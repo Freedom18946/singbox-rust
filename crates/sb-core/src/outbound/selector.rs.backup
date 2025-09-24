@@ -1,0 +1,779 @@
+use super::endpoint::ProxyEndpoint;
+use super::registry::ProxyPool;
+#[cfg(feature = "selector_p3")]
+use super::selector_p3::{Candidate as P3Candidate, ScoreSelector as P3Selector};
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+#[derive(Default)]
+struct StickyMap {
+    m: Mutex<HashMap<(SocketAddr, String), (ProxyEndpoint, Instant)>>,
+    cap: usize,
+    ttl: Duration,
+}
+
+impl StickyMap {
+    fn new(cap: usize, ttl_ms: u64) -> Self {
+        Self {
+            m: Mutex::new(HashMap::default()),
+            cap,
+            ttl: Duration::from_millis(ttl_ms),
+        }
+    }
+
+    fn get(&self, key: (SocketAddr, String)) -> Option<ProxyEndpoint> {
+        let mut g = self.m.lock();
+        if let Some((ep, ts)) = g.get(&key) {
+            if ts.elapsed() < self.ttl {
+                return Some(ep.clone());
+            }
+            g.remove(&key);
+        }
+        None
+    }
+
+    fn put(&self, key: (SocketAddr, String), ep: ProxyEndpoint) {
+        let mut g = self.m.lock();
+        if g.len() >= self.cap {
+            // Simple eviction: remove a batch randomly
+            let keys_to_remove: Vec<_> = g.keys().take(self.cap / 10).cloned().collect();
+            for k in keys_to_remove {
+                g.remove(&k);
+            }
+        }
+        g.insert(key, (ep, Instant::now()));
+    }
+}
+
+#[derive(Debug, Default)]
+struct EmaRtt {
+    // 指数滑动平均（毫秒）
+    ms: f64,
+    last: Option<Instant>,
+}
+
+impl EmaRtt {
+    fn update(&mut self, now: Instant, sample_ms: u64, half_life: Duration) {
+        let x = sample_ms as f64;
+        match self.last {
+            None => {
+                self.ms = x;
+                self.last = Some(now);
+            }
+            Some(prev) => {
+                let dt = now.saturating_duration_since(prev).as_secs_f64();
+                let hl = half_life.as_secs_f64().max(0.001);
+                // decay factor: 0.5^(dt/hl)
+                let decay = (0.5f64).powf(dt / hl);
+                self.ms = self.ms * decay + x * (1.0 - decay);
+                self.last = Some(now);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct EndpointState {
+    ema: Mutex<EmaRtt>,
+    fails: Mutex<u32>,
+    halfopen_tokens: AtomicUsize,
+}
+
+impl EndpointState {
+    fn new() -> Self {
+        Self {
+            ema: Mutex::new(EmaRtt::default()),
+            fails: Mutex::new(0),
+            halfopen_tokens: AtomicUsize::new(2), // Default value, will be overridden by config
+        }
+    }
+}
+
+static EP_STATES: once_cell::sync::OnceCell<dashmap::DashMap<String, Arc<EndpointState>>> =
+    once_cell::sync::OnceCell::new();
+
+#[derive(Clone, Copy, Debug)]
+struct SelectCfg {
+    rtt_bias: bool,
+    alpha: f64,
+    rtt_norm_ms: f64,
+    rtt_half_life_ms: u64,
+    halfopen: bool,
+    halfopen_tokens: usize,
+    fail_open_threshold: u32,
+}
+
+impl Default for SelectCfg {
+    fn default() -> Self {
+        Self {
+            rtt_bias: false,
+            alpha: 0.5,
+            rtt_norm_ms: 100.0,
+            rtt_half_life_ms: 3_000,
+            halfopen: false,
+            halfopen_tokens: 2,
+            fail_open_threshold: 3,
+        }
+    }
+}
+
+impl SelectCfg {
+    fn from_env() -> Self {
+        let mut c = Self::default();
+        if let Ok(v) = std::env::var("SB_SELECT_RTT_BIAS") {
+            c.rtt_bias = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("SB_SELECT_RTT_ALPHA") {
+            if let Ok(f) = v.parse::<f64>() {
+                c.alpha = f.clamp(0.0, 10.0);
+            }
+        }
+        if let Ok(v) = std::env::var("SB_SELECT_RTT_NORM_MS") {
+            if let Ok(f) = v.parse::<f64>() {
+                c.rtt_norm_ms = f.clamp(1.0, 10_000.0);
+            }
+        }
+        if let Ok(v) = std::env::var("SB_SELECT_RTT_HALF_LIFE_MS") {
+            if let Ok(u) = v.parse::<u64>() {
+                c.rtt_half_life_ms = u.clamp(100, 60_000);
+            }
+        }
+        if let Ok(v) = std::env::var("SB_SELECT_HALF_OPEN") {
+            c.halfopen = v == "1" || v.eq_ignore_ascii_case("true");
+        }
+        if let Ok(v) = std::env::var("SB_SELECT_HALF_OPEN_TOKENS") {
+            if let Ok(u) = v.parse::<usize>() {
+                c.halfopen_tokens = u.clamp(1, 128);
+            }
+        }
+        if let Ok(v) = std::env::var("SB_SELECT_FAIL_OPEN_THRESHOLD") {
+            if let Ok(u) = v.parse::<u32>() {
+                c.fail_open_threshold = u.clamp(1, 20);
+            }
+        }
+        c
+    }
+
+    fn is_p2_enabled(&self) -> bool {
+        self.rtt_bias || self.halfopen
+    }
+}
+
+pub struct PoolSelector {
+    sticky: StickyMap,
+    #[cfg(feature = "selector_p3")]
+    p3: Option<(
+        std::sync::Arc<parking_lot::Mutex<P3Selector>>,
+        crate::outbound::feedback::FeedbackHandle,
+    )>, // unified feedback handle
+}
+
+impl PoolSelector {
+    pub fn new(cap: usize, ttl_ms: u64) -> Self {
+        Self {
+            sticky: StickyMap::new(cap, ttl_ms),
+            #[cfg(feature = "selector_p3")]
+            p3: None,
+        }
+    }
+
+    pub fn select(
+        &self,
+        pool: &ProxyPool,
+        client: SocketAddr,
+        target: &str,
+        health: &dyn HealthView,
+    ) -> Option<ProxyEndpoint> {
+        // 在 connect 入口加可选节流
+        if std::env::var("SB_RATE_LIMIT_ENABLE").ok().as_deref() == Some("1") {
+            use crate::util::token_bucket::Bucket;
+            static BUCKET: OnceLock<std::sync::Mutex<Bucket>> = OnceLock::new();
+            let bucket = BUCKET.get_or_init(|| {
+                std::sync::Mutex::new(Bucket::new(
+                    std::env::var("SB_RATE_LIMIT_BURST")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(100),
+                    std::env::var("SB_RATE_LIMIT_RPS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(500) as f64,
+                ))
+            });
+            if !bucket.lock().unwrap().allow(1) {
+                tracing::warn!("rate_limited: outbound_connect");
+                #[cfg(feature = "metrics")]
+                {
+                    crate::metrics::outbound::rate_limited_total()
+                        .with_label_values(&["connect"])
+                        .inc();
+                }
+            }
+        }
+
+        // Check sticky mapping first
+        if let Some(ep) = self.sticky.get((client, target.to_string())) {
+            if health.is_selectable(&ep) {
+                return Some(ep);
+            }
+        }
+
+        // Filter candidates by health
+        let candidates: Vec<(usize, &ProxyEndpoint)> = pool
+            .endpoints
+            .iter()
+            .enumerate()
+            .filter(|(_, ep)| health.is_selectable(ep))
+            .collect();
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // P3 Selection Strategy (behind env); else P2; else RR
+        #[cfg(feature = "selector_p3")]
+        if self.p3_enabled() {
+            if let Some(idx) = self.select_p3_idx(pool, &candidates) {
+                let chosen = candidates
+                    .iter()
+                    .find(|(i, _)| *i == idx)
+                    .map(|(_, ep)| (*ep).clone());
+                if let Some(ep) = &chosen {
+                    self.sticky.put((client, target.to_string()), ep.clone());
+                }
+                return chosen;
+            }
+        }
+
+        let cfg = SelectCfg::from_env();
+        let chosen = if cfg.is_p2_enabled() {
+            self.select_p2(&candidates, pool, &cfg)
+        } else {
+            self.select_weighted_rr(&candidates, target)
+        };
+
+        // Update sticky mapping
+        if let Some(ep) = &chosen {
+            self.sticky.put((client, target.to_string()), ep.clone());
+        }
+
+        chosen
+    }
+
+    /// Select endpoint and also return its index within the pool
+    pub fn select_with_index(
+        &self,
+        pool: &ProxyPool,
+        client: SocketAddr,
+        target: &str,
+        health: &dyn HealthView,
+    ) -> Option<(usize, ProxyEndpoint)> {
+        // Check sticky mapping first
+        if let Some(ep) = self.sticky.get((client, target.to_string())) {
+            if health.is_selectable(&ep) {
+                // Find index in pool by matching key fields
+                if let Some(idx) = find_index_in_pool(pool, &ep) {
+                    return Some((idx, ep));
+                }
+            }
+        }
+
+        // Filter candidates by health
+        let candidates: Vec<(usize, &ProxyEndpoint)> = pool
+            .endpoints
+            .iter()
+            .enumerate()
+            .filter(|(_, ep)| health.is_selectable(ep))
+            .collect();
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // P3 Selection (behind env), else P2 / RR
+        #[cfg(feature = "selector_p3")]
+        if self.p3_enabled() {
+            if let Some(idx) = self.select_p3_idx(pool, &candidates) {
+                let chosen_ep = candidates
+                    .iter()
+                    .find(|(i, _)| *i == idx)
+                    .map(|(_, ep)| (*ep).clone())?;
+                self.sticky
+                    .put((client, target.to_string()), chosen_ep.clone());
+                return Some((idx, chosen_ep));
+            }
+        }
+
+        let cfg = SelectCfg::from_env();
+        let chosen_idx = if cfg.is_p2_enabled() {
+            self.select_p2_idx(&candidates, pool, &cfg)
+        } else {
+            self.select_weighted_rr_idx(&candidates, target)
+        }?;
+
+        let chosen_ep = candidates
+            .iter()
+            .find(|(i, _)| *i == chosen_idx)
+            .map(|(_, ep)| (*ep).clone())?;
+
+        // Update sticky mapping
+        self.sticky
+            .put((client, target.to_string()), chosen_ep.clone());
+
+        Some((chosen_idx, chosen_ep))
+    }
+
+    /// P2 Selection with RTT bias and half-open tokens
+    fn select_p2(
+        &self,
+        candidates: &[(usize, &ProxyEndpoint)],
+        pool: &ProxyPool,
+        cfg: &SelectCfg,
+    ) -> Option<ProxyEndpoint> {
+        let states = EP_STATES.get_or_init(|| dashmap::DashMap::new());
+        let mut scored: Vec<(usize, f64)> = Vec::with_capacity(candidates.len());
+
+        // Calculate scores for each candidate
+        for &(idx, ep) in candidates {
+            let key = format!("{}#{}", pool.name, idx);
+            let state = states
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(EndpointState::new()));
+
+            let w = ep.weight.min(32) as f64;
+            let mut score = w.max(0.0001);
+
+            // RTT bias
+            if cfg.rtt_bias {
+                let ema_guard = state.ema.lock();
+                let rtt_ms = ema_guard.ms;
+                if rtt_ms.is_finite() && rtt_ms > 0.0 {
+                    let norm = (rtt_ms / cfg.rtt_norm_ms).max(0.0);
+                    score = score / (1.0 + cfg.alpha * norm);
+                }
+            }
+
+            // Half-open circuit breaker
+            if cfg.halfopen {
+                let fails = *state.fails.lock();
+                if fails >= cfg.fail_open_threshold {
+                    // Ensure tokens are properly initialized with current config
+                    let current_tokens = state.halfopen_tokens.load(Ordering::Relaxed);
+                    if current_tokens == 2 && fails == 0 {
+                        // First time initialization - set to config value
+                        state
+                            .halfopen_tokens
+                            .store(cfg.halfopen_tokens, Ordering::Relaxed);
+                    }
+
+                    if state.halfopen_tokens.load(Ordering::Relaxed) == 0 {
+                        // Very low score but not zero to maintain theoretical selectability
+                        score *= 1e-6;
+                    }
+                }
+            }
+
+            // Record metrics
+            #[cfg(feature = "metrics")]
+            {
+                metrics::gauge!("proxy_select_score", "pool" => pool.name.clone(), "endpoint" => key.clone()).set(score);
+                if cfg.rtt_bias {
+                    let ema_guard = state.ema.lock();
+                    if ema_guard.ms.is_finite() {
+                        metrics::gauge!("proxy_endpoint_rtt_ms", "pool" => pool.name.clone(), "endpoint" => key.clone())
+                            .set(ema_guard.ms);
+                    }
+                }
+                if cfg.halfopen {
+                    metrics::gauge!("proxy_endpoint_halfopen_tokens", "pool" => pool.name.clone(), "endpoint" => key.clone())
+                        .set(state.halfopen_tokens.load(Ordering::Relaxed) as f64);
+                }
+            }
+
+            // Expand score into weighted slots (preserving existing weighted random style)
+            let slots = if cfg.halfopen
+                && *state.fails.lock() >= cfg.fail_open_threshold
+                && state.halfopen_tokens.load(Ordering::Relaxed) == 0
+            {
+                // No slots when circuit breaker is active and no tokens available
+                0
+            } else {
+                (score.ceil() as usize).clamp(1, 64) // Ensure at least 1 slot for selectable endpoints
+            };
+
+            for _ in 0..slots {
+                scored.push((idx, score));
+            }
+        }
+
+        if scored.is_empty() {
+            return candidates.first().map(|(_, ep)| (*ep).clone());
+        }
+
+        let pick_idx = crate::util::fast_rand_idx2(scored.len());
+        let (chosen_idx, _) = scored[pick_idx];
+        let chosen_ep = candidates.iter().find(|(idx, _)| *idx == chosen_idx)?.1;
+
+        // Record selection metric
+        #[cfg(feature = "metrics")]
+        {
+            let key = format!("{}#{}", pool.name, chosen_idx);
+            metrics::counter!("proxy_select_total", "pool" => pool.name.clone(), "endpoint" => key.clone()).increment(1);
+        }
+
+        Some(chosen_ep.clone())
+    }
+
+    /// Same as select_p2 but returns the chosen endpoint index within the pool
+    fn select_p2_idx(
+        &self,
+        candidates: &[(usize, &ProxyEndpoint)],
+        pool: &ProxyPool,
+        cfg: &SelectCfg,
+    ) -> Option<usize> {
+        let states = EP_STATES.get_or_init(|| dashmap::DashMap::new());
+        let mut scored: Vec<(usize, f64)> = Vec::with_capacity(candidates.len());
+
+        // Calculate scores for each candidate
+        for &(idx, ep) in candidates {
+            let key = format!("{}#{}", pool.name, idx);
+            let state = states
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(EndpointState::new()));
+
+            let w = ep.weight.min(32) as f64;
+            let mut score = w.max(0.0001);
+
+            // RTT bias
+            if cfg.rtt_bias {
+                let ema_guard = state.ema.lock();
+                let rtt_ms = ema_guard.ms;
+                if rtt_ms.is_finite() && rtt_ms > 0.0 {
+                    let norm = (rtt_ms / cfg.rtt_norm_ms).max(0.0);
+                    score = score / (1.0 + cfg.alpha * norm);
+                }
+            }
+
+            // Half-open circuit breaker
+            if cfg.halfopen {
+                let fails = *state.fails.lock();
+                if fails >= cfg.fail_open_threshold {
+                    // Ensure tokens are properly initialized with current config
+                    let current_tokens = state.halfopen_tokens.load(Ordering::Relaxed);
+                    if current_tokens == 2 && fails == 0 {
+                        // First time initialization - set to config value
+                        state
+                            .halfopen_tokens
+                            .store(cfg.halfopen_tokens, Ordering::Relaxed);
+                    }
+
+                    if state.halfopen_tokens.load(Ordering::Relaxed) == 0 {
+                        // Very low score but not zero to maintain theoretical selectability
+                        score *= 1e-6;
+                    }
+                }
+            }
+
+            // Expand into slots for simple weighted random selection
+            let slots = if cfg.halfopen
+                && *state.fails.lock() >= cfg.fail_open_threshold
+                && state.halfopen_tokens.load(Ordering::Relaxed) == 0
+            {
+                0
+            } else {
+                (score.ceil() as usize).clamp(1, 64)
+            };
+            for _ in 0..slots {
+                scored.push((idx, score));
+            }
+        }
+
+        if scored.is_empty() {
+            return candidates.first().map(|(idx, _)| *idx);
+        }
+
+        let pick_idx = crate::util::fast_rand_idx2(scored.len());
+        let (chosen_idx, _) = scored[pick_idx];
+
+        // Record selection metric
+        #[cfg(feature = "metrics")]
+        {
+            let key = format!("{}#{}", pool.name, chosen_idx);
+            metrics::counter!("proxy_select_total", "pool" => pool.name.clone(), "endpoint" => key.clone()).increment(1);
+        }
+
+        Some(chosen_idx)
+    }
+
+    /// Original weighted round-robin selection (fallback)
+    fn select_weighted_rr(
+        &self,
+        candidates: &[(usize, &ProxyEndpoint)],
+        target: &str,
+    ) -> Option<ProxyEndpoint> {
+        let idx = self.select_weighted_rr_idx(candidates, target)?;
+        candidates
+            .iter()
+            .find(|(i, _)| *i == idx)
+            .map(|(_, ep)| (*ep).clone())
+    }
+
+    /// Feedback mechanism: report RTT and success/failure for endpoint observation
+    pub fn on_observation(
+        &self,
+        pool_name: &str,
+        endpoint_index: usize,
+        rtt_ms: u64,
+        success: bool,
+    ) {
+        let states = EP_STATES.get_or_init(|| dashmap::DashMap::new());
+        let key = format!("{}#{}", pool_name, endpoint_index);
+        let state = states
+            .entry(key)
+            .or_insert_with(|| Arc::new(EndpointState::new()));
+
+        let now = Instant::now();
+        let cfg = SelectCfg::from_env();
+
+        // Update EMA RTT
+        {
+            let mut ema_guard = state.ema.lock();
+            ema_guard.update(now, rtt_ms, Duration::from_millis(cfg.rtt_half_life_ms));
+        }
+
+        // Update failure count and half-open tokens
+        if success {
+            *state.fails.lock() = 0;
+            if cfg.halfopen {
+                // Ensure tokens are initialized to config value
+                let current = state.halfopen_tokens.load(Ordering::Relaxed);
+                if current < cfg.halfopen_tokens {
+                    state.halfopen_tokens.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        } else {
+            let mut fails_guard = state.fails.lock();
+            *fails_guard = fails_guard.saturating_add(1);
+            if cfg.halfopen {
+                // Initialize tokens to config value if not yet initialized
+                let current = state.halfopen_tokens.load(Ordering::Relaxed);
+                if current == 2 && *fails_guard == 1 {
+                    // First failure - initialize with config
+                    state
+                        .halfopen_tokens
+                        .store(cfg.halfopen_tokens, Ordering::Relaxed);
+                } else if current > 0 {
+                    // Failure: reduce token count
+                    state.halfopen_tokens.store(current - 1, Ordering::Relaxed);
+                } else {
+                    state.halfopen_tokens.store(0, Ordering::Relaxed);
+                }
+            }
+        }
+
+        // P3 feedback (behind env)
+        #[cfg(feature = "selector_p3")]
+        if self.p3_enabled() {
+            let id = format!("{}#{}", pool_name, endpoint_index);
+            if let Some((_, fh)) = &self.p3 {
+                if success {
+                    let started = Instant::now() - Duration::from_millis(rtt_ms);
+                    fh.success(&id, started);
+                } else {
+                    fh.error(&id);
+                }
+            }
+        }
+    }
+}
+
+pub trait HealthView {
+    fn is_selectable(&self, ep: &ProxyEndpoint) -> bool; // up && breaker != open
+}
+
+// Simple hash function to avoid external dependency
+fn simple_hash(data: &[u8]) -> u32 {
+    let mut hash = 0u32;
+    for &byte in data {
+        hash = hash.wrapping_mul(31).wrapping_add(byte as u32);
+    }
+    hash
+}
+
+impl PoolSelector {
+    #[cfg(feature = "selector_p3")]
+    fn p3_enabled(&self) -> bool {
+        matches!(
+            std::env::var("SB_SELECT_P3").ok().as_deref(),
+            Some("1" | "true" | "TRUE")
+        )
+    }
+
+    #[cfg(feature = "selector_p3")]
+    fn p3_get_or_init(&self) -> std::sync::Arc<parking_lot::Mutex<P3Selector>> {
+        if self.p3.is_none() {
+            let alpha = std::env::var("SB_P3_ALPHA")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.2);
+            let eps = std::env::var("SB_P3_EPS")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.15);
+            let cooldown_ms = std::env::var("SB_P3_COOLDOWN_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(3000);
+            let bias_cold = std::env::var("SB_P3_BIAS_COLD")
+                .ok()
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(0.2);
+            let explore = std::env::var("SB_P3_EXPLORE")
+                .ok()
+                .map(|s| {
+                    if let Some(p) = s.strip_prefix("epsilon:") {
+                        p.parse().ok().map(super::selector_p3::ExploreMode::Epsilon)
+                    } else if let Some(t) = s.strip_prefix("softmax:") {
+                        t.parse().ok().map(super::selector_p3::ExploreMode::Softmax)
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .unwrap_or(super::selector_p3::ExploreMode::Off);
+            let min_dwell = std::env::var("SB_P3_MIN_DWELL_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1500);
+            let min_samples = std::env::var("SB_P3_MIN_SAMPLES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3);
+            let ema_half = std::env::var("SB_P3_EMA_HALFLIFE_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5000);
+            let selector = P3Selector::new(
+                alpha,
+                eps,
+                Duration::from_millis(cooldown_ms),
+                bias_cold,
+                (1.0, 2.0, 1.0),
+                explore,
+                Duration::from_millis(min_dwell as u64),
+                min_samples as u64,
+                Duration::from_millis(ema_half as u64),
+            );
+            let arc = std::sync::Arc::new(parking_lot::Mutex::new(selector));
+            // Wrap into unified feedback handle to concentrate reporting
+            let wrapper = crate::outbound::feedback::P3FeedbackWrapper::new(arc.clone());
+            let fh = crate::outbound::feedback::FeedbackHandle::new(std::sync::Arc::new(
+                parking_lot::Mutex::new(wrapper),
+            ));
+            let this = self as *const _ as *mut PoolSelector; // write through &self (safe for our usage here)
+            unsafe {
+                (*this).p3 = Some((arc.clone(), fh));
+            }
+            eprintln!(
+                "[P3] enabled (alpha={}, eps={}, cooldown_ms={}, bias={})",
+                alpha, eps, cooldown_ms, bias_cold
+            );
+            match explore {
+                super::selector_p3::ExploreMode::Off => eprintln!("[P3] explore=off"),
+                super::selector_p3::ExploreMode::Epsilon(p) => {
+                    eprintln!("[P3] explore=epsilon({})", p)
+                }
+                super::selector_p3::ExploreMode::Softmax(t) => {
+                    eprintln!("[P3] explore=softmax(tau={})", t)
+                }
+            }
+            // 将关键参数以 Gauge=1 的 label 落到 /metrics，便于审计
+            #[cfg(feature = "metrics")]
+            {
+                use crate::metrics::outbound::params_gauge;
+                let g = params_gauge();
+                let explore_s = match explore {
+                    super::selector_p3::ExploreMode::Off => "off",
+                    super::selector_p3::ExploreMode::Epsilon(_) => "epsilon",
+                    super::selector_p3::ExploreMode::Softmax(_) => "softmax",
+                };
+                g.with_label_values(&[
+                    &alpha.to_string(),
+                    &eps.to_string(),
+                    &cooldown_ms.to_string(),
+                    &bias_cold.to_string(),
+                    &min_dwell.to_string(),
+                    &min_samples.to_string(),
+                    &ema_half.to_string(),
+                    explore_s,
+                ])
+                .set(1);
+            }
+        }
+        self.p3.as_ref().unwrap().0.clone()
+    }
+
+    #[cfg(feature = "selector_p3")]
+    fn select_p3_idx(
+        &self,
+        pool: &ProxyPool,
+        candidates: &[(usize, &ProxyEndpoint)],
+    ) -> Option<usize> {
+        if candidates.is_empty() {
+            return None;
+        }
+        let now = Instant::now();
+        let p3 = self.p3_get_or_init();
+        let items: Vec<P3Candidate> = candidates
+            .iter()
+            .map(|(idx, ep)| P3Candidate {
+                id: format!("{}#{}", pool.name, idx),
+                weight: ep.weight,
+            })
+            .collect();
+        let choice_id = p3.lock().choose(&items, now);
+        // parse suffix after '#'
+        if let Some(pos) = choice_id.rfind('#') {
+            if let Ok(i) = choice_id[pos + 1..].parse::<usize>() {
+                return Some(i);
+            }
+        }
+        candidates.first().map(|(i, _)| *i)
+    }
+    fn select_weighted_rr_idx(
+        &self,
+        candidates: &[(usize, &ProxyEndpoint)],
+        target: &str,
+    ) -> Option<usize> {
+        let mut bag: Vec<usize> = Vec::new();
+        const WEIGHT_CAP: u32 = 32;
+        for &(idx, ep) in candidates {
+            let repeats = ep.weight.clamp(1, WEIGHT_CAP);
+            for _ in 0..repeats {
+                bag.push(idx);
+            }
+        }
+        if bag.is_empty() {
+            return None;
+        }
+        let hash = simple_hash(target.as_bytes());
+        let pick = (hash as usize) % bag.len();
+        Some(bag[pick])
+    }
+}
+
+fn find_index_in_pool(pool: &ProxyPool, ep: &ProxyEndpoint) -> Option<usize> {
+    pool.endpoints.iter().position(|e| {
+        e.kind as u8 == ep.kind as u8
+            && e.addr == ep.addr
+            && e.weight == ep.weight
+            && e.max_fail == ep.max_fail
+            && e.open_ms == ep.open_ms
+            && e.half_open_ms == ep.half_open_ms
+    })
+}

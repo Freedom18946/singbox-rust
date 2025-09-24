@@ -1,0 +1,8 @@
+{
+  "name": "loopback-smoke",
+  "steps": [
+    { "action": "loopback", "proto": "trojan", "host": "example.com", "port": 443, "seed": 1, "out": "hs.loop.1.jsonl" },
+    { "action": "verify_jsonl", "from": "hs.loop.1.jsonl", "out": "hs.loop.1.verify.json" },
+    { "action": "assert_metrics", "from": "hs.loop.1.jsonl", "expect": { "min_frames": 2, "min_tx": 8, "min_rx": 8, "max_disorder": 0 } }
+  ]
+}

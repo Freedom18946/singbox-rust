@@ -1,0 +1,19 @@
+inbounds:
+  - type: http
+    listen: 127.0.0.1:0
+  - type: socks
+    listen: 127.0.0.1:0
+
+outbounds:
+  - name: direct
+    type: direct
+  - name: block
+    type: block
+  - name: upstream-http
+    type: http
+    server: 127.0.0.1
+    port: 3128
+
+rules:
+  - domain_suffix: ["example.com"]
+    outbound: direct

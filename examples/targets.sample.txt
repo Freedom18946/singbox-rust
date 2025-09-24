@@ -1,0 +1,6 @@
+# 示例目标清单
+www.shop.com:443
+cdn.shop.com:443
+ads.example.com
+tracker.example.com
+example.com

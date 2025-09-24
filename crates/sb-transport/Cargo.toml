@@ -1,0 +1,21 @@
+[package]
+name = "sb-transport"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+transport_tls = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots"]
+transport_quic = ["dep:quinn", "transport_tls"]
+
+[dependencies]
+tokio = { workspace = true, features = ["net", "time", "io-util"] }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+pin-project-lite = "0.2"
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "logging", "tls12"] }
+tokio-rustls = { version = "0.26", optional = true, default-features = false }
+webpki-roots = { version = "0.26", optional = true }
+quinn = { version = "0.11", optional = true }
+uuid = "1.0"
+bytes = { workspace = true }

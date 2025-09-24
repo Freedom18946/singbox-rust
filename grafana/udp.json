@@ -1,0 +1,27 @@
+{
+  "title": "SB · UDP Upstream",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Upstream packets (in)",
+      "targets": [
+        { "expr": "rate(udp_upstream_pkts_in_total[1m])" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Upstream bytes (in)",
+      "targets": [
+        { "expr": "rate(udp_upstream_bytes_in_total[1m])" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Session map size",
+      "targets": [
+        { "expr": "udp_upstream_map_size" }
+      ]
+    }
+  ],
+  "schemaVersion": 38
+}

@@ -1,0 +1,11 @@
+inbounds:
+  - type: socks
+    listen: 127.0.0.1
+    port: 1080
+route:
+  rules:
+    - when: { exact: "dead.to" }   # idx 0
+      to: ghost-outbound
+outbounds:
+  - name: valid
+    type: direct

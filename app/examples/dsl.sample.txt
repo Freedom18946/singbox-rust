@@ -1,0 +1,6 @@
+# Sample DSL for testing sb-route analyze
+suffix:example.com=direct
+suffix:shop.example.com=proxy
+exact:api.example.com:443=proxy
+exact:cdn.example.com=direct
+default=direct

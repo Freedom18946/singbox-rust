@@ -1,0 +1,3 @@
+exact:example.com=direct
+suffix:shop.com=proxyA
+default:reject

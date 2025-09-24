@@ -1,0 +1,27 @@
+[package]
+name = "xtests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+explain = ["singbox-bin/explain"]
+metrics = ["singbox-bin/metrics"]
+sbcore_analyze_json = ["singbox-bin/sbcore_analyze_json"]
+pprof = ["singbox-bin/pprof"]
+out_trojan = ["sb-core/out_trojan"]
+out_ss = ["sb-core/out_ss"]
+
+[dev-dependencies]
+assert_cmd = "2"
+serde_json = "1"
+predicates = "3"
+singbox-bin = { path = "../app", package = "singbox-rust" }
+
+[dependencies]
+sb-core = { path = "../crates/sb-core" }
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[package.metadata]
+description = "Workspace integration tests"

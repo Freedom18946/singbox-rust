@@ -1,0 +1,12 @@
+{
+  "name": "alpha-smoke",
+  "stop_on_fail": true,
+  "include": ["./examples/scenarios/loopback.smoke.json"],
+  "include_glob": ["./examples/scenarios/extra.*.json"],
+  "vars": { "RUN_ID": "dev", "SUITE": "smoke" },
+  "defaults": { "seed": 42, "out_dir": "./target" },
+  "steps": [
+    { "action": "io_local", "proto": "vmess", "port": 0, "seed": 0, "out": "hs.${RUN_ID}.${SUITE}.iolocal.jsonl", "spawn_echo": true, "chaos_profile": "mobile3g" },
+    { "action": "verify_jsonl", "from": "hs.${RUN_ID}.${SUITE}.iolocal.jsonl", "out": "hs.${RUN_ID}.${SUITE}.iolocal.verify.json" }
+  ]
+}

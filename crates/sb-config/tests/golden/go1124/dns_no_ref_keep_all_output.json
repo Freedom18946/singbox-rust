@@ -1,0 +1,14 @@
+{
+  "dns": {
+    "servers": [
+      { "type": "udp", "server": "223.5.5.5", "tag": "local", "detour": "direct" },
+      { "type": "https", "server": "1.1.1.1", "tag": "remote", "detour": "direct" },
+      { "type": "rcode", "server": "refused", "tag": "block" }
+    ],
+    "rules": [
+      { "domain_suffix": "lan" },
+      { "geosite": "geolocation-!cn" }
+    ],
+    "strategy": "ipv4_only"
+  }
+}

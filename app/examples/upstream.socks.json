@@ -1,0 +1,24 @@
+{
+  "inbounds": [
+    { "type": "http", "listen": "127.0.0.1:28090" },
+    { "type": "socks", "listen": "127.0.0.1:28091" }
+  ],
+  "outbounds": [
+    { "tag": "direct", "type": "direct" },
+    { "tag": "block", "type": "block" },
+    {
+      "tag": "up_socks",
+      "type": "socks",
+      "server": "127.0.0.1:1080",
+      "username": "u",
+      "password": "p"
+    }
+  ],
+  "rules": [
+    {
+      "type": "advanced",
+      "domain_suffix": "example.com",
+      "outbound": "up_socks"
+    }
+  ]
+}

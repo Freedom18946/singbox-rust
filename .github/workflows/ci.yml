@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Cargo fmt (check)
+        run: cargo fmt --all -- --check
+
+      - name: Cargo clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Cargo check (workspace)
+        run: cargo check --features "http,socks,metrics,dns" --workspace
+
+      - name: Unit tests (sb-core/sb-adapters)
+        run: |
+          cargo test --features "http,socks,metrics,dns" -p sb-core -p sb-adapters -- --nocapture
+
+  e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: E2E tests (adapters only)
+        env:
+          RUST_TEST_THREADS: 1
+        run: |
+          cargo test --features "http,socks,metrics,e2e" -p sb-adapters -- --nocapture
+
+  dns-udp-e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: UDP DNS pool tests (optional)
+        env:
+          RUST_TEST_THREADS: 1
+        run: |
+          cargo test -q --features "http,socks,metrics,dns,dns_udp" -p sb-core -- --nocapture
+
+  dns-doh-dot-e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: DoH/DoT tests (optional)
+        env:
+          RUST_TEST_THREADS: 1
+        run: |
+          cargo test -q --features "http,socks,metrics,dns,dns_doh,dns_dot" -p sb-core -- --nocapture
+
+  router-async-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Router async smoke (adapters)
+        run: |
+          cargo test -q --features "http,socks,metrics,dns" -p sb-adapters -- --nocapture
+
+  router-rules-file:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Router rules/index/file tests (optional)
+        run: |
+          cargo test -q --features "http,socks,metrics,dns" -p sb-core --test router_rules_index -- --nocapture
+          cargo test -q --features "http,socks,metrics,dns" -p sb-core --test router_geoip_async -- --nocapture
+          cargo test -q --features "http,socks,metrics,dns" -p sb-core --test router_rules_file -- --nocapture

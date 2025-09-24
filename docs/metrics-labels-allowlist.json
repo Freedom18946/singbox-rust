@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "metrics": [
+    {
+      "name": "http_respond_total",
+      "type": "counter",
+      "labels": {
+        "code": "^(403|405|2..|3..|4..|5..)?$"
+      }
+    },
+    {
+      "name": "dns_query_total",
+      "type": "counter",
+      "labels": {
+        "backend": "^(system|udp|dot|doh)$",
+        "qtype": "^(A|AAAA|AUTO)$"
+      }
+    },
+    {
+      "name": "dns_rtt_seconds",
+      "type": "histogram|summary",
+      "labels": {
+        "backend": "^(system|udp|dot|doh)$"
+      }
+    },
+    {
+      "name": "proxy_select_total",
+      "type": "counter",
+      "labels": {
+        "pool": "^[a-zA-Z0-9_\\-]+$",
+        "endpoint": "^[a-zA-Z0-9_\\-]+#\\d+$"
+      }
+    },
+    {
+      "name": "proxy_select_score",
+      "type": "gauge",
+      "labels": {
+        "pool": "^[a-zA-Z0-9_\\-]+$",
+        "endpoint": "^[a-zA-Z0-9_\\-]+#\\d+$"
+      }
+    },
+    {
+      "name": "proxy_endpoint_rtt_ms",
+      "type": "gauge",
+      "labels": {
+        "pool": "^[a-zA-Z0-9_\\-]+$",
+        "endpoint": "^[a-zA-Z0-9_\\-]+#\\d+$"
+      }
+    },
+    {
+      "name": "udp_upstream_pkts_in_total",
+      "type": "counter",
+      "labels": {}
+    },
+    {
+      "name": "udp_upstream_bytes_in_total",
+      "type": "counter",
+      "labels": {}
+    },
+    {
+      "name": "udp_upstream_map_size",
+      "type": "gauge",
+      "labels": {}
+    },
+    {
+      "name": "udp_upstream_map_create_total",
+      "type": "counter",
+      "labels": {}
+    },
+    {
+      "name": "udp_upstream_map_close_total",
+      "type": "counter",
+      "labels": {}
+    },
+    {
+      "name": "udp_upstream_map_evict_total",
+      "type": "counter",
+      "labels": {}
+    },
+    {
+      "name": "proxy_up",
+      "type": "gauge",
+      "labels": {
+        "pool": "^[a-zA-Z0-9_\\-]+$",
+        "endpoint": "^[a-zA-Z0-9_\\-]+#\\d+$"
+      }
+    },
+    {
+      "name": "proxy_circuit_state_total",
+      "type": "counter",
+      "labels": {
+        "pool": "^[a-zA-Z0-9_\\-]+$",
+        "endpoint": "^[a-zA-Z0-9_\\-]+#\\d+$",
+        "state": "^(open|half_open|closed)$"
+      }
+    }
+  ]
+}

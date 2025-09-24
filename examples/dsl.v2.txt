@@ -1,0 +1,5 @@
+# v2：演示规则（标准 DSL）
+exact:example.com=proxyA
+suffix:shop.com=proxyA
+suffix:cdn.shop.com=proxyA
+default:reject

@@ -1,0 +1,198 @@
+use percent_encoding::percent_decode_str;
+use std::collections::HashMap;
+use tokio::io::AsyncWriteExt;
+use serde::Serialize;
+
+pub fn parse_query(q: &str) -> HashMap<String, String> {
+    let mut m = HashMap::new();
+    for kv in q.split('&') {
+        if let Some((k, v)) = kv.split_once('=') {
+            m.insert(url_decode(k), url_decode(v));
+        }
+    }
+    m
+}
+
+pub fn url_decode(s: &str) -> String {
+    percent_decode_str(s).decode_utf8_lossy().to_string()
+}
+
+pub async fn respond(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    code: u16,
+    ctype: &str,
+    body: &str,
+) -> std::io::Result<()> {
+    let status = match code {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        413 => "Payload Too Large",
+        429 => "Too Many Requests",
+        501 => "Not Implemented",
+        _ => "OK",
+    };
+    let hdr = format!(
+        "HTTP/1.1 {code} {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.as_bytes().len()
+    );
+    sock.write_all(hdr.as_bytes()).await?;
+    sock.write_all(body.as_bytes()).await?;
+    Ok(())
+}
+
+pub async fn respond_json_ok(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    body: &impl Serialize,
+) -> std::io::Result<()> {
+    let json = serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec());
+    respond(sock, 200, "application/json", std::str::from_utf8(&json).unwrap()).await
+}
+
+#[derive(Serialize)]
+struct JsonError<'a> {
+    error: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<&'a str>,
+    code: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trace_id: Option<&'a str>,
+}
+
+pub async fn respond_json_error(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    code: u16,
+    msg: &str,
+    hint: Option<&str>,
+) -> std::io::Result<()> {
+    let payload = JsonError {
+        error: msg,
+        hint,
+        code,
+        path: None,     // 可由上层按需注入
+        trace_id: None, // observe特性可注入
+    };
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{\"error\":\"unknown\"}".into());
+    respond(sock, code, "application/json", &json).await
+}
+
+/// Maximum allowed size for base64 inline content (512KB)
+pub const MAX_INLINE_BYTES: usize = 512 * 1024;
+
+/// Validate base64 content size before decoding (estimation only)
+pub fn validate_inline_size_estimate(b64_content: &str) -> Result<(), &'static str> {
+    let est = estimate_b64_decoded_size(b64_content);
+    if est <= MAX_INLINE_BYTES { Ok(()) } else { Err("inline content too large") }
+}
+
+/// More robust Base64 size estimation (ignores whitespace and considers padding)
+fn estimate_b64_decoded_size(b64: &str) -> usize {
+    // 去掉空白
+    let len = b64.as_bytes().iter().filter(|b| !b" \n\r\t".contains(b)).count();
+    // 非法字符不要在此处拒绝，让解码报错；这里只做 rough estimate
+    // Base64 4 chars -> 3 bytes，考虑填充
+    let padding = b64.chars().rev().take_while(|&c| c == '=').count();
+    if len == 0 { return 0; }
+    // 向下取整的估算，但不小于0
+    // 公式： decoded = (len/4)*3 - padding
+    let blocks = len / 4;
+    blocks.saturating_mul(3).saturating_sub(padding)
+}
+
+/// Validate actual decoded content size
+pub fn validate_decoded_size(decoded_bytes: &[u8]) -> Result<(), &'static str> {
+    if decoded_bytes.len() > MAX_INLINE_BYTES {
+        Err("inline content too large")
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate format parameter
+pub fn validate_format(format: &str) -> Result<(), &'static str> {
+    match format {
+        "clash" | "singbox" => Ok(()),
+        _ => Err("invalid format"),
+    }
+}
+
+/// Get supported patch kinds dynamically from core
+pub fn supported_patch_kinds() -> &'static [String] {
+    use std::sync::OnceLock;
+    static KINDS: OnceLock<Vec<String>> = OnceLock::new();
+
+    KINDS.get_or_init(|| {
+        #[cfg(feature = "sbcore_rules_tool")]
+        {
+            let json = sb_core::router::analyze_fix::supported_patch_kinds_json();
+            // Parse the JSON to extract kinds array
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+                if let Some(kinds_array) = value.get("kinds").and_then(|k| k.as_array()) {
+                    return kinds_array
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect();
+                }
+            }
+        }
+
+        // Fallback to empty list if core feature not available or parsing fails
+        vec![]
+    })
+}
+
+/// Check if networking is allowed via environment variable
+pub fn is_networking_allowed() -> bool {
+    match std::env::var("SB_ADMIN_ALLOW_NET") {
+        Ok(val) => val != "0" && !val.is_empty(),
+        Err(_) => true, // Default to allowed if not set
+    }
+}
+
+/// Validate URL for security (only allow http/https schemes)
+pub fn validate_url_scheme(url: &str) -> Result<(), &'static str> {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        Ok(())
+    } else {
+        Err("invalid URL scheme")
+    }
+}
+
+/// Get supported kinds as a comma-separated string for error messages
+pub fn supported_patch_kinds_hint() -> String {
+    let kinds = supported_patch_kinds();
+    if kinds.is_empty() {
+        "none available (sbcore_rules_tool feature required)".to_string()
+    } else {
+        kinds.join(", ")
+    }
+}
+
+/// Validate kinds parameter
+pub fn validate_kinds(kinds_str: &str) -> Result<Vec<String>, String> {
+    if kinds_str.trim().is_empty() {
+        return Ok(vec![]);
+    }
+
+    let supported = supported_patch_kinds();
+    let requested: Vec<String> = kinds_str.split(',').map(|s| s.trim().to_string()).collect();
+    let mut invalid = Vec::new();
+
+    for kind in &requested {
+        if !supported.iter().any(|s| s.as_str() == kind) {
+            invalid.push(kind.clone());
+        }
+    }
+
+    if invalid.is_empty() {
+        Ok(requested)
+    } else {
+        Err(format!(
+            "unsupported kinds: {:?}; supported: [{}]",
+            invalid,
+            supported.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        ))
+    }
+}

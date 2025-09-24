@@ -1,0 +1,149 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+## 默认最小构建：仅 CLI（check/version/handshake/bench/udp-echo），不触发 sb-core
+default = ["minimal"]
+minimal = []
+
+## 路由/运行期与观测能力
+router  = ["sb-core"]
+observe = ["router", "sb-metrics"]
+admin_debug = ["observe", "url"]
+
+## 子能力（从 observe 派生，按需组合）
+subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscribe"]   # /subs/fetch
+subs_clash  = []
+subs_singbox= []
+
+## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
+[[bin]]
+name = "run"
+path = "src/bin/run.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "route"
+path = "src/bin/route.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "route-explain"
+path = "src/bin/route-explain.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "sb-explaind"
+path = "src/bin/sb-explaind.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "preview"
+path = "src/bin/preview.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "dsl"
+path = "src/bin/dsl.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "preflight"
+path = "src/bin/preflight.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "subs"
+path = "src/bin/subs.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "coverage-http"
+path = "src/bin/coverage-http.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "diag"
+path = "src/bin/diag.rs"
+required-features = ["router"]
+
+## 以下 bin 不需要 router，minimal 即可
+[[bin]]
+name = "check"
+path = "src/bin/check.rs"
+
+[[bin]]
+name = "version"
+path = "src/bin/version.rs"
+
+[[bin]]
+name = "handshake"
+path = "src/bin/handshake.rs"
+
+[[bin]]
+name = "sb-bench"
+path = "src/bin/sb-bench.rs"
+
+[[bin]]
+name = "sb-udp-echo"
+path = "src/bin/sb-udp-echo.rs"
+
+[[bin]]
+name = "sb-rule-coverage"
+path = "src/bin/sb-rule-coverage.rs"
+
+[[bin]]
+name = "report"
+path = "src/bin/report.rs"
+
+[dependencies]
+anyhow      = { workspace = true }
+clap        = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+tokio       = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+serde_yaml  = { workspace = true }
+sha2        = "0.10"
+hmac        = "0.12"
+subtle      = "2.5"
+hex         = "0.4"
+httparse    = "1.8"
+tokio-rustls = "0.25"
+rustls      = "0.23"
+rustls-pemfile = "2.1"
+webpki-roots = "0.26"
+rand = "0.8"
+trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
+sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
+sb-config   = { path = "../crates/sb-config", package = "sb-config" }
+sb-metrics  = { path = "../crates/sb-metrics", optional = true }
+sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
+reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream"], optional = true }
+url         = { version = "2", optional = true }
+bytes       = { version = "1", optional = true }
+futures-util= { version = "0.3", optional = true }
+walkdir     = "2"
+regex       = "1"
+ignore      = "0.4"
+toml        = "0.8"
+once_cell   = { workspace = true }
+ipnet       = "2"
+fastrand    = "2"
+base64      = "0.22"
+percent-encoding = "2.3"
+idna        = "0.5"
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls","blocking"] }
+assert_cmd = { version = "2.0" }
+
+[build-dependencies]
+chrono = { workspace = true }
+

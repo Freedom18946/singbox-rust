@@ -1,0 +1,12 @@
+{
+  "rename": [
+    {"from": "tag", "to": "name"}
+  ],
+  "coalesce": [
+    {"to": "server_port", "from": ["server_port", "port"]}
+  ],
+  "set": [
+    {"path": "tls.enabled", "value": true}
+  ],
+  "delete": ["udp", "skip-cert-verify"]
+}

@@ -1,0 +1,14 @@
+{
+  "dns": {
+    "strategy": "prefer_ipv6",
+    "servers": [
+      { "address": "udp://8.8.8.8", "tag": "g", "detour": "direct" },
+      { "address": "https://cloudflare-dns.com/dns-query", "tag": "cf" },
+      { "address": "rcode://NXDOMAIN", "tag": "block" }
+    ],
+    "rules": [
+      { "geosite": ["cn"], "server": "g" },
+      { "domain_suffix": ["example"], "server": "cf" }
+    ]
+  }
+}

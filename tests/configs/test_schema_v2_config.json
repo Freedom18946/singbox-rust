@@ -1,0 +1,25 @@
+{
+  "inbounds": [
+    {
+      "type": "http",
+      "listen": "127.0.0.1",
+      "port": 18080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "to": "direct"
+      }
+    ]
+  },
+  "dns": {
+    "mode": "system"
+  },
+  "unknown_field": "this should cause an error"
+}

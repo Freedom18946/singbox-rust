@@ -1,0 +1,13 @@
+inbounds:
+  - type: http
+    listen: "127.0.0.1"
+    port: 18080
+outbounds:
+  - type: direct
+route:
+  rules:
+    - to: "direct"
+dns:
+  mode: system
+# This field should cause a schema v2 validation error
+unknown_top_level_field: "this should fail validation"

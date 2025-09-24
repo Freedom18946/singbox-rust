@@ -1,0 +1,27 @@
+{
+  "title": "SB · DNS",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "QPS by backend/qtype",
+      "targets": [
+        { "expr": "sum by (backend,qtype) (rate(dns_query_total[1m]))" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DNS RTT (seconds)",
+      "targets": [
+        { "expr": "avg by (backend) (dns_rtt_seconds)" }
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      { "name": "backend", "query": "label_values(dns_query_total, backend)", "type": "query" },
+      { "name": "qtype", "query": "label_values(dns_query_total, qtype)", "type": "query" }
+    ]
+  },
+  "schemaVersion": 38
+}

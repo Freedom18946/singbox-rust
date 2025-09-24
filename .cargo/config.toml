@@ -1,0 +1,5 @@
+[build]
+rustflags = [
+  "-C","target-cpu=native",
+  "--check-cfg=cfg(feature, values(\"minimal\",\"observe\",\"subs_http\",\"subs_clash\",\"subs_singbox\",\"sbcore_rules_tool\",\"rules_capture\",\"sbcore_analyze_json\",\"proto_trojan_dry\",\"proto_ss2022_min\",\"route_sandbox\",\"router\",\"bench\",\"strict_warnings\",\"metrics\",\"admin_debug\",\"explain\",\"rule_coverage\",\"panic_log\",\"hardening\",\"chaos\",\"socks\",\"redir\",\"tun\",\"http\",\"schema-v2\",\"tls-rustls\",\"config_schema\"))"
+]

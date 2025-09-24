@@ -1,0 +1,29 @@
+inbounds:
+  - type: http
+    listen: "127.0.0.1"
+    port: 8080
+  - type: socks
+    listen: "127.0.0.1"
+    port: 1080
+
+outbounds:
+  - type: direct
+    name: direct
+  - type: socks
+    name: proxy1
+    server: "1.2.3.4"
+    port: 1080
+
+route:
+  rules:
+    - name: bypass_local
+      when:
+        proto: ["tcp", "udp"]
+      to: direct
+
+dns:
+  mode: system
+  backends:
+    - type: system
+    - type: udp
+      server: "8.8.8.8"

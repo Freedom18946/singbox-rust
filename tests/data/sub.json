@@ -1,0 +1,1562 @@
+[
+  {
+    "tag": "Panel：www.creamdata.xyz",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24105,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24105,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24114,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24121,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 04",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24122,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 05",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24115,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 06",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24106,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 07",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24103,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 08",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24101,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 09",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24102,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 10",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24120,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 11",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24117,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 12",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24124,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 13",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24108,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 14",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24104,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 15",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24118,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 16",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24112,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 17",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24107,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 18",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24116,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 19",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24123,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 20",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24109,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 21",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24125,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 22",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24110,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 23",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24111,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 24",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24113,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇭🇰 HK | 香港 25",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24119,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24201,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24202,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24203,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 04",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24204,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 05",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24205,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 06",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24206,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 07",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24207,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 08",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24208,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 09",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24209,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 10",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24210,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 11",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24211,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 12",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24212,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 13",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24213,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 14",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24214,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 15",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24215,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 16",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24216,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 17",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24217,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 18",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24218,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇬 SG | 新加坡 19",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24219,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇵🇭 PH | 菲律宾 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24220,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇮🇩 ID | 印度尼西亚  01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24221,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇻🇳 VN | 越南 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24222,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇦🇺 AU | 澳大利亚 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24224,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇦🇺 AU | 澳大利亚 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24225,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇦🇺 AU | 澳大利亚 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24226,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇦🇺 AU | 澳大利亚 04",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24227,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇮🇳 IN | 印度 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24228,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇮🇳 IN | 印度 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24229,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇰🇷 KR | 韩国 01",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24230,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇰🇷 KR | 韩国 02",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24231,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇰🇷 KR | 韩国 03",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24232,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 01",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24301,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 02",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24302,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 03",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24303,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 04",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24304,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 05",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24305,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 06",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24306,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 07",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24307,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 08",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24308,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 09",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24309,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 10",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24310,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 11",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24311,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 12",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24312,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 13",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24313,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 14",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24314,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 15",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24315,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 16",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24316,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 17",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24317,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 18",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24318,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇯🇵 JP | 日本 19",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24319,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 01",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24401,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 02",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24402,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 03",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24403,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 04",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24404,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 05",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24405,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 06",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24406,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 07",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24407,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 08",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24408,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 09",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24409,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 10",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24410,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 11",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24411,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 12",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24412,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 13",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24413,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 14",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24414,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 15",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24415,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 16",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24416,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 17",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24417,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇸 US | 美国 18",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24418,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇦 CA | 加拿大 01",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24702,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇦 CA | 加拿大 02",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24703,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇦 CA | 加拿大 03",
+    "type": "trojan",
+    "server": "03047c.onndcm.xyz",
+    "server_port": 24704,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇳 TW | 台湾 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24501,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇳 TW | 台湾 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24502,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇳 TW | 台湾 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24503,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇳 TW | 台湾 04",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24504,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇳 TW | 台湾 05",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24505,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇳 TW | 台湾 06",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24506,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇩🇪 DE | 德国 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24601,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇩🇪 DE | 德国 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24602,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇩🇪 DE | 德国 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24603,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇩🇪 DE | 德国 04",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24604,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇩🇪 DE | 德国 05",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24605,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24606,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24607,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24608,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 04",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24609,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 05",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24610,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 06",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24611,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇬🇧 UK | 英国 07",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24612,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇫🇷 FR | 法国 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24613,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇫🇷 FR | 法国 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24614,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇳🇱 NL | 荷兰 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24615,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇳🇱 NL | 荷兰 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24616,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇳🇱 NL | 荷兰 03",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24617,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇪🇸 ES | 西班牙 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24631,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇷🇺 RU | 俄罗斯 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24622,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇷🇺 RU | 俄罗斯 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24623,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇺🇦 UA | 乌克兰 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24630,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇹🇷 TR | 土耳其 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24624,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇹🇷 TR | 土耳其 02",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24625,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇳🇴 NO | 挪威 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24626,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇨🇭 CH | 瑞士 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24627,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇸🇪 SE | 瑞典 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24628,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  },
+  {
+    "tag": "🇮🇪 IE | 爱尔兰 01",
+    "type": "trojan",
+    "server": "sc6f40.kfsnuf.xyz",
+    "server_port": 24629,
+    "password": "9b335940-71eb-465f-a2df-780afa92d4cd",
+    "tls": {
+      "enabled": true,
+      "server_name": "0gr4uqmtt8y41hcjsgrzdrc31.ourdvsss.com",
+      "insecure": true
+    }
+  }
+]

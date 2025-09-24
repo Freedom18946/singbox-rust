@@ -1,0 +1,1320 @@
+#!/usr/bin/env bash
+# Require bash 4+ for associative arrays
+if [[ ${BASH_VERSION%%.*} -lt 4 ]]; then
+  # Try to find bash 4+ via common paths
+  for p in /usr/local/bin/bash /opt/homebrew/bin/bash /bin/bash; do
+    if [[ -x "$p" ]] && [[ $("$p" -c 'echo ${BASH_VERSION%%.*}') -ge 4 ]]; then
+      exec "$p" "$0" "$@"
+    fi
+  done
+  echo "[WARN] bash 4+ required for associative arrays, some features may be limited"
+  # Fall back to simpler implementation without associative arrays
+  export BASH_COMPAT_MODE=1
+fi
+set -euo pipefail
+
+# 简介：统一跑 HTTP/SOCKS/DNS 的烟测，并输出 JSON 报告（CLEAN_REPORT.json）
+# 约束：不改默认配置；所有端口/进程由脚本自管生命周期；ENV 仅在脚本内开启。
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib/metrics.sh"
+source "${ROOT}/scripts/lib/os_probe.sh"
+# Use safe prom wrapper instead of direct sourcing
+source "${ROOT}/scripts/lib/prom_wrap.sh"
+
+# Safe prom.sh wrapper function for compatibility
+prom_safe_exec() {
+  # Fallback to direct bash call with error handling for backward compatibility
+  bash "${ROOT}/scripts/lib/prom.sh" "$@" 2>/dev/null || echo "0"
+}
+
+TARGET="${ROOT}/target/e2e"
+REPORT="${TARGET}/CLEAN_REPORT.json"
+LOG="${TARGET}/sing.log"
+BIN="${ROOT}/target/debug/singbox-rust"
+METRICS_ADDR="${SB_METRICS_ADDR:-127.0.0.1:9090}"
+NEED_METRICS="${NEED_METRICS:-auto}"  # auto: SB_METRICS_ADDR 存在则等待；1: 强等；0: 不等
+SB_SCENARIO_GATES="${SB_SCENARIO_GATES:-loose}" # loose: 仅 gate=1；strict: 全 gate
+SB_VALIDATE_LABELS="${SB_VALIDATE_LABELS:-0}"   # 1=开启 label 允许集校验，可 gate
+SB_LABEL_GATES="${SB_LABEL_GATES:-loose}"       # loose: 仅非法 label gate；strict: 标注不全也 gate
+SB_GATES_ONLY="${SB_GATES_ONLY:-0}"             # 1=仅使用 docs/metrics-gates.json 作为断言来源
+SB_FAILFAST="${SB_FAILFAST:-0}"                   # 1=遇到 gate 失败立即退出；等价 strict-failfast
+SB_PROC_SAMPLE_SEC="${SB_PROC_SAMPLE_SEC:-1}"   # 采样间隔秒；0=仅单次快照
+SB_PROC_PCTL="${SB_PROC_PCTL:-95}"   # 计算的分位数，默认 p95
+SB_FP_BASE="${SB_FP_BASE:-}"   # 基线指纹，形如 sha256:xxxx
+
+# SB_FAILFAST=1 equivalent to strict-failfast
+if [[ "${SB_FAILFAST}" == "1" ]]; then
+  SB_SCENARIO_GATES="strict-failfast"
+fi
+SB_PREFLIGHT_CHECK="${SB_PREFLIGHT_CHECK:-0}"    # 1=运行前做 --check 预检
+SB_PREFLIGHT_SCHEMA="${SB_PREFLIGHT_SCHEMA:-0}"  # 1=带 --schema（需要 feature=check-schema）
+SB_PREFLIGHT_REFS="${SB_PREFLIGHT_REFS:-0}"      # 1=带 --check-refs
+DURATION_SEC="${DURATION_SEC:-0}"
+SCENES_ARG=""; PROFILE="${PROFILE:-}"
+REPORT_PATH="${REPORT:-}"
+SOCKS="127.0.0.1:11080"
+HTTP="127.0.0.1:18081"
+DNS_PORT="11053"
+
+mkdir -p "${TARGET}"
+rm -f "${REPORT}" "${LOG}"
+
+# Build binary first
+echo "[STEP] 构建二进制"
+cargo build -q --bin singbox-rust
+
+# Prepare a minimal runtime config with fixed listen ports (stable smoke test)
+cat > "${TARGET}/runtime.yaml" <<YAML
+inbounds:
+  - type: http
+    listen: "127.0.0.1:18081"
+  - type: socks
+    listen: "127.0.0.1:11080"
+outbounds:
+  # 主出站：直连
+  - name: direct
+    type: direct
+  # 可选：上游 SOCKS（供 UDP 路由）
+$( if [[ "${SB_E2E_UP_CONF:-0}" == "1" ]]; then
+cat <<'UP'
+  - name: up#1
+    type: socks
+    server: "127.0.0.1:21080"
+UP
+fi )
+dialer:
+  default_outbound: direct
+dns:
+  mode: system
+  # 可选：启用内部 dot/doh backend（通过 env）
+  backends:
+$( if [[ "${SB_E2E_DNS_DOT:-0}" == "1" ]]; then
+cat <<'DOT'
+    - name: dot
+      type: dot
+      server: "1.1.1.1:853"
+      sni: "cloudflare-dns.com"
+DOT
+fi )
+$( if [[ "${SB_E2E_DNS_DOH:-0}" == "1" ]]; then
+cat <<'DOH'
+    - name: doh
+      type: doh
+      url: "https://cloudflare-dns.com/dns-query"
+DOH
+fi )
+route:
+  rules:
+$( if [[ "${SB_E2E_UP_CONF:-0}" == "1" ]]; then
+cat <<'R1'
+    # 将 UDP 流量经上游 socks
+    - name: udp->up
+      when: { proto: ["udp"] }
+      to: "proxy:up#1"
+R1
+else
+cat <<'R0'
+    # 缺省：所有走直连
+    - name: all->direct
+      to: "direct"
+R0
+fi )
+YAML
+
+# 写入 runtime.yaml 后，启动主进程前做预检（可 gate）
+PF_JSON="null"; PF_OK="1"  # 初始化预检变量
+if [[ "${SB_PREFLIGHT_CHECK}" == "1" ]]; then
+  echo "[INFO] preflight check..."
+  PF_ARGS=(check -c "${TARGET}/runtime.yaml" --fingerprint --format json)
+  [[ "${SB_PREFLIGHT_SCHEMA}" == "1" ]] && PF_ARGS+=(--schema)
+  [[ "${SB_PREFLIGHT_REFS}" == "1"   ]] && PF_ARGS+=(--check-refs --max-ref-size "${MAX_REF_SIZE:-262144}")
+  PF_JSON="$("${BIN}" "${PF_ARGS[@]}" || true)"
+  PF_OK="$(echo "$PF_JSON" | jq -r '.ok' 2>/dev/null || echo 0)"
+  FP=$(jq -r '.fingerprint // empty' <<<"$PF_JSON")
+  # 指纹 gate（可选）
+  PREFLIGHT_FP_MISMATCH=0
+  if [[ -n "${SB_FP_BASE}" && -n "${FP}" ]]; then
+    if [[ "${SB_FP_BASE#sha256:}" != "${FP}" ]]; then
+      echo "[FINGERPRINT] base=${SB_FP_BASE} actual=sha256:${FP}"
+      PREFLIGHT_FP_MISMATCH=1
+      # 按 gating 策略处理
+      if [[ "$SB_SCENARIO_GATES" == "strict" || "$SB_SCENARIO_GATES" == "strict-failfast" ]]; then
+        PF_OK=0
+        S_OK=0
+      fi
+    fi
+  fi
+  # 写入报告
+  PREFLIGHT_OBJ="$(jq -cn --argjson p "${PF_JSON:-null}" '{preflight:$p}')"
+fi
+
+function start_bin() {
+  echo "[STEP] 启动 singbox-rust"
+  RUST_LOG=${RUST_LOG:-info} \
+  SB_METRICS_ADDR="${SB_METRICS_ADDR:-}" \
+  "${BIN}" --config "${TARGET}/runtime.yaml" > "${LOG}" 2>&1 &
+  PID=$!
+  sleep 2
+  echo "[INFO] pid=${PID}"
+
+  # 进程资源采样：单次 + 可选后台最大值
+  PROC_SNAP="$(bash "${ROOT}/scripts/lib/os_probe.sh" "${PID}")"
+  PROC_MAX_FILE="${TARGET}/proc_max.json"
+  PROC_TS_FILE="${TARGET}/proc_timeseries.csv"
+  if [[ "${SB_PROC_SAMPLE_SEC}" != "0" ]]; then
+    bash "${ROOT}/scripts/lib/os_probe.sh" "${PID}" sampler "${SB_PROC_SAMPLE_SEC}" "${PROC_MAX_FILE}" "${PROC_TS_FILE}" >/dev/null 2>&1 &
+    SAMPLER_PID=$!
+  fi
+  # 等待就绪
+  for i in {1..100}; do
+    if grep -qiE "listening|bound|started" "${LOG}" ; then
+      echo "[OK] 日志显示已就绪"
+      break
+    fi
+    sleep 0.2
+  done
+  # 按端口就绪（HTTP/SOCKS）。客户端也有重试，但尽量先稳住服务端
+  if [[ -n "${HTTP}" ]]; then
+    local _h="${HTTP%:*}" _p="${HTTP##*:}"
+    (exec 3<>/dev/tcp/"${_h}"/"${_p}") 2>/dev/null || true
+  fi
+  if [[ -n "${SOCKS}" ]]; then
+    local _h2="${SOCKS%:*}" _p2="${SOCKS##*:}"
+    (exec 3<>/dev/tcp/"${_h2}"/"${_p2}") 2>/dev/null || true
+  fi
+  # metrics wait strategy
+  local want_met=0
+  if [[ "${NEED_METRICS}" == "1" ]]; then want_met=1; fi
+  if [[ "${NEED_METRICS}" == "auto" && -n "${SB_METRICS_ADDR:-}" ]]; then want_met=1; fi
+  if [[ "${want_met}" == "1" ]]; then
+    for i in {1..50}; do
+      curl -s "http://${METRICS_ADDR}/metrics" >/dev/null && { echo "[OK] /metrics 就绪"; return 0; }
+      sleep 0.2
+    done
+    echo "[ERR] /metrics 未就绪"
+    return 1
+  else
+    echo "[WARN] metrics 未启用，跳过等待"
+    return 0
+  fi
+}
+
+function stop_bin() {
+  # 停止 sampler
+  if [[ -n "${SAMPLER_PID:-}" ]]; then kill "${SAMPLER_PID}" 2>/dev/null || true; fi
+  if [[ -n "${PID:-}" ]]; then
+    echo "[STEP] 停止进程 ${PID}"
+    kill "${PID}" 2>/dev/null || true
+    wait "${PID}" 2>/dev/null || true
+  fi
+}
+trap stop_bin EXIT
+
+# 端口就绪检测：优先 /dev/tcp，fallback 到 nc -z
+wait_port() {
+  local host="$1" port="$2" tries="${3:-50}"
+  for i in $(seq 1 "$tries"); do
+    (echo > /dev/tcp/"$host"/"$port") >/dev/null 2>&1 && return 0
+    if command -v nc >/dev/null 2>&1; then nc -z -w 1 "$host" "$port" >/dev/null 2>&1 && return 0; fi
+    sleep 0.2
+  done
+  return 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --scenes) SCENES_ARG="$2"; shift 2;;
+    --duration) DURATION_SEC="$2"; shift 2;;
+    --report) REPORT_PATH="$2"; shift 2;;
+    --profile) PROFILE="$2"; shift 2;;
+    *) echo "[WARN] unknown arg: $1"; shift;;
+  esac
+done
+
+function curl_metrics() {
+  curl -s "http://${METRICS_ADDR}/metrics" 2>/dev/null || echo "# metrics unavailable"
+}
+
+# Enhanced Prometheus assertion function with diagnostic reporting
+function prom_assert() {
+  local expr="$1" op="$2" val="$3" owner="$4" severity="$5"
+  local cur=0 ok=false SOURCE="offline"
+  local timestamp=$(date +%s)
+  
+  if [[ -n "${SB_PROM_HTTP:-}" ]]; then
+    resp="$(bash "${ROOT}/scripts/lib/prom_http.sh" "${expr}")"
+    if [[ "$resp" != __PROM_HTTP_DISABLED__* && "$resp" != __PROM_HTTP_FAIL__* ]]; then
+      cur="$(jq -r '.data.result[]?.value[1]' <<<"$resp" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+      SOURCE="http"
+    else
+      SOURCE="${resp}"
+    fi
+  fi
+  
+  # Fallback to offline snapshot if HTTP failed or disabled
+  if [[ "$SOURCE" == "offline" || "$SOURCE" == __PROM_HTTP_FAIL__* ]]; then
+    # Use existing offline logic from prom.sh
+    export PROM_BEFORE="${MET_BEFORE_FILE}"
+    export PROM_AFTER="${MET_AFTER_FILE}"
+    
+    # Parse and execute simplified PromQL for offline mode
+    if [[ "$expr" =~ ^rate\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+      # rate(metric[seconds])
+      metric="${BASH_REMATCH[1]}"
+      sec="${BASH_REMATCH[2]}"
+      cur=$(prom_safe_exec rate "$metric" "" "$sec" 2>/dev/null || echo "0")
+    elif [[ "$expr" =~ ^increase\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+      # increase(metric[seconds])
+      metric="${BASH_REMATCH[1]}"
+      sec="${BASH_REMATCH[2]}"
+      cur=$(prom_safe_exec increase "$metric" "" "$sec" 2>/dev/null || echo "0")
+    elif [[ "$expr" =~ ^sum\((.+)\)$ ]]; then
+      # sum(metric)
+      metric="${BASH_REMATCH[1]}"
+      cur=$(prom_safe_exec sum "$metric" "" 2>/dev/null || echo "0")
+    else
+      # Simple metric lookup
+      cur=$(prom_safe_exec sum "$expr" "" 2>/dev/null || echo "0")
+    fi
+    
+    # If we're using offline data due to HTTP failure, keep the failure source
+    if [[ "$SOURCE" != __PROM_HTTP_FAIL__* ]]; then
+      SOURCE="offline"
+    fi
+  fi
+  
+  # Evaluate assertion
+  case "$op" in
+    "eq"|"==") [[ "$cur" == "$val" ]] && ok=true ;;
+    "gt"|">")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' && ok=true ;;
+    "gte"|">=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' && ok=true ;;
+    "lt"|"<")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' && ok=true ;;
+    "lte"|"<=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' && ok=true ;;
+  esac
+  
+  # Enhanced reporting with diagnostic information
+  local item
+  item=$(jq -cn \
+    --arg expr "$expr" \
+    --arg src "$SOURCE" \
+    --arg op "$op" \
+    --argjson cur "$cur" \
+    --argjson expect "$val" \
+    --arg owner "$owner" \
+    --arg severity "$severity" \
+    --argjson ok "$ok" \
+    --argjson ts "$timestamp" \
+    '{
+      prom: $expr,
+      source: $src,
+      operation: $op,
+      current_value: $cur,
+      expected_value: $expect,
+      owner: $owner,
+      severity: $severity,
+      success: $ok,
+      timestamp: $ts
+    }'
+  )
+  
+  ASSERTS+=("$item")
+  
+  # Return success/failure for caller
+  [[ "$ok" == "true" ]]
+}
+
+function scenario_http_405() {
+  local name="http_405"
+  local ok=0 msg=""
+  local code
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X GET "http://${HTTP}/" 2>/dev/null || echo "000")
+  if [[ "${code}" == "405" ]]; then
+    ok=1; msg="405 as expected"
+  else
+    msg="unexpected code: ${code}"
+  fi
+  echo "{\"name\":\"${name}\",\"ok\":${ok},\"msg\":\"${msg}\",\"code\":\"${code}\"}"
+}
+
+function scenario_socks5_tcp_connect() {
+  local name="socks5_tcp_connect"
+  local ok=0 msg=""
+  if timeout 5 curl -sS --socks5-hostname "${SOCKS}" "http://example.com/" -I >/dev/null 2>&1; then
+    ok=1; msg="connect ok"
+  else
+    msg="connect failed or timeout"
+  fi
+  echo "{\"name\":\"${name}\",\"ok\":${ok},\"msg\":\"${msg}\"}"
+}
+
+function scenario_socks5_udp_direct() {
+  local name="socks5_udp_direct"
+  local ok=0 msg=""
+
+  # Check if the UDP probe example exists
+  local probe_example="${ROOT}/crates/sb-core/examples/socks5_udp_probe.rs"
+  if [[ ! -f "${probe_example}" ]]; then
+    echo "{\"name\":\"${name}\",\"ok\":0,\"msg\":\"probe example not found\"}"
+    return
+  fi
+
+  if timeout 5 cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-core/Cargo.toml" -- "${SOCKS}" "1.1.1.1:53" "example.com" >/dev/null 2>&1 ; then
+    ok=1; msg="probe ok"
+  else
+    msg="probe failed or timeout"
+  fi
+  echo "{\"name\":\"${name}\",\"ok\":${ok},\"msg\":\"${msg}\"}"
+}
+
+function scenario_dns_system() {
+  local name="dns_system"
+  local ok=0 msg=""
+  if timeout 3 getent hosts example.com >/dev/null 2>&1; then
+    ok=1; msg="system dns ok"
+  elif timeout 3 nslookup example.com >/dev/null 2>&1; then
+    ok=1; msg="nslookup ok"
+  else
+    msg="dns resolution failed"
+  fi
+  echo "{\"name\":\"${name}\",\"ok\":${ok},\"msg\":\"${msg}\"}"
+}
+
+function scenario_metrics_endpoint() {
+  local name="metrics_endpoint"
+  local ok=0 msg=""
+  local metrics_output
+  metrics_output=$(curl_metrics)
+  if [[ "${metrics_output}" == *"# metrics unavailable"* ]]; then
+    msg="metrics endpoint unavailable"
+  elif [[ "${metrics_output}" == *"# HELP"* ]] || [[ "${metrics_output}" == *"# TYPE"* ]]; then
+    ok=1; msg="metrics endpoint responding"
+  else
+    msg="unexpected metrics format"
+  fi
+  echo "{\"name\":\"${name}\",\"ok\":${ok},\"msg\":\"${msg}\"}"
+}
+
+function slice_metrics() {
+  # 关键指标切片（低基数）
+  local metrics_data
+  metrics_data=$(curl_metrics)
+  echo "${metrics_data}" | grep -E 'http_respond_total|proxy_select_total|udp_.*_total|dns_query_total' | head -20 || echo "# no key metrics found"
+}
+
+function get_build_info() {
+  local build_ts
+  build_ts=$(date +%s)
+  local bin_v="$(${BIN} --version 2>/dev/null || echo "unknown")"
+  local kernel="$(uname -s || true)"; local arch="$(uname -m || true)"
+  echo "{\"ts\":${build_ts},\"bin\":\"${BIN}\",\"version\":\"${bin_v}\",\"platform\":{\"os\":\"${kernel}\",\"arch\":\"${arch}\"},\"git_commit\":\"$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')\"}"
+}
+
+start_bin
+
+echo "[STEP] 解析实际监听端口"
+# 从日志解析 HTTP 与 SOCKS 的实际监听端口，避免固定端口导致误判
+parse_last_actual() {
+  local pat="$1" file="$2" deadline=$(( $(date +%s) + 8 ))
+  local line=""
+  while [ $(date +%s) -le "$deadline" ]; do
+    line=$(grep -Eo "${pat}=127\\.0\\.0\\.1:[0-9]+" "$file" | tail -n1)
+    [ -n "$line" ] && { echo "${line##*:}"; return 0; }
+    sleep 0.1
+  done
+  return 1
+}
+HTTP_PORT="$(parse_last_actual 'HTTP.*actual' "${LOG}" || true)"
+SOCKS_PORT="$(parse_last_actual 'SOCKS.*actual' "${LOG}" || true)"
+if [[ -n "${HTTP_PORT}" ]]; then HTTP="127.0.0.1:${HTTP_PORT}"; fi
+if [[ -n "${SOCKS_PORT}" ]]; then SOCKS="127.0.0.1:${SOCKS_PORT}"; fi
+echo "[INFO] HTTP=${HTTP:-unset} SOCKS=${SOCKS:-unset}"
+
+# 等待端口监听（如可用）
+if [[ -n "${HTTP:-}" ]]; then wait_port "${HTTP%:*}" "${HTTP##*:}" 50 || echo "[WARN] HTTP 未监听就绪（继续）"; fi
+if [[ -n "${SOCKS:-}" ]]; then wait_port "${SOCKS%:*}" "${SOCKS##*:}" 50 || echo "[WARN] SOCKS 未监听就绪（继续）"; fi
+
+echo "[STEP] 运行矩阵"
+S_OK=1; declare -a CASES
+# 场景集合（基础）
+SCENES=(http_405 socks5_tcp_connect socks5_udp_direct dns_udp dns_dot dns_doh check_good check_bad)
+
+# profile 预设
+case "${PROFILE}" in
+  smoke) SCENES=(check_good check_bad http_405 socks5_tcp_connect);;
+  base)  SCENES=(check_good http_405 socks5_tcp_connect socks5_udp_direct dns_udp);;
+  release) SCENES=(check_good check_bad http_405 socks5_tcp_connect udp_upstream_stability);; # 资源护栏在 gates.json 控
+  full)  SCENES=(http_405 socks5_tcp_connect socks5_udp_direct dns_udp dns_dot dns_doh dns_dot_internal dns_doh_internal socks5_udp_upstream socks5_udp_upstream_conf selector_p2_trend selector_p2_recovery udp_upstream_longrun udp_upstream_stability);;
+  *) ;;
+esac
+# 可选扩展场景（内部链路）：
+if [[ "${SB_E2E_DNS_DOT:-0}" == "1" ]]; then SCENES+=(dns_dot_internal); fi
+if [[ "${SB_E2E_DNS_DOH:-0}" == "1" ]]; then SCENES+=(dns_doh_internal); fi
+if [[ "${SB_E2E_UDP_UPSTREAM:-0}" == "1" ]]; then SCENES+=(socks5_udp_upstream); fi
+if [[ "${SB_E2E_CHECK_SCHEMA_BAD:-0}" == "1" ]]; then SCENES+=(check_schema_bad); fi
+# 可选：配置路由的上游验证（经命名池）
+if [[ "${SB_E2E_UP_CONF:-0}" == "1" ]]; then SCENES+=(socks5_udp_upstream_conf); fi
+# 可选：P2 趋势验证
+if [[ "${SB_E2E_P2_TREND:-0}" == "1" ]]; then SCENES+=(selector_p2_trend); fi
+# 可选：P2 恢复验证
+if [[ "${SB_E2E_P2_RECOVERY:-0}" == "1" ]]; then SCENES+=(selector_p2_recovery); fi
+# 可选：UDP 长稳护栏
+if [[ "${SB_E2E_UDP_LONGRUN:-0}" == "1" ]]; then SCENES+=(udp_upstream_longrun); fi
+# 可选：UDP 泄漏护栏（含 gauge 上限）
+if [[ "${SB_E2E_UDP_STABILITY:-0}" == "1" ]]; then SCENES+=(udp_upstream_stability); fi
+# 可选：配置侧负例
+if [[ "${SB_E2E_CHECK_UNKNOWN:-0}" == "1" ]]; then SCENES+=(check_unknown); fi
+if [[ "${SB_E2E_CHECK_REF_MISS:-0}" == "1" ]]; then SCENES+=(check_ref_missing); fi
+if [[ "${SB_E2E_CHECK_CIDR_BAD:-0}" == "1" ]]; then SCENES+=(check_cidr_domain_bad); fi
+
+# 场景选择器：--scenes 或 SCENES= 逗号分隔（覆盖 profile）
+if [[ -n "${SCENES_ARG}" ]]; then
+  IFS=',' read -r -a SCENES <<< "${SCENES_ARG}"
+elif [[ -n "${SCENES:-}" ]]; then
+  IFS=',' read -r -a SCENES <<< "${SCENES}"
+fi
+
+BEFORE="$(fetch_metrics "${METRICS_ADDR}")"
+# Save metrics for PromQL assertions
+MET_BEFORE_FILE="${TARGET}/metrics_before.txt"
+echo "${BEFORE}" > "${MET_BEFORE_FILE}"
+if [[ "${DURATION_SEC}" -gt 0 ]]; then
+  echo "[STEP] 长稳模式 ${DURATION_SEC}s"
+  t_end=$(( $(date +%s) + DURATION_SEC ))
+  while [[ $(date +%s) -lt $t_end ]]; do
+    for s in "${SCENES[@]}"; do
+      export ROOT METRICS_ADDR HTTP SOCKS
+      R="$("${ROOT}/scripts/scenarios.d/${s}.zsh")"
+      ok=$(echo "$R" | sed -n 's/.*"ok":\([01]\).*/\1/p')
+      [[ "$ok" == "1" ]] || S_OK=0
+      CASES+=("$R")
+    done
+    sleep 0.2
+  done
+else
+  for s in "${SCENES[@]}"; do
+    export ROOT METRICS_ADDR HTTP SOCKS BIN
+    R="$("${ROOT}/scripts/scenarios.d/${s}.zsh")"
+    ok=$(echo "$R" | sed -n 's/.*"ok":\([01]\).*/\1/p')
+    [[ "$ok" == "1" ]] || S_OK=0
+    CASES+=("$R")
+  done
+fi
+AFTER="$(fetch_metrics "${METRICS_ADDR}")"
+# Save metrics for PromQL assertions
+MET_AFTER_FILE="${TARGET}/metrics_after.txt"
+echo "${AFTER}" > "${MET_AFTER_FILE}"
+res="[$(IFS=,; echo "${CASES[*]}")]"
+
+# 读取全过程最大值文件
+PROC_MAX="{}"; [[ -f "${PROC_MAX_FILE}" ]] && PROC_MAX="$(cat "${PROC_MAX_FILE}")"
+
+# 计算资源分位数
+PCTL_RSS=0; PCTL_FD=0; PCTL_TH=0
+if [[ -s "${PROC_TS_FILE}" ]]; then
+  PCTL_RSS=$(bash -c "source \"${ROOT}/scripts/lib/os_probe.sh\"; pctl_from_csv \"${PROC_TS_FILE}\" 1 \"${SB_PROC_PCTL}\"")
+  PCTL_FD=$(bash -c "source \"${ROOT}/scripts/lib/os_probe.sh\"; pctl_from_csv \"${PROC_TS_FILE}\" 2 \"${SB_PROC_PCTL}\"")
+  PCTL_TH=$(bash -c "source \"${ROOT}/scripts/lib/os_probe.sh\"; pctl_from_csv \"${PROC_TS_FILE}\" 3 \"${SB_PROC_PCTL}\"")
+fi
+
+echo "[STEP] 汇总报告"
+MET_SLICE="$(echo "${AFTER}" | sed 's/\"/\\\"/g' | tr -d '\n')"
+LOG_TAIL="$(tail -n 80 "${LOG}" | sed 's/\"/\\\"/g' | tr -d '\n')"
+BUILD_INFO=$(get_build_info)
+
+HAS_MET=0; echo "$AFTER" | grep -qE '^[a-zA-Z_][a-zA-Z0-9_]*({.*})?\ [0-9eE.+-]+$' && HAS_MET=1
+
+# 收集 DSL 断言 + 合并门限表（docs/metrics-gates.json），计算并写回每场景 asserts[]
+GATES_JSON="$(cat "${ROOT}/docs/metrics-gates.json" 2>/dev/null || echo '')"
+if command -v jq >/dev/null 2>&1 && [[ "${BASH_COMPAT_MODE:-0}" != "1" ]]; then
+  declare -A PER_SCENE_ASSERTS
+  declare -A PER_SCENE_GATED_OK
+  for s in "${SCENES[@]}"; do PER_SCENE_ASSERTS["$s"]='[]'; PER_SCENE_GATED_OK["$s"]=1; done
+
+  # 断言来源：Gates-only 优先 或 传统 DSL 解析
+  if [[ "${SB_GATES_ONLY}" == "1" ]]; then
+    # Gates-only 模式：仅从 gates.json 合并本场景的 metrics/compares/values
+    GATES_FILE="${ROOT}/docs/metrics-gates.json"
+    if [[ -f "$GATES_FILE" ]]; then
+      for s in "${SCENES[@]}"; do
+        # 处理 metrics
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .metrics[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r m; do
+          key=$(jq -r '.key' <<<"$m" 2>/dev/null || echo ""); lbl=$(jq -r '.label' <<<"$m" 2>/dev/null || echo ""); min=$(jq -r '.min' <<<"$m" 2>/dev/null || echo "0"); gate=$(jq -r '.gate' <<<"$m" 2>/dev/null || echo "0")
+          [[ -z "$key" ]] && continue
+          if [[ "$HAS_MET" == "1" ]]; then
+            a=$(metric_sum_label "$AFTER" "$key" "$lbl"); b=$(metric_sum_label "$BEFORE" "$key" "$lbl"); d=$(( a - b )); ok=1; (( d >= min )) || ok=0
+            [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+            item=$(jq -cn --arg name "$key" --arg label "$lbl" --arg source "gates.json" --argjson min "$min" --argjson delta "$d" --argjson ok "$ok" '{name:$name,label:$label,source:$source,min:$min,delta:$delta,ok:$ok}')
+          else
+            item=$(jq -cn --arg name "$key" --arg label "$lbl" --arg source "gates.json" '{name:$name,label:$label,source:$source,note:"metrics disabled",ok:1}')
+          fi
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        done
+        # 处理 compares
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .compares[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r c; do
+          key=$(jq -r '.key' <<<"$c" 2>/dev/null || echo ""); L=$(jq -r '.left' <<<"$c" 2>/dev/null || echo ""); R=$(jq -r '.right' <<<"$c" 2>/dev/null || echo ""); op=$(jq -r '.op' <<<"$c" 2>/dev/null || echo ""); gap=$(jq -r '.gap // 0' <<<"$c" 2>/dev/null || echo "0"); gate=$(jq -r '.gate' <<<"$c" 2>/dev/null || echo "0")
+          [[ -z "$key" ]] && continue
+          if [[ "$HAS_MET" == "1" ]]; then
+            lv=$(metric_sum_label "$AFTER" "$key" "$L"); rv=$(metric_sum_label "$AFTER" "$key" "$R")
+            diff=$(( lv - rv )); ok=1
+            case "$op" in
+              '>') (( diff >  gap )) || ok=0 ;;
+              '>=')(( diff >= gap )) || ok=0 ;;
+              '==')(( diff == gap )) || ok=0 ;;
+              '<') (( diff <  gap )) || ok=0 ;;
+              '<=')(( diff <= gap )) || ok=0 ;;
+            esac
+            [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+            item=$(jq -cn --arg compare "$key" --arg left "$L" --arg right "$R" --arg source "gates.json" --arg op "$op" --argjson gap "$gap" --argjson diff "$diff" --argjson ok "$ok" '{compare:$compare,left:$left,right:$right,op:$op,source:$source,gap:$gap,diff:$diff,ok:$ok}')
+          else
+            item=$(jq -cn --arg compare "$key" --arg left "$L" --arg right "$R" --arg source "gates.json" '{compare:$compare,left:$left,right:$right,source:$source,note:"metrics disabled",ok:1}')
+          fi
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        done
+        # 处理 values
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .values[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r v; do
+          key=$(jq -r '.key' <<<"$v" 2>/dev/null || echo ""); lbl=$(jq -r '.label' <<<"$v" 2>/dev/null || echo ""); op=$(jq -r '.op' <<<"$v" 2>/dev/null || echo ""); val=$(jq -r '.value' <<<"$v" 2>/dev/null || echo "0"); gate=$(jq -r '.gate' <<<"$v" 2>/dev/null || echo "0")
+          [[ -z "$key" ]] && continue
+          if [[ "$HAS_MET" == "1" ]]; then
+            cur=$(metric_sum_label "$AFTER" "$key" "$lbl"); ok=1
+            case "$op" in
+              '>')  (( cur >  val )) || ok=0 ;;
+              '>=') (( cur >= val )) || ok=0 ;;
+              '==') (( cur == val )) || ok=0 ;;
+              '<')  (( cur <  val )) || ok=0 ;;
+              '<=') (( cur <= val )) || ok=0 ;;
+            esac
+            [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+            item=$(jq -cn --arg value "$key" --arg label "$lbl" --arg source "gates.json" --arg op "$op" --argjson cur "$cur" --argjson expect "$val" --argjson ok "$ok" '{value:$value,label:$label,source:$source,op:$op,cur:$cur,expect:$expect,ok:$ok}')
+          else
+            item=$(jq -cn --arg value "$key" --arg label "$lbl" --arg source "gates.json" '{value:$value,label:$label,source:$source,note:"metrics disabled",ok:1}')
+          fi
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        done
+        # 处理 proc_values: 对进程资源进行阈值断言
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .proc_values[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r pv; do
+          key=$(jq -r '.key' <<<"$pv" 2>/dev/null || echo ""); op=$(jq -r '.op' <<<"$pv" 2>/dev/null || echo ""); val=$(jq -r '.value' <<<"$pv" 2>/dev/null || echo "0"); gate=$(jq -r '.gate' <<<"$pv" 2>/dev/null || echo "0")
+          [[ -z "$key" ]] && continue
+          cur=$(jq -r --arg k "$key" '.[$k]' <<<"$PROC_SNAP")
+          ok=1
+          case "$op" in
+            '>')  (( cur >  val )) || ok=0 ;;
+            '>=') (( cur >= val )) || ok=0 ;;
+            '==') (( cur == val )) || ok=0 ;;
+            '<')  (( cur <  val )) || ok=0 ;;
+            '<=') (( cur <= val )) || ok=0 ;;
+          esac
+          [[ "$SB_SCENARIO_GATES" == "strict" || "$SB_SCENARIO_GATES" == "strict-failfast" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+          item=$(jq -cn --arg value "$key" --arg source "gates.json" --arg op "$op" --argjson cur "$cur" --argjson expect "$val" --argjson ok "$ok" --arg owner "$(jq -r '.owner // ""' <<<"$pv")" --arg severity "$(jq -r '.severity // ""' <<<"$pv")" '{proc_value:$value,source:$source,op:$op,cur:$cur,expect:$expect,ok:$ok,owner:$owner,severity:$severity}')
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+          if [[ "$SB_SCENARIO_GATES" == "strict-failfast" && "$ok" == "0" ]]; then
+             echo "[FAILFAST] ${s}/proc/${key}: cur=${cur} op=${op} expect=${val} [$(jq -r '.owner//"?"' <<<"$pv")][$(jq -r '.severity//"error"' <<<"$pv")]"
+             kill "$PID" 2>/dev/null || true
+             exit 1
+          fi
+        done
+        # 处理 proc_max：对全过程最大值断言
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .proc_max[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r pm; do
+          key=$(jq -r '.key' <<<"$pm" 2>/dev/null || echo ""); op=$(jq -r '.op' <<<"$pm" 2>/dev/null || echo ""); val=$(jq -r '.value' <<<"$pm" 2>/dev/null || echo "0"); gate=$(jq -r '.gate' <<<"$pm" 2>/dev/null || echo "0")
+          [[ -z "$key" ]] && continue
+          cur=$(jq -r --arg k "${key}_max" '.[$k]' <<<"$PROC_MAX")
+          cur="${cur:-0}"
+          ok=1
+          case "$op" in
+            '>')  (( cur >  val )) || ok=0 ;;
+            '>=') (( cur >= val )) || ok=0 ;;
+            '==') (( cur == val )) || ok=0 ;;
+            '<')  (( cur <  val )) || ok=0 ;;
+            '<=') (( cur <= val )) || ok=0 ;;
+          esac
+          [[ "$SB_SCENARIO_GATES" == "strict" || "$SB_SCENARIO_GATES" == "strict-failfast" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+          item=$(jq -cn --arg proc_max "$key" --arg source "gates.json" --arg op "$op" --argjson cur "$cur" --argjson expect "$val" --argjson ok "$ok" --arg owner "$(jq -r '.owner // ""' <<<"$pm")" --arg severity "$(jq -r '.severity // ""' <<<"$pm")" '{proc_max:$proc_max,source:$source,op:$op,cur:$cur,expect:$expect,ok:$ok,owner:$owner,severity:$severity}')
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+          if [[ "$SB_SCENARIO_GATES" == "strict-failfast" && "$ok" == "0" ]]; then
+            echo "[FAILFAST] ${s}/proc_max/${key}: cur=${cur} op=${op} expect=${val} [$(jq -r '.owner//"?"' <<<"$pm")][$(jq -r '.severity//"error"' <<<"$pm")]"
+            kill "$PID" 2>/dev/null || true
+            exit 1
+          fi
+        done
+        # 处理 proc_pctl：对分位数值断言
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .proc_pctl[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r pp; do
+          key=$(jq -r '.key' <<<"$pp"); op=$(jq -r '.op' <<<"$pp"); val=$(jq -r '.value' <<<"$pp"); gate=$(jq -r '.gate' <<<"$pp")
+          case "$key" in
+            "rss_mib") cur="${PCTL_RSS}";;
+            "fd")      cur="${PCTL_FD}";;
+            "threads") cur="${PCTL_TH}";;
+            *) cur=0;;
+          esac
+          ok=1
+          case "$op" in
+            '>')  (( cur >  val )) || ok=0 ;;
+            '>=') (( cur >= val )) || ok=0 ;;
+            '==') (( cur == val )) || ok=0 ;;
+            '<')  (( cur <  val )) || ok=0 ;;
+            '<=') (( cur <= val )) || ok=0 ;;
+          esac
+          [[ "$SB_SCENARIO_GATES" == "strict" || "$SB_SCENARIO_GATES" == "strict-failfast" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+          item=$(jq -cn --arg proc_pctl "$key" --arg source "gates.json" --arg op "$op" --argjson cur "$cur" --argjson expect "$val" --argjson ok "$ok" --arg owner "$(jq -r '.owner // ""' <<<"$pp")" --arg severity "$(jq -r '.severity // ""' <<<"$pp")" '{proc_pctl:$proc_pctl,source:$source,op:$op,cur:$cur,expect:$expect,ok:$ok,owner:$owner,severity:$severity}')
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+          if [[ "$SB_SCENARIO_GATES" == "strict-failfast" && "$ok" == "0" ]]; then
+            echo "[FAILFAST] ${s}/proc_pctl/${key}: cur=${cur} op=${op} expect=${val} [$(jq -r '.owner//"?"' <<<"$pp")][$(jq -r '.severity//"error"' <<<"$pp")]"
+            kill "$PID" 2>/dev/null || true
+            exit 1
+          fi
+        done
+        # 处理 proc_pctl_window：对时序 CSV 按 window_sec 切片，计算 pctl 后 gate
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .proc_pctl_window[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r pw; do
+          key=$(jq -r '.key' <<<"$pw"); pctl=$(jq -r '.pctl' <<<"$pw"); win=$(jq -r '.window_sec' <<<"$pw"); op=$(jq -r '.op' <<<"$pw"); val=$(jq -r '.value' <<<"$pw"); gate=$(jq -r '.gate' <<<"$pw")
+          [[ -s "${PROC_TS_FILE}" ]] || continue
+          # 简单切片：按时间序列行数与采样周期推估窗口
+          secs=$(( $(wc -l < "${PROC_TS_FILE}") * ${SB_PROC_SAMPLE_SEC:-1} ))
+          if [[ "$secs" -le "$win" ]]; then
+            # 窗口不足，退化为全局 pctl
+            cur=$(bash -c "source \"${ROOT}/scripts/lib/os_probe.sh\"; pctl_from_csv \"${PROC_TS_FILE}\" $([[ \"$key\" == \"rss_mib\" ]] && echo 1 || [[ \"$key\" == \"fd\" ]] && echo 2 || echo 3) \"$pctl\"")
+            ok=1; case "$op" in '>' ) (( cur >  val )) || ok=0 ;; '>=' ) (( cur >= val )) || ok=0 ;; '==' ) (( cur == val )) || ok=0 ;; '<' ) (( cur <  val )) || ok=0 ;; '<=' ) (( cur <= val )) || ok=0 ;; esac
+            [[ "$SB_SCENARIO_GATES" =~ strict ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+            item=$(jq -cn --arg owner "$(jq -r '.owner // ""' <<<"$pw")" --arg severity "$(jq -r '.severity // ""' <<<"$pw")" --arg key "$key" --arg op "$op" --argjson cur "$cur" --argjson expect "$val" --arg p "p${pctl}@global" --argjson ok "$ok" '{proc_pctl_window:$key,window:$p,op:$op,cur:$cur,expect:$expect,ok:$ok,owner:$owner,severity:$severity}')
+            PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+          else
+            # 逐窗口（粗暴实现：tail -n，按行数切块）
+            lines=$(wc -l < "${PROC_TS_FILE}")
+            per=$(( win / ${SB_PROC_SAMPLE_SEC:-1} ))
+            idx=0
+            ok_all=1
+            while :; do
+              start=$(( idx*per + 1 )); end=$(( (idx+1)*per ))
+              [[ "$end" -gt "$lines" ]] && break
+              part="$(awk "NR>=$start && NR<=$end" "${PROC_TS_FILE}")"
+              tmp="$(mktemp)"; echo "$part" > "$tmp"
+              col=$([[ "$key" == "rss_mib" ]] && echo 1 || [[ "$key" == "fd" ]] && echo 2 || echo 3)
+              cur=$(bash -c "source \"${ROOT}/scripts/lib/os_probe.sh\"; pctl_from_csv \"$tmp\" \"$col\" \"$pctl\"")
+              rm -f "$tmp"
+              ok=1; case "$op" in '>' ) (( cur >  val )) || ok=0 ;; '>=' ) (( cur >= val )) || ok=0 ;; '==' ) (( cur == val )) || ok=0 ;; '<' ) (( cur <  val )) || ok=0 ;; '<=' ) (( cur <= val )) || ok=0 ;; esac
+              [[ "$ok" == "0" ]] && ok_all=0
+              item=$(jq -cn --arg owner "$(jq -r '.owner // ""' <<<"$pw")" --arg severity "$(jq -r '.severity // ""' <<<"$pw")" --arg key "$key" --arg op "$op" --argjson cur "$cur" --argjson expect "$val" --arg p "p${pctl}@${win}s" --argjson ok "$ok" '{proc_pctl_window:$key,window:$p,op:$op,cur:$cur,expect:$expect,ok:$ok,owner:$owner,severity:$severity}')
+              PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+              if [[ "$SB_SCENARIO_GATES" == "strict-failfast" && "$ok" == "0" ]]; then
+                echo "[FAILFAST] ${s}/proc_pctl_window/${key}@p${pctl}/${win}s cur=${cur} op=${op} expect=${val} [$(jq -r '.owner//"?"' <<<"$pw")][$(jq -r '.severity//"error"' <<<"$pw")]"
+                kill "$PID" 2>/dev/null || true; exit 1
+              fi
+              idx=$((idx+1))
+            done
+            [[ "$SB_SCENARIO_GATES" =~ strict ]] && [[ "$ok_all" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+          fi
+        done
+        
+        # 处理 prom: Enhanced Prometheus assertions with diagnostic reporting
+        jq -c --arg s "$s" '.scenes[]? | select(.name==$s) | .prom[]? // empty' "$GATES_FILE" 2>/dev/null | while read -r p; do
+          expr=$(jq -r '.expr' <<<"$p" 2>/dev/null || echo ""); op=$(jq -r '.op' <<<"$p" 2>/dev/null || echo ""); val=$(jq -r '.value' <<<"$p" 2>/dev/null || echo "0"); gate=$(jq -r '.gate' <<<"$p" 2>/dev/null || echo "0")
+          owner=$(jq -r '.owner // ""' <<<"$p" 2>/dev/null || echo ""); severity=$(jq -r '.severity // ""' <<<"$p" 2>/dev/null || echo "")
+          [[ -z "$expr" ]] && continue
+          
+          # Enhanced Prometheus query with diagnostic reporting
+          cur=0; ok=1; SOURCE="offline"
+          timestamp=$(date +%s)
+          
+          if [[ -n "${SB_PROM_HTTP:-}" ]]; then
+            resp="$(bash "${ROOT}/scripts/lib/prom_http.sh" "${expr}" 2>/dev/null || echo "__PROM_HTTP_FAIL__")"
+            if [[ "$resp" != "__PROM_HTTP_DISABLED__" && "$resp" != __PROM_HTTP_FAIL__* ]]; then
+              cur="$(jq -r '.data.result[]?.value[1]' <<<"$resp" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+              SOURCE="http"
+            elif [[ "$resp" == __PROM_HTTP_FAIL__* ]]; then
+              SOURCE="$resp"
+            fi
+          fi
+          
+          # Fallback to offline snapshot if HTTP failed or disabled
+          if [[ "$SOURCE" == "offline" || "$SOURCE" == __PROM_HTTP_FAIL__* ]]; then
+            export PROM_BEFORE="${MET_BEFORE_FILE}"
+            export PROM_AFTER="${MET_AFTER_FILE}"
+            
+            # Parse and execute simplified PromQL for offline mode
+            if [[ "$expr" =~ ^rate\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+              metric="${BASH_REMATCH[1]}"; sec="${BASH_REMATCH[2]}"
+              cur=$(prom_safe_exec rate "$metric" "" "$sec" 2>/dev/null || echo "0")
+            elif [[ "$expr" =~ ^increase\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+              metric="${BASH_REMATCH[1]}"; sec="${BASH_REMATCH[2]}"
+              cur=$(prom_safe_exec increase "$metric" "" "$sec" 2>/dev/null || echo "0")
+            elif [[ "$expr" =~ ^sum\((.+)\)$ ]]; then
+              metric="${BASH_REMATCH[1]}"
+              cur=$(prom_safe_exec sum "$metric" "" 2>/dev/null || echo "0")
+            else
+              cur=$(prom_safe_exec sum "$expr" "" 2>/dev/null || echo "0")
+            fi
+            
+            # If we're using offline data due to HTTP failure, keep the failure source
+            if [[ "$SOURCE" != __PROM_HTTP_FAIL__* ]]; then
+              SOURCE="offline"
+            fi
+          fi
+          
+          # Evaluate assertion
+          case "$op" in
+            "eq"|"==") [[ "$cur" == "$val" ]] || ok=0 ;;
+            "gt"|">")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || ok=0 ;;
+            "gte"|">=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || ok=0 ;;
+            "lt"|"<")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || ok=0 ;;
+            "lte"|"<=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || ok=0 ;;
+          esac
+          
+          [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]] && [[ "$ok" == "0" ]] && PER_SCENE_GATED_OK["$s"]=0
+          
+          # Enhanced assertion with comprehensive diagnostic information
+          item=$(jq -cn \
+            --arg prom "$expr" \
+            --arg source "$SOURCE" \
+            --arg op "$op" \
+            --argjson cur "$cur" \
+            --argjson expect "$val" \
+            --arg owner "$owner" \
+            --arg severity "$severity" \
+            --argjson ok "$ok" \
+            --argjson timestamp "$timestamp" \
+            '{prom:$prom,source:$source,operation:$op,current_value:$cur,expected_value:$expect,owner:$owner,severity:$severity,success:($ok==1),timestamp:$timestamp}'
+          )
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+          
+          if [[ "$SB_SCENARIO_GATES" == "strict-failfast" && "$ok" == "0" ]]; then
+            echo "[FAILFAST] ${s}/prom: ${expr} cur=${cur} op=${op} expect=${val} source=${SOURCE} [$owner][$severity]"
+            kill "$PID" 2>/dev/null || true
+            exit 1
+          fi
+        done
+      done
+    fi
+  else
+    # 兼容：按原 DSL 解析
+    for s in "${SCENES[@]}"; do
+      scene_file="${ROOT}/scripts/scenarios.d/${s}.zsh"
+      while IFS= read -r line; do
+        [[ "$line" =~ ^\#\ (ASSERT:|METRIC|COMPARE|VALUE|PROM) ]] || continue
+        if [[ "$line" =~ METRIC[[:space:]]+key=([^[:space:]]+)[[:space:]]+label=\'([^\']*)\'[[:space:]]+min=([0-9]+)[[:space:]]+gate=([01]) ]]; then
+          key="${BASH_REMATCH[1]}"; lbl="${BASH_REMATCH[2]}"; min="${BASH_REMATCH[3]}"; gate="${BASH_REMATCH[4]}"
+          before_sum=0; after_sum=0; delta=0; aok=1
+          if [[ "$HAS_MET" == "1" ]]; then
+            before_sum=$(metric_sum_label "$BEFORE" "$key" "$lbl")
+            after_sum=$(metric_sum_label  "$AFTER"  "$key" "$lbl")
+            delta=$(awk -v b="$before_sum" -v a="$after_sum" 'BEGIN{printf "%.0f", a-b}')
+            [[ "$delta" =~ ^- ]] && delta=0
+            if (( delta < min )); then aok=0; fi
+            if [[ "$aok" == "0" ]]; then
+              if [[ "${SB_SCENARIO_GATES}" == "strict" || "$gate" == "1" ]]; then PER_SCENE_GATED_OK["$s"]=0; fi
+            fi
+            item=$(jq -cn --arg k "$key" --arg l "$lbl" --argjson b "$before_sum" --argjson a "$after_sum" --argjson d "$delta" --argjson m "$min" --argjson ok "$aok" '{name:$k,label:$l,before:$b,after:$a,delta:$d,min:$m,ok:$ok,source:"dsl"}')
+          else
+            item=$(jq -cn --arg k "$key" --arg l "$lbl" '{name:$k,label:$l,note:"metrics disabled",ok:1,source:"dsl"}')
+          fi
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        fi
+        # New: COMPARE assertion
+        if [[ "$line" =~ COMPARE[[:space:]]+key=([^[:space:]]+)[[:space:]]+left=\'([^\']*)\'[[:space:]]+right=\'([^\']*)\'[[:space:]]+op=\'([<>]=?|==)\'[[:space:]]+gap=([0-9]+)[[:space:]]+gate=([01]) ]]; then
+          key="${BASH_REMATCH[1]}"; lft="${BASH_REMATCH[2]}"; rgt="${BASH_REMATCH[3]}"; op="${BASH_REMATCH[4]}"; gap="${BASH_REMATCH[5]}"; gate="${BASH_REMATCH[6]}"
+          aok=1; dl=0; dr=0; diff=0
+          if [[ "$HAS_MET" == "1" ]]; then
+            lb=$(metric_sum_label "$BEFORE" "$key" "$lft"); la=$(metric_sum_label "$AFTER" "$key" "$lft")
+            rb=$(metric_sum_label "$BEFORE" "$key" "$rgt"); ra=$(metric_sum_label "$AFTER" "$key" "$rgt")
+            dl=$(awk -v b="$lb" -v a="$la" 'BEGIN{printf "%.0f", a-b}'); [[ "$dl" =~ ^- ]] && dl=0
+            dr=$(awk -v b="$rb" -v a="$ra" 'BEGIN{printf "%.0f", a-b}'); [[ "$dr" =~ ^- ]] && dr=0
+            diff=$(( dl - dr ))
+            case "$op" in
+              ">")  (( diff >= gap )) || aok=0 ;;
+              ">=") (( diff >= gap )) || aok=0 ;;
+              "==") (( diff == gap )) || aok=0 ;;
+              "<")  (( -diff >= gap )) || aok=0 ;;
+              "<=") (( -diff >= gap )) || aok=0 ;;
+            esac
+            if [[ "$aok" == "0" ]]; then
+              if [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]]; then PER_SCENE_GATED_OK["$s"]=0; fi
+            fi
+            item=$(jq -cn --arg k "$key" --arg l "$lft" --arg r "$rgt" --arg o "$op" --argjson dl "$dl" --argjson dr "$dr" --argjson gap "$gap" --argjson diff "$diff" --argjson ok "$aok" '{compare:$k,left:$l,right:$r,op:$o,dl:$dl,dr:$dr,gap:$gap,diff:$diff,ok:$ok,source:"dsl"}')
+          else
+            item=$(jq -cn --arg k "$key" --arg l "$lft" --arg r "$rgt" '{compare:$k,left:$l,right:$r,note:"metrics disabled",ok:1,source:"dsl"}')
+          fi
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        fi
+        # New: VALUE assertion for gauge thresholds
+        if [[ "$line" =~ VALUE[[:space:]]+key=([^[:space:]]+)[[:space:]]+label=\'([^\']*)\'[[:space:]]+op=\'([\<\>\=]{1,2})\'[[:space:]]+value=([0-9]+)[[:space:]]+gate=([01]) ]]; then
+          key="${BASH_REMATCH[1]}"; lbl="${BASH_REMATCH[2]}"; op="${BASH_REMATCH[3]}"; val="${BASH_REMATCH[4]}"; gate="${BASH_REMATCH[5]}"
+          aok=1; cur=0
+          if [[ "$HAS_MET" == "1" ]]; then
+            # Take AFTER current value; gauge typically has one line per label, so sum = current value
+            cur=$(metric_sum_label "$AFTER" "$key" "$lbl")
+            case "$op" in
+              ">")  (( cur >  val )) || aok=0 ;;
+              ">=") (( cur >= val )) || aok=0 ;;
+              "==") (( cur == val )) || aok=0 ;;
+              "<")  (( cur <  val )) || aok=0 ;;
+              "<=") (( cur <= val )) || aok=0 ;;
+            esac
+            if [[ "$aok" == "0" ]]; then
+              if [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]]; then PER_SCENE_GATED_OK["$s"]=0; fi
+            fi
+            item=$(jq -cn --arg k "$key" --arg l "$lbl" --arg o "$op" --argjson cur "$cur" --argjson v "$val" --argjson ok "$aok" '{value:$k,label:$l,op:$o,cur:$cur,expect:$v,ok:$ok,source:"dsl"}')
+          else
+            item=$(jq -cn --arg k "$key" --arg l "$lbl" '{value:$k,label:$l,note:"metrics disabled",ok:1,source:"dsl"}')
+          fi
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        fi
+        # New: PROM assertion for Prometheus queries with diagnostic reporting
+        if [[ "$line" =~ PROM[[:space:]]+expr=\'([^\']+)\'[[:space:]]+op=([^[:space:]]+)[[:space:]]+value=([0-9.]+)[[:space:]]+owner=\'([^\']*)\'[[:space:]]+severity=\'([^\']*)\'[[:space:]]+gate=([01]) ]]; then
+          expr="${BASH_REMATCH[1]}"; op="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"; owner="${BASH_REMATCH[4]}"; severity="${BASH_REMATCH[5]}"; gate="${BASH_REMATCH[6]}"
+          
+          # Enhanced Prometheus query with diagnostic reporting
+          cur=0; aok=1; SOURCE="offline"
+          timestamp=$(date +%s)
+          
+          if [[ -n "${SB_PROM_HTTP:-}" ]]; then
+            resp="$(bash "${ROOT}/scripts/lib/prom_http.sh" "${expr}" 2>/dev/null || echo "__PROM_HTTP_FAIL__")"
+            if [[ "$resp" != "__PROM_HTTP_DISABLED__" && "$resp" != __PROM_HTTP_FAIL__* ]]; then
+              cur="$(jq -r '.data.result[]?.value[1]' <<<"$resp" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+              SOURCE="http"
+            elif [[ "$resp" == __PROM_HTTP_FAIL__* ]]; then
+              SOURCE="$resp"
+            fi
+          fi
+          
+          # Fallback to offline snapshot if HTTP failed or disabled
+          if [[ "$SOURCE" == "offline" || "$SOURCE" == __PROM_HTTP_FAIL__* ]]; then
+            export PROM_BEFORE="${MET_BEFORE_FILE}"
+            export PROM_AFTER="${MET_AFTER_FILE}"
+            
+            # Parse and execute simplified PromQL for offline mode
+            if [[ "$expr" =~ ^rate\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+              metric="${BASH_REMATCH[1]}"; sec="${BASH_REMATCH[2]}"
+              cur=$(prom_safe_exec rate "$metric" "" "$sec" 2>/dev/null || echo "0")
+            elif [[ "$expr" =~ ^increase\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+              metric="${BASH_REMATCH[1]}"; sec="${BASH_REMATCH[2]}"
+              cur=$(prom_safe_exec increase "$metric" "" "$sec" 2>/dev/null || echo "0")
+            elif [[ "$expr" =~ ^sum\((.+)\)$ ]]; then
+              metric="${BASH_REMATCH[1]}"
+              cur=$(prom_safe_exec sum "$metric" "" 2>/dev/null || echo "0")
+            else
+              cur=$(prom_safe_exec sum "$expr" "" 2>/dev/null || echo "0")
+            fi
+            
+            # If we're using offline data due to HTTP failure, keep the failure source
+            if [[ "$SOURCE" != __PROM_HTTP_FAIL__* ]]; then
+              SOURCE="offline"
+            fi
+          fi
+          
+          # Evaluate assertion
+          case "$op" in
+            "eq"|"==") [[ "$cur" == "$val" ]] || aok=0 ;;
+            "gt"|">")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || aok=0 ;;
+            "gte"|">=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || aok=0 ;;
+            "lt"|"<")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || aok=0 ;;
+            "lte"|"<=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || aok=0 ;;
+          esac
+          
+          if [[ "$aok" == "0" ]]; then
+            if [[ "$SB_SCENARIO_GATES" == "strict" || "$gate" == "1" ]]; then PER_SCENE_GATED_OK["$s"]=0; fi
+          fi
+          
+          # Enhanced assertion with comprehensive diagnostic information
+          item=$(jq -cn \
+            --arg prom "$expr" \
+            --arg source "$SOURCE" \
+            --arg op "$op" \
+            --argjson cur "$cur" \
+            --argjson expect "$val" \
+            --arg owner "$owner" \
+            --arg severity "$severity" \
+            --argjson ok "$aok" \
+            --argjson timestamp "$timestamp" \
+            '{prom:$prom,source:$source,operation:$op,current_value:$cur,expected_value:$expect,owner:$owner,severity:$severity,success:($ok==1),timestamp:$timestamp,source_type:"dsl"}'
+          )
+          PER_SCENE_ASSERTS["$s"]="$(jq -cn --argjson arr "${PER_SCENE_ASSERTS[$s]}" --argjson it "$item" '$arr + [$it]')"
+        fi
+      done < <(grep -E '^# (ASSERT:|METRIC |COMPARE |VALUE |PROM )' -n "$scene_file" || true)
+    done
+  fi
+
+  updated="${res}"
+  for s in "${SCENES[@]}"; do
+    asserts_json="${PER_SCENE_ASSERTS[$s]}"
+    gok="${PER_SCENE_GATED_OK[$s]}"
+    updated=$(echo "${updated}" | jq -c --arg scene "$s" --argjson asserts "$asserts_json" --argjson gok "$gok" 'map(if .name == $scene then . + {asserts: $asserts, ok: ((.ok==1) and ($gok==1))} else . end)')
+  done
+  res="${updated}"
+
+  PASSED=$(echo "$res" | jq -r '[ .[].ok ] | map(select(.==true or .==1)) | length' 2>/dev/null || echo 0)
+  TOTAL=$(echo "$res" | jq -r 'length' 2>/dev/null || echo 0)
+  FAILED=$(( TOTAL - PASSED ))
+  if [[ "$FAILED" -gt 0 ]]; then S_OK=0; fi
+
+  # 额外：label 校验（可选）
+  LABEL_ASSERT='{"enabled":0}'
+  if [[ "$SB_VALIDATE_LABELS" == "1" && "$HAS_MET" == "1" ]]; then
+    OUT="$("${ROOT}/scripts/validate-metrics.sh" "${METRICS_ADDR}" || true)"
+    ok=$(echo "$OUT" | jq -r '.ok' 2>/dev/null || echo 1)
+    LABEL_ASSERT=$(jq -c --argjson ok "$ok" --argjson raw "$OUT" '{enabled:1, ok:$ok, detail:$raw}')
+    if [[ "$ok" != "1" ]]; then
+      # gate 规则：loose => 仅当存在 violations 时 gate；strict => 无 metrics 也 gate
+      S_OK=0
+    fi
+  fi
+
+  REPORT="${REPORT_PATH:-${TARGET}/CLEAN_REPORT.json}"
+  cat > "${REPORT}" <<EOF
+{
+  "build": ${BUILD_INFO},
+  "scenarios": ${res},
+  "metrics": {"slice": "${MET_SLICE}"},
+  "labels": ${LABEL_ASSERT},
+  "preflight": ${PF_JSON:-null},
+  "fingerprint": { "sha256": "${FP:-}" },
+  "fingerprint_base": "${SB_FP_BASE:-}",
+  "fingerprint_match": $([[ -n "${SB_FP_BASE}" && -n "${FP}" && "${SB_FP_BASE#sha256:}" == "${FP}" ]] && echo true || echo false),
+  "proc": {
+    "snap": ${PROC_SNAP:-{}},
+    "max": ${PROC_MAX:-{}}
+  },
+  "report": { "total": ${TOTAL}, "passed": ${PASSED}, "failed": ${FAILED} },
+  "params": { "scenes": [$(printf '"%s",' "${SCENES[@]}" | sed 's/,$//')], "duration_sec": ${DURATION_SEC}, "profile":"${PROFILE}" },
+  "ok": ${S_OK},
+  "log_tail": "${LOG_TAIL}",
+  "timestamp": $(date +%s)
+}
+EOF
+else
+  echo "[WARN] jq not available or bash compat mode - using simplified metrics"
+  # Simplified fallback without per-scene asserts
+  PASSED=$(echo "$res" | jq -r '[ .[].ok ] | map(select(.==1)) | length' 2>/dev/null || echo 0)
+  TOTAL=$(echo "$res" | jq -r 'length' 2>/dev/null || echo 0)
+  FAILED=$(( TOTAL - PASSED ))
+
+  REPORT="${REPORT_PATH:-${TARGET}/CLEAN_REPORT.json}"
+  cat > "${REPORT}" <<EOF
+{
+  "build": ${BUILD_INFO},
+  "scenarios": ${res},
+  "metrics": {"slice": "${MET_SLICE}"},
+  "preflight": ${PF_JSON:-null},
+  "fingerprint": { "sha256": "${FP:-}" },
+  "report": { "total": ${TOTAL}, "passed": ${PASSED}, "failed": ${FAILED} },
+  "params": { "scenes": [$(printf '"%s",' "${SCENES[@]}" | sed 's/,$//')], "duration_sec": ${DURATION_SEC}, "profile":"${PROFILE}" },
+  "ok": ${S_OK},
+  "log_tail": "${LOG_TAIL}",
+  "timestamp": $(date +%s)
+}
+EOF
+fi
+
+  if [[ "${S_OK}" == "1" && "${SB_PREFLIGHT_CHECK}" != "1" ]]; then
+    echo "[OK] 报告就绪：${REPORT}"
+  elif [[ "${S_OK}" == "1" && "${SB_PREFLIGHT_CHECK}" == "1" ]]; then
+    if [[ "${PF_OK}" != "1" ]]; then
+      echo "[ERR] 预检失败：see preflight.issues in ${REPORT}"
+      exit 1
+    else
+      echo "[OK] 预检通过，报告就绪：${REPORT}"
+    fi
+  else
+    # 控制台最小定位
+    if command -v jq >/dev/null 2>&1; then
+      echo "[ERR] 失败用例如下："
+      jq -r '.scenarios[] | select(.ok!=true and .ok!=1) | .name as $n | (.asserts // [])[] | select(.ok==0) | "\($n)/\(.name // .value // .compare)/\(.label // .left+"|"+.right): delta=\(.delta // .diff)//min=\(.min // .gap)//cur=\(.cur // "")//expect=\(.expect // "")"' "${REPORT}" || true
+      jq -r 'select(.preflight and .preflight.ok==false) | .preflight.issues[]? | "preflight:\(.code)//\(.ptr)//\(.msg)"' "${REPORT}" || true
+    else
+      echo "[ERR] 存在失败用例或断言未通过，详见 ${REPORT}"
+    fi
+    exit 1
+  fi
+
+  # 可选打包：SB_E2E_ARCHIVE=1 生成归档
+  if [[ "${SB_E2E_ARCHIVE:-0}" == "1" ]]; then
+    local ts=$(date +%s)
+    local tar="${TARGET}/report-${ts}.tar.gz"
+    # Base archive with report and runtime config
+    tar -czf "${tar}" -C "${TARGET}" CLEAN_REPORT.json runtime.yaml >/dev/null 2>&1 || true
+    # Add fingerprint and canonical config if available
+    if [[ -n "${FP:-}" ]]; then
+      mkdir -p "${TARGET}/archive"
+      jq '.canonical' <<<"$PF_JSON" > "${TARGET}/archive/config.canonical.json" 2>/dev/null || true
+      echo "${FP}" > "${TARGET}/archive/fingerprint.txt"
+      if [[ -n "${SB_FP_BASE}" ]]; then
+        echo "base=${SB_FP_BASE}" > "${TARGET}/archive/fp.compare.txt"
+        echo "actual=sha256:${FP}" >> "${TARGET}/archive/fp.compare.txt"
+        tar -rzf "${tar}" -C "${TARGET}/archive" config.canonical.json fingerprint.txt fp.compare.txt >/dev/null 2>&1 || true
+      else
+        tar -rzf "${tar}" -C "${TARGET}/archive" config.canonical.json fingerprint.txt >/dev/null 2>&1 || true
+      fi
+    fi
+    # Add Grafana dashboards
+    tar -rzf "${tar}" -C "${ROOT}" grafana/dns.json grafana/proxy.json grafana/udp.json grafana/route.json >/dev/null 2>&1 || true
+    # Add metrics allowlist
+    tar -rzf "${tar}" -C "${ROOT}" docs/metrics-labels-allowlist.json >/dev/null 2>&1 || true
+    echo "[OK] 归档：${tar}"
+  fi
+else
+  # 无 jq：退化为旧行为（顶层 asserts），以保持向后兼容
+  ASSERTS=()
+  gates="${SB_SCENARIO_GATES}"
+  while IFS= read -r line; do :; done < /dev/null # noop to keep shellcheck quiet
+  HAS_MET=0; echo "$AFTER" | grep -qE '^[a-zA-Z_][a-zA-Z0-9_]*({.*})?\ [0-9eE.+-]+$' && HAS_MET=1
+  for s in "${SCENES[@]}"; do
+    scene_file="${ROOT}/scripts/scenarios.d/${s}.zsh"; scene_name="$s"
+    while IFS= read -r line; do
+      case "$line" in
+        "# METRIC "*)
+          key=$(echo "$line"  | sed -n "s/^# METRIC key=\([^[:space:]]\+\).*/\1/p")
+          lbl=$(echo "$line"  | sed -n "s/^# METRIC .*label='\([^']*\)'.*/\1/p")
+          min=$(echo "$line"  | sed -n "s/^# METRIC .* min=\([0-9]\+\).*/\1/p")
+          gate=$(echo "$line" | sed -n "s/^# METRIC .* gate=\([01]\).*/\1/p")
+          [[ -z "$key" || -z "$min" || -z "$gate" ]] && continue
+          before_sum=0; after_sum=0; delta=0; aok=1
+          if [[ "$HAS_MET" == "1" ]]; then
+            before_sum=$(metric_sum_label "$BEFORE" "$key" "$lbl")
+            after_sum=$(metric_sum_label  "$AFTER"  "$key" "$lbl")
+            delta=$(awk -v b="$before_sum" -v a="$after_sum" 'BEGIN{printf "%.0f", a-b}')
+            [[ "$delta" =~ ^- ]] && delta=0
+            if (( delta < min )); then aok=0; fi
+            if [[ "$aok" == "0" ]]; then
+              if [[ "$gates" == "strict" || "$gate" == "1" ]]; then S_OK=0; fi
+            fi
+            ASSERTS+=("{\"scene\":\"${scene_name}\",\"name\":\"metric:${key}\",\"label\":\"${lbl//\"/\\\"}\",\"before\":${before_sum},\"after\":${after_sum},\"delta\":${delta},\"min\":${min},\"ok\":${aok}}")
+          else
+            ASSERTS+=("{\"scene\":\"${scene_name}\",\"name\":\"metric:${key}\",\"label\":\"${lbl//\"/\\\"}\",\"note\":\"metrics disabled\",\"ok\":1}")
+          fi
+          ;;
+        "# PROM "*)
+          # Parse PROM DSL: # PROM expr='rate(metric[30])' op='>' value='0' gate=1 owner=xxx severity=error gate_group=1
+          expr=$(echo "$line" | sed -n "s/^# PROM .*expr='\([^']*\)'.*/\1/p")
+          op=$(echo "$line" | sed -n "s/^# PROM .*op='\([^']*\)'.*/\1/p")
+          val=$(echo "$line" | sed -n "s/^# PROM .*value='\([^']*\)'.*/\1/p")
+          gate=$(echo "$line" | sed -n "s/^# PROM .*gate=\([01]\).*/\1/p")
+          owner=$(echo "$line" | sed -n "s/^# PROM .*owner=\([^[:space:]]*\).*/\1/p")
+          severity=$(echo "$line" | sed -n "s/^# PROM .*severity=\([^[:space:]]*\).*/\1/p")
+          gate_group=$(echo "$line" | sed -n "s/^# PROM .*gate_group=\([01]\).*/\1/p")
+          [[ -z "$expr" || -z "$op" || -z "$val" ]] && continue
+
+          # Execute PromQL-like assertion
+          aok=1; cur="0"
+          if [[ "$HAS_MET" == "1" && "${SB_PROM_OFF:-0}" != "1" ]]; then
+            # Enhanced Prometheus query with diagnostic reporting
+            goto_eval=0
+            SOURCE="offline"
+            
+            if [[ -n "${SB_PROM_HTTP:-}" ]]; then
+              # 真查询：只支持 sum/rate/increase/absent/sum by(...) 的原生 PromQL 写法
+              resp="$(bash "${ROOT}/scripts/lib/prom_http.sh" "${expr}" 2>/dev/null || echo "__PROM_HTTP_FAIL__")"
+              if [[ "$resp" != "__PROM_HTTP_DISABLED__" && "$resp" != __PROM_HTTP_FAIL__* ]]; then
+                cur="$(jq -r '.data.result[]?.value[1]' <<<"$resp" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+                SOURCE="http"
+                # 对 sum by(...) 逐组 gate：取 .metric 中的 by labels 组合为 key
+                if [[ "${gate_group:-0}" == "1" ]]; then
+                  lines="$(jq -r '.data.result[] | "\(.metric|to_entries|map("\(.key)=\(.value)")|join(",")) \(.value[1])"' <<<"$resp" 2>/dev/null || echo "")"
+                  # 复用已有 group 判断路径
+                  if [[ -n "$lines" ]]; then
+                    # 逐组 gate：任一组未满足即失败，并记录最小失败定位
+                    cur=0; aok=1; failkeys=""
+                    while read -r kv; do
+                      [[ -z "$kv" ]] && continue
+                      key="${kv% *}"; vv="${kv##* }"
+                      cur=$(awk -v c="$cur" -v v="$vv" 'BEGIN{print c+v}')
+                      gok=1
+                      case "$op" in
+                        ">")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || gok=0 ;;
+                        ">=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || gok=0 ;;
+                        "<")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || gok=0 ;;
+                        "<=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || gok=0 ;;
+                        "==") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c == v) ? 0 : 1}' || gok=0 ;;
+                      esac
+                      [[ "$gok" == "0" ]] && { aok=0; failkeys="${failkeys}${key},"; }
+                    done <<<"$lines"
+                    goto_eval=1
+                  fi
+                fi
+                goto_eval=1
+              elif [[ "$resp" == __PROM_HTTP_FAIL__* ]]; then
+                # HTTP query failed - record failure reason and continue with offline
+                SOURCE="$resp"
+                echo "[WARN] Prometheus HTTP query failed: $resp, falling back to offline"
+              fi
+            fi
+            # 若 HTTP 未启用/失败 → 继续离线快照解析
+            if [[ "$goto_eval" == "0" ]]; then
+              export PROM_BEFORE="${MET_BEFORE_FILE}"
+              export PROM_AFTER="${MET_AFTER_FILE}"
+              # Parse and execute simplified PromQL
+              if [[ "$expr" =~ ^rate\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+                # rate(metric[seconds])
+                metric="${BASH_REMATCH[1]}"
+                sec="${BASH_REMATCH[2]}"
+                cur=$(prom_safe_exec rate "$metric" "" "$sec" 2>/dev/null || echo "0")
+              elif [[ "$expr" =~ ^increase\(([^[]+)\[([0-9]+)\]\)$ ]]; then
+                # increase(metric[seconds])
+                metric="${BASH_REMATCH[1]}"
+                sec="${BASH_REMATCH[2]}"
+                cur=$(prom_safe_exec increase "$metric" "" "$sec" 2>/dev/null || echo "0")
+              elif [[ "$expr" =~ ^sum\ by\(([a-zA-Z0-9_,\ ]+)\)\(([^{]+)\{([^}]*)\}\)$ ]]; then
+                # sum by(label1,label2)(metric{filter})
+                by="${BASH_REMATCH[1]}"
+                metric="${BASH_REMATCH[2]}"
+                labels="${BASH_REMATCH[3]}"
+                # Group results multi-line "key value"; sum total for comparison
+                lines="$(prom_safe_exec sum_by "$metric" "$labels" "$by" 2>/dev/null || echo "")"
+                if [[ "${gate_group:-0}" == "1" ]]; then
+                  # 逐组 gate：任一组未满足即失败，并记录最小失败定位
+                  cur=0; aok=1; failkeys=""
+                  while read -r kv; do
+                    [[ -z "$kv" ]] && continue
+                    key="${kv% *}"; vv="${kv##* }"
+                    cur=$(awk -v c="$cur" -v v="$vv" 'BEGIN{print c+v}')
+                    gok=1
+                    case "$op" in
+                      ">")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || gok=0 ;;
+                      ">=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || gok=0 ;;
+                      "<")  awk -v c="$vv" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || gok=0 ;;
+                      "<=") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || gok=0 ;;
+                      "==") awk -v c="$vv" -v v="$val" 'BEGIN{exit (c == v) ? 0 : 1}' || gok=0 ;;
+                    esac
+                    [[ "$gok" == "0" ]] && { aok=0; failkeys="${failkeys}${key},"; }
+                  done <<<"$lines"
+                  if [[ "${SB_SCENARIO_GATES}" == "strict-failfast" && "$aok" == "0" ]]; then
+                    echo "[FAILFAST] Prom gate failure: $expr in $scene_name"
+                    kill "$PID" 2>/dev/null || true; exit 1
+                  fi
+                  # Enhanced assertion with diagnostic information for grouped queries
+                  timestamp=$(date +%s)
+                  ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"${SOURCE}\",\"op\":\"${op}\",\"cur\":${cur},\"expect\":${val},\"owner\":\"${owner}\",\"severity\":\"${severity}\",\"by\":\"${by}\",\"groups\":\"${lines//\"/\\\"}\",\"fail\":\"${failkeys%,}\",\"ok\":${aok},\"timestamp\":${timestamp}}")
+                  continue
+                fi
+                # 默认路径：仍按总和判定，向后兼容
+                cur=$(awk '{s+=$NF} END{print s+0}' <<<"$lines")
+              elif [[ "$expr" =~ ^sum\ by\(([a-zA-Z0-9_,\ ]+)\)\(([^)]+)\)$ ]]; then
+                # sum by(label1,label2)(metric)
+                by="${BASH_REMATCH[1]}"
+                metric="${BASH_REMATCH[2]}"
+                lines="$(prom_safe_exec sum_by "$metric" "" "$by" 2>/dev/null || echo "")"
+                if [[ "${gate_group:-0}" == "1" ]]; then
+                  # 逐组 gate：任一组未满足即失败，并记录最小失败定位
+                  cur=0; aok=1; failkeys=""
+                  while read -r kv; do
+                    [[ -z "$kv" ]] && continue
+                    key="$(awk '{print $1}' <<<"$kv")"; v="$(awk '{print $2}' <<<"$kv")"
+                    res=$(awk -v c="$v" -v o="$op" -v e="$val" 'BEGIN{r=(o==">")?(c>e):(o==">=")?(c>=e):(o=="==")?(c==e):(o=="<")?(c<e):(c<=e); print r?1:0}')
+                    if [[ "$res" == "0" ]]; then aok=0; failkeys="${failkeys}${key},"; fi
+                    cur=$(awk -v a="$cur" -v b="$v" 'BEGIN{print a+b}')
+                  done <<< "$lines"
+                  if [[ "$gates" == "strict" || "$gate" == "1" ]] && [[ "$aok" == "0" ]]; then S_OK=0; fi
+                  if [[ "$gates" == "strict-failfast" && "$gate" == "1" && "$aok" == "0" ]]; then
+                    echo "[FAILFAST] ${scene_name}/PROM sum by: ${expr} failed groups=${failkeys%,} [$owner][$severity]"
+                    kill "$PID" 2>/dev/null || true; exit 1
+                  fi
+                  # Enhanced assertion with diagnostic information for grouped queries
+                  timestamp=$(date +%s)
+                  ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"${SOURCE}\",\"op\":\"${op}\",\"cur\":${cur},\"expect\":${val},\"owner\":\"${owner}\",\"severity\":\"${severity}\",\"by\":\"${by}\",\"groups\":\"${lines//\"/\\\"}\",\"fail\":\"${failkeys%,}\",\"ok\":${aok},\"timestamp\":${timestamp}}")
+                  continue
+                fi
+                # 默认路径：仍按总和判定，向后兼容
+                cur=$(awk '{s+=$NF} END{print s+0}' <<<"$lines")
+              elif [[ "$expr" =~ ^absent\(([^{]+)\{([^}]*)\}\)$ ]]; then
+                # absent(metric{label="value"})
+                metric="${BASH_REMATCH[1]}"
+                labels="${BASH_REMATCH[2]}"
+                cur=$(prom_safe_exec absent "$metric" "$labels" 2>/dev/null || echo "0")
+              elif [[ "$expr" =~ ^absent\(([^)]+)\)$ ]]; then
+                # absent(metric)
+                metric="${BASH_REMATCH[1]}"
+                cur=$(prom_safe_exec absent "$metric" "" 2>/dev/null || echo "0")
+              elif [[ "$expr" =~ ^sum\(([^{]+)\{([^}]*)\}\)$ ]]; then
+                # sum(metric{label="value"})
+                metric="${BASH_REMATCH[1]}"
+                labels="${BASH_REMATCH[2]}"
+                cur=$(prom_safe_exec sum "$metric" "$labels" 2>/dev/null || echo "0")
+              elif [[ "$expr" =~ ^sum\((.+)\)$ ]]; then
+                # sum(metric)
+                metric="${BASH_REMATCH[1]}"
+                cur=$(prom_safe_exec sum "$metric" "" 2>/dev/null || echo "0")
+              fi
+            fi
+
+            # Compare with expected value (for both HTTP and offline modes)
+            if [[ "$goto_eval" == "0" ]]; then
+              case "$op" in
+                ">")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c > v) ? 0 : 1}' || aok=0 ;;
+                ">=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c >= v) ? 0 : 1}' || aok=0 ;;
+                "==") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c == v) ? 0 : 1}' || aok=0 ;;
+                "<")  awk -v c="$cur" -v v="$val" 'BEGIN{exit (c < v) ? 0 : 1}' || aok=0 ;;
+                "<=") awk -v c="$cur" -v v="$val" 'BEGIN{exit (c <= v) ? 0 : 1}' || aok=0 ;;
+              esac
+
+              if [[ "$aok" == "0" ]]; then
+                if [[ "$gates" == "strict" || "$gate" == "1" ]]; then S_OK=0; fi
+                if [[ "$gates" == "strict-failfast" && "$gate" == "1" ]]; then
+                  echo "[FAILFAST] ${scene_name}/PROM ${expr}: cur=${cur} ${op} ${val} [${owner}][${severity}]"
+                  kill "$PID" 2>/dev/null || true
+                  exit 1
+                fi
+              fi
+            fi
+
+            # Enhanced assertion with diagnostic information
+            timestamp=$(date +%s)
+            ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"${SOURCE}\",\"op\":\"${op}\",\"cur\":${cur},\"expect\":${val},\"owner\":\"${owner}\",\"severity\":\"${severity}\",\"ok\":${aok},\"timestamp\":${timestamp}}")
+          else
+            # Enhanced assertion with diagnostic information for disabled case
+            timestamp=$(date +%s)
+            ASSERTS+=("{\"scene\":\"${scene_name}\",\"prom\":\"${expr}\",\"source\":\"disabled\",\"note\":\"metrics/prom disabled\",\"ok\":1,\"timestamp\":${timestamp}}")
+          fi
+          ;;
+      esac
+    done < "$scene_file"
+  done
+  ASS="[$(IFS=,; echo "${ASSERTS[*]-}")]"
+
+  PASSED=$(echo "$res" | jq -r '[ .[].ok ] | map(select(.==1)) | length' 2>/dev/null || echo 0)
+  TOTAL=$(echo "$res" | jq -r 'length' 2>/dev/null || echo 0)
+  FAILED=$(( TOTAL - PASSED ))
+  cat > "${REPORT}" <<EOF
+{
+  "build": ${BUILD_INFO},
+  "scenarios": ${res},
+  "metrics": {"slice": "${MET_SLICE}"},
+  "asserts": ${ASS},
+  "proc": {
+    "snap": ${PROC_SNAP:-{}},
+    "max": ${PROC_MAX:-{}}
+  },
+  "report": { "total": ${TOTAL}, "passed": ${PASSED}, "failed": ${FAILED} },
+  "ok": ${S_OK},
+  "log_tail": "${LOG_TAIL}",
+  "timestamp": $(date +%s)
+}
+EOF
+
+  if [[ "${S_OK}" == "1" ]]; then
+    echo "[OK] 报告就绪：${REPORT}"
+  else
+    echo "[ERR] 存在失败用例或指标断言未通过，详见 ${REPORT}"
+    exit 1
+  fi
+
+  # 可选打包：SB_E2E_ARCHIVE=1 生成归档
+  if [[ "${SB_E2E_ARCHIVE:-0}" == "1" ]]; then
+    local ts=$(date +%s)
+    local tar="${TARGET}/report-${ts}.tar.gz"
+    # Base archive with report and runtime config
+    tar -czf "${tar}" -C "${TARGET}" CLEAN_REPORT.json runtime.yaml >/dev/null 2>&1 || true
+    # Add fingerprint and canonical config if available
+    if [[ -n "${FP:-}" ]]; then
+      mkdir -p "${TARGET}/archive"
+      jq '.canonical' <<<"$PF_JSON" > "${TARGET}/archive/config.canonical.json" 2>/dev/null || true
+      echo "${FP}" > "${TARGET}/archive/fingerprint.txt"
+      if [[ -n "${SB_FP_BASE}" ]]; then
+        echo "base=${SB_FP_BASE}" > "${TARGET}/archive/fp.compare.txt"
+        echo "actual=sha256:${FP}" >> "${TARGET}/archive/fp.compare.txt"
+        tar -rzf "${tar}" -C "${TARGET}/archive" config.canonical.json fingerprint.txt fp.compare.txt >/dev/null 2>&1 || true
+      else
+        tar -rzf "${tar}" -C "${TARGET}/archive" config.canonical.json fingerprint.txt >/dev/null 2>&1 || true
+      fi
+    fi
+    # Add Grafana dashboards
+    tar -rzf "${tar}" -C "${ROOT}" grafana/dns.json grafana/proxy.json grafana/udp.json grafana/route.json >/dev/null 2>&1 || true
+    # Add metrics allowlist
+    tar -rzf "${tar}" -C "${ROOT}" docs/metrics-labels-allowlist.json >/dev/null 2>&1 || true
+    echo "[OK] 归档：${tar}"
+  fi
+fi

@@ -1,0 +1,18 @@
+[
+  {
+    "tag": "HK 01",
+    "type": "trojan",
+    "server": "example.hk",
+    "server_port": 24105,
+    "password": "REDACTED",
+    "tls": { "enabled": true, "server_name": "sni.example.com", "insecure": true }
+  },
+  {
+    "tag": "JP 01",
+    "type": "trojan",
+    "server": "example.jp",
+    "port": 24301,
+    "password": "REDACTED",
+    "tls": { "enabled": true, "server_name": "jp.example.com", "insecure": false }
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "inbounds": [
+    { "type": "http",  "listen": "127.0.0.1", "listen_port": 28090 },
+    { "type": "socks", "listen": "127.0.0.1", "listen_port": 28091 }
+  ],
+  "outbounds": [
+    { "type": "direct", "tag": "direct" },
+    { "type": "block",  "tag": "block" }
+  ],
+  "route": {
+    "rules": [
+      { "host_suffix": ["example.com", ".ads"], "outbound": "block" },
+      { "transport": "tcp", "outbound": "direct" }
+    ],
+    "final": "direct"
+  }
+}

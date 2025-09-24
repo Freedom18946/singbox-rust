@@ -1,0 +1,25 @@
+{
+  "_comment": "SOCKS5 inbound（TCP+UDP），UDP 直连中继（按 RFC1928 UDP Header），用于 `dig`/DNS over SOCKS 等回归",
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1:28091",
+      "username": "u",
+      "password": "p",
+      "udp": {
+        "enable": true,
+        "nat_ttl_sec": 60
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "default": "direct"
+  }
+}

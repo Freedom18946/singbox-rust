@@ -1,0 +1,15 @@
+inbounds:
+  - type: http
+    listen: "127.0.0.1"
+    port: 8080
+
+outbounds:
+  - type: direct
+    name: direct
+
+# Test reference file validation (only one rules file)
+rules_text: "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/test_rules.txt"
+
+# Additional fields with *file/*path suffixes
+custom_config_file: "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/test_custom.conf"
+ssl_cert_path: "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/test_cert.pem"

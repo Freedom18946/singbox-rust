@@ -1,0 +1,33 @@
+{
+  "_comment": "HTTP inbound + 上游 HTTP 代理（CONNECT 透传），用于回归CONNECT链路与超时/错误码映射",
+  "inbounds": [
+    {
+      "type": "http",
+      "tag": "http-in",
+      "listen": "127.0.0.1:28090",
+      "timeout_sec": 10
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "http",
+      "tag": "http-upstream",
+      "server": "127.0.0.1:8888",
+      "connect_timeout_sec": 8
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "type": "domain_suffix",
+        "value": ["example.com", "example.net"],
+        "outbound": "direct"
+      }
+    ],
+    "default": "http-upstream"
+  }
+}

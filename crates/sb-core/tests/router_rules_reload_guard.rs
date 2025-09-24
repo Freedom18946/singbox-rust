@@ -1,0 +1,13 @@
+use sb_core::router::{router_build_index_from_str, BuildError, InvalidReason};
+
+#[test]
+fn require_default_guard() {
+    std::env::set_var("SB_ROUTER_RULES_REQUIRE_DEFAULT", "1");
+    let txt = "suffix:example.com=proxy";
+    let e = router_build_index_from_str(txt, 1024).unwrap_err();
+    match e {
+        BuildError::Invalid(InvalidReason::MissingDefault) => {}
+        _ => panic!("expect MissingDefault"),
+    }
+    std::env::remove_var("SB_ROUTER_RULES_REQUIRE_DEFAULT");
+}

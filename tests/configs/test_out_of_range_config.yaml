@@ -1,0 +1,16 @@
+# Test configuration with out of range errors
+inbounds:
+  - type: "http"
+    listen: "127.0.0.1"
+    port: 70000  # Port out of range (>65535)
+outbounds:
+  - type: "direct"
+    mtu: -1500  # Negative MTU
+route:
+  rules:
+    - to: "direct"
+      when:
+        port: 999999  # Port out of range
+dns:
+  mode: "system"
+  timeout: -5  # Negative timeout

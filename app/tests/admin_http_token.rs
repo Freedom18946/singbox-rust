@@ -1,0 +1,75 @@
+use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
+use sb_core::adapter::bridge::build_bridge;
+use sb_core::admin::http::spawn_admin;
+use sb_core::routing::engine::Engine;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::thread;
+use std::time::Duration;
+
+fn get_with_token(host: &str, path: &str, tok: Option<&str>) -> String {
+    let mut s = std::net::TcpStream::connect(host).unwrap();
+    let mut req = format!("GET {} HTTP/1.1\r\nHost: {}\r\n", path, host);
+    if let Some(t) = tok {
+        req.push_str(&format!("X-Admin-Token: {}\r\n", t));
+    }
+    req.push_str("\r\n");
+    s.write_all(req.as_bytes()).unwrap();
+    let mut buf = Vec::new();
+    s.read_to_end(&mut buf).unwrap();
+    String::from_utf8_lossy(&buf).to_string()
+}
+
+#[test]
+fn admin_requires_token_when_configured() {
+    // admin port
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap();
+    drop(l);
+    let h = format!("{}:{}", addr.ip(), addr.port());
+    // minimal IR
+    let ir = ConfigIR {
+        inbounds: vec![InboundIR {
+            ty: InboundType::Socks,
+            listen: "127.0.0.1".into(),
+            port: 0,
+            sniff: false,
+            udp: false,
+            basic_auth: None,
+        }],
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Direct,
+            name: Some("direct".into()),
+            server: None,
+            port: None,
+            udp: None,
+            members: None,
+            credentials: None,
+        }],
+        route: RouteIR {
+            rules: vec![RuleIR {
+                domain: vec!["*".into()],
+                outbound: Some("direct".into()),
+                ..Default::default()
+            }],
+            default: Some("direct".into()),
+        },
+    };
+    let eng = Engine::new(&ir);
+    let br = build_bridge(&ir, eng);
+    let th = spawn_admin(
+        &h,
+        eng.clone_as_static(),
+        std::sync::Arc::new(br),
+        Some("sekret".into()),
+    )
+    .unwrap();
+    thread::sleep(Duration::from_millis(60));
+    // no token → 403
+    let r = get_with_token(&h, "/healthz", None);
+    assert!(r.contains("403"));
+    // with token → 200
+    let r = get_with_token(&h, "/healthz", Some("sekret"));
+    assert!(r.contains("200 OK"));
+    let _ = th.thread().id();
+}

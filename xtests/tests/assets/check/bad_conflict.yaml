@@ -1,0 +1,15 @@
+inbounds:
+  - type: socks
+    listen: 127.0.0.1
+    port: 1080
+route:
+  rules:
+    - when: { suffix: "example.com" }    # idx 0
+      to: proxy-a
+    - when: { suffix: "example.com" }    # idx 1
+      to: proxy-b
+outbounds:
+  - name: proxy-a
+    type: direct
+  - name: proxy-b
+    type: direct

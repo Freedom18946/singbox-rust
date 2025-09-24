@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Subscription Node Schema",
+  "description": "JSON Schema for validating subscription node exports",
+  "type": "object",
+  "required": ["type", "server"],
+  "properties": {
+    "tag": {
+      "type": "string",
+      "description": "Node identifier tag"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["trojan", "vmess", "vless", "shadowsocks", "socks", "http", "direct"],
+      "description": "Proxy protocol type"
+    },
+    "server": {
+      "type": "string",
+      "format": "hostname",
+      "description": "Server hostname or IP address"
+    },
+    "server_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "Server port number"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "Alternative port field (for compatibility)"
+    },
+    "password": {
+      "type": "string",
+      "description": "Authentication password"
+    },
+    "tls": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether TLS is enabled"
+        },
+        "server_name": {
+          "type": "string",
+          "description": "TLS Server Name Indication"
+        },
+        "insecure": {
+          "type": "boolean",
+          "description": "Skip certificate verification"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "anyOf": [
+    { "required": ["server_port"] },
+    { "required": ["port"] }
+  ]
+}

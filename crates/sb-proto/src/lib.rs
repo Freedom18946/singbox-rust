@@ -1,0 +1,31 @@
+// R97: 明确导出顺序，避免未启用特性时解析到无门控引用
+pub mod connector;
+#[cfg(feature = "outbound_registry")]
+pub mod outbound_registry;
+pub mod ss2022; // 旧占位，保持导出（如无实现则空壳）
+#[cfg(feature = "proto_ss2022_core")]
+pub mod ss2022_core;
+#[cfg(feature = "proto_ss2022_min")]
+pub mod ss2022_harness;
+#[cfg(feature = "proto_ss2022_min")]
+pub mod ss2022_min;
+#[cfg(feature = "proto_trojan_dry")]
+pub mod trojan_dry;
+#[cfg(feature = "proto_trojan_min")]
+pub mod trojan_harness;
+#[cfg(feature = "proto_trojan_min")]
+pub mod trojan_min;
+
+pub use connector::*;
+#[cfg(feature = "outbound_registry")]
+pub use outbound_registry::*;
+#[cfg(feature = "proto_ss2022_core")]
+pub use ss2022_core::*;
+#[cfg(feature = "proto_ss2022_min")]
+pub use ss2022_min::*;
+#[cfg(feature = "proto_trojan_dry")]
+pub use trojan_dry::*;
+#[cfg(feature = "proto_trojan_min")]
+pub use trojan_harness::*;
+#[cfg(feature = "proto_trojan_min")]
+pub use trojan_min::*;

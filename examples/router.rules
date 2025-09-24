@@ -1,0 +1,8 @@
+# 示例规则（最小全集）
+exact:download.example.com = direct
+suffix:.example.com       = proxy
+keyword:tracker           = reject
+ip_cidr:10.0.0.0/8        = direct
+transport:udp,port:53     = direct
+portset:80,443,8443       = proxy
+default                   = direct

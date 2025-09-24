@@ -1,0 +1,46 @@
+//! # sb-transport: 传输层抽象库
+//!
+//! 这个 crate 提供了 singbox-rust 项目的传输层抽象，包括：
+//! - `dialer`: 网络连接拨号器抽象和实现
+//! - `tls`: TLS 连接包装器（需要 `transport_tls` feature）
+//! - `util`: 传输工具函数（如超时处理）
+//! - `mem`: 内存传输（用于测试）
+//!
+//! ## Features
+//! - `transport_tls`: 启用 TLS 支持，基于 rustls
+//!
+//! ## Design Philosophy
+//! 该库遵循 singbox-rust 的设计理念：
+//! - **boring clarity**: 简单清晰的抽象
+//! - **never break userspace**: 保持向后兼容
+//! - **good taste**: 优雅的 API 设计
+//!
+//! R96: 顶层模块导出和重新暴露
+
+/// 网络连接拨号器模块
+/// 提供了 `Dialer` trait 和各种拨号器实现
+pub mod dialer;
+
+/// TLS 传输层模块
+/// 提供基于 rustls 的 TLS 连接包装器
+/// 仅在启用 `transport_tls` feature 时可用
+#[cfg(feature = "transport_tls")]
+pub mod tls;
+
+/// 传输工具模块
+/// 提供超时处理等通用传输工具函数
+pub mod util;
+
+/// 内存传输模块
+/// 提供基于内存的拨号器实现，主要用于测试
+pub mod mem;
+
+// Re-exports for a stable public surface
+// 重新导出核心类型，提供稳定的公开 API 接口
+pub use dialer::*;
+
+#[cfg(feature = "transport_tls")]
+pub use tls::*;
+
+pub use mem::*;
+pub use util::*;

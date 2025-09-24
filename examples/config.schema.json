@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sing-box Configuration Schema",
+  "description": "JSON Schema for validating sing-box configuration files",
+  "type": "object",
+  "required": ["inbounds", "outbounds"],
+  "properties": {
+    "log": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["trace", "debug", "info", "warn", "error", "fatal", "panic"]
+        },
+        "output": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "dns": {
+      "type": "object",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["address"],
+            "properties": {
+              "tag": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "address_resolver": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "inbounds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["direct", "socks", "http", "mixed", "tun", "redirect", "tproxy"]
+          },
+          "listen": {
+            "type": "string"
+          },
+          "listen_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "outbounds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["direct", "block", "socks", "http", "shadowsocks", "vmess", "trojan", "wireguard", "hysteria", "shadowtls", "vless", "tuic", "hysteria2", "selector", "urltest"]
+          },
+          "server": {
+            "type": "string"
+          },
+          "server_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "outbounds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "route": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["outbound"],
+            "properties": {
+              "outbound": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "final": {
+          "type": "string"
+        },
+        "auto_detect_interface": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "experimental": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

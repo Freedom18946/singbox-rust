@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package v2ray.core.app.router.command;
+option go_package = "github.com/v2fly/v2ray-core/v5/app/router/command";
+
+import "google/protobuf/empty.proto";
+
+message RoutingContext {
+  string InboundTag = 1;
+  string SourceIPs = 2;
+  string TargetIPs = 3;
+  uint32 SourcePort = 4;
+  uint32 TargetPort = 5;
+  string Network = 6;
+  string Protocol = 7;
+  string User = 8;
+  map<string, string> Attributes = 9;
+  string OutboundGroupTags = 10;
+  string OutboundTag = 11;
+}
+
+message SubscribeRoutingStatsRequest {
+  repeated string FieldSelectors = 1;
+}
+
+message TestRouteRequest {
+  RoutingContext RoutingContext = 1;
+  bool PublishResult = 2;
+}
+
+message RouterConfig {
+}
+
+service RoutingService {
+  rpc SubscribeRoutingStats(SubscribeRoutingStatsRequest) returns (stream RoutingContext);
+  rpc TestRoute(TestRouteRequest) returns (RoutingContext);
+}

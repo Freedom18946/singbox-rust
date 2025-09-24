@@ -1,0 +1,12 @@
+{
+  "outbounds": [
+    {
+      "type": "socks5",
+      "server": "127.0.0.1:1080",
+      "tag": "s5_up",
+      "username": "u",
+      "password": "p",
+      "connect_timeout_sec": 8
+    }
+  ]
+}

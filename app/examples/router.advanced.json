@@ -1,0 +1,21 @@
+{
+  "inbounds": [
+    { "type": "http", "listen": "127.0.0.1:28090" },
+    { "type": "socks", "listen": "127.0.0.1:28091" }
+  ],
+  "outbounds": [
+    { "tag": "direct", "type": "direct" },
+    { "tag": "block", "type": "block" }
+  ],
+  "rules": [
+    {
+      "type": "advanced",
+      "domain_suffix": "example.com",
+      "transport": "tcp",
+      "port": 80,
+      "outbound": "block"
+    },
+    { "type": "advanced", "ip_cidr": "93.184.216.0/24", "outbound": "block" },
+    { "type": "domain_suffix", "suffix": "example.net", "outbound": "direct" }
+  ]
+}

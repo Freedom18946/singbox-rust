@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package v2ray.core.app.proxyman.command;
+option go_package = "github.com/v2fly/v2ray-core/v5/app/proxyman/command";
+
+import "google/protobuf/empty.proto";
+import "core/config.proto";
+
+message AddInboundRequest {
+  v2ray.core.InboundHandlerConfig inbound = 1;
+}
+
+message AddInboundResponse {
+}
+
+message RemoveInboundRequest {
+  string tag = 1;
+}
+
+message RemoveInboundResponse {
+}
+
+message AlterInboundRequest {
+  string tag = 1;
+  v2ray.core.InboundHandlerConfig operation = 2;
+}
+
+message AlterInboundResponse {
+}
+
+message AddOutboundRequest {
+  v2ray.core.OutboundHandlerConfig outbound = 1;
+}
+
+message AddOutboundResponse {
+}
+
+message RemoveOutboundRequest {
+  string tag = 1;
+}
+
+message RemoveOutboundResponse {
+}
+
+message AlterOutboundRequest {
+  string tag = 1;
+  v2ray.core.OutboundHandlerConfig operation = 2;
+}
+
+message AlterOutboundResponse {
+}
+
+service HandlerService {
+  rpc AddInbound(AddInboundRequest) returns (AddInboundResponse);
+  rpc RemoveInbound(RemoveInboundRequest) returns (RemoveInboundResponse);
+  rpc AlterInbound(AlterInboundRequest) returns (AlterInboundResponse);
+  rpc AddOutbound(AddOutboundRequest) returns (AddOutboundResponse);
+  rpc RemoveOutbound(RemoveOutboundRequest) returns (RemoveOutboundResponse);
+  rpc AlterOutbound(AlterOutboundRequest) returns (AlterOutboundResponse);
+}

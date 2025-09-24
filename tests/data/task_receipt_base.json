@@ -1,0 +1,46 @@
+{
+  "task": "REL-FREEZE + RC-HARD + SCHEMA-FREEZE + SOAK-GATE",
+  "status": "passed",
+  "checks": {
+    "warnings_matrix": {
+      "report": ".e2e/warn_sweep.json",
+      "remaining_warnings": 0,
+      "combos": 6
+    },
+    "rc_verify": {
+      "sb_version": true,
+      "manifest": true,
+      "params_files": 2,
+      "explain_json": 2,
+      "explain_dot": 2,
+      "sbom_files": 1,
+      "license_ok": true
+    },
+    "schema_freeze": {
+      "explain_shape_ok": true,
+      "check_shape_ok": true,
+      "cli_help_ok": true
+    },
+    "bench_v2": {
+      "json_ok": true,
+      "udp_samples": 80,
+      "udp_par": 8,
+      "csv_emitted": true
+    },
+    "soak": {
+      "duration_sec": 120,
+      "udp_nat_variance_pct": 3,
+      "switch_total_monotonic": true
+    }
+  },
+  "artifacts": [
+    "app/build.rs",
+    "app/src/bin/version.rs",
+    "scripts/release",
+    "scripts/rc-verify",
+    "scripts/soak/soak-30m.sh",
+    "xtests/tests/explain_schema.rs",
+    "xtests/tests/check_schema.rs",
+    "xtests/tests/cli_help_snapshot.rs"
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"singbox-rust v2",
+  "type":"object",
+  "additionalProperties": false,
+  "properties":{
+    "inbounds":{"type":"array","items":{"$ref":"#/defs/inbound"}},
+    "outbounds":{"type":"array","items":{"$ref":"#/defs/outbound"}},
+    "route":{"$ref":"#/defs/route"}
+  },
+  "defs":{
+    "inbound":{"type":"object","additionalProperties": false,"properties":{
+      "type":{"enum":["socks","http","tun"]},
+      "listen":{"type":"string","minLength":1},
+      "port":{"type":"integer","minimum":1,"maximum":65535},
+      "udp":{"type":"boolean"},
+      "sniff":{"type":"boolean"},
+      "auth":{"type":"object","additionalProperties": false,"properties":{
+        "username":{"type":"string"},
+        "password":{"type":"string"}
+      }}
+    },"required":["type","listen","port"]},
+    "outbound":{"type":"object","additionalProperties": false,"properties":{
+      "type":{"enum":["direct","http","socks","block"]},
+      "server":{"type":"string"},
+      "port":{"type":"integer","minimum":1,"maximum":65535},
+      "udp":{"type":"string"},
+      "name":{"type":"string"}
+    },"required":["type"]},
+    "route":{"type":"object","additionalProperties": false,"properties":{
+      "rules":{"type":"array","items":{"$ref":"#/defs/rule"}},
+      "default":{"type":"string"}
+    }},
+    "rule":{"type":"object","additionalProperties": false,"properties":{
+      "domain":{"type":"array","items":{"type":"string"}},
+      "geosite":{"type":"array","items":{"type":"string"}},
+      "geoip":{"type":"array","items":{"type":"string"}},
+      "ipcidr":{"type":"array","items":{"type":"string"}},
+      "port":{"type":"array","items":{"type":"string"}},
+      "process":{"type":"array","items":{"type":"string"}},
+      "network":{"type":"array","items":{"type":"string"}},
+      "protocol":{"type":"array","items":{"type":"string"}},
+      "source":{"type":"array","items":{"type":"string"}},
+      "dest":{"type":"array","items":{"type":"string"}},
+      "user-agent":{"type":"array","items":{"type":"string"}},
+      "not_domain":{"type":"array","items":{"type":"string"}},
+      "not_geosite":{"type":"array","items":{"type":"string"}},
+      "not_geoip":{"type":"array","items":{"type":"string"}},
+      "not_ipcidr":{"type":"array","items":{"type":"string"}},
+      "not_port":{"type":"array","items":{"type":"string"}},
+      "not_process":{"type":"array","items":{"type":"string"}},
+      "not_network":{"type":"array","items":{"type":"string"}},
+      "not_protocol":{"type":"array","items":{"type":"string"}},
+      "outbound":{"type":"string"}
+    }}
+  }
+}

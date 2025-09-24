@@ -1,0 +1,13 @@
+{
+  "inbounds": [
+    { "type": "http", "listen": "127.0.0.1:28090" },
+    { "type": "socks", "listen": "127.0.0.1:28091" }
+  ],
+  "outbounds": [
+    { "tag": "direct", "type": "direct" },
+    { "tag": "block", "type": "block" }
+  ],
+  "rules": [
+    { "type": "domain_suffix", "suffix": "example.com", "outbound": "block" }
+  ]
+}

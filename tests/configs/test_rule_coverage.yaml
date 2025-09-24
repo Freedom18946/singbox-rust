@@ -1,0 +1,24 @@
+inbounds:
+  - type: http
+    listen: "127.0.0.1"
+    port: 8080
+
+outbounds:
+  - type: direct
+    name: direct
+  - type: socks
+    name: proxy1
+    server: "1.2.3.4"
+    port: 1080
+
+route:
+  rules:
+    # This rule catches everything (no when clause = match all)
+    - name: catch_all
+      to: direct
+
+    # This rule will be unreachable because the previous rule has no conditions
+    - name: specific_domain
+      when:
+        domain: ["example.com"]
+      to: "proxy:proxy1"

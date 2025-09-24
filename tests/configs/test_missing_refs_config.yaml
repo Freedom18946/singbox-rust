@@ -1,0 +1,13 @@
+inbounds:
+  - type: http
+    listen: "127.0.0.1"
+    port: 8080
+
+outbounds:
+  - type: direct
+    name: direct
+
+# Test missing reference files
+rules_text: "/nonexistent/path/rules.txt"
+custom_config_file: "/missing/file.conf"
+ssl_cert_path: "/does/not/exist.pem"

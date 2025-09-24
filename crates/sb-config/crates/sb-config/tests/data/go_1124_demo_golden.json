@@ -1,0 +1,28 @@
+{
+  "dns": {
+    "rules": [
+      { "domain_suffix": "lan", "server": "local" },
+      { "geosite": "cn", "server": "local" },
+      { "geosite": "geolocation-!cn", "server": "remote" }
+    ],
+    "servers": [
+      { "detour": "direct", "server": "223.5.5.5", "tag": "local",  "type": "udp"   },
+      { "detour": "direct", "server": "1.1.1.1",   "tag": "remote", "type": "https" }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    { "listen": "127.0.0.1", "listen_port": 1080, "tag": "socks-in", "type": "socks" }
+  ],
+  "log": { "level": "info", "timestamp": true },
+  "ntp": { "interval": "30m0s", "server": "time.apple.com", "server_port": 123 },
+  "outbounds": [
+    { "tag": "direct", "type": "direct" },
+    { "tag": "block",  "type": "block"  }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "direct",
+    "rules": [ { "outbound": "direct", "protocol": "dns" } ]
+  }
+}

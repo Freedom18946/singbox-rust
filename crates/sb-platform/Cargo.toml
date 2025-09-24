@@ -1,0 +1,23 @@
+[package]
+name = "sb-platform"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true, features = ["process", "fs", "io-util", "sync"] }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+libc = "0.2"
+log = "0.4"
+
+[dev-dependencies]
+futures = "0.3"
+
+[features]
+linux = []
+macos = []
+windows = []
+tun = []
+integration_tests = []
+full = ["linux","macos","windows","tun"]
+default = []

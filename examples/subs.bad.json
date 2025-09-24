@@ -1,0 +1,54 @@
+[
+  {
+    "tag": "BAD-01-missing-type",
+    "server": "bad.example.com",
+    "server_port": 443,
+    "password": "test-password"
+  },
+  {
+    "type": "trojan",
+    "server_port": 443,
+    "password": "test-password-no-server"
+  },
+  {
+    "tag": "BAD-03-missing-password",
+    "type": "trojan",
+    "server": "bad.example.org",
+    "server_port": 443,
+    "tls": {
+      "enabled": true,
+      "insecure": true
+    }
+  },
+  {
+    "tag": "BAD-04-no-port",
+    "type": "trojan",
+    "server": "bad.example.net",
+    "password": "test-password-no-port"
+  },
+  {
+    "tag": "BAD-05-invalid-tls",
+    "type": "trojan",
+    "server": "bad.example.xyz",
+    "server_port": 443,
+    "password": "test-password",
+    "tls": "invalid-tls-should-be-object"
+  },
+  {
+    "tag": null,
+    "type": "trojan",
+    "server": "bad.example.io",
+    "server_port": 443,
+    "password": "test-password-null-tag"
+  },
+  {
+    "tag": "BAD-07-empty-object"
+  },
+  {
+    "tag": "BAD-08-wrong-type",
+    "type": "unknown-protocol",
+    "server": "bad.example.dev",
+    "server_port": 443,
+    "password": "test-password"
+  }
+]

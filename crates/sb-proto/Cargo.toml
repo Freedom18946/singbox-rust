@@ -1,0 +1,27 @@
+[package]
+name = "sb-proto"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+proto_ss2022 = []
+proto_trojan_min = []
+proto_trojan_dry = []
+proto_ss2022_min = []
+proto_ss2022_core = []
+proto_ss2022_tls_first = ["proto_ss2022_min", "sb-transport/transport_tls"]
+outbound_registry = ["proto_trojan_min","proto_ss2022_min","sb-transport/transport_tls"]
+
+[dependencies]
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["io-util"] }
+bytes = "1"
+blake3 = "1.5"
+serde = { workspace = true, features = ["derive"] }
+sb-transport = { path = "../sb-transport" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt","macros","io-util","time"] }
+hex = "0.4"

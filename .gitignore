@@ -1,0 +1,32 @@
+# Rust
+/target
+**/target
+*.rlib
+*.rmeta
+Cargo.lock
+debug/
+release/
+
+# Byproducts
+*.log
+*.tmp
+*.pid
+*.out
+*.err
+
+# macOS
+.DS_Store
+
+# IDEs and editors
+.vscode/
+.idea/
+.ropeproject/
+.claude/
+
+# Development tools and configs
+.kiro/
+.e2e/
+
+# Exclude refs and instruction directories
+refs/
+instruction/

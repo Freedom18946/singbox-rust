@@ -1,0 +1,20 @@
+[
+  {
+    "tag": "HK-01",
+    "type": "trojan",
+    "server": "hk1.example.com",
+    "server_port": 443,
+    "password": "test123",
+    "tls": {
+      "enabled": true,
+      "server_name": "hk1.example.com"
+    }
+  },
+  {
+    "tag": "US-02",
+    "type": "shadowsocks",
+    "server": "us2.example.com",
+    "server_port": 8080,
+    "password": "test456"
+  }
+]

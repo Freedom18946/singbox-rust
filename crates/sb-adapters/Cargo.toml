@@ -1,0 +1,59 @@
+[package]
+name = "sb-adapters"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytes = "1"
+tracing = "0.1"
+async-trait = "0.1"
+once_cell = "1"
+tun2socks = { version = "0.1.10", optional = true }
+
+# VMess protocol dependencies
+uuid = { version = "1.0", features = ["v4", "serde"] }
+rand = "0.8"
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+
+# TUIC protocol dependencies (QUIC-based)
+quinn = { version = "0.11", optional = true }
+rustls = { version = "0.21", optional = true, default-features = false, features = ["logging", "tls12"] }
+webpki-roots = { version = "0.25", optional = true }
+
+# 可选：通用 metrics 宏（仅当启用 feature=metrics 时编译）
+metrics = { version = "0.23", optional = true }
+
+# 工作区内依赖（按你的仓库结构）
+sb-core = { path = "../sb-core" }
+sb-config = { path = "../sb-config" }
+sb-metrics = { path = "../sb-metrics", optional = true }
+sb-platform = { path = "../sb-platform", optional = true }
+
+[features]
+# 只在需要时显式启用对应入站；避免测试/构建环境分裂
+default = []
+http = []
+socks = []
+tun = ["dep:sb-platform"]
+# macOS transparent proxy support via tun2socks
+tun_macos = ["tun", "dep:tun2socks"]
+# 占位：便于在代码中 #[cfg(feature="metrics")]
+metrics = ["dep:metrics", "dep:sb-metrics"]
+dns = []
+dns_udp = []
+dns_doh = []
+dns_dot = []
+e2e = []
+# TUIC protocol support
+tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+serial_test = "2"

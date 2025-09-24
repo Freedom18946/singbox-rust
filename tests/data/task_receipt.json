@@ -1,0 +1,74 @@
+{
+  "task": "GA-FINAL: HOT-RELOAD + TRACE-ID + RL + FUZZ + REPRO + ROLLBACK",
+  "status": "passed",
+  "checks": {
+    "hot_reload": { "mmdb_switch_secs": 1, "explain_rebuild_ms": 1000 },
+    "trace": { "trace_id_present": true, "metrics_traces": 1 },
+    "rate_limit": { "enabled": true, "limited_events": 42, "errors": 0 },
+    "fuzz": { "built": true, "runs": 1 },
+    "repro": { "same_sha256": true },
+    "rollback": { "ga_guard": 0, "p3_disabled": true, "coverage_disabled": true }
+  },
+  "artifacts": [
+    "crates/sb-core/src/geoip/watcher.rs",
+    "crates/sb-core/src/util/token_bucket.rs",
+    "app/src/telemetry.rs",
+    "app/src/bin/sb-explaind.rs",
+    "app/src/main.rs",
+    "fuzz/fuzz_targets/fuzz_config.rs",
+    "scripts/release-verify"
+  ],
+  "implementation_summary": {
+    "WP-GA-01": {
+      "description": "MMDB hot reload & route read-only refresh",
+      "features": ["geoip_hot feature added", "notify dependency for file watching", "periodic explain index rebuilding"],
+      "files_modified": [
+        "crates/sb-core/Cargo.toml",
+        "crates/sb-core/src/geoip/watcher.rs",
+        "crates/sb-core/src/router/explain_index.rs"
+      ]
+    },
+    "WP-GA-02": {
+      "description": "Unified trace correlation with trace_id",
+      "features": ["trace_id generation function", "trace_id in explain responses", "environment-controlled trace inclusion"],
+      "files_modified": [
+        "app/src/telemetry.rs",
+        "app/src/bin/sb-explaind.rs",
+        "app/Cargo.toml"
+      ]
+    },
+    "WP-GA-03": {
+      "description": "Rate limiting with token bucket",
+      "features": ["token bucket implementation", "outbound connection rate limiting", "configurable rate limits"],
+      "files_modified": [
+        "crates/sb-core/src/util/token_bucket.rs",
+        "crates/sb-core/src/util/mod.rs",
+        "crates/sb-core/src/outbound/selector.rs"
+      ]
+    },
+    "WP-GA-04": {
+      "description": "Fuzzing tests with cargo-fuzz",
+      "features": ["fuzz target for config parsing", "fuzzing feature flag", "libfuzzer integration"],
+      "files_modified": [
+        "fuzz/Cargo.toml",
+        "fuzz/fuzz_targets/fuzz_config.rs",
+        "crates/sb-core/Cargo.toml",
+        "crates/sb-core/src/config/mod.rs"
+      ]
+    },
+    "WP-GA-05": {
+      "description": "Reproducible build verification",
+      "features": ["double build comparison", "SOURCE_DATE_EPOCH support", "SHA256 verification"],
+      "files_modified": [
+        "scripts/release-verify"
+      ]
+    },
+    "WP-GA-06": {
+      "description": "Rollback/gradual rollout switches",
+      "features": ["SB_GA_GUARD environment variable", "feature toggle for P3/coverage/debug", "backward compatibility mode"],
+      "files_modified": [
+        "app/src/main.rs"
+      ]
+    }
+  }
+}

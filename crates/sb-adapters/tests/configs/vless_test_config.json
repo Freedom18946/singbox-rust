@@ -1,0 +1,51 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "http",
+      "tag": "http-in",
+      "listen": "127.0.0.1",
+      "listen_port": 8080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "vless-out",
+      "server": "example.com",
+      "server_port": 443,
+      "uuid": "550e8400-e29b-41d4-a716-446655440000",
+      "flow": "xtls-rprx-vision",
+      "network": "tcp",
+      "packet_encoding": "xudp"
+    },
+    {
+      "type": "vless",
+      "tag": "vless-udp-out",
+      "server": "example.com",
+      "server_port": 443,
+      "uuid": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "network": "udp",
+      "packet_encoding": "packetaddr"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain": ["example.com"],
+        "outbound": "vless-out"
+      },
+      {
+        "protocol": ["udp"],
+        "outbound": "vless-udp-out"
+      }
+    ],
+    "final": "direct"
+  }
+}

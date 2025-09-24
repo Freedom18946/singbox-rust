@@ -1,0 +1,15 @@
+# Test configuration with type mismatch errors
+inbounds:
+  - type: "http"
+    listen: "127.0.0.1"
+    port: "invalid_port"  # Should be number, not string
+outbounds:
+  - type: "direct"
+    mtu: true  # Should be number, not boolean
+route:
+  rules:
+    - to: "direct"
+      when:
+        ip: 123  # Should be string, not number
+dns:
+  mode: ["system"]  # Should be string, not array

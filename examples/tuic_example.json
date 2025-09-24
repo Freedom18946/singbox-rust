@@ -1,0 +1,43 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "http",
+      "tag": "http-in",
+      "listen": "127.0.0.1",
+      "listen_port": 8080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "tuic",
+      "tag": "tuic-out",
+      "server": "tuic.example.com:443",
+      "uuid": "550e8400-e29b-41d4-a716-446655440000",
+      "password": "your_password_here",
+      "congestion_control": "bbr",
+      "udp_relay_mode": "native",
+      "udp_over_stream": false,
+      "zero_rtt_handshake": true,
+      "heartbeat": 10000,
+      "connect_timeout_sec": 10,
+      "auth_timeout_sec": 3,
+      "network": ["tcp", "udp"]
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain": ["example.com"],
+        "outbound": "tuic-out"
+      }
+    ],
+    "final": "direct"
+  }
+}

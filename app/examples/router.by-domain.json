@@ -1,0 +1,32 @@
+{
+  "_comment": "Router 基于域名后缀的分流示例；配合 HTTP/SOCKS inbound 使用。",
+  "inbounds": [
+    {
+      "type": "http",
+      "tag": "http-in",
+      "listen": "127.0.0.1:28090"
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in",
+      "listen": "127.0.0.1:28091"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      { "type": "domain_suffix", "value": ["example.com"], "outbound": "block" },
+      { "type": "domain_suffix", "value": ["example.net"], "outbound": "direct" }
+    ],
+    "default": "direct"
+  }
+}

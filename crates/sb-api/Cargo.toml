@@ -1,0 +1,49 @@
+[package]
+name = "sb-api"
+version = "0.1.0"
+edition = "2021"
+description = "API services for singbox-rust including Clash API and V2Ray API"
+
+[dependencies]
+# Web framework and HTTP server
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tokio = { version = "1.35", features = ["full"] }
+
+# Serialization and JSON handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# WebSocket support
+futures-util = "0.3"
+
+# gRPC support for V2Ray API
+tonic = { version = "0.11", optional = true }
+prost = { version = "0.12", optional = true }
+prost-types = { version = "0.12", optional = true }
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+
+# Logging and error handling
+log = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+
+# HTTP types
+http = "1.0"
+
+# Internal crates
+sb-core = { path = "../sb-core" }
+sb-config = { path = "../sb-config" }
+
+[features]
+default = ["clash-api"]
+clash-api = []
+v2ray-api = ["tonic", "prost", "prost-types", "tokio-stream"]
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[dev-dependencies]
+tokio-test = "0.4"

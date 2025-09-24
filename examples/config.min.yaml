@@ -1,0 +1,13 @@
+# 最小可运行/校验配置（无外联，仅结构合法）
+log:
+  level: error
+inbounds:
+  - type: socks
+    listen: 127.0.0.1
+    listen_port: 0
+outbounds:
+  - type: direct
+route:
+  rules:
+    - rule: default
+      outbound: direct

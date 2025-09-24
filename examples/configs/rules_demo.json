@@ -1,0 +1,14 @@
+{
+  "inbounds": [
+    { "type": "http",  "listen": "127.0.0.1", "listen_port": 28090 },
+    { "type": "socks", "listen": "127.0.0.1", "listen_port": 28091 }
+  ],
+  "route": {
+    "rules": [
+      { "host_suffix": "static.example.org", "outbound": "direct" },
+      { "host_suffix": [".tracking", ".analytics"], "outbound": "block" },
+      { "inbound": "corp-http", "outbound": "direct" }
+    ],
+    "final": "direct"
+  }
+}

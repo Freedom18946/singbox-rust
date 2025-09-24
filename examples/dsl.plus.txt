@@ -1,0 +1,9 @@
+# DSL+ 示例：包含 + 宏 + 标准 DSL
+include "rules/snippets/block_ads.dsl"
+
+@macro COMMON_SHOP {
+  suffix:shop.com=proxyA
+  suffix:cdn.shop.com=direct
+}
+use COMMON_SHOP
+default:reject

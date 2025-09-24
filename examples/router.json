@@ -1,0 +1,11 @@
+{
+  "rules": [
+    { "type": "domain",         "value": "download.example.com", "outbound": "direct" },
+    { "type": "domain_suffix",  "value": ".example.com",         "outbound": "proxy"  },
+    { "type": "domain_keyword", "value": "tracker",              "outbound": "reject" },
+    { "type": "ip_cidr",        "value": "10.0.0.0/8",           "outbound": "direct" },
+    { "type": "port",           "value": 53,                     "transport": "udp",  "outbound": "direct" },
+    { "type": "portset",        "values": [80,443,8443],         "outbound": "proxy"  }
+  ],
+  "default": "direct"
+}

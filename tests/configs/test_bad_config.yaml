@@ -1,0 +1,14 @@
+inbounds:
+  - name: http
+    type: http
+    listen: "127.0.0.1:8080"
+    port: 8080
+route:
+  rules:
+    - when: { suffix: "example.com" }
+      to: proxy-missing
+    - when: { suffix: "example.com" }
+      to: direct
+outbounds:
+  - name: proxy-a
+    type: direct

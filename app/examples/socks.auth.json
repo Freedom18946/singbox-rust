@@ -1,0 +1,13 @@
+{
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1:18080",
+      "auth": { "Users": [{ "username": "a", "password": "b" }] }
+    }
+  ],
+  "outbounds": [
+    { "tag": "direct", "type": "direct" },
+    { "tag": "block", "type": "block" }
+  ]
+}

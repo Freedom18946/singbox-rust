@@ -1,0 +1,263 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Release Candidate processing script for singbox-rust
+# Implements task 24: RC package version metadata system
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PROFILE="${PROFILE:-release}"
+
+log() {
+    echo "[RC $(date +%H:%M:%S)] $*" >&2
+}
+
+error() {
+    echo "[RC ERROR] $*" >&2
+    exit 1
+}
+
+# Function to validate version information
+validate_version_info() {
+    local version_file="$1"
+    log "Validating version information in $version_file"
+
+    if [[ ! -f "$version_file" ]]; then
+        error "Version file not found: $version_file"
+    fi
+
+    # Check if JSON is valid
+    if ! jq . "$version_file" >/dev/null 2>&1; then
+        error "Invalid JSON in version file: $version_file"
+    fi
+
+    # Validate required fields
+    local required_fields=("version" "commit" "build_time" "features" "platform")
+    for field in "${required_fields[@]}"; do
+        if ! jq -e ".$field" "$version_file" >/dev/null 2>&1; then
+            error "Missing required field '$field' in version file"
+        fi
+    done
+
+    # Validate platform structure
+    local platform_fields=("os" "arch" "target")
+    for field in "${platform_fields[@]}"; do
+        if ! jq -e ".platform.$field" "$version_file" >/dev/null 2>&1; then
+            error "Missing platform field '$field' in version file"
+        fi
+    done
+
+    log "Version information validation passed"
+}
+
+# Function to generate comprehensive version metadata
+generate_version_metadata() {
+    local output_file="$1"
+    local timestamp="$2"
+
+    log "Generating comprehensive version metadata..."
+
+    # Get git information
+    local git_commit=""
+    local git_branch=""
+    local git_tag=""
+    local git_dirty=""
+
+    if command -v git >/dev/null 2>&1 && [[ -d ".git" ]]; then
+        git_commit=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+        git_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+        git_tag=$(git describe --tags --exact-match 2>/dev/null || echo "none")
+        git_dirty=$(git diff --quiet 2>/dev/null && echo "false" || echo "true")
+    else
+        git_commit="not_available"
+        git_branch="not_available"
+        git_tag="not_available"
+        git_dirty="unknown"
+    fi
+
+    # Get build environment
+    local cargo_version=""
+    local rustc_version=""
+    local project_version=""
+
+    if command -v cargo >/dev/null 2>&1; then
+        cargo_version=$(cargo --version 2>/dev/null || echo "unknown")
+    else
+        cargo_version="not_available"
+    fi
+
+    if command -v rustc >/dev/null 2>&1; then
+        rustc_version=$(rustc --version 2>/dev/null || echo "unknown")
+    else
+        rustc_version="not_available"
+    fi
+
+    if [[ -f "Cargo.toml" ]]; then
+        project_version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2 2>/dev/null || echo "unknown")
+    else
+        project_version="unknown"
+    fi
+
+    # Generate basic version info first
+    local sb_version_output=""
+    if [[ -x "target/${PROFILE}/sb-version" ]]; then
+        sb_version_output=$(target/${PROFILE}/sb-version 2>/dev/null || echo "{}")
+    elif [[ -x "target/debug/sb-version" ]]; then
+        sb_version_output=$(target/debug/sb-version 2>/dev/null || echo "{}")
+    else
+        sb_version_output="{}"
+    fi
+
+    # Merge sb-version output with additional metadata
+    jq -n \
+        --arg timestamp "$timestamp" \
+        --arg git_commit "$git_commit" \
+        --arg git_branch "$git_branch" \
+        --arg git_tag "$git_tag" \
+        --arg git_dirty "$git_dirty" \
+        --arg cargo_version "$cargo_version" \
+        --arg rustc_version "$rustc_version" \
+        --arg project_version "$project_version" \
+        --arg profile "$PROFILE" \
+        --argjson sb_version "$sb_version_output" \
+        '{
+            timestamp: $timestamp,
+            rc_metadata: {
+                git: {
+                    commit: $git_commit,
+                    branch: $git_branch,
+                    tag: $git_tag,
+                    dirty: ($git_dirty == "true")
+                },
+                build_environment: {
+                    cargo_version: $cargo_version,
+                    rustc_version: $rustc_version,
+                    project_version: $project_version,
+                    profile: $profile
+                }
+            }
+        } + $sb_version' > "$output_file"
+}
+
+# Function to create CI integration metadata
+create_ci_metadata() {
+    local output_file="$1"
+    local timestamp="$2"
+
+    log "Creating CI integration metadata..."
+
+    jq -n \
+        --arg timestamp "$timestamp" \
+        --arg hostname "$(hostname 2>/dev/null || echo 'unknown')" \
+        --arg os "$(uname -s 2>/dev/null || echo 'unknown')" \
+        --arg arch "$(uname -m 2>/dev/null || echo 'unknown')" \
+        --arg kernel "$(uname -r 2>/dev/null || echo 'unknown')" \
+        --arg pwd "$PWD" \
+        --arg user "${USER:-unknown}" \
+        '{
+            ci_metadata: {
+                timestamp: $timestamp,
+                environment: {
+                    hostname: $hostname,
+                    os: $os,
+                    arch: $arch,
+                    kernel: $kernel,
+                    working_directory: $pwd,
+                    user: $user
+                },
+                validation: {
+                    version_format: "validated",
+                    required_fields: "checked",
+                    platform_info: "verified"
+                }
+            }
+        }' > "$output_file"
+}
+
+# Function to verify package completeness
+verify_package_completeness() {
+    local rc_dir="$1"
+    log "Verifying RC package completeness..."
+
+    local required_files=(
+        "version-*.json"
+        "ci-metadata-*.json"
+    )
+
+    local missing_files=()
+    for pattern in "${required_files[@]}"; do
+        if ! ls "$rc_dir"/$pattern >/dev/null 2>&1; then
+            missing_files+=("$pattern")
+        fi
+    done
+
+    if [[ ${#missing_files[@]} -gt 0 ]]; then
+        error "Missing required files in RC package: ${missing_files[*]}"
+    fi
+
+    log "RC package completeness verification passed"
+}
+
+# Main execution
+main() {
+    log "Starting RC package processing for singbox-rust"
+    log "Profile: $PROFILE"
+
+    # Ensure we have jq for JSON processing
+    if ! command -v jq >/dev/null 2>&1; then
+        error "jq is required for RC processing but not found"
+    fi
+
+    # Create RC directory
+    local timestamp=$(date +%s)
+    local rc_dir="${ROOT}/target/rc"
+    mkdir -p "$rc_dir"
+
+    # Build binaries if not present
+    if [[ ! -x "target/${PROFILE}/sb-version" && ! -x "target/debug/sb-version" ]]; then
+        log "Building sb-version binary..."
+        cargo build --bin sb-version
+    fi
+
+    # Generate version metadata files
+    local version_file="${rc_dir}/version-${timestamp}.json"
+    local ci_metadata_file="${rc_dir}/ci-metadata-${timestamp}.json"
+
+    generate_version_metadata "$version_file" "$timestamp"
+    create_ci_metadata "$ci_metadata_file" "$timestamp"
+
+    # Validate generated files
+    validate_version_info "$version_file"
+
+    # Verify package completeness
+    verify_package_completeness "$rc_dir"
+
+    # Create symlinks to latest
+    ln -sf "$(basename "$version_file")" "${rc_dir}/version-latest.json"
+    ln -sf "$(basename "$ci_metadata_file")" "${rc_dir}/ci-metadata-latest.json"
+
+    # Create manifest
+    local manifest_file="${rc_dir}/manifest-${timestamp}.json"
+    jq -n \
+        --arg timestamp "$timestamp" \
+        --arg version_file "$(basename "$version_file")" \
+        --arg ci_metadata_file "$(basename "$ci_metadata_file")" \
+        '{
+            timestamp: $timestamp,
+            files: {
+                version: $version_file,
+                ci_metadata: $ci_metadata_file
+            },
+            validation_status: "passed"
+        }' > "$manifest_file"
+
+    log "RC package processing completed successfully"
+    log "Generated files:"
+    log "  - $version_file"
+    log "  - $ci_metadata_file"
+    log "  - $manifest_file"
+
+    echo "$rc_dir"
+}
+
+# Run main function
+main "$@"

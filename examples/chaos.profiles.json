@@ -1,0 +1,7 @@
+{
+  "delay_tx_ms": 20,
+  "delay_rx_ms": 30,
+  "rx_drop": 1,
+  "rx_trim": 24,
+  "rx_xor": "aa"
+}
