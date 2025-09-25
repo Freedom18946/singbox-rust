@@ -13,6 +13,8 @@ pub struct AuditEntry {
     pub delta: serde_json::Value,
     pub ok: bool,
     pub msg: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changed: Option<bool>,
 }
 
 static AUDIT_LOG: OnceCell<Mutex<VecDeque<AuditEntry>>> = OnceCell::new();
@@ -79,6 +81,14 @@ pub fn create_entry(
         delta,
         ok,
         msg: msg.into(),
+        changed: None,
+    }
+}
+
+impl AuditEntry {
+    pub fn with_changed(mut self, changed: bool) -> Self {
+        self.changed = Some(changed);
+        self
     }
 }
 

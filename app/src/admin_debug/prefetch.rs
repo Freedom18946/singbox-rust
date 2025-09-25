@@ -1,8 +1,10 @@
 // app/src/admin_debug/prefetch.rs
 use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 use once_cell::sync::OnceCell;
 use tokio::sync::{mpsc, mpsc::{Sender, Receiver}};
 use anyhow::Result;
+use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct PrefetchJob {
@@ -17,6 +19,17 @@ pub struct Prefetcher {
 }
 
 static GLOBAL: OnceCell<Prefetcher> = OnceCell::new();
+static QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
+static HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
+
+fn observe_depth(depth: u64) {
+    let mut cur = HIGH_WATERMARK.load(Ordering::Relaxed);
+    while depth > cur && HIGH_WATERMARK
+        .compare_exchange(cur, depth, Ordering::Relaxed, Ordering::Relaxed).is_err()
+    { cur = HIGH_WATERMARK.load(Ordering::Relaxed); }
+    crate::admin_debug::security_metrics::set_prefetch_queue_depth(depth);
+    crate::admin_debug::security_metrics::set_prefetch_queue_high_watermark(HIGH_WATERMARK.load(Ordering::Relaxed));
+}
 
 impl Prefetcher {
     pub fn global() -> &'static Prefetcher {
@@ -43,6 +56,9 @@ impl Prefetcher {
         match self.tx.try_send(job) {
             Ok(_) => {
                 crate::admin_debug::security_metrics::prefetch_inc("enq");
+                // Update queue depth after successful enqueue with high watermark tracking
+                let new_depth = QUEUE_DEPTH.fetch_add(1, Ordering::Relaxed) + 1;
+                observe_depth(new_depth as u64);
                 true
             }
             Err(_e) => {
@@ -50,6 +66,11 @@ impl Prefetcher {
                 false
             }
         }
+    }
+
+    pub async fn shutdown(self) {
+        // Placeholder for graceful shutdown - simplified version for compatibility
+        drop(self.tx);
     }
 }
 
@@ -84,6 +105,11 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
                 }
             }
         }
+
+        // Update queue depth after job completion (success or failure)
+        let prev = QUEUE_DEPTH.fetch_sub(1, Ordering::Relaxed) - 1;
+        crate::admin_debug::security_metrics::set_prefetch_queue_depth(prev as u64);
+
         let dur_ms = start.elapsed().as_millis() as u64;
         crate::admin_debug::security_metrics::record_prefetch_run_ms(dur_ms);
         tracing::debug!(id, ok, "prefetch worker finished");
@@ -98,45 +124,52 @@ async fn do_prefetch(job: &PrefetchJob) -> Result<()> {
     Ok(())
 }
 
-// 简化版本的预取实现，复用现有安全检查
-async fn prefetch_once(url: &str, _etag: Option<String>) -> Result<()> {
-    // 检查是否启用预取
-    if std::env::var("SB_PREFETCH_ENABLE").ok().as_deref() != Some("1") {
-        return Err(anyhow::anyhow!("prefetch disabled"));
-    }
-
-    // 基本 URL 验证和安全检查
-    if url.len() > 2048 {
-        return Err(anyhow::anyhow!("URL too long"));
-    }
-
-    // 解析 URL 以便使用现有安全检查
-    let parsed_url = reqwest::Url::parse(url)
-        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
-
-    // 使用现有的安全检查
-    crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist(&parsed_url)?;
-
-    // 这里应该调用实际的 HTTP fetch 逻辑
-    // 暂时返回成功以完成骨架
-    tracing::debug!("Prefetch attempted for: {}", url);
-    Ok(())
+/// For shutdown support - can be called once to take ownership for graceful shutdown
+pub fn global_take() -> Option<Prefetcher> {
+    // Note: This is a simplified version - in production you'd want proper synchronization
+    None // Current structure doesn't easily support taking ownership, placeholder for interface
 }
 
-// 对外 API
+/// Get high watermark metric for export
+pub fn get_high_watermark() -> u64 {
+    HIGH_WATERMARK.load(Ordering::Relaxed)
+}
+
 pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
     if std::env::var("SB_PREFETCH_ENABLE").ok().as_deref() != Some("1") {
         return false;
     }
-
     let job = PrefetchJob {
         url: url.to_string(),
         etag,
-        deadline_ms: 0, // TODO: 实际计算
-        tries: 0,
+        deadline_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64 + 60_000,
+        tries: std::env::var("SB_PREFETCH_RETRIES").ok()
+            .and_then(|s| s.parse::<u8>().ok())
+            .unwrap_or(3),
     };
-
     Prefetcher::global().enqueue(job)
+}
+
+async fn prefetch_once(url: &str, etag: Option<String>) -> Result<crate::admin_debug::cache::CacheEntry> {
+    // 快速校验
+    if url.len() > 2048 {
+        anyhow::bail!("url too long");
+    }
+    let parsed = Url::parse(url)?;
+    crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist(&parsed)?;
+
+    // 真实抓取（含限流/熔断/缓存/ETag）
+    #[cfg(feature = "subs_http")]
+    {
+        return crate::admin_debug::endpoints::subs::fetch_with_limits_to_cache(url, etag, true).await;
+    }
+    #[cfg(not(feature = "subs_http"))]
+    {
+        anyhow::bail!("subs_http feature disabled");
+    }
 }
 
 #[cfg(test)]
@@ -173,5 +206,16 @@ mod tests {
         // In a real test, we'd want to mock the underlying components
         let _result = enqueue_prefetch("https://example.com", None);
         std::env::remove_var("SB_PREFETCH_ENABLE");
+    }
+
+    #[tokio::test]
+    async fn queue_depth_drops_when_full() {
+        // 构造容量=1的 prefetcher
+        let (tx, _rx) = mpsc::channel::<PrefetchJob>(1);
+        let pf = Prefetcher { tx };
+
+        assert!(pf.enqueue(PrefetchJob{ url:"http://a".into(), etag:None, deadline_ms:0, tries:1 }));
+        // 第二次应丢弃
+        assert!(!pf.enqueue(PrefetchJob{ url:"http://b".into(), etag:None, deadline_ms:0, tries:1 }));
     }
 }

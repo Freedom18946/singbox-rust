@@ -45,12 +45,19 @@ pub async fn handle_put(
     sock: &mut (impl AsyncRead + AsyncWrite + Unpin),
     body: bytes::Bytes,
     headers: &HashMap<String, String>,
-) -> std::io::Result<()> {
+) -> std::io::Result<()>
+{
     // Check RBAC - X-Role header should be admin
     let role = headers.get("x-role").map(|s| s.as_str()).unwrap_or("");
     if role != "admin" {
         return respond_json_error(sock, 403, "Access denied", Some("X-Role: admin required")).await;
     }
+
+    // Dry-run toggle
+    let dry = headers
+        .get("x-config-dryrun")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
 
     // Parse the delta
     let delta: ConfigDelta = match serde_json::from_slice(&body) {
@@ -60,45 +67,36 @@ pub async fn handle_put(
         }
     };
 
-    // Apply delta using reloadable module
-    let result = reloadable::apply(&delta);
-    let (success, message) = match result {
-        Ok(msg) => (true, msg),
-        Err(e) => (false, e.to_string()),
-    };
+    // Apply (or simulate) the delta
+    match reloadable::apply_with_dryrun(&delta, dry) {
+        Ok(app) => {
+            // Audit with changed field
+            let entry = audit::create_entry(
+                "admin",
+                if dry { "config_dryrun" } else { "config_apply" },
+                serde_json::to_value(&delta).unwrap_or(serde_json::json!({})),
+                app.ok,
+                &app.msg,
+            ).with_changed(app.changed);
+            audit::log(entry);
 
-    // Create audit entry
-    let delta_json = serde_json::to_value(&delta).unwrap_or(serde_json::json!({}));
-    let actor = headers.get("authorization")
-        .and_then(|auth| {
-            if auth.starts_with("SB-HMAC ") {
-                auth.strip_prefix("SB-HMAC ").and_then(|s| s.split(':').next())
-            } else if auth.starts_with("Bearer ") {
-                Some("bearer_user")
-            } else {
-                None
-            }
-        })
-        .unwrap_or("unknown");
-
-    let entry = audit::create_entry(
-        actor,
-        "config.put",
-        delta_json.clone(),
-        success,
-        &message,
-    );
-    audit::log(entry);
-
-    if success {
-        let response = serde_json::json!({
-            "status": "applied",
-            "delta": delta_json,
-            "message": message
-        });
-        respond(sock, 200, "application/json", &serde_json::to_string(&response).unwrap()).await
-    } else {
-        respond_json_error(sock, 500, "Failed to apply configuration", Some(&message)).await
+            // Respond with full result including changed field
+            #[derive(serde::Serialize)]
+            struct Resp<'a> { ok: bool, msg: &'a str, changed: bool, version: u64, diff: serde_json::Value }
+            let resp = Resp { ok: app.ok, msg: &app.msg, changed: app.changed, version: app.version, diff: app.diff };
+            respond_json_ok(sock, &resp).await
+        }
+        Err(e) => {
+            let entry = audit::create_entry(
+                "admin",
+                if dry { "config_dryrun" } else { "config_apply" },
+                serde_json::to_value(&delta).unwrap_or(serde_json::json!({})),
+                false,
+                &e,
+            ).with_changed(false);
+            audit::log(entry);
+            respond_json_error(sock, 400, "apply failed", Some(&e)).await
+        }
     }
 }
 

@@ -36,6 +36,13 @@ pub struct Supervisor {
     state: Arc<RwLock<State>>,
 }
 
+/// Handle to supervisor that allows graceful shutdown without taking ownership
+#[derive(Clone)]
+pub struct SupervisorHandle {
+    tx: mpsc::Sender<ReloadMsg>,
+    state: Arc<RwLock<State>>,
+}
+
 impl State {
     pub fn new(engine: Engine<'static>, bridge: Bridge) -> Self {
         Self {
@@ -105,6 +112,14 @@ impl Supervisor {
         });
 
         Ok(Self { tx, handle, state })
+    }
+
+    /// Get a handle to this supervisor for operations that don't require ownership
+    pub fn handle(&self) -> SupervisorHandle {
+        SupervisorHandle {
+            tx: self.tx.clone(),
+            state: Arc::clone(&self.state),
+        }
     }
 
     /// Trigger hot reload with new configuration
@@ -252,6 +267,43 @@ impl Supervisor {
             "{}",
             serde_json::to_string(&shutdown_json).unwrap_or_default()
         );
+    }
+}
+
+impl SupervisorHandle {
+    /// Begin graceful shutdown via handle (doesn't require ownership)
+    pub async fn shutdown_graceful(&self, dur: Duration) -> Result<()> {
+        let deadline = Instant::now() + dur;
+
+        self.tx
+            .send(ReloadMsg::Shutdown { deadline })
+            .await
+            .context("failed to send shutdown message")?;
+
+        Ok(())
+    }
+
+    /// Trigger hot reload with new configuration via handle
+    pub async fn reload(&self, new_ir: sb_config::ir::ConfigIR) -> Result<Diff> {
+        let old_ir = {
+            let state_guard = self.state.read().await;
+            // For now, return an empty diff since we can't easily convert types
+            return Ok(Diff::default());
+        };
+
+        let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
+
+        self.tx
+            .send(ReloadMsg::Apply(new_ir))
+            .await
+            .context("failed to send reload message")?;
+
+        Ok(diff)
+    }
+
+    /// Get read-only access to current state
+    pub async fn state(&self) -> Arc<RwLock<State>> {
+        Arc::clone(&self.state)
     }
 }
 

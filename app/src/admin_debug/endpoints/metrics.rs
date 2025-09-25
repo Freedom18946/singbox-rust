@@ -1,6 +1,21 @@
 use tokio::io::AsyncWriteExt;
 use crate::admin_debug::security_metrics as sm;
 
+use lazy_static::lazy_static;
+use prometheus::{register_int_gauge, IntGauge};
+
+lazy_static! {
+    static ref PREFETCH_QUEUE_DEPTH: IntGauge = register_int_gauge!(
+        "sb_prefetch_queue_depth",
+        "Prefetch queue depth"
+    ).unwrap();
+}
+
+/// 供 security_metrics 调用，更新 Prom Gauge
+pub fn update_prefetch_depth(v: i64) {
+    PREFETCH_QUEUE_DEPTH.set(v);
+}
+
 fn line(k: &str, v: u64) -> String { format!("{k} {v}\n") }
 
 pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
@@ -92,6 +107,27 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
     }
     buf.push_str(&format!("sb_subs_fetch_seconds_count {}\n", h.latency_count));
     buf.push_str(&format!("sb_subs_fetch_seconds_sum {}\n", h.latency_sum_ms as f64 / 1000.0));
+
+    // Prefetch metrics
+    buf.push_str("# HELP sb_prefetch_queue_depth Prefetch queue depth\n# TYPE sb_prefetch_queue_depth gauge\n");
+    buf.push_str(&format!("sb_prefetch_queue_depth {}\n", h.prefetch_queue_depth));
+
+    buf.push_str("# HELP sb_prefetch_queue_high_watermark Prefetch queue high watermark\n# TYPE sb_prefetch_queue_high_watermark gauge\n");
+    buf.push_str(&format!("sb_prefetch_queue_high_watermark {}\n", crate::admin_debug::security_metrics::get_prefetch_queue_high_watermark()));
+
+    buf.push_str("# HELP sb_prefetch_jobs_total Prefetch job events\n# TYPE sb_prefetch_jobs_total counter\n");
+    buf.push_str(&format!("sb_prefetch_jobs_total{{event=\"enq\"}} {}\n", h.prefetch_enqueue));
+    buf.push_str(&format!("sb_prefetch_jobs_total{{event=\"drop\"}} {}\n", h.prefetch_drop));
+    buf.push_str(&format!("sb_prefetch_jobs_total{{event=\"done\"}} {}\n", h.prefetch_done));
+    buf.push_str(&format!("sb_prefetch_jobs_total{{event=\"fail\"}} {}\n", h.prefetch_fail));
+    buf.push_str(&format!("sb_prefetch_jobs_total{{event=\"retry\"}} {}\n", h.prefetch_retry));
+
+    // Prefetch run time histogram
+    buf.push_str("# HELP sb_prefetch_run_seconds Prefetch worker execution time\n# TYPE sb_prefetch_run_seconds histogram\n");
+    for (le, c) in h.prefetch_run_buckets.iter() {
+        let bucket = if *le >= 999999.0 { "+Inf".to_string() } else { format!("{:.3}", le) };
+        buf.push_str(&format!("sb_prefetch_run_seconds_bucket{{le=\"{}\"}} {}\n", bucket, c));
+    }
 
     crate::admin_debug::http_util::respond(sock, 200, "text/plain; version=0.0.4", &buf).await
 }

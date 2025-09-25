@@ -263,9 +263,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     let timeout_ms = config.timeout_ms;
     let size_limit = config.max_bytes;
 
-    // Build HTTP client first
+    // Build HTTP client with SafeRedirect policy
+    use crate::admin_debug::http::redirect::SafeRedirect;
+    let redirect = SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
     let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(max_redirects))
+        .redirect(reqwest::redirect::Policy::custom(redirect))
         .connect_timeout(std::time::Duration::from_millis(timeout_ms.min(1500)))
         .user_agent(format!("sb-subs/{}", env!("CARGO_PKG_VERSION")))
         .build()?;
@@ -363,6 +365,9 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
                 let cached_string = String::from_utf8_lossy(&cached_body).to_string();
                 record_latency_ms(t0.elapsed().as_millis() as u64);
                 mark_last_ok();
+                // Trigger prefetch for successful 304 response
+                let et_local: Option<String> = cached_tier_entry.etag().cloned();
+                maybe_enqueue_prefetch(&resp, &et_local);
                 return Ok(cached_string);
             }
         }
@@ -418,7 +423,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     if let Some(cl) = resp.content_length() {
         if cl as usize > size_limit { inc_exceed_size(); set_last_error_with_host(ErrorKind::SizeExceed, &host, "cl exceed"); anyhow::bail!("exceed size limit: {} bytes", size_limit); }
     }
-    // Extract headers before consuming response
+    // Extract all data before consuming response
     let response_etag = resp.headers()
         .get(reqwest::header::ETAG)
         .and_then(|v| v.to_str().ok())
@@ -428,6 +433,9 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
+
+    let response_url = resp.url().clone();
+    let response_headers = resp.headers().clone();
 
     let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
     let mut stream = resp.bytes_stream();
@@ -450,7 +458,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     // Store in cache with ETag and Content-Type if available
     if let Ok(mut lru) = cache::global().lock() {
         let cache_entry = cache::CacheEntry {
-            etag: response_etag,
+            etag: response_etag.clone(),
             content_type: response_content_type,
             body: body.to_vec(),
             timestamp: std::time::Instant::now(),
@@ -465,7 +473,341 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     }
 
     mark_last_ok();
+    // Trigger prefetch for successful 200 response
+    let et_local: Option<String> = response_etag.clone();
+    if let Some(ma) = cache_control_max_age(&response_headers) {
+        if ma >= 60 {
+            crate::admin_debug::prefetch::enqueue_prefetch(response_url.as_str(), et_local);
+        }
+    }
     Ok(out)
+}
+
+#[cfg(feature = "subs_http")]
+pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_prefetch: bool) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
+    inc_total_requests();
+
+    let t0 = Instant::now();
+
+    // Rate limiting - acquire permits for both concurrency and RPS
+    acquire_permits().await.map_err(|e| {
+        crate::admin_debug::security_metrics::inc_rate_limited();
+        set_last_error(ErrorKind::RateLimited, format!("rate limit: {}", e));
+        e
+    })?;
+    let parsed = url::Url::parse(url)?;
+    let host = parsed.host_str().unwrap_or("").to_string();
+
+    // Circuit breaker check
+    if let Ok(mut br) = breaker::global().lock() {
+        if !br.check(&host) {
+            inc_breaker_block();
+            set_last_error_with_host(ErrorKind::Other, &host, "circuit breaker open");
+            anyhow::bail!("circuit breaker open for host: {}", host);
+        }
+    }
+
+    // Async security checks
+    if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
+        inc_block_private_ip();
+        set_last_error_with_host(ErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e));
+        return Err(e);
+    }
+    if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
+        inc_block_private_ip();
+        set_last_error_with_host(ErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e));
+        return Err(e);
+    }
+
+    // Get current configuration
+    let config = reloadable::get();
+    let max_redirects = config.max_redirects;
+    let timeout_ms = config.timeout_ms;
+    let size_limit = config.max_bytes;
+
+    // Build HTTP client with SafeRedirect policy
+    use crate::admin_debug::http::redirect::SafeRedirect;
+    let redirect = SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::custom(redirect))
+        .connect_timeout(std::time::Duration::from_millis(timeout_ms.min(1500)))
+        .user_agent(format!("sb-subs/{}", env!("CARGO_PKG_VERSION")))
+        .build()?;
+
+    // Check cache first
+    let mut if_none_match = etag;
+    if let Ok(mut lru) = cache::global().lock() {
+        if let Some(cached_tier_entry) = lru.get(url) {
+            inc_cache_hit();
+            if if_none_match.is_none() {
+                if_none_match = cached_tier_entry.etag().cloned();
+            }
+        } else {
+            inc_cache_miss();
+        }
+    }
+
+    // Build request with conditional headers if we have an ETag
+    let mut request_builder = client.get(parsed.clone());
+    if let Some(etag_val) = &if_none_match {
+        request_builder = request_builder.header(reqwest::header::IF_NONE_MATCH, etag_val);
+    }
+
+    let resp = match tokio::time::timeout(
+        std::time::Duration::from_millis(timeout_ms),
+        request_builder.send()
+    ).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => {
+            // Handle various error types
+            if e.is_connect() {
+                inc_connect_timeout();
+                set_last_error_with_host(ErrorKind::ConnectTimeout, &host, "connect timeout");
+            }
+            if let Ok(mut br) = breaker::global().lock() {
+                br.mark_failure(&host);
+            }
+            return Err(e.into());
+        }
+        Err(_) => {
+            inc_timeout();
+            set_last_error_with_host(ErrorKind::Timeout, &host, "overall timeout");
+            if let Ok(mut br) = breaker::global().lock() {
+                br.mark_failure(&host);
+            }
+            return Err(anyhow::anyhow!("timeout"));
+        }
+    };
+
+    // Handle 304 Not Modified
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        let cached_entry = {
+            if let Ok(mut lru) = cache::global().lock() {
+                lru.get(resp.url().as_str()).map(|x| x.clone())
+            } else {
+                None
+            }
+        };
+
+        if let Some(cached_tier_entry) = cached_entry {
+            let cached_body = cached_tier_entry.get_body().await.map_err(|e| anyhow::anyhow!("Failed to read cached body: {}", e))?;
+            record_latency_ms(t0.elapsed().as_millis() as u64);
+            mark_last_ok();
+            // Trigger prefetch for successful 304 response
+            let et_local: Option<String> = cached_tier_entry.etag().cloned();
+            maybe_enqueue_prefetch(&resp, &et_local);
+
+            return Ok(crate::admin_debug::cache::CacheEntry {
+                etag: cached_tier_entry.etag().cloned(),
+                content_type: cached_tier_entry.content_type().cloned(),
+                body: cached_body,
+                timestamp: std::time::Instant::now(),
+            });
+        }
+        if is_prefetch {
+            anyhow::bail!("cache miss on 304 (prefetch)");
+        } else {
+            // Fallback: make a fresh request without If-None-Match for main path
+            let fresh_resp = match tokio::time::timeout(
+                std::time::Duration::from_millis(timeout_ms),
+                client.get(parsed.clone()).send()
+            ).await {
+                Ok(Ok(r)) => r,
+                Ok(Err(e)) => {
+                    if e.is_connect() {
+                        inc_connect_timeout();
+                        set_last_error_with_host(ErrorKind::ConnectTimeout, &host, "connect timeout on fallback");
+                    }
+                    if let Ok(mut br) = breaker::global().lock() {
+                        br.mark_failure(&host);
+                    }
+                    return Err(e.into());
+                }
+                Err(_) => {
+                    inc_timeout();
+                    set_last_error_with_host(ErrorKind::Timeout, &host, "timeout on fallback");
+                    if let Ok(mut br) = breaker::global().lock() {
+                        br.mark_failure(&host);
+                    }
+                    return Err(anyhow::anyhow!("timeout on fallback"));
+                }
+            };
+
+            if !fresh_resp.status().is_success() {
+                let status = fresh_resp.status();
+                let code = fresh_resp.status().as_u16();
+                if (400..500).contains(&code) {
+                    inc_upstream_4xx();
+                    set_last_error_with_host(ErrorKind::Upstream4xx, &host, format!("upstream {} on fallback", status));
+                }
+                if (500..600).contains(&code) {
+                    inc_upstream_5xx();
+                    set_last_error_with_host(ErrorKind::Upstream5xx, &host, format!("upstream {} on fallback", status));
+                }
+                if (500..600).contains(&code) {
+                    if let Ok(mut br) = breaker::global().lock() {
+                        br.mark_failure(&host);
+                    }
+                }
+                anyhow::bail!("upstream status {} on fallback", status);
+            }
+
+            // Process the fresh response like a normal success response
+            let response_etag = fresh_resp.headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let response_content_type = fresh_resp.headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let fresh_resp_url = fresh_resp.url().clone();
+            let fresh_resp_headers = fresh_resp.headers().clone();
+
+            // Check content length
+            if let Some(cl) = fresh_resp.content_length() {
+                if cl as usize > size_limit {
+                    inc_exceed_size();
+                    set_last_error_with_host(ErrorKind::SizeExceed, &host, "cl exceed on fallback");
+                    anyhow::bail!("exceed size limit: {} bytes on fallback", size_limit);
+                }
+            }
+
+            let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
+            let mut stream = fresh_resp.bytes_stream();
+            use futures_util::StreamExt;
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                if body.len() + chunk.len() > size_limit {
+                    inc_exceed_size();
+                    set_last_error_with_host(ErrorKind::SizeExceed, &host, "stream exceed on fallback");
+                    anyhow::bail!("exceed size limit: {} bytes on fallback", size_limit);
+                }
+                body.extend_from_slice(&chunk);
+            }
+
+            // Record latency and mark success
+            let dt = t0.elapsed().as_millis() as u64;
+            record_latency_ms(dt);
+
+            // Create cache entry
+            let cache_entry = crate::admin_debug::cache::CacheEntry {
+                etag: response_etag.clone(),
+                content_type: response_content_type,
+                body: body.to_vec(),
+                timestamp: std::time::Instant::now(),
+            };
+
+            // Store in cache
+            if let Ok(mut lru) = cache::global().lock() {
+                lru.put(url.to_string(), cache_entry.clone());
+            }
+
+            // Mark circuit breaker success
+            if let Ok(mut br) = breaker::global().lock() {
+                br.mark_success(&host);
+            }
+
+            mark_last_ok();
+            // Trigger prefetch for successful fallback 200 response
+            let et_local: Option<String> = response_etag.clone();
+            if let Some(ma) = cache_control_max_age(&fresh_resp_headers) {
+                if ma >= 60 {
+                    crate::admin_debug::prefetch::enqueue_prefetch(fresh_resp_url.as_str(), et_local);
+                }
+            }
+            return Ok(cache_entry);
+        }
+    }
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let code = resp.status().as_u16();
+        if (400..500).contains(&code) {
+            inc_upstream_4xx();
+            set_last_error_with_host(ErrorKind::Upstream4xx, &host, format!("upstream {}", status));
+        }
+        if (500..600).contains(&code) {
+            inc_upstream_5xx();
+            set_last_error_with_host(ErrorKind::Upstream5xx, &host, format!("upstream {}", status));
+        }
+        if (500..600).contains(&code) {
+            if let Ok(mut br) = breaker::global().lock() {
+                br.mark_failure(&host);
+            }
+        }
+        anyhow::bail!("upstream status {}", status);
+    }
+
+    // Extract all data before consuming response
+    let response_etag = resp.headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let response_content_type = resp.headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let resp_url = resp.url().clone();
+    let resp_headers = resp.headers().clone();
+
+    // Check content length
+    if let Some(cl) = resp.content_length() {
+        if cl as usize > size_limit {
+            inc_exceed_size();
+            set_last_error_with_host(ErrorKind::SizeExceed, &host, "cl exceed");
+            anyhow::bail!("exceed size limit: {} bytes", size_limit);
+        }
+    }
+
+    let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
+    let mut stream = resp.bytes_stream();
+    use futures_util::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if body.len() + chunk.len() > size_limit {
+            inc_exceed_size();
+            set_last_error_with_host(ErrorKind::SizeExceed, &host, "stream exceed");
+            anyhow::bail!("exceed size limit: {} bytes", size_limit);
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    // Record latency and mark success
+    let dt = t0.elapsed().as_millis() as u64;
+    record_latency_ms(dt);
+
+    // Create cache entry
+    let cache_entry = crate::admin_debug::cache::CacheEntry {
+        etag: response_etag.clone(),
+        content_type: response_content_type,
+        body: body.to_vec(),
+        timestamp: std::time::Instant::now(),
+    };
+
+    // Store in cache
+    if let Ok(mut lru) = cache::global().lock() {
+        lru.put(url.to_string(), cache_entry.clone());
+    }
+
+    // Mark circuit breaker success
+    if let Ok(mut br) = breaker::global().lock() {
+        br.mark_success(&host);
+    }
+
+    mark_last_ok();
+    // Trigger prefetch for successful 200 response
+    let et_local: Option<String> = response_etag.clone();
+    if let Some(ma) = cache_control_max_age(&resp_headers) {
+        if ma >= 60 {
+            crate::admin_debug::prefetch::enqueue_prefetch(resp_url.as_str(), et_local);
+        }
+    }
+    Ok(cache_entry)
 }
 
 pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
@@ -1071,6 +1413,30 @@ mod tests {
             // We can't directly check the semaphore capacity, but it should be functioning
             let available = sem_guard.available_permits();
             assert!(available <= new_conc, "Available permits should not exceed new concurrency limit");
+        }
+    }
+}
+
+/// 解析 Cache-Control: max-age
+#[cfg(feature = "subs_http")]
+pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
+    use reqwest::header::CACHE_CONTROL;
+    let s = h.get(CACHE_CONTROL)?.to_str().ok()?;
+    for d in s.split(',') {
+        let d = d.trim();
+        if let Some(v) = d.strip_prefix("max-age=") {
+            if let Ok(n) = v.parse::<u64>() { return Some(n); }
+        }
+    }
+    None
+}
+
+/// 在主路径成功后触发预取（200/304 且 max-age>=60）
+#[cfg(feature = "subs_http")]
+pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: &Option<String>) {
+    if let Some(ma) = cache_control_max_age(resp.headers()) {
+        if ma >= 60 {
+            crate::admin_debug::prefetch::enqueue_prefetch(resp.url().as_str(), response_etag.clone());
         }
     }
 }

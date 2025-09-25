@@ -1,16 +1,30 @@
-#![cfg(feature = "bench")]
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
 
+#[cfg(not(feature = "bench"))]
+fn main() {
+    eprintln!("sb-bench: built without `--features bench` — stub running.");
+    eprintln!("Set SB_BENCH=1 and enable `bench` feature to run benchmarks.");
+}
+
+#[cfg(feature = "bench")]
 use std::net::SocketAddr;
+#[cfg(feature = "bench")]
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "bench")]
 use hdrhistogram::Histogram;
+#[cfg(feature = "bench")]
 use serde_json::json;
+#[cfg(feature = "bench")]
 use tokio::time::timeout;
+#[cfg(feature = "bench")]
 use trust_dns_proto::op::{Message, MessageType, OpCode, Query};
+#[cfg(feature = "bench")]
 use trust_dns_proto::rr::{Name, RecordType};
+#[cfg(feature = "bench")]
 use trust_dns_proto::serialize::binary::{BinEncodable, BinEncoder};
 
+#[cfg(feature = "bench")]
 #[tokio::main]
 async fn main() {
     if std::env::var("SB_BENCH").ok().as_deref() != Some("1") {
@@ -44,6 +58,7 @@ async fn main() {
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
 }
 
+#[cfg(feature = "bench")]
 async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
     let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_TCP address");
     let mut hist = histogram();
@@ -92,6 +107,7 @@ async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
     json
 }
 
+#[cfg(feature = "bench")]
 async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
     let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_UDP address");
     let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
@@ -153,6 +169,7 @@ async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
     json
 }
 
+#[cfg(feature = "bench")]
 async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
     let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_DNS address");
     let name = Name::from_ascii(qname).expect("invalid SB_BENCH_DNS_NAME");
@@ -217,16 +234,19 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
     json
 }
 
+#[cfg(feature = "bench")]
 fn histogram() -> Histogram<u64> {
     Histogram::new_with_bounds(1, 60_000, 3).expect("failed to create histogram")
 }
 
+#[cfg(feature = "bench")]
 fn record_elapsed(hist: &mut Histogram<u64>, started: Instant) {
     let elapsed = started.elapsed();
     let value = elapsed.as_millis().max(1) as u64;
     let _ = hist.record(value);
 }
 
+#[cfg(feature = "bench")]
 fn histogram_json(hist: &Histogram<u64>) -> serde_json::Value {
     json!({
         "p50": hist.value_at_quantile(0.50),

@@ -1,2 +1,6 @@
+# ./rust-toolchain.toml
 [toolchain]
-channel = "stable"
+channel = "1.80.0"
+components = ["rustfmt", "clippy"]
+# 如需常用目标，可按需补充（可选）
+# targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-apple-darwin"]

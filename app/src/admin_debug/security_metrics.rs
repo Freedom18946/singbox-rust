@@ -72,6 +72,8 @@ static PREFETCH_DROP: AtomicU64 = AtomicU64::new(0);
 static PREFETCH_DONE: AtomicU64 = AtomicU64::new(0);
 static PREFETCH_FAIL: AtomicU64 = AtomicU64::new(0);
 static PREFETCH_RETRY: AtomicU64 = AtomicU64::new(0);
+static PREFETCH_QUEUE_DEPTH: AtomicU64 = AtomicU64::new(0);
+static PREFETCH_QUEUE_HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
 
 static PREFETCH_RUN_COUNTS: OnceCell<Mutex<Vec<u64>>> = OnceCell::new();
 static PREFETCH_RUN_BUCKETS: [u32; 7] = [50, 100, 200, 500, 1000, 2000, u32::MAX]; // milliseconds
@@ -149,6 +151,34 @@ pub fn record_prefetch_run_ms(ms: u64) {
             }
         }
     }
+}
+
+pub fn set_prefetch_queue_depth(depth: u64) {
+    PREFETCH_QUEUE_DEPTH.store(depth, Ordering::Relaxed);
+    #[cfg(feature = "admin_debug")]
+    crate::admin_debug::endpoints::metrics::update_prefetch_depth(depth as i64);
+}
+
+pub fn set_prefetch_queue_high_watermark(watermark: u64) {
+    PREFETCH_QUEUE_HIGH_WATERMARK.store(watermark, Ordering::Relaxed);
+}
+
+pub fn get_prefetch_queue_high_watermark() -> u64 {
+    PREFETCH_QUEUE_HIGH_WATERMARK.load(Ordering::Relaxed)
+}
+
+pub fn get_prefetch_queue_depth() -> u64 {
+    PREFETCH_QUEUE_DEPTH.load(Ordering::Relaxed)
+}
+
+pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) {
+    (
+        PREFETCH_ENQUEUE.load(Ordering::Relaxed),
+        PREFETCH_DROP.load(Ordering::Relaxed),
+        PREFETCH_DONE.load(Ordering::Relaxed),
+        PREFETCH_FAIL.load(Ordering::Relaxed),
+        PREFETCH_RETRY.load(Ordering::Relaxed)
+    )
 }
 
 pub fn inc_dns_cache_hit() {
@@ -326,6 +356,7 @@ pub struct SecuritySnapshot {
     pub prefetch_done: u64,
     pub prefetch_fail: u64,
     pub prefetch_retry: u64,
+    pub prefetch_queue_depth: u64,
     pub prefetch_run_buckets: Vec<(f64, u64)>,
 }
 
@@ -636,6 +667,7 @@ pub fn snapshot() -> SecuritySnapshot {
         prefetch_done: PREFETCH_DONE.load(Ordering::Relaxed),
         prefetch_fail: PREFETCH_FAIL.load(Ordering::Relaxed),
         prefetch_retry: PREFETCH_RETRY.load(Ordering::Relaxed),
+        prefetch_queue_depth: PREFETCH_QUEUE_DEPTH.load(Ordering::Relaxed),
         prefetch_run_buckets: PREFETCH_RUN_COUNTS.get()
             .and_then(|m| m.lock().ok())
             .map(|c| PREFETCH_RUN_BUCKETS.iter().zip(c.iter()).map(|(b,v)| ((*b as f64)/1000.0, *v)).collect())

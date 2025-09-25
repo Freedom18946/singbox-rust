@@ -1,12 +1,15 @@
 use anyhow::Result;
 use clap::Parser;
 use sb_config::validator::v2::to_ir_v1;
-use sb_core::adapter::bridge::build_bridge;
+// Removed unused bridge import
 use sb_core::admin::http::spawn_admin;
 use sb_core::runtime::{supervisor::Supervisor, Runtime};
 use serde_json::json;
 use std::{fs, sync::Arc, thread, time::Duration};
 use tokio::signal;
+
+#[cfg(feature = "admin_debug")]
+use app;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
@@ -37,6 +40,9 @@ struct Args {
     /// config path for SIGHUP reload (optional)
     #[arg(long = "reload-path")]
     reload_path: Option<String>,
+    /// admin implementation: core|debug (default: core). Also can be set via SB_ADMIN_IMPL env var.
+    #[arg(long = "admin-impl", default_value = "core")]
+    admin_impl: String,
 }
 
 #[tokio::main]
@@ -76,21 +82,51 @@ async fn main() -> Result<()> {
         .admin_listen
         .or_else(|| std::env::var("ADMIN_LISTEN").ok());
     if let Some(addr) = admin_addr {
-        // Admin HTTP 仅依赖 supervisor 与运行时句柄
-        let token = args
-            .admin_token
-            .clone()
-            .or_else(|| std::env::var("ADMIN_TOKEN").ok());
-        let supervisor_for_admin = Some(supervisor.clone());
-        let handle = tokio::runtime::Handle::current();
-        let _ = spawn_admin(
-            &addr,
-            /*engine:*/ Runtime::dummy_engine(),
-            /*bridge:*/ Runtime::dummy_bridge(),
-            token,
-            supervisor_for_admin,
-            Some(handle),
-        );
+        let admin_impl = std::env::var("SB_ADMIN_IMPL").unwrap_or(args.admin_impl.clone());
+
+        match admin_impl.as_str() {
+            "debug" => {
+                #[cfg(feature = "admin_debug")]
+                {
+                    let socket_addr: std::net::SocketAddr = addr.parse()
+                        .map_err(|e| anyhow::anyhow!("Invalid admin listen address: {}", e))?;
+
+                    let tls_conf = app::admin_debug::http::TlsConf::from_env();
+                    let auth_conf = app::admin_debug::http::AuthConf::from_env();
+
+                    let tls_opt = if tls_conf.enabled { Some(tls_conf) } else { None };
+
+                    app::admin_debug::http::spawn(socket_addr, tls_opt, auth_conf)
+                        .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {}", e))?;
+                    tracing::info!(addr = %socket_addr, impl = "debug", "Started admin debug server");
+                }
+                #[cfg(not(feature = "admin_debug"))]
+                {
+                    return Err(anyhow::anyhow!("admin_debug feature not enabled, cannot use --admin-impl=debug"));
+                }
+            }
+            "core" => {
+                // Admin HTTP 仅依赖 supervisor 与运行时句柄
+                let token = args
+                    .admin_token
+                    .clone()
+                    .or_else(|| std::env::var("ADMIN_TOKEN").ok());
+                let supervisor_for_admin = Some(supervisor.clone());
+                let handle = tokio::runtime::Handle::current();
+                let _ = spawn_admin(
+                    &addr,
+                    /*engine:*/ Runtime::dummy_engine(),
+                    /*bridge:*/ Runtime::dummy_bridge(),
+                    token,
+                    supervisor_for_admin,
+                    Some(handle),
+                );
+                tracing::info!(addr = %addr, impl = "core", "Started core admin server");
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Invalid --admin-impl value: '{}'. Must be 'core' or 'debug'", admin_impl));
+            }
+        }
     }
 
     // 4) 启动反馈（锁死字段集；供 GUI/脚本感知状态）
@@ -110,14 +146,14 @@ async fn main() -> Result<()> {
     }
 
     // 5) 信号处理
-    let supervisor_for_signals = supervisor.clone();
+    let supervisor_handle = supervisor.handle();
     let grace_duration = Duration::from_millis(args.grace);
     let reload_path = args.reload_path.clone();
 
     tokio::select! {
         // Handle SIGTERM/SIGINT for graceful shutdown
         _ = signal::ctrl_c() => {
-            handle_shutdown_signal(supervisor_for_signals, grace_duration).await?;
+            handle_shutdown_signal(supervisor_handle.clone(), grace_duration).await?;
         }
         // Handle SIGHUP for reload
         _ = handle_sighup(supervisor.clone(), reload_path) => {
@@ -137,7 +173,7 @@ async fn main() -> Result<()> {
             }
             Ok::<(), anyhow::Error>(())
         } => {
-            handle_shutdown_signal(supervisor_for_signals, grace_duration).await?;
+            handle_shutdown_signal(supervisor_handle, grace_duration).await?;
         }
     }
 
@@ -146,10 +182,10 @@ async fn main() -> Result<()> {
 
 /// Handle shutdown signals (SIGTERM/SIGINT)
 async fn handle_shutdown_signal(
-    supervisor: Arc<Supervisor>,
+    supervisor_handle: sb_core::runtime::supervisor::SupervisorHandle,
     grace_duration: Duration,
 ) -> Result<()> {
-    supervisor.shutdown_graceful(grace_duration).await?;
+    supervisor_handle.shutdown_graceful(grace_duration).await?;
     Ok(())
 }
 

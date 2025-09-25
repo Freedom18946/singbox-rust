@@ -39,6 +39,28 @@ bash scripts/run-examples.sh examples/configs/full_stack.json
 ### 🧪 测试文档
 - [tests/README.md](tests/README.md) - 测试指南和目录结构
 
+### Admin 实现选择
+运行期可通过 CLI 或环境变量在 **核心实现** 与 **Debug 实现**间切换：
+
+```bash
+# 核心 Admin（默认）
+run --admin-impl core
+
+# Debug Admin（包含 Dry-Run、审计、config_version 等扩展）
+SB_PREFETCH_ENABLE=1 \
+SB_PREFETCH_CAP=256 \
+SB_PREFETCH_WORKERS=2 \
+run --admin-impl debug --admin-listen 127.0.0.1:8088
+```
+
+### 预取（Prefetch）
+当 `/subs/...` 响应 `Cache-Control: max-age>=60` 时将触发异步预取，并在 `__metrics` 暴露：
+```
+sb_prefetch_queue_depth
+sb_prefetch_jobs_total{event=...}
+```
+可使用 `scripts/prefetch-heat.sh` 观察指标变化。
+
 ## Status
 
 Phase 2.4: inbounds (HTTP/SOCKS) wired, rule engine minimal, env-driven suffix rules.

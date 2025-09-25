@@ -1,0 +1,44 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH app 1  "app " 
+.SH NAME
+app \- Sing CLI
+.SH SYNOPSIS
+\fBapp\fR [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Sing CLI
+.SH OPTIONS
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+app\-check(1)
+Validate configuration without starting I/O
+.TP
+app\-prefetch(1)
+预取相关工具
+.TP
+app\-auth(1)
+鉴权相关工具（签名/重放）
+.TP
+app\-prom(1)
+Prometheus 指标工具（抓取/直方图）
+.TP
+app\-bench(1)
+简易 I/O 基准（HTTP）
+.TP
+app\-gen\-completions(1)
+生成 shell 补全脚本
+.TP
+app\-man(1)
+生成 man page
+.TP
+app\-run(1)
+Run main service (existing)
+.TP
+app\-route(1)
+Route explain and test
+.TP
+app\-help(1)
+Print this message or the help of the given subcommand(s)

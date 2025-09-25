@@ -6,6 +6,8 @@
 
 #[cfg(feature = "admin_debug")]
 mod admin_debug;
+#[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+mod analyze;
 #[cfg(feature = "router")]
 mod bootstrap;
 mod cli;
@@ -36,11 +38,25 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match args.command {
-        cli::Commands::Run(a) => cli::run::run(a).await,
         cli::Commands::Check(a) => {
             let code = cli::check::run(a)?;
             std::process::exit(code);
         }
+        cli::Commands::Prefetch(a) => cli::prefetch::main(a),
+        cli::Commands::Auth(a) => cli::auth::main(a),
+        cli::Commands::Prom(a) => cli::prom::main(a).await,
+        cli::Commands::Bench(a) => cli::bench::main(a).await,
+        cli::Commands::GenCompletions(a) => {
+            cli::completion::main(a)?;
+            Ok(())
+        }
+        cli::Commands::Man(a) => {
+            cli::man::main(a)?;
+            Ok(())
+        }
+        #[cfg(feature = "router")]
+        cli::Commands::Run(a) => cli::run::run(a).await,
+        #[cfg(feature = "router")]
         cli::Commands::Route(a) => {
             cli::route::run(a)?;
             Ok(())

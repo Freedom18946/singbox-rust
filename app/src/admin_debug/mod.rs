@@ -1,4 +1,5 @@
 pub mod http;
+pub mod http_server;
 pub mod http_util;
 pub mod endpoints;
 pub mod security;
@@ -10,6 +11,9 @@ pub mod reloadable;
 pub mod audit;
 pub mod prefetch;
 
+// Note: http_server contains the plain HTTP admin server functionality
+// while http/ contains redirect policies and other HTTP utilities
+
 /// Initialize admin debug server if enabled
 pub async fn init(addr: Option<&str>) {
     let bind_addr = match addr {
@@ -20,7 +24,7 @@ pub async fn init(addr: Option<&str>) {
     // Initialize SIGHUP signal handler for configuration reloading
     reloadable::init_signal_handler();
 
-    if let Err(e) = http::serve_plain(&bind_addr).await {
+    if let Err(e) = http_server::serve_plain(&bind_addr).await {
         tracing::error!(error = %e, "failed to start admin debug server");
     }
 }
