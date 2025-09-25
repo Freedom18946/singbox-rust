@@ -27,6 +27,11 @@ pub fn main(a: ManArgs) -> Result<()> {
     } else {
         let mut buf = Vec::new();
         man.render(&mut buf)?;
+        // 在 stdout 模式下，在顶部插入程序名/版本/日期摘要
+        let name = env!("CARGO_PKG_NAME");
+        let ver = env!("CARGO_PKG_VERSION");
+        let date = chrono::Local::now().format("%Y-%m-%d");
+        println!(".\\\" {} {} {}", name, ver, date); // 摘要行
         std::io::stdout().write_all(&buf)?;
     }
     Ok(())

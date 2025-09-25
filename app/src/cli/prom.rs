@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(not(test), deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::undocumented_unsafe_blocks
+))]
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use regex::Regex;
 use anyhow::{Result, Context};
@@ -83,7 +91,8 @@ pub(crate) fn labels_match(all: &BTreeMap<String,String>, sel: &BTreeMap<String,
 
 async fn scrape(url: String, filter: Option<String>, select: Option<String>, labels: Vec<String>, jsonl: bool, _json: bool) -> Result<()> {
     let txt = http_get_text(&url).await?;
-    let re = Regex::new(r#"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+]?\d+(\.\d+)?|NaN|\+?Inf)$"#).unwrap();
+    let re = Regex::new(r#"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+]?\d+(\.\d+)?|NaN|\+?Inf)$"#)
+        .context("invalid regex pattern for metrics parsing")?;
     let mut out: Vec<Sample> = Vec::new();
     let filter_re = filter.and_then(|f| Regex::new(&f).ok());
     let sel: Option<Vec<String>> = select.map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
@@ -103,7 +112,11 @@ async fn scrape(url: String, filter: Option<String>, select: Option<String>, lab
             let lbl = parse_labels_text(label_str);
             if !label_sel.is_empty() && !labels_match(&lbl, &label_sel) { continue; }
             out.push(Sample{ name: name.to_string(), labels: lbl, value });
-            if jsonl { println!("{}", serde_json::to_string(out.last().unwrap())?); }
+            if jsonl {
+                if let Some(last) = out.last() {
+                    println!("{}", serde_json::to_string(last)?);
+                }
+            }
         }
     }
     if !jsonl {
@@ -150,7 +163,7 @@ async fn hist(metrics: Vec<String>, url: String, labels: Vec<String>, group_by: 
     for line in txt.lines() {
         if line.starts_with('#') { continue; }
         for m in &metrics {
-            let (re_b, re_s, re_c) = rx.get(m).unwrap();
+            let Some((re_b, re_s, re_c)) = rx.get(m) else { continue; };
             if let Some(cap) = re_b.captures(line) {
                 let lbl = parse_labels_text(cap.get(1).map(|m| m.as_str()).unwrap_or(""));
                 if !label_sel.is_empty() && !labels_match(&lbl, &label_sel) { continue; }

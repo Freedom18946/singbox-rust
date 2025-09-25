@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 use crate::inbound::socks5::{encode_udp_request, greet_noauth, udp_associate};
 use crate::outbound::endpoint::{ProxyEndpoint, ProxyKind};
 use crate::socks5::decode_udp_reply;

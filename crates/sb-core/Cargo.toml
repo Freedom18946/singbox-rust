@@ -51,25 +51,55 @@ webpki-roots = "0.26"  # 新增：用于 TLS root certs
 # 原有 dev-deps，如果有
 
 [features]
-default = []  # 默认 feature
-scaffold = []  # 满足 app 依赖
-# 新增：所有 unexpected cfg features（空实现，破警告；可后续添加 deps 如 out_ss = ["some-crate"]）
-error-v2 = []
-out_trojan = []
-out_ss = []
-out_shadowtls = []
-out_naive = []
-out_vless = []
-out_vmess = []
-out_tuic = []
-out_hysteria2 = []
-out_wireguard = []
-out_ssh = []
-out_quic = []
-selector_p3 = []
-dns_doh = []
-dns_dot = []
-dns_http = []
-dns_udp = []
-dns_cache = []
-tls_rustls = []  # 匹配代码中的 tls_rustls（或改代码为 tls-rustls）
+# 基线：不默认开启任何可选功能，便于上层精确组合
+default = []
+
+# 历史/代码中出现过的功能位（按字母序归并；全部先落空数组，行为不变）
+adapter            = []
+analyze_json       = []
+bench              = []
+cache_stats        = []
+cache_stats_hot    = []
+cache_stats_wire   = []
+chaos              = []
+dns_cache          = []
+dns_doh            = []
+dns_dot            = []
+dns_http           = []
+dns_udp            = []
+dsl_analyze        = []
+dsl_derive         = []
+dsl_plus           = []
+error-v2           = []
+explain            = []
+fuzzing            = []
+handshake_alpha    = []
+http_exporter      = []
+labels             = []
+obs                = []
+out_hysteria2      = []
+out_naive          = []
+out_quic           = []
+out_shadowtls      = []
+out_ssh            = []
+out_ss             = []
+out_trojan         = []
+out_tuic           = []
+out_vless          = []
+out_vmess          = []
+out_wireguard      = []
+router             = []
+rules_capture      = []
+sbcore_analyze_json= []
+sbcore_rules_tool  = []
+scaffold           = []  # 满足 app 依赖
+schema-v2          = []
+selector_p3        = []
+socks              = []
+subs_clash         = []
+subs_http          = []
+subs_singbox       = []
+tls_rustls         = []  # 匹配代码中的 tls_rustls（或改代码为 tls-rustls）
+
+# 你也可以在后续提交中，将这些特性与依赖绑定，例如：
+# subs_http = ["sb-subscribe?/http"]  # 示例：当 sb-subscribe 提供 http 子特性时

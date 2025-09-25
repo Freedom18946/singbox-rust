@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 //! UDP proxy glue: maintain per-client UDP associations for SOCKS5 relay.
 //! 这是"最小骨架"，只提供你补丁会调用的两个函数，默认 behind env。
 use std::{

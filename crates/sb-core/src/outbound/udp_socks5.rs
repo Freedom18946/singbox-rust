@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 use crate::inbound::socks5::{decode_udp_reply, encode_udp_request, greet_noauth, udp_associate};
 use crate::net::datagram::UdpTargetAddr;
 use crate::net::ratelimit::maybe_drop_udp;

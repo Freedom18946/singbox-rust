@@ -18,6 +18,18 @@ subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscri
 subs_clash  = []
 subs_singbox= []
 
+## 新增组合预设（示例）
+cli_min = []                         # 仅 CLI，不拉业务依赖
+router_full = ["router", "sb-core/router"]         # 打开路由相关
+observe_full = ["observe", "sb-core/http_exporter"]  # 打开 metrics exporter
+full    = [
+    "router_full",
+    "observe_full",
+    "admin_debug",
+    "subs_http",
+    # 其它你需要的聚合开关...
+]
+
 ## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
 [[bin]]
 name = "run"

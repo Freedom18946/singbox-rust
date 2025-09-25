@@ -40,6 +40,7 @@ async fn send_direct(payload: &[u8], dst: &SocketAddr) -> anyhow::Result<usize> 
     Ok(n)
 }
 
+#[cfg(feature = "scaffold")]
 async fn send_socks5_via_upstream(
     payload: &[u8],
     dst: &SocketAddr,
@@ -53,6 +54,16 @@ async fn send_socks5_via_upstream(
         metrics::counter!("outbound_connect_total", "kind"=>"udp", "mode"=>"socks5", "result"=>"ok").increment(1);
     }
     Ok(n)
+}
+
+#[cfg(not(feature = "scaffold"))]
+async fn send_socks5_via_upstream(
+    payload: &[u8],
+    dst: &SocketAddr,
+    _upstream: SocketAddr,
+) -> anyhow::Result<usize> {
+    // Fallback to direct when scaffold feature is not enabled
+    send_direct(payload, dst).await
 }
 
 /// Public: choose a backend according to weights and send one datagram.

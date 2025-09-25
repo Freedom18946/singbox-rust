@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 use crate::outbound::socks5_udp::UpSocksSession;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};

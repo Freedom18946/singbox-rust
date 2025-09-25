@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(not(test), deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::undocumented_unsafe_blocks
+))]
 use clap::{Args as ClapArgs, ValueEnum, CommandFactory};
 use clap_complete::{generate, shells};
 use std::io;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum Shell {
@@ -29,8 +37,9 @@ pub struct CompletionArgs {
 pub fn main(a: CompletionArgs) -> Result<()> {
     let mut cmd = crate::cli::Args::command();
     let bin = std::env::var("SB_CLI_BIN").unwrap_or_else(|_| cmd.get_name().to_string());
-    if let Some(dir) = a.dir {
-        std::fs::create_dir_all(&dir).ok();
+    if let Some(ref dir) = a.dir {
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("create completion output dir {:?}", dir))?;
         let path = |shell_name: &str| dir.join(format!("{}_{}.completion", bin, shell_name));
         macro_rules! write_file {
             ($sh:expr, $name:expr) => {{
@@ -64,5 +73,18 @@ pub fn main(a: CompletionArgs) -> Result<()> {
             Shell::Elvish => generate(shells::Elvish, &mut cmd, &bin, &mut io::stdout()),
         }
     }
+    // 追加安装提示
+    print_install_hints(&a);
     Ok(())
+}
+
+fn print_install_hints(a: &CompletionArgs) {
+    use std::env;
+    let exe = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "app".into());
+    eprintln!("# install hints (macOS/Linux)");
+    eprintln!("# Bash   : ~/.bashrc    -> source <(./{} gen-completions --shell bash)", exe);
+    eprintln!("# Zsh    : ~/.zshrc     -> source <(./{} gen-completions --shell zsh)", exe);
+    eprintln!("# Fish   : ~/.config/fish/completions/{}.fish  (mkdir -p 其目录后拷贝生成文件)", exe);
+    eprintln!("# PowerSh: $PROFILE     -> 取生成的 ps1 并 dot-source");
+    eprintln!("# Elvish : ~/.elvish/lib/completions/{}.elv (拷贝后 use completions/{})", exe, exe);
 }

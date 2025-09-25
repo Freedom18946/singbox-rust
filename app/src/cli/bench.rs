@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(not(test), deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::undocumented_unsafe_blocks
+))]
 use clap::{Args as ClapArgs, Subcommand};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tokio::time::{Instant, Duration};
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -115,10 +123,14 @@ pub(crate) fn compute_hist(lat_ms: &[u64], buckets: &[f64]) -> Hist {
     Hist { buckets: buckets.to_vec(), counts, cdf }
 }
 
-fn load_body(arg: &str) -> String {
+/// 从 `--body` 参数加载正文；支持 `@file`，失败将带上下文返回错误
+fn load_body(arg: &str) -> Result<String> {
     if let Some(path) = arg.strip_prefix('@') {
-        std::fs::read_to_string(path).unwrap_or_default()
-    } else { arg.to_string() }
+        Ok(std::fs::read_to_string(path)
+            .with_context(|| format!("read body from file {:?}", path))?)
+    } else {
+        Ok(arg.to_string())
+    }
 }
 
 #[cfg(feature = "reqwest")]
@@ -138,7 +150,8 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
     let lat = Arc::new(Mutex::new(Vec::<u64>::with_capacity(requests as usize)));
     let mut joins = Vec::with_capacity(concurrency);
     let method = Method::from_bytes(method.as_bytes()).unwrap_or(Method::GET);
-    let body_text = body.map(|b| load_body(&b));
+    // 将 Option<Result<String>> 转换为 Result<Option<String>>
+    let body_text = body.map(|b| load_body(&b)).transpose()?;
     for _ in 0..concurrency {
         let client = client.clone();
         let stats = stats.clone();
@@ -160,7 +173,10 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
                 match res {
                     Ok(r) => {
                         let sc = r.status().as_u16();
-                        let bytes = r.bytes().await.map(|b| b.len() as u64).unwrap_or(0);
+                        let bytes = match r.bytes().await {
+                            Ok(b) => b.len() as u64,
+                            Err(_) => 0,
+                        };
                         let mut g = stats.lock();
                         if (200..300).contains(&sc) { g.ok_2xx += 1; } else { g.other += 1; }
                         g.bytes += bytes;
@@ -228,7 +244,8 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
     }
     if let Some(path) = save_path {
         let data = serde_json::to_string_pretty(&out)?;
-        let _ = fs::write(path, data);
+        fs::write(&path, data)
+          .with_context(|| format!("write histogram json to {:?}", path))?;
     }
     Ok(())
 }

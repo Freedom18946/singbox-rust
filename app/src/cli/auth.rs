@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg_attr(not(test), deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::undocumented_unsafe_blocks
+))]
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use anyhow::{Result, Context};
 use std::time::{Duration, Instant};
@@ -228,7 +236,7 @@ async fn replay(url: String, key_id: String, secret: String,
                     let i = counter.fetch_add(1, Ordering::Relaxed);
                     if i >= times { break; }
                     // 限速：取令牌
-                    let _p = sem.acquire().await.unwrap();
+                    let _p = sem.acquire().await.map_err(|e| anyhow::anyhow!("semaphore acquire failed: {}", e))?;
                     let auth = format!("SB-HMAC key_id=\"{}\", ts={}, nonce=\"{}\"", key_id, ts, nonce_cloned);
                     let mut req = client.put(&url).header("Authorization", auth);
                     for h in &hdrs_vec {
@@ -237,7 +245,8 @@ async fn replay(url: String, key_id: String, secret: String,
                     // 签名头（使用 canonical 字符串包括可选的 body hash 头）
                     let header_strs: Vec<String> = hdrs_vec.iter().cloned().collect();
                     let (canon_str, _) = build_canonical(ts, &nonce_cloned, &header_strs);
-                    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+                    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+                        .context("invalid HMAC key length")?;
                     mac.update(canon_str.as_bytes());
                     let sig_b64 = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
                     req = req.header("X-SB-Signature", sig_b64);
@@ -254,7 +263,10 @@ async fn replay(url: String, key_id: String, secret: String,
                         Ok(r) => {
                             let sc = r.status().as_u16();
                             let bytes_len = if !status_only {
-                                r.bytes().await.map(|b| b.len() as u64).unwrap_or(0)
+                                match r.bytes().await {
+                                    Ok(b) => b.len() as u64,
+                                    Err(_) => 0,
+                                }
                             } else { 0 };
                             let mut g = stats.lock();
                             *g.per_sec.entry(sec).or_default() += 1;
