@@ -8,9 +8,8 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, data: &[u8]) -> io::Result<()> {
     let path = path.as_ref();
     let dir = path.parent().ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no parent dir"))?;
     let mut tmp: PathBuf = dir.to_path_buf();
-    tmp.push(format!('.'.to_string() + &format!(".{}.tmp", std::process::id())));
     // Better unique temp name
-    tmp.push(format!("sbtmp-{}-{}.tmp", std::process::id(), std::time::SystemTime::now().elapsed().unwrap_or_default().as_nanos()));
+    tmp.push(format!(".sbtmp-{}-{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()));
 
     // Create and write
     let mut f = OpenOptions::new().create(true).write(true).truncate(true).open(&tmp)?;

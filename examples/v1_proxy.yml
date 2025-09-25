@@ -1,0 +1,27 @@
+schema_version: 1
+inbounds:
+  - type: http
+    tag: "http-in"
+    listen: "127.0.0.1"
+    listen_port: 8080
+  - type: socks
+    tag: "socks-in"
+    listen: "127.0.0.1"
+    listen_port: 1080
+outbounds:
+  - type: shadowsocks
+    tag: shadowsocks-out
+    server: "127.0.0.1"
+    server_port: 8888
+    method: "aes-128-gcm"
+    password: "test-password"
+  - type: direct
+    tag: direct
+route:
+  final: direct
+  rules:
+    - domain:
+        - "example.org"
+    - ip_cidr:
+        - "192.168.1.0/24"
+      outbound: shadowsocks-out

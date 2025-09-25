@@ -150,6 +150,7 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
     }
 
     Ok(Config {
+        schema_version: 2,
         inbounds: vec![], // 不从订阅生成入站
         outbounds,
         rules,
@@ -282,6 +283,7 @@ fn parse_singbox_json_value(val: JsonValue) -> Result<Config> {
     }
 
     Ok(Config {
+        schema_version: 2,
         inbounds: vec![],
         outbounds: outs,
         rules,

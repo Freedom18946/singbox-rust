@@ -16,6 +16,8 @@ fn main() {
         "version": env!("CARGO_PKG_VERSION"),
         "features": feats,
         "fingerprint": build_fingerprint(),
+        "license": "Apache-2.0",
+        "license_notice": "Licensed under the Apache License, Version 2.0. See LICENSES/THIRD-PARTY.md for third-party licenses.",
         "build_info": {
             "git_sha": bi.git_sha,
             "build_ts": bi.build_ts

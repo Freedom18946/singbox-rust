@@ -11,20 +11,25 @@ pub fn compat_1_12_4(cfg: Config) -> Config { cfg }
 /// - Injects `schema_version: 2`
 pub fn migrate_to_v2(raw: &Value) -> Value {
     let mut v = raw.clone();
-    let mut obj = match v {
+    let obj = match v {
         Value::Object(ref mut m) => m,
         _ => return v,
     };
     // schema_version
-    obj.entry("schema_version".into()).or_insert(Value::from(2));
+    obj.entry("schema_version").or_insert(Value::from(2));
 
     // Move rules/default into route
     if obj.get("route").is_none() {
-        obj.insert("route".into(), Value::Object(serde_json::Map::new()));
+        obj.insert("route".to_string(), Value::Object(serde_json::Map::new()));
     }
+
+    // Extract rules and default_outbound before getting mutable reference to route
+    let rules_to_move = obj.remove("rules");
+    let default_to_move = obj.remove("default_outbound");
+
     if let Some(route) = obj.get_mut("route").and_then(|x| x.as_object_mut()) {
-        if let Some(rules) = obj.remove("rules") { route.entry("rules".into()).or_insert(rules); }
-        if let Some(def) = obj.remove("default_outbound") { route.entry("default".into()).or_insert(def); }
+        if let Some(rules) = rules_to_move { route.entry("rules").or_insert(rules); }
+        if let Some(def) = default_to_move { route.entry("default").or_insert(def); }
     }
 
     // Normalize outbound type field values

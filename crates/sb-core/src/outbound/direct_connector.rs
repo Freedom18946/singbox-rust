@@ -70,7 +70,7 @@ impl OutboundConnector for DirectConnector {
         let _permit = tokio::time::timeout(Duration::from_millis(q_ms), sem.acquire())
             .await
             .map_err(|_| SbError::timeout("outbound_queue", q_ms))
-            .and_then(|r| r.map_err(|_| SbError::Canceled))?;
+            .and_then(|r| r.map_err(|_| SbError::Canceled { operation: "acquire_semaphore".to_string() }))?;
         let addr = self.resolve_endpoint(&ctx.dst).await?;
 
         let stream = timeout(self.connect_timeout, TcpStream::connect(addr))

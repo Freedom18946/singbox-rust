@@ -60,7 +60,7 @@ pub async fn main(a: BenchArgs) -> Result<()> {
     match a.cmd {
         #[cfg(feature = "reqwest")]
         BenchCmd::Io {
-            url, requests, concurrency, json, method, body, hdrs, h2, insecure, keepalive, timeout_ms, hist_buckets, save_path
+            url, requests, concurrency, json, method, body, hdrs, h2, insecure, keepalive, timeout_ms, hist_buckets, save_path, out_path
         } => bench_io(
             url, requests, concurrency, json, method, body, hdrs, h2, insecure, keepalive, timeout_ms, hist_buckets, save_path, out_path
         ).await,
@@ -294,7 +294,7 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
     let final_path = out_path.or(save_path);
     if let Some(path) = final_path {
         let data = serde_json::to_string_pretty(&to_fixed_schema(&out))?;
-        sb_core::util::fs_atomic::write_atomic(&path, data.as_bytes())
+        crate::util::write_atomic(&path, data.as_bytes())
           .with_context(|| format!("write histogram json atomically to {:?}", path))?;
     }
     Ok(())

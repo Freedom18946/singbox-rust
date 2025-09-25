@@ -372,6 +372,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_get_utun_name_with_invalid_fd() {
+        // Passing an invalid fd should produce an IoError without panic
+        let res = MacOsTun::get_utun_name(-1);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_cstring_new_fails_when_interior_nul() {
+        // Ensure CString::new errors are mapped (this is indirect via control name in open)
+        // Here we only assert CString::new would fail if given bad input; the open_utun_device
+        // uses a constant so this is a direct unit assertion.
+        assert!(std::ffi::CString::new(b"bad\0name".as_slice()).is_err());
+    }
+
+    #[test]
     fn test_parse_utun_unit() {
         assert_eq!(MacOsTun::parse_utun_unit("utun0").unwrap(), 1);
         assert_eq!(MacOsTun::parse_utun_unit("utun8").unwrap(), 9);

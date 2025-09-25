@@ -66,11 +66,21 @@ fn limits() -> Limits {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone, Debug)]
 struct ClientStat {
     concurrent: usize,
     tokens: f64,
     last_refill: Instant,
+}
+
+impl Default for ClientStat {
+    fn default() -> Self {
+        Self {
+            concurrent: 0,
+            tokens: 0.0,
+            last_refill: Instant::now(),
+        }
+    }
 }
 
 static PER_IP: Lazy<Mutex<HashMap<IpAddr, ClientStat>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -130,7 +140,7 @@ fn read_line(s: &mut TcpStream, total_read: &mut usize) -> std::io::Result<Strin
     let start = Instant::now();
     let mut buf = Vec::with_capacity(128);
     let mut b = [0u8; 1];
-    let mut last_cr = false;
+    let mut _last_cr = false;
 
     // First byte timeout
     s.set_read_timeout(Some(lim.first_byte_timeout))?;
@@ -146,7 +156,7 @@ fn read_line(s: &mut TcpStream, total_read: &mut usize) -> std::io::Result<Strin
             "header too large",
         ));
     }
-    last_cr = b[0] == b'\r';
+    _last_cr = b[0] == b'\r';
 
     // Remaining line within first_line_timeout
     let deadline = start + lim.first_line_timeout;
@@ -172,10 +182,10 @@ fn read_line(s: &mut TcpStream, total_read: &mut usize) -> std::io::Result<Strin
                 "header too large",
             ));
         }
-        if last_cr && b[0] == b'\n' {
+        if _last_cr && b[0] == b'\n' {
             break;
         }
-        last_cr = b[0] == b'\r';
+        _last_cr = b[0] == b'\r';
     }
     Ok(String::from_utf8_lossy(&buf).trim().to_string())
 }

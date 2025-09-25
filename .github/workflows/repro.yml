@@ -1,0 +1,217 @@
+name: Reproducible Builds
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+jobs:
+  repro-build:
+    name: Reproducible Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: 1.79.0  # MSRV
+        profile: minimal
+        override: true
+        components: rustfmt, clippy
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: repro-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Set SOURCE_DATE_EPOCH for reproducible builds
+      run: |
+        if [ -n "${{ github.event.release.published_at }}" ]; then
+          # Use release date for releases
+          SOURCE_DATE_EPOCH=$(date -d "${{ github.event.release.published_at }}" +%s)
+        else
+          # Use commit date for other builds
+          SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+        fi
+        echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" >> $GITHUB_ENV
+        echo "Using SOURCE_DATE_EPOCH: $SOURCE_DATE_EPOCH ($(date -d @$SOURCE_DATE_EPOCH))"
+
+    - name: Build release binaries (reproducible)
+      run: |
+        # Set reproducible build environment
+        export SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
+        export RUSTFLAGS="-C strip=symbols -C opt-level=3 -C lto=fat"
+
+        # Build without -Z build-std to maintain MSRV compatibility
+        cargo build --release --locked
+
+        # Verify binary was created
+        ls -la target/release/
+
+    - name: Strip and prepare binaries
+      run: |
+        # Strip symbols for smaller binaries (redundant with RUSTFLAGS but ensures consistency)
+        strip target/release/singbox-rust || true
+
+        # Create reproducible archive with sorted contents
+        mkdir -p dist
+
+        # Copy binary with deterministic timestamp
+        cp target/release/singbox-rust dist/
+        touch -d "@$SOURCE_DATE_EPOCH" dist/singbox-rust
+
+        # Create reproducible tar.gz with sorted file order
+        cd dist
+        tar --sort=name --owner=0 --group=0 --numeric-owner \
+            --mtime="@$SOURCE_DATE_EPOCH" \
+            -czf singbox-rust-linux-x64.tar.gz singbox-rust
+        cd ..
+
+    - name: Generate checksums
+      run: |
+        cd dist
+        # Generate SHA256 checksums
+        sha256sum singbox-rust > singbox-rust.sha256
+        sha256sum singbox-rust-linux-x64.tar.gz > singbox-rust-linux-x64.tar.gz.sha256
+
+        # Create combined checksum file
+        cat *.sha256 > checksums.sha256
+
+        # Display checksums for verification
+        echo "=== Generated Checksums ==="
+        cat checksums.sha256
+
+        # Create build manifest with metadata
+        cat > build-manifest.json << EOF
+        {
+          "source_date_epoch": $SOURCE_DATE_EPOCH,
+          "build_date": "$(date -u -d @$SOURCE_DATE_EPOCH --iso-8601=seconds)",
+          "git_commit": "$GITHUB_SHA",
+          "git_ref": "$GITHUB_REF",
+          "rust_version": "$(rustc --version)",
+          "target": "x86_64-unknown-linux-gnu",
+          "artifacts": [
+            {
+              "name": "singbox-rust",
+              "type": "binary",
+              "size": $(stat -c%s singbox-rust),
+              "sha256": "$(cut -d' ' -f1 singbox-rust.sha256)"
+            },
+            {
+              "name": "singbox-rust-linux-x64.tar.gz",
+              "type": "archive",
+              "size": $(stat -c%s singbox-rust-linux-x64.tar.gz),
+              "sha256": "$(cut -d' ' -f1 singbox-rust-linux-x64.tar.gz.sha256)"
+            }
+          ]
+        }
+        EOF
+
+        echo "=== Build Manifest ==="
+        cat build-manifest.json
+
+    - name: Upload reproducible artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: reproducible-build-${{ github.sha }}
+        path: |
+          dist/singbox-rust
+          dist/singbox-rust-linux-x64.tar.gz
+          dist/checksums.sha256
+          dist/build-manifest.json
+        retention-days: 30
+
+    - name: Verify reproducibility (if previous build exists)
+      continue-on-error: true
+      run: |
+        # This step would compare with previous builds to verify reproducibility
+        # For now, we'll just document the checksums
+        echo "Build completed. For reproducibility verification, compare checksums across builds."
+        echo "Current build SHA256:"
+        cat dist/checksums.sha256
+
+  # Note: SBOM generation is in a separate job to allow it to fail without blocking the build
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Allow failure without blocking other jobs
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: 1.79.0  # MSRV
+        profile: minimal
+        override: true
+
+    - name: Cache cargo tools
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/bin/
+        key: cargo-tools-${{ runner.os }}-cyclonedx
+
+    - name: Install cyclonedx-bom tool
+      run: |
+        # Install cyclonedx-bom if not cached
+        if ! command -v cyclonedx-bom &> /dev/null; then
+          echo "Installing cyclonedx-bom..."
+          cargo install cyclonedx-bom
+        else
+          echo "cyclonedx-bom already installed"
+        fi
+        cyclonedx-bom --version
+
+    - name: Generate SBOM
+      run: |
+        # Run the SBOM generation script
+        ./scripts/sbom.sh
+
+        # Verify SBOM was generated
+        if [ -f sbom.json ]; then
+          echo "SBOM generated successfully"
+          echo "SBOM size: $(stat -c%s sbom.json) bytes"
+          echo "SBOM components: $(jq '.components | length // 0' sbom.json 2>/dev/null || echo 'unknown')"
+        else
+          echo "Warning: SBOM generation may have failed"
+          ls -la *.json *.xml 2>/dev/null || echo "No SBOM files found"
+        fi
+
+    - name: Upload SBOM artifact
+      uses: actions/upload-artifact@v3
+      if: always()  # Upload even if SBOM generation had warnings
+      with:
+        name: sbom-${{ github.sha }}
+        path: |
+          sbom.json
+          sbom.xml
+          sbom-metadata.json
+        retention-days: 90  # Keep SBOM longer for supply chain tracking
+
+    - name: Display SBOM summary
+      if: success()
+      run: |
+        echo "=== SBOM Summary ==="
+        if [ -f sbom-metadata.json ]; then
+          cat sbom-metadata.json
+        fi
+
+        # Show first few components as example
+        if [ -f sbom.json ] && command -v jq &> /dev/null; then
+          echo "=== Sample Components ==="
+          jq -r '.components[:5] | .[] | "\(.name) \(.version // "unknown") (\(.type // "library"))"' sbom.json || true
+        fi

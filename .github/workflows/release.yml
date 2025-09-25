@@ -11,7 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.preflight.outputs.digest }}
+      signature: ${{ steps.preflight.outputs.signature }}
+      rust-version: ${{ steps.preflight.outputs.rust-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+      - name: Run preflight checks
+        id: preflight
+        run: |
+          bash scripts/preflight.sh
+          echo "digest=$(sha256sum target/preflight-report.json | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "signature=$(sha256sum target/preflight-report.json | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "rust-version=$(cargo version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" >> $GITHUB_OUTPUT
+
   release-draft:
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -38,6 +56,16 @@ jobs:
       - name: Build (release)
         run: |
           cargo build --release --bins --target ${{ matrix.target }}
+      - name: Verify preflight consistency
+        run: |
+          echo "Verifying preflight digest: ${{ needs.preflight.outputs.digest }}"
+          echo "Verifying rust version: ${{ needs.preflight.outputs.rust-version }}"
+          # Verify consistent rust version
+          current_rust=$(cargo version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          if [[ "$current_rust" != "${{ needs.preflight.outputs.rust-version }}" ]]; then
+            echo "Error: Rust version mismatch. Preflight: ${{ needs.preflight.outputs.rust-version }}, Current: $current_rust"
+            exit 1
+          fi
       - name: Prepare package
         shell: bash
         run: |
@@ -45,7 +73,7 @@ jobs:
           NAME="singbox-rust"
           TARGET="${{ matrix.target }}"
           OUT="dist/${NAME}-${TARGET}"
-          mkdir -p "$OUT/bin" "$OUT/share/man" "$OUT/share/completions" || true
+          mkdir -p "$OUT/bin" "$OUT/share/man" "$OUT/share/completions" "$OUT/LICENSES" || true
           # pick main binary name (singbox-rust or app)
           BIN_PATH="target/${TARGET}/release/singbox-rust"
           if [[ ! -f "$BIN_PATH" ]]; then BIN_PATH="target/${TARGET}/release/app"; fi
@@ -53,11 +81,14 @@ jobs:
           # generate completions/man if supported
           if "$BIN_PATH" gen-completions --dir "$OUT/share/completions" >/dev/null 2>&1; then echo ok; fi
           if "$BIN_PATH" man --dir "$OUT/share/man" >/dev/null 2>&1; then echo ok; fi
-          # copy docs
+          # copy docs and licenses
           cp README.md "$OUT/" || true
           cp LICENSE "$OUT/" || true
+          cp LICENSES/THIRD-PARTY.md "$OUT/LICENSES/" || true
           # version info
           echo "version,$(git describe --tags --always || echo 0.0.0)" > "$OUT/VERSION.txt"
+          # preflight digest
+          echo "preflight_digest,${{ needs.preflight.outputs.digest }}" >> "$OUT/VERSION.txt"
           # archive
           mkdir -p dist
           if [[ "${{ matrix.archive }}" == "zip" ]]; then

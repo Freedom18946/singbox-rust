@@ -1,0 +1,23 @@
+schema_version: 1
+dns:
+  servers:
+    - tag: "cloudflare"
+      address: "1.1.1.1"
+      address_resolver: "local"
+    - tag: "local"
+      address: "223.5.5.5"
+      detour: direct
+  rules:
+    - domain_suffix:
+        - "cn"
+      server: "local"
+  final: "cloudflare"
+inbounds:
+  - type: tun
+    tag: tun-in
+    interface_name: utun
+    inet4_address: 172.19.0.1/30
+    auto_route: true
+outbounds:
+  - type: direct
+    tag: direct

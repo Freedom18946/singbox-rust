@@ -35,6 +35,20 @@ CLI bench (HTTP/2) requires feature `reqwest`:
 cargo run -p app --features reqwest -- bench io --h2 --url https://example.com --requests 10 --concurrency 2 --json
 ```
 
+### Performance Baseline & Regression Detection
+
+Record and verify performance baselines:
+
+```bash
+# Record baseline (run once on known-good performance)
+scripts/bench-guard.sh --record
+
+# Check for regressions (CI/development use)
+scripts/bench-guard.sh --check
+```
+
+The guard script enforces ±8% tolerance for percentiles (p50/p90/p99) and ±5% for RPS/throughput.
+
 ## Lint Baseline
 
 - Workspace default denies warnings: `cargo clippy --workspace --all-targets -- -D warnings`

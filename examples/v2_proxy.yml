@@ -1,0 +1,25 @@
+inbounds:
+  - name: http-in
+    type: http
+    listen: "127.0.0.1:8080"
+  - name: socks-in
+    type: socks
+    listen: "127.0.0.1:1080"
+outbounds:
+  - name: shadowsocks-out
+    type: shadowsocks
+    server: "127.0.0.1"
+    port: 8888
+    method: "aes-128-gcm"
+    password: "test-password"
+  - name: direct
+    type: direct
+route:
+  final: direct
+  rules:
+    - when:
+        domain: "example.org"
+      to: shadowsocks-out
+    - when:
+        ip_cidr: "192.168.1.0/24"
+      to: shadowsocks-out

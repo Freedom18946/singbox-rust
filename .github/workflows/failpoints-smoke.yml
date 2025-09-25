@@ -1,0 +1,54 @@
+name: failpoints-smoke
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  failpoints-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Non-blocking job
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+
+      - name: Build with failpoints feature
+        run: |
+          cargo build --features failpoints
+          cargo build --lib --features failpoints -p sb-transport
+          cargo build --lib --features failpoints -p sb-core
+
+      - name: Run failpoints unit tests
+        run: |
+          cargo test --features failpoints --lib failpoint_dialer
+          cargo test --features failpoints failpoint_tests
+
+      - name: Run failpoints integration tests
+        env:
+          FAILPOINTS: "transport.dialer.connect_start=return(1%)"
+        run: |
+          cargo test --features failpoints --test failpoints_integration
+
+      - name: Verify failpoints can be disabled
+        run: |
+          cargo build --release
+          cargo test --release
+
+      - name: Failpoints smoke test summary
+        if: always()
+        run: |
+          echo "Failpoints feature smoke test completed"
+          echo "This job is allowed to fail during development"

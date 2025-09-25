@@ -38,6 +38,7 @@ pub fn merge(base: Config, sub: Config) -> Config {
     let outbounds = out_map.into_values().collect::<Vec<_>>();
 
     Config {
+        schema_version: base.schema_version.max(sub.schema_version), // 取较高版本
         inbounds: base.inbounds, // 本地掌控
         outbounds,
         rules: sub.rules, // 订阅覆盖
@@ -53,6 +54,7 @@ mod tests {
     #[test]
     fn merge_replace_rules_and_outbounds() {
         let base = Config {
+            schema_version: 1,
             inbounds: vec![super::super::Inbound::Http {
                 listen: "127.0.0.1:8080".into(),
             }],
@@ -76,6 +78,7 @@ mod tests {
         };
 
         let sub = Config {
+            schema_version: 1,
             inbounds: vec![], // 忽略
             outbounds: vec![
                 Outbound::Socks5 {

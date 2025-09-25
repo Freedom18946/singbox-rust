@@ -68,6 +68,8 @@ pub enum SbError {
     },
     /// Address related error
     Addr { message: String },
+    /// Operation was canceled
+    Canceled { operation: String },
     /// Poisoned synchronization primitive encountered
     Poison { message: String },
     /// Generic error wrapper with optional source
@@ -137,6 +139,7 @@ impl fmt::Display for SbError {
                 write!(f, "Capacity exceeded for {}: limit {}", what, limit)
             }
             SbError::Addr { message } => write!(f, "Address error: {}", message),
+            SbError::Canceled { operation } => write!(f, "Canceled: {}", operation),
             SbError::Poison { message } => write!(f, "Poison error: {}", message),
             SbError::Other { message, .. } => write!(f, "Other error: {}", message),
         }
@@ -169,6 +172,8 @@ impl SbError {
     pub fn dns(msg: impl Into<String>) -> Self { Self::Dns { message: msg.into() } }
     /// Create an address error
     pub fn addr(msg: impl Into<String>) -> Self { Self::Addr { message: msg.into() } }
+    /// Create a canceled error
+    pub fn canceled(operation: impl Into<String>) -> Self { Self::Canceled { operation: operation.into() } }
     /// Create a poison error
     pub fn poison(msg: impl Into<String>) -> Self { Self::Poison { message: msg.into() } }
     /// Create a generic other error with optional source
@@ -184,6 +189,7 @@ impl SbError {
             SbError::Timeout { .. } => "Timeout",
             SbError::Capacity { .. } => "Capacity",
             SbError::Addr { .. } => "Addr",
+            SbError::Canceled { .. } => "Canceled",
             SbError::Poison { .. } => "Poison",
             SbError::Other { .. } => "Other",
         }
@@ -330,6 +336,13 @@ impl From<SbError> for Issue {
                 code: "Addr".to_string(),
                 ptr: "".to_string(),
                 msg: message,
+                hint: None,
+            },
+            SbError::Canceled { operation } => Issue {
+                kind: "canceled".to_string(),
+                code: "Canceled".to_string(),
+                ptr: "".to_string(),
+                msg: format!("Operation canceled: {}", operation),
                 hint: None,
             },
             SbError::Poison { message } => Issue {

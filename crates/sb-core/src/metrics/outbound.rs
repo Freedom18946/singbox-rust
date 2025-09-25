@@ -21,6 +21,7 @@ pub enum OutboundErrorClass {
     Other,
 }
 
+#[allow(dead_code)] // preserved for JSON contract/future export
 fn label_kind(k: OutboundKind) -> &'static str {
     match k {
         OutboundKind::Direct => "direct",
@@ -50,6 +51,7 @@ fn label_kind(k: OutboundKind) -> &'static str {
     }
 }
 
+#[allow(dead_code)] // preserved for JSON contract/future export
 fn label_err(c: OutboundErrorClass) -> &'static str {
     match c {
         OutboundErrorClass::Timeout => "timeout",
@@ -416,17 +418,17 @@ pub fn record_aead_decrypt_duration(
 pub fn record_aead_encrypt_total(
     protocol: crate::metrics::labels::Proto,
     cipher: crate::metrics::labels::CipherType,
-    result: crate::metrics::labels::ResultTag,
+    _result: crate::metrics::labels::ResultTag,
 ) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_aead_encrypt_total", "protocol" => protocol.as_str(), "cipher" => cipher.as_str(), "result" => result.as_str()).increment(1);
+    counter!("outbound_aead_encrypt_total", "protocol" => protocol.as_str(), "cipher" => cipher.as_str(), "result" => _result.as_str()).increment(1);
 }
 
 pub fn record_aead_decrypt_total(
     protocol: crate::metrics::labels::Proto,
     cipher: crate::metrics::labels::CipherType,
-    result: crate::metrics::labels::ResultTag,
+    _result: crate::metrics::labels::ResultTag,
 ) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_aead_decrypt_total", "protocol" => protocol.as_str(), "cipher" => cipher.as_str(), "result" => result.as_str()).increment(1);
+    counter!("outbound_aead_decrypt_total", "protocol" => protocol.as_str(), "cipher" => cipher.as_str(), "result" => _result.as_str()).increment(1);
 }

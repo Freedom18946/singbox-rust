@@ -1,4 +1,6 @@
 // UDP metrics: provide a minimal API used by NAT and upstream code
+// Placeholder metrics for future prometheus export - parameters may appear unused when metrics feature disabled
+#![allow(clippy::unused_self, clippy::unused_io_amount)]
 #![cfg_attr(
     any(test),
     allow(dead_code, unused_imports, unused_variables, unused_must_use)
@@ -88,17 +90,17 @@ pub fn register_udp_nat_metrics() -> UdpNatMetrics {
 }
 
 // Lightweight metrics crate helpers (used by runtime code)
-pub fn set_nat_size(size: usize) {
+pub fn set_nat_size(_size: usize) {
     #[cfg(feature = "metrics")]
-    gauge!("udp_nat_size").set(size as f64);
+    gauge!("udp_nat_size").set(_size as f64);
 }
 
 /// Set NAT entry gauges for observability
-pub fn set_nat_entries(alive: usize, gc: usize) {
+pub fn set_nat_entries(_alive: usize, _gc: usize) {
     #[cfg(feature = "metrics")]
     {
-        gauge!("udp_nat_entries", "state" => "alive").set(alive as f64);
-        gauge!("udp_nat_entries", "state" => "gc").set(gc as f64);
+        gauge!("udp_nat_entries", "state" => "alive").set(_alive as f64);
+        gauge!("udp_nat_entries", "state" => "gc").set(_gc as f64);
     }
 }
 
@@ -108,10 +110,10 @@ pub enum EvictionReason {
     Replace,
 }
 
-pub fn record_nat_eviction(reason: EvictionReason) {
+pub fn record_nat_eviction(_reason: EvictionReason) {
     #[cfg(feature = "metrics")]
     {
-        let r = match reason {
+        let r = match _reason {
             EvictionReason::Ttl => "ttl",
             EvictionReason::Capacity => "capacity",
             EvictionReason::Replace => "replace",
@@ -148,17 +150,17 @@ pub fn record_upstream_failure(class: UdpErrorClass) {
     }
 }
 
-pub fn record_flow_bytes(dir: &str, n: usize) {
+pub fn record_flow_bytes(_dir: &str, _n: usize) {
     #[cfg(feature = "metrics")]
-    match dir {
-        "in" => counter!("udp_flow_bytes_in_total").increment(n as u64),
-        _ => counter!("udp_flow_bytes_out_total").increment(n as u64),
+    match _dir {
+        "in" => counter!("udp_flow_bytes_in_total").increment(_n as u64),
+        _ => counter!("udp_flow_bytes_out_total").increment(_n as u64),
     }
 }
 
-pub fn record_session_ttl(ttl_seconds: f64) {
+pub fn record_session_ttl(_ttl_seconds: f64) {
     #[cfg(feature = "metrics")]
-    histogram!("udp_nat_ttl_seconds").record(ttl_seconds);
+    histogram!("udp_nat_ttl_seconds").record(_ttl_seconds);
 }
 
 // Helper functions using registry_ext

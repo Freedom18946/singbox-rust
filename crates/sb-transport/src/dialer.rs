@@ -9,6 +9,15 @@
 
 use async_trait::async_trait;
 use thiserror::Error;
+use std::net::SocketAddr;
+use std::time::Duration;
+use tokio::net::{lookup_host, TcpStream};
+use tokio::time::{timeout, sleep};
+use tokio_util::sync::CancellationToken;
+use futures::future::{select_ok, FutureExt};
+use tracing::debug;
+use crate::retry::{RetryPolicy, retry_conditions};
+use crate::resource_pressure::{global_monitor, error_analysis};
 
 /// 拨号过程中可能出现的错误类型
 ///
@@ -132,24 +141,278 @@ pub struct TcpDialer;
 impl Dialer for TcpDialer {
     /// 建立 TCP 连接到指定的主机和端口
     ///
-    /// 该实现直接使用 `tokio::net::TcpStream::connect` 进行连接，
-    /// 支持以下特性：
-    /// - 自动 DNS 解析（支持域名和 IP 地址）
-    /// - 异步非阻塞连接
-    /// - 自动错误转换（将 IO 错误转换为 DialError::Io）
-    ///
-    /// # 网络行为
-    /// - 使用系统默认的 TCP 连接超时
-    /// - 遵循系统 DNS 配置进行域名解析
-    /// - 支持 IPv4 和 IPv6（取决于系统配置）
+    /// 该实现支持 Happy Eyeballs (RFC 8305) 算法：
+    /// - 同时尝试 IPv6 和 IPv4 连接
+    /// - 交错发起连接尝试，IPv6 略早于 IPv4
+    /// - 使用环境变量控制行为：
+    ///   - SB_HE_DISABLE=1: 禁用 Happy Eyeballs，回退到原始行为
+    ///   - SB_HE_DELAY_MS: 设置 IPv4 延迟启动时间（默认 50ms）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
-        // 使用 tokio 的异步 TCP 连接
-        // (host, port) 元组会自动处理 DNS 解析
-        let s = tokio::net::TcpStream::connect((host, port)).await?;
+        // 检查是否禁用 Happy Eyeballs
+        if std::env::var("SB_HE_DISABLE").map_or(false, |v| v == "1") {
+            debug!("Happy Eyeballs disabled, using traditional dial");
+            let s = TcpStream::connect((host, port)).await?;
+            return Ok(Box::new(s));
+        }
 
-        // 将具体的 TcpStream 装箱为通用的 IoStream
-        // 这允许调用者统一处理不同类型的连接
-        Ok(Box::new(s))
+        // 获取延迟配置
+        let delay_ms = std::env::var("SB_HE_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(50);
+        let ipv4_delay = Duration::from_millis(delay_ms);
+
+        debug!("Starting Happy Eyeballs connection to {}:{}, IPv4 delay: {:?}", host, port, ipv4_delay);
+
+        // DNS 解析获取所有地址
+        let addrs: Vec<SocketAddr> = match lookup_host(format!("{}:{}", host, port)).await {
+            Ok(addrs) => addrs.collect(),
+            Err(e) => return Err(DialError::from(e)),
+        };
+
+        if addrs.is_empty() {
+            return Err(DialError::Other("no addresses found".into()));
+        }
+
+        // 分离 IPv6 和 IPv4 地址
+        let (ipv6_addrs, ipv4_addrs): (Vec<_>, Vec<_>) = addrs
+            .into_iter()
+            .partition(|addr| addr.is_ipv6());
+
+        debug!("Resolved {} IPv6 addresses, {} IPv4 addresses", ipv6_addrs.len(), ipv4_addrs.len());
+
+        // Happy Eyeballs 算法实现
+        self.happy_eyeballs_connect(ipv6_addrs, ipv4_addrs, ipv4_delay).await
+    }
+}
+
+impl TcpDialer {
+    /// Happy Eyeballs 连接算法实现
+    ///
+    /// 根据 RFC 8305，交错尝试 IPv6 和 IPv4 连接：
+    /// 1. 立即开始第一个 IPv6 连接
+    /// 2. 延迟后开始第一个 IPv4 连接
+    /// 3. 继续交错其余地址
+    /// 4. 返回第一个成功的连接，取消其余连接
+    async fn happy_eyeballs_connect(
+        &self,
+        ipv6_addrs: Vec<SocketAddr>,
+        ipv4_addrs: Vec<SocketAddr>,
+        ipv4_delay: Duration,
+    ) -> Result<IoStream, DialError> {
+
+        // 如果没有任何地址，返回错误
+        if ipv6_addrs.is_empty() && ipv4_addrs.is_empty() {
+            return Err(DialError::Other("no addresses to connect".into()));
+        }
+
+        // 如果只有一种类型的地址，直接尝试连接
+        if ipv6_addrs.is_empty() {
+            debug!("IPv4-only connection attempt");
+            return self.try_connect_addrs(&ipv4_addrs).await;
+        }
+        if ipv4_addrs.is_empty() {
+            debug!("IPv6-only connection attempt");
+            return self.try_connect_addrs(&ipv6_addrs).await;
+        }
+
+        // 双栈 Happy Eyeballs 算法
+        debug!("Dual-stack Happy Eyeballs connection attempt");
+
+        let cancel_token = CancellationToken::new();
+        let mut connection_futures = Vec::new();
+
+        // 立即启动第一个 IPv6 连接
+        if let Some(addr) = ipv6_addrs.first() {
+            let cancel_clone = cancel_token.clone();
+            connection_futures.push(
+                self.connect_with_cancellation(*addr, cancel_clone).boxed()
+            );
+        }
+
+        // 延迟启动第一个 IPv4 连接
+        if let Some(addr) = ipv4_addrs.first() {
+            let cancel_clone = cancel_token.clone();
+            connection_futures.push(async move {
+                sleep(ipv4_delay).await;
+                self.connect_with_cancellation(*addr, cancel_clone).await
+            }.boxed());
+        }
+
+        // 交错添加其余地址（简化版本：先 IPv6 后 IPv4）
+        for addr in ipv6_addrs.iter().skip(1) {
+            let cancel_clone = cancel_token.clone();
+            connection_futures.push(
+                self.connect_with_cancellation(*addr, cancel_clone).boxed()
+            );
+        }
+
+        for addr in ipv4_addrs.iter().skip(1) {
+            let cancel_clone = cancel_token.clone();
+            connection_futures.push(
+                self.connect_with_cancellation(*addr, cancel_clone).boxed()
+            );
+        }
+
+        // 等待第一个成功的连接
+        match select_ok(connection_futures).await {
+            Ok((stream, _)) => {
+                // 取消所有其他连接尝试
+                cancel_token.cancel();
+                debug!("Happy Eyeballs connection succeeded");
+                Ok(stream)
+            }
+            Err(e) => {
+                debug!("All Happy Eyeballs connection attempts failed: {}", e);
+                Err(e)
+            }
+        }
+    }
+
+    /// 尝试连接地址列表中的第一个可用地址
+    async fn try_connect_addrs(&self, addrs: &[SocketAddr]) -> Result<IoStream, DialError> {
+        let mut last_error = DialError::Other("no addresses provided".into());
+
+        for addr in addrs {
+            match TcpStream::connect(addr).await {
+                Ok(stream) => {
+                    debug!("Successfully connected to {}", addr);
+                    return Ok(Box::new(stream));
+                }
+                Err(e) => {
+                    debug!("Failed to connect to {}: {}", addr, e);
+                    last_error = DialError::from(e);
+                }
+            }
+        }
+
+        Err(last_error)
+    }
+
+    /// 带取消支持的连接方法
+    async fn connect_with_cancellation(
+        &self,
+        addr: SocketAddr,
+        cancel_token: CancellationToken,
+    ) -> Result<IoStream, DialError> {
+        let connect_future = TcpStream::connect(addr);
+
+        tokio::select! {
+            result = connect_future => {
+                match result {
+                    Ok(stream) => {
+                        debug!("Connection to {} succeeded", addr);
+                        Ok(Box::new(stream))
+                    }
+                    Err(e) => {
+                        debug!("Connection to {} failed: {}", addr, e);
+                        Err(DialError::from(e))
+                    }
+                }
+            }
+            _ = cancel_token.cancelled() => {
+                debug!("Connection to {} cancelled", addr);
+                Err(std::io::Error::new(std::io::ErrorKind::Interrupted, format!("connection to {}", addr)).into())
+            }
+        }
+    }
+}
+
+/// TCP 拨号器，支持重试策略
+///
+/// 这是对 `TcpDialer` 的包装，添加了可配置的重试机制。
+/// 对于幂等的连接操作（如初始TCP握手），可以通过环境变量启用重试。
+pub struct RetryableTcpDialer {
+    inner: TcpDialer,
+    retry_policy: RetryPolicy,
+}
+
+impl Default for RetryableTcpDialer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RetryableTcpDialer {
+    /// 创建新的可重试TCP拨号器，从环境变量读取重试配置
+    pub fn new() -> Self {
+        Self {
+            inner: TcpDialer,
+            retry_policy: RetryPolicy::from_env(),
+        }
+    }
+
+    /// 创建带指定重试策略的TCP拨号器
+    pub fn with_policy(policy: RetryPolicy) -> Self {
+        Self {
+            inner: TcpDialer,
+            retry_policy: policy,
+        }
+    }
+}
+
+#[async_trait]
+impl Dialer for RetryableTcpDialer {
+    /// 建立 TCP 连接，支持重试机制
+    ///
+    /// 对于连接建立这类幂等操作，如果启用了重试策略，
+    /// 将在遇到临时网络错误时进行重试。
+    async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
+        let host = host.to_string(); // Clone for closure
+
+        self.retry_policy
+            .execute(
+                "tcp_connect",
+                || {
+                    let inner = &self.inner;
+                    let host = host.as_str();
+                    async move { inner.connect(host, port).await }
+                },
+                retry_conditions::is_retriable_error,
+            )
+            .await
+    }
+}
+
+/// 资源压力感知的拨号器包装器
+///
+/// 此拨号器会检测资源压力（如文件描述符耗尽、内存不足）并采取相应的回退策略：
+/// - 自动检测资源压力相关错误
+/// - 在压力情况下应用节流延迟
+/// - 向管理界面暴露压力指标
+pub struct ResourceAwareDialer<D: Dialer> {
+    inner: D,
+}
+
+impl<D: Dialer + Clone> Clone for ResourceAwareDialer<D> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<D: Dialer> ResourceAwareDialer<D> {
+    /// 创建新的资源感知拨号器
+    pub fn new(inner: D) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl<D: Dialer + Send + Sync> Dialer for ResourceAwareDialer<D> {
+    async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
+        // 预先检查是否需要节流
+        global_monitor().throttle_if_needed(crate::resource_pressure::ResourceType::FileDescriptors).await;
+
+        let result = self.inner.connect(host, port).await;
+
+        // 分析结果中的资源压力指示
+        if let Err(ref error) = result {
+            error_analysis::record_if_pressure_error(error).await;
+        }
+
+        result
     }
 }
 

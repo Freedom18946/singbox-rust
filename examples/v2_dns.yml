@@ -1,0 +1,22 @@
+dns:
+  servers:
+    - name: "cloudflare"
+      address: "1.1.1.1"
+      address_resolver: "local"
+    - name: "local"
+      address: "223.5.5.5"
+      detour: direct
+  rules:
+    - when:
+        suffix: "cn"
+      use: "local"
+  final: "cloudflare"
+inbounds:
+  - name: tun-in
+    type: tun
+    interface_name: utun
+    inet4_address: "172.19.0.1/30"
+    auto_route: true
+outbounds:
+  - name: direct
+    type: direct

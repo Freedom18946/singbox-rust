@@ -22,13 +22,20 @@
 pub mod dialer;
 pub mod pool {
     pub mod limit;
+    pub mod circuit_breaker;
 }
+
+#[cfg(feature = "failpoints")]
+pub mod failpoint_dialer;
 
 /// TLS 传输层模块
 /// 提供基于 rustls 的 TLS 连接包装器
 /// 仅在启用 `transport_tls` feature 时可用
 #[cfg(feature = "transport_tls")]
 pub mod tls;
+
+#[cfg(feature = "transport_tls")]
+pub mod tls_secure;
 
 /// 传输工具模块
 /// 提供超时处理等通用传输工具函数
@@ -38,6 +45,18 @@ pub mod util;
 /// 提供基于内存的拨号器实现，主要用于测试
 pub mod mem;
 
+/// 重试和退避策略模块
+/// 提供统一的重试策略，用于提高幂等 I/O 操作的可靠性
+pub mod retry;
+
+/// 熔断器模块
+/// 提供轻量级熔断保护，防止级联故障
+pub mod circuit_breaker;
+
+/// 资源压力检测模块
+/// 提供文件描述符和内存压力检测与回退策略
+pub mod resource_pressure;
+
 // Re-exports for a stable public surface
 // 重新导出核心类型，提供稳定的公开 API 接口
 pub use dialer::*;
@@ -45,5 +64,14 @@ pub use dialer::*;
 #[cfg(feature = "transport_tls")]
 pub use tls::*;
 
+#[cfg(feature = "transport_tls")]
+pub use tls_secure::*;
+
 pub use mem::*;
+pub use retry::*;
+pub use circuit_breaker::*;
+pub use resource_pressure::*;
 pub use util::*;
+
+#[cfg(feature = "failpoints")]
+pub use failpoint_dialer::*;

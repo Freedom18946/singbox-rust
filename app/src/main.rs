@@ -14,14 +14,18 @@ mod cli;
 mod config_loader;
 mod env_dump;
 mod tracing_init;
+mod logging;
 
 use clap::Parser;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize enhanced logging system
+    logging::init_logging()?;
+
     let args = cli::Args::parse();
 
-    #[cfg(feature = "chaos")]
+    #[cfg(feature = "failpoints")]
     sb_core::util::failpoint::init_from_env();
 
     #[cfg(feature = "panic_log")]

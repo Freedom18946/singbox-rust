@@ -1,0 +1,12 @@
+inbounds:
+  - name: mixed-in
+    type: mixed
+    listen: "127.0.0.1:1080"
+outbounds:
+  - name: direct
+    type: direct
+route:
+  rules:
+    - when:
+        suffix: "example.com"
+      to: direct

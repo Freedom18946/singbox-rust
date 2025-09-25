@@ -182,7 +182,7 @@ impl SimpleV2RayApiServer {
             || request
                 .pattern
                 .chars()
-                .any(|c| (c as u32) < 0x20 && c != '\\n' && c != '\\r' && c != '\\t')
+                .any(|c| (c as u32) < 0x20 && c != '\n' && c != '\r' && c != '\t')
         {
             return Err(crate::error::ApiError::Parse {
                 message: "invalid pattern".to_string(),

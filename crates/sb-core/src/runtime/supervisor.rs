@@ -211,8 +211,9 @@ impl Supervisor {
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
+                let health_cancel = CancellationToken::new();
                 let health_handle = tokio::spawn(async move {
-                    spawn_health_task_async(health_bridge).await;
+                    spawn_health_task_async(health_bridge, health_cancel).await;
                 });
                 state_guard.health = Some(health_handle);
             }

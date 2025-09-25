@@ -29,7 +29,7 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         let permit = match tokio::time::timeout(std::time::Duration::from_millis(self.queue_ms), self.sem.acquire()).await {
             Ok(Ok(p)) => p,
-            Ok(Err(_)) => return Err(DialError::Canceled),
+            Ok(Err(_)) => return Err(std::io::ErrorKind::Interrupted.into()),
             Err(_elapsed) => return Err(DialError::Other("queue_timeout".into())),
         };
         let res = self.inner.connect(host, port).await;

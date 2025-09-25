@@ -18,6 +18,10 @@ subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscri
 subs_clash  = []
 subs_singbox= []
 
+## Empty features for check-cfg quieting
+handshake_alpha = []
+failpoints = []
+
 ## 新增组合预设（示例）
 cli_min = []                         # 仅 CLI，不拉业务依赖
 router_full = ["router", "sb-core/router"]         # 打开路由相关

@@ -8,9 +8,12 @@ use std::path::Path;
 // Removed sb_core dependencies to break circular dependency
 // TODO: These will be reintroduced when sb-core depends on sb-config
 
+pub mod defaults;
+pub mod de;
 pub mod ir;
 pub mod merge;
 pub mod minimize;
+pub mod model;
 pub mod normalize;
 pub mod present;
 pub mod rule;

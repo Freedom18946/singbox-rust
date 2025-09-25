@@ -19,6 +19,7 @@ pub mod admin_debug;
 pub mod analyze;
 pub mod cli;
 pub mod config_loader;
+pub mod util;
 pub mod env_dump;
 #[cfg(feature = "hardening")]
 pub mod hardening;

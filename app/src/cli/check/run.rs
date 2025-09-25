@@ -3,6 +3,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
 
+use crate::util;
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode};
 use sb_config::validator::v2;
@@ -138,7 +139,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         }
         let text = serde_json::to_string_pretty(&out_json)?;
         let out = if let Some(o) = &args.out { o.clone() } else { format!("{}.normalized.json", &args.config) };
-        sb_core::util::fs_atomic::write_atomic(&out, text.as_bytes())
+        util::write_atomic(&out, text.as_bytes())
             .with_context(|| format!("write {}", out))?;
     }
 

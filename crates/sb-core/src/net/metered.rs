@@ -179,7 +179,8 @@ where
                         res = async {
                             if let Some(to) = write_timeout {
                                 tokio::time::timeout(to, w.write_all(&buf[..n])).await
-                                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))
+                                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))?
+                                    .map(|_| ())
                             } else {
                                 w.write_all(&buf[..n]).await.map(|_| ())
                             }

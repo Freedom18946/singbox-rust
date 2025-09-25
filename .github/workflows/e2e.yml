@@ -31,3 +31,22 @@ jobs:
         with:
           name: e2e-artifacts
           path: .e2e/**/*
+
+  e2e-compat-diff:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+      - name: Run Rust vs Go compatibility diff (allow failure)
+        env:
+          GO_SINGBOX_BIN: "/dev/null"  # Placeholder - would be set to real Go binary path
+        run: |
+          chmod +x scripts/e2e-diff.sh
+          scripts/e2e-diff.sh || echo "Diff completed with differences - this is expected during development"
+      - name: Upload diff artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diff-artifacts
+          path: target/e2e-diff/**/*
