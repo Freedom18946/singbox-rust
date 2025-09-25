@@ -51,6 +51,8 @@ pub enum BenchCmd {
         #[arg(long="hist-buckets")] hist_buckets: Option<String>,
         /// 将结果保存为 JSON
         #[arg(long="save")] save_path: Option<std::path::PathBuf>,
+        /// Preferred output path (alias of --save)
+        #[arg(long="out")] out_path: Option<std::path::PathBuf>,
     },
 }
 
@@ -60,12 +62,22 @@ pub async fn main(a: BenchArgs) -> Result<()> {
         BenchCmd::Io {
             url, requests, concurrency, json, method, body, hdrs, h2, insecure, keepalive, timeout_ms, hist_buckets, save_path
         } => bench_io(
-            url, requests, concurrency, json, method, body, hdrs, h2, insecure, keepalive, timeout_ms, hist_buckets, save_path
+            url, requests, concurrency, json, method, body, hdrs, h2, insecure, keepalive, timeout_ms, hist_buckets, save_path, out_path
         ).await,
 
         #[cfg(not(feature = "reqwest"))]
-        BenchCmd::Io { .. } => {
-            anyhow::bail!("feature 'reqwest' is required for `bench io` (rebuild with `--features reqwest)");
+        BenchCmd::Io { json, .. } => {
+            // Great UX when feature is missing: actionable hint + exit code 2
+            let hint = "Enable 'reqwest' feature. Example: cargo run -p app --features reqwest -- bench io --h2 --url https://example.com";
+            if json {
+                println!("{}", serde_json::json!({
+                    "error": "feature_required",
+                    "feature": "reqwest"
+                }));
+            } else {
+                eprintln!("bench io requires feature 'reqwest'\nHint: {}", hint);
+            }
+            std::process::exit(2);
         }
     }
 }
@@ -136,12 +148,40 @@ fn load_body(arg: &str) -> Result<String> {
     }
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq)]
+struct BenchJsonOut {
+    // fixed schema keys
+    p50: u64,
+    p90: u64,
+    p99: u64,
+    rps: f64,
+    throughput_bps: f64,
+    elapsed_ms: u128,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    histogram: Option<Hist>,
+}
+
 #[cfg(feature = "reqwest")]
-// 实现 TODO: 支持 --h2。我们按请求级别强制 HTTP/2（不依赖 builder 全局开关）
+fn to_fixed_schema(s: &IoStats) -> BenchJsonOut {
+    let secs = (s.elapsed_ms as f64) / 1000.0;
+    let bps = if secs <= 0.0 { 0.0 } else { (s.bytes as f64) / secs };
+    BenchJsonOut {
+        p50: s.p50_ms,
+        p90: s.p90_ms,
+        p99: s.p99_ms,
+        rps: s.rps,
+        throughput_bps: bps,
+        elapsed_ms: s.elapsed_ms,
+        histogram: s.hist.clone(),
+    }
+}
+
+#[cfg(feature = "reqwest")]
+// 实现：支持 --h2。按请求级别强制 HTTP/2（不依赖 builder 全局开关）
 async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
                   method: String, body: Option<String>, hdrs: Vec<String>, h2: bool,
                   insecure: bool, keepalive: bool, timeout_ms: u64,
-                  hist_buckets: Option<String>, save_path: Option<std::path::PathBuf>) -> Result<()> {
+                  hist_buckets: Option<String>, save_path: Option<std::path::PathBuf>, out_path: Option<std::path::PathBuf>) -> Result<()> {
     let mut cb = reqwest::Client::builder()
         .timeout(Duration::from_millis(timeout_ms));
     if insecure { cb = cb.danger_accept_invalid_certs(true); }
@@ -241,7 +281,8 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
         Some(Hist { buckets, counts, cdf })
     } else { None };
     if json {
-        println!("{}", serde_json::to_string(&out)?);
+        let fixed = to_fixed_schema(&out);
+        println!("{}", serde_json::to_string(&fixed)?);
     } else {
         println!("total={} ok_2xx={} other={} time_ms={} rps={:.1} thrpt_MiBps={:.2} p50={} p90={} p99={} max={} min={}",
             out.total, out.ok_2xx, out.other, out.elapsed_ms, out.rps, out.thrpt_mib_s,
@@ -250,10 +291,11 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
             eprintln!("# hist buckets(ms)={:?} counts={:?} cdf={:?}", h.buckets, h.counts, h.cdf);
         }
     }
-    if let Some(path) = save_path {
-        let data = serde_json::to_string_pretty(&out)?;
-        fs::write(&path, data)
-          .with_context(|| format!("write histogram json to {:?}", path))?;
+    let final_path = out_path.or(save_path);
+    if let Some(path) = final_path {
+        let data = serde_json::to_string_pretty(&to_fixed_schema(&out))?;
+        sb_core::util::fs_atomic::write_atomic(&path, data.as_bytes())
+          .with_context(|| format!("write histogram json atomically to {:?}", path))?;
     }
     Ok(())
 }
@@ -263,7 +305,8 @@ async fn bench_io(_url: String, _requests: u32, _concurrency: usize, _json: bool
                   _method: String, _body: Option<String>, _hdrs: Vec<String>, _h2: bool,
                   _insecure: bool, _keepalive: bool, _timeout_ms: u64,
                   _hist_buckets: Option<String>, _save_path: Option<std::path::PathBuf>) -> Result<()> {
-    anyhow::bail!("feature 'reqwest' is required for `bench io` (rebuild with `--features reqwest`)")
+    // Should be handled in main() guard; keep as a fallback.
+    anyhow::bail!("feature 'reqwest' is required for `bench io`")
 }
 
 // -----------------------------

@@ -1,13 +1,11 @@
-# 最小可运行/校验配置（无外联，仅结构合法）
-log:
-  level: error
+# 最小可运行/校验配置（v2 schema；无外联）
+schema_version: 2
 inbounds:
   - type: socks
     listen: 127.0.0.1
-    listen_port: 0
+    port: 0
 outbounds:
   - type: direct
+    name: direct
 route:
-  rules:
-    - rule: default
-      outbound: direct
+  default: direct

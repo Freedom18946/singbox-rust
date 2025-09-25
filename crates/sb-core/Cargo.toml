@@ -49,6 +49,7 @@ webpki-roots = "0.26"  # 新增：用于 TLS root certs
 
 [dev-dependencies]
 # 原有 dev-deps，如果有
+loom = "0.7"
 
 [features]
 # 基线：不默认开启任何可选功能，便于上层精确组合

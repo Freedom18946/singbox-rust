@@ -145,6 +145,24 @@ All features are disabled by default to avoid breaking existing deployments. Ena
 ]
 ```
 
+## 近期新增/可调参数（汇总）
+
+- UDP NAT
+  - `SB_UDP_TTL_MS`: NAT session TTL in milliseconds (default 300000)
+  - `SB_UDP_GC_MS`: NAT GC interval in milliseconds (default 5000)
+  - `SB_UDP_NAT_MAX`: Max NAT entries (default 1000; also used in datagram path)
+
+- Outbound backpressure / queueing
+  - `SB_OUT_MAX_CONCURRENCY`: Global outbound connect concurrency limit (default 256)
+  - `SB_OUT_QUEUE_MS`: Queue wait timeout for outbound connects (ms; default 5000)
+
+- Dialer backpressure (sb-transport)
+  - `SB_DIAL_MAX_CONCURRENCY`: Max concurrency per LimitedDialer (default 128)
+  - `SB_DIAL_QUEUE_MS`: Queue wait timeout (ms; default 5000)
+
+- E2E helper
+  - `GO_SINGBOX_BIN`: Path to go sing-box for compatibility replay (optional)
+
 > 路由语法：使用 `proxy:poolA` 指向命名代理池，`proxy` 仍走默认代理。池不存在或全熔断时按健康回退开关处理。
 
 ### Router Rules 2.0 (compiled index; file+env)

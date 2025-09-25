@@ -52,6 +52,14 @@ impl UdpProcessor {
         }
     }
 
+    /// Create with env overrides: SB_UDP_TTL_MS, SB_UDP_GC_MS (ms), SB_UDP_NAT_MAX
+    pub fn from_env() -> (Self, Duration) {
+        let ttl_ms = std::env::var("SB_UDP_TTL_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(300_000);
+        let max = std::env::var("SB_UDP_NAT_MAX").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(1000);
+        let gc_ms = std::env::var("SB_UDP_GC_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(5_000);
+        (Self::new(max, Duration::from_millis(ttl_ms)), Duration::from_millis(gc_ms))
+    }
+
     /// Process inbound UDP packet (from client to server)
     pub async fn process_inbound(&self, packet: UdpPacket) -> SbResult<SocketAddr> {
         #[cfg(feature = "metrics")]
@@ -146,7 +154,16 @@ impl UdpProcessor {
             let mut interval = tokio::time::interval(cleanup_interval);
             loop {
                 interval.tick().await;
-                let expired_count = self.cleanup_expired().await;
+                // Batch GC to reduce pause time
+                let mut total = 0usize;
+                loop {
+                    let mut nat = self.nat.lock().await;
+                    let removed = nat.evict_expired_batch(256);
+                    drop(nat);
+                    total += removed;
+                    if removed < 256 { break; }
+                }
+                let expired_count = total;
                 if expired_count > 0 {
                     tracing::debug!("Cleaned up {} expired UDP NAT sessions", expired_count);
                 }
@@ -261,6 +278,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_inbound_zero_payload_no_crash() {
+        let processor = UdpProcessor::new(100, Duration::from_secs(300));
+        let packet = test_packet(1234, 5678, b"");
+        // Should succeed and create mapping even with empty payload
+        let mapped = processor.process_inbound(packet).await.expect("inbound ok");
+        assert!(processor.lookup_session(&mapped).await.is_some());
+    }
+
+    #[tokio::test]
     async fn test_bidirectional_flow_mapping() {
         let processor = UdpProcessor::new(100, Duration::from_secs(300));
 
@@ -304,5 +330,50 @@ mod tests {
         // Clear all sessions
         processor.clear_sessions().await;
         assert_eq!(processor.session_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn gc_batch_removes_in_chunks() {
+        let processor = UdpProcessor::new(100, Duration::from_millis(5));
+        for i in 0..50u16 {
+            let p = test_packet(1000 + i, 2000, b"x");
+            let _ = processor.process_inbound(p).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let mut removed = 0usize;
+        {
+            let mut nat = processor.nat.lock().await;
+            removed += nat.evict_expired_batch(10);
+            assert_eq!(removed, 10);
+            removed += nat.evict_expired_batch(10);
+            assert_eq!(removed, 20);
+        }
+    }
+
+    #[tokio::test]
+    async fn burst_then_gc_falls_back() {
+        let processor = UdpProcessor::new(200, Duration::from_millis(5));
+        for i in 0..100u16 {
+            let _ = processor.process_inbound(test_packet(2000 + i, 53, b"req")).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_millis(8)).await;
+        let start = processor.session_count().await;
+        assert!(start >= 100);
+        let removed = processor.cleanup_expired().await;
+        assert!(removed > 0);
+        let after = processor.session_count().await;
+        assert!(after < start);
+    }
+
+    #[test]
+    fn env_overrides_readable() {
+        std::env::set_var("SB_UDP_TTL_MS", "1234");
+        std::env::set_var("SB_UDP_GC_MS", "77");
+        std::env::set_var("SB_UDP_NAT_MAX", "42");
+        let (_p, gc) = UdpProcessor::from_env();
+        assert_eq!(gc, Duration::from_millis(77));
+        std::env::remove_var("SB_UDP_TTL_MS");
+        std::env::remove_var("SB_UDP_GC_MS");
+        std::env::remove_var("SB_UDP_NAT_MAX");
     }
 }

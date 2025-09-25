@@ -11,8 +11,9 @@ pub fn normalize_value(v: Value) -> Value {
             let mut keys: Vec<_> = m.keys().cloned().collect();
             keys.sort_unstable();
             for k in keys {
-                let vv = m.remove(&k).unwrap();
-                nm.insert(k, normalize_value(vv));
+                if let Some(vv) = m.remove(&k) {
+                    nm.insert(k, normalize_value(vv));
+                }
             }
             Value::Object(nm)
         }

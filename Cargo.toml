@@ -17,6 +17,12 @@ members = [
 # 默认只构建 app（其它 crate 在需要时由 feature/依赖拉起）
 default-members = ["app"]
 
+[workspace.package]
+rust-version = "1.79"
+
+[workspace.lints.rust]
+warnings = "deny"
+
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
@@ -43,4 +49,3 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # 说明：
 # - 统一常用 crates 的版本，减少 features/版本不一致导致的编译报错
 # - 其它依赖请在各子 crate 内单独声明（避免 workspace 可选特性的限制）
-

@@ -51,9 +51,32 @@ pub fn validate_v2(doc: &serde_json::Value) -> Vec<Value> {
         }
     };
     let mut issues = Vec::<Value>::new();
+    // 0) schema_version check (must be 2)
+    match doc.get("schema_version") {
+        Some(v) => {
+            if v.as_u64() != Some(2) {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    "/schema_version",
+                    "schema_version must be 2",
+                    "set to 2",
+                ));
+            }
+        }
+        None => {
+            // Optional: we accept missing but could warn to migrate
+            issues.push(emit_issue(
+                "warning",
+                IssueCode::MissingRequired,
+                "/schema_version",
+                "missing schema_version (assuming v2)",
+                "add: 2",
+            ));
+        }
+    }
     // 1) 根 additionalProperties=false
-    if let Some(obj) = doc.as_object() {
-        let props = schema["properties"].as_object().unwrap();
+    if let (Some(obj), Some(props)) = (doc.as_object(), schema.get("properties").and_then(|p| p.as_object())) {
         for k in obj.keys() {
             if !props.contains_key(k) {
                 issues.push(emit_issue(

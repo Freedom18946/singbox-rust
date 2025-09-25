@@ -1,5 +1,6 @@
 use once_cell::sync::OnceCell;
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc, atomic::{AtomicU64, Ordering}};
+use arc_swap::ArcSwap;
 
 fn json_diff_enhanced(before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
     use serde_json::{json, Value};
@@ -139,21 +140,20 @@ impl EnvConfig {
     }
 }
 
-static CONFIG: OnceCell<Mutex<EnvConfig>> = OnceCell::new();
-static VERSION: OnceCell<Mutex<u64>> = OnceCell::new();
+static CONFIG: OnceCell<ArcSwap<EnvConfig>> = OnceCell::new();
+static VERSION: OnceCell<AtomicU64> = OnceCell::new();
 
 pub fn get() -> EnvConfig {
-    CONFIG
-        .get_or_init(|| Mutex::new(EnvConfig::from_env()))
-        .lock()
-        .unwrap()
-        .clone()
+    let cfg = CONFIG
+        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()))
+        .load();
+    (*cfg).clone()
 }
 
 pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Result<String, String> {
-    let config_mutex = CONFIG.get_or_init(|| Mutex::new(EnvConfig::from_env()));
-
-    let mut config = config_mutex.lock().map_err(|e| format!("Failed to acquire config lock: {}", e))?;
+    let arc = CONFIG
+        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
+    let mut config = (*arc.load()).clone();
     let mut changes = Vec::new();
 
     // Apply changes from delta
@@ -255,15 +255,15 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
 
     tracing::info!(changes = ?changes, "Configuration applied via API");
 
+    // commit atomically
+    arc.store(Arc::new(config));
+    VERSION.get_or_init(|| AtomicU64::new(0)).fetch_add(1, Ordering::Relaxed);
+
     Ok(format!("Applied changes: {}", changes.join(", ")))
 }
 
 pub fn version() -> u64 {
-    VERSION
-        .get_or_init(|| Mutex::new(0))
-        .lock()
-        .unwrap()
-        .clone()
+    VERSION.get_or_init(|| AtomicU64::new(0)).load(Ordering::Relaxed)
 }
 
 #[derive(serde::Serialize)]
@@ -370,21 +370,21 @@ fn apply_to_config(config: &mut EnvConfig, delta: &crate::admin_debug::endpoints
 }
 
 pub fn apply_with_dryrun(delta: &crate::admin_debug::endpoints::config::ConfigDelta, dry_run: bool) -> Result<ApplyResult, String> {
-    let config_mutex = CONFIG.get_or_init(|| Mutex::new(EnvConfig::from_env()));
-    let version_mutex = VERSION.get_or_init(|| Mutex::new(0));
+    let arc = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
+    let ctr = VERSION.get_or_init(|| AtomicU64::new(0));
 
-    let config = config_mutex.lock().map_err(|e| format!("Failed to acquire config lock: {}", e))?;
-    let before = serde_json::to_value(&*config).unwrap();
+    let before_cfg = arc.load();
+    let before = serde_json::to_value(&*before_cfg).unwrap_or_else(|_| serde_json::json!({}));
 
     // Create a temp copy and apply changes to compute diff
     let mut temp_config = config.clone();
     let _changes = apply_to_config(&mut temp_config, delta)?;
 
-    let after = serde_json::to_value(&temp_config).unwrap();
+    let after = serde_json::to_value(&temp_config).unwrap_or_else(|_| serde_json::json!({}));
     let diff = json_diff_enhanced(&before, &after);
     let changed = !diff_is_empty(&diff);
 
-    let current_version = version_mutex.lock().unwrap().clone();
+    let current_version = ctr.load(Ordering::Relaxed);
 
     if dry_run {
         Ok(ApplyResult {
@@ -395,24 +395,18 @@ pub fn apply_with_dryrun(delta: &crate::admin_debug::endpoints::config::ConfigDe
             diff,
         })
     } else if changed {
-        // Apply changes to actual config and bump version
-        drop(config); // Release config lock before calling apply
-        match apply(delta) {
-            Ok(msg) => {
-                let mut ver = version_mutex.lock().unwrap();
-                *ver += 1;
-                let new_version = *ver;
-
-                Ok(ApplyResult {
-                    ok: true,
-                    msg,
-                    version: new_version,
-                    changed: true,
-                    diff,
-                })
-            }
-            Err(e) => Err(e),
-        }
+        // Compute new config and commit atomically
+        let mut new_cfg = (*before_cfg).clone();
+        let _ = apply_to_config(&mut new_cfg, delta)?;
+        arc.store(Arc::new(new_cfg));
+        let new_version = ctr.fetch_add(1, Ordering::Relaxed) + 1;
+        Ok(ApplyResult {
+            ok: true,
+            msg: "applied".to_string(),
+            version: new_version,
+            changed: true,
+            diff,
+        })
     } else {
         // No changes, don't bump version
         Ok(ApplyResult {
@@ -426,15 +420,14 @@ pub fn apply_with_dryrun(delta: &crate::admin_debug::endpoints::config::ConfigDe
 }
 
 pub fn reload() {
-    if let Some(mutex) = CONFIG.get() {
-        if let Ok(mut config) = mutex.lock() {
-            *config = EnvConfig::from_env();
-            tracing::info!("Configuration reloaded from environment variables");
-
-            // Apply hot updates to subsystems
-            #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
-            crate::admin_debug::endpoints::subs::resize_limiters(config.max_concurrency, config.rps);
-        }
+    let cfg = EnvConfig::from_env();
+    if let Some(arc) = CONFIG.get() {
+        arc.store(Arc::new(cfg.clone()));
+        tracing::info!("Configuration reloaded from environment variables");
+        #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
+        crate::admin_debug::endpoints::subs::resize_limiters(cfg.max_concurrency, cfg.rps);
+    } else {
+        CONFIG.get_or_init(|| ArcSwap::from_pointee(cfg));
     }
 }
 
@@ -656,5 +649,82 @@ mod tests_idempotent {
 
         // Should not be empty
         assert!(!diff_is_empty(&diff));
+    }
+}
+
+#[cfg(test)]
+mod tests_concurrency_and_rollback {
+    use super::*;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn high_concurrent_reads_and_applies() {
+        reload();
+        let start = version();
+
+        let readers: Vec<_> = (0..8)
+            .map(|_| {
+                thread::spawn(|| {
+                    for _ in 0..500 {
+                        let _cfg = get();
+                        std::hint::black_box(&_cfg);
+                    }
+                })
+            })
+            .collect();
+
+        // Apply a few times
+        for i in 0..10u64 {
+            let _ = apply_with_dryrun(
+                &crate::admin_debug::endpoints::config::ConfigDelta {
+                    timeout_ms: Some(4000 + i as u64),
+                    ..Default::default()
+                },
+                false,
+            )
+            .expect("apply ok");
+        }
+
+        for j in readers { let _ = j.join(); }
+        assert!(version() >= start + 10);
+    }
+
+    #[test]
+    fn failed_update_does_not_commit() {
+        reload();
+        let before = get();
+        // invalid value
+        let res = apply_with_dryrun(
+            &crate::admin_debug::endpoints::config::ConfigDelta { max_redirects: Some(1000), ..Default::default() },
+            false,
+        );
+        assert!(res.is_err());
+        let after = get();
+        assert_eq!(before.max_redirects, after.max_redirects);
+    }
+}
+
+#[cfg(loom)]
+mod loom_smoke {
+    use super::*;
+    use loom::thread;
+
+    #[test]
+    fn loom_apply_and_get_do_not_panic() {
+        loom::model(|| {
+            // initialize
+            let _ = CONFIG.get_or_init(|| arc_swap::ArcSwap::from_pointee(EnvConfig::from_env()));
+            let mut hs = Vec::new();
+            for i in 0..2 {
+                hs.push(thread::spawn(move || {
+                    let _ = get();
+                    if i == 0 {
+                        let _ = apply_with_dryrun(&crate::admin_debug::endpoints::config::ConfigDelta{ rps: Some(5), ..Default::default() }, false);
+                    }
+                }));
+            }
+            for h in hs { let _ = h.join(); }
+        });
     }
 }

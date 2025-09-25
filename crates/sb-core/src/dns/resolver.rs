@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use std::{sync::Arc, time::Duration};
 
 use super::{DnsAnswer, DnsUpstream, RecordType, Resolver};
+use crate::error::SbError;
 
 /// 标准 DNS 解析器实现
 #[derive(Clone)]
@@ -70,10 +71,10 @@ impl DnsResolver {
         }
 
         if all_ips.is_empty() {
-            return Err(anyhow::anyhow!(
-                "No DNS records found for domain: {}",
+            return Err(anyhow::Error::from(SbError::dns(format!(
+                "No DNS records for domain: {}",
                 domain
-            ));
+            ))));
         }
 
         Ok(DnsAnswer {
@@ -90,7 +91,7 @@ impl DnsResolver {
         domain: &str,
         record_type: RecordType,
     ) -> Result<DnsAnswer> {
-        let mut last_error = None;
+        let mut last_error: Option<anyhow::Error> = None;
 
         // 尝试每个上游服务器
         for upstream in &self.upstreams {
@@ -140,13 +141,18 @@ impl DnsResolver {
                     )
                     .increment(1);
 
-                    last_error = Some(e);
+                    // Map to structured SbError for callers
+                    let mapped = SbError::dns(format!(
+                        "upstream={} query {:?} for {} failed: {}",
+                        upstream_name, record_type, domain, e
+                    ));
+                    last_error = Some(anyhow::Error::from(mapped));
                 }
             }
         }
 
         // 所有上游都失败了
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("No healthy DNS upstreams available")))
+        Err(last_error.unwrap_or_else(|| anyhow::Error::from(SbError::dns("No healthy DNS upstreams available"))))
     }
 }
 
@@ -155,7 +161,19 @@ impl Resolver for DnsResolver {
     async fn resolve(&self, domain: &str) -> Result<DnsAnswer> {
         let start_time = std::time::Instant::now();
 
-        let result = self.resolve_both_records(domain).await;
+        // Global timeout for resolve to avoid hangs; cancel concurrent tasks via select
+        let timeout_ms = std::env::var("SB_DNS_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(2_000);
+        let timeout_dur = Duration::from_millis(timeout_ms);
+
+        let result = tokio::select! {
+            res = self.resolve_both_records(domain) => res,
+            _ = tokio::time::sleep(timeout_dur) => {
+                Err(anyhow::Error::from(SbError::timeout("dns_resolve", timeout_ms)))
+            }
+        };
 
         // 记录解析延迟
         #[cfg(feature = "metrics")]

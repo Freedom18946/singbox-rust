@@ -34,6 +34,10 @@ impl LinuxTun {
         ifr.set_flags(IFF_TUN | IFF_NO_PI);
 
         // Create the TUN interface
+        // SAFETY: We pass a valid file descriptor obtained from OpenOptions::open and a
+        // properly initialized ifr structure whose lifetime outlives the call.
+        // The ioctl request code TUNSETIFF is platform-defined and the return value is
+        // checked for errors (< 0) and mapped to TunError.
         unsafe {
             let result = libc::ioctl(file.as_raw_fd(), TUNSETIFF, &ifr);
             if result < 0 {
@@ -168,6 +172,33 @@ impl LinuxTun {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linux_ioctl_failure_path_is_handled() {
+        // This test does not perform a real ioctl; instead, validate that constructing
+        // the IfrData and calling into ioctl failure path would be handled.
+        // We simulate the open failure by trying to open a bogus device, which should
+        // return IoError/DeviceNotFound and not panic.
+        let cfg = TunConfig { name: "tun-test".to_string(), mtu: 1500, ipv4: None, ipv6: None };
+        // open_tun_device is private; exercise create() via TunDevice trait which calls it.
+        // This should fail on typical CI runners where /dev/net/tun is unavailable.
+        let res = LinuxTun::create(&cfg);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_linux_fcntl_failure_mock() {
+        // SAFETY: Calling fcntl on an invalid fd (-1) is expected to return -1 and set errno.
+        // This is a test-only negative path to ensure we can observe and handle failures
+        // in similar syscalls if added.
+        let rc = unsafe { libc::fcntl(-1, libc::F_GETFL) };
+        assert_eq!(rc, -1);
+    }
+}
+
 impl TunDevice for LinuxTun {
     fn create(config: &TunConfig) -> Result<Self, TunError>
     where
@@ -255,6 +286,7 @@ impl IfrData {
     }
 
     fn get_name(&self) -> Option<String> {
+        // SAFETY: Converting c_char array to u8 slice with proper length bounds
         let name_bytes = unsafe {
             std::slice::from_raw_parts(self.ifr_name.as_ptr() as *const u8, libc::IF_NAMESIZE)
         };

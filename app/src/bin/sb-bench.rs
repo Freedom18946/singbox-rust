@@ -2,8 +2,8 @@
 
 #[cfg(not(feature = "bench"))]
 fn main() {
-    eprintln!("sb-bench: built without `--features bench` — stub running.");
-    eprintln!("Set SB_BENCH=1 and enable `bench` feature to run benchmarks.");
+    tracing::warn!(target: "app::bench", "built without `--features bench` — stub running");
+    tracing::info!(target: "app::bench", "Set SB_BENCH=1 and enable `bench` feature to run benchmarks");
 }
 
 #[cfg(feature = "bench")]
@@ -28,7 +28,7 @@ use trust_dns_proto::serialize::binary::{BinEncodable, BinEncoder};
 #[tokio::main]
 async fn main() {
     if std::env::var("SB_BENCH").ok().as_deref() != Some("1") {
-        eprintln!("SB_BENCH!=1, exit");
+        tracing::warn!(target: "app::bench", "SB_BENCH!=1, exit");
         return;
     }
 

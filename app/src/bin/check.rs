@@ -78,7 +78,7 @@ fn human_check(root: &Value) -> Result<()> {
                     }
                 }
                 other => {
-                    eprintln!("[warn] {base}.type = {other} 未在最小校验清单中；跳过深度检查");
+                    tracing::warn!(target: "app::check", base = %base, kind = %other, "type not in minimal checklist; skip deep checks");
                 }
             }
         }
@@ -119,9 +119,9 @@ fn main() -> Result<()> {
                     .map(|e| format!("{}", e))
                     .collect();
 
-                eprintln!("配置 schema 验证失败：");
+                tracing::error!(target: "app::check", "配置 schema 验证失败");
                 for (i, error) in errors.iter().enumerate() {
-                    eprintln!("  {}: {}", i + 1, error);
+                    tracing::error!(target: "app::check", idx = i + 1, msg = %error, "schema validation error");
                 }
 
                 std::process::exit(2);
@@ -130,13 +130,13 @@ fn main() -> Result<()> {
 
         #[cfg(not(feature = "config_schema"))]
         {
-            eprintln!("警告：--config-schema 需要 config_schema feature 支持");
+            tracing::warn!(target: "app::check", "--config-schema 需要 config_schema feature 支持");
             std::process::exit(1);
         }
     }
 
     if let Err(e) = human_check(&v) {
-        eprintln!("校验未通过：{e}");
+        tracing::error!(target: "app::check", error = %e, "校验未通过");
         std::process::exit(2);
     }
 

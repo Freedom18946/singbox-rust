@@ -165,7 +165,17 @@ impl ProcessMatcher {
 
 impl Default for ProcessMatcher {
     fn default() -> Self {
-        Self::new().expect("Failed to create ProcessMatcher")
+        // Avoid panicking in production; construct a conservative fallback when platform init fails.
+        Self::new().unwrap_or_else(|_| Self {
+            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache_ttl: Duration::from_secs(30),
+            #[cfg(target_os = "linux")]
+            linux_impl: linux::LinuxProcessMatcher::default(),
+            #[cfg(target_os = "macos")]
+            macos_impl: macos::MacOsProcessMatcher::new().unwrap_or(macos::MacOsProcessMatcher),
+            #[cfg(target_os = "windows")]
+            windows_impl: windows::WindowsProcessMatcher::new().unwrap_or(windows::WindowsProcessMatcher),
+        })
     }
 }
 

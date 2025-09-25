@@ -251,6 +251,20 @@ impl From<tokio::time::error::Elapsed> for DialError {
     }
 }
 
+// Bridge mapping to unified SbError in sb-core without changing public API.
+impl From<DialError> for sb_core::error::SbError {
+    fn from(e: DialError) -> Self {
+        match e {
+            DialError::Io(ioe) => sb_core::error::SbError::io(ioe),
+            DialError::Tls(msg) => sb_core::error::SbError::other(format!("tls: {}", msg)),
+            DialError::NotSupported => sb_core::error::SbError::other("not supported"),
+            #[allow(deprecated)]
+            DialError::Timeout => sb_core::error::SbError::Timeout { operation: "dial".into(), timeout_ms: 0 },
+            DialError::Other(msg) => sb_core::error::SbError::other(msg),
+        }
+    }
+}
+
 /// 私有 IO 工具模块
 ///
 /// 该模块包含一些内部使用的 IO 相关类型和工具函数，

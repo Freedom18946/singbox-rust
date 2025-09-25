@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "metrics")]
 fn err_kind_local(e: &io::Error) -> &'static str {
@@ -41,6 +42,26 @@ pub async fn copy_bidirectional_streaming<A, B>(
     b: &mut B,
     _label: &'static str,
     interval_dur: Duration,
+) -> io::Result<(u64, u64)>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    copy_bidirectional_streaming_ctl(a, b, _label, interval_dur, None, None, None).await
+}
+
+/// 双向拷贝（带可选读/写超时与取消传播）。
+/// - 当读侧在 `read_timeout` 内无进展，返回 TimedOut
+/// - 当写侧在 `write_timeout` 内无法完成，返回 TimedOut
+/// - 当收到 `cancel` 取消，返回 Interrupted
+pub async fn copy_bidirectional_streaming_ctl<A, B>(
+    a: &mut A,
+    b: &mut B,
+    _label: &'static str,
+    interval_dur: Duration,
+    read_timeout: Option<Duration>,
+    write_timeout: Option<Duration>,
+    cancel: Option<CancellationToken>,
 ) -> io::Result<(u64, u64)>
 where
     A: AsyncRead + AsyncWrite + Unpin,
@@ -101,7 +122,14 @@ where
     };
 
     // 单向拷贝 worker：从 r 读到 buf，写入 w，并将 n 加到 counter
-    async fn pump<R, W>(mut r: R, mut w: W, counter: Arc<AtomicU64>) -> io::Result<u64>
+    async fn pump<R, W>(
+        mut r: R,
+        mut w: W,
+        counter: Arc<AtomicU64>,
+        read_timeout: Option<Duration>,
+        write_timeout: Option<Duration>,
+        cancel: Option<CancellationToken>,
+    ) -> io::Result<u64>
     where
         R: AsyncRead + Unpin,
         W: AsyncWrite + Unpin,
@@ -109,11 +137,66 @@ where
         let mut buf = vec![0u8; 16 * 1024];
         let mut total = 0u64;
         loop {
-            let n = r.read(&mut buf).await?;
+            let n = {
+                // 读超时/取消
+                if let Some(ref tok) = cancel {
+                    tokio::select! {
+                        _ = tok.cancelled() => {
+                            return Err(io::Error::new(io::ErrorKind::Interrupted, "canceled"));
+                        }
+                        res = async {
+                            if let Some(to) = read_timeout {
+                                tokio::time::timeout(to, r.read(&mut buf)).await
+                                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "read timeout"))?
+                            } else {
+                                r.read(&mut buf).await
+                            }
+                        } => res?,
+                    }
+                } else {
+                    if let Some(to) = read_timeout {
+                        tokio::time::timeout(to, r.read(&mut buf))
+                            .await
+                            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "read timeout"))??
+                    } else {
+                        r.read(&mut buf).await?
+                    }
+                }
+            };
             if n == 0 {
+                // 半关闭：尝试优雅关闭写侧
+                let _ = w.flush().await;
+                let _ = tokio::io::AsyncWriteExt::shutdown(&mut w).await;
                 break;
             }
-            w.write_all(&buf[..n]).await?;
+            // 写超时/取消
+            {
+                if let Some(ref tok) = cancel {
+                    tokio::select! {
+                        _ = tok.cancelled() => {
+                            return Err(io::Error::new(io::ErrorKind::Interrupted, "canceled"));
+                        }
+                        res = async {
+                            if let Some(to) = write_timeout {
+                                tokio::time::timeout(to, w.write_all(&buf[..n])).await
+                                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))
+                            } else {
+                                w.write_all(&buf[..n]).await.map(|_| ())
+                            }
+                        } => {
+                            res?;
+                        }
+                    }
+                } else {
+                    if let Some(to) = write_timeout {
+                        tokio::time::timeout(to, w.write_all(&buf[..n]))
+                            .await
+                            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))??
+                    } else {
+                        w.write_all(&buf[..n]).await?;
+                    }
+                }
+            }
             total += n as u64;
             counter.fetch_add(n as u64, Ordering::Relaxed);
         }
@@ -125,8 +208,8 @@ where
     // 并行两路拷贝（不 spawn，直接 join，避免 'static 约束）
     let up_c = up.clone();
     let down_c = down.clone();
-    let up_fut = pump(&mut ar, &mut bw, up_c);
-    let down_fut = pump(&mut br, &mut aw, down_c);
+    let up_fut = pump(&mut ar, &mut bw, up_c, read_timeout, write_timeout, cancel.clone());
+    let down_fut = pump(&mut br, &mut aw, down_c, read_timeout, write_timeout, cancel.clone());
 
     let res = tokio::try_join!(up_fut, down_fut);
 
@@ -244,3 +327,98 @@ pub fn wrap_stream<T>(label: &'static str, io: T) -> MeteredStream<T> {
 }
 
 // 移除自定义 JoinError 包装，直接忽略 join 结果（ticker 无副作用）
+
+#[cfg(test)]
+mod tests_timeouts {
+    use super::*;
+    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn read_timeout_triggers() {
+        let (mut a, mut b) = duplex(8);
+        // 不写任何数据，直接进入 copy，设置非常短的读超时
+        let r = copy_bidirectional_streaming_ctl(
+            &mut a,
+            &mut b,
+            "test",
+            Duration::from_millis(50),
+            Some(Duration::from_millis(30)),
+            None,
+            None,
+        )
+        .await;
+        assert!(r.is_err());
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn write_timeout_triggers_when_peer_not_reading() {
+        let (mut a, mut b) = duplex(1);
+        // 先向 a 写入数据，使得 a->b 方向有数据可写
+        a.write_all(b"hello").await.unwrap();
+        // 立即进入拷贝，b 的读取方向没有任何数据，且我们不给 b 读，导致 a->b 写阻塞
+        let r = copy_bidirectional_streaming_ctl(
+            &mut a,
+            &mut b,
+            "test",
+            Duration::from_millis(50),
+            None,
+            Some(Duration::from_millis(30)),
+            None,
+        )
+        .await;
+        assert!(r.is_err());
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn cancel_token_causes_interrupted() {
+        let (mut a, mut b) = duplex(8);
+        let tok = CancellationToken::new();
+        let t2 = tok.clone();
+        let fut = copy_bidirectional_streaming_ctl(
+            &mut a,
+            &mut b,
+            "test",
+            Duration::from_millis(50),
+            None,
+            None,
+            Some(tok),
+        );
+        let j = tokio::spawn(async move {
+            // 短暂等待再取消
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            t2.cancel();
+        });
+        let r = fut.await;
+        let _ = j.await;
+        assert!(r.is_err());
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::Interrupted);
+    }
+
+    #[tokio::test]
+    async fn peer_half_close_propagates_shutdown() {
+        let (mut a, mut b) = duplex(8);
+
+        // 对端半关闭：在后台对 b 执行 shutdown 写，使得 a 的读返回 0
+        let mut b_clone = b.clone();
+        let closer = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let _ = AsyncWriteExt::shutdown(&mut b_clone).await;
+        });
+
+        let r = copy_bidirectional_streaming_ctl(
+            &mut a,
+            &mut b,
+            "test",
+            Duration::from_millis(50),
+            Some(Duration::from_millis(100)),
+            Some(Duration::from_millis(100)),
+            None,
+        )
+        .await;
+        let _ = closer.await;
+        // 应当正常结束（非错误），或最少不崩溃
+        assert!(r.is_ok());
+    }
+}

@@ -201,14 +201,20 @@ impl UdpNat {
         }
     }
 
-    /// Evict expired sessions
+    /// Evict expired sessions (all)
     pub fn evict_expired(&mut self) -> usize {
+        self.evict_expired_batch(usize::MAX)
+    }
+
+    /// Evict expired sessions up to `limit` entries (batch GC)
+    pub fn evict_expired_batch(&mut self, limit: usize) -> usize {
         let mut expired_keys = Vec::new();
 
         // Find expired sessions
         for (flow_key, session) in &self.sessions {
             if session.is_expired(self.session_ttl) {
                 expired_keys.push(flow_key.clone());
+                if expired_keys.len() >= limit { break; }
             }
         }
 
@@ -229,7 +235,10 @@ impl UdpNat {
 
         // Update metrics
         #[cfg(feature = "metrics")]
-        set_nat_size(self.sessions.len());
+        {
+            set_nat_size(self.sessions.len());
+            crate::metrics::udp::set_nat_entries(self.sessions.len(), count);
+        }
 
         count
     }
@@ -284,7 +293,8 @@ impl UdpNat {
         let start_port = self.next_port;
 
         loop {
-            let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), self.next_port);
+            // Use infallible constructor to avoid parse().unwrap()
+            let addr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), self.next_port);
 
             // Check if port is already in use
             if !self.reverse_map.contains_key(&addr) {
@@ -481,6 +491,14 @@ mod tests {
             .create_mapping(test_addr(1002), test_addr(2002))
             .unwrap();
         assert_eq!(nat.session_count(), 2); // Still at capacity
+    }
+
+    #[test]
+    fn test_udp_nat_zero_capacity_returns_error() {
+        let mut nat = UdpNat::new(0, Duration::from_secs(300));
+        // When capacity is zero, creating a mapping should return a capacity error and not panic.
+        let res = nat.create_mapping(test_addr(1000), test_addr(2000));
+        assert!(res.is_err());
     }
 
     #[test]

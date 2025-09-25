@@ -5,7 +5,7 @@ use std::net::TcpStream;
 
 fn main() {
     let addr = std::env::args().nth(1).unwrap_or_else(|| "127.0.0.1:19090".to_string());
-    let mut s = TcpStream::connect(addr).expect("connect exporter");
+    let mut s = match TcpStream::connect(addr) { Ok(s) => s, Err(e)=> { eprintln!("connect failed: {}", e); return; } };
     let req = b"GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n";
     s.write_all(req).ok();
     let mut buf = Vec::new();

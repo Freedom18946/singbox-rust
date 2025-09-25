@@ -16,9 +16,13 @@ pub mod present;
 pub mod rule;
 pub mod subscribe;
 pub mod validator;
+pub mod compat;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
+    /// Schema version (2 by default)
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     #[serde(default)]
     pub inbounds: Vec<Inbound>,
     #[serde(default)]
@@ -285,6 +289,8 @@ fn auth_user_pass(a: Option<&Auth>) -> (Option<String>, Option<String>) {
 fn default_vless_network() -> String {
     "tcp".to_string()
 }
+
+fn default_schema_version() -> u32 { 2 }
 
 #[cfg(test)]
 mod tests {

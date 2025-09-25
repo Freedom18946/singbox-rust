@@ -7,7 +7,7 @@
 > 3. 📋 基于本文档进行开发路径规划
 > 
 > **更新责任**: 任何修改项目结构的操作都必须同步更新本文档  
-> **最后更新**: 2024年9月20日
+> **最后更新**: 2025年9月25日
 
 ## 项目概述
 
@@ -22,12 +22,13 @@ singbox-rust/
 ├── 📁 .kiro/                     # Kiro IDE 配置和规范
 ├── 📁 app/                       # 主应用程序
 ├── 📁 crates/                    # 核心 crate 模块
-├── 📁 docs/                      # 项目文档
+├── 📁 docs/                      # 项目文档（Cookbook/Development/OPS 等）
 ├── 📁 examples/                  # 示例代码和配置
 ├── 📁 tests/                     # 测试文件（重新整理后）
 ├── 📁 scripts/                   # 构建和部署脚本
 ├── 📁 .e2e/                      # 端到端测试环境
 ├── 📁 grafana/                   # Grafana 监控面板
+├── 📁 packaging/                 # systemd/Docker 等发布产物
 ├── 📁 refs/                      # 参考资料和分析
 ├── 📁 instruction/               # 指令和文档
 ├── 📄 Cargo.toml                 # 工作空间配置
@@ -136,14 +137,14 @@ app/
 
 ```
 docs/
-├── 📄 ARCHITECTURE.md           # 架构设计文档
-├── 📄 CLI_TOOLS.md             # CLI 工具说明
-├── 📄 ERRORS.md                # 错误处理指南
-├── 📄 ROUTER_RULES.md          # 路由规则文档
-├── 📄 SCHEMA.*.json5           # Schema 定义
-├── 📄 PROJECT_STRUCTURE_NAVIGATION.md  # 本导航文档
-├── 📁 examples/                # 文档示例
-└── 📁 scripts/                 # 文档生成脚本
+├── ARCHITECTURE.md           # 架构设计文档
+├── CLI_TOOLS.md              # CLI 工具说明
+├── COOKBOOK.md               # 可运行示例与排错
+├── DEVELOPMENT.md            # 质量闸门与开发参考
+├── OPS.md                    # 运维与部署（systemd/Docker）
+├── ENV_VARS.md               # 环境变量清单
+├── PROJECT_STRUCTURE_NAVIGATION.md  # 本导航文档
+└── ...
 ```
 
 ## 示例和配置 (examples/)
@@ -163,12 +164,11 @@ examples/
 
 ```
 scripts/
-├── 📁 ci/                      # CI/CD 脚本
-├── 📁 .e2e/                    # E2E 测试脚本
-├── 📁 scenarios.d/             # 场景测试脚本
-├── 📄 e2e_*.zsh                # 端到端测试
-├── 📄 run-*                    # 运行脚本
-└── 📄 release*                 # 发布脚本
+├── ci/                      # CI/CD 脚本
+├── e2e-run.sh               # 非阻断 e2e 汇总
+├── preflight.sh             # 发行前预检门禁
+├── bench.sh                 # 开发态基准脚本
+└── ...
 ```
 
 ## 开发环境配置

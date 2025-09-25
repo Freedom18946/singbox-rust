@@ -46,6 +46,14 @@ pub enum VmessSecurity {
 }
 
 impl VmessSecurity {
+    /// Parse human-readable security setting.
+    ///
+    /// Example
+    /// ```
+    /// use sb_adapters::outbound::vmess::VmessSecurity;
+    /// assert_eq!(VmessSecurity::from_str("aes-128-gcm"), VmessSecurity::Aes128Gcm);
+    /// assert_eq!(VmessSecurity::from_str("auto"), VmessSecurity::Auto);
+    /// ```
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "auto" => Self::Auto,

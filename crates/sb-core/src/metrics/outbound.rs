@@ -125,14 +125,12 @@ pub fn params_gauge() -> &'static prometheus::IntGaugeVec {
 
 #[cfg(feature = "metrics")]
 pub fn proxy_select_score() -> &'static prometheus::GaugeVec {
-    use crate::metrics::registry_ext::get_or_register_gauge_vec;
-    let gaugevec = get_or_register_gauge_vec(
+    use crate::metrics::registry_ext::get_or_register_gauge_vec_f64;
+    get_or_register_gauge_vec_f64(
         "proxy_select_score_prom",
         "P3 selector score (prometheus crate)",
         &["outbound"],
-    );
-    // Safety: transmute IntGaugeVec to GaugeVec - they have the same layout
-    unsafe { std::mem::transmute(gaugevec) }
+    )
 }
 
 #[cfg(feature = "metrics")]

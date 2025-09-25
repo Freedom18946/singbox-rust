@@ -14,6 +14,7 @@ use std::time::Instant;
 // =============================
 
 /// 当前活跃 HTTP 连接（长连接含 keep-alive）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error if metrics registry fails
 pub static HTTP_INFLIGHT: Lazy<IntGauge> = Lazy::new(|| {
     register_int_gauge!(opts!(
         "http_inflight",
@@ -23,12 +24,14 @@ pub static HTTP_INFLIGHT: Lazy<IntGauge> = Lazy::new(|| {
 });
 
 /// 已接受的 HTTP 连接总数
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!("http_conn_total", "Total accepted HTTP connections"))
         .expect("register http_conn_total")
 });
 
 /// CONNECT 请求总数（入站 HTTP 代理处理的隧道建立请求）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONNECT_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_connect_req_total",
@@ -38,6 +41,7 @@ pub static HTTP_CONNECT_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// CONNECT 成功建立的总数
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONNECT_OK_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_connect_ok_total",
@@ -47,6 +51,7 @@ pub static HTTP_CONNECT_OK_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// CONNECT 失败总数（握手失败/上游失败/路由失败等）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONNECT_FAIL_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_connect_fail_total",
@@ -56,6 +61,7 @@ pub static HTTP_CONNECT_FAIL_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 入站 HTTP 层错误（解析/协议/早期关闭等）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_error_total",
@@ -65,6 +71,7 @@ pub static HTTP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 入站请求总数（不区分方法/状态）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_req_total",
@@ -74,6 +81,7 @@ pub static HTTP_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 按方法维度的请求计数（避免高基数，仅固定方法集合）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_METHOD_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_method_total",
@@ -84,6 +92,7 @@ pub static HTTP_METHOD_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 /// 按状态码段（2xx/3xx/4xx/5xx）的响应计数
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_STATUS_CLASS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_status_class_total",
@@ -94,8 +103,10 @@ pub static HTTP_STATUS_CLASS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 /// 请求耗时直方图（毫秒）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_REQ_DURATION_MS: Lazy<Histogram> = Lazy::new(|| {
     // 指数桶：2ms ~ 4096ms
+    // Expect is at constructor-time; invalid input here indicates a programmer error.
     let buckets = prometheus::exponential_buckets(0.002, 2.0, 13).expect("make buckets");
     register_histogram!(HistogramOpts {
         common_opts: opts!(
@@ -108,6 +119,7 @@ pub static HTTP_REQ_DURATION_MS: Lazy<Histogram> = Lazy::new(|| {
 });
 
 /// 按出站类型（direct/http/socks）的连接尝试
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_outbound_connect_attempt_total",
@@ -118,6 +130,7 @@ pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 /// 按出站类型的连接失败分类（dns/tcp_timeout/tls/other）
+#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_OUTBOUND_CONNECT_ERROR: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_outbound_connect_error_total",

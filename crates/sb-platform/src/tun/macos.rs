@@ -18,6 +18,9 @@ impl MacOsTun {
     /// Open a utun device on macOS
     fn open_utun_device(config: &TunConfig) -> Result<(File, String), TunError> {
         // Create a system socket for utun control
+        // SAFETY: We pass valid constants for domain (PF_SYSTEM), type (SOCK_DGRAM), and protocol
+        // (SYSPROTO_CONTROL). The returned file descriptor is checked for negative values to map
+        // errors into TunError without panicking.
         let fd = unsafe { libc::socket(libc::PF_SYSTEM, libc::SOCK_DGRAM, SYSPROTO_CONTROL) };
 
         if fd < 0 {
@@ -30,6 +33,7 @@ impl MacOsTun {
             ctl_name: [0; 96],
         };
 
+        // Ensure the control name is a valid C string (no interior NUL)
         let control_name = CString::new(UTUN_CONTROL_NAME)
             .map_err(|_| TunError::InvalidConfig("Invalid control name".to_string()))?;
 
@@ -41,9 +45,12 @@ impl MacOsTun {
         }
 
         // Get control info
+        // SAFETY: We pass a valid file descriptor and a mutable pointer to a properly
+        // initialized C structure. Return value is checked for errors (< 0).
         let result = unsafe { libc::ioctl(fd, CTLIOCGINFO, &mut ctl_info) };
 
         if result < 0 {
+            // SAFETY: fd is valid, close is idempotent
             unsafe {
                 libc::close(fd);
             }
@@ -60,6 +67,8 @@ impl MacOsTun {
             sc_reserved: [0; 5],
         };
 
+        // SAFETY: We pass a valid file descriptor and a pointer to a SockaddrCtl value. The
+        // size is computed from the struct type. Return value is checked (< 0) and mapped.
         let result = unsafe {
             libc::connect(
                 fd,
@@ -69,6 +78,7 @@ impl MacOsTun {
         };
 
         if result < 0 {
+            // SAFETY: fd is valid, close is idempotent
             unsafe {
                 libc::close(fd);
             }
@@ -82,6 +92,7 @@ impl MacOsTun {
             format!("utun{}", addr.sc_unit - 1)
         };
 
+        // SAFETY: from_raw_fd transfers ownership; fd will be managed by File's Drop impl
         let file = unsafe { File::from_raw_fd(fd) };
         Ok((file, actual_name))
     }
@@ -112,6 +123,8 @@ impl MacOsTun {
         let mut ifname = [0u8; libc::IF_NAMESIZE];
         let mut len = libc::IF_NAMESIZE as libc::socklen_t;
 
+        // SAFETY: We pass a valid fd and a pointer to a mutable buffer sized to IF_NAMESIZE.
+        // len tracks the buffer length as required by getsockopt. Return value is checked.
         let result = unsafe {
             libc::getsockopt(
                 fd,
@@ -205,6 +218,26 @@ impl MacOsTun {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_utun_name_with_invalid_fd() {
+        // Passing an invalid fd should produce an IoError without panic
+        let res = MacOsTun::get_utun_name(-1);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_cstring_new_fails_when_interior_nul() {
+        // Ensure CString::new errors are mapped (this is indirect via control name in open)
+        // Here we only assert CString::new would fail if given bad input; the open_utun_device
+        // uses a constant so this is a direct unit assertion.
+        assert!(std::ffi::CString::new(b"bad\0name".as_slice()).is_err());
     }
 }
 

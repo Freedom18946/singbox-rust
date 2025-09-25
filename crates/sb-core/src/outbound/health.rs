@@ -47,7 +47,7 @@ static STATES: once_cell::sync::OnceCell<DashMap<String, EpState>> =
 
 pub struct MultiHealthView;
 
-// TODO: HealthView trait not defined yet
+// NOTE: HealthView trait can be wired when multi-pool selection is finalized.
 /*impl crate::outbound::selector::HealthView for MultiHealthView {
     fn is_selectable(&self, ep: &ProxyEndpoint) -> bool {
         let states = match STATES.get() {

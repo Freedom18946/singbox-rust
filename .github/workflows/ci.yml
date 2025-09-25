@@ -3,20 +3,28 @@ name: CI
 on:
   push:
     branches: [ main, master ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches: [ main, master ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      - uses: ./.github/actions/rust-setup
 
       - name: Cargo fmt (check)
         run: cargo fmt --all -- --check
@@ -36,10 +44,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      - uses: ./.github/actions/rust-setup
       - name: E2E tests (adapters only)
         env:
           RUST_TEST_THREADS: 1
@@ -51,10 +56,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      - uses: ./.github/actions/rust-setup
       - name: UDP DNS pool tests (optional)
         env:
           RUST_TEST_THREADS: 1
@@ -66,10 +68,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      - uses: ./.github/actions/rust-setup
       - name: DoH/DoT tests (optional)
         env:
           RUST_TEST_THREADS: 1
@@ -80,10 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      - uses: ./.github/actions/rust-setup
       - name: Router async smoke (adapters)
         run: |
           cargo test -q --features "http,socks,metrics,dns" -p sb-adapters -- --nocapture
@@ -93,12 +89,34 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
+      - uses: ./.github/actions/rust-setup
       - name: Router rules/index/file tests (optional)
         run: |
           cargo test -q --features "http,socks,metrics,dns" -p sb-core --test router_rules_index -- --nocapture
           cargo test -q --features "http,socks,metrics,dns" -p sb-core --test router_geoip_async -- --nocapture
           cargo test -q --features "http,socks,metrics,dns" -p sb-core --test router_rules_file -- --nocapture
+
+  clippy-strict-platform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+      - name: Clippy strict (sb-platform lib-only)
+        run: |
+          cargo clippy -p sb-platform --lib -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks
+
+  cli-contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: CLI JSON contract tests (route/check/version/admin/bench)
+        env:
+          RUST_TEST_THREADS: 1
+        run: |
+          cargo test -p app --test cli_json_contract -- --nocapture
+          cargo test -p app --test admin_contract -- --nocapture
+          cargo test -p app --test bench_io_contract -- --nocapture

@@ -17,3 +17,8 @@
 
 ## 规范化导出（sing_box / clash）
 使用 `sb-subs probe --export ... --normalize {sing_box|clash}` 将过滤/去重后的数组落地为目标生态最小可用形。
+
+## 更多文档
+- Cookbook（可运行示例与排错）：`docs/COOKBOOK.md`
+- 开发与质量闸门：`docs/DEVELOPMENT.md`
+- 运维与部署（systemd/Docker）：`docs/OPS.md`

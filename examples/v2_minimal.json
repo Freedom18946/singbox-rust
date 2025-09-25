@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "inbounds": [
+    { "type": "http", "listen": "127.0.0.1", "port": 28090 }
+  ],
+  "outbounds": [
+    { "type": "direct", "name": "direct" },
+    { "type": "block",  "name": "block" }
+  ],
+  "route": { "default": "direct" }
+}
+

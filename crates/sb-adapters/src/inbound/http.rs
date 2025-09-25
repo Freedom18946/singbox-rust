@@ -311,9 +311,10 @@ async fn handle_client(
 
                 if let Some(reg) = registry::global() {
                     if let Some(pool) = reg.pools.get(&name) {
+                        let default_peer: std::net::SocketAddr = std::net::SocketAddr::from(([0,0,0,0], 0));
                         if let Some(ep) = sel.select(
                             pool,
-                            peer.unwrap_or_else(|| "0.0.0.0:0".parse().unwrap()),
+                            peer.unwrap_or(default_peer),
                             &format!("{}:{}", host, port),
                             &health,
                         ) {
@@ -399,9 +400,25 @@ async fn handle_client(
     cli.write_all(resp).await?;
     cli.flush().await?;
 
-    // 隧道转发（计量 copy；label=http）
-    let _ =
-        sb_core::net::metered::copy_bidirectional_metered(&mut cli, &mut upstream, "http").await?;
+    // 隧道转发（计量 copy；label=http），统一读/写超时（来自环境变量，可选）
+    fn dur_from_env(key: &str) -> Option<std::time::Duration> {
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .and_then(|ms| if ms > 0 { Some(std::time::Duration::from_millis(ms)) } else { None })
+    }
+    let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
+    let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+    let _ = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+        &mut cli,
+        &mut upstream,
+        "http",
+        std::time::Duration::from_secs(1),
+        rt,
+        wt,
+        None,
+    )
+    .await?;
     return Ok(());
 }
 

@@ -321,7 +321,14 @@ impl ResolverHandle {
         // 1) cache hit (scoped; drop lock before awaits)
         #[cfg(feature = "dns_cache")]
         {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = match self.cache.lock() {
+                Ok(g) => g,
+                Err(_e) => {
+                    tracing::error!(target: "sb_core::dns", "cache lock poisoned on resolve/get");
+                    // skip cache path on lock failure
+                    return self.resolve_via_pool_or_system(host).await;
+                }
+            };
             if let Some(ent) = cache.get(&key) {
                 #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
@@ -337,7 +344,15 @@ impl ResolverHandle {
                         if self.prefetch_enabled {
                             let key_clone = key.clone();
                             let permit = self.prefetch_sem.clone().try_acquire_owned();
-                            let mut inflight = self.prefetch_inflight.lock().unwrap();
+                            let mut inflight = match self.prefetch_inflight.lock() {
+                                Ok(g) => g,
+                                Err(_e) => {
+                                    tracing::warn!(target: "sb_core::dns", "prefetch inflight lock poisoned; skip prefetch");
+                                    // behave as no prefetch capacity
+                                    drop(cache);
+                                    return self.resolve_via_pool_or_system(host).await;
+                                }
+                            };
                             if let Ok(p) = permit {
                                 if inflight.insert(key_clone.clone()) {
                                     #[cfg(feature = "metrics")]
@@ -368,7 +383,9 @@ impl ResolverHandle {
                     tokio::spawn(async move {
                         let _p = permit;
                         let _ = handle.resolve_via_pool_or_system(&key_spawn).await;
-                        handle.prefetch_inflight.lock().unwrap().remove(&key_spawn);
+                        if let Ok(mut s) = handle.prefetch_inflight.lock() {
+                            let _ = s.remove(&key_spawn);
+                        }
                     });
                 }
                 return Ok(DnsAnswer {
@@ -393,7 +410,11 @@ impl ResolverHandle {
                     source: cache::Source::Static,
                     rcode: cache::Rcode::NoError,
                 };
-                self.cache.lock().unwrap().put(&key, answer);
+                if let Ok(c) = self.cache.lock() {
+                    c.put(&key, answer);
+                } else {
+                    tracing::error!(target: "sb_core::dns", "cache lock poisoned on static put");
+                }
             }
             #[cfg(feature = "metrics")]
             ::metrics::counter!("dns_query_total", "hit"=>"miss", "family"=>"ANY", "source"=>"static", "rcode"=>"ok").increment(1);
@@ -414,7 +435,7 @@ impl ResolverHandle {
                 }
                 if ips.is_empty() {
                     #[cfg(feature = "dns_cache")]
-                    self.cache.lock().unwrap().put_negative(&key);
+                    if let Ok(c) = self.cache.lock() { c.put_negative(&key); } else { tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative"); }
                     #[cfg(feature = "metrics")]
                     ::metrics::counter!("dns_error_total", "class"=>"empty").increment(1);
                     #[cfg(feature = "metrics")]
@@ -434,7 +455,7 @@ impl ResolverHandle {
                             source: cache::Source::System,
                             rcode: cache::Rcode::NoError,
                         };
-                        self.cache.lock().unwrap().put(&key, answer);
+                        if let Ok(c) = self.cache.lock() { c.put(&key, answer); } else { tracing::error!(target: "sb_core::dns", "cache lock poisoned on put"); }
                     }
                     #[cfg(feature = "metrics")]
                     ::metrics::counter!("dns_query_total", "hit"=>"miss", "family"=>"ANY", "source"=>"system", "rcode"=>"ok").increment(1);
@@ -448,7 +469,7 @@ impl ResolverHandle {
             }
             Err(_e) => {
                 #[cfg(feature = "dns_cache")]
-                self.cache.lock().unwrap().put_negative(&key);
+                if let Ok(c) = self.cache.lock() { c.put_negative(&key); } else { tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative"); }
                 #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_error_total", "class"=>"resolve").increment(1);
                 #[cfg(feature = "metrics")]
@@ -463,17 +484,21 @@ impl ResolverHandle {
         let host_lc = host.to_ascii_lowercase();
         // 构建或获取 per-host semaphore，然后通过 RAII 守卫获取两个 permit
         let host_sem = {
-            let mut g = self.inflight_per_host.lock().expect("poisoned");
-            g.entry(host_lc.clone())
-                .or_insert_with(|| {
-                    Arc::new(tokio::sync::Semaphore::new(
-                        std::env::var("SB_DNS_PER_HOST_INFLIGHT")
-                            .ok()
-                            .and_then(|v| v.parse::<usize>().ok())
-                            .unwrap_or(2),
-                    ))
-                })
-                .clone()
+            if let Ok(mut g) = self.inflight_per_host.lock() {
+                g.entry(host_lc.clone())
+                    .or_insert_with(|| {
+                        Arc::new(tokio::sync::Semaphore::new(
+                            std::env::var("SB_DNS_PER_HOST_INFLIGHT")
+                                .ok()
+                                .and_then(|v| v.parse::<usize>().ok())
+                                .unwrap_or(2),
+                        ))
+                    })
+                    .clone()
+            } else {
+                tracing::warn!(target: "sb_core::dns", host=%host_lc, "per-host inflight lock poisoned; falling back to global only");
+                Arc::new(tokio::sync::Semaphore::new(1))
+            }
         };
         let _inflight = InflightGuards::acquire(&self.inflight_global, &host_sem).await;
         // Build upstream pool from env
@@ -862,10 +887,12 @@ async fn resolve_race(
         .cloned()
         .filter(|u| {
             let key = up_key(u);
-            let map = h.up_health.lock().unwrap();
-            match map.get(&key) {
-                Some(st) => now >= st.down_until,
-                None => true,
+            match h.up_health.lock() {
+                Ok(map) => match map.get(&key) {
+                    Some(st) => now >= st.down_until,
+                    None => true,
+                },
+                Err(_) => true,
             }
         })
         .collect();
@@ -990,7 +1017,13 @@ async fn resolve_fanout(
 }
 
 fn mark_upstream_fail(h: &ResolverHandle, key: &str, reason: &str) {
-    let mut map = h.up_health.lock().unwrap();
+    let mut map = match h.up_health.lock() {
+        Ok(g) => g,
+        Err(_e) => {
+            tracing::error!(target: "sb_core::dns", upstream=%key, "up_health lock poisoned on fail");
+            return;
+        }
+    };
     let st = map.entry(key.to_string()).or_insert(UpHealth {
         fail_count: 0,
         down_until: std::time::Instant::now(),
@@ -1009,7 +1042,13 @@ fn mark_upstream_fail(h: &ResolverHandle, key: &str, reason: &str) {
 }
 
 fn mark_upstream_success(h: &ResolverHandle, key: &str) {
-    let mut map = h.up_health.lock().unwrap();
+    let mut map = match h.up_health.lock() {
+        Ok(g) => g,
+        Err(_e) => {
+            tracing::error!(target: "sb_core::dns", upstream=%key, "up_health lock poisoned on success");
+            return;
+        }
+    };
     let st = map.entry(key.to_string()).or_insert(UpHealth {
         fail_count: 0,
         down_until: std::time::Instant::now(),

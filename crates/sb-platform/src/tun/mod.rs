@@ -9,6 +9,13 @@ use std::sync::Arc;
 use thiserror::Error;
 
 /// TUN device configuration
+///
+/// Example
+/// ```
+/// use sb_platform::tun::TunConfig;
+/// let cfg = TunConfig::default();
+/// assert!(cfg.mtu >= 1200);
+/// ```
 #[derive(Debug, Clone)]
 pub struct TunConfig {
     /// Device name (e.g., "utun0", "tun0", "wintun")

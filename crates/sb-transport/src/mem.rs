@@ -161,15 +161,43 @@ impl Dialer for DuplexDialer {
         // 2. 满足 Dialer trait 的 Send + Sync 要求
         // 3. 每个 DuplexDialer 实例只使用一次
 
-        // 从 Mutex 中取出 DuplexStream
-        let s = self
+        // 从 Mutex 中取出 DuplexStream。若发生 Poison（前一次持锁线程 panic），
+        // 则按“显式错误策略”返回确定性错误，避免使用已不可信的内部状态。
+        let mut guard = self
             .cli
             .lock()
-            .unwrap()
-            .take()
-            .ok_or(DialError::NotSupported)?;
+            .map_err(|_| DialError::Other("mutex poisoned".into()))?;
+        let s = guard.take().ok_or(DialError::NotSupported)?;
 
         // 将 DuplexStream 包装为 IoStream 返回
         Ok(Box::new(s))
+    }
+}
+
+#[cfg(test)]
+mod tests_poison {
+    use super::*;
+    use std::thread;
+
+    #[tokio::test]
+    async fn connect_after_poison_returns_deterministic_error() {
+        let (dialer, _server) = DuplexDialer::new_pair();
+
+        // Deliberately poison the mutex by panicking while holding the lock in another thread
+        let cli_ptr: *const Mutex<Option<tokio::io::DuplexStream>> = &dialer.cli;
+        let _ = thread::spawn(move || {
+            // SAFETY: Only used here to intentionally trigger a poison; not used elsewhere.
+            let m = unsafe { &*cli_ptr };
+            let _g = m.lock().unwrap();
+            panic!("intentional panic to poison mutex");
+        })
+        .join();
+
+        // connect should now return a deterministic error rather than panic
+        let err = dialer.connect("unused", 0).await.err().expect("must err");
+        match err {
+            DialError::Other(msg) => assert!(msg.contains("poisoned")),
+            _ => panic!("unexpected error: {err:?}"),
+        }
     }
 }

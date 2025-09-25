@@ -87,12 +87,15 @@ fn main() {
             println!("}}");
         }
         _ => {
-            // Extra stderr hints for quick eyeballing
-            eprintln!("decision={}", r.phase);
+            // Extra log hints for quick eyeballing
+            tracing::info!(target: "app::route-explain", decision = %r.phase, "decision");
             if let Some(s) = r.steps.iter().find(|s| s.matched) {
-                eprintln!(
-                    "first_match[{}] rule_id={} reason={}",
-                    s.phase, s.rule_id, s.reason
+                tracing::info!(
+                    target: "app::route-explain",
+                    phase = %s.phase,
+                    rule_id = %s.rule_id,
+                    reason = %s.reason,
+                    "first_match"
                 );
             }
             let trace = Map::new();

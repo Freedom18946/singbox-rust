@@ -14,6 +14,7 @@ use tokio::net::UdpSocket;
 use sb_core::net::udp_nat::{NatKey, NatMap, TargetAddr, UpstreamError, record_upstream_failure, update_flow_metrics};
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::rules as rules_global;
+use sb_core::error::SbError;
 
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge, histogram};
@@ -38,12 +39,12 @@ fn nat_ttl_from_env() -> Duration {
 /// Returns (target_addr, header_length) on success
 fn parse_socks5_udp_header(buf: &[u8]) -> Result<(TargetAddr, usize)> {
     if buf.len() < 4 {
-        bail!("SOCKS5 UDP header too short");
+        bail!(SbError::parse("SOCKS5 UDP header too short"));
     }
 
     // Check reserved fields and fragment
     if buf[0] != 0 || buf[1] != 0 || buf[2] != 0 {
-        bail!("Invalid SOCKS5 UDP reserved fields or fragment");
+        bail!(SbError::parse("Invalid SOCKS5 UDP reserved fields or fragment"));
     }
 
     let atyp = buf[3];
@@ -53,7 +54,7 @@ fn parse_socks5_udp_header(buf: &[u8]) -> Result<(TargetAddr, usize)> {
         0x01 => {
             // IPv4
             if buf.len() < offset + 6 {
-                bail!("IPv4 address too short");
+                bail!(SbError::parse("IPv4 address too short"));
             }
             let ip = std::net::Ipv4Addr::new(buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]);
             offset += 4;
@@ -64,7 +65,7 @@ fn parse_socks5_udp_header(buf: &[u8]) -> Result<(TargetAddr, usize)> {
         0x04 => {
             // IPv6
             if buf.len() < offset + 18 {
-                bail!("IPv6 address too short");
+                bail!(SbError::parse("IPv6 address too short"));
             }
             let ip = std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&buf[offset..offset + 16])?);
             offset += 16;
@@ -75,20 +76,22 @@ fn parse_socks5_udp_header(buf: &[u8]) -> Result<(TargetAddr, usize)> {
         0x03 => {
             // Domain name
             if buf.len() < offset + 1 {
-                bail!("Domain length field missing");
+                bail!(SbError::parse("Domain length field missing"));
             }
             let domain_len = buf[offset] as usize;
             offset += 1;
             if buf.len() < offset + domain_len + 2 {
-                bail!("Domain name or port missing");
+                bail!(SbError::parse("Domain name or port missing"));
             }
-            let host = std::str::from_utf8(&buf[offset..offset + domain_len])?.to_string();
+            let host = std::str::from_utf8(&buf[offset..offset + domain_len])
+                .map_err(|e| SbError::parse(format!("invalid domain utf8: {}", e)))?
+                .to_string();
             offset += domain_len;
             let port = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
             offset += 2;
             TargetAddr::Domain { host, port }
         }
-        _ => bail!("Invalid address type: {}", atyp),
+        _ => bail!(SbError::addr(format!("Invalid address type: {}", atyp))),
     };
 
     Ok((target, offset))
@@ -122,18 +125,23 @@ fn encode_socks5_udp_reply(target: &SocketAddr, payload: &[u8]) -> Vec<u8> {
 async fn create_upstream_socket(target: &TargetAddr) -> Result<Arc<UdpSocket>> {
     let socket = match target {
         TargetAddr::Ip(addr) => {
-            let sock = UdpSocket::bind("0.0.0.0:0").await?;
-            sock.connect(addr).await?;
+            let sock = UdpSocket::bind("0.0.0.0:0").await
+                .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
+            sock.connect(addr).await
+                .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
             sock
         }
         TargetAddr::Domain { host, port } => {
             // For domain targets, resolve and connect
             let addr = tokio::net::lookup_host(format!("{}:{}", host, port))
-                .await?
+                .await
+                .map_err(|e| anyhow::Error::from(SbError::dns(format!("resolve failed: {}", e))))?
                 .next()
-                .ok_or_else(|| anyhow::anyhow!("Failed to resolve domain: {}", host))?;
-            let sock = UdpSocket::bind("0.0.0.0:0").await?;
-            sock.connect(addr).await?;
+                .ok_or_else(|| anyhow::Error::from(SbError::dns(format!("Failed to resolve domain: {}", host))))?;
+            let sock = UdpSocket::bind("0.0.0.0:0").await
+                .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
+            sock.connect(addr).await
+                .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
             sock
         }
     };

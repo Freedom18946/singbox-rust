@@ -93,6 +93,15 @@ pub fn set_nat_size(size: usize) {
     gauge!("udp_nat_size").set(size as f64);
 }
 
+/// Set NAT entry gauges for observability
+pub fn set_nat_entries(alive: usize, gc: usize) {
+    #[cfg(feature = "metrics")]
+    {
+        gauge!("udp_nat_entries", "state" => "alive").set(alive as f64);
+        gauge!("udp_nat_entries", "state" => "gc").set(gc as f64);
+    }
+}
+
 pub enum EvictionReason {
     Ttl,
     Capacity,

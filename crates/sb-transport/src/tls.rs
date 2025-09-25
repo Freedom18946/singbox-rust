@@ -292,9 +292,16 @@ impl<D: Dialer> TlsDialer<D> {
 
         // 读取和解析 ALPN 协议列表
         let alpn = std::env::var("SB_TLS_ALPN").ok().map(|s| {
-            s.split(',')
-                .map(|x| x.trim().as_bytes().to_vec())
-                .collect::<Vec<_>>()
+            let parts = s.split(',');
+            let mut v = Vec::with_capacity(parts.clone().count());
+            for p in parts {
+                let p = p.trim();
+                if !p.is_empty() {
+                    // 最小拷贝：直接基于 &str 生成 Vec<u8>
+                    v.push(p.as_bytes().to_vec());
+                }
+            }
+            v
         });
 
         Self {

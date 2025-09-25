@@ -65,6 +65,12 @@ impl Default for DirectConnector {
 #[async_trait]
 impl OutboundConnector for DirectConnector {
     async fn connect_tcp(&self, ctx: &ConnCtx) -> SbResult<TcpStream> {
+        // Global backpressure via semaphore
+        let (sem, q_ms) = global_limiters();
+        let _permit = tokio::time::timeout(Duration::from_millis(q_ms), sem.acquire())
+            .await
+            .map_err(|_| SbError::timeout("outbound_queue", q_ms))
+            .and_then(|r| r.map_err(|_| SbError::Canceled))?;
         let addr = self.resolve_endpoint(&ctx.dst).await?;
 
         let stream = timeout(self.connect_timeout, TcpStream::connect(addr))
@@ -94,6 +100,15 @@ impl OutboundConnector for DirectConnector {
 
         Ok(Box::new(DirectUdpTransport::new(socket)))
     }
+}
+
+fn global_limiters() -> (&'static tokio::sync::Semaphore, u64) {
+    use std::sync::OnceLock;
+    static SEM: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    let max = std::env::var("SB_OUT_MAX_CONCURRENCY").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(256).max(1);
+    let q_ms = std::env::var("SB_OUT_QUEUE_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(5_000);
+    let sem = SEM.get_or_init(|| tokio::sync::Semaphore::new(max));
+    (sem, q_ms)
 }
 
 /// Direct UDP transport implementation

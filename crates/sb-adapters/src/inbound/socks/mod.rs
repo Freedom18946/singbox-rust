@@ -517,12 +517,24 @@ async fn handle_conn(
             reply(cli, 0x00, None).await?;
             debug!(peer=%peer, "socks connect established");
 
-            // 双向转发 + 计量
-            let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming(
+            // 双向转发 + 计量 + 读/写超时（可选，来自环境）
+            fn dur_from_env(key: &str) -> Option<std::time::Duration> {
+                std::env::var(key)
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .and_then(|ms| if ms > 0 { Some(std::time::Duration::from_millis(ms)) } else { None })
+            }
+
+            let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
+            let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+            let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
                 cli,
                 &mut srv,
                 "socks",
                 std::time::Duration::from_secs(1),
+                rt,
+                wt,
+                None,
             )
             .await?;
             Ok(())

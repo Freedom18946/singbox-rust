@@ -9,6 +9,7 @@ pub struct ConfigView {
 }
 
 #[derive(Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_redirects: Option<usize>,
@@ -47,10 +48,19 @@ pub async fn handle_put(
     headers: &HashMap<String, String>,
 ) -> std::io::Result<()>
 {
+    let t_start = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let t0 = tokio::time::Instant::now();
     // Check RBAC - X-Role header should be admin
     let role = headers.get("x-role").map(|s| s.as_str()).unwrap_or("");
     if role != "admin" {
-        return respond_json_error(sock, 403, "Access denied", Some("X-Role: admin required")).await;
+        // Stable error schema
+        #[derive(serde::Serialize)]
+        struct Resp<'a> { status: &'a str, applied: bool, errors: Vec<&'a str>, start_ms: u128, dur_ms: u128 }
+        let resp = Resp { status: "error", applied: false, errors: vec!["X-Role: admin required"], start_ms: t_start, dur_ms: t0.elapsed().as_millis() };
+        return crate::admin_debug::http_util::respond(sock, 403, "application/json", &serde_json::to_string(&resp).unwrap_or_else(|_|"{}".into())).await;
     }
 
     // Dry-run toggle
@@ -80,10 +90,12 @@ pub async fn handle_put(
             ).with_changed(app.changed);
             audit::log(entry);
 
-            // Respond with full result including changed field
+            // Respond with fixed schema and stable field order
             #[derive(serde::Serialize)]
-            struct Resp<'a> { ok: bool, msg: &'a str, changed: bool, version: u64, diff: serde_json::Value }
-            let resp = Resp { ok: app.ok, msg: &app.msg, changed: app.changed, version: app.version, diff: app.diff };
+            struct Resp<'a> { status: &'a str, applied: bool, errors: &'a[&'a str], start_ms: u128, dur_ms: u128 }
+            let status = if app.ok { "ok" } else { "error" };
+            let applied = app.ok && !dry && app.changed;
+            let resp = Resp { status, applied, errors: &[], start_ms: t_start, dur_ms: t0.elapsed().as_millis() };
             respond_json_ok(sock, &resp).await
         }
         Err(e) => {
@@ -95,7 +107,11 @@ pub async fn handle_put(
                 &e,
             ).with_changed(false);
             audit::log(entry);
-            respond_json_error(sock, 400, "apply failed", Some(&e)).await
+            // Fixed schema error
+            #[derive(serde::Serialize)]
+            struct Resp<'a> { status: &'a str, applied: bool, errors: [&'a str;1], start_ms: u128, dur_ms: u128 }
+            let resp = Resp { status: "error", applied: false, errors: [&*e], start_ms: t_start, dur_ms: t0.elapsed().as_millis() };
+            crate::admin_debug::http_util::respond(sock, 400, "application/json", &serde_json::to_string(&resp).unwrap_or_else(|_|"{}".into())).await
         }
     }
 }

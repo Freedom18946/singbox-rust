@@ -182,7 +182,7 @@ impl Lru {
     fn write_to_disk(&self, key: &str, entry: &CacheEntry) -> Result<(), std::io::Error> {
         if let Some(ref base_path) = self.disk_backing {
             let file_path = self.disk_path(key);
-            std::fs::write(&file_path, &entry.body)?;
+            sb_core::util::fs_atomic::write_atomic(&file_path, &entry.body)?;
         }
         Ok(())
     }

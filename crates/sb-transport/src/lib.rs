@@ -20,6 +20,9 @@
 /// 网络连接拨号器模块
 /// 提供了 `Dialer` trait 和各种拨号器实现
 pub mod dialer;
+pub mod pool {
+    pub mod limit;
+}
 
 /// TLS 传输层模块
 /// 提供基于 rustls 的 TLS 连接包装器

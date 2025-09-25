@@ -7,6 +7,7 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use sb_core::error::SbError;
 
 /// Result type for API operations
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -47,9 +48,43 @@ pub enum ApiError {
     /// WebSocket error
     #[error("WebSocket error: {message}")]
     WebSocket { message: String },
+
+    /// Input parse error (malformed or ambiguous input)
+    #[error("Parse error: {message}")]
+    Parse { message: String },
+
+    /// A specific field is invalid
+    #[error("Invalid field '{field}': {message}")]
+    InvalidField { field: String, message: String },
+
+    /// Unsupported API version requested
+    #[error("Unsupported version: {version}")]
+    UnsupportedVersion { version: String },
 }
 
 impl ApiError {
+    /// Stable kind string for logging/assertions
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ApiError::BadRequest { .. } => "BadRequest",
+            ApiError::NotFound { .. } => "NotFound",
+            ApiError::Internal { .. } => "Internal",
+            ApiError::ServiceUnavailable { .. } => "ServiceUnavailable",
+            ApiError::Configuration { .. } => "Configuration",
+            ApiError::Json { .. } => "Json",
+            ApiError::WebSocket { .. } => "WebSocket",
+            ApiError::Parse { .. } => "Parse",
+            ApiError::InvalidField { .. } => "InvalidField",
+            ApiError::UnsupportedVersion { .. } => "UnsupportedVersion",
+        }
+    }
+
+    /// Example
+    /// ```
+    /// use sb_api::error::ApiError;
+    /// let e = ApiError::bad_request("missing field");
+    /// assert_eq!(e.status_code(), axum::http::StatusCode::BAD_REQUEST);
+    /// ```
     /// Create a bad request error
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::BadRequest {
@@ -95,6 +130,9 @@ impl ApiError {
             ApiError::Configuration { .. } => StatusCode::BAD_REQUEST,
             ApiError::Json { .. } => StatusCode::BAD_REQUEST,
             ApiError::WebSocket { .. } => StatusCode::BAD_REQUEST,
+            ApiError::Parse { .. } => StatusCode::BAD_REQUEST,
+            ApiError::InvalidField { .. } => StatusCode::BAD_REQUEST,
+            ApiError::UnsupportedVersion { .. } => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -110,5 +148,12 @@ impl IntoResponse for ApiError {
         }));
 
         (status_code, body).into_response()
+    }
+}
+
+impl From<SbError> for ApiError {
+    fn from(e: SbError) -> Self {
+        // Preserve source via anyhow wrapping, keep external signature intact
+        ApiError::Internal { source: anyhow::Error::from(e) }
     }
 }

@@ -18,7 +18,40 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 ```bash
 cargo check --workspace --all-features
 bash scripts/ci-local.sh
+scripts/e2e-run.sh   # optional e2e summary → .e2e/summary.json
 ```
+
+### Logging & Docs
+
+- Runtime logs use `tracing` across binaries and libraries.
+- Enable and filter logs via env:
+  - `RUST_LOG=info` enables info-level logs (use `debug` for more detail).
+  - Example: `RUST_LOG=sb_core=debug,app=info cargo run -p app -- version`.
+  - JSON output (when subscriber configured): `RUST_LOG=info APP_LOG_JSON=1 ...`.
+
+CLI bench (HTTP/2) requires feature `reqwest`:
+
+```bash
+cargo run -p app --features reqwest -- bench io --h2 --url https://example.com --requests 10 --concurrency 2 --json
+```
+
+## Lint Baseline
+
+- Workspace default denies warnings: `cargo clippy --workspace --all-targets -- -D warnings`
+- Strict lib-only checks (pedantic + nursery):
+  - `cargo clippy -p sb-core --lib --features metrics -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks`
+  - `cargo clippy -p sb-platform --lib -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks`
+  - `cargo clippy -p sb-transport --lib -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks`
+
+Docs & guides:
+- Cookbook: docs/COOKBOOK.md
+- Development gates: docs/DEVELOPMENT.md
+- Operations: docs/OPS.md
+
+Local verification:
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test -p app -q -- --nocapture`
+- `cargo test -p sb-core --features metrics -q`
 
 Run with an example:
 
@@ -35,6 +68,7 @@ bash scripts/run-examples.sh examples/configs/full_stack.json
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - 架构设计文档
 - [docs/ROUTER_RULES.md](docs/ROUTER_RULES.md) - 路由规则文档
 - [docs/ENV_VARS.md](docs/ENV_VARS.md) - 环境变量配置
+ - [docs/COOKBOOK.md](docs/COOKBOOK.md) - 快速上手/常见问题/可运行示例
 
 ### 🧪 测试文档
 - [tests/README.md](tests/README.md) - 测试指南和目录结构
@@ -64,6 +98,18 @@ sb_prefetch_jobs_total{event=...}
 ## Status
 
 Phase 2.4: inbounds (HTTP/SOCKS) wired, rule engine minimal, env-driven suffix rules.
+
+## Deployment (Quickstart)
+
+- Systemd (Linux): see `packaging/systemd/singbox-rs.service`, then:
+  - `sudo cp packaging/systemd/singbox-rs.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload && sudo systemctl enable --now singbox-rs`
+
+- Docker (MUSL image): see `packaging/docker/Dockerfile.musl` and `packaging/docker/entrypoint.sh`.
+  - Exposes admin/metrics and mounts `/data` for configs.
+  - Example: `docker run -p 18088:18088 -v $PWD:/data singbox-rs:latest --config /data/minimal.yaml`
+
+Health probe: `curl -fsS http://127.0.0.1:18088/metrics` (or admin ping endpoint if enabled).
 ## Troubleshooting
 
 - Set `SB_PRINT_ENV=1` to print a one-line JSON snapshot of relevant environment variables at startup.

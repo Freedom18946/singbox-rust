@@ -139,8 +139,24 @@ impl SimpleV2RayApiServer {
         Ok(())
     }
 
+    /// Negotiate API version; returns error if unsupported
+    pub fn negotiate_version(&self, version: &str) -> ApiResult<()> {
+        match version {
+            "v1" | "1" => Ok(()),
+            other => Err(crate::error::ApiError::UnsupportedVersion {
+                version: other.to_string(),
+            }),
+        }
+    }
+
     /// Get stats for a specific counter
     pub async fn get_stats(&self, request: SimpleStatsRequest) -> ApiResult<SimpleStatsResponse> {
+        if request.name.trim().is_empty() {
+            return Err(crate::error::ApiError::InvalidField {
+                field: "name".to_string(),
+                message: "empty".to_string(),
+            });
+        }
         let stats = self.stats.lock().await;
         let value = stats.get(&request.name).copied().unwrap_or(0);
 
@@ -161,6 +177,17 @@ impl SimpleV2RayApiServer {
         &self,
         request: SimpleQueryStatsRequest,
     ) -> ApiResult<SimpleQueryStatsResponse> {
+        // basic input validation: reject overly long patterns and control chars (except whitespace)
+        if request.pattern.len() > 2048
+            || request
+                .pattern
+                .chars()
+                .any(|c| (c as u32) < 0x20 && c != '\\n' && c != '\\r' && c != '\\t')
+        {
+            return Err(crate::error::ApiError::Parse {
+                message: "invalid pattern".to_string(),
+            });
+        }
         let stats = self.stats.lock().await;
         let mut matching_stats = Vec::new();
 
@@ -297,6 +324,42 @@ mod tests {
         let response = server.query_stats(request).await.unwrap();
         assert!(response.stats.len() >= 1);
         assert!(response.stats.iter().all(|s| s.name.contains("inbound")));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_field_and_parse_errors() {
+        let config = ApiConfig {
+            listen_addr: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
+            enable_cors: false,
+            cors_origins: None,
+            auth_token: None,
+            enable_traffic_ws: false,
+            enable_logs_ws: false,
+            traffic_broadcast_interval_ms: 1000,
+            log_buffer_size: 100,
+        };
+
+        let server = SimpleV2RayApiServer::new(config).unwrap();
+
+        // Empty name should yield InvalidField
+        let bad = SimpleStatsRequest { name: "  ".to_string(), reset: false };
+        match server.get_stats(bad).await.err().expect("must error") {
+            crate::error::ApiError::InvalidField { field, .. } => assert_eq!(field, "name"),
+            e => panic!("unexpected error: {e}"),
+        }
+
+        // Pattern containing control char should yield Parse
+        let badq = SimpleQueryStatsRequest { pattern: "\u{0001}".to_string(), reset: false };
+        match server.query_stats(badq).await.err().expect("must error") {
+            crate::error::ApiError::Parse { .. } => {}
+            e => panic!("unexpected error: {e}"),
+        }
+
+        // Unsupported version
+        match server.negotiate_version("v42").err().expect("must error") {
+            crate::error::ApiError::UnsupportedVersion { version } => assert_eq!(version, "v42"),
+            e => panic!("unexpected error: {e}"),
+        }
     }
 
     #[tokio::test]

@@ -1,0 +1,33 @@
+name: e2e-compat
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+      - name: Run e2e compatibility (non-blocking)
+        run: scripts/e2e-run.sh || true
+      - name: Upload .e2e artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: .e2e/**/*

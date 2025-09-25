@@ -33,10 +33,11 @@ impl GeoIpDb {
     /// # Returns
     /// * `Result<Self, SbError>` - GeoIP database instance or error
     pub fn load_from_file(path: &Path) -> SbResult<Self> {
+        // Map IO errors to a structured configuration error for consistency in router layer
         let data = std::fs::read(path).map_err(|e| SbError::Config {
             code: crate::error::IssueCode::MissingRequired,
-            ptr: format!("/geoip/database_path"),
-            msg: format!("Failed to read GeoIP database file: {}", e),
+            ptr: "/geoip/database_path".to_string(),
+            msg: format!("io: failed to read GeoIP database file: {}", e),
             hint: Some("Ensure the GeoIP database file exists and is readable".to_string()),
         })?;
 
@@ -56,7 +57,7 @@ impl GeoIpDb {
         let content = String::from_utf8(self.data.clone()).map_err(|e| SbError::Config {
             code: crate::error::IssueCode::InvalidType,
             ptr: "/geoip/database_content".to_string(),
-            msg: format!("Invalid UTF-8 in GeoIP database: {}", e),
+            msg: format!("parse_error: invalid UTF-8 in GeoIP database: {}", e),
             hint: Some("Ensure the GeoIP database file is in valid UTF-8 format".to_string()),
         })?;
 
@@ -388,8 +389,8 @@ impl GeoSiteDb {
     pub fn load_from_file(path: &Path) -> SbResult<Self> {
         let data = std::fs::read_to_string(path).map_err(|e| SbError::Config {
             code: crate::error::IssueCode::MissingRequired,
-            ptr: format!("/geosite/database_path"),
-            msg: format!("Failed to read GeoSite database file: {}", e),
+            ptr: "/geosite/database_path".to_string(),
+            msg: format!("io: failed to read GeoSite database file: {}", e),
             hint: Some("Ensure the GeoSite database file exists and is readable".to_string()),
         })?;
 
@@ -404,10 +405,11 @@ impl GeoSiteDb {
 
             let parts: Vec<&str> = line.splitn(3, ':').collect();
             if parts.len() != 3 {
-                eprintln!(
-                    "Warning: Malformed line {} in GeoSite database: {}",
-                    line_num + 1,
-                    line
+                tracing::warn!(
+                    target: "sb_core::router::geo",
+                    line_no = line_num + 1,
+                    line = %line,
+                    "Malformed line in GeoSite database"
                 );
                 continue;
             }
@@ -417,10 +419,11 @@ impl GeoSiteDb {
             let pattern = parts[2].trim().to_string();
 
             if category.is_empty() || pattern.is_empty() {
-                eprintln!(
-                    "Warning: Empty category or pattern at line {}: {}",
-                    line_num + 1,
-                    line
+                tracing::warn!(
+                    target: "sb_core::router::geo",
+                    line_no = line_num + 1,
+                    line = %line,
+                    "Empty category or pattern"
                 );
                 continue;
             }
@@ -431,11 +434,12 @@ impl GeoSiteDb {
                 "keyword" => DomainRule::Keyword(pattern),
                 "regex" => DomainRule::Regex(pattern),
                 _ => {
-                    eprintln!(
-                        "Warning: Unknown rule type '{}' at line {}: {}",
-                        rule_type,
-                        line_num + 1,
-                        line
+                    tracing::warn!(
+                        target: "sb_core::router::geo",
+                        rule_type = %rule_type,
+                        line_no = line_num + 1,
+                        line = %line,
+                        "Unknown rule type"
                     );
                     continue;
                 }
@@ -971,5 +975,25 @@ mod tests {
         assert_eq!(stats.database_size, test_data.len());
         assert_eq!(stats.total_countries, 3);
         assert_eq!(stats.cache_size, 0);
+    }
+
+    #[test]
+    fn test_geoip_invalid_utf8_does_not_panic() {
+        // Construct a DB with invalid UTF-8 content and ensure build_index returns an error
+        let mut db = GeoIpDb {
+            data: vec![0xff, 0xfe, 0xfd],
+            index: BTreeMap::new(),
+            cache: HashMap::new(),
+        };
+        let res = db.build_index();
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_geoip_load_missing_file_is_error() {
+        // Load from a non-existent file returns an error, not a panic
+        let p = std::path::Path::new("/this/definitely/does/not/exist.geoip");
+        let res = GeoIpDb::load_from_file(p);
+        assert!(res.is_err());
     }
 }

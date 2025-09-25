@@ -8,7 +8,7 @@ async fn main() {
         .unwrap_or_else(|_| "127.0.0.1:18090".into())
         .parse()
         .unwrap();
-    eprintln!("[covd] listen http://{}", addr);
+    tracing::info!(target: "app::coverage-http", %addr, "listen");
     let svc = hyper::service::make_service_fn(move |_| async move {
         Ok::<_, hyper::Error>(hyper::service::service_fn(
             |req: Request<Body>| async move {

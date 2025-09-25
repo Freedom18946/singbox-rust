@@ -158,13 +158,15 @@ indicatif = "0.17"
 parking_lot = "0.12"
 atty = "0.2"
 chrono = { workspace = true }
+arc-swap = "1.7"
 
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls","blocking"] }
 assert_cmd = { version = "2.0" }
+loom = "0.7"
+criterion = { version = "0.5", default-features = false }
 
 [build-dependencies]
 chrono = { workspace = true }
-

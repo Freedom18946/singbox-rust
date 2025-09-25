@@ -36,9 +36,8 @@ pub fn init_metrics_exporter_once() {
         // Check if metrics should be enabled
         if let Ok(addr_env) = std::env::var("SB_METRICS_ADDR") {
             if !addr_env.trim().is_empty() {
-                tracing::info!(addr=%addr_env, "metrics exporter initialized (placeholder)");
-                // TODO: real metrics exporter implementation
-                // For now just log that it would be enabled
+                tracing::info!(addr=%addr_env, "metrics exporter initialized (stub)");
+                // NOTE: placeholder exporter; real exporter can be wired via feature flags.
             }
         }
         // Always return () to mark as initialized

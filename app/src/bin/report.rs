@@ -4,7 +4,7 @@ use clap::Parser;
 fn main() {
     let args = Args::parse();
     if let Err(e) = report::main(args) {
-        eprintln!(r#"{{"ok":false,"error":"{}"}}"#, e);
+        tracing::error!(target: "app::report", error = %e, "report error");
         std::process::exit(1);
     }
 }

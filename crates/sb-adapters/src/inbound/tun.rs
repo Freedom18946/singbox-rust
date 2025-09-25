@@ -341,9 +341,11 @@ mod sys_macos {
     /// 打开 utun 并返回 AsyncFd；由上层执行读循环以便访问 router / ConnectParams
     #[cfg(feature = "tun")]
     pub async fn open_async_fd(name_hint: &str, mtu: u32) -> io::Result<AsyncFd<std::fs::File>> {
+        // SAFETY: open_utun performs system calls and returns owned fd, errors are properly handled
         let fd = unsafe { open_utun(name_hint)? };
         set_nonblocking(fd)?;
         log::info!("utun opened fd={}, mtu={}", fd, mtu);
+        // SAFETY: from_raw_fd transfers ownership, AsyncFd will manage the file descriptor lifecycle
         let async_fd =
             unsafe { AsyncFd::with_interest(std::fs::File::from_raw_fd(fd), Interest::READABLE) }
                 .map_err(io::Error::other)?;
@@ -351,6 +353,7 @@ mod sys_macos {
     }
 
     #[cfg(feature = "tun")]
+    /// SAFETY: Performs system calls to open utun device; caller must ensure fd is properly managed
     unsafe fn open_utun(_name_hint: &str) -> io::Result<RawFd> {
         // 参考: utun via PF_SYSTEM/SYSPROTO_CONTROL
         // 1) socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL)
@@ -368,7 +371,8 @@ mod sys_macos {
             ctl_id: 0,
             ctl_name: [0; 96],
         };
-        let name = CString::new("com.apple.net.utun_control").unwrap();
+        let name = CString::new("com.apple.net.utun_control")
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid control name"))?;
         // strncpy
         for (i, b) in name.as_bytes_with_nul().iter().enumerate() {
             if i < info.ctl_name.len() {
@@ -417,10 +421,12 @@ mod sys_macos {
 
     #[cfg(feature = "tun")]
     fn set_nonblocking(fd: RawFd) -> io::Result<()> {
+        // SAFETY: fcntl with valid fd and standard flag operation, return value checked
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
         if flags < 0 {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: fcntl with valid fd and flags to set non-blocking mode, return value checked
         let r = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
         if r < 0 {
             return Err(io::Error::last_os_error());

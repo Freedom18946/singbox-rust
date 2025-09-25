@@ -31,6 +31,15 @@
 
 > 门限的**唯一真相源**：`docs/metrics-gates.json`，脚本自动合并 DSL（若存在）。
 
+## 质量闸门与辅助作业（汇总）
+
+- 基础质量（quality-gates 工作流）
+  - `cargo fmt --all -- --check`
+  - `cargo doc --no-deps -D warnings`
+  - 严格 clippy（lib-only, pedantic/nursery）
+- 覆盖率与变异（coverage-and-mutants 工作流；非阻断）
+- 发布前检查（preflight 工作流；手动或 PR 标签触发）
+
 ### RC 出包
 - `scripts/run-rc`：全自动跑 profile=full + strict-failfast + 归档；输出 `target/rc/rc-<ts>.tar.gz`。
 - 包含：CLEAN_REPORT.json、归档报告、gates/allowlist、Grafana 面板。

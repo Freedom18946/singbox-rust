@@ -57,3 +57,4 @@ tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots"]
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 serial_test = "2"
+proptest = "1.4"

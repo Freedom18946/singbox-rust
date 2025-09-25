@@ -124,6 +124,16 @@ impl P3Selector {
         };
         s.rtt_ema + 1000.0 * s.err_rate() + s.fuse_penalty(&self.cfg)
     }
+    /// Pick a member outbound by score with jitter threshold.
+    ///
+    /// Example
+    /// ```
+    /// use sb_core::outbound::p3_selector::{P3Selector, PickerConfig};
+    /// let mut s = P3Selector::new(vec!["a".into(), "b".into()], PickerConfig::default());
+    /// for _ in 0..10 { s.record_rtt("a", 20.0); s.record_rtt("b", 50.0); }
+    /// let pick = s.pick();
+    /// assert!(pick == "a" || pick == "b");
+    /// ```
     pub fn pick(&mut self) -> String {
         // 计算得分
         let mut best = None::<(String, f64)>;

@@ -1,8 +1,8 @@
 {
+  "schema_version": 2,
   "inbounds": [
-    { "type": "http", "listen": "127.0.0.1", "listen_port": 28090 }
+    { "type": "http", "listen": "127.0.0.1", "port": 28090 }
   ],
-  "route": {
-    "final": "direct"
-  }
+  "outbounds": [ { "type": "direct", "name": "direct" } ],
+  "route": { "default": "direct" }
 }

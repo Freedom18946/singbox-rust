@@ -1,3 +1,18 @@
+//! Simple DNS cache with TTL-based entries.
+//!
+//! Example
+//! ```
+//! use sb_core::router::dns::DnsCache;
+//! use std::time::Duration;
+//!
+//! let cache = DnsCache::new(Duration::from_secs(1));
+//! // "localhost" should resolve on all platforms without network I/O.
+//! let ips = cache.resolve_cached_or_lookup("localhost");
+//! assert!(ips.is_some());
+//! // Subsequent lookup should be served from cache.
+//! let ips2 = cache.resolve_cached_or_lookup("localhost");
+//! assert_eq!(ips, ips2);
+//! ```
 use std::collections::HashMap;
 use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::{Arc, RwLock};

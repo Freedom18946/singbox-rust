@@ -268,6 +268,13 @@ async fn test_v2ray_api_error_handling() {
     ];
 
     for counter_name in test_cases {
+        if counter_name.is_empty() {
+            // Empty is invalid now
+            let bad = sb_api::v2ray::simple::SimpleStatsRequest { name: String::new(), reset: false };
+            let err = server.get_stats(bad).await.err();
+            assert!(matches!(err, Some(sb_api::error::ApiError::InvalidField { .. })));
+            continue;
+        }
         // Test getting stats
         let request = sb_api::v2ray::simple::SimpleStatsRequest {
             name: counter_name.to_string(),
@@ -282,8 +289,7 @@ async fn test_v2ray_api_error_handling() {
         );
 
         // Test updating stats
-        let result = server.update_traffic(counter_name, 100).await;
-        // update_traffic doesn't return a result, but it shouldn't panic
+        let _ = server.update_traffic(counter_name, 100).await;
 
         // Verify the update worked
         let request = sb_api::v2ray::simple::SimpleStatsRequest {

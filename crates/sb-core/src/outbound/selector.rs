@@ -65,7 +65,7 @@ impl Selector {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|_| std::time::Duration::from_millis(0))
             .as_millis()
     }
 
@@ -86,6 +86,10 @@ impl Selector {
                 continue;
             }
             let mut score = Self::score_of(&s);
+            if !score.is_finite() {
+                // Skip invalid score
+                continue;
+            }
             // 抖动：避免雪崩（细微随机，0..jitter_ms）
             let j = fastrand::f64() * self.jitter_ms;
             score += j;
@@ -117,13 +121,11 @@ impl Selector {
         if !ok {
             s.cb_open_until_ms = s.last_update_ms + self.cb_open_ms as u128;
         }
-        // 指标：分数和计数（outbound=选择器名, member=被选成员名）
-        M().proxy_select_score.set(
-            &[("outbound", self.name.as_str()), ("member", member)],
-            Self::score_of(s),
-        );
+        // 指标：固定标签集，仅 outbound（成员维度避免标签爆炸）
+        M().proxy_select_score
+            .set(&[("outbound", self.name.as_str())], Self::score_of(s));
         M().proxy_select_total
-            .inc(&[("outbound", self.name.as_str()), ("member", member)]);
+            .inc(&[("outbound", self.name.as_str())]);
     }
 
     /// Record observation for a specific endpoint (used by health monitoring)
@@ -157,6 +159,14 @@ impl Selector {
 
 impl crate::adapter::OutboundConnector for Selector {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
+        // 空池：返回可诊断错误（不崩溃）
+        if self.members.is_empty() {
+            tracing::warn!(target: "sb_core::selector", outbound=%self.name, "connect called with empty pool");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "selector has no members",
+            ));
+        }
         // 冷启动：轮询几次采样
         let sample_rounds = self.min_samples.min(self.members.len().max(1));
         let mut last_err: Option<std::io::Error> = None;

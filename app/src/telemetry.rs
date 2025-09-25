@@ -19,7 +19,7 @@ mod imp {
     }
 
     pub async fn init_and_listen() {
-        // TODO: real /metrics exporter
+        // NOTE: metrics exporter entrypoint (stub); admin_debug may expose metrics.
         #[cfg(feature = "admin_debug")]
         crate::admin_debug::init(None).await;
     }

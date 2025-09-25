@@ -1,4 +1,4 @@
-use std::{fmt, io, time::Duration};
+use std::{error::Error as StdError, fmt, io, time::Duration};
 use thiserror::Error;
 
 #[cfg(feature = "error-v2")]
@@ -39,8 +39,15 @@ pub enum Error {
 }
 
 /// Schema v2 error system with structured error reporting
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum SbError {
+    /// I/O error wrapper
+    Io(#[allow(dead_code)] io::Error),
+    /// DNS-related error (NXDOMAIN, SERVFAIL, malformed, etc.)
+    Dns { message: String },
+    /// Input parse error
+    Parse { message: String },
+    /// Timeout with operation and duration
     Config {
         code: IssueCode,
         ptr: String,
@@ -59,6 +66,12 @@ pub enum SbError {
         what: String,
         limit: usize,
     },
+    /// Address related error
+    Addr { message: String },
+    /// Poisoned synchronization primitive encountered
+    Poison { message: String },
+    /// Generic error wrapper with optional source
+    Other { message: String, #[allow(dead_code)] source: Option<Box<dyn StdError + Send + Sync>> },
 }
 
 /// Issue codes for configuration validation errors
@@ -96,6 +109,9 @@ pub struct Issue {
 impl fmt::Display for SbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            SbError::Io(e) => write!(f, "io: {}", e),
+            SbError::Dns { message } => write!(f, "DNS error: {}", message),
+            SbError::Parse { message } => write!(f, "Parse error: {}", message),
             SbError::Config {
                 code,
                 ptr,
@@ -120,11 +136,67 @@ impl fmt::Display for SbError {
             SbError::Capacity { what, limit } => {
                 write!(f, "Capacity exceeded for {}: limit {}", what, limit)
             }
+            SbError::Addr { message } => write!(f, "Address error: {}", message),
+            SbError::Poison { message } => write!(f, "Poison error: {}", message),
+            SbError::Other { message, .. } => write!(f, "Other error: {}", message),
         }
     }
 }
 
-impl std::error::Error for SbError {}
+impl std::error::Error for SbError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            SbError::Io(e) => Some(e),
+            SbError::Other { source: Some(src), .. } => Some(src.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl SbError {
+    /// Create an I/O error wrapper
+    pub fn io(e: io::Error) -> Self { Self::Io(e) }
+    /// Create a parse error
+    ///
+    /// Example
+    /// ```
+    /// use sb_core::error::SbError;
+    /// let e = SbError::parse("bad token");
+    /// assert_eq!(e.kind(), "Parse");
+    /// ```
+    pub fn parse(msg: impl Into<String>) -> Self { Self::Parse { message: msg.into() } }
+    /// Create a DNS error
+    pub fn dns(msg: impl Into<String>) -> Self { Self::Dns { message: msg.into() } }
+    /// Create an address error
+    pub fn addr(msg: impl Into<String>) -> Self { Self::Addr { message: msg.into() } }
+    /// Create a poison error
+    pub fn poison(msg: impl Into<String>) -> Self { Self::Poison { message: msg.into() } }
+    /// Create a generic other error with optional source
+    pub fn other(msg: impl Into<String>) -> Self { Self::Other { message: msg.into(), source: None } }
+    /// Stable error kind for matching in tests and callers
+    pub fn kind(&self) -> &'static str {
+        match self {
+            SbError::Io(_) => "Io",
+            SbError::Dns { .. } => "Dns",
+            SbError::Parse { .. } => "Parse",
+            SbError::Config { .. } => "Config",
+            SbError::Network { .. } => "Network",
+            SbError::Timeout { .. } => "Timeout",
+            SbError::Capacity { .. } => "Capacity",
+            SbError::Addr { .. } => "Addr",
+            SbError::Poison { .. } => "Poison",
+            SbError::Other { .. } => "Other",
+        }
+    }
+}
+
+impl From<io::Error> for SbError {
+    fn from(e: io::Error) -> Self { SbError::Io(e) }
+}
+
+impl From<anyhow::Error> for SbError {
+    fn from(e: anyhow::Error) -> Self { SbError::Other { message: e.to_string(), source: Some(e.into()) } }
+}
 
 impl SbError {
     /// Create a configuration error
@@ -196,6 +268,27 @@ impl From<Issue> for SbError {
 impl From<SbError> for Issue {
     fn from(error: SbError) -> Self {
         match error {
+            SbError::Io(e) => Issue {
+                kind: "io".to_string(),
+                code: format!("{:?}", e.kind()),
+                ptr: "".to_string(),
+                msg: e.to_string(),
+                hint: None,
+            },
+            SbError::Dns { message } => Issue {
+                kind: "dns".to_string(),
+                code: "Dns".to_string(),
+                ptr: "".to_string(),
+                msg: message,
+                hint: None,
+            },
+            SbError::Parse { message } => Issue {
+                kind: "parse".to_string(),
+                code: "Parse".to_string(),
+                ptr: "".to_string(),
+                msg: message,
+                hint: None,
+            },
             SbError::Config {
                 code,
                 ptr,
@@ -230,6 +323,27 @@ impl From<SbError> for Issue {
                 code: "CapacityExceeded".to_string(),
                 ptr: "".to_string(),
                 msg: format!("Capacity exceeded for {}: limit {}", what, limit),
+                hint: None,
+            },
+            SbError::Addr { message } => Issue {
+                kind: "addr".to_string(),
+                code: "Addr".to_string(),
+                ptr: "".to_string(),
+                msg: message,
+                hint: None,
+            },
+            SbError::Poison { message } => Issue {
+                kind: "poison".to_string(),
+                code: "Poison".to_string(),
+                ptr: "".to_string(),
+                msg: message,
+                hint: None,
+            },
+            SbError::Other { message, .. } => Issue {
+                kind: "other".to_string(),
+                code: "Other".to_string(),
+                ptr: "".to_string(),
+                msg: message,
                 hint: None,
             },
         }

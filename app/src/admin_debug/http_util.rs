@@ -52,13 +52,7 @@ pub async fn respond_json_ok(
 #[derive(Serialize)]
 struct JsonError<'a> {
     error: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    hint: Option<&'a str>,
-    code: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    trace_id: Option<&'a str>,
+    detail: &'a str,
 }
 
 pub async fn respond_json_error(
@@ -67,14 +61,9 @@ pub async fn respond_json_error(
     msg: &str,
     hint: Option<&str>,
 ) -> std::io::Result<()> {
-    let payload = JsonError {
-        error: msg,
-        hint,
-        code,
-        path: None,     // 可由上层按需注入
-        trace_id: None, // observe特性可注入
-    };
-    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{\"error\":\"unknown\"}".into());
+    let detail = hint.unwrap_or(msg);
+    let payload = JsonError { error: msg, detail };
+    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{\"error\":\"unknown\",\"detail\":\"unknown\"}".into());
     respond(sock, code, "application/json", &json).await
 }
 

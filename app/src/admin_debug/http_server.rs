@@ -366,14 +366,23 @@ async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(
     let mut buf = Vec::with_capacity(2048);
     let mut tmp = [0u8; 512];
     let mut total = 0usize;
+    let (max_h, _max_b, firstline_ms, _rt) = admin_limits();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(firstline_ms);
 
     loop {
-        let n = tokio::io::AsyncReadExt::read(r, &mut tmp).await?;
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "first line timeout"));
+        }
+        let remain = deadline.saturating_duration_since(now);
+        let n = tokio::time::timeout(remain, tokio::io::AsyncReadExt::read(r, &mut tmp))
+            .await
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "first line timeout"))??;
         if n == 0 { break; }
         buf.extend_from_slice(&tmp[..n]);
         total += n;
 
-        if total > 8 * 1024 { // 8KB header limit
+        if total > max_h { // header limit
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "header too large"));
         }
 
@@ -381,7 +390,7 @@ async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(
         if buf.len() > 0 && n < tmp.len() { continue; }
     }
 
-    let mut headers = [httparse::EMPTY_HEADER; 32]; // 32 header limit
+    let mut headers = [httparse::EMPTY_HEADER; 64]; // 64 header limit
     let mut req = httparse::Request::new(&mut headers);
     let _ = req.parse(&buf)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad header"))?;
@@ -391,7 +400,7 @@ async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(
     let mut map = HashMap::new();
 
     for h in req.headers.iter() {
-        if h.name.len() > 64 || h.value.len() > 4096 { // Per-header size limit
+        if h.name.len() > 256 || h.value.len() > 16 * 1024 { // Per-header size limit
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "header line too large"));
         }
         map.insert(h.name.to_ascii_lowercase(), String::from_utf8_lossy(h.value).trim().to_string());
@@ -401,6 +410,7 @@ async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(
 }
 
 async fn read_request_body<R: AsyncRead + Unpin>(r: &mut R, headers: &HashMap<String, String>) -> std::io::Result<bytes::Bytes> {
+    let (_max_h, max_b, _fl, read_ms) = admin_limits();
     let content_length = headers.get("content-length")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(0);
@@ -409,12 +419,14 @@ async fn read_request_body<R: AsyncRead + Unpin>(r: &mut R, headers: &HashMap<St
         return Ok(bytes::Bytes::new());
     }
 
-    if content_length > 1024 * 1024 { // 1MB limit
+    if content_length > max_b { // size limit
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "request body too large"));
     }
 
     let mut body = vec![0u8; content_length];
-    tokio::io::AsyncReadExt::read_exact(r, &mut body).await?;
+    tokio::time::timeout(std::time::Duration::from_millis(read_ms), tokio::io::AsyncReadExt::read_exact(r, &mut body))
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "body read timeout"))??;
     Ok(bytes::Bytes::from(body))
 }
 
@@ -428,7 +440,7 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     // Print and optionally write port for test discovery
     println!("ADMIN_LISTEN={}", actual_addr);
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
-        if let Err(e) = std::fs::write(&portfile, actual_addr.to_string()) {
+        if let Err(e) = sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes()) {
             tracing::warn!(portfile = %portfile, error = %e, "failed to write admin port file");
         }
     }
@@ -544,7 +556,7 @@ async fn serve_with_config(addr: &str, tls_conf: Option<TlsConf>, auth_conf: Aut
     // Print and optionally write port for test discovery
     println!("ADMIN_LISTEN={}", actual_addr);
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
-        if let Err(e) = std::fs::write(&portfile, actual_addr.to_string()) {
+        if let Err(e) = sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes()) {
             tracing::warn!(portfile = %portfile, error = %e, "failed to write admin port file");
         }
     }
@@ -654,7 +666,7 @@ pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
     // Print and optionally write port for test discovery
     println!("ADMIN_LISTEN={}", actual_addr);
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
-        if let Err(e) = std::fs::write(&portfile, actual_addr.to_string()) {
+        if let Err(e) = sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes()) {
             tracing::warn!(portfile = %portfile, error = %e, "failed to write admin port file");
         }
     }
@@ -980,4 +992,24 @@ mod tests {
 
         std::env::remove_var("SB_ADMIN_HMAC_SECRET");
     }
+}
+fn admin_limits() -> (usize, usize, u64, u64) {
+    // returns (max_header_bytes, max_body_bytes, firstline_timeout_ms, read_timeout_ms)
+    let max_h = std::env::var("SB_ADMIN_MAX_HEADER_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(64 * 1024);
+    let max_b = std::env::var("SB_ADMIN_MAX_BODY_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2 * 1024 * 1024);
+    let firstline = std::env::var("SB_ADMIN_FIRSTLINE_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3000);
+    let read_timeout = std::env::var("SB_ADMIN_READ_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(4000);
+    (max_h, max_b, firstline, read_timeout)
 }

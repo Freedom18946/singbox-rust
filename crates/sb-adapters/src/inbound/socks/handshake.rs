@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use sb_core::error::SbError;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -18,7 +19,7 @@ pub async fn negotiate_method(stream: &mut TcpStream, policy: &SocksAuth) -> Res
     let ver = head[0];
     let nmethods = head[1] as usize;
     if ver != 0x05 {
-        bail!("invalid SOCKS version: {}", ver);
+        bail!(SbError::parse(format!("invalid SOCKS version: {}", ver)));
     }
     let mut methods = vec![0u8; nmethods];
     stream.read_exact(&mut methods).await?;
@@ -28,7 +29,7 @@ pub async fn negotiate_method(stream: &mut TcpStream, policy: &SocksAuth) -> Res
     stream.flush().await?;
 
     if selected == 0xFF {
-        bail!("no acceptable authentication method");
+        bail!(SbError::other("no acceptable authentication method"));
     }
     Ok(selected)
 }
@@ -38,7 +39,7 @@ pub async fn read_request(stream: &mut TcpStream) -> Result<Request> {
     let mut head = [0u8; 4];
     stream.read_exact(&mut head).await?;
     if head[0] != 0x05 {
-        bail!("invalid SOCKS version in request");
+        bail!(SbError::parse("invalid SOCKS version in request"));
     }
     let cmd = head[1];
     let atyp = head[3];
@@ -61,7 +62,7 @@ pub async fn read_request(stream: &mut TcpStream) -> Result<Request> {
             stream.read_exact(&mut b).await?;
             std::net::Ipv6Addr::from(b).to_string()
         }
-        _ => bail!("address type not supported"),
+        _ => bail!(SbError::addr("address type not supported")),
     };
 
     let mut p = [0u8; 2];

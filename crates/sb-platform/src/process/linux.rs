@@ -93,9 +93,8 @@ impl LinuxProcessMatcher {
     }
 
     async fn find_process_by_inode(&self, inode: u64) -> Result<u32, ProcessMatchError> {
-        // Check cache first
-        {
-            let cache = self.inode_cache.lock().unwrap();
+        // Check cache first (ignore poisoning and proceed)
+        if let Ok(cache) = self.inode_cache.lock() {
             if let Some(&pid) = cache.get(&inode) {
                 return Ok(pid);
             }
@@ -119,9 +118,8 @@ impl LinuxProcessMatcher {
             if let Ok(pid) = pid_str.parse::<u32>() {
                 if let Ok(found_inode) = self.check_process_fds(pid, inode).await {
                     if found_inode {
-                        // Cache the result
-                        {
-                            let mut cache = self.inode_cache.lock().unwrap();
+                        // Cache the result (ignore poisoning)
+                        if let Ok(mut cache) = self.inode_cache.lock() {
                             cache.insert(inode, pid);
                         }
                         return Ok(pid);
@@ -171,6 +169,12 @@ impl LinuxProcessMatcher {
         }
 
         Ok(false)
+    }
+}
+
+impl Default for LinuxProcessMatcher {
+    fn default() -> Self {
+        Self { inode_cache: std::sync::Mutex::new(HashMap::new()) }
     }
 }
 

@@ -1,8 +1,9 @@
 # 快速验证（本地）
 
 ```bash
-# 一键：生成补丁 + 编译 + 端到端测试
-scripts/cli_patch_and_test.sh
+# 一键：端到端兼容性与汇总（可选 GO_SINGBOX_BIN）
+scripts/e2e-run.sh
+cat .e2e/summary.json
 
 # 回溯三件套（失败时）
 tail -n 200 .e2e/sing.log
@@ -42,3 +43,8 @@ lsof -nP -iTCP:<HTTP_PORT> -sTCP:LISTEN -P || true; netstat -an | grep <HTTP_POR
    scripts/e2e_udp_echo.zsh
    ```
 4. 观察 `/metrics`：`socks_udp_packets_in_total`、`socks_udp_packets_out_total`、`socks_udp_nat_size`、`socks_udp_nat_evicted_total`。
+
+## 产物与存档（.e2e/）
+- `compat_subset.json`（或 `compat_subset_{go|rust}.json`）：`route --explain` 稳定子集对比
+- `bench.json`：`bench io --json` 探测（可能缺特性而跳过）
+- `summary.json`：聚合报告（时间戳 / 兼容状态 / bench 探测）

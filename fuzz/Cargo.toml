@@ -8,7 +8,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-sb-core = { path = "../crates/sb-core", features=["fuzzing"] }
+sb-core = { path = "../crates/sb-core", features=["fuzzing"], default-features = false }
+sb-api = { path = "../crates/sb-api", default-features = false }
+sb-adapters = { path = "../crates/sb-adapters", default-features = false }
 
 [workspace]
 members = ["."]

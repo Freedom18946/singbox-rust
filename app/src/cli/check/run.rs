@@ -6,16 +6,22 @@ use std::fs;
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode};
 use sb_config::validator::v2;
+use sb_config::compat as cfg_compat;
 
 /// Main check function - returns exit code (0 = success, 1 = warnings, 2 = errors)
 pub fn run(args: CheckArgs) -> Result<i32> {
     // Read and parse config file (support both JSON and YAML)
     let data = fs::read(&args.config).with_context(|| format!("read config {}", &args.config))?;
-    let raw: Value = if args.config.ends_with(".yaml") || args.config.ends_with(".yml") {
+    let mut raw: Value = if args.config.ends_with(".yaml") || args.config.ends_with(".yml") {
         serde_yaml::from_slice(&data).with_context(|| "parse as yaml")?
     } else {
         serde_json::from_slice(&data).with_context(|| "parse as json")?
     };
+
+    // Optional migration to v2 schema view
+    if args.migrate {
+        raw = cfg_compat::migrate_to_v2(&raw);
+    }
 
     let mut issues: Vec<CheckIssue> = Vec::new();
 
@@ -30,8 +36,21 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     if args.schema_v2 || args.deny_unknown {
         let v2_issues = v2::validate_v2(&raw);
         // Convert v2 issues to CheckIssue format
+        let allow_prefixes: Vec<String> = args
+            .allow_unknown
+            .as_ref()
+            .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            .unwrap_or_else(|| Vec::new());
         for issue_value in v2_issues {
-            if let Some(converted_issue) = convert_v2_issue(&issue_value) {
+            if let Some(mut converted_issue) = convert_v2_issue(&issue_value) {
+                // Downgrade UnknownField to warning when allowed by prefix
+                if converted_issue.code == IssueCode::UnknownField && !allow_prefixes.is_empty() {
+                    let ptr = converted_issue.ptr.clone();
+                    let allowed = allow_prefixes.iter().any(|p| ptr.starts_with(p));
+                    if allowed {
+                        converted_issue.kind = super::types::IssueKind::Warning;
+                    }
+                }
                 issues.push(converted_issue);
             }
         }
@@ -108,6 +127,20 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         fingerprint,
         canonical,
     };
+
+    // Handle normalized/migrated output write if requested
+    if args.write_normalized {
+        let mut out_json = raw.clone();
+        normalize_json(&mut out_json);
+        // stamp schema_version when migrating or missing
+        if out_json.get("schema_version").is_none() {
+            if let Some(obj) = out_json.as_object_mut() { obj.insert("schema_version".into(), Value::from(2)); }
+        }
+        let text = serde_json::to_string_pretty(&out_json)?;
+        let out = if let Some(o) = &args.out { o.clone() } else { format!("{}.normalized.json", &args.config) };
+        sb_core::util::fs_atomic::write_atomic(&out, text.as_bytes())
+            .with_context(|| format!("write {}", out))?;
+    }
 
     // Output results
     match args.format.as_str() {
@@ -483,4 +516,73 @@ fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
         tos: None,
         risk: None,
     })
+}
+
+#[cfg(test)]
+mod tests_schema_lock {
+    use super::*;
+
+    #[test]
+    fn check_json_schema_locked() {
+        let rep = CheckReport {
+            ok: false,
+            file: "demo.json".into(),
+            issues: vec![CheckIssue {
+                kind: super::types::IssueKind::Error,
+                ptr: "/inbounds/0/port".into(),
+                msg: "port must be integer".into(),
+                code: IssueCode::TypeMismatch,
+                hint: Some("1..65535".into()),
+                rule_id: None,
+                key: None,
+                members: None,
+                tos: None,
+                risk: None,
+            }],
+            summary: serde_json::json!({"total_issues":1, "errors":1, "warnings":0}),
+            fingerprint: Some("deadbeef".into()),
+            canonical: None,
+        };
+        let s = serde_json::to_string_pretty(&rep).unwrap();
+        // 锁定字段顺序/必需项（回归友好）：前三行严格匹配
+        let lines: Vec<&str> = s.lines().collect();
+        assert!(lines[0].contains("{"));
+        assert!(lines[1].contains("\"ok\""));
+        assert!(lines[2].contains("\"file\""));
+        assert!(s.contains("\"issues\""));
+        assert!(s.contains("\"summary\""));
+    }
+
+    #[test]
+    fn check_sarif_schema_locked() {
+        let rep = CheckReport {
+            ok: false,
+            file: "demo.json".into(),
+            issues: vec![CheckIssue {
+                kind: super::types::IssueKind::Warning,
+                ptr: "/route/rules/0".into(),
+                msg: "rule has no match conditions".into(),
+                code: IssueCode::EmptyRuleMatch,
+                hint: Some("add at least one match condition".into()),
+                rule_id: None,
+                key: None,
+                members: None,
+                tos: None,
+                risk: None,
+            }],
+            summary: serde_json::json!({"total_issues":1, "errors":0, "warnings":1}),
+            fingerprint: None,
+            canonical: None,
+        };
+        let s = to_sarif(&rep);
+        // 顶层键顺序和必需项
+        assert!(s.contains("\"version\": \"2.1.0\""));
+        assert!(s.contains("\"runs\""));
+        assert!(s.contains("\"tool\""));
+        assert!(s.contains("\"results\""));
+        // result 基本字段
+        assert!(s.contains("\"ruleId\""));
+        assert!(s.contains("\"message\""));
+        assert!(s.contains("\"locations\""));
+    }
 }

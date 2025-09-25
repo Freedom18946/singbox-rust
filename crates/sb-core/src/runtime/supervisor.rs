@@ -10,6 +10,7 @@ use sb_config::ir::diff::Diff;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
+use tokio_util::sync::CancellationToken;
 
 /// Messages sent to supervisor event loop
 #[derive(Debug)]
@@ -34,6 +35,7 @@ pub struct Supervisor {
     tx: mpsc::Sender<ReloadMsg>,
     handle: tokio::task::JoinHandle<()>,
     state: Arc<RwLock<State>>,
+    cancel: CancellationToken,
 }
 
 /// Handle to supervisor that allows graceful shutdown without taking ownership
@@ -41,6 +43,7 @@ pub struct Supervisor {
 pub struct SupervisorHandle {
     tx: mpsc::Sender<ReloadMsg>,
     state: Arc<RwLock<State>>,
+    cancel: CancellationToken,
 }
 
 impl State {
@@ -58,6 +61,7 @@ impl Supervisor {
     /// Start supervisor with initial configuration
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
+        let cancel = CancellationToken::new();
 
         // Build initial engine and bridge
         let engine = Engine::from_ir(&ir).context("failed to build engine from initial config")?;
@@ -75,8 +79,7 @@ impl Supervisor {
                 let ib = inbound.clone();
                 tokio::task::spawn_blocking(move || {
                     if let Err(e) = ib.serve() {
-                        // TODO: Add proper logging
-                        eprintln!("inbound serve failed: {}", e);
+                        tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
                     }
                 });
             }
@@ -84,8 +87,9 @@ impl Supervisor {
             // Optional health task
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
+                let tok = cancel.clone();
                 let health_handle = tokio::spawn(async move {
-                    spawn_health_task_async(health_bridge).await;
+                    spawn_health_task_async(health_bridge, tok).await;
                 });
                 drop(state_guard);
                 state.write().await.health = Some(health_handle);
@@ -95,15 +99,18 @@ impl Supervisor {
         let state_clone = Arc::clone(&state);
 
         // Event loop
+        let cancel_ev = cancel.clone();
         let handle = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg {
                     ReloadMsg::Apply(new_ir) => {
                         if let Err(e) = Self::handle_reload(&state_clone, new_ir).await {
-                            eprintln!("reload failed: {}", e);
+                            tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         }
                     }
                     ReloadMsg::Shutdown { deadline } => {
+                        // 广播取消信号
+                        cancel_ev.cancel();
                         Self::handle_shutdown(&state_clone, deadline).await;
                         break;
                     }
@@ -111,7 +118,7 @@ impl Supervisor {
             }
         });
 
-        Ok(Self { tx, handle, state })
+        Ok(Self { tx, handle, state, cancel })
     }
 
     /// Get a handle to this supervisor for operations that don't require ownership
@@ -119,6 +126,7 @@ impl Supervisor {
         SupervisorHandle {
             tx: self.tx.clone(),
             state: Arc::clone(&self.state),
+            cancel: self.cancel.clone(),
         }
     }
 
@@ -149,9 +157,12 @@ impl Supervisor {
             .await
             .context("failed to send shutdown message")?;
 
+        // 广播取消信号（幂等）
+        self.cancel.cancel();
+
         // Wait for event loop to finish
         if let Err(e) = self.handle.await {
-            eprintln!("supervisor task join failed: {}", e);
+            tracing::error!(target: "sb_core::runtime", error = %e, "supervisor task join failed");
         }
 
         Ok(())
@@ -179,7 +190,7 @@ impl Supervisor {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
                 if let Err(e) = ib.serve() {
-                    eprintln!("new inbound serve failed: {}", e);
+                    tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
                 }
             });
         }
@@ -207,7 +218,7 @@ impl Supervisor {
             }
         }
 
-        eprintln!("configuration reloaded successfully");
+        tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
 
         Ok(())
     }
@@ -217,11 +228,10 @@ impl Supervisor {
         let start_shutdown = Instant::now();
 
         // Stop accepting new connections (implementation depends on inbound design)
-        eprintln!(
-            "beginning graceful shutdown, deadline in {} ms",
-            deadline
-                .saturating_duration_since(start_shutdown)
-                .as_millis()
+        tracing::warn!(
+            target: "sb_core::runtime",
+            deadline_ms = deadline.saturating_duration_since(start_shutdown).as_millis() as u64,
+            "beginning graceful shutdown"
         );
 
         // Wait for active connections to finish or timeout
@@ -263,10 +273,11 @@ impl Supervisor {
             "fingerprint": env!("CARGO_PKG_VERSION")
         });
 
-        eprintln!(
-            "{}",
-            serde_json::to_string(&shutdown_json).unwrap_or_default()
-        );
+        if let Ok(s) = serde_json::to_string(&shutdown_json) {
+            tracing::info!(target: "sb_core::runtime", event = %s, "shutdown summary");
+        } else {
+            tracing::info!(target: "sb_core::runtime", ok = shutdown_success, wait_ms = wait_ms as u64, "shutdown completed");
+        }
     }
 }
 
@@ -310,15 +321,19 @@ impl SupervisorHandle {
 // Helper functions for supervisor
 
 /// Placeholder async health task spawning function
-pub async fn spawn_health_task_async(bridge: Arc<Bridge>) {
+pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationToken) {
     // Placeholder for async health checking
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(30)).await;
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+            }
             // Perform health checks
-            eprintln!(
-                "health check completed, outbounds: {}",
-                bridge.outbounds_snapshot().len()
+            tracing::debug!(
+                target: "sb_core::runtime",
+                outbounds = bridge.outbounds_snapshot().len(),
+                "health check completed"
             );
         }
     })

@@ -11,16 +11,19 @@ on:
       - "app/**"
       - ".github/workflows/cli-only.yml"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          components: clippy
+      - uses: ./.github/actions/rust-setup
       - name: Build (CLI only)
         run: cargo build -p app --bin app --features admin_debug,subs_http,reqwest --locked
       - name: Clippy (deny warnings)
