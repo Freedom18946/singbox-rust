@@ -61,6 +61,7 @@ pub async fn main(a: PromArgs) -> Result<()> {
 struct Sample { name: String, labels: BTreeMap<String,String>, value: f64 }
 
 /// testhooks: 供单测使用，保持 crate 可见
+#[must_use]
 pub(crate) fn parse_label_kvs(xs: &[String]) -> BTreeMap<String,String> {
     let mut out = BTreeMap::new();
     for s in xs {
@@ -72,6 +73,7 @@ pub(crate) fn parse_label_kvs(xs: &[String]) -> BTreeMap<String,String> {
 }
 
 /// 将 `{k="v",x="y"}` 文本解析为 map（宽松容错）
+#[must_use]
 pub(crate) fn parse_labels_text(label_text: &str) -> BTreeMap<String,String> {
     let mut lbl = BTreeMap::new();
     let inner = label_text.trim().trim_start_matches('{').trim_end_matches('}');
@@ -85,6 +87,7 @@ pub(crate) fn parse_labels_text(label_text: &str) -> BTreeMap<String,String> {
 }
 
 /// 所有选择器均需命中
+#[must_use]
 pub(crate) fn labels_match(all: &BTreeMap<String,String>, sel: &BTreeMap<String,String>) -> bool {
     sel.iter().all(|(k, want)| all.get(k).map(|v| v==want).unwrap_or(false))
 }

@@ -90,6 +90,7 @@ struct IoStats {
     hist: Option<Hist>,
 }
 
+#[must_use]
 pub(crate) fn parse_buckets(s: &str) -> Result<Vec<f64>> {
     let mut v = Vec::new();
     for part in s.split(',') {
@@ -104,6 +105,7 @@ pub(crate) fn parse_buckets(s: &str) -> Result<Vec<f64>> {
 }
 
 /// testhooks: 根据采样延迟与边界，计算直方图（counts/cdf）
+#[must_use]
 pub(crate) fn compute_hist(lat_ms: &[u64], buckets: &[f64]) -> Hist {
     let mut counts = vec![0u64; buckets.len()];
     for &lat in lat_ms {
@@ -124,6 +126,7 @@ pub(crate) fn compute_hist(lat_ms: &[u64], buckets: &[f64]) -> Hist {
 }
 
 /// 从 `--body` 参数加载正文；支持 `@file`，失败将带上下文返回错误
+#[must_use]
 fn load_body(arg: &str) -> Result<String> {
     if let Some(path) = arg.strip_prefix('@') {
         Ok(std::fs::read_to_string(path)
@@ -134,8 +137,9 @@ fn load_body(arg: &str) -> Result<String> {
 }
 
 #[cfg(feature = "reqwest")]
+// 实现 TODO: 支持 --h2。我们按请求级别强制 HTTP/2（不依赖 builder 全局开关）
 async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
-                  method: String, body: Option<String>, hdrs: Vec<String>, _h2: bool,
+                  method: String, body: Option<String>, hdrs: Vec<String>, h2: bool,
                   insecure: bool, keepalive: bool, timeout_ms: u64,
                   hist_buckets: Option<String>, save_path: Option<std::path::PathBuf>) -> Result<()> {
     let mut cb = reqwest::Client::builder()
@@ -165,6 +169,10 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
             while stats.lock().total + done < requests {
                 let t = Instant::now();
                 let mut req = client.request(method.clone(), &url);
+                if h2 {
+                    // reqwest 0.12 支持 per-request 指定协议版本
+                    req = req.version(reqwest::Version::HTTP_2);
+                }
                 if let Some(ref b) = body_text { req = req.body(b.clone()); }
                 for h in hdrs.iter() {
                     if let Some((k,v)) = h.split_once(':') { req = req.header(k.trim(), v.trim()); }

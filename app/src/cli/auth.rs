@@ -100,6 +100,7 @@ fn parse_env_file(p: &std::path::Path) -> BTreeMap<String,String> {
     m
 }
 
+#[must_use]
 pub(crate) fn read_body_inline(body: &Option<String>, body_file: &Option<PathBuf>) -> Result<Option<Vec<u8>>> {
     match (body, body_file) {
         (Some(b), None) => Ok(Some(b.as_bytes().to_vec())),
@@ -109,6 +110,7 @@ pub(crate) fn read_body_inline(body: &Option<String>, body_file: &Option<PathBuf
     }
 }
 
+#[must_use]
 pub(crate) fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);

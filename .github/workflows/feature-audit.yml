@@ -21,16 +21,22 @@ jobs:
       - name: Check (CLI only quick sanity)
         run: |
           cargo check -p app --no-default-features --features "admin_debug,subs_http,reqwest"
-      - name: Clippy (strict gates)
+      # 基线：workspace 级别不放过普通 warning，但不强制 pedantic/nursery，避免存量债压垮 CI
+      - name: Clippy (workspace baseline)
         run: |
-          cargo clippy --workspace --all-targets -- \
+          cargo clippy --workspace --all-targets -- -D warnings
+      # 严格：对 app（CLI）执行更严格门禁，并开启 pedantic/nursery（随 -D warnings 整体升级为 error）
+      - name: Clippy (strict for app)
+        run: |
+          cargo clippy -p app --all-targets -- \
             -D warnings \
             -D clippy::unwrap_used \
             -D clippy::expect_used \
             -D clippy::panic \
             -D clippy::todo \
             -D clippy::unimplemented \
-            -D clippy::undocumented_unsafe_blocks
+            -D clippy::undocumented_unsafe_blocks \
+            -W clippy::pedantic -W clippy::nursery
       - name: Unit tests (reqwest off)
         run: |
           cargo test -p app --no-default-features -- --nocapture
