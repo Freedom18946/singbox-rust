@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
-use anyhow::Result;
+use anyhow::{Result, Context};
 use std::time::{Duration, Instant};
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use parking_lot::Mutex;
 use hmac::{Hmac, Mac};
-use sha2::{Sha256, Sha512};
+use sha2::{Digest, Sha256, Sha512};
 use base64::Engine;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(ClapArgs, Debug)]
 pub struct AuthArgs {
@@ -34,7 +36,13 @@ pub enum AuthCmd {
         /// 签名算法
         #[arg(long, value_enum, default_value_t=Algo::HmacSha256)] algo: Algo,
         /// 打印 canonical 字符串
-        #[arg(long)] canon: bool
+        #[arg(long)] canon: bool,
+        /// 可选：参与签名的请求体（字面值）
+        #[arg(long="body")] body: Option<String>,
+        /// 可选：参与签名的请求体文件（从文件读取）
+        #[arg(long="body-file")] body_file: Option<PathBuf>,
+        /// 若开启，则计算 SHA256(body) 并作为 x-body-sha256 加入 canonical
+        #[arg(long="body-hash")] body_hash: bool,
     },
     /// 回放重试（指向 dry-run 端点）
     Replay {
@@ -49,17 +57,23 @@ pub enum AuthCmd {
         #[arg(long="status-only")] status_only: bool,
         /// 追加请求头（可多次）K:V
         #[arg(long="hdr")] hdrs: Vec<String>,
-        #[arg(long)] json: bool
+        #[arg(long)] json: bool,
+        /// 可选：参与签名并发送的请求体（字面值）
+        #[arg(long="body")] body: Option<String>,
+        /// 可选：参与签名并发送的请求体文件
+        #[arg(long="body-file")] body_file: Option<PathBuf>,
+        /// 若开启，则计算 SHA256(body) 并以 x-body-sha256 参与签名
+        #[arg(long="body-hash")] body_hash: bool,
     }
 }
 
 pub fn main(a: AuthArgs) -> Result<()> {
     match a.cmd {
-        AuthCmd::Sign { key_id, secret, header, env_file, algo, canon } =>
-            sign_ex(key_id, secret, header, env_file, algo, canon),
-        AuthCmd::Replay { url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json } =>
+        AuthCmd::Sign { key_id, secret, header, env_file, algo, canon, body, body_file, body_hash } =>
+            sign_ex(key_id, secret, header, env_file, algo, canon, body, body_file, body_hash),
+        AuthCmd::Replay { url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash } =>
             tokio::runtime::Runtime::new().unwrap().block_on(
-                replay(url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json)
+                replay(url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash)
             ),
     }
 }
@@ -78,6 +92,22 @@ fn parse_env_file(p: &std::path::Path) -> BTreeMap<String,String> {
     m
 }
 
+pub(crate) fn read_body_inline(body: &Option<String>, body_file: &Option<PathBuf>) -> Result<Option<Vec<u8>>> {
+    match (body, body_file) {
+        (Some(b), None) => Ok(Some(b.as_bytes().to_vec())),
+        (None, Some(p)) => Ok(Some(fs::read(p).with_context(|| format!("read body-file {:?}", p))?)),
+        (None, None) => Ok(None),
+        (Some(_), Some(_)) => anyhow::bail!("--body 与 --body-file 只能二选一"),
+    }
+}
+
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let digest = hasher.finalize();
+    hex::encode(digest)
+}
+
 fn build_canonical(ts: i64, nonce: &str, headers: &[String]) -> (String, Vec<(String,String)>) {
     let mut kvs = Vec::<(String,String)>::new();
     for h in headers {
@@ -91,8 +121,24 @@ fn build_canonical(ts: i64, nonce: &str, headers: &[String]) -> (String, Vec<(St
     (canon, kvs)
 }
 
-fn sign_ex(key_id: String, secret: String, header: Vec<String>,
-           env_file: Option<std::path::PathBuf>, algo: Algo, canon: bool) -> Result<()> {
+pub(crate) fn inject_body_hash(
+    headers: &mut Vec<String>,
+    body: &Option<Vec<u8>>,
+    enable: bool
+) {
+    if !enable { return; }
+    if let Some(b) = body {
+        let h = sha256_hex(b);
+        // 避免重复
+        if !headers.iter().any(|h| h.to_ascii_lowercase().starts_with("x-body-sha256:")) {
+            headers.push(format!("x-body-sha256:{}", h));
+        }
+    }
+}
+
+fn sign_ex(key_id: String, secret: String, mut header: Vec<String>,
+           env_file: Option<std::path::PathBuf>, algo: Algo, canon: bool,
+           body: Option<String>, body_file: Option<PathBuf>, body_hash: bool) -> Result<()> {
     let mut key_id = key_id;
     let mut secret = secret;
     if let Some(p) = env_file.as_ref() {
@@ -100,6 +146,8 @@ fn sign_ex(key_id: String, secret: String, header: Vec<String>,
         if let Some(v) = m.get("KEY_ID") { key_id = v.clone(); }
         if let Some(v) = m.get("KEY_SECRET") { secret = v.clone(); }
     }
+    let body_bytes = read_body_inline(&body, &body_file)?;
+    inject_body_hash(&mut header, &body_bytes, body_hash);
     let ts = (chrono::Utc::now().timestamp()) as i64;
     let nonce = format!("{:016x}", rand::random::<u64>());
     let (canon_str, _hdrs) = build_canonical(ts, &nonce, &header);
@@ -135,7 +183,10 @@ struct ReplayStats {
 
 async fn replay(url: String, key_id: String, secret: String,
                 times: u64, concurrency: usize, rps: u64, timeout_ms: u64,
-                status_only: bool, hdrs: Vec<String>, json: bool) -> Result<()> {
+                status_only: bool, mut hdrs: Vec<String>, json: bool,
+                body: Option<String>, body_file: Option<PathBuf>, body_hash: bool) -> Result<()> {
+    let body_bytes = read_body_inline(&body, &body_file)?;
+    inject_body_hash(&mut hdrs, &body_bytes, body_hash);
     #[cfg(feature = "reqwest")]
     {
         let client = reqwest::Client::builder().timeout(Duration::from_millis(timeout_ms)).build()?;
@@ -169,6 +220,7 @@ async fn replay(url: String, key_id: String, secret: String,
             let nonce_cloned = nonce.clone();
             let counter = counter.clone();
             let sem = sem.clone();
+            let body_bytes_cloned = body_bytes.clone();
             let per_sec_key = move || (chrono::Utc::now().timestamp()) as u64;
             join.push(tokio::spawn(async move {
                 // 循环领取任务
@@ -182,11 +234,17 @@ async fn replay(url: String, key_id: String, secret: String,
                     for h in &hdrs_vec {
                         if let Some((k,v)) = h.split_once(':') { req = req.header(k.trim(), v.trim()); }
                     }
-                    // 签名头
+                    // 签名头（使用 canonical 字符串包括可选的 body hash 头）
+                    let header_strs: Vec<String> = hdrs_vec.iter().cloned().collect();
+                    let (canon_str, _) = build_canonical(ts, &nonce_cloned, &header_strs);
                     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
-                    mac.update(format!("ts:{}\nnonce:{}", ts, nonce_cloned).as_bytes());
+                    mac.update(canon_str.as_bytes());
                     let sig_b64 = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
                     req = req.header("X-SB-Signature", sig_b64);
+                    // 可选请求体
+                    if let Some(body) = &body_bytes_cloned {
+                        req = req.body(body.clone());
+                    }
                     let t = Instant::now();
                     let res = req.send().await;
                     let ms = t.elapsed().as_millis() as u64;
@@ -240,5 +298,90 @@ async fn replay(url: String, key_id: String, secret: String,
     #[cfg(not(feature = "reqwest"))]
     {
         anyhow::bail!("该命令需要启用编译特性：reqwest")
+    }
+}
+
+// -----------------------------
+// Tests (pure; no network)
+// -----------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hmac::{Hmac, Mac};
+
+    fn hmac256_hex(key: &str, data: &str) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).unwrap();
+        mac.update(data.as_bytes());
+        hex::encode(mac.finalize().into_bytes())
+    }
+
+    #[test]
+    fn test_sha256_hex_ok() {
+        assert_eq!(sha256_hex(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(sha256_hex(b"hello"), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    }
+
+    #[test]
+    fn test_inject_body_hash_once() {
+        let body = Some(b"abc".to_vec());
+        let mut hdrs = vec!["X-A:1".into()];
+        inject_body_hash(&mut hdrs, &body, true);
+        inject_body_hash(&mut hdrs, &body, true);
+        let count = hdrs.iter().filter(|h| h.to_ascii_lowercase().starts_with("x-body-sha256:")).count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_canonical_and_signature_matrix() {
+        // 固定 ts/nonce/secret，构造 4×2 矩阵：
+        // headers: 无 / 有自定义； body-hash: 关/开
+        let ts = 1700000000_i64;
+        let nonce = "0000000000000001";
+        let secret = "s3cr3t";
+
+        // 基线 headers
+        let base = vec![
+            "x-key-id:demo".into(),
+            "x-extra:42".into(),
+        ];
+
+        // case 1: no body-hash
+        {
+            let hdrs = base.clone();
+            let (canon, _kv) = build_canonical(ts, nonce, &hdrs);
+            let sig_hex = hmac256_hex(secret, &canon);
+            assert!(sig_hex.len() == 64);
+        }
+
+        // case 2: body-hash enabled with body
+        {
+            let mut hdrs = base.clone();
+            let body = Some(b"hello".to_vec());
+            inject_body_hash(&mut hdrs, &body, true);
+            let (canon, _kv) = build_canonical(ts, nonce, &hdrs);
+            // 证明 x-body-sha256 已参与
+            assert!(canon.contains("x-body-sha256"));
+            let sig_hex = hmac256_hex(secret, &canon);
+            assert!(sig_hex.len() == 64);
+        }
+
+        // case 3: body-hash enabled but no body -> 等效于 case1
+        {
+            let mut hdrs = base.clone();
+            let body: Option<Vec<u8>> = None;
+            inject_body_hash(&mut hdrs, &body, true);
+            let (canon, _kv) = build_canonical(ts, nonce, &hdrs);
+            assert!(!canon.contains("x-body-sha256"));
+        }
+
+        // case 4: duplicated x-body-sha256 should not duplicate
+        {
+            let mut hdrs = base.clone();
+            hdrs.push(format!("x-body-sha256:{}", sha256_hex(b"hello")));
+            let body = Some(b"hello".to_vec());
+            inject_body_hash(&mut hdrs, &body, true);
+            let only_one = hdrs.iter().filter(|h| h.to_ascii_lowercase().starts_with("x-body-sha256:")).count();
+            assert_eq!(only_one, 1);
+        }
     }
 }

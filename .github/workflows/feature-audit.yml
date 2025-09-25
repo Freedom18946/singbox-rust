@@ -1,0 +1,31 @@
+name: feature-audit
+on:
+  pull_request:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust 1.82
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+          components: rustfmt, clippy
+      - name: Audit features
+        run: |
+          chmod +x scripts/audit_features.sh
+          ./scripts/audit_features.sh
+      - name: Check (CLI only quick sanity)
+        run: |
+          cargo check -p app --no-default-features --features "admin_debug,subs_http,reqwest"
+
+      - name: Unit tests (reqwest off)
+        run: |
+          cargo test -p app --no-default-features -- --nocapture
+
+      - name: Unit tests (reqwest on)
+        run: |
+          cargo test -p app --no-default-features --features reqwest -- --nocapture
