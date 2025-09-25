@@ -236,7 +236,13 @@ async fn replay(url: String, key_id: String, secret: String,
                     let i = counter.fetch_add(1, Ordering::Relaxed);
                     if i >= times { break; }
                     // 限速：取令牌
-                    let _p = sem.acquire().await.map_err(|e| anyhow::anyhow!("semaphore acquire failed: {}", e))?;
+                    let _p = match sem.acquire().await {
+                        Ok(p) => p,
+                        Err(_) => {
+                            eprintln!("semaphore acquire failed, skipping request");
+                            continue;
+                        }
+                    };
                     let auth = format!("SB-HMAC key_id=\"{}\", ts={}, nonce=\"{}\"", key_id, ts, nonce_cloned);
                     let mut req = client.put(&url).header("Authorization", auth);
                     for h in &hdrs_vec {
@@ -245,8 +251,13 @@ async fn replay(url: String, key_id: String, secret: String,
                     // 签名头（使用 canonical 字符串包括可选的 body hash 头）
                     let header_strs: Vec<String> = hdrs_vec.iter().cloned().collect();
                     let (canon_str, _) = build_canonical(ts, &nonce_cloned, &header_strs);
-                    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-                        .context("invalid HMAC key length")?;
+                    let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
+                        Ok(m) => m,
+                        Err(_) => {
+                            eprintln!("invalid HMAC key length, skipping request");
+                            continue;
+                        }
+                    };
                     mac.update(canon_str.as_bytes());
                     let sig_b64 = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
                     req = req.header("X-SB-Signature", sig_b64);
