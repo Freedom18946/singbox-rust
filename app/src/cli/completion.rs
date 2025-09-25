@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+use clap::{Args as ClapArgs, ValueEnum, CommandFactory};
+use clap_complete::{generate, shells};
+use std::io;
+use anyhow::Result;
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Elvish,
+}
+
+#[derive(ClapArgs, Debug)]
+pub struct CompletionArgs {
+    /// 目标 shell
+    #[arg(long, value_enum)]
+    pub shell: Shell,
+    /// 输出目录（默认 stdout）
+    #[arg(long)]
+    pub dir: Option<std::path::PathBuf>,
+    /// 一键生成全部 shell（需配合 --dir）
+    #[arg(long)]
+    pub all: bool,
+}
+
+pub fn main(a: CompletionArgs) -> Result<()> {
+    let mut cmd = crate::cli::Args::command();
+    let bin = std::env::var("SB_CLI_BIN").unwrap_or_else(|_| cmd.get_name().to_string());
+    if let Some(dir) = a.dir {
+        std::fs::create_dir_all(&dir).ok();
+        let path = |shell_name: &str| dir.join(format!("{}_{}.completion", bin, shell_name));
+        macro_rules! write_file {
+            ($sh:expr, $name:expr) => {{
+                let mut f = std::fs::File::create(path($name))?;
+                clap_complete::generate($sh, &mut cmd, &bin, &mut f);
+                Ok::<_, anyhow::Error>(())
+            }};
+        }
+        if a.all {
+            write_file!(shells::Bash, "bash")?;
+            write_file!(shells::Zsh, "zsh")?;
+            write_file!(shells::Fish, "fish")?;
+            write_file!(shells::PowerShell, "powershell")?;
+            write_file!(shells::Elvish, "elvish")?;
+            eprintln!("# completions written to {}", dir.display());
+        } else {
+            match a.shell {
+                Shell::Bash => { write_file!(shells::Bash, "bash")?; }
+                Shell::Zsh => { write_file!(shells::Zsh, "zsh")?; }
+                Shell::Fish => { write_file!(shells::Fish, "fish")?; }
+                Shell::PowerShell => { write_file!(shells::PowerShell, "powershell")?; }
+                Shell::Elvish => { write_file!(shells::Elvish, "elvish")?; }
+            }
+        }
+    } else {
+        match a.shell {
+            Shell::Bash => generate(shells::Bash, &mut cmd, &bin, &mut io::stdout()),
+            Shell::Zsh => generate(shells::Zsh, &mut cmd, &bin, &mut io::stdout()),
+            Shell::Fish => generate(shells::Fish, &mut cmd, &bin, &mut io::stdout()),
+            Shell::PowerShell => generate(shells::PowerShell, &mut cmd, &bin, &mut io::stdout()),
+            Shell::Elvish => generate(shells::Elvish, &mut cmd, &bin, &mut io::stdout()),
+        }
+    }
+    Ok(())
+}

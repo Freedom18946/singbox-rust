@@ -1,0 +1,29 @@
+name: CLI only
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "app/**"
+      - ".github/workflows/cli-only.yml"
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - "app/**"
+      - ".github/workflows/cli-only.yml"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: clippy
+      - name: Build (CLI only)
+        run: cargo build -p app --bin app --features admin_debug,subs_http,reqwest --locked
+      - name: Clippy (deny warnings)
+        run: cargo clippy -p app -- -D warnings
+      - name: Test (minimal)
+        run: cargo test -p app --lib -- --quiet
