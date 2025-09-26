@@ -15,51 +15,79 @@ pub type ApiResult<T> = Result<T, ApiError>;
 /// API error types
 #[derive(Debug, Error)]
 pub enum ApiError {
-    /// Invalid request parameters
+    /// Client sent a malformed or invalid request.
     #[error("Invalid request: {message}")]
-    BadRequest { message: String },
+    BadRequest {
+        /// Human-readable error message.
+        message: String,
+    },
 
-    /// Resource not found
+    /// Requested resource was not found.
     #[error("Not found: {resource}")]
-    NotFound { resource: String },
+    NotFound {
+        /// Resource identifier that was not found.
+        resource: String,
+    },
 
-    /// Internal server error
+    /// Internal server error. Underlying error source.
     #[error("Internal error: {source}")]
     Internal {
+        /// Underlying error source.
         #[from]
         source: anyhow::Error,
     },
 
-    /// Service unavailable
+    /// Service is temporarily unavailable.
     #[error("Service unavailable: {message}")]
-    ServiceUnavailable { message: String },
+    ServiceUnavailable {
+        /// Human-readable reason describing the service disruption.
+        message: String,
+    },
 
-    /// Configuration error
+    /// Configuration-related error.
     #[error("Configuration error: {message}")]
-    Configuration { message: String },
+    Configuration {
+        /// Problem detail associated with configuration.
+        message: String,
+    },
 
-    /// JSON serialization/deserialization error
+    /// JSON serialization/deserialization failure. Underlying error source.
     #[error("JSON error: {source}")]
     Json {
+        /// Underlying error source.
         #[from]
         source: serde_json::Error,
     },
 
-    /// WebSocket error
+    /// WebSocket error.
     #[error("WebSocket error: {message}")]
-    WebSocket { message: String },
+    WebSocket {
+        /// Human-readable error message for WebSocket operations.
+        message: String,
+    },
 
-    /// Input parse error (malformed or ambiguous input)
+    /// Parsing error.
     #[error("Parse error: {message}")]
-    Parse { message: String },
+    Parse {
+        /// Human-readable parsing error message.
+        message: String,
+    },
 
-    /// A specific field is invalid
+    /// Invalid field in API input.
     #[error("Invalid field '{field}': {message}")]
-    InvalidField { field: String, message: String },
+    InvalidField {
+        /// Name of the invalid field.
+        field: String,
+        /// Explanation of why the field is invalid.
+        message: String,
+    },
 
-    /// Unsupported API version requested
+    /// Unsupported API version.
     #[error("Unsupported version: {version}")]
-    UnsupportedVersion { version: String },
+    UnsupportedVersion {
+        /// The version string that is not supported.
+        version: String,
+    },
 }
 
 impl ApiError {

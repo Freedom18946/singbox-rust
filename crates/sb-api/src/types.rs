@@ -1,7 +1,7 @@
 //! Common types and data structures for API services
 
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr, time::SystemTime};
+use std::{collections::HashMap, net::SocketAddr};
 
 /// Connection information for API responses
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,7 +244,11 @@ pub enum WebSocketMessage {
     },
     /// Heartbeat/ping message
     #[serde(rename = "ping")]
-    Ping { timestamp: u64 },
+    /// Client-side ping with UNIX timestamp.
+    Ping {
+        /// UNIX timestamp in milliseconds.
+        timestamp: u64,
+    },
     /// Response to client requests
     #[serde(rename = "response")]
     Response {

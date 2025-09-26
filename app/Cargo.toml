@@ -4,12 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-## 默认最小构建：仅 CLI（check/version/handshake/bench/udp-echo），不触发 sb-core
-default = ["minimal"]
+## 默认最小构建：不启用任何可选特性，降低默认噪声
+default = []
 minimal = []
 
+# Dev/auxiliary CLI feature gates
+bench-cli = []
+manpage = []
+dev-cli = []
+
 ## 路由/运行期与观测能力
-router  = ["sb-core"]
+router  = ["sb-core", "sb-core/router"]
 observe = ["router", "sb-metrics"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http"]
 
@@ -113,6 +118,7 @@ path = "src/bin/sb-rule-coverage.rs"
 [[bin]]
 name = "report"
 path = "src/bin/report.rs"
+required-features = ["dev-cli"]
 
 [dependencies]
 anyhow      = { workspace = true }

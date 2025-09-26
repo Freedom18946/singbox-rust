@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use app::cli::report::{self, Args};
 use clap::Parser;
 

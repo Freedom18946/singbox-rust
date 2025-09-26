@@ -8,7 +8,10 @@ pub mod log;
 pub mod metrics;
 pub mod net;
 pub mod outbound; // <— 新增导出，供 bridge/scaffold 使用
+#[cfg(feature = "router")]
 pub mod routing;
+#[cfg(feature = "router")]
+pub use self::routing as router;   // 提供 sb_core::router 别名
 pub mod runtime;
 pub mod session;
 pub mod socks5;

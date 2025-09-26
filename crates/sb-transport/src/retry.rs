@@ -114,7 +114,7 @@ impl RetryPolicy {
             return operation().await;
         }
 
-        let mut last_error = None;
+        // Track is not needed as we return on final attempt
 
         for attempt in 0..=self.max_attempts {
             match operation().await {
@@ -163,7 +163,7 @@ impl RetryPolicy {
                         attempt + 1
                     );
 
-                    last_error = Some(error);
+                    // remember last error only if needed (not required)
 
                     // Wait before retry (skip delay on first attempt)
                     if attempt < self.max_attempts {
@@ -175,8 +175,9 @@ impl RetryPolicy {
             }
         }
 
-        // This should never be reached, but handle it gracefully
-        Err(last_error.expect("Should have at least one error"))
+        // This should never be reached; as a safe fallback, perform one more attempt
+        // and return its result to avoid constructing a generic error.
+        operation().await
     }
 }
 

@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use clap::{Args as ClapArgs, Subcommand};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+#[cfg(feature="dev-cli")]
 use serde::Serialize;
-use serde_json;
-use atty;
 
 #[derive(ClapArgs, Debug)]
 pub struct PrefetchArgs {
@@ -117,7 +113,7 @@ fn feature_guard(feature: &str) -> anyhow::Result<()> {
     anyhow::bail!("该命令需要启用编译特性：{}", feature)
 }
 
-fn stats(json: bool) -> anyhow::Result<()> {
+fn stats(_json: bool) -> anyhow::Result<()> {
     // admin_debug 下导出指标；否则提示开启特性
     #[cfg(feature = "admin_debug")]
     {
@@ -126,7 +122,7 @@ fn stats(json: bool) -> anyhow::Result<()> {
         let high = m::get_prefetch_queue_high_watermark();
         let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
 
-        if json {
+        if _json {
             // 输出 JSON 格式
             let json_obj = serde_json::json!({
                 "depth": depth,
@@ -156,7 +152,7 @@ fn stats(json: bool) -> anyhow::Result<()> {
     }
 }
 
-fn enqueue(url: String, etag: Option<String>) -> anyhow::Result<()> {
+fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
     {
         // 检查是否启用
@@ -171,9 +167,9 @@ fn enqueue(url: String, etag: Option<String>) -> anyhow::Result<()> {
             .unwrap_or(128);
 
         // 仅入队，不抓取
-        let ok = crate::admin_debug::prefetch::enqueue_prefetch(&url, etag);
+        let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
         if ok {
-            println!("enqueued: {}", url);
+            println!("enqueued: {}", _url);
             Ok(())
         } else {
             anyhow::bail!(
@@ -188,36 +184,36 @@ fn enqueue(url: String, etag: Option<String>) -> anyhow::Result<()> {
     }
 }
 
-fn heat(url: String, concurrency: usize, duration: u64, rps: u64, etag: Option<String>) -> anyhow::Result<()> {
+fn heat(_url: String, _concurrency: usize, _duration: u64, _rps: u64, _etag: Option<String>) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
     {
-        let stop = Arc::new(AtomicBool::new(false));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stop2 = stop.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(duration));
-            stop2.store(true, Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_secs(_duration));
+            stop2.store(true, std::sync::atomic::Ordering::Relaxed);
         });
 
-        let mut handles = Vec::with_capacity(concurrency);
-        for _ in 0..concurrency {
+        let mut handles = Vec::with_capacity(_concurrency);
+        for _ in 0.._concurrency {
             let stop = stop.clone();
-            let url = url.clone();
-            let etag = etag.clone();
+            let url = _url.clone();
+            let etag = _etag.clone();
             handles.push(std::thread::spawn(move || {
                 let mut enq = 0u64;
                 let mut drop = 0u64;
-                let mut last = Instant::now();
-                let interval = if rps == 0 { Duration::from_millis(0) } else { Duration::from_secs_f64(1.0 / (rps as f64).max(1.0)) };
-                while !stop.load(Ordering::Relaxed) {
+                let mut last = std::time::Instant::now();
+                let interval = if _rps == 0 { std::time::Duration::from_millis(0) } else { std::time::Duration::from_secs_f64(1.0 / (_rps as f64).max(1.0)) };
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     let ok = crate::admin_debug::prefetch::enqueue_prefetch(&url, etag.clone());
                     if ok { enq += 1; } else { drop += 1; }
-                    if rps > 0 {
+                    if _rps > 0 {
                         let target = interval;
                         let spent = last.elapsed();
                         if spent < target {
                             std::thread::sleep(target - spent);
                         }
-                        last = Instant::now();
+                        last = std::time::Instant::now();
                     } else {
                         // 当 rps=0 时避免 CPU 100% 占用
                         std::thread::yield_now();
@@ -243,6 +239,7 @@ fn heat(url: String, concurrency: usize, duration: u64, rps: u64, etag: Option<S
     }
 }
 
+#[cfg(feature="dev-cli")]
 #[derive(Clone, Copy, Default, Serialize)]
 struct PrefStats {
     depth: u64,
@@ -265,22 +262,22 @@ fn read_stats() -> PrefStats {
     }
 }
 
-fn watch(interval: u64, duration: u64, plain: bool, json: bool, ndjson: bool) -> anyhow::Result<()> {
+fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: bool) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
-        let iv = Duration::from_secs(interval.max(1));
-        let deadline = if duration == 0 { None } else { Some(Instant::now() + Duration::from_secs(duration)) };
+        let iv = std::time::Duration::from_secs(_interval.max(1));
+        let deadline = if _duration == 0 { None } else { Some(std::time::Instant::now() + std::time::Duration::from_secs(_duration)) };
         let mut series: Vec<u64> = Vec::with_capacity(1200);
-        let is_tty = atty::is(atty::Stream::Stdout) && !plain && !json && !ndjson;
+        let is_tty = atty::is(atty::Stream::Stdout) && !_plain && !_json && !_ndjson;
         loop {
             let s = read_stats();
             series.push(s.depth);
             while series.len() > 60 { series.remove(0); }
-            if json || ndjson {
+            if _json || _ndjson {
                 let line = serde_json::json!({
                     "depth": s.depth, "high": s.high, "enq": s.enq, "drop": s.drop,
                     "done": s.done, "fail": s.fail, "retry": s.retry,
-                    "ts_ms": (Instant::now().elapsed().as_millis() as u64)
+                    "ts_ms": (std::time::Instant::now().elapsed().as_millis() as u64)
                 });
                 println!("{}", line);
             } else if is_tty {
@@ -293,7 +290,7 @@ fn watch(interval: u64, duration: u64, plain: bool, json: bool, ndjson: bool) ->
                 println!("depth={} high={} enq={} drop={} done={} fail={} retry={}",
                     s.depth, s.high, s.enq, s.drop, s.done, s.fail, s.retry);
             }
-            if let Some(t) = deadline { if Instant::now() >= t { break; } }
+            if let Some(t) = deadline { if std::time::Instant::now() >= t { break; } }
             std::thread::sleep(iv);
         }
         if is_tty { println!(); }
@@ -309,8 +306,8 @@ fn sparkline(data: &[u64]) -> String {
     // unicode blocks ▁▂▃▄▅▆▇█
     const GLYPHS: &[char] = &['▁','▂','▃','▄','▅','▆','▇','█'];
     if data.is_empty() { return "".into(); }
-    let min = *data.iter().min().unwrap();
-    let max = *data.iter().max().unwrap();
+    let min = *data.iter().min().unwrap_or(&0);
+    let max = *data.iter().max().unwrap_or(&0);
     if max == min { return std::iter::repeat('▁').take(data.len()).collect(); }
     data.iter().map(|v| {
         let n = (((*v - min) as f64) / ((max - min) as f64) * (GLYPHS.len() as f64 - 1.0)).round() as usize;
@@ -318,21 +315,21 @@ fn sparkline(data: &[u64]) -> String {
     }).collect()
 }
 
-fn drain(timeout: u64, every_ms: u64, quiet: bool) -> anyhow::Result<()> {
+fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
-        let until = Instant::now() + Duration::from_secs(timeout);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(_timeout);
         loop {
             let d = read_stats().depth;
             if d == 0 {
-                if !quiet { println!("queue drained"); }
+                if !_quiet { println!("queue drained"); }
                 return Ok(());
             }
-            if Instant::now() >= until {
-                if !quiet { eprintln!("timeout waiting for drain; depth={}", d); }
+            if std::time::Instant::now() >= until {
+                if !_quiet { eprintln!("timeout waiting for drain; depth={}", d); }
                 std::process::exit(2);
             }
-            std::thread::sleep(Duration::from_millis(every_ms.max(50)));
+            std::thread::sleep(std::time::Duration::from_millis(_every_ms.max(50)));
         }
     }
     #[cfg(not(feature = "admin_debug"))]
@@ -341,6 +338,7 @@ fn drain(timeout: u64, every_ms: u64, quiet: bool) -> anyhow::Result<()> {
     }
 }
 
+#[cfg(feature="dev-cli")]
 #[derive(Serialize)]
 struct SampleOut {
     trigger: &'static str,
@@ -350,31 +348,31 @@ struct SampleOut {
     enqueue_cost_ms: u128,
 }
 
-fn sample(url: String, etag: Option<String>, window: u64, wait_done: bool, json: bool) -> anyhow::Result<()> {
+fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _json: bool) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
     {
         let before = read_stats().depth;
-        let t0 = Instant::now();
-        let ok = crate::admin_debug::prefetch::enqueue_prefetch(&url, etag);
+        let t0 = std::time::Instant::now();
+        let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
         let t1 = t0.elapsed();
         let mut peak = before;
-        let until = Instant::now() + Duration::from_secs(window);
-        while Instant::now() < until {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(_window);
+        while std::time::Instant::now() < until {
             let cur = read_stats();
             peak = peak.max(cur.depth);
-            std::thread::sleep(Duration::from_millis(200));
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
         let mut after = read_stats().depth;
-        if wait_done {
+        if _wait_done {
             let target = before.saturating_add(1); // 允许微小波动
-            let end2 = Instant::now() + Duration::from_secs(window);
-            while Instant::now() < end2 {
+            let end2 = std::time::Instant::now() + std::time::Duration::from_secs(_window);
+            while std::time::Instant::now() < end2 {
                 after = read_stats().depth;
                 if after <= target { break; }
-                std::thread::sleep(Duration::from_millis(200));
+                std::thread::sleep(std::time::Duration::from_millis(200));
             }
         }
-        if json {
+        if _json {
             let out = SampleOut {
                 trigger: if ok { "enqueued" } else { "drop" },
                 before, peak, after,

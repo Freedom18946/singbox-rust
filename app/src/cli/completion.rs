@@ -78,7 +78,7 @@ pub fn main(a: CompletionArgs) -> Result<()> {
     Ok(())
 }
 
-fn print_install_hints(a: &CompletionArgs) {
+fn print_install_hints(_a: &CompletionArgs) {
     use std::env;
     let exe = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "app".into());
     eprintln!("# install hints (macOS/Linux)");

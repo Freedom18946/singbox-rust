@@ -12,9 +12,12 @@ use sb_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
+#[cfg(feature = "tuic")]
 use std::sync::Arc;
+#[cfg(any(test, feature = "tuic"))]
 use tokio::net::lookup_host;
+#[cfg(feature = "tuic")]
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 use uuid::Uuid;
@@ -379,12 +382,16 @@ impl TuicMultiplexer {
 /// TUIC outbound connector
 #[derive(Debug)]
 pub struct TuicConnector {
+    #[allow(dead_code)]
     config: TuicConfig,
+    #[allow(dead_code)]
     user_id: Uuid,
     congestion_control: TuicCongestionControl,
     udp_relay_mode: TuicUdpRelayMode,
     connect_timeout: Duration,
+    #[allow(dead_code)]
     auth_timeout: Duration,
+    #[allow(dead_code)]
     heartbeat_interval: Duration,
 }
 
@@ -413,7 +420,7 @@ impl TuicConnector {
 
         let heartbeat_interval = Duration::from_millis(config.heartbeat);
 
-        Ok(Self {
+        let connector = Self {
             config,
             user_id,
             congestion_control,
@@ -421,10 +428,13 @@ impl TuicConnector {
             connect_timeout,
             auth_timeout,
             heartbeat_interval,
-        })
+        };
+
+        Ok(connector)
     }
 
     /// Resolve server address
+    #[cfg(any(test, feature = "tuic"))]
     async fn resolve_server(&self) -> SbResult<SocketAddr> {
         let mut addrs = lookup_host(&self.config.server).await.map_err(|e| {
             SbError::network(
@@ -539,14 +549,8 @@ impl TuicConnector {
     }
 
     #[cfg(not(feature = "tuic"))]
+    #[allow(dead_code)]
     async fn connect_quic(&self) -> SbResult<()> {
-        // Use the fields to avoid dead code warnings
-        let _ = (
-            &self.config,
-            &self.user_id,
-            &self.auth_timeout,
-            &self.heartbeat_interval,
-        );
         Err(SbError::network(
             ErrorClass::Configuration,
             "TUIC support not enabled. Rebuild with --features tuic".to_string(),
@@ -554,13 +558,8 @@ impl TuicConnector {
     }
 
     #[cfg(not(feature = "tuic"))]
+    #[allow(dead_code)]
     async fn authenticate(&self, _connection: &()) -> SbResult<()> {
-        let _ = (
-            &self.config,
-            &self.user_id,
-            &self.auth_timeout,
-            &self.heartbeat_interval,
-        );
         Err(SbError::network(
             ErrorClass::Configuration,
             "TUIC support not enabled. Rebuild with --features tuic".to_string(),

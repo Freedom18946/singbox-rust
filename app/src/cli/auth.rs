@@ -9,10 +9,7 @@
 ))]
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use anyhow::{Result, Context};
-use std::time::{Duration, Instant};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use parking_lot::Mutex;
+// (unused) removed
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256, Sha512};
 use base64::Engine;
@@ -80,7 +77,7 @@ pub fn main(a: AuthArgs) -> Result<()> {
         AuthCmd::Sign { key_id, secret, header, env_file, algo, canon, body, body_file, body_hash } =>
             sign_ex(key_id, secret, header, env_file, algo, canon, body, body_file, body_hash),
         AuthCmd::Replay { url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash } =>
-            tokio::runtime::Runtime::new().unwrap().block_on(
+            tokio::runtime::Runtime::new()?.block_on(
                 replay(url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash)
             ),
     }
@@ -191,39 +188,40 @@ struct ReplayStats {
     per_sec: BTreeMap<u64, u64>,
 }
 
-async fn replay(url: String, key_id: String, secret: String,
-                times: u64, concurrency: usize, rps: u64, timeout_ms: u64,
-                status_only: bool, mut hdrs: Vec<String>, json: bool,
+async fn replay(_url: String, _key_id: String, _secret: String,
+                _times: u64, _concurrency: usize, _rps: u64, _timeout_ms: u64,
+                _status_only: bool, mut hdrs: Vec<String>, _json: bool,
                 body: Option<String>, body_file: Option<PathBuf>, body_hash: bool) -> Result<()> {
     let body_bytes = read_body_inline(&body, &body_file)?;
     inject_body_hash(&mut hdrs, &body_bytes, body_hash);
     #[cfg(feature = "reqwest")]
     {
-        let client = reqwest::Client::builder().timeout(Duration::from_millis(timeout_ms)).build()?;
+        use std::time::{Duration, Instant};
+        let client = reqwest::Client::builder().timeout(Duration::from_millis(_timeout_ms)).build()?;
         // 令牌桶：一个后台 task 以 RPS 频率往信号量投放许可
-        let sem = Arc::new(tokio::sync::Semaphore::new(if rps == 0 { i32::MAX as usize } else { 0 }));
-        if rps > 0 {
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(if _rps == 0 { i32::MAX as usize } else { 0 }));
+        if _rps > 0 {
             let sem_filler = sem.clone();
             tokio::spawn(async move {
-                let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / (rps as f64)));
+                let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / (_rps as f64)));
                 loop { ticker.tick().await; let _ = sem_filler.add_permits(1); }
             });
         }
-        let counter = Arc::new(AtomicU64::new(0));
-        let stats = Arc::new(Mutex::new(ReplayStats::default()));
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let stats = std::sync::Arc::new(parking_lot::Mutex::new(ReplayStats::default()));
         stats.lock().start_ms = Instant::now().elapsed().as_millis(); // 起点基准
-        let pb = if json { None } else {
-            Some(indicatif::ProgressBar::new(times).with_style(indicatif::ProgressStyle::with_template(
-                "{msg}   {wide_bar} {pos}/{len}  {per_sec}").unwrap()))
+        let pb = if _json { None } else {
+            let style = indicatif::ProgressStyle::with_template("{msg}   {wide_bar} {pos}/{len}  {per_sec}")?;
+            Some(indicatif::ProgressBar::new(_times).with_style(style))
         };
         let ts = (chrono::Utc::now().timestamp()) as i64;
         let nonce = format!("{:016x}", rand::random::<u64>());
         let mut join = Vec::new();
-        for _ in 0..concurrency {
+        for _ in 0.._concurrency {
             let client = client.clone();
-            let url = url.clone();
-            let key_id = key_id.clone();
-            let secret = secret.clone();
+            let url = _url.clone();
+            let key_id = _key_id.clone();
+            let secret = _secret.clone();
             let stats = stats.clone();
             let pb2 = pb.clone();
             let hdrs_vec = hdrs.clone();
@@ -235,8 +233,8 @@ async fn replay(url: String, key_id: String, secret: String,
             join.push(tokio::spawn(async move {
                 // 循环领取任务
                 loop {
-                    let i = counter.fetch_add(1, Ordering::Relaxed);
-                    if i >= times { break; }
+                    let i = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if i >= _times { break; }
                     // 限速：取令牌
                     let _p = match sem.acquire().await {
                         Ok(p) => p,
@@ -275,7 +273,7 @@ async fn replay(url: String, key_id: String, secret: String,
                     match res {
                         Ok(r) => {
                             let sc = r.status().as_u16();
-                            let bytes_len = if !status_only {
+                            let bytes_len = if !_status_only {
                                 match r.bytes().await {
                                     Ok(b) => b.len() as u64,
                                     Err(_) => 0,
@@ -307,7 +305,7 @@ async fn replay(url: String, key_id: String, secret: String,
             let qps_avg = (g.total as f64) / elapsed_s;
             let qps_peak = g.per_sec.values().copied().max().unwrap_or(0) as f64;
             g.qps_peak = qps_peak;
-            if json {
+            if _json {
                 println!("{}", serde_json::json!({
                   "ok2xx": g.ok2xx, "e4xx": g.e4xx, "e5xx": g.e5xx, "other": g.other,
                   "total": g.total, "bytes": g.bytes,

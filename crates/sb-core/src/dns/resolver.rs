@@ -159,7 +159,7 @@ impl DnsResolver {
 #[async_trait]
 impl Resolver for DnsResolver {
     async fn resolve(&self, domain: &str) -> Result<DnsAnswer> {
-        let start_time = std::time::Instant::now();
+        let _start_time = std::time::Instant::now();
 
         // Global timeout for resolve to avoid hangs; cancel concurrent tasks via select
         let timeout_ms = std::env::var("SB_DNS_TIMEOUT_MS")
@@ -178,7 +178,7 @@ impl Resolver for DnsResolver {
         // 记录解析延迟
         #[cfg(feature = "metrics")]
         {
-            let latency_ms = start_time.elapsed().as_millis() as f64;
+            let latency_ms = _start_time.elapsed().as_millis() as f64;
             metrics::histogram!("dns_resolve_duration_ms").record(latency_ms);
         }
 

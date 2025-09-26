@@ -16,7 +16,8 @@ pub struct ExplainResult {
 
 /// ExplainEngine holds IR and provides routing explanation
 pub struct ExplainEngine {
-    ir: Box<sb_config::ir::ConfigIR>,
+    #[allow(dead_code)]
+    ir: Box<sb_config::ir::ConfigIR>, // Keeps IR data alive for engine pointer
     engine: Engine<'static>,
 }
 

@@ -37,17 +37,24 @@ cargo run -p app --features reqwest -- bench io --h2 --url https://example.com -
 
 ### Performance Baseline & Regression Detection
 
-Record and verify performance baselines:
+Record and verify performance baselines using cargo bench:
 
 ```bash
-# Record baseline (run once on known-good performance)
-scripts/bench-guard.sh --record
+# Record baseline (run once on stable machine)
+scripts/bench-guard.sh record
 
 # Check for regressions (CI/development use)
-scripts/bench-guard.sh --check
+scripts/bench-guard.sh check
+
+# Adjust tolerance threshold (default: ±10%)
+BENCH_GUARD_TOL=0.05 scripts/bench-guard.sh check
 ```
 
-The guard script enforces ±8% tolerance for percentiles (p50/p90/p99) and ±5% for RPS/throughput.
+The guard script:
+- Records hardware/machine info, date, git SHA, and rustc version in baseline.json
+- Compares current benchmark results against baseline with configurable tolerance
+- Returns exit code 3 for regressions, 2 for setup/parsing failures
+- Supports stable benchmarks that avoid external network dependencies
 
 ## Lint Baseline
 

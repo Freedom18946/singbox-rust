@@ -6,7 +6,7 @@
 )]
 
 #[cfg(feature = "metrics")]
-use metrics::{counter, histogram};
+use crate::metrics::registry_ext::{get_or_register_counter_vec, get_or_register_histogram_vec};
 
 // Reuse the real outbound kind type to avoid duplicate definitions
 pub use crate::outbound::OutboundKind;
@@ -66,31 +66,71 @@ pub fn register_metrics() {
     // no-op; metrics are on-demand by macros
 }
 
-pub fn record_connect_attempt(kind: OutboundKind) {
+pub fn record_connect_attempt(_kind: OutboundKind) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_connect_total", "kind" => label_kind(kind), "result" => "attempt")
-        .increment(1);
+    {
+        let kind = _kind;
+        let cv = get_or_register_counter_vec(
+            "outbound_connect_total",
+            "outbound connect attempts/results",
+            &["kind", "result"],
+        );
+        cv.with_label_values(&[label_kind(kind), "attempt"]).inc();
+    }
 }
 
-pub fn record_connect_success(kind: OutboundKind) {
+pub fn record_connect_success(_kind: OutboundKind) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_connect_total", "kind" => label_kind(kind), "result" => "ok").increment(1);
+    {
+        let kind = _kind;
+        let cv = get_or_register_counter_vec(
+            "outbound_connect_total",
+            "outbound connect attempts/results",
+            &["kind", "result"],
+        );
+        cv.with_label_values(&[label_kind(kind), "success"]).inc();
+    }
 }
 
-pub fn record_connect_failure(kind: OutboundKind) {
+pub fn record_connect_failure(_kind: OutboundKind) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_connect_total", "kind" => label_kind(kind), "result" => "fail").increment(1);
+    {
+        let kind = _kind;
+        let cv = get_or_register_counter_vec(
+            "outbound_connect_total",
+            "outbound connect attempts/results",
+            &["kind", "result"],
+        );
+        cv.with_label_values(&[label_kind(kind), "failure"]).inc();
+    }
 }
 
-pub fn record_connect_error(kind: OutboundKind, class: OutboundErrorClass) {
+pub fn record_connect_error(_kind: OutboundKind, _class: OutboundErrorClass) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_error_total", "kind" => label_kind(kind), "class" => label_err(class))
-        .increment(1);
+    {
+        let kind = _kind;
+        let class = _class;
+        let cv = get_or_register_counter_vec(
+            "outbound_connect_error_total",
+            "outbound connect error total",
+            &["kind", "class"],
+        );
+        cv.with_label_values(&[label_kind(kind), label_err(class)]).inc();
+    }
 }
 
-pub fn record_connect_duration(duration_ms: f64) {
+pub fn record_connect_duration(_duration_ms: f64) {
     #[cfg(feature = "metrics")]
-    histogram!("outbound_connect_duration_ms").record(duration_ms);
+    {
+        // If kind is needed per instruction, callers should provide it via kind-specific histograms.
+        let hv = get_or_register_histogram_vec(
+            "outbound_connect_duration_ms",
+            "outbound connect duration (ms)",
+            &[],
+            None,
+        );
+        hv.with_label_values(&[]).observe(_duration_ms);
+    }
 }
 
 // P3 selector Prometheus-export style (kept for compatibility with earlier experiments)
@@ -398,37 +438,79 @@ pub fn record_ss_aead_op_duration(duration_ms: f64, cipher: &str, operation: &st
 
 // Generic AEAD operation metrics using static labels
 pub fn record_aead_encrypt_duration(
-    duration_ms: f64,
-    protocol: crate::metrics::labels::Proto,
-    cipher: crate::metrics::labels::CipherType,
+    _duration_ms: f64,
+    _protocol: crate::metrics::labels::Proto,
+    _cipher: crate::metrics::labels::CipherType,
 ) {
     #[cfg(feature = "metrics")]
     histogram!("outbound_aead_encrypt_duration_ms", "protocol" => protocol.as_str(), "cipher" => cipher.as_str()).record(duration_ms);
 }
 
 pub fn record_aead_decrypt_duration(
-    duration_ms: f64,
-    protocol: crate::metrics::labels::Proto,
-    cipher: crate::metrics::labels::CipherType,
+    _duration_ms: f64,
+    _protocol: crate::metrics::labels::Proto,
+    _cipher: crate::metrics::labels::CipherType,
 ) {
     #[cfg(feature = "metrics")]
-    histogram!("outbound_aead_decrypt_duration_ms", "protocol" => protocol.as_str(), "cipher" => cipher.as_str()).record(duration_ms);
+    histogram!(
+        "outbound_aead_decrypt_duration_ms",
+        "protocol" => _protocol.as_str(),
+        "cipher" => _cipher.as_str()
+    )
+    .record(_duration_ms);
 }
 
 pub fn record_aead_encrypt_total(
-    protocol: crate::metrics::labels::Proto,
-    cipher: crate::metrics::labels::CipherType,
+    _protocol: crate::metrics::labels::Proto,
+    _cipher: crate::metrics::labels::CipherType,
     _result: crate::metrics::labels::ResultTag,
 ) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_aead_encrypt_total", "protocol" => protocol.as_str(), "cipher" => cipher.as_str(), "result" => _result.as_str()).increment(1);
+    counter!(
+        "outbound_aead_encrypt_total",
+        "protocol" => _protocol.as_str(),
+        "cipher" => _cipher.as_str(),
+        "result" => _result.as_str()
+    )
+    .increment(1);
 }
 
 pub fn record_aead_decrypt_total(
-    protocol: crate::metrics::labels::Proto,
-    cipher: crate::metrics::labels::CipherType,
+    _protocol: crate::metrics::labels::Proto,
+    _cipher: crate::metrics::labels::CipherType,
     _result: crate::metrics::labels::ResultTag,
 ) {
     #[cfg(feature = "metrics")]
-    counter!("outbound_aead_decrypt_total", "protocol" => protocol.as_str(), "cipher" => cipher.as_str(), "result" => _result.as_str()).increment(1);
+    counter!(
+        "outbound_aead_decrypt_total",
+        "protocol" => _protocol.as_str(),
+        "cipher" => _cipher.as_str(),
+        "result" => _result.as_str()
+    )
+    .increment(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connect_success_increments_with_kind_label() {
+        // arrange
+        record_connect_success(OutboundKind::Direct);
+
+        // assert (only when metrics feature enabled)
+        #[cfg(feature = "metrics")]
+        {
+            let mfs = crate::metrics::registry().gather();
+            let mut buf = Vec::new();
+            prometheus::TextEncoder::new()
+                .encode(&mfs, &mut buf)
+                .expect("encode");
+            let s = String::from_utf8(buf).unwrap();
+            assert!(s.contains("outbound_connect_total"));
+            assert!(s.contains("kind=\"direct\""));
+            assert!(s.contains("result=\"success\""));
+        }
+    }
 }

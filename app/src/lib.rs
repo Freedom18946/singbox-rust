@@ -20,6 +20,7 @@ pub mod analyze;
 pub mod cli;
 pub mod config_loader;
 pub mod util;
+#[cfg(feature = "dev-cli")]
 pub mod env_dump;
 #[cfg(feature = "hardening")]
 pub mod hardening;
@@ -28,8 +29,15 @@ pub mod http_util;
 #[cfg(feature = "panic_log")]
 pub mod panic;
 pub mod telemetry;
+#[cfg(feature = "dev-cli")]
 pub mod tracing_init;
+
+// Router facade - available always, but functionality gated by feature
+pub mod router;
 
 // 兼容占位：保留 bootstrap 模块（空壳），防止其他地方 `mod bootstrap;` 报错。
 #[cfg(feature = "router")]
 pub mod bootstrap;
+
+// Allow referencing the crate by name `app` within this crate as well
+extern crate self as app;

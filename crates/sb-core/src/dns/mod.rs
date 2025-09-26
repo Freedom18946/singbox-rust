@@ -115,9 +115,13 @@ pub struct ResolverHandle {
     static_ttl: Duration,
     ipv6_enabled: bool,
     // Prefetch
+    #[allow(dead_code)]
     prefetch_enabled: bool,
+    #[allow(dead_code)]
     prefetch_before: Duration,
+    #[allow(dead_code)]
     prefetch_sem: Arc<tokio::sync::Semaphore>,
+    #[allow(dead_code)]
     prefetch_inflight: Arc<std::sync::Mutex<HashSet<String>>>,
     // Upstream health
     up_health: Arc<std::sync::Mutex<HashMap<String, UpHealth>>>,
@@ -628,7 +632,7 @@ async fn query_one(
     _he_race_ms: u64,
     timeout_ms: u64,
 ) -> Result<(Vec<IpAddr>, Duration)> {
-    let start = std::time::Instant::now();
+    let _start = std::time::Instant::now();
     let mut ips: Vec<IpAddr> = Vec::new();
     let ttl: Duration;
     match up.clone() {
@@ -849,7 +853,7 @@ async fn query_one(
     // latency metric
     #[cfg(feature = "metrics")]
     {
-        let elapsed = start.elapsed().as_millis() as f64;
+        let elapsed = _start.elapsed().as_millis() as f64;
         let kind = match up {
             Upstream::System => "system",
             Upstream::Udp(_) => "udp",
@@ -1016,7 +1020,7 @@ async fn resolve_fanout(
     })
 }
 
-fn mark_upstream_fail(h: &ResolverHandle, key: &str, reason: &str) {
+fn mark_upstream_fail(h: &ResolverHandle, key: &str, _reason: &str) {
     let mut map = match h.up_health.lock() {
         Ok(g) => g,
         Err(_e) => {
@@ -1037,7 +1041,7 @@ fn mark_upstream_fail(h: &ResolverHandle, key: &str, reason: &str) {
     #[cfg(feature = "metrics")]
     {
         ::metrics::gauge!("dns_upstream_state", "upstream"=>key.to_string(), "kind"=>if key.starts_with("udp://"){"udp"} else if key=="system" {"system"} else {"other"}, "state"=>"down").set(0.0);
-        ::metrics::counter!("dns_pool_errors_total", "upstream"=>key.to_string(), "reason"=>reason.to_string()).increment(1);
+        ::metrics::counter!("dns_pool_errors_total", "upstream"=>key.to_string(), "reason"=>_reason.to_string()).increment(1);
     }
 }
 

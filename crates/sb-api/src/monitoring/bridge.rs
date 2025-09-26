@@ -35,24 +35,39 @@ pub struct MetricsBridge {
     prev_down: AtomicU64,
 }
 
+/// Aggregate outbound connection metrics surfaced to API.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct OutboundMetrics {
+    /// Total connect attempts observed.
     pub connect_attempts: u64,
+    /// Successful outbound connections.
     pub connect_successes: u64,
+    /// Failed outbound connections.
     pub connect_failures: u64,
+    /// Total uploaded bytes across outbound connections.
     pub total_bytes_up: u64,
+    /// Total downloaded bytes across outbound connections.
     pub total_bytes_down: u64,
+    /// Average connection duration in seconds.
     pub avg_connection_duration: f64,
+    /// The most recent error, if any.
     pub last_error: Option<String>,
 }
 
+/// DNS metrics snapshot surfaced to API.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DnsMetrics {
+    /// Total DNS queries processed.
     pub total_queries: u64,
+    /// Cache hit count.
     pub cache_hits: u64,
+    /// Cache miss count.
     pub cache_misses: u64,
+    /// Average response time in milliseconds.
     pub avg_response_time: f64,
+    /// Total DNS errors.
     pub errors: u64,
+    /// Current DNS cache size.
     pub cache_size: usize,
 }
 

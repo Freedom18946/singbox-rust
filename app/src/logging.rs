@@ -7,7 +7,7 @@
 //! - Explicit flush on application exit
 //! - Environment-driven configuration
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
@@ -18,6 +18,7 @@ use tracing_subscriber::{
     Layer,
     EnvFilter,
 };
+use anyhow::{self, Result};
 
 /// Global logging configuration
 static LOGGING_CONFIG: OnceLock<LoggingConfig> = OnceLock::new();
@@ -93,13 +94,17 @@ impl LoggingConfig {
 }
 
 /// Initialize the logging system with environment-based configuration
-pub fn init_logging() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn init_logging() -> Result<()> {
     let config = LoggingConfig::from_env();
-    LOGGING_CONFIG.set(config.clone()).map_err(|_| "Logging already initialized")?;
+    LOGGING_CONFIG
+        .set(config.clone())
+        .map_err(|_| anyhow::anyhow!("logging already initialized"))?;
 
     // Create shutdown channel for coordinated flushing
     let (tx, _rx) = broadcast::channel(1);
-    SHUTDOWN_SENDER.set(tx).map_err(|_| "Shutdown sender already set")?;
+    SHUTDOWN_SENDER
+        .set(tx)
+        .map_err(|_| anyhow::anyhow!("shutdown sender already set"))?;
 
     // Build the subscriber based on configuration
     let env_filter = EnvFilter::new(&config.level);
@@ -189,7 +194,13 @@ fn should_sample(target: &str, config: &SamplingConfig) -> bool {
         samples: HashMap::new(),
         window_start: Instant::now(),
     }));
-    let mut sampler = sampler_mutex.lock().unwrap();
+    let mut sampler = match sampler_mutex.lock() {
+        Ok(g) => g,
+        Err(_poison) => {
+            // On lock poison, allow the event rather than panic.
+            return true;
+        }
+    };
     let now = Instant::now();
 
     // Reset window if expired
@@ -212,19 +223,48 @@ fn should_sample(target: &str, config: &SamplingConfig) -> bool {
 fn install_exit_hook() {
     // Register signal handlers for graceful shutdown
     tokio::spawn(async {
-        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("Failed to install SIGTERM handler");
-        let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .expect("Failed to install SIGINT handler");
+        use tokio::signal::unix::{signal, SignalKind};
 
-        tokio::select! {
-            _ = sigterm.recv() => {
+        let mut sigterm = match signal(SignalKind::terminate()) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(error = %e, "install signal handler failed: SIGTERM");
+                None
+            }
+        };
+        let mut sigint = match signal(SignalKind::interrupt()) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(error = %e, "install signal handler failed: SIGINT");
+                None
+            }
+        };
+
+        match (sigterm.as_mut(), sigint.as_mut()) {
+            (Some(s1), Some(s2)) => {
+                tokio::select! {
+                    _ = s1.recv() => {
+                        tracing::info!("Received SIGTERM, flushing logs...");
+                        flush_logs().await;
+                    }
+                    _ = s2.recv() => {
+                        tracing::info!("Received SIGINT, flushing logs...");
+                        flush_logs().await;
+                    }
+                }
+            }
+            (Some(s1), None) => {
+                let _ = s1.recv().await;
                 tracing::info!("Received SIGTERM, flushing logs...");
                 flush_logs().await;
             }
-            _ = sigint.recv() => {
+            (None, Some(s2)) => {
+                let _ = s2.recv().await;
                 tracing::info!("Received SIGINT, flushing logs...");
                 flush_logs().await;
+            }
+            (None, None) => {
+                // No handlers installed; nothing to do.
             }
         }
     });
@@ -234,15 +274,12 @@ fn install_exit_hook() {
     std::panic::set_hook(Box::new(move |panic_info| {
         eprintln!("Panic occurred, attempting to flush logs...");
         let _ = std::thread::spawn(|| {
-            tokio::runtime::Handle::try_current()
-                .map(|handle| {
-                    handle.spawn(flush_logs());
-                })
-                .or_else(|_| {
-                    // If no async runtime, do synchronous flush
-                    std::thread::sleep(Duration::from_millis(100));
-                    Ok(())
-                });
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(flush_logs());
+            } else {
+                // If no async runtime, wait briefly to allow buffers to flush
+                std::thread::sleep(Duration::from_millis(100));
+            }
         }).join();
 
         original_hook(panic_info);
@@ -265,6 +302,7 @@ pub async fn flush_logs() {
 }
 
 /// Force immediate flush of logs (for testing)
+#[cfg(any(test, feature = "dev-cli"))]
 pub fn flush_logs_sync() {
     // For synchronous environments, just add a small delay
     std::thread::sleep(Duration::from_millis(100));

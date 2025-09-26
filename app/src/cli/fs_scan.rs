@@ -1,7 +1,11 @@
+#[cfg(feature="dev-cli")]
 use ignore::WalkBuilder;
+#[cfg(feature="dev-cli")]
 use regex::Regex;
 use serde::Serialize;
+#[cfg(feature="dev-cli")]
 use std::fs;
+#[cfg(feature="dev-cli")]
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Default)]
@@ -64,6 +68,7 @@ pub struct ReportMetrics {
     pub security_flags: SecurityFlags,
 }
 
+#[cfg(feature="dev-cli")]
 #[derive(Serialize)]
 pub struct FsReport {
     pub root: String,
@@ -71,10 +76,12 @@ pub struct FsReport {
     pub metrics: ReportMetrics,
 }
 
+#[cfg(feature="dev-cli")]
 pub struct Scanner {
     root: PathBuf,
 }
 
+#[cfg(feature="dev-cli")]
 impl Scanner {
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self { root: root.as_ref().to_path_buf() }
@@ -101,7 +108,7 @@ impl Scanner {
             vec![]
         };
 
-        let re_json_err = Regex::new(r"\brespond_json_error\s*\(").unwrap();
+        let _ = Regex::new(r"\brespond_json_error\s*\(");
         // 仅统计可能设置响应头为 text/plain 的代码片段：
         // - header("content-type", "text/plain")
         // - .content_type("text/plain")
@@ -211,6 +218,7 @@ impl Scanner {
     }
 }
 
+#[cfg(feature="dev-cli")]
 fn is_source_file(p: &Path) -> bool {
     match p.extension().and_then(|s| s.to_str()) {
         Some("rs" | "toml" | "sh" | "yml" | "yaml") => true,
@@ -220,6 +228,7 @@ fn is_source_file(p: &Path) -> bool {
     }
 }
 
+#[cfg(feature="dev-cli")]
 fn parse_bin_gates_toml(toml_path: PathBuf) -> BinGates {
     let mut g = BinGates { minimal_bins: vec![], router_gated_bins: vec![] };
     let Ok(s) = fs::read_to_string(&toml_path) else { return g; };

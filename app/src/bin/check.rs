@@ -102,14 +102,14 @@ fn main() -> Result<()> {
     };
 
     // Schema validation (if provided)
-    if let Some(schema_path) = &opt.config_schema {
-        let schema_raw =
-            fs::read_to_string(schema_path).map_err(|e| anyhow!("读取 schema 文件失败：{e}"))?;
-        let schema_json: Value =
-            serde_json::from_str(&schema_raw).map_err(|e| anyhow!("解析 schema 文件失败：{e}"))?;
-
+    if let Some(_schema_path) = &opt.config_schema {
         #[cfg(feature = "config_schema")]
         {
+            let schema_raw =
+                fs::read_to_string(_schema_path).map_err(|e| anyhow!("读取 schema 文件失败：{e}"))?;
+            let schema_json: Value =
+                serde_json::from_str(&schema_raw).map_err(|e| anyhow!("解析 schema 文件失败：{e}"))?;
+
             let schema = jsonschema::JSONSchema::compile(&schema_json)
                 .map_err(|e| anyhow!("编译 JSON Schema 失败：{e}"))?;
 
@@ -127,11 +127,9 @@ fn main() -> Result<()> {
                 std::process::exit(2);
             }
         }
-
         #[cfg(not(feature = "config_schema"))]
         {
-            tracing::warn!(target: "app::check", "--config-schema 需要 config_schema feature 支持");
-            std::process::exit(1);
+            anyhow::bail!("--config-schema 需要启用 'config_schema' feature（请以 `--features config_schema` 构建运行）");
         }
     }
 

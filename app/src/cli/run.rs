@@ -9,7 +9,9 @@ use std::{
 };
 use tracing::{error, info, warn};
 
-use crate::{bootstrap, config_loader, env_dump};
+use crate::{bootstrap, config_loader};
+#[cfg(feature = "dev-cli")]
+use crate::env_dump;
 use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 // Temporarily disabled for minimal CLI
 //use sb_core::router::engine::Router as CoreRouter;
@@ -68,22 +70,32 @@ pub async fn run(args: RunArgs) -> Result<()> {
             .config_path
             .clone()
             .context("--check 需要指定 --config <path>")?;
-        match crate::config_loader::check_only(&cfg_path) {
-            Ok((ib, ob, rules)) => {
-                println!("CONFIG_OK: inbounds={ib} outbounds={ob} rules={rules}");
-                return Ok(());
+#[cfg(feature = "dev-cli")]
+        {
+            match crate::config_loader::check_only(&cfg_path) {
+                Ok((ib, ob, rules)) => {
+                    println!("CONFIG_OK: inbounds={ib} outbounds={ob} rules={rules}");
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("CONFIG_BAD: {e}");
+                    std::process::exit(1);
+                }
             }
-            Err(e) => {
-                eprintln!("CONFIG_BAD: {e}");
-                std::process::exit(1);
-            }
+        }
+        #[cfg(not(feature = "dev-cli"))]
+        {
+            eprintln!("CONFIG CHECK: dev-cli feature not enabled");
+            std::process::exit(2);
         }
     }
 
     // Initialize observability (tracing + metrics) once
+    #[cfg(feature = "dev-cli")]
     crate::tracing_init::init_observability_once();
 
     // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
+    #[cfg(feature = "dev-cli")]
     env_dump::print_once_if_enabled();
 
     // Initialize admin debug server if enabled

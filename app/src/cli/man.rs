@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg(feature="manpage")]
 use clap::CommandFactory;
 use clap_mangen::Man;
 use anyhow::Result;

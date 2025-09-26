@@ -166,12 +166,12 @@ impl NatMap {
                     }
                     let item = h.pop().unwrap();
                     match self.try_evict(item, now).await {
-                        EvictResult::Removed(reason) => {
+                        EvictResult::Removed(_reason) => {
                             removed += 1;
                             #[cfg(feature = "metrics")]
                             self.metrics
                                 .evicted_total
-                                .with_label_values(&[reason])
+                                .with_label_values(&[_reason])
                                 .inc();
                         }
                         EvictResult::GenMismatch => {
@@ -196,19 +196,19 @@ impl NatMap {
             return;
         }
         let now = self.now();
-        let mut cnt = 0usize;
+        let mut _cnt = 0usize;
         let mut h = self.heap.lock().await;
         while self.map.len() > self.cap {
             if let Some(item) = h.pop() {
                 let _ = self.try_evict_inner(item, now, Some("capacity")).await;
-                cnt += 1;
+                _cnt += 1;
             } else {
                 break;
             }
         }
         #[cfg(feature = "metrics")]
         {
-            if cnt > 0 {
+            if _cnt > 0 {
                 self.metrics.heap_len.set(h.len() as i64);
             }
             self.metrics.size_gauge.set(self.map.len() as i64);

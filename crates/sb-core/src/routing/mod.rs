@@ -6,3 +6,7 @@ pub mod trace;
 
 pub mod matcher;
 pub mod router;
+
+// Re-export commonly used types from submodules
+pub use explain::{ExplainEngine, ExplainResult};
+pub use trace::Trace;

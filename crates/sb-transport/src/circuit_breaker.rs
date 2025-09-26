@@ -14,8 +14,8 @@
 //! - `SB_CB_HALFOPEN_MAX`: Maximum concurrent half-open probes (default: 1)
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tracing::{debug, warn, trace};
 
 /// Circuit breaker state
@@ -186,10 +186,11 @@ pub struct CircuitBreaker {
 impl CircuitBreaker {
     /// Create a new circuit breaker for the given outbound
     pub fn new(outbound_name: String, config: CircuitBreakerConfig) -> Self {
+        let cfg = config.clone();  // 用于 state 初始化的只读快照
         let circuit_breaker = Self {
             outbound_name: outbound_name.clone(),
             config,
-            state: Arc::new(Mutex::new(CircuitBreakerState::new(&config))),
+            state: Arc::new(Mutex::new(CircuitBreakerState::new(&cfg))),
         };
 
         // Initialize metrics
@@ -205,7 +206,13 @@ impl CircuitBreaker {
 
     /// Check if a request should be allowed through
     pub fn allow_request(&self) -> CircuitBreakerDecision {
-        let mut state = self.state.lock().unwrap();
+        let mut state = match self.state.lock() {
+            Ok(g) => g,
+            Err(_e) => {
+                warn!("circuit breaker state lock poisoned; rejecting request");
+                return CircuitBreakerDecision::Reject;
+            }
+        };
         let now = Instant::now();
 
         match state.state {
@@ -243,7 +250,13 @@ impl CircuitBreaker {
 
     /// Record the result of a request
     pub fn record_result(&self, success: bool, is_timeout: bool) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = match self.state.lock() {
+            Ok(g) => g,
+            Err(_e) => {
+                warn!("circuit breaker state lock poisoned; skip record_result");
+                return;
+            }
+        };
         let now = Instant::now();
 
         if success {
@@ -340,16 +353,25 @@ impl CircuitBreaker {
 
     /// Get current circuit state
     pub fn state(&self) -> CircuitState {
-        self.state.lock().unwrap().state
+        match self.state.lock() {
+            Ok(g) => g.state,
+            Err(_e) => {
+                warn!("circuit breaker state lock poisoned; return Open");
+                CircuitState::Open
+            }
+        }
     }
 
     /// Get current failure count in window
     pub fn failure_count(&self) -> u32 {
-        self.state.lock().unwrap().failure_window.failure_count()
+        match self.state.lock() {
+            Ok(mut g) => g.failure_window.failure_count(),
+            Err(_e) => 0,
+        }
     }
 
     /// Update metrics
-    fn update_metrics(&self, state: CircuitState) {
+    fn update_metrics(&self, _state: CircuitState) {
         #[cfg(feature="metrics")]
         {
             use sb_core::metrics::registry_ext::get_or_register_gauge_vec_f64;
@@ -358,7 +380,7 @@ impl CircuitBreaker {
                 "Circuit breaker state",
                 &["outbound", "state"]
             );
-            gauge.with_label_values(&[self.outbound_name.as_str(), state.as_str()]).set(1.0);
+            gauge.with_label_values(&[self.outbound_name.as_str(), _state.as_str()]).set(1.0);
         }
     }
 
@@ -374,7 +396,10 @@ impl CircuitBreaker {
 
     /// Force reset circuit to closed state (for testing/admin)
     pub fn reset(&self) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = match self.state.lock() {
+            Ok(g) => g,
+            Err(_e) => return,
+        };
         debug!("Circuit breaker {} reset to closed state", self.outbound_name);
         state.state = CircuitState::Closed;
         state.state_changed_at = Instant::now();

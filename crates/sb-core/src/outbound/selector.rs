@@ -41,7 +41,6 @@ pub struct Selector {
     pub members: Vec<Member>, // 候选出站
     state: Arc<Mutex<HashMap<String, Stat>>>,
     alpha: f64,         // EMA 系数（RTT）
-    penalty: f64,       // 失败惩罚系数（毫秒等效）
     jitter_ms: f64,     // 抖动
     cb_open_ms: u64,    // 熔断打开时间
     min_samples: usize, // 冷启动阶段的最少采样数
@@ -54,7 +53,6 @@ impl Selector {
             members,
             state: Arc::new(Mutex::new(HashMap::new())),
             alpha: 0.3,
-            penalty: 400.0,
             jitter_ms: 8.0,
             cb_open_ms: 1500,
             min_samples: 2,

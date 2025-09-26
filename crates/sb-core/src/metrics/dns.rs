@@ -6,7 +6,11 @@
 )]
 
 #[cfg(feature = "metrics")]
-use metrics::{counter, gauge, histogram};
+use crate::metrics::registry_ext::{
+    get_or_register_counter_vec,
+    get_or_register_gauge_vec_f64,
+    get_or_register_histogram_vec,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub enum DnsQueryType {
@@ -61,17 +65,26 @@ impl DnsErrorClass {
     }
 }
 
-pub fn record_query(q: DnsQueryType) {
+pub fn record_query(_q: DnsQueryType) {
     #[cfg(feature = "metrics")]
-    counter!("dns_query_total", "qtype" => q.as_str().to_string()).increment(1);
+    {
+        let cv = get_or_register_counter_vec("dns_query_total", "DNS queries", &["qtype"]);
+        cv.with_label_values(&[_q.as_str()]).inc();
+    }
 }
-pub fn record_rtt(rtt_ms: f64) {
+pub fn record_rtt(_rtt_ms: f64) {
     #[cfg(feature = "metrics")]
-    histogram!("dns_rtt_ms").record(rtt_ms);
+    {
+        let hv = get_or_register_histogram_vec("dns_rtt_ms", "DNS RTT (ms)", &[], None);
+        hv.with_label_values(&[]).observe(_rtt_ms);
+    }
 }
-pub fn record_error(c: DnsErrorClass) {
+pub fn record_error(_c: DnsErrorClass) {
     #[cfg(feature = "metrics")]
-    counter!("dns_error_total", "class" => c.as_str().to_string()).increment(1);
+    {
+        let cv = get_or_register_counter_vec("dns_error_total", "DNS errors", &["kind"]);
+        cv.with_label_values(&[_c.as_str()]).inc();
+    }
 }
 
 pub fn record_cache_hit() {
@@ -82,19 +95,37 @@ pub fn record_cache_miss() {
     #[cfg(feature = "metrics")]
     counter!("dns_cache_miss_total").increment(1);
 }
-pub fn set_cache_size(size: usize) {
+pub fn set_cache_size(_size: usize) {
     #[cfg(feature = "metrics")]
-    gauge!("dns_cache_size").set(size as f64);
+    {
+        let gv = get_or_register_gauge_vec_f64("dns_cache_size", "DNS cache size", &[]);
+        gv.with_label_values(&[]).set(_size as f64);
+    }
 }
-pub fn record_successful_query(q: DnsQueryType, rtt_ms: f64, from_cache: bool) {
+pub fn record_successful_query(_q: DnsQueryType, _rtt_ms: f64, _from_cache: bool) {
     #[cfg(feature = "metrics")]
-    counter!("dns_success_total", "qtype" => q.as_str().to_string(), "cache" => if from_cache {"1"} else {"0"}.to_string()).increment(1);
-    #[cfg(feature = "metrics")]
-    histogram!("dns_rtt_ms", "qtype" => q.as_str().to_string()).record(rtt_ms);
+    {
+        let cv = get_or_register_counter_vec(
+            "dns_success_total",
+            "DNS successful queries",
+            &["qtype", "from_cache"],
+        );
+        let from_cache = if _from_cache { "1" } else { "0" };
+        cv.with_label_values(&[_q.as_str(), from_cache]).inc();
+        let hv = get_or_register_histogram_vec("dns_rtt_ms", "DNS RTT (ms)", &[], None);
+        hv.with_label_values(&[]).observe(_rtt_ms);
+    }
 }
-pub fn record_failed_query(q: DnsQueryType, class: DnsErrorClass) {
+pub fn record_failed_query(_q: DnsQueryType, _class: DnsErrorClass) {
     #[cfg(feature = "metrics")]
-    counter!("dns_failure_total", "qtype" => q.as_str().to_string(), "class" => class.as_str().to_string()).increment(1);
+    {
+        let cv = get_or_register_counter_vec(
+            "dns_failed_total",
+            "DNS failed queries",
+            &["qtype", "class"],
+        );
+        cv.with_label_values(&[_q.as_str(), _class.as_str()]).inc();
+    }
 }
 
 pub fn register_metrics() {

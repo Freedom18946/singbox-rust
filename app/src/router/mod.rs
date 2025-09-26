@@ -1,0 +1,240 @@
+//! Router facade module
+//!
+//! When the `router` feature is enabled, re-exports sb_core::router functionality.
+//! When disabled, provides safe placeholder functions that return appropriate errors.
+
+// Re-export everything from sb_core::router when router feature is enabled
+#[cfg(feature = "router")]
+pub use sb_core::router::*;
+
+
+// Re-export specific routing modules at top level for easier access
+#[cfg(feature = "router")]
+pub mod explain {
+    pub use sb_core::router::explain::*;
+}
+
+#[cfg(feature = "router")]
+pub mod trace {
+    pub use sb_core::router::trace::*;
+}
+
+// Provide routing as an alias to maintain compatibility
+#[cfg(feature = "router")]
+pub mod routing {
+    pub use sb_core::router::*;
+}
+
+// Safe placeholders when router feature is not enabled
+#[cfg(not(feature = "router"))]
+pub mod coverage {
+    pub fn reset() {
+        // No-op when router is disabled
+    }
+
+    pub fn snapshot() -> serde_json::Value {
+        serde_json::json!({})
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod analyze_fix {
+    pub fn supported_patch_kinds_json() -> String {
+        r#"{"error": "router feature not enabled"}"#.to_string()
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod preview {
+    use anyhow::Result;
+
+    pub fn build_index_from_rules(_rules: &str) -> Result<()> {
+        anyhow::bail!("app built without `router` feature")
+    }
+
+    pub fn build_index_from_rules_plus(_rules: &str, _cwd: Option<&std::path::Path>) -> Result<()> {
+        anyhow::bail!("app built without `router` feature")
+    }
+
+    pub fn preview_decide_http(_idx: &(), _target: &str) -> Result<PreviewResult> {
+        anyhow::bail!("app built without `router` feature")
+    }
+
+    pub fn preview_decide_udp(_idx: &(), _target: &str) -> Result<PreviewResult> {
+        anyhow::bail!("app built without `router` feature")
+    }
+
+    pub fn derive_compare_targets(_a: &str, _b: &str, _limit: Option<usize>) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn derive_targets(_dsl: &str, _limit: Option<usize>) -> Vec<String> {
+        vec![]
+    }
+
+    pub fn analyze_dsl(_dsl: &str) -> AnalysisResult {
+        AnalysisResult::default()
+    }
+
+    pub fn analysis_to_json(_analysis: &AnalysisResult) -> String {
+        r#"{"error": "router feature not enabled"}"#.to_string()
+    }
+
+    #[derive(Default)]
+    pub struct PreviewResult {
+        pub decision: String,
+        pub reason: String,
+        pub reason_kind: String,
+    }
+
+    #[derive(Default)]
+    pub struct AnalysisResult {
+        // Empty placeholder struct
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod minijson {
+    pub enum Val {
+        Str(&'static str),
+    }
+
+    pub fn obj(_items: &[(&str, Val)]) -> String {
+        r#"{"error": "router feature not enabled"}"#.to_string()
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod dsl_plus {
+    use anyhow::Result;
+
+    pub fn expand_dsl_plus(_text: &str, _cwd: Option<&std::path::Path>) -> Result<String> {
+        anyhow::bail!("app built without `router` feature")
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod explain {
+    use anyhow::Result;
+
+    pub fn explain_decision(_query: &ExplainQuery) -> Result<ExplainResult> {
+        anyhow::bail!("app built without `router` feature")
+    }
+
+    #[derive(Default)]
+    pub struct ExplainQuery {
+        pub host: String,
+        pub port: u16,
+    }
+
+    #[derive(Default)]
+    pub struct ExplainResult {
+        pub decision: String,
+        pub reason: String,
+        pub reason_kind: String,
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod engine {
+    use anyhow::Result;
+
+    pub struct RouterHandle;
+
+    impl RouterHandle {
+        pub fn from_env() -> Self {
+            RouterHandle
+        }
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod analyze {
+    #[derive(Default)]
+    pub struct Report {
+        // Empty placeholder
+    }
+
+    pub fn analyze(_text: &str) -> Report {
+        Report::default()
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod explain_index {
+    pub fn rebuild_periodic(_router: super::engine::RouterHandle, _interval: std::time::Duration) {
+        // No-op
+    }
+
+    pub fn snapshot_digest(_idx: &()) -> String {
+        "no-router".to_string()
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub mod patch_plan {
+    use anyhow::Result;
+
+    pub fn build_plan(_old: &str, _new: &str, _ctx: Option<&str>) -> Result<()> {
+        anyhow::bail!("app built without `router` feature")
+    }
+}
+
+#[cfg(not(feature = "router"))]
+pub fn rules_normalize(_rules: &str) -> String {
+    _rules.to_string() // Pass-through when router disabled
+}
+
+#[cfg(not(feature = "router"))]
+pub fn router_captured_rules() -> Option<Vec<String>> {
+    None
+}
+
+#[cfg(not(feature = "router"))]
+pub fn get_index() -> () {
+    ()
+}
+
+#[cfg(not(feature = "router"))]
+pub struct Router;
+
+#[cfg(not(feature = "router"))]
+pub struct RouterHandle;
+
+// Provide routing module placeholder when router feature is disabled
+#[cfg(not(feature = "router"))]
+pub mod routing {
+    use anyhow::Result;
+
+    pub mod explain {
+        use anyhow::Result;
+
+        pub struct ExplainEngine;
+
+        impl ExplainEngine {
+            pub fn from_config(_cfg: &sb_config::Config) -> Result<Self> {
+                anyhow::bail!("app built without `router` feature")
+            }
+
+            pub fn explain(&self, _dest: &str, _with_trace: bool) -> ExplainResult {
+                ExplainResult::default()
+            }
+        }
+
+        #[derive(Default)]
+        pub struct ExplainResult {
+            pub dest: String,
+            pub matched_rule: String,
+            pub chain: Vec<String>,
+            pub outbound: String,
+            pub trace: Option<super::trace::Trace>,
+        }
+    }
+
+    pub mod trace {
+        #[derive(Default)]
+        pub struct Trace {
+            // Empty placeholder
+        }
+    }
+}

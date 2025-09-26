@@ -15,6 +15,7 @@ mod config_loader;
 mod env_dump;
 mod tracing_init;
 mod logging;
+mod router;
 
 use clap::Parser;
 
@@ -49,11 +50,13 @@ async fn main() -> anyhow::Result<()> {
         cli::Commands::Prefetch(a) => cli::prefetch::main(a),
         cli::Commands::Auth(a) => cli::auth::main(a),
         cli::Commands::Prom(a) => cli::prom::main(a).await,
+        #[cfg(feature = "bench-cli")]
         cli::Commands::Bench(a) => cli::bench::main(a).await,
         cli::Commands::GenCompletions(a) => {
             cli::completion::main(a)?;
             Ok(())
         }
+        #[cfg(feature = "manpage")]
         cli::Commands::Man(a) => {
             cli::man::main(a)?;
             Ok(())

@@ -2,7 +2,7 @@
 
 use crate::{
     clash::server::ApiState,
-    error::{ApiError, ApiResult},
+    error::ApiResult,
     types::*,
 };
 use axum::{

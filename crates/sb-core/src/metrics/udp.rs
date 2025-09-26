@@ -137,16 +137,23 @@ pub enum UdpErrorClass {
     Upstream,
     Other,
 }
-pub fn record_upstream_failure(class: UdpErrorClass) {
+pub fn record_upstream_failure(_class: UdpErrorClass) {
     #[cfg(feature = "metrics")]
     {
+        use crate::metrics::registry_ext::get_or_register_counter_vec;
+        let class = _class;
         let c = match class {
             UdpErrorClass::Io => "io",
             UdpErrorClass::Timeout => "timeout",
             UdpErrorClass::Upstream => "upstream",
             UdpErrorClass::Other => "other",
         };
-        counter!("udp_upstream_error_total", "class" => c.to_string()).increment(1);
+        let cv = get_or_register_counter_vec(
+            "udp_upstream_fail_total",
+            "udp upstream failure total",
+            &["class"],
+        );
+        cv.with_label_values(&[c]).inc();
     }
 }
 
@@ -176,4 +183,25 @@ pub fn udp_nat_evicted_total() -> &'static prometheus::IntCounterVec {
 
 pub fn register_metrics() {
     // no-op; metrics are created by macros on use
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upstream_failure_counts_with_class() {
+        record_upstream_failure(UdpErrorClass::Timeout);
+        #[cfg(feature = "metrics")]
+        {
+            let mfs = crate::metrics::registry().gather();
+            let mut buf = Vec::new();
+            prometheus::TextEncoder::new()
+                .encode(&mfs, &mut buf)
+                .expect("encode");
+            let s = String::from_utf8(buf).unwrap();
+            assert!(s.contains("udp_upstream_fail_total"));
+            assert!(s.contains("class=\"timeout\""));
+        }
+    }
 }

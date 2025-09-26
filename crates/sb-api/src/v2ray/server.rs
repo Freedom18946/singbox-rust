@@ -1,7 +1,6 @@
 //! V2Ray API server implementation
 
 use crate::{error::ApiResult, types::ApiConfig};
-use std::net::SocketAddr;
 
 #[cfg(feature = "v2ray-api")]
 mod grpc_impl {

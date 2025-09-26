@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, warn, error};
+use tracing::{debug, warn};
 
 /// Types of resource pressure that can be detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +128,12 @@ pub struct ResourcePressureMonitor {
     mem_pressure_counter: AtomicU64,
 }
 
+impl Default for ResourcePressureMonitor {
+    fn default() -> Self {
+        Self::new(ResourcePressureConfig::default())
+    }
+}
+
 impl ResourcePressureMonitor {
     /// Create a new resource pressure monitor
     pub fn new(config: ResourcePressureConfig) -> Self {
@@ -138,11 +144,6 @@ impl ResourcePressureMonitor {
             fd_pressure_counter: AtomicU64::new(0),
             mem_pressure_counter: AtomicU64::new(0),
         }
-    }
-
-    /// Create with default configuration
-    pub fn default() -> Self {
-        Self::new(ResourcePressureConfig::default())
     }
 
     /// Record a resource pressure event
@@ -231,7 +232,7 @@ impl ResourcePressureMonitor {
 
 /// Global instance of the resource pressure monitor
 static GLOBAL_MONITOR: once_cell::sync::Lazy<ResourcePressureMonitor> =
-    once_cell::sync::Lazy::new(|| ResourcePressureMonitor::default());
+    once_cell::sync::Lazy::new(ResourcePressureMonitor::default);
 
 /// Get the global resource pressure monitor instance
 pub fn global_monitor() -> &'static ResourcePressureMonitor {

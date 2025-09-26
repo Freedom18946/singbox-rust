@@ -27,6 +27,7 @@ pub struct HealthReport {
     pub error: Option<String>,
 }
 
+#[cfg(feature = "dev-cli")]
 pub fn probe_from_portfile(portfile: Option<&Path>, timeout_ms: u64) -> HealthReport {
     let pf = portfile
         .map(|p| p.to_path_buf())

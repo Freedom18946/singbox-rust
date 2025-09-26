@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::json;
 
 /// Print a success JSON with optional payload
+#[cfg(feature = "dev-cli")]
 pub fn ok<T: Serialize>(payload: &T) {
     let obj = json!({
         "ok": true,
@@ -12,6 +13,7 @@ pub fn ok<T: Serialize>(payload: &T) {
 }
 
 /// Print an error JSON and exit with non-zero status
+#[cfg(feature = "dev-cli")]
 pub fn err(code: u16, error: &str, hint: &str) -> ! {
     let obj = json!({
         "ok": false,
@@ -20,5 +22,20 @@ pub fn err(code: u16, error: &str, hint: &str) -> ! {
         "code": code
     });
     eprintln!("{}", serde_json::to_string(&obj).unwrap());
+    std::process::exit(1);
+}
+
+// Fallback minimal helpers when dev-cli is not enabled
+#[cfg(not(feature = "dev-cli"))]
+pub fn ok<T: Serialize>(payload: &T) {
+    match serde_json::to_string(payload) {
+        Ok(s) => println!("{}", s),
+        Err(_) => println!("{}", "{}"),
+    }
+}
+
+#[cfg(not(feature = "dev-cli"))]
+pub fn err(_code: u16, error: &str, hint: &str) -> ! {
+    eprintln!("error: {} hint: {}", error, hint);
     std::process::exit(1);
 }

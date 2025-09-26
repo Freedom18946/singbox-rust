@@ -6,7 +6,11 @@
 //! - Error classification
 
 #[cfg(feature = "metrics")]
-use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
+use crate::metrics::registry_ext::{
+    get_or_register_counter_vec,
+    get_or_register_gauge_vec_f64,
+    get_or_register_histogram_vec,
+};
 
 #[cfg(feature = "metrics")]
 use once_cell::sync::Lazy;
@@ -15,17 +19,33 @@ use once_cell::sync::Lazy;
 static HTTP_RESPOND_405_TOTAL: Lazy<Counter> = Lazy::new(|| counter!("http_respond_405_total"));
 
 #[cfg(feature = "metrics")]
-static HTTP_CONNECT_DURATION_MS: Lazy<Histogram> =
-    Lazy::new(|| histogram!("http_connect_duration_ms"));
+static HTTP_CONNECT_DURATION_MS: Lazy<&'static prometheus::HistogramVec> = Lazy::new(|| {
+    get_or_register_histogram_vec(
+        "http_connect_duration_ms",
+        "http connect duration (ms)",
+        &[],
+        None,
+    )
+});
 
 #[cfg(feature = "metrics")]
-static HTTP_REQUESTS_TOTAL: Lazy<Counter> = Lazy::new(|| counter!("http_requests_total"));
+static HTTP_REQUESTS_TOTAL: Lazy<&'static prometheus::IntCounterVec> = Lazy::new(|| {
+    get_or_register_counter_vec(
+        "http_requests_total",
+        "http requests total",
+        &["method", "status"],
+    )
+});
 
 #[cfg(feature = "metrics")]
-static HTTP_ERRORS_TOTAL: Lazy<Counter> = Lazy::new(|| counter!("http_errors_total"));
+static HTTP_ERRORS_TOTAL: Lazy<&'static prometheus::IntCounterVec> = Lazy::new(|| {
+    get_or_register_counter_vec("http_errors_total", "http errors total", &["class"])
+});
 
 #[cfg(feature = "metrics")]
-static HTTP_ACTIVE_CONNECTIONS: Lazy<Gauge> = Lazy::new(|| gauge!("http_active_connections"));
+static HTTP_ACTIVE_CONNECTIONS: Lazy<&'static prometheus::GaugeVec> = Lazy::new(|| {
+    get_or_register_gauge_vec_f64("http_active_connections", "active http connections", &[])
+});
 
 /// Register all HTTP metrics
 pub fn register_metrics() {
@@ -46,31 +66,33 @@ pub fn inc_405_responses() {
 }
 
 /// Record HTTP connection duration
-pub fn record_connect_duration(duration_ms: f64) {
+pub fn record_connect_duration(_duration_ms: f64) {
     #[cfg(feature = "metrics")]
-    HTTP_CONNECT_DURATION_MS.record(duration_ms);
+    HTTP_CONNECT_DURATION_MS.with_label_values(&[]).observe(_duration_ms);
 }
 
 /// Increment total HTTP requests
-pub fn inc_requests(method: &str, status: u16) {
+pub fn inc_requests(_method: &str, _status: u16) {
     #[cfg(feature = "metrics")]
     {
-        counter!("http_requests_total", "method" => method.to_string(), "status" => status.to_string()).increment(1);
+        HTTP_REQUESTS_TOTAL
+            .with_label_values(&[_method, &format!("{}", _status)])
+            .inc();
     }
 }
 
 /// Increment HTTP errors with classification
-pub fn inc_errors(class: &str) {
+pub fn inc_errors(_class: &str) {
     #[cfg(feature = "metrics")]
     {
-        counter!("http_errors_total", "class" => class.to_string()).increment(1);
+        HTTP_ERRORS_TOTAL.with_label_values(&[_class]).inc();
     }
 }
 
 /// Set active HTTP connections count
-pub fn set_active_connections(count: usize) {
+pub fn set_active_connections(_count: usize) {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.set(count as f64);
+    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[]).set(_count as f64);
 }
 
 /// Increment active connections
@@ -132,5 +154,19 @@ mod tests {
     fn test_metrics_registration() {
         // This test ensures metrics can be registered without panicking
         register_metrics();
+    }
+
+    #[test]
+    fn active_connections_gauge_set() {
+        set_active_connections(7);
+        #[cfg(feature = "metrics")]
+        {
+            let mut buf = Vec::new();
+            prometheus::TextEncoder::new()
+                .encode(&crate::metrics::registry().gather(), &mut buf)
+                .unwrap();
+            let s = String::from_utf8(buf).unwrap();
+            assert!(s.contains("http_active_connections"));
+        }
     }
 }

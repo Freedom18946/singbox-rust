@@ -1,8 +1,7 @@
 #[cfg(feature = "dns_cache")]
 use super::cache::{DnsCache, Entry as CacheEntry, HitKind, Key as CacheKey, QType};
 use anyhow::Result;
-use std::net::{IpAddr, SocketAddr};
-use std::time::Duration;
+use std::net::SocketAddr;
 use tokio::net::lookup_host;
 
 #[derive(Clone, Copy, Debug)]
@@ -55,11 +54,13 @@ fn timeout_from_env() -> u64 {
         .unwrap_or(1500)
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
 fn doh_url_from_env() -> String {
     std::env::var("SB_DNS_DOH_URL")
         .unwrap_or_else(|_| "https://cloudflare-dns.com/dns-query".into())
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
 fn dot_addr_from_env() -> Option<SocketAddr> {
     std::env::var("SB_DNS_DOT_ADDR")
         .ok()
@@ -74,7 +75,7 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
     #[cfg(feature = "metrics")]
     let t0 = std::time::Instant::now();
     let host_owned = host.to_string();
-    let run = move |b: DnsBackend| {
+    let _run = move |b: DnsBackend| {
         let host = host_owned.clone();
         let port = port;
         let timeout = timeout;
@@ -92,7 +93,7 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
     #[cfg(feature = "dns_cache")]
     {
         if cache_enabled() {
-            return resolve_with_cache(backend, host.to_string(), port, timeout, qsel, run).await;
+            return resolve_with_cache(backend, host.to_string(), port, timeout, qsel, _run).await;
         }
     }
     // ========== 无缓存路径 ==========
@@ -108,12 +109,17 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
             QSel::AAAA => "aaaa",
             QSel::Auto => "auto",
         };
-        metrics::histogram!("dns_rtt_seconds", "backend"=>label(backend), "qtype"=>qtype_label)
+        #[cfg(any(test, feature = "dev-cli"))]
+        let backend_label = label(backend);
+        #[cfg(not(any(test, feature = "dev-cli")))]
+        let backend_label = "default";
+        metrics::histogram!("dns_rtt_seconds", "backend"=>backend_label, "qtype"=>qtype_label)
             .record(dt);
     }
     Ok(out)
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
 fn label(b: DnsBackend) -> &'static str {
     match b {
         DnsBackend::System => "system",
@@ -175,7 +181,11 @@ async fn resolve_qsel_qtype(
             QSel::AAAA => "aaaa",
             QSel::Auto => "auto",
         };
-        metrics::counter!("dns_query_total", "backend"=>label(backend), "qtype"=>qtype_label)
+        #[cfg(any(test, feature = "dev-cli"))]
+        let backend_label = label(backend);
+        #[cfg(not(any(test, feature = "dev-cli")))]
+        let backend_label = "default";
+        metrics::counter!("dns_query_total", "backend"=>backend_label, "qtype"=>qtype_label)
             .increment(1);
     }
     match backend {
@@ -196,16 +206,16 @@ async fn resolve_qsel_qtype(
 }
 
 async fn udp_resolve_qtype(
-    host: &str,
-    port: u16,
-    timeout_ms: u64,
-    qtype: u16,
+    _host: &str,
+    _port: u16,
+    _timeout_ms: u64,
+    _qtype: u16,
 ) -> Result<Vec<SocketAddr>> {
     #[cfg(feature = "dns_udp")]
     {
         use crate::dns::udp::{build_query, parse_answers};
         use std::time::Duration;
-        let q = build_query(host, qtype)?;
+        let q = build_query(_host, _qtype)?;
         let svr = std::env::var("SB_DNS_UDP_SERVER")
             .unwrap_or_else(|_| "1.1.1.1:53".into())
             .parse::<SocketAddr>()?;
@@ -213,12 +223,12 @@ async fn udp_resolve_qtype(
         sock.send_to(&q, svr).await?;
         let mut buf = [0u8; 1500];
         let (n, _) =
-            tokio::time::timeout(Duration::from_millis(timeout_ms), sock.recv_from(&mut buf))
+            tokio::time::timeout(Duration::from_millis(_timeout_ms), sock.recv_from(&mut buf))
                 .await??;
-        let (ips, _ttl) = parse_answers(&buf[..n], qtype)?;
+        let (ips, _ttl) = parse_answers(&buf[..n], _qtype)?;
         Ok(ips
             .into_iter()
-            .map(|ip| SocketAddr::new(ip, port))
+            .map(|ip| SocketAddr::new(ip, _port))
             .collect())
     }
     #[cfg(not(feature = "dns_udp"))]
@@ -239,7 +249,10 @@ async fn dot_resolve_qtype(
     qtype: u16,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::dot::query_dot_once;
+    #[cfg(any(test, feature = "dev-cli"))]
     let addr = dot_addr_from_env().unwrap_or_else(|| "1.1.1.1:853".parse().unwrap());
+    #[cfg(not(any(test, feature = "dev-cli")))]
+    let addr = "1.1.1.1:853".parse().unwrap();
     let (ips, _ttl) = query_dot_once(addr, host, qtype, timeout_ms).await?;
     Ok(ips
         .into_iter()
@@ -275,7 +288,10 @@ async fn doh_resolve_qtype(
     qtype: u16,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::doh::query_doh_once;
+    #[cfg(any(test, feature = "dev-cli"))]
     let url = doh_url_from_env();
+    #[cfg(not(any(test, feature = "dev-cli")))]
+    let url = "https://cloudflare-dns.com/dns-query".to_string();
     let (ips, _ttl) = query_doh_once(&url, host, qtype, timeout_ms).await?;
     Ok(ips
         .into_iter()
@@ -452,10 +468,10 @@ async fn resolve_cached_qtype(
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(60);
-        let ips: Vec<IpAddr> = res.iter().map(|sa| sa.ip()).collect();
+        let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer {
             ips,
-            ttl: Duration::from_secs(ttl as u64),
+            ttl: std::time::Duration::from_secs(ttl as u64),
             source: super::cache::Source::System,
             rcode: super::cache::Rcode::NoError,
         };
@@ -499,10 +515,10 @@ async fn refresh_cached_qtype(
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(60);
-        let ips: Vec<IpAddr> = res.iter().map(|sa| sa.ip()).collect();
+        let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer {
             ips,
-            ttl: Duration::from_secs(ttl as u64),
+            ttl: std::time::Duration::from_secs(ttl as u64),
             source: super::cache::Source::System,
             rcode: super::cache::Rcode::NoError,
         };
@@ -543,10 +559,10 @@ where
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(60);
-        let ips: Vec<IpAddr> = res.iter().map(|sa| sa.ip()).collect();
+        let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer {
             ips,
-            ttl: Duration::from_secs(ttl as u64),
+            ttl: std::time::Duration::from_secs(ttl as u64),
             source: super::cache::Source::System,
             rcode: super::cache::Rcode::NoError,
         };

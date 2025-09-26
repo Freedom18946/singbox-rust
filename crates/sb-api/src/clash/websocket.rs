@@ -2,7 +2,6 @@
 
 use crate::{
     clash::server::ApiState,
-    error::ApiError,
     types::{LogEntry, TrafficStats, WebSocketMessage},
 };
 use axum::{
@@ -14,7 +13,7 @@ use serde_json::json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{
     sync::broadcast,
-    time::{interval, timeout},
+    time::interval,
 };
 
 /// Handle traffic WebSocket connections

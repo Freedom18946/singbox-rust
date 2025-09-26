@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![cfg(feature = "bench-cli")]
 #![cfg_attr(not(test), deny(
     clippy::unwrap_used,
     clippy::expect_used,

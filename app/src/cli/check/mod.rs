@@ -4,4 +4,4 @@ pub mod types;
 
 pub use args::CheckArgs;
 pub use run::run;
-pub use types::{CheckIssue, CheckReport, IssueCode, IssueKind};
+// Re-export only what is needed externally; internal types kept within module

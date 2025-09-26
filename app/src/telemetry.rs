@@ -10,10 +10,12 @@ mod imp {
     }
 
     pub fn init_tracing() {
+        #[cfg(feature = "dev-cli")]
         crate::tracing_init::init_tracing_once();
     }
 
     pub async fn init_metrics_exporter() -> Result<()> {
+        #[cfg(feature = "dev-cli")]
         crate::tracing_init::init_metrics_exporter_once();
         Ok(())
     }

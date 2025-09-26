@@ -38,6 +38,7 @@ impl CacheEntry {
         Instant::now() >= self.expires_at
     }
 
+    #[cfg(any(test, feature = "dev-cli"))]
     fn remaining_ttl(&self) -> Duration {
         self.expires_at.saturating_duration_since(Instant::now())
     }

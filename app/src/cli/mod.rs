@@ -1,14 +1,19 @@
 pub mod check;
 pub mod buildinfo;
+#[cfg(feature = "dev-cli")]
 pub mod fs_scan;
+#[cfg(feature = "dev-cli")]
 pub mod report;
+#[cfg(feature = "dev-cli")]
 pub mod health;
 pub mod json;
 pub mod prefetch;
 pub mod auth;
 pub mod prom;
+#[cfg(feature = "bench-cli")]
 pub mod bench;
 pub mod completion;
+#[cfg(feature = "manpage")]
 pub mod man;
 #[cfg(feature = "router")]
 pub mod route;
@@ -36,10 +41,12 @@ pub enum Commands {
     /// Prometheus 指标工具（抓取/直方图）
     Prom(prom::PromArgs),
     /// 简易 I/O 基准（HTTP）
+    #[cfg(feature = "bench-cli")]
     Bench(bench::BenchArgs),
     /// 生成 shell 补全脚本
     GenCompletions(completion::CompletionArgs),
     /// 生成 man page
+    #[cfg(feature = "manpage")]
     Man(man::ManArgs),
     /// Run main service (existing)
     #[cfg(feature = "router")]

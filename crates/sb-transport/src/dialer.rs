@@ -12,7 +12,7 @@ use thiserror::Error;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::{lookup_host, TcpStream};
-use tokio::time::{timeout, sleep};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use futures::future::{select_ok, FutureExt};
 use tracing::debug;

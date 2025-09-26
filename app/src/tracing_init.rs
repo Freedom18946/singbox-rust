@@ -1,3 +1,4 @@
+#![cfg(feature="dev-cli")]
 use std::sync::OnceLock;
 
 /// Ensure tracing is initialized only once across the application

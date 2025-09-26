@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "metrics")]
@@ -282,15 +282,16 @@ impl<T: AsyncRead + Unpin> AsyncRead for MeteredStream<T> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        let _ = self.label;
         let pre = buf.filled().len();
         let p = Pin::new(&mut self.inner).poll_read(cx, buf);
         if let Poll::Ready(Ok(())) = &p {
-            let n = buf.filled().len().saturating_sub(pre);
+            let _n = buf.filled().len().saturating_sub(pre);
             #[cfg(feature = "metrics")]
             {
                 use metrics::counter;
-                self.down.fetch_add(n as u64, Ordering::Relaxed);
-                counter!("bytes_down_total").increment(n as u64);
+                self.down.fetch_add(_n as u64, Ordering::Relaxed);
+                counter!("bytes_down_total").increment(_n as u64);
             }
         }
         p
@@ -303,13 +304,14 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for MeteredStream<T> {
         cx: &mut Context<'_>,
         data: &[u8],
     ) -> Poll<io::Result<usize>> {
+        let _ = self.label;
         let p = Pin::new(&mut self.inner).poll_write(cx, data);
-        if let Poll::Ready(Ok(n)) = p {
+        if let Poll::Ready(Ok(_n)) = p {
             #[cfg(feature = "metrics")]
             {
                 use metrics::counter;
-                self.up.fetch_add(n as u64, Ordering::Relaxed);
-                counter!("bytes_up_total").increment(n as u64);
+                self.up.fetch_add(_n as u64, Ordering::Relaxed);
+                counter!("bytes_up_total").increment(_n as u64);
             }
         }
         p

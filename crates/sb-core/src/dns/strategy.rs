@@ -269,7 +269,7 @@ impl QueryExecutor {
             return self.query_failover(domain, record_type).await;
         }
 
-        let upstream_name = upstream.name().to_string();
+        let _upstream_name = upstream.name().to_string();
         match self
             .query_with_retry(upstream.clone(), domain, record_type)
             .await
@@ -279,19 +279,19 @@ impl QueryExecutor {
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "round_robin",
-                    "upstream" => upstream_name,
+                    "upstream" => _upstream_name,
                     "result" => "success"
                 )
                 .increment(1);
 
                 Ok(answer)
             }
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(feature = "metrics")]
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "round_robin",
-                    "upstream" => upstream_name.clone(),
+                    "upstream" => _upstream_name.clone(),
                     "result" => "error"
                 )
                 .increment(1);
@@ -317,7 +317,7 @@ impl QueryExecutor {
             return self.query_failover(domain, record_type).await;
         }
 
-        let upstream_name = upstream.name().to_string();
+        let _upstream_name = upstream.name().to_string();
         match self
             .query_with_retry(upstream.clone(), domain, record_type)
             .await
@@ -327,19 +327,19 @@ impl QueryExecutor {
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "random",
-                    "upstream" => upstream_name,
+                    "upstream" => _upstream_name,
                     "result" => "success"
                 )
                 .increment(1);
 
                 Ok(answer)
             }
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(feature = "metrics")]
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "random",
-                    "upstream" => upstream_name.clone(),
+                    "upstream" => _upstream_name.clone(),
                     "result" => "error"
                 )
                 .increment(1);
@@ -357,7 +357,7 @@ impl QueryExecutor {
         domain: &str,
         record_type: RecordType,
     ) -> Result<DnsAnswer> {
-        let upstream_name = upstream.name().to_string();
+        let _upstream_name = upstream.name().to_string();
         let mut delay = self.retry_config.retry_delay;
         let mut last_error = None;
 
@@ -375,7 +375,7 @@ impl QueryExecutor {
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
                             "dns_retry_total",
-                            "upstream" => upstream_name.clone(),
+                            "upstream" => _upstream_name.clone(),
                             "result" => "success_after_retry"
                         )
                         .increment(1);
@@ -383,8 +383,8 @@ impl QueryExecutor {
 
                     return Ok(answer);
                 }
-                Err(e) => {
-                    last_error = Some(e);
+                Err(_e) => {
+                    last_error = Some(_e);
 
                     if attempt < self.retry_config.max_retries {
                         tracing::debug!(
@@ -399,7 +399,7 @@ impl QueryExecutor {
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
                             "dns_retry_total",
-                            "upstream" => upstream_name.clone(),
+                            "upstream" => _upstream_name.clone(),
                             "result" => "retry"
                         )
                         .increment(1);

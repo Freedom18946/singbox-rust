@@ -4,7 +4,6 @@ use crate::{
     types::{Connection, LogEntry, TrafficStats},
     v2ray::simple::SimpleStat,
 };
-use serde_json::json;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -47,8 +46,11 @@ pub struct RealtimeReporter {
     is_running: AtomicBool,
 
     // Broadcast channels for different types of updates
+    /// Channel for broadcasting traffic statistics updates
     pub traffic_tx: broadcast::Sender<TrafficStats>,
+    /// Channel for broadcasting log entries
     pub log_tx: broadcast::Sender<LogEntry>,
+    /// Channel for broadcasting connection updates
     pub connection_tx: broadcast::Sender<Connection>,
     v2ray_stats_tx: broadcast::Sender<SimpleStat>,
 
@@ -78,9 +80,9 @@ impl RealtimeReporter {
     /// Start the reporter with input streams from collectors
     pub async fn start(
         &self,
-        mut traffic_rx: broadcast::Receiver<TrafficStats>,
-        mut connection_rx: broadcast::Receiver<Connection>,
-        mut performance_rx: broadcast::Receiver<serde_json::Value>,
+        traffic_rx: broadcast::Receiver<TrafficStats>,
+        connection_rx: broadcast::Receiver<Connection>,
+        performance_rx: broadcast::Receiver<serde_json::Value>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if self.is_running.load(Ordering::Relaxed) {
             return Ok(());
@@ -89,16 +91,16 @@ impl RealtimeReporter {
         self.is_running.store(true, Ordering::Relaxed);
 
         // Start traffic reporting task
-        let traffic_task = self.start_traffic_reporting(traffic_rx).await;
+        let _traffic_task = self.start_traffic_reporting(traffic_rx).await;
 
         // Start connection reporting task
-        let connection_task = self.start_connection_reporting(connection_rx).await;
+        let _connection_task = self.start_connection_reporting(connection_rx).await;
 
         // Start performance reporting task
-        let performance_task = self.start_performance_reporting(performance_rx).await;
+        let _performance_task = self.start_performance_reporting(performance_rx).await;
 
         // Start log generation task (for demonstration)
-        let log_task = self.start_log_generation().await;
+        let _log_task = self.start_log_generation().await;
 
         log::info!("Real-time reporter started with all reporting tasks");
         Ok(())

@@ -8,33 +8,41 @@ use tokio::sync::{broadcast, Mutex};
 /// Simplified stats data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleStat {
+    /// Fully-qualified stat counter name.
     pub name: String,
+    /// Current counter value.
     pub value: i64,
 }
 
 /// Simplified stats request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleStatsRequest {
+    /// Stat counter name to query.
     pub name: String,
+    /// Whether to reset the counter after reading.
     pub reset: bool,
 }
 
 /// Simplified stats response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleStatsResponse {
+    /// Single stat entry.
     pub stat: SimpleStat,
 }
 
 /// Simplified query stats request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleQueryStatsRequest {
+    /// Name substring to match (empty = all).
     pub pattern: String,
+    /// Whether to reset counters after reading.
     pub reset: bool,
 }
 
 /// Simplified query stats response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleQueryStatsResponse {
+    /// Matching stats list.
     pub stats: Vec<SimpleStat>,
 }
 
@@ -92,6 +100,9 @@ impl SimpleV2RayApiServer {
 
     /// Start the simple V2Ray API server
     pub async fn start(&self) -> ApiResult<()> {
+        // Touch unread field for clippy
+        let _ = &self.monitoring;
+
         log::info!(
             "Starting simplified V2Ray API server on {}",
             self.config.listen_addr

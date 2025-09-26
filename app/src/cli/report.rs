@@ -1,3 +1,4 @@
+#![cfg(feature="dev-cli")]
 use crate::cli::{buildinfo, fs_scan, health};
 use clap::Parser;
 use serde::Serialize;

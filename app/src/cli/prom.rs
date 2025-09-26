@@ -250,11 +250,11 @@ async fn hist(metrics: Vec<String>, url: String, labels: Vec<String>, group_by: 
     Ok(())
 }
 
-async fn http_get_text(url: &str) -> Result<String> {
+async fn http_get_text(_url: &str) -> Result<String> {
     #[cfg(feature = "reqwest")]
     {
-        let txt = reqwest::Client::new().get(url).send().await
-            .with_context(|| format!("GET {}", url))?
+        let txt = reqwest::Client::new().get(_url).send().await
+            .with_context(|| format!("GET {}", _url))?
             .text().await?;
         Ok(txt)
     }

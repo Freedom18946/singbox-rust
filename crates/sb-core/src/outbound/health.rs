@@ -110,6 +110,7 @@ pub async fn spawn_if_enabled() {
 
 async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> {
     let t0 = Instant::now();
+    let _ = label(ep.kind);
     let check_result = match ep.kind {
         ProxyKind::Http => check_http(ep.clone()).await,
         ProxyKind::Socks5 => check_socks5(ep.clone()).await,
@@ -132,7 +133,7 @@ async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> 
                     .increment(1);
             }
         }
-        Err(err) => {
+        Err(_err) => {
             st.up.store(false, Ordering::Relaxed);
             let mut c = st.consecutive_fail.lock();
             *c = c.saturating_add(1);
@@ -142,10 +143,10 @@ async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> 
                 metrics::gauge!("proxy_up", "kind" => label(ep.kind)).set(0.0);
 
                 // Use error classification instead of generic "fail"
-                let error_class = if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
+                let error_class = if let Some(io_err) = _err.downcast_ref::<std::io::Error>() {
                     error_class::classify_io(io_err)
                 } else {
-                    error_class::classify_proto(err.as_ref())
+                    error_class::classify_proto(_err.as_ref())
                 };
 
                 metrics::counter!("proxy_check_total", "result" => "fail", "class" => error_class, "kind" => label(ep.kind))
@@ -158,6 +159,7 @@ async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> 
 
 async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
     let t0 = Instant::now();
+    let _ = label(ep.kind);
     let check_result = match ep.kind {
         ProxyKind::Http => check_http(ep.clone()).await,
         ProxyKind::Socks5 => check_socks5(ep.clone()).await,
@@ -187,7 +189,7 @@ async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
                     .increment(1);
             }
         }
-        Err(err) => {
+        Err(_err) => {
             ent.up.store(false, Ordering::Relaxed);
             let mut c = ent.consecutive_fail.lock();
             *c = c.saturating_add(1);
@@ -200,10 +202,10 @@ async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
                 metrics::gauge!("proxy_up", "kind" => label(ep.kind), "endpoint" => key.to_string()).set(0.0);
 
                 // Use error classification instead of generic "fail"
-                let error_class = if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
+                let error_class = if let Some(io_err) = _err.downcast_ref::<std::io::Error>() {
                     error_class::classify_io(io_err)
                 } else {
-                    error_class::classify_proto(err.as_ref())
+                    error_class::classify_proto(_err.as_ref())
                 };
 
                 metrics::counter!("proxy_check_total", "result" => "fail", "class" => error_class, "kind" => label(ep.kind), "endpoint" => key.to_string())

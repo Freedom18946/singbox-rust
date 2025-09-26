@@ -44,7 +44,6 @@ impl DhcpResolver {
 #[async_trait]
 impl super::Resolver for DhcpResolver {
     async fn resolve(&self, _domain: &str) -> Result<super::DnsAnswer> {
-        use std::time::Duration;
         // Placeholder implementation
         anyhow::bail!("DHCP DNS resolver not implemented yet")
     }

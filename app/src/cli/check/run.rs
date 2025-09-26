@@ -3,7 +3,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
 
-use crate::util;
+use app::util;
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode};
 use sb_config::validator::v2;
@@ -359,7 +359,7 @@ fn to_sarif(rep: &CheckReport) -> String {
             "results": results
         }]
     });
-    serde_json::to_string_pretty(&sarif).unwrap()
+    serde_json::to_string_pretty(&sarif).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Normalize JSON for consistent fingerprinting (recursive key sorting, remove comments)
@@ -469,7 +469,7 @@ fn json_sort_key(v: &Value) -> String {
 fn fingerprint_of(v: &Value) -> String {
     let mut norm = v.clone();
     normalize_json(&mut norm);
-    let serialized = serde_json::to_vec(&norm).unwrap();
+    let serialized = serde_json::to_vec(&norm).unwrap_or_else(|_| b"{}".to_vec());
     let mut hasher = Sha256::new();
     hasher.update(&serialized);
     let result = hasher.finalize();

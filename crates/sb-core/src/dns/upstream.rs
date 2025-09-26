@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
 
@@ -347,6 +347,7 @@ impl DotUpstream {
 #[async_trait]
 impl DnsUpstream for DotUpstream {
     async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let _ = (&self.server, &self.server_name, &self.timeout);
         // DoT 实现需要 TLS 支持，这里提供基础框架
         // 实际实现需要使用 rustls 或其他 TLS 库
         #[cfg(feature = "dns_dot")]
@@ -355,6 +356,7 @@ impl DnsUpstream for DotUpstream {
         }
         #[cfg(not(feature = "dns_dot"))]
         {
+            let _ = (domain, record_type);
             Err(anyhow::anyhow!("DoT support requires dns_dot feature"))
         }
     }
@@ -400,7 +402,7 @@ pub struct DohUpstream {
     timeout: Duration,
     name: String,
     #[cfg(feature = "dns_doh")]
-    client: Arc<reqwest::Client>,
+    client: std::sync::Arc<reqwest::Client>,
 }
 
 impl DohUpstream {
@@ -419,7 +421,7 @@ impl DohUpstream {
                 .timeout(timeout)
                 .build()
                 .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
-            Arc::new(client)
+            std::sync::Arc::new(client)
         };
 
         Ok(Self {
@@ -435,12 +437,14 @@ impl DohUpstream {
 #[async_trait]
 impl DnsUpstream for DohUpstream {
     async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let _ = (&self.url, &self.timeout);
         #[cfg(feature = "dns_doh")]
         {
             self.query_doh(domain, record_type).await
         }
         #[cfg(not(feature = "dns_doh"))]
         {
+            let _ = (domain, record_type);
             Err(anyhow::anyhow!("DoH support requires dns_doh feature"))
         }
     }

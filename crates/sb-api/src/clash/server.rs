@@ -3,7 +3,7 @@
 use crate::{
     clash::{handlers, websocket},
     error::{ApiError, ApiResult},
-    monitoring::{MonitoringSystemHandle, ReportConfig},
+    monitoring::MonitoringSystemHandle,
     types::ApiConfig,
 };
 use axum::{
@@ -27,6 +27,7 @@ pub struct ApiState {
     pub monitoring: Option<MonitoringSystemHandle>,
     /// Mock router and outbound references (TODO: replace with actual handles)
     pub router_handle: Option<()>, // Will be replaced with actual router handle
+    /// Placeholder for outbound handle until integration.
     pub outbound_handle: Option<()>, // Will be replaced with actual outbound handle
 }
 

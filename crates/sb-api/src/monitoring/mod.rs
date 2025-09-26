@@ -13,7 +13,7 @@ pub use reporter::{RealtimeReporter, ReportConfig};
 
 use crate::types::{Connection, LogEntry, TrafficStats};
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 
 /// Real-time monitoring system that integrates with core metrics
 pub struct MonitoringSystem {
