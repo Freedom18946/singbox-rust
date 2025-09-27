@@ -1,7 +1,7 @@
 //! DSL 目标派生器（从"标准 DSL 文本"派生一组能覆盖规则的目标 host[:port]）
 //! 仅做**启发式**派生：exact/suffix 为主；不做 DNS 或网络交互。
 //! 目的：为批量预演/回归对比提供"最小但有意义"的目标集。
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {

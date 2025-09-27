@@ -2,7 +2,7 @@ use std::{error::Error as StdError, fmt, io, time::Duration};
 use thiserror::Error;
 
 #[cfg(feature = "error-v2")]
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type SbResult<T> = std::result::Result<T, SbError>;

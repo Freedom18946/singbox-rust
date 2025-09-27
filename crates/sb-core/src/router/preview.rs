@@ -42,6 +42,8 @@ pub fn preview_decide_http(
             decision: d.to_string(),
             reason: format!("{} matched host={}", k, host),
             reason_kind: k.into(),
+            #[cfg(feature = "router_cache_explain")]
+            cache_status: None,
         };
     }
     #[cfg(feature = "router_keyword")]
@@ -57,6 +59,8 @@ pub fn preview_decide_http(
                     decision: dec,
                     reason: format!("keyword matched host={}", host),
                     reason_kind: "keyword".into(),
+                    #[cfg(feature = "router_cache_explain")]
+                    cache_status: None,
                 };
             }
         }
@@ -67,6 +71,8 @@ pub fn preview_decide_http(
                 decision: d.to_string(),
                 reason: format!("ip matched ip={}", ip),
                 reason_kind: "ip".into(),
+                #[cfg(feature = "router_cache_explain")]
+                cache_status: None,
             };
         }
     }
@@ -80,12 +86,16 @@ pub fn preview_decide_http(
             decision: d.to_string(),
             reason: format!("transport/port matched transport=tcp port={:?}", port_opt),
             reason_kind: k.into(),
+            #[cfg(feature = "router_cache_explain")]
+            cache_status: None,
         };
     }
     crate::router::engine::DecisionExplain {
         decision: idx.default.to_string(),
         reason: "default".into(),
         reason_kind: "default".into(),
+        #[cfg(feature = "router_cache_explain")]
+        cache_status: None,
     }
 }
 
@@ -105,6 +115,8 @@ pub fn preview_decide_udp(
             decision: d.to_string(),
             reason: format!("{} matched host={}", k, host_norm),
             reason_kind: k.into(),
+            #[cfg(feature = "router_cache_explain")]
+            cache_status: None,
         };
     }
     #[cfg(feature = "router_keyword")]
@@ -120,6 +132,8 @@ pub fn preview_decide_udp(
                     decision: dec,
                     reason: format!("keyword matched host={}", host_norm),
                     reason_kind: "keyword".into(),
+                    #[cfg(feature = "router_cache_explain")]
+                    cache_status: None,
                 };
             }
         }
@@ -130,6 +144,8 @@ pub fn preview_decide_udp(
                 decision: d.to_string(),
                 reason: format!("ip matched ip={}", ip),
                 reason_kind: "ip".into(),
+                #[cfg(feature = "router_cache_explain")]
+                cache_status: None,
             };
         }
     }
@@ -138,12 +154,16 @@ pub fn preview_decide_udp(
             decision: d.to_string(),
             reason: "transport/port matched transport=udp".into(),
             reason_kind: "transport".into(),
+            #[cfg(feature = "router_cache_explain")]
+            cache_status: None,
         };
     }
     crate::router::engine::DecisionExplain {
         decision: idx.default.to_string(),
         reason: "default".into(),
         reason_kind: "default".into(),
+        #[cfg(feature = "router_cache_explain")]
+        cache_status: None,
     }
 }
 

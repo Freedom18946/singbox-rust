@@ -116,7 +116,7 @@ impl MetricsBridge {
     }
 
     /// Get handle for external access
-    pub fn handle(&self) -> MetricsBridgeHandle {
+    pub fn handle(&self) -> MetricsBridgeHandle<'_> {
         MetricsBridgeHandle { bridge: self }
     }
 

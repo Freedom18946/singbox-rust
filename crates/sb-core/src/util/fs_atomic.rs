@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 /// Ensures data is fsynced before replace; on Windows falls back to remove+rename.
 pub fn write_atomic<P: AsRef<Path>>(path: P, data: &[u8]) -> io::Result<()> {
     let path = path.as_ref();
-    let dir = path.parent().ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no parent dir"))?;
+    let dir = path.parent().ok_or_else(|| io::Error::other("no parent dir"))?;
     let mut tmp: PathBuf = dir.to_path_buf();
     // Better unique temp name
     tmp.push(format!(".sbtmp-{}-{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()));

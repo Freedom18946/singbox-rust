@@ -1,5 +1,5 @@
 use once_cell::sync::OnceCell;
-use std::sync::{Mutex, Arc, atomic::{AtomicU64, Ordering}};
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use arc_swap::ArcSwap;
 
 fn json_diff_enhanced(before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
@@ -144,16 +144,18 @@ static CONFIG: OnceCell<ArcSwap<EnvConfig>> = OnceCell::new();
 static VERSION: OnceCell<AtomicU64> = OnceCell::new();
 
 pub fn get() -> EnvConfig {
-    let cfg = CONFIG
-        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()))
-        .load();
-    (*cfg).clone()
+    let cfg = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env())).load();
+    (**cfg).clone()
+}
+#[allow(dead_code)]
+pub fn get_arc() -> Arc<EnvConfig> {
+    (*CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env())).load()).clone()
 }
 
 pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Result<String, String> {
     let arc = CONFIG
         .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
-    let mut config = (*arc.load()).clone();
+    let mut config = (**arc.load()).clone();
     let mut changes = Vec::new();
 
     // Apply changes from delta
@@ -374,10 +376,10 @@ pub fn apply_with_dryrun(delta: &crate::admin_debug::endpoints::config::ConfigDe
     let ctr = VERSION.get_or_init(|| AtomicU64::new(0));
 
     let before_cfg = arc.load();
-    let before = serde_json::to_value(&*before_cfg).unwrap_or_else(|_| serde_json::json!({}));
+    let before = serde_json::to_value(&**before_cfg).unwrap_or_else(|_| serde_json::json!({}));
 
     // Create a temp copy and apply changes to compute diff
-    let mut temp_config = config.clone();
+    let mut temp_config = (**before_cfg).clone();
     let _changes = apply_to_config(&mut temp_config, delta)?;
 
     let after = serde_json::to_value(&temp_config).unwrap_or_else(|_| serde_json::json!({}));
@@ -396,7 +398,7 @@ pub fn apply_with_dryrun(delta: &crate::admin_debug::endpoints::config::ConfigDe
         })
     } else if changed {
         // Compute new config and commit atomically
-        let mut new_cfg = (*before_cfg).clone();
+        let mut new_cfg = (**before_cfg).clone();
         let _ = apply_to_config(&mut new_cfg, delta)?;
         arc.store(Arc::new(new_cfg));
         let new_version = ctr.fetch_add(1, Ordering::Relaxed) + 1;
@@ -705,7 +707,7 @@ mod tests_concurrency_and_rollback {
     }
 }
 
-#[cfg(loom)]
+#[cfg(all(test, feature = "loom"))]
 mod loom_smoke {
     use super::*;
     use loom::thread;

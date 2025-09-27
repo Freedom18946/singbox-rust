@@ -4,6 +4,10 @@
 //! and monitoring the proxy server. It supports both gRPC (when v2ray-api
 //! feature is enabled) and a simplified implementation (default).
 
+#![warn(missing_docs)]
+// 该模块为 gRPC/协议壳，文档噪声在严格门禁下过高，先局部豁免，生产面向文档另行提供。
+#![allow(missing_docs)]
+
 pub mod server;
 pub mod simple;
 

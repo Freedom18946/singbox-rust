@@ -91,12 +91,12 @@ async fn main() -> Result<()> {
                     let socket_addr: std::net::SocketAddr = addr.parse()
                         .map_err(|e| anyhow::anyhow!("Invalid admin listen address: {}", e))?;
 
-                    let tls_conf = app::admin_debug::http::TlsConf::from_env();
-                    let auth_conf = app::admin_debug::http::AuthConf::from_env();
+                    let tls_conf = app::admin_debug::http_server::TlsConf::from_env();
+                    let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
 
                     let tls_opt = if tls_conf.enabled { Some(tls_conf) } else { None };
 
-                    app::admin_debug::http::spawn(socket_addr, tls_opt, auth_conf)
+                    app::admin_debug::http_server::spawn(socket_addr, tls_opt, auth_conf)
                         .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {}", e))?;
                     tracing::info!(addr = %socket_addr, impl = "debug", "Started admin debug server");
                 }

@@ -300,7 +300,7 @@ mod tests {
     }
 }
 
-#[cfg(loom)]
+#[cfg(feature = "loom")]
 mod loom_smoke {
     use super::*;
     use loom::thread;

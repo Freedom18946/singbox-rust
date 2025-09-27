@@ -27,6 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-setup
+        with:
+          toolchain: "1.90.0"
       - name: Rustfmt check
         run: cargo fmt --all -- --check
 
@@ -35,6 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-setup
+        with:
+          toolchain: "1.90.0"
       - name: Build docs with warnings-as-errors
         run: cargo doc --no-deps -D warnings
 
@@ -43,6 +47,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-setup
+        with:
+          toolchain: "1.90.0"
       - name: Clippy strict (all libs)
         run: |
           set -euo pipefail

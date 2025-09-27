@@ -571,6 +571,12 @@ async fn serve_with_config(addr: &str, tls_conf: Option<TlsConf>, auth_conf: Aut
         None
     };
 
+    if matches!(auth_conf, AuthConf::Mtls { enabled: true }) && tls_acceptor.is_none() {
+        tracing::warn!(
+            "mTLS requested via SB_ADMIN_MTLS=1 but TLS is not configured (SB_ADMIN_TLS_CERT/KEY missing); refusing to authenticate clients with mTLS"
+        );
+    }
+
     loop {
         let (stream, _) = listener.accept().await?;
         let tls = tls_acceptor.clone();

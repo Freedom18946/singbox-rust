@@ -1,6 +1,7 @@
 use once_cell::sync::OnceCell;
 use std::{collections::HashMap, time::{Duration, Instant}, sync::Mutex};
 use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Clone)]
 pub struct CacheEntry {
@@ -8,6 +9,15 @@ pub struct CacheEntry {
     pub content_type: Option<String>,
     pub body: Vec<u8>,
     pub timestamp: Instant,
+}
+
+fn disk_path_inner(base: &Path, key: &str) -> PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    let hash = hasher.finish();
+    base.join(format!("{:x}", hash))
 }
 
 #[derive(Clone)]
@@ -144,22 +154,24 @@ impl Lru {
 
                 match entry {
                     TierEntry::Mem(_) => {
-                        // Try to move to disk if disk backing is enabled
-                        if self.disk_backing.is_some() && size > 4096 { // Only move larger entries to disk
-                            if let TierEntry::Mem(cache_entry) = entry {
-                                if let Ok(()) = self.write_to_disk(&key, &cache_entry) {
-                                    let disk_entry = TierEntry::Disk {
-                                        path: self.disk_path(&key),
-                                        etag: cache_entry.etag,
-                                        len: size,
-                                        content_type: cache_entry.content_type,
-                                        timestamp: cache_entry.timestamp,
-                                    };
-                                    // Entry moved to disk but stays in cache - no byte count change needed
-                                    // Preserve original access timestamp for proper LRU ordering
-                                    self.map.insert(key, (disk_entry, access_time));
-                                    // This doesn't count as an eviction since entry stays accessible
-                                    return;
+                        // Try to move to disk if disk backing is enabled (only for larger entries)
+                        if let Some(base_path) = &self.disk_backing {
+                            if size > 4096 {
+                                if let TierEntry::Mem(cache_entry) = entry {
+                                    if let Ok(()) = self.write_to_disk(&key, &cache_entry) {
+                                        let disk_entry = TierEntry::Disk {
+                                            path: disk_path_inner(base_path, &key),
+                                            etag: cache_entry.etag,
+                                            len: size,
+                                            content_type: cache_entry.content_type,
+                                            timestamp: cache_entry.timestamp,
+                                        };
+                                        // Entry moved to disk but stays in cache - no byte count change needed
+                                        // Preserve original access timestamp for proper LRU ordering
+                                        self.map.insert(key, (disk_entry, access_time));
+                                        // This doesn't count as an eviction since entry stays accessible
+                                        return;
+                                    }
                                 }
                             }
                         }
@@ -181,12 +193,13 @@ impl Lru {
 
     fn write_to_disk(&self, key: &str, entry: &CacheEntry) -> Result<(), std::io::Error> {
         if let Some(ref base_path) = self.disk_backing {
-            let file_path = self.disk_path(key);
+            let file_path = disk_path_inner(base_path, key);
             sb_core::util::fs_atomic::write_atomic(&file_path, &entry.body)?;
         }
         Ok(())
     }
 
+    #[cfg(test)]
     fn disk_path(&self, key: &str) -> PathBuf {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -197,7 +210,7 @@ impl Lru {
 
         self.disk_backing
             .as_ref()
-            .unwrap()
+            .expect("disk backing expected in tests")
             .join(format!("{:x}", hash))
     }
 

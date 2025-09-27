@@ -4,47 +4,23 @@ use hyper::{Body, Request, Response, StatusCode};
 use sb_core::router::explain as ex;
 use sb_core::router::explain::{ExplainQuery, ExplainResult};
 use serde_json::{Map, Value};
-use singbox_rust::http_util;
+use app::http_util;
 use std::{net::SocketAddr, str::FromStr};
 use url::form_urlencoded;
 
 mod telemetry {
-    pub use singbox_rust::telemetry::*;
+    pub use app::telemetry::*;
 }
 
 #[cfg(feature = "pprof")]
 async fn collect_pprof(sec: u64, _freq: i32) -> Result<Vec<u8>, String> {
-    // 在 macOS 上 pprof 库有兼容性问题，提供软降级
-    if std::env::consts::OS == "macos" {
-        let svg = format!(
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="600" height="60">
-          <text x="10" y="35" font-size="16">pprof disabled on macOS (compatibility issue)</text></svg>"#
-        );
-        return Ok(svg.into_bytes());
-    }
-
-    use pprof::ProfilerGuard;
-    let freq = _freq.max(1);
-    tokio::task::spawn_blocking(move || {
-        let guard = ProfilerGuard::new(freq).map_err(|e| format!("pprof_guard:{e}"))?;
-        std::thread::sleep(std::time::Duration::from_secs(sec));
-        let report = guard
-            .report()
-            .build()
-            .map_err(|e| format!("pprof_report:{e}"))?;
-        let mut out = Vec::new();
-        if let Err(e) = report.flamegraph(&mut out) {
-            // 软降级：输出最小 SVG，避免 0 字节
-            let svg = format!(
-                r#"<svg xmlns="http://www.w3.org/2000/svg" width="600" height="60">
-              <text x="10" y="35" font-size="16">pprof soft-disabled: {e}</text></svg>"#
-            );
-            out = svg.into_bytes();
-        }
-        Ok(out)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    // 本构建未链接 pprof 后端，统一返回占位 SVG，避免依赖引入。
+    let svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="640" height="60">
+      <text x="10" y="35" font-size="16">pprof feature enabled but backend not linked; waited {}s</text></svg>"#,
+        sec
+    );
+    Ok(svg.into_bytes())
 }
 
 fn to_dot(res: &ExplainResult) -> String {
@@ -125,7 +101,7 @@ async fn handle(
         {
             return Ok(http_util::text(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "pprof feature disabled",
+                "pprof feature disabled".to_string(),
             ));
         }
     }

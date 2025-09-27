@@ -34,14 +34,16 @@ pub fn init_tracing_once_with_filter(filter: &str) {
 /// Returns () on success, () on error (non-blocking)
 pub fn init_metrics_exporter_once() {
     METRICS.get_or_init(|| {
-        // Check if metrics should be enabled
-        if let Ok(addr_env) = std::env::var("SB_METRICS_ADDR") {
-            if !addr_env.trim().is_empty() {
-                tracing::info!(addr=%addr_env, "metrics exporter initialized (stub)");
-                // NOTE: placeholder exporter; real exporter can be wired via feature flags.
+        // Spawn Prometheus exporter if SB_METRICS_ADDR is set, e.g. "127.0.0.1:9090"
+        if std::env::var("SB_METRICS_ADDR").ok().is_some() {
+            if let Some(_jh) = sb_metrics::maybe_spawn_http_exporter_from_env() {
+                tracing::info!("metrics exporter started");
+            } else {
+                tracing::warn!("metrics exporter disabled or failed to start");
             }
+        } else {
+            tracing::debug!("metrics exporter not configured (SB_METRICS_ADDR unset)");
         }
-        // Always return () to mark as initialized
     });
 }
 

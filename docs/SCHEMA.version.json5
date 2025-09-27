@@ -1,0 +1,13 @@
+// Version command JSON output schema
+// Contract: fixed field names, case-sensitive, stable across versions
+{
+  "name": "app",  // package name from Cargo.toml
+  "version": "0.1.0",  // semantic version from Cargo.toml
+  "commit": "abc12345",  // git SHA (short or full)
+  "date": "2025-09-27T10:00:00Z",  // build timestamp (ISO 8601)
+  "features": [  // enabled cargo features, sorted alphabetically
+    "admin_debug",
+    "metrics",
+    "router"
+  ]
+}

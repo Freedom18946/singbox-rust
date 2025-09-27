@@ -38,16 +38,24 @@ pub struct ShadowTlsOutbound {
 #[cfg(feature = "out_shadowtls")]
 impl ShadowTlsOutbound {
     pub fn new(config: ShadowTlsConfig) -> anyhow::Result<Self> {
-        // Create TLS configuration for ShadowTLS
+        // System roots
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_root_certificates(roots)
             .with_no_client_auth();
 
-        if config.skip_cert_verify
-            && std::env::var("SB_STL_ALLOW_INSECURE").ok() == Some("1".to_string())
-        {
-            // Allow insecure connections if explicitly enabled
+        // Allow insecure verification when explicitly enabled
+        let insecure_env = std::env::var("SB_STL_ALLOW_INSECURE")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if config.skip_cert_verify || insecure_env {
             tracing::warn!("ShadowTLS: insecure mode enabled, certificate verification disabled");
+            let v = crate::tls::danger::NoVerify::new();
+            tls_config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(v));
         }
 
         if let Some(alpn) = &config.alpn {
@@ -55,7 +63,6 @@ impl ShadowTlsOutbound {
         }
 
         let tls_config = Arc::new(tls_config);
-
         Ok(Self { config, tls_config })
     }
 }
@@ -100,7 +107,7 @@ impl OutboundTcp for ShadowTlsOutbound {
         };
 
         let connector = TlsConnector::from(self.tls_config.clone());
-        let tls_stream = match connector.connect(server_name, tcp_stream).await {
+        let mut tls_stream = match connector.connect(server_name, tcp_stream).await {
             Ok(stream) => stream,
             Err(e) => {
                 record_connect_error(
@@ -132,21 +139,21 @@ impl OutboundTcp for ShadowTlsOutbound {
             histogram!("shadowtls_handshake_ms").record(start.elapsed().as_millis() as f64);
         }
 
-        // Note: In a full ShadowTLS implementation, the target would be used as follows:
-        // 1. The TLS connection above is the "masquerading" connection to the decoy server
-        // 2. The actual target traffic would be tunneled through this TLS connection
-        // 3. ShadowTLS protocol would encode target info and relay actual payload
-
-        // For now, we store the target info for future protocol implementation
-        tracing::debug!(
-            "ShadowTLS connecting to decoy {}, actual target: {:?}",
-            self.config.sni,
-            target
+        // Minimal tunneling header: mimic HTTP CONNECT to improve cover traffic plausibility
+        // CONNECT host:port HTTP/1.1\r\nHost: host:port\r\n\r\n
+        use tokio::io::AsyncWriteExt;
+        let connect_line = format!(
+            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+            target.host, target.port, target.host, target.port
         );
-
-        // TODO: Implement ShadowTLS protocol layer that uses `target` for actual routing
-        // This would involve sending target information through the established TLS tunnel
-        // and setting up bidirectional forwarding
+        if let Err(e) = tls_stream.write_all(connect_line.as_bytes()).await {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("shadowtls_connect_total", "result" => "write_fail").increment(1);
+            return Err(io::Error::new(io::ErrorKind::Other, format!("tunnel header write failed: {}", e)));
+        }
+        if let Err(e) = tls_stream.flush().await {
+            return Err(io::Error::new(io::ErrorKind::Other, format!("tunnel header flush failed: {}", e)));
+        }
 
         Ok(tls_stream)
     }

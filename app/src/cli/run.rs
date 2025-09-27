@@ -7,9 +7,11 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime},
 };
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
-use crate::{bootstrap, config_loader};
+use crate::bootstrap;
+#[cfg(feature = "dev-cli")]
+use crate::config_loader;
 #[cfg(feature = "dev-cli")]
 use crate::env_dump;
 use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
@@ -33,6 +35,7 @@ pub struct RunArgs {
     no_banner: bool,
 }
 
+#[allow(dead_code)]
 fn parse_addr(s: &str) -> std::result::Result<SocketAddr, String> {
     s.parse().map_err(|e| format!("invalid addr `{s}`: {e}"))
 }
@@ -168,6 +171,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
 
     // 进入引导
     let boot = async {
+        #[allow(unused_variables)]
         let rt = bootstrap::start_from_config(cfg).await?;
 
         // watch: 轮询 mtime，热替换 Router/Outbound

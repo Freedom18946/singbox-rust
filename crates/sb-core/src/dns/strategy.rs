@@ -269,6 +269,7 @@ impl QueryExecutor {
             return self.query_failover(domain, record_type).await;
         }
 
+        #[cfg(feature = "metrics")]
         let upstream_name = upstream.name().to_string();
         match self
             .query_with_retry(upstream.clone(), domain, record_type)
@@ -317,6 +318,7 @@ impl QueryExecutor {
             return self.query_failover(domain, record_type).await;
         }
 
+        #[cfg(feature = "metrics")]
         let upstream_name = upstream.name().to_string();
         match self
             .query_with_retry(upstream.clone(), domain, record_type)
@@ -357,6 +359,7 @@ impl QueryExecutor {
         domain: &str,
         record_type: RecordType,
     ) -> Result<DnsAnswer> {
+        #[cfg(feature = "metrics")]
         let upstream_name = upstream.name().to_string();
         let mut delay = self.retry_config.retry_delay;
         let mut last_error = None;

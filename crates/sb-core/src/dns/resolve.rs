@@ -1,5 +1,5 @@
 #[cfg(feature = "dns_cache")]
-use super::cache::{DnsCache, Entry as CacheEntry, HitKind, Key as CacheKey, QType};
+use super::cache::{DnsCache, QType};
 use anyhow::Result;
 use std::net::SocketAddr;
 use tokio::net::lookup_host;
@@ -324,7 +324,7 @@ async fn doh_resolve(_host: &str, _port: u16, _timeout_ms: u64) -> Result<Vec<So
 pub async fn resolve_socketaddr(host: &str, port: u16) -> std::io::Result<SocketAddr> {
     let addrs = resolve_all(host, port)
         .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     addrs
         .first()
         .copied()
@@ -333,9 +333,7 @@ pub async fn resolve_socketaddr(host: &str, port: u16) -> std::io::Result<Socket
 
 /// Backward compatibility: resolve_all but return io::Result
 pub async fn resolve_all_compat(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
-    resolve_all(host, port)
-        .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    resolve_all(host, port).await.map_err(std::io::Error::other)
 }
 
 #[cfg(feature = "dns_cache")]

@@ -9,6 +9,7 @@ use std::time::Instant;
 
 /// 全局累计下行字节（server->client）
 pub static BYTES_DOWN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "bytes_down_total",
         "Total bytes sent from server to clients"
@@ -18,6 +19,7 @@ pub static BYTES_DOWN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 
 /// 全局累计上行字节（client->server）
 pub static BYTES_UP_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "bytes_up_total",
         "Total bytes received from clients to server"
@@ -27,6 +29,7 @@ pub static BYTES_UP_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 
 /// 按方向与通道类型聚合的字节计数
 pub static BYTES_TOTAL_VEC: Lazy<IntCounterVec> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter_vec!(
         "bytes_total",
         "Total bytes by direction and channel",
@@ -42,6 +45,7 @@ pub static THROUGHPUT_BPS: Lazy<Histogram> = Lazy::new(|| {
         // Fallback to fixed buckets on exponential_buckets failure
         vec![512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32768.0, 65536.0]
     });
+    #[allow(clippy::expect_used)]
     register_histogram!(prometheus::HistogramOpts::new(
         "throughput_bps",
         "Observed coarse-grained throughput in bytes per second"

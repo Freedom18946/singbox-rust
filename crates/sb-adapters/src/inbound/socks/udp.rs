@@ -14,57 +14,8 @@ use sb_core::outbound::health::MultiHealthView;
 use sb_core::outbound::observe::{with_observation, with_pool_observation};
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
-// TODO: Enable when feature is available
-// use sb_core::outbound::socks5_udp::UpSocksSession;
-
-// Stub implementations for missing types
-#[derive(Debug, Clone)]
-pub struct UpSocksSession;
-
-impl UpSocksSession {
-    pub async fn create(_endpoint: ProxyEndpoint, _timeout_ms: u64) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(Self)
-    }
-
-    pub async fn recv_once(&self, _timeout_secs: u64) -> Result<Option<(SocketAddr, Vec<u8>)>, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(None)
-    }
-
-    pub fn bind_observation(&self, _pool_name: String, _idx: usize) {
-        // Stub implementation
-    }
-
-    pub async fn send_to(&self, _dst: SocketAddr, _payload: &[u8]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(()) // Stub implementation
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct UdpUpstreamMap;
-
-impl UdpUpstreamMap {
-    pub fn new(_ttl: std::time::Duration) -> Self {
-        Self
-    }
-
-    pub async fn insert(&self, _key: UpstreamKey, _value: Arc<UpSocksSession>) -> bool {
-        false // Stub implementation
-    }
-
-    pub async fn get(&self, _key: &UpstreamKey) -> Option<Arc<UpSocksSession>> {
-        None // Stub implementation
-    }
-
-    pub async fn evict_expired(&self) -> usize {
-        0 // Stub implementation
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct UpstreamKey {
-    pub src: SocketAddr,
-    pub dst: (std::net::IpAddr, u16),
-}
+use sb_core::outbound::socks5_udp::UpSocksSession;
+use sb_core::net::udp_upstream_map::{Key as UpstreamKey, UdpUpstreamMap};
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -547,6 +498,7 @@ async fn forward_via_proxy(
     };
     let target_label = format!("{}:{}", ip, port);
     let session = match ensure_upstream_session(
+        Arc::clone(&listen),
         Arc::clone(&up_map),
         key,
         client,
@@ -571,32 +523,44 @@ async fn forward_via_proxy(
         return ProxyOutcome::NeedFallback;
     }
 
-    // TODO: Fix unsized type issue with recv_once method signature
-    // for _ in 0..4 {
-    //     match session.recv_once(5).await {
-    //         Ok(Some((reply_addr, ref reply_payload))) => {
-    //             let reply = encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), reply_payload);
-    //             if let Err(e) = listen.send_to(&reply, client).await {
-    //                 tracing::debug!(error=%e, "socks5-udp: send back from upstream failed");
-    //                 #[cfg(feature = "metrics")]
-    //                 counter!("socks_udp_error_total", "class" => "return_fail").increment(1);
-    //                 break;
-    //             }
-    //         }
-    //         Ok(None) => break,
-    //         Err(e) => {
-    //             #[cfg(feature = "metrics")]
-    //             metrics::counter!("udp_upstream_error_total", "class" => "recv").increment(1);
-    //             tracing::debug!(error=%e, "socks5-udp: upstream recv error");
-    //             break;
-    //         }
-    //     }
-    // }
+    // Receive a few replies best-effort within a short window to support simple echo-style flows.
+    // This is intentionally lightweight; full bi-directional relaying is handled by higher-level services.
+    let recv_iters = std::env::var("SB_SOCKS_UDP_UP_RECV_ITERS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2)
+        .min(8);
+    let per_iter_ms = std::env::var("SB_SOCKS_UDP_UP_RECV_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(200)
+        .min(2_000);
+    for _ in 0..recv_iters {
+        match session.recv_once(per_iter_ms).await {
+            Ok(Some((reply_addr, ref reply_payload))) => {
+                let reply = encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), reply_payload);
+                if let Err(e) = listen.send_to(&reply, client).await {
+                    tracing::debug!(error=%e, "socks5-udp: send back from upstream failed");
+                    #[cfg(feature = "metrics")]
+                    counter!("socks_udp_error_total", "class" => "return_fail").increment(1);
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("udp_upstream_error_total", "class" => "recv").increment(1);
+                tracing::debug!(error=%e, "socks5-udp: upstream recv error");
+                break;
+            }
+        }
+    }
 
     ProxyOutcome::Handled
 }
 
 async fn ensure_upstream_session(
+    listen: Arc<UdpSocket>,
     up_map: Arc<UdpUpstreamMap>,
     key: UpstreamKey,
     client: SocketAddr,
@@ -644,6 +608,26 @@ async fn ensure_upstream_session(
                 #[cfg(feature = "metrics")]
                 metrics::counter!("udp_upstream_error_total", "class" => "capacity").increment(1);
             }
+            // Spawn background receiver to forward replies to client
+            let listen_sock = Arc::clone(&listen);
+            let sess_clone = arc.clone();
+            tokio::spawn(async move {
+                let per_ms = std::env::var("SB_SOCKS_UDP_UP_BG_RECV_MS")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(500)
+                    .min(10_000);
+                loop {
+                    match sess_clone.recv_once(per_ms).await {
+                        Ok(Some((reply_addr, payload))) => {
+                            let reply = encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), &payload);
+                            let _ = listen_sock.send_to(&reply, client).await;
+                        }
+                        Ok(None) => continue,
+                        Err(_) => break,
+                    }
+                }
+            });
             Some(arc)
         }
         Err(e) => {

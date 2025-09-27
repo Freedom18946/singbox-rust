@@ -1,0 +1,8 @@
+{
+  "dest": "example.com:443",
+  "matched_rule": "623ec325",
+  "chain": [
+    "domain:example.com"
+  ],
+  "outbound": "direct"
+}

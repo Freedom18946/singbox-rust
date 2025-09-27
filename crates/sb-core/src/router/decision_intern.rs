@@ -36,7 +36,7 @@ fn pool() -> &'static Mutex<Pool> {
 
 /// Intern a decision string and return &'static str for legacy APIs.
 pub fn intern_decision(s: &str) -> &'static str {
-    let mut g = pool().lock().unwrap();
+    let mut g = pool().lock().unwrap_or_else(|e| e.into_inner());
     g.intern(s)
 }
 
@@ -48,6 +48,6 @@ pub fn intern_decision_owned(s: String) -> &'static str {
 /// Visible for tests.
 #[allow(dead_code)]
 pub fn intern_size() -> usize {
-    let g = pool().lock().unwrap();
+    let g = pool().lock().unwrap_or_else(|e| e.into_inner());
     g.len()
 }

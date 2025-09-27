@@ -337,12 +337,12 @@ impl ResolverHandle {
         // 1) cache hit (scoped; drop lock before awaits)
         #[cfg(feature = "dns_cache")]
         {
-            let mut cache_opt = self.cache.lock();
+            let cache_opt = self.cache.lock();
             if cache_opt.is_err() {
                 tracing::error!(target: "sb_core::dns", "cache lock poisoned on resolve/get");
                 need_fallback = true;
             }
-            if let Ok(mut cache) = cache_opt {
+            if let Ok(cache) = cache_opt {
             if let Some(ent) = cache.get(&key) {
                 #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
@@ -1073,8 +1073,8 @@ fn mark_upstream_success(h: &ResolverHandle, key: &str) {
 #[async_trait]
 impl Resolver for ResolverHandle {
     async fn resolve(&self, domain: &str) -> Result<DnsAnswer> {
-        // Use ResolverHandle's own resolve method
-        self.resolve(domain).await
+        // Disambiguate to call the inherent method, not the trait method
+        ResolverHandle::resolve(self, domain).await
     }
 
     fn name(&self) -> &str {

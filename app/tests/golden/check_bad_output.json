@@ -1,0 +1,39 @@
+{
+  "ok": false,
+  "file": "app/tests/golden/config_bad.json",
+  "issues": [
+    {
+      "kind": "warning",
+      "ptr": "/schema_version",
+      "msg": "missing schema_version (assuming v2)",
+      "code": "MISSING_FIELD",
+      "hint": "add: 2"
+    },
+    {
+      "kind": "error",
+      "ptr": "/rules",
+      "msg": "unknown field",
+      "code": "UNKNOWN_FIELD",
+      "hint": "remove it"
+    },
+    {
+      "kind": "error",
+      "ptr": "/inbounds/0/port",
+      "msg": "port must be integer",
+      "code": "TYPE_MISMATCH",
+      "hint": "1..65535"
+    },
+    {
+      "kind": "error",
+      "ptr": "/inbounds/0/__unknown_field__",
+      "msg": "unknown field",
+      "code": "UNKNOWN_FIELD",
+      "hint": "remove it"
+    }
+  ],
+  "summary": {
+    "errors": 3,
+    "total_issues": 4,
+    "warnings": 1
+  }
+}

@@ -261,7 +261,7 @@ impl TunInbound {
                                                     // 2.3e: 计数
                                                     TCP_PROBE_OK.fetch_add(1, Ordering::Relaxed);
                                                     // 立刻丢弃以关闭连接
-                                                    drop(_s);
+                                                    let _ = _s; // dropping_copy_types: avoid no-op drop on Copy
                                                     debug!(
                                                         "tun probe dial OK -> {}:{} | closed | user={:?} timeout={}ms",
                                                         ip, port, self.cfg.user_tag, self.cfg.timeout_ms

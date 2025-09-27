@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "file": "app/tests/golden/config_good.json",
+  "issues": [],
+  "summary": {
+    "errors": 0,
+    "total_issues": 0,
+    "warnings": 0
+  }
+}

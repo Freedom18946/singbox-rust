@@ -24,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-setup
+        with:
+          toolchain: "1.90.0"
       - name: Build (CLI only)
         run: cargo build -p app --bin app --features admin_debug,subs_http,reqwest --locked
       - name: Clippy (deny warnings)

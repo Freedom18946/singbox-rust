@@ -2,9 +2,9 @@ name: "Rust Setup (toolchain+cache)"
 description: "Set up Rust toolchain and cache"
 inputs:
   toolchain:
-    description: "Rust toolchain (default 1.82.0)"
+    description: "Rust toolchain (default 1.90.0)"
     required: false
-    default: "1.82.0"
+    default: "1.90.0"
   components:
     description: "Comma-separated components (e.g. clippy,rustfmt)"
     required: false

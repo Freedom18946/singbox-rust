@@ -25,7 +25,7 @@ pub enum OutboundErrorClass {
     Other,
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
+#[cfg(any(test, feature = "dev-cli", feature = "metrics"))]
 #[deprecated(since = "0.1.0", note = "preserved for JSON contract/future export")]
 fn label_kind(k: OutboundKind) -> &'static str {
     match k {
@@ -56,7 +56,7 @@ fn label_kind(k: OutboundKind) -> &'static str {
     }
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
+#[cfg(any(test, feature = "dev-cli", feature = "metrics"))]
 #[deprecated(since = "0.1.0", note = "preserved for JSON contract/future export")]
 fn label_err(c: OutboundErrorClass) -> &'static str {
     match c {
@@ -443,17 +443,17 @@ pub fn record_ss_aead_op_duration(duration_ms: f64, cipher: &str, operation: &st
 
 // Generic AEAD operation metrics using static labels
 pub fn record_aead_encrypt_duration(
-    duration_ms: f64,
-    protocol: crate::metrics::labels::Proto,
-    cipher: crate::metrics::labels::CipherType,
+    _duration_ms: f64,
+    _protocol: crate::metrics::labels::Proto,
+    _cipher: crate::metrics::labels::CipherType,
 ) {
     #[cfg(feature = "metrics")]
     histogram!(
         "outbound_aead_encrypt_duration_ms",
-        "protocol" => protocol.as_str(),
-        "cipher" => cipher.as_str()
+        "protocol" => _protocol.as_str(),
+        "cipher" => _cipher.as_str()
     )
-    .record(duration_ms);
+    .record(_duration_ms);
 }
 
 pub fn record_aead_decrypt_duration(

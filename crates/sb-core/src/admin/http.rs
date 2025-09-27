@@ -257,7 +257,7 @@ fn write_json(s: &mut TcpStream, code: u16, body: &str) -> std::io::Result<()> {
     let hdr = format!(
         "HTTP/1.1 {} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         code,
-        body.as_bytes().len()
+        body.len()
     );
     s.write_all(hdr.as_bytes())?;
     s.write_all(body.as_bytes())

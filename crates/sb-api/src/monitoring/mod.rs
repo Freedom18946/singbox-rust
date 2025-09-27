@@ -79,7 +79,7 @@ impl MonitoringSystem {
     }
 
     /// Get metrics bridge handle for external components
-    pub fn bridge_handle(&self) -> MetricsBridgeHandle {
+    pub fn bridge_handle(&self) -> MetricsBridgeHandle<'_> {
         self.bridge.handle()
     }
 
@@ -149,7 +149,7 @@ impl MonitoringSystemHandle {
     }
 
     /// Get metrics bridge handle
-    pub fn bridge(&self) -> MetricsBridgeHandle {
+    pub fn bridge(&self) -> MetricsBridgeHandle<'_> {
         self.bridge.handle()
     }
 

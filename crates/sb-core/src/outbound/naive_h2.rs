@@ -70,8 +70,7 @@ impl OutboundTcp for NaiveH2Outbound {
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
         use crate::metrics::labels::{record_connect_total, Proto, ResultTag};
         use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_error, record_connect_success,
-            OutboundErrorClass,
+            record_connect_attempt, record_connect_success,
         };
 
         record_connect_attempt(crate::outbound::OutboundKind::Http);

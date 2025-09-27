@@ -2,7 +2,7 @@
 name = "sb-core"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.90"
 license = "Apache-2.0"
 description = "Core functionality for singbox-rust"
 repository = "https://github.com/singbox-rust/singbox-rust"
@@ -68,10 +68,20 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 ipnet = "2.7"
 blake3 = "1.3"
 glob = "0.3"
+lru = "0.12"
+maxminddb = "0.23"
+aho-corasick = "1.1"
+rustls-pki-types = "1.0"
+x509-parser = { version = "0.15", optional = true }
+humantime = "2.1"
+idna = { version = "0.5", optional = true }
+thrussh = { version = "0.35", optional = true }
+thrussh-keys = { version = "=0.22.1", optional = true }
+loom = { version = "0.7", optional = true }
 
 [dev-dependencies]
-# 原有 dev-deps，如果有
-loom = "0.7"
+# Test dependencies
+tempfile = "3"
 
 [features]
 # 基线：不默认开启任何可选功能，便于上层精确组合
@@ -107,7 +117,7 @@ out_hysteria2      = []
 out_naive          = []
 out_quic           = []
 out_shadowtls      = []
-out_ssh            = []
+out_ssh            = ["dep:thrussh", "dep:thrussh-keys"]
 out_ss             = []
 out_trojan         = []
 out_tuic           = []
@@ -115,6 +125,7 @@ out_vless          = []
 out_vmess          = []
 out_wireguard      = []
 preview            = []
+preview_route      = []
 router             = []
 routing            = ["router"]  # routing as alias for router
 rules_capture      = []
@@ -127,7 +138,23 @@ socks              = []
 subs_clash         = []
 subs_http          = []
 subs_singbox       = []
-tls_rustls         = []  # 匹配代码中的 tls_rustls（或改代码为 tls-rustls）
+tls_rustls         = ["dep:x509-parser"]  # rustls-based TLS, with x509-parser for pinning
+geoip_hot          = []
+geoip_mmdb         = []
+idna               = ["dep:idna"]
+json               = []
+rand               = []
+router_cache_explain = []
+router_cache_lru_demo = []
+router_cache_wire  = []
+router_json        = []
+router_keyword_ac  = []
+router_keyword     = []
+rule_coverage      = []
+rules_tool         = []
+suffix_trie        = []
+tls                = []
+loom               = ["dep:loom"]
 failpoints         = ["dep:fail"]
 resolv_conf        = ["dep:notify"]
 

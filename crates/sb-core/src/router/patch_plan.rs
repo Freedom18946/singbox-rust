@@ -46,7 +46,7 @@ pub fn build_plan(text: &str, kinds: &[&str], file: Option<&str>) -> PlanResult 
             "portrange_merge" => analyze_fix::build_portrange_merge_patch(&rep, text, file),
             "suffix_shadow_cleanup" => analyze_fix::build_suffix_shadow_cleanup_patch(&rep, file),
             "port_aggregate" => analyze_fix::build_port_aggregate_patch(text, file),
-            "lint_autofix" => analyze_fix::build_lint_autofix_patch(text, file),
+            "lint_autofix" => analyze_fix::build_lint_autofix_patch(&rep, text, file),
             _ => None,
         };
         if let Some(p) = next {
@@ -104,7 +104,7 @@ pub fn apply_plan(text: &str, kinds: &[&str]) -> String {
                 analyze_fix::build_suffix_shadow_cleanup_patch(&rep, Some("rules.conf"))
             }
             "port_aggregate" => analyze_fix::build_port_aggregate_patch(&cur, Some("rules.conf")),
-            "lint_autofix" => analyze_fix::build_lint_autofix_patch(&cur, Some("rules.conf")),
+            "lint_autofix" => analyze_fix::build_lint_autofix_patch(&rep, &cur, Some("rules.conf")),
             _ => None,
         };
         if let Some(p) = patch {

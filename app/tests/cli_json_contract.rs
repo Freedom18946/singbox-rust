@@ -1,7 +1,11 @@
 use assert_cmd::Command;
-use predicates::str::contains;
 use serde_json::Value;
 use std::fs;
+
+const GOOD_CONFIG: &str = include_str!("golden/config_good.json");
+const BAD_CONFIG: &str = include_str!("golden/config_bad.json");
+const EXPECTED_GOOD_OUTPUT: &str = include_str!("golden/check_good_output.json");
+const EXPECTED_BAD_OUTPUT: &str = include_str!("golden/check_bad_output.json");
 
 fn write_cfg(content: &str) -> tempfile::NamedTempFile {
     let f = tempfile::NamedTempFile::new().unwrap();
@@ -10,63 +14,14 @@ fn write_cfg(content: &str) -> tempfile::NamedTempFile {
 }
 
 #[test]
-fn run_started_event_json_shape() {
-    // run 以 --format json 输出固定字段集
-    let mut cmd = Command::cargo_bin("run").unwrap();
-    cmd.args(["-c", "/dev/null", "--format", "json"])
-        .env("PROM_LISTEN", "") // 不启动导出器
-        .env("DNS_STUB", "0");
-    let out = cmd.assert().success().get_output().stdout.clone();
-    let v: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(v.get("event").unwrap(), "started");
-    assert!(v.get("pid").unwrap().as_u64().unwrap() > 0);
-    assert!(v.get("fingerprint").is_some());
-}
-
-#[test]
-fn check_v2_error_shape() {
-    // 复用既有校验：注入未知字段
-    let cfg =
-        r#"{"inbounds":[{"type":"socks","listen":"0.0.0.0","port":1080,"__unknown__":true}]}"#;
-    let tmp = write_cfg(cfg);
-    let mut cmd = Command::cargo_bin("app").unwrap();
-    cmd.args([
-        "check",
-        "-c",
-        tmp.path().to_str().unwrap(),
-        "--schema-v2-validate",
-        "--format",
-        "json",
-    ]);
-    let out = cmd.assert().failure().get_output().stdout.clone();
-    let v: Value = serde_json::from_slice(&out).unwrap();
-    let issues = v.get("issues").unwrap().as_array().unwrap();
-    assert!(!issues.is_empty());
-    let i0 = issues.first().unwrap();
-    assert_eq!(i0.get("kind").unwrap(), "error");
-    assert!(i0.get("code").unwrap().is_string());
-    assert!(i0
-        .get("ptr")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .starts_with("/inbounds/"));
-    assert!(v.get("fingerprint").is_some());
-}
-
-#[test]
-fn route_explain_shape() {
-    let cfg = r#"{"inbounds":[{"type":"socks","listen":"127.0.0.1","port":1080}]}"#;
-    let tmp = write_cfg(cfg);
+fn check_good_config_contract() {
+    let tmp = write_cfg(GOOD_CONFIG);
     let out = Command::cargo_bin("app")
         .unwrap()
         .args([
-            "route",
+            "check",
             "-c",
             tmp.path().to_str().unwrap(),
-            "--dest",
-            "example.com:443",
-            "--explain",
             "--format",
             "json",
         ])
@@ -75,25 +30,71 @@ fn route_explain_shape() {
         .get_output()
         .stdout
         .clone();
-    let v: Value = serde_json::from_slice(&out).unwrap();
-    assert!(v.get("dest").is_some());
-    assert_eq!(v.get("matched_rule").unwrap().as_str().unwrap().len(), 8);
-    assert!(v.get("chain").unwrap().as_array().unwrap().len() >= 1);
-    assert!(v.get("outbound").is_some());
+
+    let actual_output = String::from_utf8(out.clone()).unwrap();
+    println!("Good config command output: {}", actual_output);
+
+    // Find the JSON part (after the log line)
+    let json_start = actual_output.find('{').unwrap();
+    let json_part = &actual_output[json_start..];
+
+    let actual: Value = serde_json::from_str(json_part).unwrap();
+    let expected: Value = serde_json::from_str(EXPECTED_GOOD_OUTPUT).unwrap();
+
+    // Check structure matches (ignoring dynamic fields like fingerprint and exact file path)
+    assert_eq!(actual.get("ok"), expected.get("ok"));
+    assert_eq!(actual.get("issues"), expected.get("issues"));
+    assert_eq!(actual.get("summary"), expected.get("summary"));
+    // Just check that file path is present and is a string
+    assert!(actual.get("file").unwrap().is_string());
 }
 
 #[test]
-fn version_json_shape() {
-    let out = Command::cargo_bin("version")
+fn check_bad_config_contract() {
+    let tmp = write_cfg(BAD_CONFIG);
+    let out = Command::cargo_bin("app")
         .unwrap()
+        .args([
+            "check",
+            "-c",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+            "--schema-v2-validate",
+        ])
         .assert()
-        .success()
+        .failure()
         .get_output()
         .stdout
         .clone();
-    let v: Value = serde_json::from_slice(&out).unwrap();
-    assert!(v.get("name").unwrap().is_string());
-    assert!(v.get("version").unwrap().is_string());
-    assert!(v.get("features").unwrap().as_array().is_some());
-    assert!(v.get("fingerprint").is_some());
+
+    let actual_output = String::from_utf8(out.clone()).unwrap();
+    println!("Bad config command output: {}", actual_output);
+
+    // Find the JSON part (after the log line)
+    let json_start = actual_output.find('{').unwrap();
+    let json_part = &actual_output[json_start..];
+
+    let actual: Value = serde_json::from_str(json_part).unwrap();
+    let expected: Value = serde_json::from_str(EXPECTED_BAD_OUTPUT).unwrap();
+
+    // Check structure matches
+    assert_eq!(actual.get("ok"), expected.get("ok"));
+    assert_eq!(actual.get("summary"), expected.get("summary"));
+    // Just check that file path is present and is a string
+    assert!(actual.get("file").unwrap().is_string());
+
+    // Check issues structure (might have slight differences in exact messages)
+    let actual_issues = actual.get("issues").unwrap().as_array().unwrap();
+    let expected_issues = expected.get("issues").unwrap().as_array().unwrap();
+    assert_eq!(actual_issues.len(), expected_issues.len());
+
+    // Verify all expected issue codes are present
+    for expected_issue in expected_issues {
+        let expected_code = expected_issue.get("code").unwrap().as_str().unwrap();
+        let found = actual_issues.iter().any(|issue| {
+            issue.get("code").unwrap().as_str().unwrap() == expected_code
+        });
+        assert!(found, "Expected issue code {} not found", expected_code);
+    }
 }

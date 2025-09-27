@@ -23,10 +23,10 @@ pub fn apply_cli_patch(original: &str, patch: &str) -> Result<String, ApplyError
     let mut adds: Vec<String> = Vec::new();
     for raw in patch.lines() {
         let line = raw.trim_end();
-        if line.starts_with('-') {
-            dels.push(line[1..].to_string());
-        } else if line.starts_with('+') {
-            adds.push(line[1..].to_string());
+        if let Some(stripped) = line.strip_prefix('-') {
+            dels.push(stripped.to_string());
+        } else if let Some(stripped) = line.strip_prefix('+') {
+            adds.push(stripped.to_string());
         }
     }
     let mut out =

@@ -21,7 +21,7 @@ exclude = [
 default-members = ["app"]
 
 [workspace.package]
-rust-version = "1.82"
+rust-version = "1.90"
 license = "Apache-2.0"
 repository = "https://example.com/your/repo"
 homepage = "https://example.com/your/home"

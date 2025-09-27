@@ -94,8 +94,10 @@ impl RouterHandle {
                 Some(Mutex::new((
                     0u64,
                     lru::LruCache::new(
-                        std::num::NonZeroUsize::new(cap)
-                            .unwrap_or_else(|| std::num::NonZeroUsize::new(1024).unwrap()),
+                        std::num::NonZeroUsize::new(cap).unwrap_or_else(|| {
+                            // SAFETY: 1024 is a non-zero constant; constructing NonZeroUsize is sound.
+                            unsafe { std::num::NonZeroUsize::new_unchecked(1024) }
+                        }),
                     ),
                 )))
             } else {
@@ -104,7 +106,7 @@ impl RouterHandle {
         };
         #[cfg(not(feature = "router_cache_lru_demo"))]
         let cache = None;
-        let handle = Self {
+        let mut handle = Self {
             idx: shared,
             resolver: None,
             cache,
@@ -131,7 +133,7 @@ impl RouterHandle {
     #[cfg(feature = "router_cache_lru_demo")]
     pub(crate) fn lru_snapshot(&self) -> Option<(usize, usize, u64, u64)> {
         if let Some(c) = &self.cache {
-            let g = c.lock().unwrap();
+            let g = c.lock().unwrap_or_else(|e| e.into_inner());
             Some((g.1.len(), g.1.cap().get(), 0, 0)) // size, capacity, hits, misses (simplified)
         } else {
             None
@@ -141,7 +143,7 @@ impl RouterHandle {
     #[cfg(feature = "router_cache_lru_demo")]
     pub(crate) fn lru_clear(&self) {
         if let Some(c) = &self.cache {
-            let mut g = c.lock().unwrap();
+            let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
             g.1.clear();
         }
     }
@@ -324,7 +326,7 @@ impl RouterHandle {
             let Some(c) = &self.cache else { return None };
             // 检查 generation
             let gen = self.idx.read().ok().map(|a| a.gen).unwrap_or(0);
-            let mut g = c.lock().unwrap();
+            let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
             if g.0 != gen {
                 // generation 变化：清空并更新
                 #[cfg(feature = "metrics")]
@@ -356,7 +358,7 @@ impl RouterHandle {
         {
             let Some(c) = &self.cache else { return };
             let gen = self.idx.read().ok().map(|a| a.gen).unwrap_or(0);
-            let mut g = c.lock().unwrap();
+            let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
             if g.0 != gen {
                 // 先对齐 generation
                 g.0 = gen;
@@ -453,7 +455,7 @@ impl RouterHandle {
 
     /// Get current router generation
     pub async fn current_generation(&self) -> u64 {
-        let idx = self.idx.read().expect("poisoned");
+        let idx = self.idx.read().unwrap_or_else(|e| e.into_inner());
         idx.gen
     }
 
@@ -522,7 +524,7 @@ impl RouterHandle {
         };
 
         // 基于共享索引决策
-        let idx = { self.idx.read().expect("poisoned").clone() };
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
 
         // Check exact/suffix first
         if let Some(d) = super::router_index_decide_exact_suffix(&idx, &host_str) {
@@ -553,7 +555,7 @@ impl RouterHandle {
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(5);
-        let idx = { self.idx.read().expect("poisoned").clone() };
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host);
         // 复合缓存键：transport|host_norm（UDP 无端口）
         let cache_key = format!("udp|{}", host_norm);
@@ -736,7 +738,7 @@ impl RouterHandle {
     /// 旧接口适配：根据上下文进行路由并返回 RouteTarget（不做 DNS，仅 exact/suffix/IP/default）
     pub fn select_ctx_and_record(&self, ctx: RouteCtx) -> RouteTarget {
         // 拿快照
-        let idx = { self.idx.read().expect("poisoned").clone() };
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         // host 优先
         if let Some(h) = ctx.host {
             if let Some(d) = router_index_decide_exact_suffix(&idx, h) {
@@ -885,14 +887,16 @@ impl RouterHandle {
             }
             if let Some(geo) = self.geoip.as_ref() {
                 provider_seen = true;
-                if let Some(cc) = geo.lookup(_ip) {
-                    #[cfg(feature = "metrics")]
-                    {
-                        let label = self.geoip_source.as_deref().unwrap_or("legacy");
-                        metrics::counter!("geoip_lookup_total", "source"=>label.to_string())
-                            .increment(1);
+                if let Some(geo_info) = geo.lookup(_ip) {
+                    if let Some(cc) = geo_info.country_code {
+                        #[cfg(feature = "metrics")]
+                        {
+                            let label = self.geoip_source.as_deref().unwrap_or("legacy");
+                            metrics::counter!("geoip_lookup_total", "source"=>label.to_string())
+                                .increment(1);
+                        }
+                        return Some(cc);
                     }
-                    return Some(cc);
                 }
             }
             #[cfg(feature = "metrics")]
@@ -1064,7 +1068,16 @@ pub struct DecisionExplain {
 }
 
 pub fn decide_http_explain(target: &str) -> DecisionExplain {
-    let idx = { shared_index().read().expect("poisoned").clone() };
+    let idx = {
+        shared_index()
+            .read()
+            .unwrap_or_else(|e| {
+                #[allow(clippy::print_stderr)]
+                eprintln!("RwLock poisoned; proceeding with inner guard");
+                e.into_inner()
+            })
+            .clone()
+    };
     let (host_raw, port_opt) = if let Some((h, p)) = target.rsplit_once(':') {
         (h, p.parse::<u16>().ok())
     } else {
@@ -1139,7 +1152,17 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
 }
 
 pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> DecisionExplain {
-    let idx = { handle.idx.read().expect("poisoned").clone() };
+    let idx = {
+        handle
+            .idx
+            .read()
+            .unwrap_or_else(|e| {
+                #[allow(clippy::print_stderr)]
+                eprintln!("RwLock poisoned; proceeding with inner guard");
+                e.into_inner()
+            })
+            .clone()
+    };
     let host_norm = normalize_host(host);
     if let Some(d) = super::router_index_decide_exact_suffix(&idx, &host_norm) {
         let k = if idx.exact.contains_key(&host_norm) {
@@ -1253,7 +1276,21 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
 impl RouterHandle {
     /// 返回当前 gen（只读），便于基准与可视化记录
     pub fn current_gen(&self) -> u64 {
-        self.idx.read().expect("poisoned").gen
+        self.idx.read().unwrap_or_else(|e| e.into_inner()).gen
+    }
+
+    /// Get a read lock on the router index for explain functionality
+    pub fn get_index(&self) -> std::sync::RwLockReadGuard<Arc<RouterIndex>> {
+        self.idx.read().unwrap_or_else(|e| {
+            #[allow(clippy::print_stderr)]
+            eprintln!("RwLock poisoned; proceeding with inner guard");
+            e.into_inner()
+        })
+    }
+
+    /// Get reference to the GeoIP database for explain functionality
+    pub fn get_geoip_db(&self) -> Option<&std::sync::Arc<crate::router::geo::GeoIpDb>> {
+        self.geoip_db.as_ref()
     }
 }
 
@@ -1261,7 +1298,7 @@ impl RouterHandle {
 impl RouterHandle {
     pub(crate) fn init_geoip_if_env(&mut self) {
         use std::time::Duration;
-        self.geoip_mux = crate::geoip::multi::GeoMux::from_env();
+        self.geoip_mux = crate::geoip::multi::GeoMux::from_env().ok();
         self.geoip = None;
         self.geoip_source = None;
         if let Ok(path) = std::env::var("SB_GEOIP_MMDB") {
@@ -1273,9 +1310,9 @@ impl RouterHandle {
                 .ok()
                 .and_then(|v| humantime::parse_duration(&v).ok())
                 .unwrap_or(Duration::from_secs(600));
-            match crate::geoip::mmdb::GeoIp::open(&path, cap, ttl) {
+            match crate::geoip::mmdb::GeoIp::open(std::path::Path::new(&path), cap, ttl) {
                 Ok(geo) => {
-                    self.geoip = Some(geo);
+                    self.geoip = Some(std::sync::Arc::new(geo));
                     self.geoip_source = Some(path);
                 }
                 Err(err) => {
@@ -1283,5 +1320,12 @@ impl RouterHandle {
                 }
             }
         }
+    }
+}
+
+impl RouterHandle {
+    /// Get a snapshot of the current RouterIndex (for read-only analysis/explain)
+    pub fn index_snapshot(&self) -> Arc<RouterIndex> {
+        self.idx.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }

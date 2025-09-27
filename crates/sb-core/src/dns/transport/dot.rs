@@ -39,9 +39,12 @@ impl DotTransport {
 
         #[cfg(feature = "tls")]
         let tls_config = {
+            let root_store = rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
+            };
+
             let mut config = rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(rustls_native_certs::load_native_certs()?)
+                .with_root_certificates(root_store)
                 .with_no_client_auth();
 
             // 启用 ALPN 协议协商
@@ -80,7 +83,7 @@ impl DotTransport {
 
         // 建立 TLS 连接
         let connector = TlsConnector::from(self.tls_config.clone());
-        let server_name = rustls::ServerName::try_from(self.server_name.as_str())
+        let server_name = rustls_pki_types::ServerName::try_from(self.server_name.clone())
             .context("Invalid server name for TLS")?;
 
         let tls_stream =

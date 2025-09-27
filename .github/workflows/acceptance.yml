@@ -1,0 +1,139 @@
+name: acceptance-tests
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  schedule:
+    # Run acceptance tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  acceptance-suite:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [A1, A2, A3, A4, A5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+        with:
+          toolchain: "1.90.0"
+
+      - name: Build debug binary
+        run: cargo build --bin app
+
+      - name: Create .e2e directory
+        run: mkdir -p .e2e
+
+      - name: Run ${{ matrix.test }} acceptance test
+        id: test_run
+        continue-on-error: true
+        run: |
+          cd scripts
+          case "${{ matrix.test }}" in
+            A1) ./A1_explain_replay.sh ;;
+            A2) ./A2_schema_v2_acceptance.sh ;;
+            A3) ./A3_udp_stress_metrics.sh ;;
+            A4) ./A4_prom_noise_regression.sh ;;
+            A5) ./A5_rc_package_verification.sh ;;
+          esac
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Upload ${{ matrix.test }} results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-${{ matrix.test }}-results
+          path: |
+            .e2e/*${{ matrix.test }}*.json
+            .e2e/*results*.json
+          retention-days: 7
+
+      - name: Check test status
+        if: steps.test_run.outputs.exit_code == '2'
+        run: |
+          echo "::error::${{ matrix.test }} acceptance test failed critically"
+          exit 1
+
+  acceptance-summary:
+    runs-on: ubuntu-latest
+    needs: acceptance-suite
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/rust-setup
+        with:
+          toolchain: "1.90.0"
+
+      - name: Download all test results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: acceptance-*-results
+          path: .e2e/
+          merge-multiple: true
+
+      - name: Generate acceptance report
+        run: |
+          echo "# Acceptance Test Results" > acceptance_report.md
+          echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> acceptance_report.md
+          echo "" >> acceptance_report.md
+
+          for test in A1 A2 A3 A4 A5; do
+            echo "## $test Results" >> acceptance_report.md
+
+            # Find result file for this test
+            result_file=$(find .e2e -name "*${test}*results*.json" | head -1)
+            if [[ -f "$result_file" ]]; then
+              status=$(jq -r '.status // "unknown"' "$result_file" 2>/dev/null || echo "unknown")
+              case "$status" in
+                "pass") echo "✅ **PASS** - All tests passed" >> acceptance_report.md ;;
+                "partial") echo "⚠️ **PARTIAL** - Some tests failed" >> acceptance_report.md ;;
+                "skipped") echo "⏭️ **SKIP** - Test was skipped" >> acceptance_report.md ;;
+                *) echo "❌ **FAIL** - Test failed or status unknown" >> acceptance_report.md ;;
+              esac
+
+              # Add test details if available
+              if [[ "$status" != "unknown" ]]; then
+                total=$(jq -r '.total_tests // .total_checks // "N/A"' "$result_file" 2>/dev/null || echo "N/A")
+                passed=$(jq -r '.tests_passed // .checks_passed // "N/A"' "$result_file" 2>/dev/null || echo "N/A")
+                failed=$(jq -r '.tests_failed // .checks_failed // "N/A"' "$result_file" 2>/dev/null || echo "N/A")
+                echo "- Total: $total, Passed: $passed, Failed: $failed" >> acceptance_report.md
+              fi
+            else
+              echo "❓ **UNKNOWN** - No result file found" >> acceptance_report.md
+            fi
+            echo "" >> acceptance_report.md
+          done
+
+          # Output summary for GitHub Actions
+          echo "## Summary" >> acceptance_report.md
+          total_files=$(find .e2e -name "*results*.json" | wc -l)
+          echo "Found $total_files result files" >> acceptance_report.md
+
+          cat acceptance_report.md
+
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-report
+          path: acceptance_report.md
+          retention-days: 30

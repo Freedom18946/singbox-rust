@@ -1,0 +1,21 @@
+{
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1:1080"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "rules": [
+    {
+      "domain_suffix": ["example.com"],
+      "outbound": "direct"
+    }
+  ],
+  "default_outbound": "direct"
+}

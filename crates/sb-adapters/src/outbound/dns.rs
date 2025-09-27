@@ -4,16 +4,165 @@
 //! DNS queries through specific servers or configurations.
 
 use crate::outbound::prelude::*;
+use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
+use tokio::net::{TcpStream, UdpSocket};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+/// DNS transport protocols
+#[derive(Debug, Clone, PartialEq)]
+pub enum DnsTransport {
+    /// Plain DNS over UDP (port 53)
+    Udp,
+    /// Plain DNS over TCP (port 53)
+    Tcp,
+    /// DNS over TLS (port 853)
+    DoT,
+    /// DNS over HTTPS (port 443)
+    DoH,
+    /// DNS over QUIC (port 853)
+    DoQ,
+}
+
+impl DnsTransport {
+    fn default_port(&self) -> u16 {
+        match self {
+            DnsTransport::Udp | DnsTransport::Tcp => 53,
+            DnsTransport::DoT | DnsTransport::DoQ => 853,
+            DnsTransport::DoH => 443,
+        }
+    }
+}
+
+/// DNS server configuration
+#[derive(Debug, Clone)]
+pub struct DnsConfig {
+    /// DNS server address
+    pub server: IpAddr,
+    /// DNS server port (default: protocol specific)
+    pub port: Option<u16>,
+    /// Transport protocol
+    pub transport: DnsTransport,
+    /// Connection timeout
+    pub timeout: Duration,
+    /// Enable DNS over encrypted protocols
+    pub tls_server_name: Option<String>,
+    /// Custom DNS query timeout
+    pub query_timeout: Duration,
+    /// Enable EDNS0 support
+    pub enable_edns0: bool,
+    /// Maximum message size for EDNS0
+    pub edns0_buffer_size: u16,
+}
+
+impl Default for DnsConfig {
+    fn default() -> Self {
+        Self {
+            server: "8.8.8.8".parse().unwrap(),
+            port: None,
+            transport: DnsTransport::Udp,
+            timeout: Duration::from_secs(5),
+            tls_server_name: None,
+            query_timeout: Duration::from_secs(3),
+            enable_edns0: true,
+            edns0_buffer_size: 1232,
+        }
+    }
+}
 
 /// DNS outbound connector
 #[derive(Debug, Clone)]
 pub struct DnsConnector {
-    _config: Option<()>, // Placeholder
+    config: DnsConfig,
+}
+
+impl DnsConnector {
+    /// Create a new DNS connector with the given configuration
+    pub fn new(config: DnsConfig) -> Self {
+        Self { config }
+    }
+
+    /// Get the DNS server address with port
+    fn server_addr(&self) -> SocketAddr {
+        let port = self.config.port.unwrap_or_else(|| self.config.transport.default_port());
+        SocketAddr::new(self.config.server, port)
+    }
+
+    /// Create a DNS connection based on transport protocol
+    async fn create_dns_connection(&self) -> Result<BoxedStream> {
+        let server_addr = self.server_addr();
+
+        match self.config.transport {
+            DnsTransport::Udp => {
+                // UDP DNS typically doesn't maintain persistent connections
+                // For UDP, we create a connected UDP socket that behaves like a stream
+                let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(AdapterError::Io)?;
+
+                socket.connect(server_addr).await.map_err(AdapterError::Io)?;
+
+                // Wrap UDP socket to behave like a stream
+                Ok(Box::new(UdpStreamWrapper::new(socket)))
+            }
+            DnsTransport::Tcp => {
+                // TCP DNS connection
+                let stream = tokio::time::timeout(
+                    self.config.timeout,
+                    TcpStream::connect(server_addr)
+                ).await
+                .map_err(|_| AdapterError::Timeout(self.config.timeout))?
+                .map_err(AdapterError::Io)?;
+
+                Ok(Box::new(stream))
+            }
+            DnsTransport::DoT => {
+                // DNS over TLS - for now, fallback to TCP
+                tracing::warn!("DNS over TLS not fully implemented, falling back to TCP");
+                let stream = tokio::time::timeout(
+                    self.config.timeout,
+                    TcpStream::connect(server_addr)
+                ).await
+                .map_err(|_| AdapterError::Timeout(self.config.timeout))?
+                .map_err(AdapterError::Io)?;
+
+                Ok(Box::new(stream))
+            }
+            DnsTransport::DoH => {
+                // DNS over HTTPS - requires HTTP client
+                return Err(AdapterError::Other(
+                    "DNS over HTTPS requires HTTP client implementation".to_string(),
+                ));
+            }
+            DnsTransport::DoQ => {
+                // DNS over QUIC - requires QUIC implementation
+                return Err(AdapterError::Other(
+                    "DNS over QUIC not yet implemented".to_string(),
+                ));
+            }
+        }
+    }
+
+    /// Validate DNS configuration
+    fn validate_config(&self) -> Result<()> {
+        if self.config.timeout.is_zero() {
+            return Err(AdapterError::InvalidConfig("DNS timeout cannot be zero"));
+        }
+
+        if self.config.query_timeout.is_zero() {
+            return Err(AdapterError::InvalidConfig("DNS query timeout cannot be zero"));
+        }
+
+        if matches!(self.config.transport, DnsTransport::DoT | DnsTransport::DoH)
+            && self.config.tls_server_name.is_none() {
+            tracing::warn!("TLS server name not specified for encrypted DNS transport");
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for DnsConnector {
     fn default() -> Self {
-        Self { _config: None }
+        Self::new(DnsConfig::default())
     }
 }
 
@@ -24,10 +173,110 @@ impl OutboundConnector for DnsConnector {
     }
 
     async fn start(&self) -> Result<()> {
-        Err(AdapterError::NotImplemented { what: "adapter-dns" })
+        // Validate configuration
+        self.validate_config()?;
+
+        // Test connectivity to DNS server
+        if let Err(e) = tokio::time::timeout(
+            self.config.timeout,
+            TcpStream::connect(self.server_addr())
+        ).await {
+            tracing::warn!("DNS server connectivity test failed: {:?}", e);
+            // Don't fail startup for connectivity issues
+        }
+
+        tracing::info!(
+            "DNS connector started - server: {}, transport: {:?}",
+            self.server_addr(),
+            self.config.transport
+        );
+
+        Ok(())
     }
 
-    async fn dial(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        Err(AdapterError::NotImplemented { what: "DNS dial" })
+    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
+        tracing::debug!("DNS connector dialing target: {:?}", target);
+
+        // For DNS connector, we create a connection to the DNS server
+        // The actual DNS resolution logic would be handled at a higher level
+        let stream = self.create_dns_connection().await?;
+
+        tracing::debug!(
+            "DNS connection established to server: {} via {:?}",
+            self.server_addr(),
+            self.config.transport
+        );
+
+        Ok(stream)
+    }
+}
+
+/// Wrapper to make UDP socket behave like a stream
+struct UdpStreamWrapper {
+    socket: UdpSocket,
+    buffer: Vec<u8>,
+}
+
+impl UdpStreamWrapper {
+    fn new(socket: UdpSocket) -> Self {
+        Self {
+            socket,
+            buffer: Vec::new(),
+        }
+    }
+}
+
+impl tokio::io::AsyncRead for UdpStreamWrapper {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if !self.buffer.is_empty() {
+            let to_copy = std::cmp::min(buf.remaining(), self.buffer.len());
+            buf.put_slice(&self.buffer[..to_copy]);
+            self.buffer.drain(..to_copy);
+            return std::task::Poll::Ready(Ok(()));
+        }
+
+        let mut scratch = [0u8; 2048];
+        let mut read_buf = tokio::io::ReadBuf::new(&mut scratch);
+        match std::pin::Pin::new(&mut self.socket).poll_recv(cx, &mut read_buf) {
+            std::task::Poll::Ready(Ok(())) => {
+                let filled = read_buf.filled();
+                let to_copy = std::cmp::min(buf.remaining(), filled.len());
+                buf.put_slice(&filled[..to_copy]);
+                if to_copy < filled.len() {
+                    self.buffer.extend_from_slice(&filled[to_copy..]);
+                }
+                std::task::Poll::Ready(Ok(()))
+            }
+            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),
+            std::task::Poll::Pending => std::task::Poll::Pending,
+        }
+    }
+}
+
+impl tokio::io::AsyncWrite for UdpStreamWrapper {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        std::pin::Pin::new(&mut self.socket).poll_send(cx, buf)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        std::task::Poll::Ready(Ok(()))
     }
 }

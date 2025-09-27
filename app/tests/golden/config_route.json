@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1:1080"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+  "rules": [
+    {
+      "domain_suffix": ["example.com"],
+      "outbound": "direct"
+    }
+  ],
+  "default_outbound": "direct"
+}

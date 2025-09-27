@@ -9,6 +9,7 @@ use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter, Int
 // =============================
 /// 新建的 TCP 连接总数
 pub static TCP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "socks_tcp_conn_total",
         "Total TCP connections accepted by SOCKS inbound"
@@ -18,6 +19,7 @@ pub static TCP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 
 /// TCP 层错误总数
 pub static TCP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "socks_tcp_error_total",
         "Total TCP errors observed by SOCKS inbound"
@@ -30,12 +32,14 @@ pub static TCP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 // =============================
 /// 当前 UDP NAT 表大小
 pub static UDP_NAT_SIZE: Lazy<IntGauge> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_gauge!(opts!("socks_udp_nat_size", "Current UDP NAT entries"))
         .expect("register socks_udp_nat_size")
 });
 
 /// UDP NAT 淘汰条目累计
 pub static UDP_NAT_EVICTIONS_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "socks_udp_nat_evictions_total",
         "Total UDP NAT eviction entries"
@@ -45,6 +49,7 @@ pub static UDP_NAT_EVICTIONS_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 
 /// 从客户端发往远端的 UDP 包总数（out）
 pub static UDP_PKTS_OUT_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "socks_udp_pkts_out_total",
         "Total UDP packets forwarded from client to remote"
@@ -54,6 +59,7 @@ pub static UDP_PKTS_OUT_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 
 /// 从远端返回到客户端的 UDP 包总数（in）
 pub static UDP_PKTS_IN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "socks_udp_pkts_in_total",
         "Total UDP packets forwarded from remote to client"

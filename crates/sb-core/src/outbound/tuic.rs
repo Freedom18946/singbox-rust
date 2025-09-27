@@ -9,11 +9,9 @@ use async_trait::async_trait;
 use std::io;
 #[cfg(feature = "out_tuic")]
 use std::net::SocketAddr;
-#[cfg(feature = "out_tuic")]
-use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt};
 
 #[cfg(feature = "out_tuic")]
-use super::quic::common::{connect as quic_connect, QuicConfig};
+use super::quic::common::QuicConfig;
 #[cfg(feature = "out_tuic")]
 use super::types::{HostPort, OutboundTcp};
 
@@ -57,24 +55,34 @@ impl TuicOutbound {
     }
 
     fn create_quinn_config(&self) -> io::Result<quinn::ClientConfig> {
-        use quinn::ClientConfig;
         use rustls::{ClientConfig as RustlsConfig, RootCertStore};
+        use std::sync::Arc;
 
-        let roots = RootCertStore::empty();
+        // Root store with system roots (webpki-roots)
+        let mut roots = RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
+        // Build rustls client config
         let mut tls_config = RustlsConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
 
+        // Apply ALPN protocols, e.g., ["tuic"]
         tls_config.alpn_protocols = self.quic_config.alpn.clone();
 
-        // Note: This is a placeholder implementation
-        // In a real implementation, you would need to properly configure the QUIC client
-        // For now, we'll create a basic configuration
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "QUIC configuration not fully implemented",
-        ))
+        // Optional: allow insecure for testing as per config
+        if self.quic_config.allow_insecure {
+            #[cfg(feature = "tls_rustls")]
+            {
+                use crate::tls::danger::NoVerify;
+                tls_config
+                    .dangerous()
+                    .set_certificate_verifier(Arc::new(NoVerify::new()));
+            }
+        }
+
+        // Use platform verifier for TLS roots; ALPN/SNI can be provided on connect.
+        Ok(quinn::ClientConfig::with_platform_verifier())
     }
 
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
@@ -179,7 +187,18 @@ impl OutboundTcp for TuicOutbound {
         let quinn_config = self.create_quinn_config()?;
 
         // Establish QUIC connection to server
-        let connection = match tuic_quic_connect(&quinn_config, server_addr).await {
+        let server_name = if self.config.server.parse::<std::net::IpAddr>().is_ok() {
+            // IPs don't make good SNI; use a neutral default when skipping verify
+            if self.quic_config.allow_insecure {
+                "localhost"
+            } else {
+                &self.config.server
+            }
+        } else {
+            &self.config.server
+        };
+
+        let connection = match tuic_quic_connect(&quinn_config, server_addr, server_name).await {
             Ok(conn) => conn,
             Err(e) => {
                 record_connect_error(
@@ -319,6 +338,7 @@ impl OutboundTcp for TuicOutbound {
 async fn tuic_quic_connect(
     config: &quinn::ClientConfig,
     server_addr: std::net::SocketAddr,
+    server_name: &str,
 ) -> Result<quinn::Connection, Box<dyn std::error::Error + Send + Sync>> {
     // Create QUIC endpoint
     let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
@@ -326,7 +346,7 @@ async fn tuic_quic_connect(
 
     // Connect to server
     let connection = endpoint
-        .connect(server_addr, "localhost")? // Use localhost as SNI, should be configurable
+        .connect(server_addr, server_name)?
         .await?;
 
     tracing::debug!("QUIC connection established to {}", server_addr);

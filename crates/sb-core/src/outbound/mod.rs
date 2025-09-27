@@ -488,10 +488,7 @@ async fn socks5_connect(cfg: &Socks5Config, ep: Endpoint) -> io::Result<TcpStrea
                 ));
             }
         } else if rep[1] != 0x00 {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "socks method not acceptable",
-            ));
+            return Err(io::Error::other("socks method not acceptable"));
         }
 
         let mut req = Vec::with_capacity(22);
@@ -533,7 +530,7 @@ async fn socks5_connect(cfg: &Socks5Config, ep: Endpoint) -> io::Result<TcpStrea
         let mut head = [0u8; 4];
         s.read_exact(&mut head).await?;
         if head[0] != 0x05 || head[1] != 0x00 {
-            return Err(io::Error::new(io::ErrorKind::Other, "socks connect failed"));
+            return Err(io::Error::other("socks connect failed"));
         }
         match head[3] {
             0x01 => {
@@ -650,7 +647,7 @@ async fn http_connect(cfg: &HttpProxyConfig, ep: Endpoint) -> io::Result<TcpStre
         }
         let ok = buf.starts_with(b"HTTP/1.1 200") || buf.starts_with(b"HTTP/1.0 200");
         if !ok {
-            return Err(io::Error::new(io::ErrorKind::Other, "http connect failed"));
+            return Err(io::Error::other("http connect failed"));
         }
         io::Result::Ok(())
     })
@@ -788,14 +785,14 @@ async fn shadowtls_connect(
     cfg: &shadowtls::ShadowTlsConfig,
     ep: Endpoint,
 ) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
+    use crypto_types::HostPort;
 
-    let target = match ep {
+    let _target = match ep {
         Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = shadowtls::ShadowTlsOutbound::new(cfg.clone()).map_err(|e| {
+    let _outbound = shadowtls::ShadowTlsOutbound::new(cfg.clone()).map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format!("ShadowTLS setup failed: {}", e),
@@ -812,14 +809,14 @@ async fn shadowtls_connect(
 
 #[cfg(feature = "out_naive")]
 async fn naive_connect(cfg: &naive_h2::NaiveH2Config, ep: Endpoint) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
+    use crypto_types::HostPort;
 
-    let target = match ep {
+    let _target = match ep {
         Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = naive_h2::NaiveH2Outbound::new(cfg.clone())
+    let _outbound = naive_h2::NaiveH2Outbound::new(cfg.clone())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Naive setup failed: {}", e)))?;
 
     // Note: Naive returns a compat stream, not a TcpStream
@@ -861,14 +858,14 @@ async fn vmess_connect(cfg: &vmess::VmessConfig, ep: Endpoint) -> io::Result<Tcp
 
 #[cfg(feature = "out_tuic")]
 async fn tuic_connect(cfg: &tuic::TuicConfig, ep: Endpoint) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
+    use crypto_types::HostPort;
 
-    let target = match ep {
+    let _target = match ep {
         Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = tuic::TuicOutbound::new(cfg.clone())
+    let _outbound = tuic::TuicOutbound::new(cfg.clone())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("TUIC setup failed: {}", e)))?;
 
     // Note: TUIC returns a compat stream, not a TcpStream
@@ -883,14 +880,14 @@ async fn hysteria2_connect(
     cfg: &hysteria2::Hysteria2Config,
     ep: Endpoint,
 ) -> io::Result<TcpStream> {
-    use crypto_types::{HostPort, OutboundTcp};
+    use crypto_types::HostPort;
 
-    let target = match ep {
+    let _target = match ep {
         Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = hysteria2::Hysteria2Outbound::new(cfg.clone()).map_err(|e| {
+    let _outbound = hysteria2::Hysteria2Outbound::new(cfg.clone()).map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format!("Hysteria2 setup failed: {}", e),
@@ -938,5 +935,8 @@ async fn ssh_connect(cfg: &ssh_stub::SshConfig, ep: Endpoint) -> io::Result<TcpS
     let outbound = ssh_stub::SshOutbound::new(cfg.clone())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("SSH setup failed: {}", e)))?;
 
-    outbound.connect(&target).await
+    outbound
+        .connect(&target)
+        .await
+        .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, format!("Failed to connect via SSH proxy: {}", e)))
 }

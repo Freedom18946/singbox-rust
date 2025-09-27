@@ -8,6 +8,7 @@
 
 pub mod dns;
 pub mod dns_v2;
+pub mod geoip;
 pub mod http;
 pub mod http_exporter;
 pub mod labels;

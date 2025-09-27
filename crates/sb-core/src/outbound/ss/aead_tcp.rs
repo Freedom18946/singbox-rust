@@ -1,5 +1,5 @@
 use super::super::address::{encode_ss_addr, get_port_from_target, Addr};
-use super::super::types::{Outbound, TargetAddr, TcpConnectRequest, UdpBindRequest};
+use super::super::types::{Outbound, TcpConnectRequest, UdpBindRequest};
 use super::hkdf::{derive_subkey, generate_salt, HashAlgorithm};
 use crate::metrics::outbound as metrics;
 use crate::telemetry::{err_kind, outbound_connect, outbound_handshake};
@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce as AesNonce};

@@ -32,9 +32,17 @@ pub struct JsonDoc {
 fn parse_decision(s: &str) -> Option<Decision> {
     match s.to_ascii_lowercase().as_str() {
         "direct" => Some(Decision::Direct),
-        "proxy" => Some(Decision::Proxy),
+        "proxy" => Some(Decision::Proxy(None)),
         "reject" => Some(Decision::Reject),
-        _ => None,
+        _ => {
+            // Handle "proxy:name" format
+            if s.starts_with("proxy:") && s.len() > 6 {
+                let proxy_name = s[6..].to_string();
+                Some(Decision::Proxy(Some(proxy_name)))
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -73,17 +81,17 @@ fn to_rules(mut doc: JsonDoc) -> Vec<Rule> {
         let t_rule = match jr.transport.as_deref().map(|s| s.to_ascii_lowercase()) {
             Some(ref t) if t == "udp" => Some(Rule {
                 kind: RuleKind::TransportUdp,
-                decision,
+                decision: decision.clone(),
             }),
             Some(ref t) if t == "tcp" => Some(Rule {
                 kind: RuleKind::TransportTcp,
-                decision,
+                decision: decision.clone(),
             }),
             _ => None,
         };
         // 主体规则：支持大量别名
         let mut append = |rk: RuleKind| {
-            out.push(Rule { kind: rk, decision });
+            out.push(Rule { kind: rk, decision: decision.clone() });
         };
         match k.as_str() {
             // domain exact

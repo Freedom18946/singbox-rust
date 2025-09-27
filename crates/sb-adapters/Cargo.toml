@@ -2,7 +2,7 @@
 name = "sb-adapters"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.90"
 license = "Apache-2.0"
 description = "Proxy adapters for singbox-rust"
 repository = "https://github.com/singbox-rust/singbox-rust"
@@ -40,7 +40,7 @@ metrics = { version = "0.23", optional = true }
 clap = { version = "4", optional = true, features = ["derive"] }
 
 # 工作区内依赖（按你的仓库结构）
-sb-core = { path = "../sb-core", features = ["router"] }
+sb-core = { path = "../sb-core", features = ["router", "scaffold"] }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
 sb-metrics = { path = "../sb-metrics", optional = true }

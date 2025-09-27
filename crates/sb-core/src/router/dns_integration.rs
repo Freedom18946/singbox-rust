@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::{DnsResolverBridge, EnhancedDnsResolver, RouterHandle};
+use super::{EnhancedDnsResolver, RouterHandle};
 use crate::dns::{Resolver, ResolverHandle};
 
 /// DNS integration configuration

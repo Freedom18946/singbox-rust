@@ -15,7 +15,7 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce as ChaNonce};
 use sha2::{Sha256, Digest};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac};
 use rand::RngCore;
 
 /// Shadowsocks configuration
@@ -65,6 +65,7 @@ impl CipherMethod {
         }
     }
 
+    #[allow(dead_code)]
     fn tag_size(&self) -> usize {
         16 // Both AES-GCM and ChaCha20-Poly1305 use 16-byte tags
     }

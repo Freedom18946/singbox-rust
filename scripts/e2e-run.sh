@@ -54,7 +54,74 @@ if "${ROOT}/target/debug/${BIN:-singbox-rust}" bench io --url http://example.com
   if grep -q '"histogram"' "$OUT/bench.json"; then BENCH="ok"; else BENCH="bad_json"; fi
 fi
 
-# 4) Write summary
+# 4) Run acceptance test suite A1-A5
+echo "[e2e] Running acceptance tests..."
+ACCEPTANCE_RESULTS=()
+ACCEPTANCE_OVERALL="pass"
+
+# A1: Go vs Rust route --explain compatibility
+echo "[e2e] A1: Go vs Rust compatibility"
+if bash "${ROOT}/scripts/A1_explain_replay.sh" >/dev/null 2>&1; then
+  A1_STATUS="pass"
+else
+  case $? in
+    77) A1_STATUS="skip" ;;
+    *) A1_STATUS="fail"; ACCEPTANCE_OVERALL="partial" ;;
+  esac
+fi
+ACCEPTANCE_RESULTS+=("A1:$A1_STATUS")
+
+# A2: Schema v2 validation
+echo "[e2e] A2: Schema v2 validation"
+if bash "${ROOT}/scripts/A2_schema_v2_acceptance.sh" >/dev/null 2>&1; then
+  A2_STATUS="pass"
+else
+  case $? in
+    77) A2_STATUS="skip" ;;
+    *) A2_STATUS="fail"; ACCEPTANCE_OVERALL="partial" ;;
+  esac
+fi
+ACCEPTANCE_RESULTS+=("A2:$A2_STATUS")
+
+# A3: UDP stress and metrics
+echo "[e2e] A3: UDP stress testing"
+if bash "${ROOT}/scripts/A3_udp_stress_metrics.sh" >/dev/null 2>&1; then
+  A3_STATUS="pass"
+else
+  case $? in
+    77) A3_STATUS="skip" ;;
+    *) A3_STATUS="fail"; ACCEPTANCE_OVERALL="partial" ;;
+  esac
+fi
+ACCEPTANCE_RESULTS+=("A3:$A3_STATUS")
+
+# A4: Prometheus noise reduction
+echo "[e2e] A4: Prometheus noise reduction"
+if bash "${ROOT}/scripts/A4_prom_noise_regression.sh" >/dev/null 2>&1; then
+  A4_STATUS="pass"
+else
+  case $? in
+    77) A4_STATUS="skip" ;;
+    *) A4_STATUS="fail"; ACCEPTANCE_OVERALL="partial" ;;
+  esac
+fi
+ACCEPTANCE_RESULTS+=("A4:$A4_STATUS")
+
+# A5: RC package verification
+echo "[e2e] A5: RC package verification"
+if bash "${ROOT}/scripts/A5_rc_package_verification.sh" >/dev/null 2>&1; then
+  A5_STATUS="pass"
+else
+  case $? in
+    77) A5_STATUS="skip" ;;
+    *) A5_STATUS="fail"; ACCEPTANCE_OVERALL="partial" ;;
+  esac
+fi
+ACCEPTANCE_RESULTS+=("A5:$A5_STATUS")
+
+echo "[e2e] Acceptance tests completed: ${ACCEPTANCE_RESULTS[*]}"
+
+# 5) Write summary
 TS=$(date -u +%FT%TZ)
 cat >"$OUT/summary.json" <<JSON
 {
@@ -62,7 +129,11 @@ cat >"$OUT/summary.json" <<JSON
   "tests_status": $E2E_STATUS,
   "go_present": $( [[ -n "${GO_SINGBOX_BIN:-}" ]] && echo true || echo false ),
   "compat": "$COMPAT",
-  "bench_json": "$BENCH"
+  "bench_json": "$BENCH",
+  "acceptance": {
+    "overall": "$ACCEPTANCE_OVERALL",
+    "results": [$(IFS=','; printf '"%s"' "${ACCEPTANCE_RESULTS[*]}" | sed 's/","/","/g')]
+  }
 }
 JSON
 

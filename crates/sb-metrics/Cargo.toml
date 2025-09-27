@@ -2,7 +2,7 @@
 name = "sb-metrics"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.90"
 license = "Apache-2.0"
 description = "Metrics and monitoring for singbox-rust"
 repository = "https://github.com/singbox-rust/singbox-rust"

@@ -25,8 +25,13 @@ fn is_private_ipv4(ip: Ipv4Addr) -> bool {
     }
 }
 
+#[inline]
+fn is_unique_local_v6(ip: Ipv6Addr) -> bool {
+    // fc00::/7 → 0b11111100 mask
+    (ip.octets()[0] & 0xfe) == 0xfc
+}
 fn is_private_ipv6(ip: Ipv6Addr) -> bool {
-    ip.is_unique_local() || ip.is_loopback() || ip.is_unspecified() || is_ipv4_mapped_ipv6(ip)
+    is_unique_local_v6(ip) || ip.is_loopback() || ip.is_unspecified() || is_ipv4_mapped_ipv6(ip)
 }
 
 // Helper function to check if IPv6 address is IPv4-mapped (::ffff:x.y.z.w)

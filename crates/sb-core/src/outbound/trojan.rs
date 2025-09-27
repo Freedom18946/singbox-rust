@@ -5,7 +5,7 @@ use async_trait::async_trait;
 #[cfg(feature = "out_trojan")]
 use rustls::pki_types::ServerName;
 #[cfg(feature = "out_trojan")]
-use rustls::{ClientConfig, RootCertStore};
+use rustls::ClientConfig;
 #[cfg(feature = "out_trojan")]
 use std::sync::Arc;
 #[cfg(feature = "out_trojan")]
@@ -58,20 +58,31 @@ pub struct TrojanOutbound {
 impl TrojanOutbound {
     pub fn new(config: TrojanConfig) -> std::io::Result<Self> {
         // Create TLS configuration for Trojan
+        // Root store with system roots
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(rustls::RootCertStore::empty())
+            .with_root_certificates(roots)
             .with_no_client_auth();
 
-        if config.skip_cert_verify
-            && std::env::var("SB_TROJAN_SKIP_CERT_VERIFY").ok().as_deref() == Some("true")
-        {
+        let insecure_env = std::env::var("SB_TROJAN_SKIP_CERT_VERIFY").ok().map(|v| v=="1"||v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        if config.skip_cert_verify || insecure_env {
             tracing::warn!("Trojan: insecure mode enabled, certificate verification disabled");
+            #[cfg(feature = "tls_rustls")]
+            {
+                let v = crate::tls::danger::NoVerify::new();
+                tls_config.dangerous().set_certificate_verifier(std::sync::Arc::new(v));
+            }
         }
 
         // Configure ALPN if specified
         if let Ok(alpn_env) = std::env::var("SB_TROJAN_ALPN") {
             if !alpn_env.is_empty() {
                 tls_config.alpn_protocols = vec![alpn_env.as_bytes().to_vec()];
+            }
+        } else if let Some(alpn) = &config.alpn {
+            if !alpn.is_empty() {
+                tls_config.alpn_protocols = alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
             }
         }
 
@@ -176,7 +187,7 @@ impl TrojanOutbound {
                 // Received proper 200 OK response
                 #[cfg(feature = "metrics")]
                 {
-                    use crate::metrics::outbound;
+                    
                     metrics::counter!("trojan_handshake_total", "result" => "ok", "response" => "200").increment(1);
                 }
             }
@@ -184,7 +195,7 @@ impl TrojanOutbound {
                 // Received response but not 200 OK, tolerate it
                 #[cfg(feature = "metrics")]
                 {
-                    use crate::metrics::outbound;
+                    
                     metrics::counter!("trojan_handshake_total", "result" => "ok", "response" => "non_200").increment(1);
                 }
             }
@@ -192,7 +203,7 @@ impl TrojanOutbound {
                 // No response or timeout, tolerate it for compatibility
                 #[cfg(feature = "metrics")]
                 {
-                    use crate::metrics::outbound;
+                    
                     metrics::counter!("trojan_handshake_total", "result" => "ok", "response" => "empty").increment(1);
                 }
             }

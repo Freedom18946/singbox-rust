@@ -451,7 +451,7 @@ mod real {
         Ok(None)
     }
 
-    fn main() -> Result<()> {
+    pub fn main() -> Result<()> {
         let opt = Opt::parse();
         match opt.cmd {
             Cmd::Encode {
@@ -920,3 +920,12 @@ mod real {
 
 #[cfg(feature = "handshake_alpha")]
 pub use real::*;
+
+// Provide a real entrypoint when feature is enabled
+#[cfg(feature = "handshake_alpha")]
+fn main() {
+    if let Err(e) = real::main() {
+        eprintln!("handshake failed: {e}");
+        std::process::exit(1);
+    }
+}

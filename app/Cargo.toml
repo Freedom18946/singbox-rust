@@ -20,12 +20,21 @@ admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http"
 
 ## 子能力（从 observe 派生，按需组合）
 subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscribe"]   # /subs/fetch
-subs_clash  = []
-subs_singbox= []
+subs_clash  = ["sb-subscribe/subs_clash"]
+subs_singbox= ["sb-subscribe/subs_singbox"]
+explain = ["sb-core/explain"]
+rule_coverage = ["sb-core/rule_coverage"]
+dsl_plus = ["sb-core/dsl_plus"]
+dsl_analyze = ["sb-core/dsl_analyze"]
+dsl_derive = ["sb-core/dsl_derive"]
+pprof = []
+loom = []
+io_local_alpha = ["sb-runtime/io_local_alpha"]
 
 ## Empty features for check-cfg quieting
-handshake_alpha = []
-failpoints = []
+handshake_alpha = ["sb-runtime", "sb-runtime/handshake_alpha"]
+preview_route = ["sb-core/preview_route"]
+failpoints = ["sb-core/chaos"]
 
 ## 新增组合预设（示例）
 cli_min = []                         # 仅 CLI，不拉业务依赖
@@ -102,6 +111,7 @@ path = "src/bin/version.rs"
 [[bin]]
 name = "handshake"
 path = "src/bin/handshake.rs"
+required-features = ["handshake_alpha"]
 
 [[bin]]
 name = "sb-bench"
@@ -136,6 +146,7 @@ hmac        = "0.12"
 subtle      = "2.5"
 hex         = "0.4"
 httparse    = "1.8"
+hyper       = "0.14"
 tokio-rustls = "0.25"
 rustls      = "0.23"
 rustls-pemfile = "2.1"
@@ -146,6 +157,7 @@ sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = 
 sb-config   = { path = "../crates/sb-config", package = "sb-config" }
 sb-metrics  = { path = "../crates/sb-metrics", optional = true }
 sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
+sb-runtime  = { path = "../crates/sb-runtime", optional = true }
 reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream"], optional = true }
 url         = { version = "2", optional = true }
 bytes       = { version = "1", optional = true }

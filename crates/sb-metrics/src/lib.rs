@@ -7,7 +7,7 @@ pub mod registry;
 pub mod server;
 pub mod socks;
 pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线
-use std::{convert::Infallible, net::SocketAddr, time::Instant};
+use std::{convert::Infallible, net::SocketAddr, sync::atomic::{AtomicU64, Ordering}, time::{Duration, Instant}};
 
 use hyper::server::conn::Http;
 use hyper::service::service_fn;
@@ -19,7 +19,56 @@ use prometheus::{
 };
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::{info, warn, debug};
+
+/// Error rate limiter for metrics server to prevent log noise
+struct ErrorRateLimiter {
+    accept_errors: AtomicU64,
+    connection_errors: AtomicU64,
+    last_accept_log: std::sync::Mutex<Instant>,
+    last_connection_log: std::sync::Mutex<Instant>,
+}
+
+impl ErrorRateLimiter {
+    fn new() -> Self {
+        Self {
+            accept_errors: AtomicU64::new(0),
+            connection_errors: AtomicU64::new(0),
+            last_accept_log: std::sync::Mutex::new(Instant::now()),
+            last_connection_log: std::sync::Mutex::new(Instant::now()),
+        }
+    }
+
+    /// Log accept errors with rate limiting (max once per 30 seconds)
+    fn log_accept_error(&self, e: &dyn std::fmt::Display) {
+        let count = self.accept_errors.fetch_add(1, Ordering::Relaxed) + 1;
+
+        if let Ok(mut last_log) = self.last_accept_log.try_lock() {
+            if last_log.elapsed() >= Duration::from_secs(30) {
+                warn!(error=%e, count=%count, "metrics accept failed (rate limited)");
+                *last_log = Instant::now();
+                self.accept_errors.store(0, Ordering::Relaxed);
+            }
+        }
+        // If we can't get the lock, just increment counter silently
+    }
+
+    /// Log connection errors with rate limiting (max once per 30 seconds)
+    fn log_connection_error(&self, e: &dyn std::fmt::Display) {
+        let count = self.connection_errors.fetch_add(1, Ordering::Relaxed) + 1;
+
+        if let Ok(mut last_log) = self.last_connection_log.try_lock() {
+            if last_log.elapsed() >= Duration::from_secs(30) {
+                warn!(error=%e, count=%count, "metrics serve_connection error (rate limited)");
+                *last_log = Instant::now();
+                self.connection_errors.store(0, Ordering::Relaxed);
+            }
+        }
+        // If we can't get the lock, just increment counter silently
+    }
+}
+
+static ERROR_RATE_LIMITER: Lazy<ErrorRateLimiter> = Lazy::new(ErrorRateLimiter::new);
 
 pub static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
 
@@ -381,7 +430,7 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
             let (stream, _peer) = match listener.accept().await {
                 Ok(x) => x,
                 Err(e) => {
-                    warn!(error=%e, "metrics accept failed");
+                    ERROR_RATE_LIMITER.log_accept_error(&e);
                     continue;
                 }
             };
@@ -390,7 +439,7 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
                     .serve_connection(stream, service_fn(metrics_http))
                     .await
                 {
-                    warn!(error=%e, "metrics serve_connection error");
+                    ERROR_RATE_LIMITER.log_connection_error(&e);
                 }
             });
         }

@@ -12,6 +12,8 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 
 use sb_core::net::udp_nat::{NatKey, NatMap, TargetAddr, UpstreamError, record_upstream_failure, update_flow_metrics};
+use sb_core::net::datagram::UdpTargetAddr;
+use sb_core::outbound::udp_socks5;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::rules as rules_global;
 use sb_core::error::SbError;
@@ -240,8 +242,36 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                 continue;
             }
             RDecision::Proxy(_) => {
-                // TODO: Implement proxy forwarding
-                tracing::warn!("UDP proxy forwarding not yet implemented, falling back to direct");
+                // Proxy via upstream SOCKS5 if configured (SB_UDP_PROXY_MODE=socks5 and address provided)
+                if std::env::var("SB_UDP_PROXY_MODE")
+                    .ok()
+                    .map(|v| v.eq_ignore_ascii_case("socks5"))
+                    .unwrap_or(false)
+                {
+                    let udp_target = match &target {
+                        TargetAddr::Ip(sa) => UdpTargetAddr::Ip(*sa),
+                        TargetAddr::Domain { host, port } => UdpTargetAddr::Domain {
+                            host: host.clone(),
+                            port: *port,
+                        },
+                    };
+                    let payload = &buffer[header_len..bytes_received];
+                    match udp_socks5::sendto_via_socks5(&socket, payload, &udp_target).await {
+                        Ok(_n) => {
+                            #[cfg(feature = "metrics")]
+                            {
+                                counter!("udp_pkts_out_total").increment(1);
+                                counter!("udp_bytes_out_total").increment(payload.len() as u64);
+                            }
+                            // Rely on SOCKS5 upstream conn to deliver replies; not handled here.
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::warn!("UDP proxy send failed: {}", e);
+                            // fall through to direct when allowed
+                        }
+                    }
+                }
             }
             RDecision::Direct => {}
         }

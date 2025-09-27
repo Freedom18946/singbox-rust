@@ -2,7 +2,6 @@
 //! This module provides adapters to integrate the DNS system into routing decisions
 
 use std::future::Future;
-use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 

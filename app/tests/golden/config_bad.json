@@ -1,0 +1,17 @@
+{
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1",
+      "port": "not_a_number",
+      "__unknown_field__": true
+    }
+  ],
+  "outbounds": [],
+  "rules": [
+    {
+      "domain_suffix": [],
+      "outbound": "nonexistent"
+    }
+  ]
+}

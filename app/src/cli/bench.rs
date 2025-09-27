@@ -295,7 +295,7 @@ async fn bench_io(url: String, requests: u32, concurrency: usize, json: bool,
     let final_path = out_path.or(save_path);
     if let Some(path) = final_path {
         let data = serde_json::to_string_pretty(&to_fixed_schema(&out))?;
-        crate::util::write_atomic(&path, data.as_bytes())
+        app::util::write_atomic(&path, data.as_bytes())
           .with_context(|| format!("write histogram json atomically to {:?}", path))?;
     }
     Ok(())

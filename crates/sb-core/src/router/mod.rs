@@ -257,11 +257,14 @@ impl RouterIndex {
             for (dom, dec) in &self.suffix {
                 t.insert_suffix(dom, *dec);
             }
-            *trie.lock().unwrap() = t;
+            *trie.lock().unwrap_or_else(|e| e.into_inner()) = t;
             ver.store(cur, Ordering::Relaxed);
         }
         if std::env::var("SB_ROUTER_SUFFIX_TRIE").ok().as_deref() == Some("1") {
-            trie.lock().unwrap().query(host)
+            {
+                let guard = trie.lock().unwrap_or_else(|e| e.into_inner());
+                guard.query(host)
+            }
         } else {
             None
         }
@@ -271,8 +274,10 @@ impl RouterIndex {
 impl RouterIndex {
     #[allow(dead_code)]
     pub(crate) fn checksum_version64(&self) -> u64 {
-        use std::convert::TryInto;
-        u64::from_le_bytes(self.checksum[0..8].try_into().unwrap())
+        // Avoid unwrap: copy bytes explicitly; length is guaranteed by checksum invariant.
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(&self.checksum[0..8]);
+        u64::from_le_bytes(arr)
     }
 
     pub fn decide_http_explain(&self, host_norm: &str) -> crate::router::engine::DecisionExplain {
@@ -289,6 +294,8 @@ impl RouterIndex {
                     decision: dec.clone(),
                     reason: "keyword_match".to_string(),
                     reason_kind: "keyword".to_string(),
+                    #[cfg(feature = "router_cache_explain")]
+                    cache_status: None,
                 };
             }
         }
@@ -773,7 +780,7 @@ pub fn router_build_index_from_str(
         rules_capture::capture(&expanded);
     }
     let checksum = blake3_checksum(&expanded /* 使用展开后的文本 */);
-    let idx = RouterIndex {
+    let mut idx = RouterIndex {
         exact,
         suffix,
         suffix_map,
@@ -1435,7 +1442,7 @@ impl HotReloader {
         }
         // 原子切换
         let shared = shared_index();
-        *shared.write().expect("poisoned") = idx.clone();
+        *shared.write().unwrap_or_else(|e| e.into_inner()) = idx.clone();
         #[cfg(feature = "metrics")]
         incr_counter("router_rules_reload_total", &[("result", "success")]);
         Ok(Some(idx))
@@ -1459,6 +1466,7 @@ fn next_backoff(prev: u64, cap: u64) -> u64 {
 pub mod bench_api {
     use super::*;
     /// 构建索引供基准使用；避免基准测试复制内部细节
+    #[allow(clippy::expect_used)]
     pub fn build_index(text: &str) -> Arc<RouterIndex> {
         super::router_build_index_from_str(text, 1 << 24).expect("bench build index")
     }
@@ -1475,7 +1483,7 @@ pub async fn spawn_rules_hot_reload(
         .unwrap_or(0);
     if file.is_empty() || interval_ms == 0 {
         // 热重载未启用，直接返回一个 no-op handle
-        return Ok(tokio::spawn(async move { () }));
+        return Ok(tokio::spawn(async move {}));
     }
     let path = PathBuf::from(&file);
     let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
@@ -1503,7 +1511,7 @@ pub async fn spawn_rules_hot_reload(
                 match read_rules_with_includes(&path, 0, &mut visited).await {
                     Ok(text) => {
                         // 与当前 checksum 比较，避免无谓切换
-                        let cur_sum = { (*shared.read().expect("poisoned")).checksum };
+                        let cur_sum = { (*shared.read().unwrap_or_else(|e| e.into_inner())).checksum };
                         let mut hasher = Blake3::new();
                         hasher.update(text.as_bytes());
                         let new_sum = *hasher.finalize().as_bytes();
@@ -1518,7 +1526,7 @@ pub async fn spawn_rules_hot_reload(
                             Ok(new_idx) => {
                                 let elapsed = build_start.elapsed().as_millis() as f64;
                                 // 生成号 +1，并暴露 generation
-                                let mut w = shared.write().expect("poisoned");
+                                let mut w = shared.write().unwrap_or_else(|e| e.into_inner());
                                 let prev_gen = w.gen;
                                 let mut idx_cloned = (*new_idx).clone();
                                 idx_cloned.gen = prev_gen.saturating_add(1);
@@ -1839,7 +1847,7 @@ pub fn runtime_override_udp(host_norm: &str) -> Option<(&'static str, &'static s
 /// —— 快照摘要导出（JSON 字符串；feature=json 才返回 JSON，否则返回人类可读文本）———
 pub fn router_snapshot_summary() -> String {
     let snap = shared_index();
-    let idx = snap.read().expect("poisoned");
+    let idx = snap.read().unwrap_or_else(|e| e.into_inner());
     let sizes = RuleSizes {
         exact: idx.exact.len(),
         suffix: idx.suffix.len(),
@@ -1877,7 +1885,7 @@ pub fn router_snapshot_summary() -> String {
 /// R14: 对外导出获取当前索引并生成 cache 摘要（只读）
 pub fn router_cache_summary() -> String {
     let s = shared_index();
-    let guard = s.read().expect("poisoned");
+    let guard = s.read().unwrap_or_else(|e| e.into_inner());
     guard.decision_cache_summary_json()
 }
 
@@ -1908,7 +1916,16 @@ fn hex_checksum(bytes: &[u8; 32]) -> String {
 /// 旧接口：HTTP 决策（同步、零 DNS）。支持 "host" 或 "host:port" 或字面量 IP。
 pub fn decide_http(target: &str) -> RouteDecision {
     // 改为共享快照：零分配、零 rebuild
-    let idx = { shared_index().read().expect("poisoned").clone() };
+    let idx = {
+        shared_index()
+            .read()
+            .unwrap_or_else(|e| {
+                #[allow(clippy::print_stderr)]
+                eprintln!("RwLock poisoned; proceeding with inner guard");
+                e.into_inner()
+            })
+            .clone()
+    };
 
     // 解析目标
     let (host_raw, port_opt) = if let Some((h, p)) = target.rsplit_once(':') {

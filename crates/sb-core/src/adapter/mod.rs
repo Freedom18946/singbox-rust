@@ -5,6 +5,7 @@ use std::net::TcpStream;
 use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
+pub mod bridge;
 
 /// 入站服务（如 socks/http/tun）统一接口
 pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {

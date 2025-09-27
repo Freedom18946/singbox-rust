@@ -68,5 +68,9 @@ async fn main() -> anyhow::Result<()> {
             cli::route::run(a)?;
             Ok(())
         }
+        cli::Commands::Version(a) => {
+            cli::version::run(a)?;
+            Ok(())
+        }
     }
 }

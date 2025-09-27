@@ -194,10 +194,31 @@ impl Socks5Connector {
     }
 
     /// Create BIND connection through SOCKS5 BIND (passive TCP connection)
-    /// This is a placeholder implementation - BIND functionality not yet implemented
     #[cfg(feature = "socks-bind")]
-    pub async fn dial_bind(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        Err(AdapterError::NotImplemented { what: "socks-bind" })
+    pub async fn dial_bind(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+        // Parse proxy server address
+        let proxy_addr: SocketAddr = self
+            .config
+            .server
+            .parse()
+            .with_context(|| format!("Invalid SOCKS5 proxy address: {}", self.config.server))
+            .map_err(|e| AdapterError::Other(e.to_string()))?;
+
+        // Connect to proxy server with timeout
+        let mut stream = tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
+            .await
+            .with_context(|| format!("Failed to connect to SOCKS5 proxy {}", proxy_addr))
+            .map_err(|e| AdapterError::Other(e.to_string()))?
+            .with_context(|| format!("TCP connection to SOCKS5 proxy {} failed", proxy_addr))
+            .map_err(|e| AdapterError::Other(e.to_string()))?;
+
+        // Perform SOCKS5 handshake
+        self.socks5_handshake(&mut stream, opts.connect_timeout).await?;
+
+        // Perform BIND and wait for incoming connection
+        self.socks5_bind(&mut stream, &target, &opts).await?;
+
+        Ok(Box::new(stream) as BoxedStream)
     }
 }
 
@@ -695,6 +716,132 @@ impl Socks5Connector {
         tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut skip_buf))
             .await
             .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Response read timeout")))??;
+
+        Ok(())
+    }
+
+    /// Perform BIND command and wait for second reply indicating an incoming connection
+    #[cfg(feature = "socks-bind")]
+    async fn socks5_bind(&self, stream: &mut TcpStream, target: &Target, opts: &DialOpts) -> Result<()> {
+        use std::time::Duration;
+        // Build BIND request
+        let mut request = vec![0x05, 0x02, 0x00]; // VER, CMD=BIND, RSV
+        // Address: allow remote resolution or send IP/domain based on ResolveMode
+        match opts.resolve_mode {
+            ResolveMode::Local => {
+                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                    match ip {
+                        IpAddr::V4(v4) => {
+                            request.push(0x01);
+                            request.extend_from_slice(&v4.octets());
+                        }
+                        IpAddr::V6(v6) => {
+                            request.push(0x04);
+                            request.extend_from_slice(&v6.octets());
+                        }
+                    }
+                } else {
+                    // Resolve locally
+                    let addrs = tokio::time::timeout(
+                        opts.connect_timeout,
+                        tokio::net::lookup_host((&target.host[..], target.port)),
+                    )
+                    .await
+                    .map_err(|_| AdapterError::Network("DNS timeout".to_string()))
+                    .and_then(|r| r.map_err(|e| AdapterError::Network(e.to_string())))?;
+                    if let Some(sa) = addrs.into_iter().next() {
+                        match sa.ip() {
+                            IpAddr::V4(v4) => {
+                                request.push(0x01);
+                                request.extend_from_slice(&v4.octets());
+                            }
+                            IpAddr::V6(v6) => {
+                                request.push(0x04);
+                                request.extend_from_slice(&v6.octets());
+                            }
+                        }
+                    } else {
+                        return Err(AdapterError::Network(format!("Failed to resolve {}", target.host)));
+                    }
+                }
+            }
+            ResolveMode::Remote => {
+                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                    match ip {
+                        IpAddr::V4(v4) => {
+                            request.push(0x01);
+                            request.extend_from_slice(&v4.octets());
+                        }
+                        IpAddr::V6(v6) => {
+                            request.push(0x04);
+                            request.extend_from_slice(&v6.octets());
+                        }
+                    }
+                } else {
+                    if target.host.len() > 255 {
+                        return Err(AdapterError::InvalidConfig("Domain name too long"));
+                    }
+                    request.push(0x03);
+                    request.push(target.host.len() as u8);
+                    request.extend_from_slice(target.host.as_bytes());
+                }
+            }
+        }
+        request.extend_from_slice(&target.port.to_be_bytes());
+
+        // Send BIND request
+        tokio::time::timeout(opts.connect_timeout, stream.write_all(&request))
+            .await
+            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind write timeout")))??;
+
+        // Read first reply (bind address)
+        let mut head = [0u8; 4];
+        tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut head))
+            .await
+            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind read timeout")))??;
+        if head[0] != 0x05 { return Err(AdapterError::Protocol(format!("Invalid SOCKS version: {}", head[0]))); }
+        if head[1] != 0x00 {
+            return Err(AdapterError::Protocol(format!("SOCKS bind failed (code: {})", head[1])));
+        }
+        // Skip bound addr in first reply
+        let skip = match head[3] { 0x01 => 6, 0x04 => 18, 0x03 => {
+            let mut l=[0u8;1]; tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut l)).await
+                .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind read timeout")))??;
+            l[0] as usize + 2 }, _ => return Err(AdapterError::Protocol("Invalid ATYP in bind reply".into())) };
+        let mut sink = vec![0u8; skip];
+        tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut sink))
+            .await
+            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind read timeout")))??;
+
+        // Wait for second reply (incoming connection accepted). Use a generous timeout (connect_timeout * 2)
+        let wait = opts
+            .connect_timeout
+            .checked_mul(2)
+            .unwrap_or(Duration::from_secs(60));
+        tokio::time::timeout(wait, async {
+            let mut head2 = [0u8; 4];
+            stream.read_exact(&mut head2).await?;
+            if head2[0] != 0x05 || head2[1] != 0x00 {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "BIND not accepted"));
+            }
+            // Skip addr
+            let skip2 = match head2[3] {
+                0x01 => 6,
+                0x04 => 18,
+                0x03 => {
+                    let mut l = [0u8; 1];
+                    stream.read_exact(&mut l).await?;
+                    l[0] as usize + 2
+                }
+                _ => 0,
+            };
+            let mut sink2 = vec![0u8; skip2];
+            if skip2 > 0 { stream.read_exact(&mut sink2).await?; }
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .map_err(|_| AdapterError::Other("BIND accept timeout".into()))
+        .and_then(|r| r.map_err(AdapterError::Io))?;
 
         Ok(())
     }

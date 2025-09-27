@@ -303,7 +303,7 @@ fn test_error_types_comprehensive() {
         TunError::DeviceBusy("test-device".to_string()),
         TunError::InvalidConfig("invalid setting".to_string()),
         TunError::OperationFailed("operation failed".to_string()),
-        TunError::IoError(std::io::Error::new(std::io::ErrorKind::Other, "test error")),
+        TunError::IoError(std::io::Error::other("test error")),
     ];
 
     for error in errors {

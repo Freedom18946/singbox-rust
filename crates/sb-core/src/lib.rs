@@ -17,6 +17,7 @@ pub mod router;
 pub mod runtime;
 pub mod session;
 pub mod socks5;
+pub mod subscribe;
 pub mod telemetry;
 pub mod transport;
 pub mod types;
@@ -34,5 +35,8 @@ pub mod obs;
 pub mod observe {
     pub use crate::outbound::observe::*;
 }
+
+// TLS utilities
+pub mod tls;
 
 pub use adapter::*; // 兼容 re-export

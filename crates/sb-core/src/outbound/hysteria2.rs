@@ -13,7 +13,7 @@
 #[cfg(feature = "out_hysteria2")]
 use async_trait::async_trait;
 #[cfg(feature = "out_hysteria2")]
-use quinn::{Connection, RecvStream, SendStream};
+use quinn::Connection;
 #[cfg(feature = "out_hysteria2")]
 use rand::Rng;
 #[cfg(feature = "out_hysteria2")]
@@ -28,8 +28,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[cfg(feature = "out_hysteria2")]
 use tokio::sync::Mutex;
-#[cfg(feature = "out_hysteria2")]
-use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt};
 
 #[cfg(feature = "out_hysteria2")]
 use super::quic::common::{connect as quic_connect, QuicConfig};
@@ -226,19 +224,62 @@ impl Hysteria2Outbound {
 
     /// Get or create a QUIC connection with connection pooling
     async fn get_connection(&self) -> io::Result<Connection> {
-        let mut pool = self.connection_pool.lock().await;
-
-        // Check if we have a valid existing connection
-        if let Some(ref conn) = *pool {
-            if !conn.close_reason().is_some() {
-                return Ok(conn.clone());
+        // Fast path: return existing healthy connection
+        if let Some(conn) = {
+            let pool = self.connection_pool.lock().await;
+            pool.as_ref().cloned()
+        } {
+            if conn.close_reason().is_none() {
+                return Ok(conn);
             }
         }
 
-        // Create new connection
-        let connection = self.create_new_connection().await?;
-        *pool = Some(connection.clone());
-        Ok(connection)
+        // Retry with exponential backoff
+        let max_retries = std::env::var("SB_HYSTERIA2_MAX_RETRIES")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(3)
+            .min(8);
+        let base_ms = std::env::var("SB_HYSTERIA2_BACKOFF_MS_BASE")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(200);
+        let cap_ms = std::env::var("SB_HYSTERIA2_BACKOFF_MS_MAX")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(2_000);
+
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
+            match self.create_new_connection().await {
+                Ok(connection) => {
+                    let mut pool = self.connection_pool.lock().await;
+                    *pool = Some(connection.clone());
+                    #[cfg(feature = "metrics")]
+                    {
+                        use metrics::counter;
+                        counter!("hysteria2_connect_retries_total", "result" => "ok").increment(1);
+                    }
+                    return Ok(connection);
+                }
+                Err(e) => {
+                    #[cfg(feature = "metrics")]
+                    {
+                        use metrics::counter;
+                        counter!("hysteria2_connect_retries_total", "result" => "fail").increment(1);
+                    }
+                    if attempt >= max_retries { return Err(e); }
+                    // Exponential backoff with jitter
+                    let exp = attempt.saturating_sub(1).min(8);
+                    let mut delay = base_ms.saturating_mul(1u64 << exp);
+                    delay = delay.min(cap_ms);
+                    let jitter = fastrand::u64(..(delay/5 + 1)); // up to 20% jitter
+                    tokio::time::sleep(std::time::Duration::from_millis(delay + jitter)).await;
+                    continue;
+                }
+            }
+        }
     }
 
     /// Create a new QUIC connection with proper configuration
@@ -580,9 +621,40 @@ impl Hysteria2UdpSession {
             ));
         }
 
-        // Parse source address (simplified)
-        let addr = "127.0.0.1:0".parse().unwrap(); // Placeholder
-        let payload = data[8..].to_vec();
+        // Parse source address following our send format: [8B session][1B atyp][addr][2B port][payload]
+        let mut i = 8usize;
+        if data.len() < i + 1 { return Err(io::Error::new(io::ErrorKind::InvalidData, "missing atyp")); }
+        let atyp = data[i]; i += 1;
+        let addr = match atyp {
+            0x01 => {
+                if data.len() < i + 4 + 2 { return Err(io::Error::new(io::ErrorKind::InvalidData, "short v4")); }
+                let ip = std::net::Ipv4Addr::new(data[i], data[i+1], data[i+2], data[i+3]);
+                i += 4;
+                let port = u16::from_be_bytes([data[i], data[i+1]]); i += 2;
+                std::net::SocketAddr::from((ip, port))
+            }
+            0x04 => {
+                if data.len() < i + 16 + 2 { return Err(io::Error::new(io::ErrorKind::InvalidData, "short v6")); }
+                let mut seg = [0u8;16]; seg.copy_from_slice(&data[i..i+16]);
+                let ip = std::net::Ipv6Addr::from(seg);
+                i += 16;
+                let port = u16::from_be_bytes([data[i], data[i+1]]); i += 2;
+                std::net::SocketAddr::from((ip, port))
+            }
+            0x03 => {
+                if data.len() < i + 1 { return Err(io::Error::new(io::ErrorKind::InvalidData, "short domain len")); }
+                let n = data[i] as usize; i += 1;
+                if data.len() < i + n + 2 { return Err(io::Error::new(io::ErrorKind::InvalidData, "short domain body")); }
+                let host = std::str::from_utf8(&data[i..i+n]).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "bad domain utf8"))?.to_string();
+                i += n;
+                let port = u16::from_be_bytes([data[i], data[i+1]]); i += 2;
+                // Best-effort resolve domain to SocketAddr for API compatibility; fallback to 0.0.0.0:port
+                let addr = tokio::net::lookup_host((host.as_str(), port)).await.ok().and_then(|mut it| it.next()).unwrap_or_else(|| std::net::SocketAddr::from(([0,0,0,0], port)));
+                addr
+            }
+            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "bad atyp")),
+        };
+        let payload = data[i..].to_vec();
 
         // Check bandwidth limits
         if let Some(ref limiter) = self.bandwidth_limiter {

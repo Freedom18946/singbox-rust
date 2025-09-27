@@ -11,12 +11,12 @@ pub use sb_core::router::*;
 // Re-export specific routing modules at top level for easier access
 #[cfg(feature = "router")]
 pub mod explain {
-    pub use sb_core::router::explain::*;
+    pub use sb_core::routing::explain::*;
 }
 
 #[cfg(feature = "router")]
 pub mod trace {
-    pub use sb_core::router::trace::*;
+    pub use sb_core::routing::trace::*;
 }
 
 // Provide routing as an alias to maintain compatibility

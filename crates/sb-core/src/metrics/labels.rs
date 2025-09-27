@@ -78,27 +78,27 @@ impl CipherType {
 }
 
 // Convenience functions for common metric patterns
-pub fn record_connect_total(proto: Proto, result: ResultTag) {
+pub fn record_connect_total(_proto: Proto, _result: ResultTag) {
     #[cfg(feature = "metrics")]
     {
         use metrics::counter;
-        counter!("outbound_connect_total", "proto" => proto.as_str(), "result" => result.as_str())
+        counter!("outbound_connect_total", "proto" => _proto.as_str(), "result" => _result.as_str())
             .increment(1);
     }
 }
 
-pub fn record_handshake_duration(proto: Proto, duration_ms: f64) {
+pub fn record_handshake_duration(_proto: Proto, _duration_ms: f64) {
     #[cfg(feature = "metrics")]
     {
         use metrics::histogram;
-        histogram!("outbound_handshake_duration_ms", "proto" => proto.as_str()).record(duration_ms);
+        histogram!("outbound_handshake_duration_ms", "proto" => _proto.as_str()).record(_duration_ms);
     }
 }
 
-pub fn record_tls_verify(proto: Proto, result: &'static str) {
+pub fn record_tls_verify(_proto: Proto, _result: &'static str) {
     #[cfg(feature = "metrics")]
     {
         use metrics::counter;
-        counter!("tls_verify_total", "proto" => proto.as_str(), "result" => result).increment(1);
+        counter!("tls_verify_total", "proto" => _proto.as_str(), "result" => _result).increment(1);
     }
 }

@@ -34,33 +34,33 @@ pub fn register_udp_nat_metrics() -> UdpNatMetrics {
         "udp_nat_size_prom",
         "Current UDP NAT map size (prometheus crate)",
     ))
-    .unwrap();
+    .expect("Failed to create udp_nat_size_prom gauge");
     let heap_len = IntGauge::with_opts(Opts::new(
         "udp_nat_heap_len_prom",
         "UDP NAT heap length (prometheus crate)",
     ))
-    .unwrap();
+    .expect("Failed to create udp_nat_heap_len_prom gauge");
     let gen_mismatch = IntCounter::with_opts(Opts::new(
         "udp_nat_gen_mismatch_total_prom",
         "Heap gen mismatches (prometheus crate)",
     ))
-    .unwrap();
+    .expect("Failed to create udp_nat_gen_mismatch_total_prom counter");
     let bytes_in = IntCounter::with_opts(Opts::new(
         "udp_flow_bytes_in_total_prom",
         "UDP flow bytes in (prometheus crate)",
     ))
-    .unwrap();
+    .expect("Failed to create udp_flow_bytes_in_total_prom counter");
     let bytes_out = IntCounter::with_opts(Opts::new(
         "udp_flow_bytes_out_total_prom",
         "UDP flow bytes out (prometheus crate)",
     ))
-    .unwrap();
+    .expect("Failed to create udp_flow_bytes_out_total_prom counter");
 
     let ttl_histogram = Histogram::with_opts(HistogramOpts::new(
         "udp_nat_ttl_seconds",
         "UDP NAT session TTL in seconds",
     ))
-    .unwrap();
+    .expect("Failed to create udp_nat_ttl_seconds histogram");
 
     // Use registry_ext for evicted_total
     let evicted_total = udp_nat_evicted_total().clone();

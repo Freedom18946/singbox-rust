@@ -110,24 +110,27 @@ pub async fn trojan_dryrun_tls_env(
                     .map_err(|e| format!("{:?}", e))?;
                 return Ok(());
             }
-            // 回退 TCP
-            let mut s = TcpDialer
-                .connect(host, port)
-                .await
-                .map_err(|e| format!("{:?}", e))?;
-            let hello = TrojanHello {
-                password: pass,
-                host: host.into(),
-                port,
-            };
-            let buf = hello.to_bytes();
-            tokio::io::AsyncWriteExt::write_all(&mut s, &buf)
-                .await
-                .map_err(|e| format!("{:?}", e))?;
-            tokio::io::AsyncWriteExt::flush(&mut s)
-                .await
-                .map_err(|e| format!("{:?}", e))?;
-            Ok(())
+            #[cfg(not(feature = "transport_tls"))]
+            {
+                // 回退 TCP
+                let mut s = TcpDialer
+                    .connect(host, port)
+                    .await
+                    .map_err(|e| format!("{:?}", e))?;
+                let hello = TrojanHello {
+                    password: pass,
+                    host: host.into(),
+                    port,
+                };
+                let buf = hello.to_bytes();
+                tokio::io::AsyncWriteExt::write_all(&mut s, &buf)
+                    .await
+                    .map_err(|e| format!("{:?}", e))?;
+                tokio::io::AsyncWriteExt::flush(&mut s)
+                    .await
+                    .map_err(|e| format!("{:?}", e))?;
+                Ok(())
+            }
         }
         _ => Err("kind not supported".into()),
     }

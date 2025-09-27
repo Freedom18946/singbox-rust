@@ -8,13 +8,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::{mpsc, watch, RwLock};
-use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "geoip_hot")]
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
-use super::{router_build_index_from_str, BuildError};
+use super::router_build_index_from_str;
 use crate::router::{RouterHandle, RouterIndex};
 
 /// Hot reload configuration

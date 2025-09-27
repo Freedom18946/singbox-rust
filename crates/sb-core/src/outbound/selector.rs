@@ -2,7 +2,7 @@
 //! - Inputs: members = [(name, connector)]
 //! - Policy: EMA RTT with failures as penalties; jitter; cold start guard.
 //! - Metrics: proxy_select_total{outbound,member} counter,
-//!            proxy_select_score{outbound,member} gauge (current score snapshot).
+//!   proxy_select_score{outbound,member} gauge (current score snapshot).
 use crate::adapter::OutboundConnector;
 use super::endpoint::ProxyEndpoint;
 use sb_metrics::registry::global as M;
@@ -141,23 +141,19 @@ impl Selector {
         dur_ms: u64,
         success: bool,
     ) {
-        // This is a stub implementation for compatibility
-        // In a full implementation, this would update statistics for load balancing
-        if !success {
-            // Log or record failure for this endpoint
-            tracing::debug!(
-                pool = pool_name,
-                endpoint = endpoint_index,
-                duration_ms = dur_ms,
-                "Endpoint observation recorded: failure"
-            );
+        // Map pool endpoint index to member if possible; fallback to index
+        let member_name = self
+            .members
+            .get(endpoint_index)
+            .map(|m| m.name.as_str())
+            .unwrap_or("idx");
+        let dur = dur_ms as u128;
+        self.on_result(member_name, dur, success);
+        // Lightweight logs to aid debugging
+        if success {
+            tracing::trace!(pool = pool_name, endpoint = endpoint_index, duration_ms = dur_ms, "selector observation: ok");
         } else {
-            tracing::trace!(
-                pool = pool_name,
-                endpoint = endpoint_index,
-                duration_ms = dur_ms,
-                "Endpoint observation recorded: success"
-            );
+            tracing::debug!(pool = pool_name, endpoint = endpoint_index, duration_ms = dur_ms, "selector observation: fail");
         }
     }
 }

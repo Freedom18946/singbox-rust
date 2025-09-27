@@ -223,11 +223,11 @@ pub fn parse_rules(lines: &str) -> Vec<Rule> {
             Some((l, r)) => (l.trim(), r.trim()),
             None => continue,
         };
-        let decision = if rhs.to_ascii_lowercase() == "direct" {
+        let decision = if rhs.eq_ignore_ascii_case("direct") {
             Decision::Direct
-        } else if rhs.to_ascii_lowercase() == "proxy" {
+        } else if rhs.eq_ignore_ascii_case("proxy") {
             Decision::Proxy(None)
-        } else if rhs.to_ascii_lowercase() == "reject" {
+        } else if rhs.eq_ignore_ascii_case("reject") {
             Decision::Reject
         } else if let Some(pool_name) = rhs.strip_prefix("proxy:") {
             Decision::Proxy(Some(pool_name.trim().to_string()))
@@ -292,10 +292,11 @@ pub fn parse_rules(lines: &str) -> Vec<Rule> {
             continue;
         }
         if kinds.len() == 1 {
-            out.push(Rule {
-                kind: kinds.pop().unwrap(),
-                decision,
-            });
+            if let Some(k) = kinds.pop() {
+                out.push(Rule { kind: k, decision });
+            } else {
+                continue;
+            }
         } else {
             for k in kinds {
                 out.push(Rule {
@@ -311,11 +312,11 @@ pub fn parse_rules(lines: &str) -> Vec<Rule> {
 // --------- 辅助：便捷构建 & 示例 ----------
 impl Decision {
     pub fn from_str(s: &str) -> Option<Self> {
-        if s.to_ascii_lowercase() == "direct" {
+        if s.eq_ignore_ascii_case("direct") {
             Some(Decision::Direct)
-        } else if s.to_ascii_lowercase() == "proxy" {
+        } else if s.eq_ignore_ascii_case("proxy") {
             Some(Decision::Proxy(None))
-        } else if s.to_ascii_lowercase() == "reject" {
+        } else if s.eq_ignore_ascii_case("reject") {
             Some(Decision::Reject)
         } else if let Some(pool_name) = s.strip_prefix("proxy:") {
             Some(Decision::Proxy(Some(pool_name.trim().to_string())))

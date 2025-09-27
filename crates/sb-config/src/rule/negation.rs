@@ -67,14 +67,14 @@ pub fn has_any_negation(json_bytes: &[u8]) -> bool {
         return false;
     };
     rules.iter().any(|r| {
-        r.not_domain.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_geoip.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_geosite.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_ipcidr.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_port.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_process.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_network.as_ref().map_or(false, |v| !v.is_empty())
-            || r.not_protocol.as_ref().map_or(false, |v| !v.is_empty())
+        r.not_domain.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_geoip.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_geosite.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_ipcidr.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_port.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_process.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_network.as_ref().is_some_and(|v| !v.is_empty())
+            || r.not_protocol.as_ref().is_some_and(|v| !v.is_empty())
     })
 }
 

@@ -1,5 +1,7 @@
 pub mod check;
 pub mod buildinfo;
+pub mod version;
+pub mod output;
 #[cfg(feature = "dev-cli")]
 pub mod fs_scan;
 #[cfg(feature = "dev-cli")]
@@ -20,7 +22,18 @@ pub mod route;
 #[cfg(feature = "router")]
 pub mod run;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+/// Output format for CLI commands
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum Format {
+    /// Human-readable output
+    Human,
+    /// JSON output
+    Json,
+    /// SARIF output (for check command)
+    Sarif,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "app")]
@@ -54,4 +67,13 @@ pub enum Commands {
     #[cfg(feature = "router")]
     /// Route explain and test
     Route(route::RouteArgs),
+    /// Display version information
+    Version(VersionArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct VersionArgs {
+    /// Output format
+    #[arg(long, value_enum, default_value_t = Format::Human)]
+    pub format: Format,
 }

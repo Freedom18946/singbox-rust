@@ -164,11 +164,11 @@ impl Config {
         None
     }
 
-    /// 构建 `OutboundRegistry` 与 `Router`（真实实现）
-            // - 支持 direct/block/socks5/http 四类出站
-            // - 规则：`rules[].domain_suffix -> RouteTarget::Named(outbound)`
-            // - 默认路由：`default_outbound` 若指定则使用该命名出站，否则 Direct
-    /// TODO: Re-enable after breaking circular dependency
+    // 构建 `OutboundRegistry` 与 `Router`（真实实现）
+    // - 支持 direct/block/socks5/http 四类出站
+    // - 规则：`rules[].domain_suffix -> RouteTarget::Named(outbound)`
+    // - 默认路由：`default_outbound` 若指定则使用该命名出站，否则 Direct
+    // TODO: Re-enable after breaking circular dependency
     /*
     pub fn build_registry_and_router(&self) -> Result<(OutboundRegistry, Router)> {
         // 1) 构建 OutboundRegistry
@@ -256,10 +256,90 @@ impl Config {
     }
     */
 
-    /// Temporary stub implementation to get CLI working
+    /// Build-time validation + IR 编译（不引入 sb-core 以避免环依赖）
+    ///
+    /// 作用：
+    /// - 复用现有 validate 进行强校验
+    /// - 将 Config 转换为 IR（ConfigIR/RouteIR/RuleIR），保证规则可被路由层消费
+    /// - 为上层提供“构建已通过”的语义（此处不返回具体路由器实例）
     pub fn build_registry_and_router(&self) -> Result<()> {
-        // Stub implementation - just validates config is loadable
-        // Real implementation commented out due to circular deps
+        use crate::ir::{ConfigIR, InboundIR, OutboundIR as OIR, OutboundType as OT, RouteIR, RuleIR};
+        self.validate()?;
+
+        // 转换 Outbound → IR
+        let mut outs: Vec<OIR> = Vec::new();
+        for o in &self.outbounds {
+            match o {
+                Outbound::Direct { name } => outs.push(OIR { ty: OT::Direct, server: None, port: None, udp: None, name: Some(name.clone()), members: None, credentials: None }),
+                Outbound::Block { name } => outs.push(OIR { ty: OT::Block, server: None, port: None, udp: None, name: Some(name.clone()), members: None, credentials: None }),
+                Outbound::Socks5 { name, server, port, auth } => outs.push(OIR {
+                    ty: OT::Socks,
+                    server: Some(server.clone()),
+                    port: Some(*port),
+                    udp: Some("socks5-upstream".into()),
+                    name: Some(name.clone()),
+                    members: None,
+                    credentials: auth.as_ref().map(|a| crate::ir::Credentials { username: Some(a.username.clone()), password: Some(a.password.clone()), username_env: None, password_env: None }),
+                }),
+                Outbound::Http { name, server, port, auth } => outs.push(OIR {
+                    ty: OT::Http,
+                    server: Some(server.clone()),
+                    port: Some(*port),
+                    udp: None,
+                    name: Some(name.clone()),
+                    members: None,
+                    credentials: auth.as_ref().map(|a| crate::ir::Credentials { username: Some(a.username.clone()), password: Some(a.password.clone()), username_env: None, password_env: None }),
+                }),
+                Outbound::Vless { name, server, port, .. } => outs.push(OIR {
+                    ty: OT::Direct, // 先按直连导出，避免未落地导致构建失败（再由路由决策控制）
+                    server: Some(server.clone()),
+                    port: Some(*port),
+                    udp: None,
+                    name: Some(name.clone()),
+                    members: None,
+                    credentials: None,
+                }),
+            }
+        }
+
+        // 转换 Rule → IR
+        let mut rules_ir: Vec<RuleIR> = Vec::new();
+        for r in &self.rules {
+            rules_ir.push(RuleIR {
+                domain: r.domain_suffix.clone(),
+                geosite: Vec::new(),
+                geoip: Vec::new(),
+                ipcidr: r.ip_cidr.clone(),
+                port: r.port.clone(),
+                process: Vec::new(),
+                network: r.transport.clone().into_iter().collect(),
+                protocol: Vec::new(),
+                source: Vec::new(),
+                dest: Vec::new(),
+                user_agent: Vec::new(),
+                not_domain: Vec::new(),
+                not_geosite: Vec::new(),
+                not_geoip: Vec::new(),
+                not_ipcidr: Vec::new(),
+                not_port: Vec::new(),
+                not_process: Vec::new(),
+                not_network: Vec::new(),
+                not_protocol: Vec::new(),
+                outbound: Some(r.outbound.clone()),
+            });
+        }
+
+        let route_ir = RouteIR { rules: rules_ir, default: self.default_outbound.clone() };
+        let cfg_ir = ConfigIR { inbounds: Vec::<InboundIR>::new(), outbounds: outs, route: route_ir };
+        // 轻量一致性检查：确保 default 在 outbounds 中
+        if let Some(def) = &cfg_ir.route.default {
+            let exists = cfg_ir
+                .outbounds
+                .iter()
+                .any(|o| o.name.as_deref() == Some(def.as_str()));
+            if !exists { return Err(anyhow!("default_outbound '{}' not defined", def)); }
+        }
+        // 最终：丢弃 IR（实际消费在 sb-core），仅以可构建通过为准
         Ok(())
     }
 
