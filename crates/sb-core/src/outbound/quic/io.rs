@@ -36,15 +36,27 @@ impl AsyncWrite for QuicBidiStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.send).poll_write(cx, buf)
+        match Pin::new(&mut self.send).poll_write(cx, buf) {
+            Poll::Ready(Ok(n)) => Poll::Ready(Ok(n)),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.send).poll_flush(cx)
+        match Pin::new(&mut self.send).poll_flush(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.send).poll_shutdown(cx)
+        match Pin::new(&mut self.send).poll_shutdown(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

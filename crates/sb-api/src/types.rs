@@ -240,7 +240,7 @@ pub enum WebSocketMessage {
         /// Connection change type (new, closed, updated)
         action: String,
         /// Connection data
-        connection: Connection,
+        connection: Box<Connection>,
     },
     /// Heartbeat/ping message
     #[serde(rename = "ping")]

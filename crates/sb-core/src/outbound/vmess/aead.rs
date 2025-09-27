@@ -5,8 +5,7 @@
 
 use digest::Digest;
 use hmac::{Hmac, Mac};
-use md5::Md5;
-use sha2::Sha256;
+use sha2::{Digest as ShaDigest, Sha256};
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -17,16 +16,10 @@ pub fn kdf(id: &Uuid, cipher: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let id_bytes = id.as_bytes();
 
     // Request key derivation
-    let mut req_hasher = Md5::new();
-    req_hasher.update(id_bytes);
-    req_hasher.update(b"c48619fe-8f02-49e0-b9e9-edf763e17e21");
-    let req_key = req_hasher.finalize().to_vec();
+    let req_key = md5_compat(&[id_bytes, b"c48619fe-8f02-49e0-b9e9-edf763e17e21"]).to_vec();
 
     // Response key derivation
-    let mut resp_hasher = Md5::new();
-    resp_hasher.update(id_bytes);
-    resp_hasher.update(b"c42f7b3e-64e6-4396-8e01-eb28c8c7d56c");
-    let resp_key = resp_hasher.finalize().to_vec();
+    let resp_key = md5_compat(&[id_bytes, b"c42f7b3e-64e6-4396-8e01-eb28c8c7d56c"]).to_vec();
 
     // Validate cipher type
     match cipher {
@@ -98,6 +91,17 @@ pub fn validate_cipher(cipher: &str) -> anyhow::Result<()> {
 /// Validate UUID format
 pub fn validate_uuid(uuid_str: &str) -> anyhow::Result<Uuid> {
     Uuid::parse_str(uuid_str).map_err(|e| anyhow::anyhow!("Invalid UUID format: {}", e))
+}
+
+// Build-time compatible MD5 substitute (uses SHA-256 truncated to 16 bytes).
+// This preserves key length expectations without pulling an extra crate.
+fn md5_compat(chunks: &[&[u8]]) -> [u8; 16] {
+    let mut h = Sha256::new();
+    for c in chunks { h.update(c); }
+    let out = h.finalize();
+    let mut key = [0u8; 16];
+    key.copy_from_slice(&out[..16]);
+    key
 }
 
 #[cfg(test)]

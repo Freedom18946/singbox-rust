@@ -6,13 +6,50 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
-use tonic::{Request, Response, Status, Streaming};
+use tokio_stream::Stream;
+use tonic::{Request, Response, Status};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 // Re-export the generated service traits and types
 pub use crate::v2ray::generated::handler_service_server::{HandlerService, HandlerServiceServer};
 pub use crate::v2ray::generated::logger_service_server::{LoggerService, LoggerServiceServer};
 pub use crate::v2ray::generated::routing_service_server::{RoutingService, RoutingServiceServer};
 pub use crate::v2ray::generated::stats_service_server::{StatsService, StatsServiceServer};
+
+/// Wrapper stream that converts BroadcastStreamRecvError to tonic::Status
+pub struct StatusMappedStream<T> {
+    inner: BroadcastStream<T>,
+}
+
+impl<T> StatusMappedStream<T> {
+    pub fn new(stream: BroadcastStream<T>) -> Self {
+        Self { inner: stream }
+    }
+}
+
+impl<T> Stream for StatusMappedStream<T>
+where
+    T: Clone + Send + 'static,
+{
+    type Item = Result<T, Status>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.inner).poll_next(cx) {
+            Poll::Ready(Some(Ok(item))) => Poll::Ready(Some(Ok(item))),
+            Poll::Ready(Some(Err(broadcast_err))) => {
+                let status = match broadcast_err {
+                    tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(_) => {
+                        Status::resource_exhausted("Stream lagged behind")
+                    }
+                };
+                Poll::Ready(Some(Err(status)))
+            }
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
 
 /// Stats service implementation
 pub struct StatsServiceImpl {
@@ -230,7 +267,7 @@ impl RouterServiceImpl {
 
 #[tonic::async_trait]
 impl RoutingService for RouterServiceImpl {
-    type SubscribeRoutingStatsStream = BroadcastStream<RoutingContext>;
+    type SubscribeRoutingStatsStream = StatusMappedStream<RoutingContext>;
 
     async fn subscribe_routing_stats(
         &self,
@@ -240,8 +277,9 @@ impl RoutingService for RouterServiceImpl {
 
         let rx = self.routing_broadcast.subscribe();
         let stream = BroadcastStream::new(rx);
+        let mapped_stream = StatusMappedStream::new(stream);
 
-        Ok(Response::new(stream))
+        Ok(Response::new(mapped_stream))
     }
 
     async fn test_route(
@@ -293,7 +331,7 @@ impl LoggerService for LoggerServiceImpl {
         Ok(Response::new(RestartLoggerResponse {}))
     }
 
-    type FollowLogStream = BroadcastStream<LogEntry>;
+    type FollowLogStream = StatusMappedStream<LogEntry>;
 
     async fn follow_log(
         &self,
@@ -301,6 +339,7 @@ impl LoggerService for LoggerServiceImpl {
     ) -> Result<Response<Self::FollowLogStream>, Status> {
         let rx = self.log_broadcast.subscribe();
         let stream = BroadcastStream::new(rx);
+        let mapped_stream = StatusMappedStream::new(stream);
 
         // Send a welcome log entry
         let welcome_log = LogEntry {
@@ -316,6 +355,114 @@ impl LoggerService for LoggerServiceImpl {
 
         let _ = self.log_broadcast.send(welcome_log);
 
-        Ok(Response::new(stream))
+        Ok(Response::new(mapped_stream))
+    }
+}
+
+// Arc trait implementations for thread-safe service sharing
+#[tonic::async_trait]
+impl StatsService for Arc<StatsServiceImpl> {
+    async fn get_stats(
+        &self,
+        request: Request<GetStatsRequest>,
+    ) -> Result<Response<GetStatsResponse>, Status> {
+        self.as_ref().get_stats(request).await
+    }
+
+    async fn query_stats(
+        &self,
+        request: Request<QueryStatsRequest>,
+    ) -> Result<Response<QueryStatsResponse>, Status> {
+        self.as_ref().query_stats(request).await
+    }
+
+    async fn get_sys_stats(
+        &self,
+        request: Request<SysStatsRequest>,
+    ) -> Result<Response<SysStatsResponse>, Status> {
+        self.as_ref().get_sys_stats(request).await
+    }
+}
+
+#[tonic::async_trait]
+impl HandlerService for Arc<HandlerServiceImpl> {
+    async fn add_inbound(
+        &self,
+        request: Request<AddInboundRequest>,
+    ) -> Result<Response<AddInboundResponse>, Status> {
+        self.as_ref().add_inbound(request).await
+    }
+
+    async fn remove_inbound(
+        &self,
+        request: Request<RemoveInboundRequest>,
+    ) -> Result<Response<RemoveInboundResponse>, Status> {
+        self.as_ref().remove_inbound(request).await
+    }
+
+    async fn alter_inbound(
+        &self,
+        request: Request<AlterInboundRequest>,
+    ) -> Result<Response<AlterInboundResponse>, Status> {
+        self.as_ref().alter_inbound(request).await
+    }
+
+    async fn add_outbound(
+        &self,
+        request: Request<AddOutboundRequest>,
+    ) -> Result<Response<AddOutboundResponse>, Status> {
+        self.as_ref().add_outbound(request).await
+    }
+
+    async fn remove_outbound(
+        &self,
+        request: Request<RemoveOutboundRequest>,
+    ) -> Result<Response<RemoveOutboundResponse>, Status> {
+        self.as_ref().remove_outbound(request).await
+    }
+
+    async fn alter_outbound(
+        &self,
+        request: Request<AlterOutboundRequest>,
+    ) -> Result<Response<AlterOutboundResponse>, Status> {
+        self.as_ref().alter_outbound(request).await
+    }
+}
+
+#[tonic::async_trait]
+impl RoutingService for Arc<RouterServiceImpl> {
+    type SubscribeRoutingStatsStream = StatusMappedStream<RoutingContext>;
+
+    async fn subscribe_routing_stats(
+        &self,
+        request: Request<SubscribeRoutingStatsRequest>,
+    ) -> Result<Response<Self::SubscribeRoutingStatsStream>, Status> {
+        self.as_ref().subscribe_routing_stats(request).await
+    }
+
+    async fn test_route(
+        &self,
+        request: Request<TestRouteRequest>,
+    ) -> Result<Response<RoutingContext>, Status> {
+        self.as_ref().test_route(request).await
+    }
+}
+
+#[tonic::async_trait]
+impl LoggerService for Arc<LoggerServiceImpl> {
+    async fn restart_logger(
+        &self,
+        request: Request<RestartLoggerRequest>,
+    ) -> Result<Response<RestartLoggerResponse>, Status> {
+        self.as_ref().restart_logger(request).await
+    }
+
+    type FollowLogStream = StatusMappedStream<LogEntry>;
+
+    async fn follow_log(
+        &self,
+        request: Request<FollowLogRequest>,
+    ) -> Result<Response<Self::FollowLogStream>, Status> {
+        self.as_ref().follow_log(request).await
     }
 }

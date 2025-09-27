@@ -11,9 +11,9 @@ use tracing::{debug, info, trace, warn};
 use crate::inbound::socks::udp::{bind_udp_any, get_udp_bind_addr};
 
 /// 启动最小 SOCKS5 TCP 服务：
-/// - greeting: 版本 5，选择 NO_AUTH(0x00)
-/// - request: 仅支持 CMD=UDP_ASSOCIATE(0x03)
-/// - reply: 成功时返回当前 UDP 绑定地址（BND.ADDR/PORT）
+        // - greeting: 版本 5，选择 NO_AUTH(0x00)
+        // - request: 仅支持 CMD=UDP_ASSOCIATE(0x03)
+        // - reply: 成功时返回当前 UDP 绑定地址（BND.ADDR/PORT）
 pub async fn run_tcp(addr: &str) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("socks: TCP listening on {}", listener.local_addr()?);

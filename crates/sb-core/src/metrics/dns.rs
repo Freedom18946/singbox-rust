@@ -11,6 +11,8 @@ use crate::metrics::registry_ext::{
     get_or_register_gauge_vec_f64,
     get_or_register_histogram_vec,
 };
+#[cfg(feature = "metrics")]
+use metrics::counter;
 
 #[derive(Clone, Copy, Debug)]
 pub enum DnsQueryType {
@@ -136,8 +138,7 @@ pub fn register_metrics() {
 #[cfg(feature = "metrics")]
 use prometheus::IntCounterVec;
 
-#[cfg(feature = "metrics")]
-use crate::metrics::registry_ext::get_or_register_counter_vec;
+
 
 #[cfg(feature = "metrics")]
 pub fn dns_query_total() -> &'static prometheus::IntCounterVec {

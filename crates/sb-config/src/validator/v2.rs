@@ -94,7 +94,7 @@ pub fn validate_v2(doc: &serde_json::Value) -> Vec<Value> {
         for (i, ib) in arr.iter().enumerate() {
             // required: type, listen, port
             for rq in ["type", "listen", "port"] {
-                if !ib.get(rq).is_some() {
+                if ib.get(rq).is_none() {
                     issues.push(emit_issue(
                         "error",
                         IssueCode::MissingRequired,
@@ -161,8 +161,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 port: i.get("port").and_then(|v| v.as_u64()).unwrap_or(1080) as u16,
                 sniff: i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false),
                 udp: i.get("udp").and_then(|v| v.as_bool()).unwrap_or(false),
-                basic_auth: i.get("basicAuth").and_then(|a| {
-                    Some(Credentials {
+                basic_auth: i.get("basicAuth").map(|a| Credentials {
                         username: a
                             .get("username")
                             .and_then(|v| v.as_str())
@@ -179,8 +178,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             .get("password_env")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
-                    })
-                }),
+                    }),
             });
         }
     }
@@ -210,8 +208,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .filter_map(|x| x.as_str().map(|s| s.to_string()))
                         .collect()
                 }),
-                credentials: o.get("credentials").and_then(|c| {
-                    Some(Credentials {
+                credentials: o.get("credentials").map(|c| Credentials {
                         username: c
                             .get("username")
                             .and_then(|v| v.as_str())
@@ -228,8 +225,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             .get("password_env")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
-                    })
-                }),
+                    }),
             });
         }
     }

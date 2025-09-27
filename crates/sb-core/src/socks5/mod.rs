@@ -115,7 +115,7 @@ pub fn encode_udp_request(dst: &SocketAddr, payload: &[u8]) -> Vec<u8> {
 
 /// Decode a UDP REPLY datagram (RFC1928 §7). Returns (dst, payload).
 /// FRAG must be 0 (we don't support fragmentation).
-pub fn decode_udp_reply<'a>(buf: &'a [u8]) -> anyhow::Result<(SocketAddr, &'a [u8])> {
+pub fn decode_udp_reply(buf: &[u8]) -> anyhow::Result<(SocketAddr, &[u8])> {
     if buf.len() < 3 {
         return Err(anyhow::anyhow!("socks5: short reply header"));
     }

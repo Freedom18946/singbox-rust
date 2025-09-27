@@ -167,7 +167,7 @@ pub async fn send_balanced(
         // base=200ms, factor=2, cap=5s
         let base = 200u64;
         let cap = 5000u64;
-        let shift = (fails.min(16)) as u32;
+        let shift = fails.min(16);
         let mul = 1u64 << shift; // 2^fails
         Duration::from_millis((base.saturating_mul(mul)).min(cap))
     }

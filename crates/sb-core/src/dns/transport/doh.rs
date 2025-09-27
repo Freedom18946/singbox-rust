@@ -36,7 +36,6 @@ impl DohTransport {
         // 创建 HTTP 客户端
         let client = reqwest::Client::builder()
             .timeout(timeout)
-            .http2_prior_knowledge() // 优先使用 HTTP/2
             .tcp_keepalive(Duration::from_secs(60))
             .pool_idle_timeout(Duration::from_secs(90))
             .pool_max_idle_per_host(10)

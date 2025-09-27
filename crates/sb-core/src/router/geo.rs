@@ -376,10 +376,10 @@ impl GeoSiteDb {
     ///
     /// Expected format: Each line contains "CATEGORY:RULE_TYPE:PATTERN"
     /// Examples:
-    /// - "google:exact:google.com"
-    /// - "google:suffix:.google.com"
-    /// - "ads:keyword:ads"
-    /// - "social:regex:.*facebook.*"
+            // - "google:exact:google.com"
+            // - "google:suffix:.google.com"
+            // - "ads:keyword:ads"
+            // - "social:regex:.*facebook.*"
     ///
     /// # Arguments
     /// * `path` - Path to the GeoSite database file

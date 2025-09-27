@@ -87,7 +87,7 @@ impl DnsCache {
         ttl: Duration,
         now: Instant,
     ) {
-        let (ttl, _clamp_dir) = self.clamp(ttl);
+        let (ttl, clamp_dir) = self.clamp(ttl);
         let key = (name.to_ascii_lowercase(), q);
         let e = PosEntry {
             addrs,
@@ -108,7 +108,7 @@ impl DnsCache {
     }
 
     pub async fn put_neg(&self, name: &str, q: QType, ttl: Duration, now: Instant) {
-        let (ttl, _clamp_dir) = self.clamp(ttl);
+        let (ttl, clamp_dir) = self.clamp(ttl);
         let key = (name.to_ascii_lowercase(), q);
         let e = NegEntry {
             expires_at: now + ttl,

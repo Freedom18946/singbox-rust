@@ -15,7 +15,7 @@ use super::{
     router_index_decide_ip, router_index_decide_transport_port, runtime_override_udp, shared_index,
     RouterIndex,
 };
-use crate::geoip::lookup_with_metrics;
+use crate::geoip::lookup_with_metrics_decision;
 use crate::outbound::RouteTarget;
 
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`
@@ -260,7 +260,7 @@ impl RouterHandle {
         }
 
         // Fall back to legacy GeoIP lookup
-        if let Some(decision) = lookup_with_metrics(ip) {
+        if let Some(decision) = lookup_with_metrics_decision(ip) {
             #[cfg(feature = "metrics")]
             metrics::counter!("geoip_lookup_total", "source"=>"legacy", "result"=>"hit")
                 .increment(1);
@@ -1214,7 +1214,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
                 }
                 if try_geoip {
                     for ip in ips {
-                        if let Some(d) = lookup_with_metrics(ip) {
+                        if let Some(d) = lookup_with_metrics_decision(ip) {
                             return DecisionExplain {
                                 decision: d.to_string(),
                                 reason: format!("dns->geoip matched ip={}", ip),

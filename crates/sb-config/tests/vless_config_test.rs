@@ -1,7 +1,6 @@
 //! Test VLESS configuration parsing and validation
 
 use sb_config::Outbound;
-use serde_json;
 
 #[test]
 fn test_vless_config_parsing() {

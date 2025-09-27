@@ -115,7 +115,7 @@ impl TrafficCollector {
                 };
 
                 // Broadcast the updated stats
-                if let Err(_) = traffic_tx.send(updated_stats) {
+                if traffic_tx.send(updated_stats).is_err() {
                     log::debug!("No traffic subscribers, continuing collection");
                 }
 
@@ -221,7 +221,7 @@ impl ConnectionCollector {
                 // Broadcast current connections status
                 let current_connections = connections.lock().await;
                 for connection in current_connections.iter() {
-                    if let Err(_) = connection_tx.send(connection.clone()) {
+                    if connection_tx.send(connection.clone()).is_err() {
                         log::debug!("No connection subscribers");
                         break;
                     }
@@ -261,7 +261,9 @@ impl ConnectionCollector {
         // Broadcast the new connection immediately
         let _ = self.connection_tx.send(connection);
 
-        log::debug!("Added connection: {}", connections.last().unwrap().id);
+        if let Some(last) = connections.last() {
+            log::debug!("Added connection: {}", last.id);
+        }
     }
 
     /// Remove a connection
@@ -281,6 +283,12 @@ impl ConnectionCollector {
     /// Get connection count
     pub async fn get_connection_count(&self) -> usize {
         self.connections.lock().await.len()
+    }
+}
+
+impl Default for ConnectionCollector {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -327,7 +335,7 @@ impl PerformanceCollector {
                 let metrics = bridge.get_performance_metrics().await;
 
                 // Broadcast performance metrics
-                if let Err(_) = performance_tx.send(metrics.clone()) {
+                if performance_tx.send(metrics.clone()).is_err() {
                     log::debug!("No performance metrics subscribers");
                 }
 

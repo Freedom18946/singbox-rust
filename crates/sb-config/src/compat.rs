@@ -5,10 +5,10 @@ use super::model::Config;
 pub fn compat_1_12_4(cfg: Config) -> Config { cfg }
 
 /// Migrate legacy config (v1-style) into v2 canonical layout.
-/// - Moves root `rules` -> `route.rules`
-/// - Renames `default_outbound` -> `route.default`
-/// - Normalizes outbound type `socks5` -> `socks`
-/// - Injects `schema_version: 2`
+        // - Moves root `rules` -> `route.rules`
+        // - Renames `default_outbound` -> `route.default`
+        // - Normalizes outbound type `socks5` -> `socks`
+        // - Injects `schema_version: 2`
 pub fn migrate_to_v2(raw: &Value) -> Value {
     let mut v = raw.clone();
     let obj = match v {

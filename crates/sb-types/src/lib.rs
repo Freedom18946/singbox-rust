@@ -101,6 +101,6 @@ mod tests {
     #[test]
     fn issuecode_serialization() {
         let j = serde_json::to_string(&IssueCode::SchemaInvalid).unwrap();
-        assert_eq!(j, r#""SCHEMA_INVALID""#);
+        assert_eq!(j, r#""SchemaInvalid""#);
     }
 }

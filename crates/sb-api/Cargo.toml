@@ -3,6 +3,9 @@ name = "sb-api"
 version = "0.1.0"
 edition = "2021"
 description = "API services for singbox-rust including Clash API and V2Ray API"
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [dependencies]
 # Web framework and HTTP server
@@ -24,6 +27,7 @@ tonic = { version = "0.11", optional = true }
 prost = { version = "0.12", optional = true }
 prost-types = { version = "0.12", optional = true }
 tokio-stream = { version = "0.1", features = ["sync"], optional = true }
+http-body = { version = "0.4", optional = true }
 
 # Logging and error handling
 log = "0.4"
@@ -40,7 +44,7 @@ sb-config = { path = "../sb-config" }
 [features]
 default = ["clash-api"]
 clash-api = []
-v2ray-api = ["tonic", "prost", "prost-types", "tokio-stream"]
+v2ray-api = ["tonic", "prost", "prost-types", "tokio-stream", "http-body"]
 
 [build-dependencies]
 tonic-build = "0.11"

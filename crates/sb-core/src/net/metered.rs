@@ -51,9 +51,9 @@ where
 }
 
 /// 双向拷贝（带可选读/写超时与取消传播）。
-/// - 当读侧在 `read_timeout` 内无进展，返回 TimedOut
-/// - 当写侧在 `write_timeout` 内无法完成，返回 TimedOut
-/// - 当收到 `cancel` 取消，返回 Interrupted
+        // - 当读侧在 `read_timeout` 内无进展，返回 TimedOut
+        // - 当写侧在 `write_timeout` 内无法完成，返回 TimedOut
+        // - 当收到 `cancel` 取消，返回 Interrupted
 pub async fn copy_bidirectional_streaming_ctl<A, B>(
     a: &mut A,
     b: &mut B,
@@ -153,14 +153,12 @@ where
                             }
                         } => res?,
                     }
+                } else if let Some(to) = read_timeout {
+                    tokio::time::timeout(to, r.read(&mut buf))
+                        .await
+                        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "read timeout"))??
                 } else {
-                    if let Some(to) = read_timeout {
-                        tokio::time::timeout(to, r.read(&mut buf))
-                            .await
-                            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "read timeout"))??
-                    } else {
-                        r.read(&mut buf).await?
-                    }
+                    r.read(&mut buf).await?
                 }
             };
             if n == 0 {
@@ -188,14 +186,12 @@ where
                             res?;
                         }
                     }
+                } else if let Some(to) = write_timeout {
+                    tokio::time::timeout(to, w.write_all(&buf[..n]))
+                        .await
+                        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))??
                 } else {
-                    if let Some(to) = write_timeout {
-                        tokio::time::timeout(to, w.write_all(&buf[..n]))
-                            .await
-                            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))??
-                    } else {
-                        w.write_all(&buf[..n]).await?;
-                    }
+                    w.write_all(&buf[..n]).await?;
                 }
             }
             total += n as u64;

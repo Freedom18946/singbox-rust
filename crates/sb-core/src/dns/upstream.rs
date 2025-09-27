@@ -92,11 +92,11 @@ impl UdpUpstream {
         let mut packet = Vec::new();
 
         // DNS Header (12 bytes)
-        let transaction_id = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u16)
-            .to_be_bytes();
+        let transaction_id_val: u16 = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(d) => d.as_nanos() as u16,
+            Err(_) => 0,
+        };
+        let transaction_id = transaction_id_val.to_be_bytes();
 
         packet.extend_from_slice(&transaction_id); // Transaction ID
         packet.extend_from_slice(&[0x01, 0x00]); // Flags: Standard query, recursion desired
@@ -287,7 +287,8 @@ impl DnsUpstream for UdpUpstream {
                             self.server,
                             domain,
                             attempt,
-                            last_error.as_ref().unwrap()
+                            // Log the latest error without risking panic on None
+                            last_error.as_ref().map(|err| err.to_string()).unwrap_or_else(|| "unknown".to_string())
                         );
                         // 短暂延迟后重试
                         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -296,7 +297,10 @@ impl DnsUpstream for UdpUpstream {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All UDP DNS queries failed")))
+        match last_error {
+            Some(err) => Err(err),
+            None => Err(anyhow::anyhow!("All UDP DNS queries failed")),
+        }
     }
 
     fn name(&self) -> &str {
@@ -305,15 +309,14 @@ impl DnsUpstream for UdpUpstream {
 
     async fn health_check(&self) -> bool {
         // 简单的健康检查：尝试查询一个已知域名
-        match tokio::time::timeout(
-            Duration::from_secs(5),
-            self.query_once("dns.google", RecordType::A),
+        matches!(
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                self.query_once("dns.google", RecordType::A),
+            )
+            .await,
+            Ok(Ok(_))
         )
-        .await
-        {
-            Ok(Ok(_)) => true,
-            _ => false,
-        }
     }
 }
 
@@ -368,15 +371,14 @@ impl DnsUpstream for DotUpstream {
     async fn health_check(&self) -> bool {
         #[cfg(feature = "dns_dot")]
         {
-            match tokio::time::timeout(
-                Duration::from_secs(5),
-                self.query("dns.google", RecordType::A),
+            matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    self.query("dns.google", RecordType::A),
+                )
+                .await,
+                Ok(Ok(_))
             )
-            .await
-            {
-                Ok(Ok(_)) => true,
-                _ => false,
-            }
         }
         #[cfg(not(feature = "dns_dot"))]
         {
@@ -477,7 +479,10 @@ impl DnsUpstream for DohUpstream {
 impl DohUpstream {
     async fn query_doh(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
         // 构建 DNS 查询包
-        let temp_upstream = UdpUpstream::new("0.0.0.0:53".parse().unwrap());
+        let temp_upstream = {
+            let addr = "0.0.0.0:53".parse().map_err(|e| anyhow::anyhow!("invalid DoH bind address: {}", e))?;
+            UdpUpstream::new(addr)
+        };
         let query_packet = temp_upstream.build_query_packet(domain, record_type)?;
 
         // 发送 DoH 请求
@@ -529,6 +534,10 @@ impl SystemUpstream {
             name: "system".to_string(),
         }
     }
+}
+
+impl Default for SystemUpstream {
+    fn default() -> Self { Self::new() }
 }
 
 #[async_trait]

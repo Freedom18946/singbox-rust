@@ -298,7 +298,7 @@ impl UdpNat {
 
             // Check if port is already in use
             if !self.reverse_map.contains_key(&addr) {
-                self.next_port = if self.next_port >= 65535 {
+                self.next_port = if self.next_port == 65535 {
                     self.base_port
                 } else {
                     self.next_port + 1
@@ -307,7 +307,7 @@ impl UdpNat {
             }
 
             // Move to next port
-            self.next_port = if self.next_port >= 65535 {
+            self.next_port = if self.next_port == 65535 {
                 self.base_port
             } else {
                 self.next_port + 1

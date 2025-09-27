@@ -59,10 +59,10 @@ pub enum DialError {
 ///
 /// 该 trait 是一个标记 trait，用于统一表示同时支持异步读取和写入的类型。
 /// 所有满足以下条件的类型都会自动实现该 trait：
-/// - 实现 `tokio::io::AsyncRead`（异步读取）
-/// - 实现 `tokio::io::AsyncWrite`（异步写入）
-/// - 实现 `Unpin`（可安全移动）
-/// - 实现 `Send`（可在线程间传递）
+        // - 实现 `tokio::io::AsyncRead`（异步读取）
+        // - 实现 `tokio::io::AsyncWrite`（异步写入）
+        // - 实现 `Unpin`（可安全移动）
+        // - 实现 `Send`（可在线程间传递）
 pub trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
 /// 为所有满足条件的类型自动实现 `AsyncReadWrite`
@@ -75,22 +75,22 @@ impl<T> AsyncReadWrite for T where T: tokio::io::AsyncRead + tokio::io::AsyncWri
 ///
 /// 该类型是一个装箱的 trait object，用于在运行时处理不同类型的异步 IO 流。
 /// 这种设计允许：
-/// - 统一处理不同底层实现的网络连接（TCP、TLS、内存管道等）
-/// - 在编译时擦除具体类型，提供灵活的接口
-/// - 支持动态分发，便于在不同传输类型之间切换
+        // - 统一处理不同底层实现的网络连接（TCP、TLS、内存管道等）
+        // - 在编译时擦除具体类型，提供灵活的接口
+        // - 支持动态分发，便于在不同传输类型之间切换
 pub type IoStream = Box<dyn AsyncReadWrite>;
 
 /// 异步网络拨号器 trait
 ///
 /// 该 trait 定义了统一的网络连接建立接口。所有拨号器实现都必须：
-/// - 支持线程安全（`Send + Sync`）
-/// - 提供异步连接方法
-/// - 返回统一的 IoStream 或 DialError
+        // - 支持线程安全（`Send + Sync`）
+        // - 提供异步连接方法
+        // - 返回统一的 IoStream 或 DialError
 ///
 /// ## 设计原则
-/// - **简单性**: 仅提供必要的连接抽象
-/// - **可扩展性**: 通过不同实现支持各种传输协议
-/// - **一致性**: 统一的错误处理和返回类型
+        // - **简单性**: 仅提供必要的连接抽象
+        // - **可扩展性**: 通过不同实现支持各种传输协议
+        // - **一致性**: 统一的错误处理和返回类型
 ///
 /// ## 使用示例
 /// ```rust,no_run
@@ -108,18 +108,18 @@ pub trait Dialer: Send + Sync {
     /// 建立到指定主机和端口的连接
     ///
     /// # 参数
-    /// - `host`: 目标主机名或 IP 地址
-    /// - `port`: 目标端口号
+            // - `host`: 目标主机名或 IP 地址
+            // - `port`: 目标端口号
     ///
     /// # 返回值
-    /// - `Ok(IoStream)`: 成功建立的连接流
-    /// - `Err(DialError)`: 连接失败的具体错误
+            // - `Ok(IoStream)`: 成功建立的连接流
+            // - `Err(DialError)`: 连接失败的具体错误
     ///
     /// # 错误处理
     /// 该方法可能返回以下错误：
-    /// - `DialError::Io`: 底层网络 IO 错误
-    /// - `DialError::Other`: 超时或其他通用错误
-    /// - `DialError::NotSupported`: 拨号器不支持该操作
+            // - `DialError::Io`: 底层网络 IO 错误
+            // - `DialError::Other`: 超时或其他通用错误
+            // - `DialError::NotSupported`: 拨号器不支持该操作
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError>;
 }
 
@@ -127,14 +127,14 @@ pub trait Dialer: Send + Sync {
 ///
 /// 这是最基本的拨号器实现，直接使用 tokio 的 `TcpStream` 建立 TCP 连接。
 /// 该拨号器：
-/// - 不包含任何状态，因此可以安全地在多个地方复用
-/// - 直接映射到系统的 TCP 连接能力
-/// - 适用于大多数基础网络连接需求
+        // - 不包含任何状态，因此可以安全地在多个地方复用
+        // - 直接映射到系统的 TCP 连接能力
+        // - 适用于大多数基础网络连接需求
 ///
 /// ## 使用场景
-/// - 直接的 TCP 连接（如 HTTP、原始 TCP 代理）
-/// - 作为其他拨号器的底层传输（如 TLS 拨号器的内部实现）
-/// - 测试和开发环境中的简单连接需求
+        // - 直接的 TCP 连接（如 HTTP、原始 TCP 代理）
+        // - 作为其他拨号器的底层传输（如 TLS 拨号器的内部实现）
+        // - 测试和开发环境中的简单连接需求
 pub struct TcpDialer;
 
 #[async_trait]
@@ -142,9 +142,9 @@ impl Dialer for TcpDialer {
     /// 建立 TCP 连接到指定的主机和端口
     ///
     /// 该实现支持 Happy Eyeballs (RFC 8305) 算法：
-    /// - 同时尝试 IPv6 和 IPv4 连接
-    /// - 交错发起连接尝试，IPv6 略早于 IPv4
-    /// - 使用环境变量控制行为：
+            // - 同时尝试 IPv6 和 IPv4 连接
+            // - 交错发起连接尝试，IPv6 略早于 IPv4
+            // - 使用环境变量控制行为：
     ///   - SB_HE_DISABLE=1: 禁用 Happy Eyeballs，回退到原始行为
     ///   - SB_HE_DELAY_MS: 设置 IPv4 延迟启动时间（默认 50ms）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
@@ -377,9 +377,9 @@ impl Dialer for RetryableTcpDialer {
 /// 资源压力感知的拨号器包装器
 ///
 /// 此拨号器会检测资源压力（如文件描述符耗尽、内存不足）并采取相应的回退策略：
-/// - 自动检测资源压力相关错误
-/// - 在压力情况下应用节流延迟
-/// - 向管理界面暴露压力指标
+        // - 自动检测资源压力相关错误
+        // - 在压力情况下应用节流延迟
+        // - 向管理界面暴露压力指标
 pub struct ResourceAwareDialer<D: Dialer> {
     inner: D,
 }
@@ -419,13 +419,13 @@ impl<D: Dialer + Send + Sync> Dialer for ResourceAwareDialer<D> {
 /// 基于闭包的自定义拨号器
 ///
 /// 该拨号器允许通过闭包注入自定义的连接逻辑，非常适用于：
-/// - 单元测试中模拟各种网络行为
-/// - 开发环境中的连接调试和监控
-/// - 特殊场景下的连接定制（如连接池、负载均衡等）
-/// - admin 端点的只读示例构造
+        // - 单元测试中模拟各种网络行为
+        // - 开发环境中的连接调试和监控
+        // - 特殊场景下的连接定制（如连接池、负载均衡等）
+        // - admin 端点的只读示例构造
 ///
 /// ## 类型参数
-/// - `F`: 闭包类型，必须满足复杂的约束以支持异步操作
+        // - `F`: 闭包类型，必须满足复杂的约束以支持异步操作
 ///
 /// ## 设计考虑
 /// 该拨号器使用了类型擦除的设计，闭包返回装箱的 Future，
@@ -475,15 +475,15 @@ impl<F> FnDialer<F> {
     /// R69: 便于 admin 端点构造只读示例
     ///
     /// # 参数
-    /// - `f`: 实现拨号逻辑的闭包函数
+            // - `f`: 实现拨号逻辑的闭包函数
     ///
     /// # 返回值
     /// 包装了给定闭包的 `FnDialer` 实例
     ///
     /// ## 使用场景
-    /// - 测试中注入模拟连接行为
-    /// - 特殊网络环境的连接定制
-    /// - 连接监控和调试
+            // - 测试中注入模拟连接行为
+            // - 特殊网络环境的连接定制
+            // - 连接监控和调试
     pub fn new(f: F) -> Self {
         Self(f)
     }
@@ -492,20 +492,20 @@ impl<F> FnDialer<F> {
 /// 兼容性转换：将 tokio 超时错误统一映射为 DialError
 ///
 /// 这个实现确保了整个传输层对超时错误的一致处理：
-/// - 将 `tokio::time::error::Elapsed` 转换为 `DialError::Other("timeout")`
-/// - 避免使用已弃用的 `DialError::Timeout`
-/// - 与 util 模块的超时处理策略保持一致
+        // - 将 `tokio::time::error::Elapsed` 转换为 `DialError::Other("timeout")`
+        // - 避免使用已弃用的 `DialError::Timeout`
+        // - 与 util 模块的超时处理策略保持一致
 ///
 /// ## 设计理由
 /// 使用字符串 "timeout" 而不是专门的枚举变体：
-/// - 保持错误类型的简洁性
-/// - 便于日志记录和调试
-/// - 与现有的错误处理模式一致
+        // - 保持错误类型的简洁性
+        // - 便于日志记录和调试
+        // - 与现有的错误处理模式一致
 impl From<tokio::time::error::Elapsed> for DialError {
     /// 将 tokio 超时错误转换为标准化的拨号错误
     ///
     /// # 参数
-    /// - `_`: tokio 的超时错误（具体内容被忽略）
+            // - `_`: tokio 的超时错误（具体内容被忽略）
     ///
     /// # 返回值
     /// 标准化的 `DialError::Other("timeout")` 错误
@@ -539,9 +539,9 @@ pub(crate) mod priv_io {
     ///
     /// 该类型别名将 tokio 的双工流类型暴露为 IoStream 的实现者，
     /// 主要用于：
-    /// - 内存中的双向通信管道
-    /// - 测试中模拟网络连接
-    /// - 进程间或任务间的数据传递
+            // - 内存中的双向通信管道
+            // - 测试中模拟网络连接
+            // - 进程间或任务间的数据传递
     ///
     /// 注意：该类型当前未被使用，但保留以备将来扩展
     #[allow(dead_code)]
@@ -551,19 +551,19 @@ pub(crate) mod priv_io {
     ///
     /// 该函数用于在编译时验证类型是否满足 AsyncReadWrite 的要求，
     /// 包括：
-    /// - `AsyncRead`: 支持异步读取
-    /// - `AsyncWrite`: 支持异步写入
-    /// - `Unpin`: 可以安全地在内存中移动
-    /// - `Send`: 可以在线程间传递
-    /// - `'static`: 具有静态生命周期
+            // - `AsyncRead`: 支持异步读取
+            // - `AsyncWrite`: 支持异步写入
+            // - `Unpin`: 可以安全地在内存中移动
+            // - `Send`: 可以在线程间传递
+            // - `'static`: 具有静态生命周期
     ///
     /// # 参数
-    /// - `_`: 要检查的类型的引用（参数被忽略，仅用于类型推断）
+            // - `_`: 要检查的类型的引用（参数被忽略，仅用于类型推断）
     ///
     /// # 用途
-    /// - 编译时类型验证
-    /// - 确保类型满足 IoStream 的要求
-    /// - 测试和开发中的类型检查
+            // - 编译时类型验证
+            // - 确保类型满足 IoStream 的要求
+            // - 测试和开发中的类型检查
     #[allow(dead_code)]
     pub fn is_async_read_write<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(_: &T) {}
 }

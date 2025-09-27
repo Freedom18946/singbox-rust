@@ -15,6 +15,7 @@ pub mod merge;
 pub mod minimize;
 pub mod model;
 pub mod normalize;
+pub mod outbound;
 pub mod present;
 pub mod rule;
 pub mod subscribe;
@@ -97,13 +98,13 @@ pub struct Rule {
     /// 域名后缀匹配（任意一个命中即生效）
     #[serde(default)]
     pub domain_suffix: Vec<String>,
-    /// [预埋] IP 段（CIDR），当前 Router 只接域名，后续在 sb-core 落地
+    /// \[预埋\] IP 段（CIDR），当前 Router 只接域名，后续在 sb-core 落地
     #[serde(default)]
     pub ip_cidr: Vec<String>,
-    /// [预埋] 端口或范围（形如 "80", "443", "1000-2000"）
+    /// \[预埋\] 端口或范围（形如 "80", "443", "1000-2000"）
     #[serde(default)]
     pub port: Vec<String>,
-    /// [预埋] 传输层协议: "tcp" | "udp"
+    /// \[预埋\] 传输层协议: "tcp" | "udp"
     #[serde(default)]
     pub transport: Option<String>,
     /// 命中的出站名称（需存在于 outbounds）
@@ -164,9 +165,9 @@ impl Config {
     }
 
     /// 构建 `OutboundRegistry` 与 `Router`（真实实现）
-    /// - 支持 direct/block/socks5/http 四类出站
-    /// - 规则：`rules[].domain_suffix -> RouteTarget::Named(outbound)`
-    /// - 默认路由：`default_outbound` 若指定则使用该命名出站，否则 Direct
+            // - 支持 direct/block/socks5/http 四类出站
+            // - 规则：`rules[].domain_suffix -> RouteTarget::Named(outbound)`
+            // - 默认路由：`default_outbound` 若指定则使用该命名出站，否则 Direct
     /// TODO: Re-enable after breaking circular dependency
     /*
     pub fn build_registry_and_router(&self) -> Result<(OutboundRegistry, Router)> {

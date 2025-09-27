@@ -56,7 +56,7 @@ fn classify_io_error(e: &std::io::Error) -> &'static str {
 
 fn udp_limiter() -> Option<&'static RateLimiter> {
     static LIM: OnceLock<Option<RateLimiter>> = OnceLock::new();
-    LIM.get_or_init(|| RateLimiter::from_env_udp()).as_ref()
+    LIM.get_or_init(RateLimiter::from_env_udp).as_ref()
 }
 
 /// 可选解析辅助：当目标是域名且 SB_DNS_ENABLE=1 时，使用进程级 DNS 客户端解析一个可用地址。
@@ -114,9 +114,9 @@ pub async fn direct_udp_socket_for(dst: &UdpTargetAddr) -> Result<UdpSocket> {
 }
 
 /// 直接转发一个 UDP 数据包到目标地址。
-/// - `sock`：入站绑定的 UdpSocket（共享同一 socket，便于回流）
-/// - `dst`：目标（域名或 IP）
-/// - `payload`：要发送的负载
+        // - `sock`：入站绑定的 UdpSocket（共享同一 socket，便于回流）
+        // - `dst`：目标（域名或 IP）
+        // - `payload`：要发送的负载
 pub async fn direct_sendto(sock: &UdpSocket, dst: &UdpTargetAddr, payload: &[u8]) -> Result<usize> {
     if let Some(l) = udp_limiter() {
         if let Err(reason) = l.allow(payload.len()) {

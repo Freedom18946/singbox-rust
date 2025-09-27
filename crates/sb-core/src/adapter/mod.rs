@@ -101,3 +101,7 @@ impl Bridge {
         self.find_outbound(name)
     }
 }
+
+impl Default for Bridge {
+    fn default() -> Self { Self::new() }
+}

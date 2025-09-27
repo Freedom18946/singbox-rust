@@ -1,3 +1,4 @@
+#![cfg(feature = "adapter-vless")]
 //! Final integration test for VLESS protocol implementation
 //!
 //! This test verifies that the complete VLESS implementation works correctly

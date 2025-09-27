@@ -72,6 +72,8 @@ pub mod rule_id;
 pub use explain_bridge::rebuild_index;
 #[cfg(feature = "explain")]
 pub use explain_index::get_index;
+#[cfg(feature = "explain")]
+pub use self::explain::{ExplainDto, ExplainResult, ExplainQuery, ExplainTrace, ExplainStep};
 // 为了兼容历史导出路径：router::{RouterHandle,RouteCtx,Transport,Router,RouteDecision,RouteTarget,DnsResolve,DnsResult}
 pub use self::dns_bridge::{DnsResolverBridge, EnhancedDnsResolver};
 pub use self::dns_integration::{
@@ -1289,8 +1291,8 @@ async fn read_rules_file(path: &Path) -> Result<String, std::io::Error> {
 }
 
 /// 递归展开 include 指令，支持两种形式：
-/// - `include path/to/file.rules`
-/// - `@include path/to/file.rules`
+        // - `include path/to/file.rules`
+        // - `@include path/to/file.rules`
 /// 相对路径基于父文件目录；深度由 `SB_ROUTER_RULES_INCLUDE_DEPTH` 控制（默认 4）
 fn read_rules_with_includes<'a>(
     root: &'a Path,
@@ -2053,7 +2055,7 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
         }
         // GeoIP check if enabled
         if _use_geoip {
-            if let Some(lookup_cc) = crate::geoip::lookup_with_metrics(ip) {
+            if let Some(lookup_cc) = crate::geoip::lookup_with_metrics_decision(ip) {
                 for (cc, decision) in &idx.geoip_rules {
                     if cc == &lookup_cc {
                         return *decision;

@@ -41,6 +41,10 @@ impl DhcpResolver {
     }
 }
 
+impl Default for DhcpResolver {
+    fn default() -> Self { Self::new() }
+}
+
 #[async_trait]
 impl super::Resolver for DhcpResolver {
     async fn resolve(&self, _domain: &str) -> Result<super::DnsAnswer> {

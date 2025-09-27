@@ -8,5 +8,5 @@ pub mod matcher;
 pub mod router;
 
 // Re-export commonly used types from submodules
-pub use explain::{ExplainEngine, ExplainResult};
+pub use explain::{ExplainEngine, ExplainResult, ExplainDto};
 pub use trace::Trace;

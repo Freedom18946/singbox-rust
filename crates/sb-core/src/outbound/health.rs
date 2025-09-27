@@ -34,6 +34,12 @@ impl HealthStatus {
     }
 }
 
+impl Default for HealthStatus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct EpState {
     pub up: AtomicBool,
     pub consecutive_fail: parking_lot::Mutex<u32>,
@@ -84,7 +90,7 @@ pub async fn spawn_if_enabled() {
         return;
     }
     let st = STATUS.get_or_init(HealthStatus::new).clone();
-    let _ = STATES.get_or_init(|| DashMap::new());
+    let _ = STATES.get_or_init(DashMap::new);
     let interval_ms = interval_ms();
 
     tokio::spawn(async move {
@@ -165,7 +171,7 @@ async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
         ProxyKind::Socks5 => check_socks5(ep.clone()).await,
     };
 
-    let states = STATES.get().unwrap();
+    let Some(states) = STATES.get() else { return Ok(()); };
     let ent = states.entry(key.to_string()).or_insert_with(|| EpState {
         up: AtomicBool::new(true),
         consecutive_fail: parking_lot::Mutex::new(0),
@@ -242,9 +248,9 @@ async fn check_http(ep: ProxyEndpoint) -> anyhow::Result<()> {
             let (version, status_code) = parts;
             if version == "HTTP/1.0" || version == "HTTP/1.1" {
                 // 2xx (success) or 407 (proxy auth required - indicates connectivity) = healthy
-                if (status_code >= 200 && status_code < 300) || status_code == 407 {
-                    return Ok(());
-                }
+            if (200..300).contains(&status_code) || status_code == 407 {
+                return Ok(());
+            }
             }
         }
     }

@@ -63,7 +63,10 @@ impl UdpNatTable {
         }
     }
     pub fn insert(&self, src: SocketAddr, upstream: SocketAddr, ttl: Duration) {
-        let mut g = self.inner.lock().unwrap();
+        let Ok(mut g) = self.inner.lock() else {
+            // On lock poison, skip UDP NAT tracking (graceful degradation)
+            return;
+        };
         if g.len() >= self.max_entries {
             // 逐出一个最旧的（简化）
             if let Some((k, _)) = g
@@ -87,14 +90,20 @@ impl UdpNatTable {
         M().udp_map_size.set(g.len() as u64);
     }
     pub fn hit(&self, src: SocketAddr, upstream: SocketAddr) {
-        let mut g = self.inner.lock().unwrap();
+        let Ok(mut g) = self.inner.lock() else {
+            // On lock poison, skip UDP NAT tracking (graceful degradation)
+            return;
+        };
         if let Some(e) = g.get_mut(&(src, upstream)) {
             e.last = Instant::now();
         }
     }
     pub fn evict_expired(&self) {
         let now = Instant::now();
-        let mut g = self.inner.lock().unwrap();
+        let Ok(mut g) = self.inner.lock() else {
+            // On lock poison, skip UDP NAT tracking (graceful degradation)
+            return;
+        };
         let mut removed = 0;
         g.retain(|_, e| {
             if now.duration_since(e.last) > e.ttl {

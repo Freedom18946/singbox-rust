@@ -31,27 +31,31 @@ impl DnsCache {
     }
 
     pub fn resolve(&self, host: &str, port: u16) -> Option<Vec<SocketAddr>> {
-        // 1) 命中缓存
-        if let Some(v) = self.inner.lock().unwrap().get(host) {
-            if Self::now() < v.expire_at {
-                return Some(v.addrs.clone());
+        // 1) 命中缓存（锁污染时跳过缓存）
+        if let Ok(guard) = self.inner.lock() {
+            if let Some(v) = guard.get(host) {
+                if Self::now() < v.expire_at {
+                    return Some(v.addrs.clone());
+                }
             }
         }
         // 2) 系统解析
         let q = format!("{}:{}", host, port);
         match q.to_socket_addrs() {
-            Ok(mut it) => {
-                let mut acc = vec![];
-                while let Some(a) = it.next() {
+            Ok(it) => {
+                let mut acc = Vec::new();
+                for a in it {
                     acc.push(a);
                 }
                 if !acc.is_empty() {
-                    // 3) 写缓存
+                    // 3) 写缓存（锁污染时忽略缓存写入）
                     let e = Entry {
                         addrs: acc.clone(),
                         expire_at: Self::now() + self.ttl,
                     };
-                    self.inner.lock().unwrap().insert(host.to_string(), e);
+                    if let Ok(mut g) = self.inner.lock() {
+                        g.insert(host.to_string(), e);
+                    }
                     return Some(acc);
                 }
                 None
@@ -61,10 +65,12 @@ impl DnsCache {
     }
     pub fn purge_expired(&self) {
         let now = Self::now();
-        self.inner.lock().unwrap().retain(|_, e| e.expire_at > now);
+        if let Ok(mut g) = self.inner.lock() {
+            g.retain(|_, e| e.expire_at > now);
+        }
     }
     pub fn size(&self) -> usize {
-        self.inner.lock().unwrap().len()
+        self.inner.lock().map(|g| g.len()).unwrap_or(0)
     }
 }
 

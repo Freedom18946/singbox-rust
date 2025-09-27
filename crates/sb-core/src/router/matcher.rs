@@ -47,9 +47,9 @@ impl DomainRuleSet {
     }
 
     /// 从统一的字符串列表加载，带前缀语义：
-    /// - `full:example.com` -> exact
-    /// - `suffix:example.com` -> suffix
-    /// - `keyword:foo` -> keyword
+            // - `full:example.com` -> exact
+            // - `suffix:example.com` -> suffix
+            // - `keyword:foo` -> keyword
     pub fn from_tagged_rules<I>(rules: I) -> Self
     where
         I: IntoIterator<Item = String>,

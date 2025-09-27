@@ -8,18 +8,10 @@ use std::io::Write;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 
+#[derive(Default)]
 pub struct TlsClient {
     pub dialer: TcpDialer,
     pub alpn: Vec<Vec<u8>>,
-}
-
-impl Default for TlsClient {
-    fn default() -> Self {
-        Self {
-            dialer: TcpDialer::default(),
-            alpn: vec![],
-        }
-    }
 }
 
 pub struct TlsResult {
@@ -86,7 +78,16 @@ impl TlsClient {
                 negotiated_alpn: None,
             };
         }
-        let stream = stream.unwrap();
+        let stream = match stream {
+            Some(s) => s,
+            None => {
+                let fallback = error.unwrap_or(NetClass {
+                    code: crate::error_map::IssueCode::TlsHandshakeProtocol,
+                    class: "proto",
+                });
+                return TlsResult { error: Some(fallback), negotiated_alpn: None };
+            }
+        };
 
         let mut cfg = ClientConfig::builder()
             .with_root_certificates(default_root_store())

@@ -418,6 +418,12 @@ impl EnhancedDnsClient {
     }
 }
 
+impl Default for EnhancedDnsClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

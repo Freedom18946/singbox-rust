@@ -147,7 +147,19 @@ impl P3Selector {
                 _ => {}
             }
         }
-        let (pick, pick_sc) = best.expect("no outbound");
+        let (pick, pick_sc) = match best {
+            Some(v) => v,
+            None => {
+                let fallback = self
+                    .last_pick
+                    .clone()
+                    .or_else(|| self.outbounds.first().cloned())
+                    .unwrap_or_default();
+                M().proxy_select_total
+                    .inc(&[(LABEL_OUTBOUND, fallback.as_str())]);
+                return fallback;
+            }
+        };
         // 抖动阈：若新旧差距不足阈值比率，保持原选择
         if let Some(prev) = self.last_pick.clone() {
             let prev_sc = self.score_of(&prev);

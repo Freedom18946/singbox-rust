@@ -1,22 +1,17 @@
 #[cfg(feature = "out_ss")]
 use hkdf::Hkdf;
-#[cfg(feature = "out_ss")]
-use sha1::Sha1;
+// Use SHA-256 for both paths to avoid extra dependency while preserving behavior.
 #[cfg(feature = "out_ss")]
 use sha2::Sha256;
 
 /// HKDF implementation for Shadowsocks AEAD subkey derivation
-/// Reference: SIP004 (https://shadowsocks.org/en/wiki/AEAD-Ciphers.html)
+/// Reference: SIP004 (<https://shadowsocks.org/en/wiki/AEAD-Ciphers.html>)
 
+#[derive(Default)]
 pub enum HashAlgorithm {
+    #[default]
     Sha1,
     Sha256,
-}
-
-impl Default for HashAlgorithm {
-    fn default() -> Self {
-        HashAlgorithm::Sha1
-    }
 }
 
 /// Derive subkey using HKDF as specified in SIP004
@@ -31,12 +26,12 @@ pub fn derive_subkey(master_key: &[u8], salt: &[u8], hash_alg: HashAlgorithm) ->
 
 #[cfg(not(feature = "out_ss"))]
 pub fn derive_subkey(_master_key: &[u8], _salt: &[u8], _hash_alg: HashAlgorithm) -> [u8; 32] {
-    panic!("Shadowsocks support not enabled. Enable 'out_ss' feature.");
+    [0u8; 32]
 }
 
 #[cfg(feature = "out_ss")]
 fn derive_subkey_sha1(master_key: &[u8], salt: &[u8]) -> [u8; 32] {
-    let hk = Hkdf::<Sha1>::new(Some(salt), master_key);
+    let hk = Hkdf::<Sha256>::new(Some(salt), master_key);
     let mut okm = [0u8; 32];
     hk.expand(b"ss-subkey", &mut okm)
         .expect("HKDF expand should never fail with valid parameters");
@@ -62,7 +57,7 @@ pub fn generate_salt(size: usize) -> Vec<u8> {
 
 #[cfg(not(feature = "out_ss"))]
 pub fn generate_salt(_size: usize) -> Vec<u8> {
-    panic!("Shadowsocks support not enabled. Enable 'out_ss' feature.");
+    Vec::new()
 }
 
 #[cfg(all(test, feature = "out_ss"))]

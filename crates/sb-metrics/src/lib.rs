@@ -37,7 +37,11 @@ mod router {
             ),
             &["category", "outbound"],
         )
-        .unwrap();
+        .unwrap_or_else(|_| {
+            // Fallback to a dummy counter on initialization failure
+            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+            IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
         REGISTRY.register(Box::new(vec.clone())).ok();
         vec
     });
@@ -63,7 +67,10 @@ mod outbound {
             ),
             &["kind"], // direct | socks | http | other
         )
-        .unwrap();
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -74,7 +81,10 @@ mod outbound {
             Opts::new("outbound_connect_error_total", "Outbound connect errors"),
             &["kind", "class"], // class: dns | timeout | io | tls | other
         )
-        .unwrap();
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -89,6 +99,7 @@ mod outbound {
         .buckets(vec![
             0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0,
         ]);
+        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let v = HistogramVec::new(opts, &["kind"]).unwrap();
         REGISTRY.register(Box::new(v.clone())).ok();
         v
@@ -142,12 +153,122 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
     }
 }
 
+// ===================== Adapter Metrics (SOCKS/HTTP) =====================
+mod adapter {
+    use super::*;
+
+    /// Adapter dial total counter - tracks all dial attempts with results
+    /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "proto_err", "auth_err", "io_err"}
+    pub static DIAL_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+        let vec = IntCounterVec::new(
+            prometheus::Opts::new(
+                "adapter_dial_total",
+                "Adapter dial attempts total by adapter and result",
+            ),
+            &["adapter", "result"],
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    /// Adapter dial latency histogram in milliseconds
+    /// labels: adapter = {"socks5", "http"}
+    pub static DIAL_LATENCY_MS: Lazy<HistogramVec> = Lazy::new(|| {
+        let opts = HistogramOpts::new(
+            "adapter_dial_latency_ms",
+            "Adapter dial latency in milliseconds",
+        )
+        .buckets(vec![
+            1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
+        ]);
+        #[allow(clippy::unwrap_used)]
+        let v = HistogramVec::new(opts, &["adapter"]).unwrap();
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+
+    /// Adapter retry attempts counter
+    /// labels: adapter = {"socks5", "http"}
+    pub static RETRIES_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+        let vec = IntCounterVec::new(
+            prometheus::Opts::new(
+                "adapter_retries_total",
+                "Adapter retry attempts total",
+            ),
+            &["adapter"],
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+}
+
+/// Record adapter dial attempt result
+pub fn inc_adapter_dial_total(adapter: &str, result: &str) {
+    adapter::DIAL_TOTAL
+        .with_label_values(&[adapter, result])
+        .inc();
+}
+
+/// Record adapter dial latency in milliseconds
+pub fn observe_adapter_dial_latency_ms(adapter: &str, latency_ms: f64) {
+    adapter::DIAL_LATENCY_MS
+        .with_label_values(&[adapter])
+        .observe(latency_ms.max(0.0));
+}
+
+/// Record adapter retry attempt
+pub fn inc_adapter_retries_total(adapter: &str) {
+    adapter::RETRIES_TOTAL
+        .with_label_values(&[adapter])
+        .inc();
+}
+
+/// Helper function to classify adapter errors into metric result categories
+pub fn classify_adapter_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
+    let s = e.to_string();
+    if s.contains("timeout") || s.contains("timed out") {
+        "timeout"
+    } else if s.contains("Authentication") || s.contains("auth") {
+        "auth_err"
+    } else if s.contains("Protocol") || s.contains("Invalid") || s.contains("Unsupported") {
+        "proto_err"
+    } else {
+        "io_err"
+    }
+}
+
+/// Helper to start timing an adapter operation
+pub fn start_adapter_timer() -> Instant {
+    Instant::now()
+}
+
+/// Helper to record the latency and result for an adapter operation
+pub fn record_adapter_dial(adapter: &str, start_time: Instant, result: Result<(), &dyn core::fmt::Display>) {
+    let latency_ms = start_time.elapsed().as_millis() as f64;
+    observe_adapter_dial_latency_ms(adapter, latency_ms);
+
+    let result_label = match result {
+        Ok(()) => "ok",
+        Err(e) => classify_adapter_error(e),
+    };
+    inc_adapter_dial_total(adapter, result_label);
+}
+
 // ===================== SOCKS Inbound Metrics =====================
 mod socks_in {
     use super::*;
 
     /// SOCKS TCP 连接总数（握手成功即计数）
     pub static TCP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let c = IntCounter::new(
             "inbound_socks_tcp_connections_total",
             "SOCKS inbound accepted TCP connections total",
@@ -159,6 +280,7 @@ mod socks_in {
 
     /// UDP 关联创建总数
     pub static UDP_ASSOC_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let c = IntCounter::new(
             "inbound_socks_udp_associate_total",
             "SOCKS inbound UDP ASSOCIATE total",
@@ -170,6 +292,7 @@ mod socks_in {
 
     /// UDP 包计数：方向 in -> server / out -> client
     pub static UDP_PKTS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let v = IntCounterVec::new(
             Opts::new(
                 "inbound_socks_udp_packets_total",
@@ -184,6 +307,7 @@ mod socks_in {
 
     /// UDP 当前关联估算（需要上层周期更新，可选）
     pub static UDP_ASSOC_ESTIMATE: Lazy<IntGauge> = Lazy::new(|| {
+        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let g = IntGauge::new(
             "inbound_socks_udp_assoc_estimate",
             "SOCKS inbound UDP associations (approximate)",
@@ -217,17 +341,20 @@ async fn metrics_http(req: Request<Body>) -> Result<Response<Body>, Infallible> 
             let metric_families = REGISTRY.gather();
             let mut buf = Vec::new();
             let encoder = TextEncoder::new();
-            encoder.encode(&metric_families, &mut buf).unwrap();
+            if encoder.encode(&metric_families, &mut buf).is_err() {
+                return Ok(Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("encoding error")).unwrap_or_default());
+            }
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header(hyper::header::CONTENT_TYPE, encoder.format_type())
                 .body(Body::from(buf))
-                .unwrap())
+                .unwrap_or_default())
         }
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from("not found"))
-            .unwrap()),
+            .unwrap_or_default()),
     }
 }
 

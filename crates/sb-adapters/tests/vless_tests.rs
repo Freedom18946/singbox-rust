@@ -1,3 +1,4 @@
+#![cfg(feature = "adapter-vless")]
 //! Comprehensive tests for VLESS protocol implementation
 
 use sb_adapters::outbound::vless::{

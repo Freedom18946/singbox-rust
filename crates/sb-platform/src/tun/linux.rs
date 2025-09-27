@@ -34,10 +34,10 @@ impl LinuxTun {
         ifr.set_flags(IFF_TUN | IFF_NO_PI);
 
         // Create the TUN interface
-        // SAFETY: We pass a valid file descriptor obtained from OpenOptions::open and a
-        // properly initialized ifr structure whose lifetime outlives the call.
-        // The ioctl request code TUNSETIFF is platform-defined and the return value is
-        // checked for errors (< 0) and mapped to TunError.
+        // SAFETY:
+                // - 不变量：file 是有效的文件句柄，ifr 是正确初始化的 IfrData 结构
+                // - 并发/别名：ifr 为局部变量，file 由当前线程独占访问
+                // - FFI/平台契约：TUNSETIFF 是 Linux 上有效的 ioctl 命令，返回值已检查
         unsafe {
             let result = libc::ioctl(file.as_raw_fd(), TUNSETIFF, &ifr);
             if result < 0 {
@@ -286,7 +286,10 @@ impl IfrData {
     }
 
     fn get_name(&self) -> Option<String> {
-        // SAFETY: Converting c_char array to u8 slice with proper length bounds
+        // SAFETY:
+                // - 不变量：ifr_name 是长度为 IF_NAMESIZE 的有效数组，转换为 u8 切片
+                // - 并发/别名：self 为不可变引用，数组内容在调用期间稳定
+                // - FFI/平台契约：从 c_char 数组创建 u8 切片在内存布局上是安全的
         let name_bytes = unsafe {
             std::slice::from_raw_parts(self.ifr_name.as_ptr() as *const u8, libc::IF_NAMESIZE)
         };

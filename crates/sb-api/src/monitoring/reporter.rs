@@ -122,7 +122,7 @@ impl RealtimeReporter {
                 match traffic_rx.recv().await {
                     Ok(stats) => {
                         // Broadcast to Clash API clients
-                        if let Err(_) = traffic_tx.send(stats.clone()) {
+                        if traffic_tx.send(stats.clone()).is_err() {
                             log::debug!("No Clash API traffic subscribers");
                         }
 
@@ -191,7 +191,7 @@ impl RealtimeReporter {
                 match connection_rx.recv().await {
                     Ok(connection) => {
                         // Broadcast to Clash API clients
-                        if let Err(_) = connection_tx.send(connection.clone()) {
+                        if connection_tx.send(connection.clone()).is_err() {
                             log::debug!("No connection subscribers");
                         }
 
@@ -273,7 +273,7 @@ impl RealtimeReporter {
                     connection_id: None,
                 };
 
-                if let Err(_) = log_tx.send(log_entry) {
+                if log_tx.send(log_entry).is_err() {
                     log::debug!("No log subscribers");
                 }
             }

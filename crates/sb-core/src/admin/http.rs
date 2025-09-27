@@ -3,7 +3,7 @@
 //!   GET  /healthz                      → 200 JSON {ok,pid,fingerprint}
 //!   GET  /outbounds                    → 200 JSON [{name,kind}]
 //!   POST /explain {"dest","network","protocol"} → 200 JSON {dest,outbound}
-//!   POST /reload  {"config": <obj>|null, "path": <string>|null} → 200 JSON {event,ok,changed,fingerprint,t}
+//!   POST /reload  {"config": `obj`|null, "path": `string`|null} → 200 JSON {event,ok,changed,fingerprint,t}
 //! Security:
 //!   - Loopback-only by default (10/172/192/127/::1 accepted).
 //!   - If ADMIN_TOKEN/--admin-token is set, require header `X-Admin-Token: <token>`.
@@ -18,6 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
 
 use crate::adapter::Bridge;
+#[cfg(feature = "router")]
 use crate::routing::engine::{Engine, Input};
 use crate::runtime::supervisor::Supervisor;
 use sb_config::ir::ConfigIR;
@@ -280,7 +281,8 @@ fn parse_path(line: &str) -> (&str, &str, &str) {
 
 fn handle(
     mut cli: TcpStream,
-    engine: &Engine,
+    #[cfg(feature = "router")] engine: &Engine,
+    #[cfg(not(feature = "router"))] _engine: &(),
     bridge: &Bridge,
     admin_token: Option<&str>,
     supervisor: Option<&Arc<Supervisor>>,
@@ -349,6 +351,7 @@ fn handle(
             let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
             write_json(&mut cli, 200, &body)
         }
+        #[cfg(feature = "router")]
         ("POST", "/explain") => {
             let body = match read_body(&mut cli, &headers) {
                 Ok(b) => b,
@@ -382,6 +385,11 @@ fn handle(
             });
             let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
             write_json(&mut cli, 200, &body)
+        }
+        #[cfg(not(feature = "router"))]
+        ("POST", "/explain") => {
+            let obj = json_err("not_available", "router feature not enabled");
+            write_json(&mut cli, 503, &obj)
         }
         ("POST", "/reload") => handle_reload(&mut cli, &headers, supervisor, rt_handle),
         _ => {
@@ -481,7 +489,8 @@ fn handle_reload(
                         "fingerprint": env!("CARGO_PKG_VERSION"),
                         "t": now
                     });
-                    return write_json(cli, 400, &serde_json::to_string(&error_obj).unwrap());
+                    let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+                    return write_json(cli, 400, &body);
                 }
             }
         }
@@ -556,7 +565,7 @@ fn handle_reload(
     // 执行真正的 reload：用 tokio 运行时句柄在同步线程里阻塞执行
     let diff_result = match rt_handle {
         Some(h) => h.block_on(async { supervisor.reload(ir).await }),
-        None => Err(anyhow::anyhow!("no runtime handle")).map_err(|e| e.into()),
+        None => Err(anyhow::anyhow!("no runtime handle")),
     };
 
     let diff_result = match diff_result {
@@ -606,7 +615,8 @@ fn handle_reload(
 
 pub fn spawn_admin(
     listen: &str,
-    engine: Engine<'static>,
+    #[cfg(feature = "router")] engine: Engine<'static>,
+    #[cfg(not(feature = "router"))] _engine: (),
     bridge: Arc<Bridge>,
     admin_token: Option<String>,
     supervisor: Option<Arc<Supervisor>>,
@@ -628,7 +638,10 @@ pub fn spawn_admin(
             match c {
                 Ok(s) => {
                     let _ = s.set_nodelay(true);
+                    #[cfg(feature = "router")]
                     let eng = Engine::new(engine.cfg);
+                    #[cfg(not(feature = "router"))]
+                    let eng = ();
                     let brc = bridge.clone();
                     let tok = admin_token.clone();
                     let sup = supervisor.clone();

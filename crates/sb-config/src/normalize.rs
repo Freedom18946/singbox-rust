@@ -109,7 +109,7 @@ pub fn normalize_config(cfg: &mut ConfigIR) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{ConfigIR, RuleIR};
+    use crate::ir::RuleIR;
     #[test]
     fn domain_norm_and_ports() {
         let mut r = RuleIR {

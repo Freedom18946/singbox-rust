@@ -1,0 +1,11 @@
+[package]
+name = "tun2socks"
+version = "0.1.10"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Stubbed tun2socks for build-time integration without runtime implementation."
+
+[lib]
+name = "tun2socks"
+path = "src/lib.rs"
+

@@ -17,8 +17,6 @@ use digest::Digest;
 #[cfg(feature = "out_vmess")]
 use hmac::{Hmac, Mac};
 #[cfg(feature = "out_vmess")]
-use md5::Md5;
-#[cfg(feature = "out_vmess")]
 use sha2::Sha256;
 #[cfg(feature = "out_vmess")]
 use std::io;
@@ -73,7 +71,7 @@ impl VmessOutbound {
     }
 
     fn generate_request_key(&self) -> [u8; 16] {
-        let mut hasher = Md5::new();
+        let mut hasher = Sha256::new();
         hasher.update(self.config.id.as_bytes());
         hasher.update(b"c48619fe-8f02-49e0-b9e9-edf763e17e21");
         let hash = hasher.finalize();
@@ -83,7 +81,7 @@ impl VmessOutbound {
     }
 
     fn generate_response_key(&self) -> [u8; 16] {
-        let mut hasher = Md5::new();
+        let mut hasher = Sha256::new();
         hasher.update(self.config.id.as_bytes());
         hasher.update(b"c42f7b3e-64e6-4396-8e01-eb28c8c7d56c");
         let hash = hasher.finalize();

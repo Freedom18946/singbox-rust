@@ -47,15 +47,20 @@ impl LabeledGauges {
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect();
-        let mut g = self.inner.lock().unwrap();
-        let e = g.entry(key).or_default();
-        e.set(v.to_bits());
+        if let Ok(mut g) = self.inner.lock() {
+            let e = g.entry(key).or_default();
+            e.set(v.to_bits());
+        }
+        // On lock poison, silently skip metrics update (graceful degradation)
     }
     pub fn snapshot(&self) -> Vec<(Vec<(String, String)>, f64)> {
-        let g = self.inner.lock().unwrap();
-        g.iter()
-            .map(|(k, v)| (k.clone(), f64::from_bits(v.get())))
-            .collect()
+        if let Ok(g) = self.inner.lock() {
+            g.iter()
+                .map(|(k, v)| (k.clone(), f64::from_bits(v.get())))
+                .collect()
+        } else {
+            Vec::new() // Return empty on lock poison (graceful degradation)
+        }
     }
 }
 
@@ -102,13 +107,18 @@ impl LabeledCounters {
             .iter()
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect();
-        let mut g = self.inner.lock().unwrap();
-        let c = g.entry(key).or_default();
-        c.inc();
+        if let Ok(mut g) = self.inner.lock() {
+            let c = g.entry(key).or_default();
+            c.inc();
+        }
+        // On lock poison, silently skip counter increment (graceful degradation)
     }
     pub fn snapshot(&self) -> Vec<(Vec<(String, String)>, u64)> {
-        let g = self.inner.lock().unwrap();
-        g.iter().map(|(k, c)| (k.clone(), c.get())).collect()
+        if let Ok(g) = self.inner.lock() {
+            g.iter().map(|(k, c)| (k.clone(), c.get())).collect()
+        } else {
+            Vec::new() // Return empty on lock poison (graceful degradation)
+        }
     }
 }
 

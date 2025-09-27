@@ -4,6 +4,7 @@
 //! via async channels while maintaining service availability.
 
 use crate::adapter::Bridge;
+#[cfg(feature = "router")]
 use crate::routing::engine::Engine;
 use anyhow::{Context, Result};
 use sb_config::ir::diff::Diff;
@@ -22,9 +23,18 @@ pub enum ReloadMsg {
 }
 
 /// Runtime state managed by supervisor
+#[cfg(feature = "router")]
 #[derive(Debug)]
 pub struct State {
     pub engine: Engine<'static>,
+    pub bridge: Arc<Bridge>,
+    pub health: Option<tokio::task::JoinHandle<()>>,
+    pub started_at: Instant,
+}
+
+#[cfg(not(feature = "router"))]
+#[derive(Debug)]
+pub struct State {
     pub bridge: Arc<Bridge>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     pub started_at: Instant,
@@ -46,6 +56,7 @@ pub struct SupervisorHandle {
     cancel: CancellationToken,
 }
 
+#[cfg(feature = "router")]
 impl State {
     pub fn new(engine: Engine<'static>, bridge: Bridge) -> Self {
         Self {
@@ -57,8 +68,20 @@ impl State {
     }
 }
 
+#[cfg(not(feature = "router"))]
+impl State {
+    pub fn new(_engine: (), bridge: Bridge) -> Self {
+        Self {
+            bridge: Arc::new(bridge),
+            health: None,
+            started_at: Instant::now(),
+        }
+    }
+}
+
 impl Supervisor {
     /// Start supervisor with initial configuration
+    #[cfg(feature = "router")]
     pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
@@ -110,6 +133,55 @@ impl Supervisor {
                     }
                     ReloadMsg::Shutdown { deadline } => {
                         // 广播取消信号
+                        cancel_ev.cancel();
+                        Self::handle_shutdown(&state_clone, deadline).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(Self { tx, handle, state, cancel })
+    }
+
+    /// Start supervisor with initial configuration (router feature disabled)
+    #[cfg(not(feature = "router"))]
+    pub async fn start(ir: sb_config::ir::ConfigIR) -> Result<Self> {
+        let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
+        let cancel = CancellationToken::new();
+
+        let bridge = Bridge::from_ir(&ir).context("failed to build bridge from initial config")?;
+        let initial_state = State::new((), bridge);
+        let state = Arc::new(RwLock::new(initial_state));
+
+        // Start inbound listeners
+        {
+            let state_guard = state.read().await;
+            for inbound in &state_guard.bridge.inbounds {
+                let ib = inbound.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = ib.serve() {
+                        tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
+                    }
+                });
+            }
+
+            // Optional health task
+            // (implementation would be similar to router version but without engine)
+        }
+
+        // Event loop (simplified for non-router case)
+        let state_clone = Arc::clone(&state);
+        let cancel_ev = cancel.clone();
+        let handle = tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                match msg {
+                    ReloadMsg::Apply(new_ir) => {
+                        if let Err(e) = Self::handle_reload_no_router(&state_clone, new_ir).await {
+                            tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
+                        }
+                    }
+                    ReloadMsg::Shutdown { deadline } => {
                         cancel_ev.cancel();
                         Self::handle_shutdown(&state_clone, deadline).await;
                         break;
@@ -178,6 +250,7 @@ impl Supervisor {
     }
 
     // Internal: handle reload in event loop
+    #[cfg(feature = "router")]
     async fn handle_reload(
         state: &Arc<RwLock<State>>,
         new_ir: sb_config::ir::ConfigIR,
@@ -224,6 +297,54 @@ impl Supervisor {
         }
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
+
+        Ok(())
+    }
+
+    // Internal: handle reload in event loop (router feature disabled)
+    #[cfg(not(feature = "router"))]
+    async fn handle_reload_no_router(
+        state: &Arc<RwLock<State>>,
+        new_ir: sb_config::ir::ConfigIR,
+    ) -> Result<()> {
+        // Build new bridge (no engine needed)
+        let new_bridge = Bridge::from_ir(&new_ir).context("failed to build new bridge")?;
+
+        // Start new inbound listeners first
+        let new_bridge_arc = Arc::new(new_bridge);
+        for inbound in &new_bridge_arc.inbounds {
+            let ib = inbound.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = ib.serve() {
+                    tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
+                }
+            });
+        }
+
+        // Update state atomically
+        {
+            let mut state_guard = state.write().await;
+
+            // Stop old health task if any
+            if let Some(old_health) = state_guard.health.take() {
+                old_health.abort();
+            }
+
+            // Replace bridge (no engine field in non-router State)
+            state_guard.bridge = new_bridge_arc;
+
+            // Start new health task if needed
+            if std::env::var("SB_HEALTH_ENABLE").is_ok() {
+                let health_bridge = state_guard.bridge.clone();
+                let health_cancel = CancellationToken::new();
+                let health_handle = tokio::spawn(async move {
+                    spawn_health_task_async(health_bridge, health_cancel).await;
+                });
+                state_guard.health = Some(health_handle);
+            }
+        }
+
+        tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully (no router)");
 
         Ok(())
     }
@@ -351,6 +472,7 @@ pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationTo
     .ok();
 }
 
+#[cfg(feature = "router")]
 impl Engine<'_> {
     /// Create engine from IR configuration
     pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Engine<'static>> {
@@ -360,11 +482,16 @@ impl Engine<'_> {
     }
 }
 
+#[cfg(not(feature = "router"))]
+pub fn engine_from_ir(_ir: &sb_config::ir::ConfigIR) -> Result<()> {
+    anyhow::bail!("app built without `router` feature")
+}
+
 impl Bridge {
     /// Create bridge from IR configuration
     pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Bridge> {
         // This should use existing bridge construction logic
         // For now, create a minimal bridge
-        Ok(Bridge::new_from_config(ir).context("failed to create bridge from config")?)
+        Bridge::new_from_config(ir).context("failed to create bridge from config")
     }
 }

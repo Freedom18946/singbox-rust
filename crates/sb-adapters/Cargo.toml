@@ -2,17 +2,23 @@
 name = "sb-adapters"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+description = "Proxy adapters for singbox-rust"
+repository = "https://github.com/singbox-rust/singbox-rust"
 
 [dependencies]
 anyhow = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net", "time"] }
+async-trait = "0.1"
+bytes = "1"
+once_cell = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-bytes = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net", "time"] }
 tracing = "0.1"
-async-trait = "0.1"
-once_cell = "1"
 tun2socks = { version = "0.1.10", optional = true }
+libc = "0.2"
 
 # VMess protocol dependencies
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -30,11 +36,27 @@ webpki-roots = { version = "0.25", optional = true }
 # 可选：通用 metrics 宏（仅当启用 feature=metrics 时编译）
 metrics = { version = "0.23", optional = true }
 
+# 可选：clap 支持（用于 CLI ValueEnum 实现）
+clap = { version = "4", optional = true, features = ["derive"] }
+
 # 工作区内依赖（按你的仓库结构）
-sb-core = { path = "../sb-core" }
+sb-core = { path = "../sb-core", features = ["router"] }
 sb-config = { path = "../sb-config" }
+sb-types = { path = "../sb-types" }
 sb-metrics = { path = "../sb-metrics", optional = true }
 sb-platform = { path = "../sb-platform", optional = true }
+
+# Additional dependencies needed by adapters
+hex = "0.4"
+base64 = "0.22"
+sha1 = "0.10"
+url = "2.5"
+ipnet = "2.7"
+blake3 = "1.3"
+glob = "0.3"
+
+# TLS dependencies for HTTPS proxy
+tokio-rustls = { version = "0.24", optional = true }
 
 [features]
 # 只在需要时显式启用对应入站；避免测试/构建环境分裂
@@ -46,6 +68,8 @@ tun = ["dep:sb-platform"]
 tun_macos = ["tun", "dep:tun2socks"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
 metrics = ["dep:metrics", "dep:sb-metrics"]
+# CLI 支持
+clap = ["dep:clap"]
 dns = []
 dns_udp = []
 dns_doh = []
@@ -54,7 +78,35 @@ e2e = []
 # TUIC protocol support
 tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots"]
 
+# Go parity adapter feature gates
+adapter-socks = []
+socks-udp = ["adapter-socks"]
+socks-bind = ["adapter-socks"]
+adapter-http = []
+http-tls = ["adapter-http", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls"]
+adapter-shadowsocks = []
+adapter-trojan = []
+adapter-vmess = []
+adapter-vless = []
+adapter-hysteria2 = []
+adapter-dns = []
+
+[[bench]]
+name = "adapters_conn"
+harness = false
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 serial_test = "2"
 proptest = "1.4"
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+
+[[example]]
+name = "http_connect_probe"
+path = "examples/http_connect_probe.rs"
+required-features = ["adapter-http"]
+
+[[example]]
+name = "socks_udp_probe"
+path = "examples/socks_udp_probe.rs"
+required-features = ["socks"]

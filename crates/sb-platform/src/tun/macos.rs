@@ -18,9 +18,10 @@ impl MacOsTun {
     /// Open a utun device on macOS
     fn open_utun_device(config: &TunConfig) -> Result<(File, String), TunError> {
         // Create a system socket for utun control
-        // SAFETY: We pass valid constants for domain (PF_SYSTEM), type (SOCK_DGRAM), and protocol
-        // (SYSPROTO_CONTROL). The returned file descriptor is checked for negative values to map
-        // errors into TunError without panicking.
+        // SAFETY:
+        // - 不变量：传递有效的常量参数给 socket 系统调用
+        // - 并发/别名：每次调用创建新的文件描述符，无数据竞争
+        // - FFI/平台契约：在 macOS 上 PF_SYSTEM/SOCK_DGRAM/SYSPROTO_CONTROL 是有效参数
         let fd = unsafe { libc::socket(libc::PF_SYSTEM, libc::SOCK_DGRAM, SYSPROTO_CONTROL) };
 
         if fd < 0 {
@@ -45,12 +46,17 @@ impl MacOsTun {
         }
 
         // Get control info
-        // SAFETY: We pass a valid file descriptor and a mutable pointer to a properly
-        // initialized C structure. Return value is checked for errors (< 0).
+        // SAFETY:
+                // - 不变量：fd 是有效的文件描述符，ctl_info 是正确初始化的 C 结构体
+                // - 并发/别名：ctl_info 独占访问，fd 由当前线程拥有
+                // - FFI/平台契约：CTLIOCGINFO 是 macOS 上有效的 ioctl 命令
         let result = unsafe { libc::ioctl(fd, CTLIOCGINFO, &mut ctl_info) };
 
         if result < 0 {
-            // SAFETY: fd is valid, close is idempotent
+            // SAFETY:
+                    // - 不变量：fd 是有效的文件描述符
+                    // - 并发/别名：close 是幂等的，当前线程拥有 fd
+                    // - FFI/平台契约：close 系统调用在所有平台上都是安全的
             unsafe {
                 libc::close(fd);
             }
@@ -67,8 +73,10 @@ impl MacOsTun {
             sc_reserved: [0; 5],
         };
 
-        // SAFETY: We pass a valid file descriptor and a pointer to a SockaddrCtl value. The
-        // size is computed from the struct type. Return value is checked (< 0) and mapped.
+        // SAFETY:
+                // - 不变量：fd 是有效的文件描述符，addr 指向有效的 SockaddrCtl 结构体
+                // - 并发/别名：addr 为局部变量，由当前线程独占访问
+                // - FFI/平台契约：connect 系统调用参数类型转换合法
         let result = unsafe {
             libc::connect(
                 fd,
@@ -78,7 +86,10 @@ impl MacOsTun {
         };
 
         if result < 0 {
-            // SAFETY: fd is valid, close is idempotent
+            // SAFETY:
+                    // - 不变量：fd 是有效的文件描述符
+                    // - 并发/别名：close 是幂等的，当前线程拥有 fd
+                    // - FFI/平台契约：close 系统调用在所有平台上都是安全的
             unsafe {
                 libc::close(fd);
             }
@@ -92,7 +103,10 @@ impl MacOsTun {
             format!("utun{}", addr.sc_unit - 1)
         };
 
-        // SAFETY: from_raw_fd transfers ownership; fd will be managed by File's Drop impl
+        // SAFETY:
+                // - 不变量：fd 是有效的文件描述符，from_raw_fd 转移所有权
+                // - 并发/别名：File 的 Drop 实现将管理文件描述符生命周期
+                // - FFI/平台契约：文件描述符所有权正确转移
         let file = unsafe { File::from_raw_fd(fd) };
         Ok((file, actual_name))
     }
@@ -123,8 +137,10 @@ impl MacOsTun {
         let mut ifname = [0u8; libc::IF_NAMESIZE];
         let mut len = libc::IF_NAMESIZE as libc::socklen_t;
 
-        // SAFETY: We pass a valid fd and a pointer to a mutable buffer sized to IF_NAMESIZE.
-        // len tracks the buffer length as required by getsockopt. Return value is checked.
+        // SAFETY:
+                // - 不变量：fd 是有效的文件描述符，ifname 是大小为 IF_NAMESIZE 的可变缓冲区
+                // - 并发/别名：ifname 为局部变量，由当前线程独占访问
+                // - FFI/平台契约：getsockopt 系统调用参数类型和大小正确
         let result = unsafe {
             libc::getsockopt(
                 fd,
@@ -221,25 +237,7 @@ impl MacOsTun {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_utun_name_with_invalid_fd() {
-        // Passing an invalid fd should produce an IoError without panic
-        let res = MacOsTun::get_utun_name(-1);
-        assert!(res.is_err());
-    }
-
-    #[test]
-    fn test_cstring_new_fails_when_interior_nul() {
-        // Ensure CString::new errors are mapped (this is indirect via control name in open)
-        // Here we only assert CString::new would fail if given bad input; the open_utun_device
-        // uses a constant so this is a direct unit assertion.
-        assert!(std::ffi::CString::new(b"bad\0name".as_slice()).is_err());
-    }
-}
+/* first test module removed (duplicate); tests consolidated below */
 
 impl TunDevice for MacOsTun {
     fn create(config: &TunConfig) -> Result<Self, TunError>

@@ -415,21 +415,22 @@ async fn handle_udp_associate(
 
     tokio::spawn(manager.clone().inbound_loop());
 
-    if let Ok(mut control) = stream.try_clone() {
-        let manager = manager.clone();
-        tokio::spawn(async move {
-            let mut buf = [0u8; 1];
-            loop {
-                match control.read(&mut buf).await {
-                    Ok(0) | Err(_) => {
-                        manager.teardown().await;
-                        break;
-                    }
-                    Ok(_) => continue,
-                }
-            }
-        });
-    }
+    // TODO: Fix try_clone issue for control stream monitoring
+    // if let Ok(mut control) = stream.try_clone().await {
+    //     let manager = manager.clone();
+    //     tokio::spawn(async move {
+    //         let mut buf = [0u8; 1];
+    //         loop {
+    //             match control.read_exact(&mut buf).await {
+    //                 Ok(0) | Err(_) => {
+    //                     manager.teardown().await;
+    //                     break;
+    //                 }
+    //                 Ok(_) => continue,
+    //             }
+    //         }
+    //     });
+    // }
 
     info!(peer=?peer, bind=?bind_addr, "SOCKS UDP associate ready");
     Ok(())
@@ -651,13 +652,15 @@ impl UdpSessionManager {
 
         let socket = self.socket.clone();
         let endpoint_clone = endpoint.clone();
+        let transport_clone = transport.clone();
+        let key_clone = key.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; 65535];
             loop {
-                match transport.recv_from(&mut buf).await {
+                match transport_clone.recv_from(&mut buf).await {
                     Ok((size, addr)) => {
                         let packet = build_udp_response(&endpoint_clone, addr, &buf[..size]);
-                        if socket.send_to(&packet, key.client).await.is_err() {
+                        if socket.send_to(&packet, key_clone.client).await.is_err() {
                             break;
                         }
                     }

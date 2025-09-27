@@ -165,7 +165,10 @@ impl DnsTransport for EnhancedUdpTransport {
                                 "DNS query failed, retrying: server={}, attempt={}, error={}",
                                 server,
                                 attempt,
-                                last_error.as_ref().unwrap()
+                                last_error
+                                    .as_ref()
+                                    .map(|e| e.to_string())
+                                    .unwrap_or_else(|| "unknown".into())
                             );
 
                             // Brief delay before retry
@@ -175,7 +178,10 @@ impl DnsTransport for EnhancedUdpTransport {
                                 "DNS query failed after {} retries: server={}, error={}",
                                 self.retries,
                                 server,
-                                last_error.as_ref().unwrap()
+                                last_error
+                                    .as_ref()
+                                    .map(|e| e.to_string())
+                                    .unwrap_or_else(|| "unknown".into())
                             );
                         }
                     }
@@ -184,7 +190,7 @@ impl DnsTransport for EnhancedUdpTransport {
         }
 
         // All servers and retries failed
-        let final_error = last_error.unwrap_or_else(|| anyhow!("No DNS servers available"));
+        let final_error = match last_error { Some(e) => e, None => anyhow!("No DNS servers available") };
         let error_class = Self::classify_error(&final_error);
         record_error(error_class);
 

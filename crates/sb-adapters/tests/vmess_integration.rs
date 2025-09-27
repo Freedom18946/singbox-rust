@@ -1,3 +1,4 @@
+#![cfg(feature = "adapter-vmess")]
 //! VMess protocol integration tests
 
 use sb_adapters::outbound::vmess::{VmessConfig, VmessConnector};

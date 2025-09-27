@@ -1,3 +1,4 @@
+#![cfg(feature = "adapter-http")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 // unused import removed
 

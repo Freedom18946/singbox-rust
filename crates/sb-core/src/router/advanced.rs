@@ -303,7 +303,7 @@ pub fn compile_common_domain_rules(list_exact: &[String], list_suffix: &[String]
     out
 }
 
-/// -------------------- 统计与可视化导出（占位） -------------------------
+        // -------------------- 统计与可视化导出（占位） -------------------------
 #[derive(Default)]
 pub struct AdvStats {
     pub rules: BTreeMap<String, u64>,
@@ -324,7 +324,7 @@ pub fn snapshot_stats(engine: &AdvEngine) -> AdvStats {
     AdvStats { rules: engine.stats() }
 }
 
-/// ---------------------------- 单元测试 ---------------------------------
+        // ---------------------------- 单元测试 ---------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;

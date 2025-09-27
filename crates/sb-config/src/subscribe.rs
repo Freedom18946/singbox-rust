@@ -2,7 +2,7 @@
 //! 目标：把第三方订阅（文本）映射为我们内部的 `Config`
 //! - Clash: YAML (proxies / proxy-groups / rules)
 //! - Sing-Box: JSON/YAML (outbounds / route.rules)
-//! 取最常见的子集，保持健壮降级；不做远程下载，这里只做 parse。
+//!   取最常见的子集，保持健壮降级；不做远程下载，这里只做 parse。
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;

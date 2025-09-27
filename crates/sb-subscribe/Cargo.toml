@@ -2,6 +2,9 @@
 name = "sb-subscribe"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
 
 [features]
 default = []
@@ -14,7 +17,7 @@ subs_bindings_dry = ["subs_bindings", "dep:tokio", "sb-core/dns_udp"]
 subs_view = []       # 视图功能显式 feature（与 app/subs_view 对齐）
 subs_full = ["subs_view","subs_bindings"]   # R100：full 视图聚合（hash 可选）
 subs_diff = ["subs_full"]  # R106: diff 功能建立在 full 聚合之上（纯离线）
-subs_preview_plan = ["subs_full","subs_lint"]  # R117：聚合计划（依赖 sb-core/minijson/normalize/patch_apply）
+subs_preview_plan = ["subs_full","subs_lint","sb-core/router"]  # R117：需要 sb-core 路由模块
 subs_preview_apply = ["subs_preview_plan"]                      # R118：dry-run 应用（开关桩）
 subs_preview_batch = ["subs_full"]                             # R139：批量预演
 subs_ruleset_cache = []                                   # R140：Provider 缓存

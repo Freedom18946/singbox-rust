@@ -14,14 +14,33 @@ members = [
   "crates/sb-subscribe",
   "crates/sb-api"
 ]
+exclude = [
+  "crates/sb-adapters/fuzz"
+]
 # 默认只构建 app（其它 crate 在需要时由 feature/依赖拉起）
 default-members = ["app"]
 
 [workspace.package]
-rust-version = "1.79"
+rust-version = "1.82"
+license = "Apache-2.0"
+repository = "https://example.com/your/repo"
+homepage = "https://example.com/your/home"
+readme = "README.md"
+
+[workspace.metadata.check-cfg]
+# 空壳声明，避免 unexpected cfg 噪音；真正受用范围由各 crate features 决定
 
 [workspace.lints.rust]
 warnings = "deny"
+dead_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+undocumented_unsafe_blocks = "deny"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 anyhow = "1"
@@ -46,6 +65,12 @@ metrics = "0.24"
 sb-types = { path = "crates/sb-types" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
+
 # 说明：
 # - 统一常用 crates 的版本，减少 features/版本不一致导致的编译报错
 # - 其它依赖请在各子 crate 内单独声明（避免 workspace 可选特性的限制）
+
+[patch.crates-io]
+# Override crates.io tun2socks with a local build-time stub to keep
+# all-features builds working on stable toolchains and offline.
+tun2socks = { path = "vendor/tun2socks" }

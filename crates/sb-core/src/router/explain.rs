@@ -1,6 +1,7 @@
 #![cfg(feature = "explain")]
 #![cfg_attr(test, allow(dead_code, unused_imports, unused_variables))]
 use std::net::IpAddr;
+use serde::Serialize;
 
 #[derive(Clone, Debug)]
 pub struct ExplainQuery {
@@ -30,6 +31,85 @@ pub struct ExplainResult {
     pub rule_id: String,
     pub reason: String,
     pub steps: Vec<ExplainStep>,
+}
+
+/// External DTO for router explain responses
+/// Schema locked for API stability
+#[derive(Clone, Debug, Serialize)]
+pub struct ExplainDto {
+    pub dest: String,
+    pub matched_rule: String,
+    pub chain: Vec<String>,
+    pub outbound: String,
+    pub rule_id: String,
+    pub reason: String,
+}
+
+impl From<ExplainResult> for ExplainDto {
+    fn from(result: ExplainResult) -> Self {
+        let chain: Vec<String> = result.steps.iter()
+            .filter(|step| step.matched)
+            .map(|step| step.phase.to_string())
+            .collect();
+
+        ExplainDto {
+            dest: String::new(), // Needs to be filled from context
+            matched_rule: result.phase.to_string(),
+            chain,
+            outbound: extract_outbound_from_reason(&result.reason),
+            rule_id: result.rule_id,
+            reason: result.reason,
+        }
+    }
+}
+
+impl ExplainDto {
+    /// Create ExplainDto from ExplainResult with destination context
+    pub fn from_result_with_dest(result: ExplainResult, dest: &str) -> Self {
+        let chain = result.steps.iter().filter(|s| s.matched).map(|s| s.phase.to_string()).collect();
+        let outbound = derive_outbound(&result);
+        let rule_id = calc_rule_id(&result); // sha256 前8位
+
+        Self {
+            dest: dest.into(),
+            matched_rule: result.rule_id.clone(),
+            chain,
+            outbound,
+            rule_id,
+            reason: result.reason.clone(),
+        }
+    }
+}
+
+/// 稳定指纹（临时实现，后续可换成真实规则体指纹）
+fn calc_rule_id(r: &ExplainResult) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(r.rule_id.as_bytes());
+    format!("{:x}", hasher.finalize())[..8].to_string()
+}
+
+fn derive_outbound(r: &ExplainResult) -> String {
+    // 简化：优先从 reason 提取 "kind:name"，否则 "default"
+    r.reason.split(':').nth(1).unwrap_or("default").to_string()
+}
+
+/// Extract outbound name from reason string
+/// Handles formats like "proxy:outbound_name" or fallback to "direct"
+fn extract_outbound_from_reason(reason: &str) -> String {
+    if let Some(colon_pos) = reason.find(':') {
+        let after_colon = &reason[colon_pos + 1..];
+        if !after_colon.is_empty() {
+            return after_colon.to_string();
+        }
+    }
+
+    // Default fallback
+    if reason.contains("proxy") {
+        "proxy".to_string()
+    } else {
+        "direct".to_string()
+    }
 }
 
 impl ExplainTrace {

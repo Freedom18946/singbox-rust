@@ -14,6 +14,8 @@ use crate::metrics::registry_ext::{
 
 #[cfg(feature = "metrics")]
 use once_cell::sync::Lazy;
+#[cfg(feature = "metrics")]
+use metrics::{Counter, counter};
 
 #[cfg(feature = "metrics")]
 static HTTP_RESPOND_405_TOTAL: Lazy<Counter> = Lazy::new(|| counter!("http_respond_405_total"));
@@ -98,13 +100,13 @@ pub fn set_active_connections(_count: usize) {
 /// Increment active connections
 pub fn inc_active_connections() {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.increment(1.0);
+    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[]).inc();
 }
 
 /// Decrement active connections
 pub fn dec_active_connections() {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.decrement(1.0);
+    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[]).dec();
 }
 
 /// Error classes for HTTP operations

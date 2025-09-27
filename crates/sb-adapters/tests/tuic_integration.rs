@@ -1,3 +1,4 @@
+#![cfg(feature = "tuic")]
 //! TUIC protocol integration tests
 //!
 //! These tests verify TUIC protocol implementation including:

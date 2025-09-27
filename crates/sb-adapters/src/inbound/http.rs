@@ -21,21 +21,27 @@ use std::sync::OnceLock;
 static HTTP_FLAG_SMOKE_405: OnceLock<bool> = OnceLock::new();
 static HTTP_FLAG_DISABLE_STOP: OnceLock<bool> = OnceLock::new();
 #[inline]
-#[allow(dead_code)]
+#[cfg(any(test, feature = "dev-cli"))]
 fn http_flag_smoke_405() -> bool {
     *HTTP_FLAG_SMOKE_405.get_or_init(|| std::env::var("SB_HTTP_SMOKE_405").is_ok())
 }
 #[inline]
-#[allow(dead_code)]
+#[cfg(any(test, feature = "dev-cli"))]
 fn http_flag_disable_stop() -> bool {
     *HTTP_FLAG_DISABLE_STOP.get_or_init(|| std::env::var("SB_HTTP_DISABLE_STOP").is_ok())
+}
+
+static HTTP_FLAG_LEGACY_WRITE: OnceLock<bool> = OnceLock::new();
+#[inline]
+fn http_legacy_write_enabled() -> bool {
+    *HTTP_FLAG_LEGACY_WRITE.get_or_init(|| std::env::var("SB_HTTP_LEGACY_WRITE").is_ok())
 }
 
 use std::sync::atomic::AtomicUsize;
 use std::{net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "metrics")]
-#[allow(dead_code)]
+#[deprecated(since = "0.1.0", note = "kept for compatibility; metrics collection not yet implemented")]
 static HTTP_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "metrics")]
@@ -78,7 +84,7 @@ fn http_disable_stop_enabled() -> bool {
     )
 }
 /// 回滚开关：降级为"只写 + 关"
-#[allow(dead_code)]
+#[cfg(any(test, feature = "dev-cli"))]
 fn http_legacy_write_enabled() -> bool {
     matches!(
         std::env::var("SB_HTTP_LEGACY_WRITE").ok().as_deref(),
@@ -91,9 +97,9 @@ fn should_short_circuit_405() -> bool {
     http_smoke_405_enabled()
 }
 
-#[allow(dead_code)]
+#[deprecated(since = "0.1.0", note = "reserved for future header size limits")]
 const MAX_HEADER: usize = 8 * 1024;
-#[allow(dead_code)]
+#[deprecated(since = "0.1.0", note = "reserved for future timeout configuration")]
 const READ_HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
@@ -305,7 +311,7 @@ async fn handle_client(
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(4096);
-                    PoolSelector::new(cap, ttl)
+                    PoolSelector::new("http_proxy".to_string(), "default".to_string())
                 });
                 let health = MultiHealthView;
 
@@ -313,10 +319,10 @@ async fn handle_client(
                     if let Some(pool) = reg.pools.get(&name) {
                         let default_peer: std::net::SocketAddr = std::net::SocketAddr::from(([0,0,0,0], 0));
                         if let Some(ep) = sel.select(
-                            pool,
+                            &name,
                             peer.unwrap_or(default_peer),
                             &format!("{}:{}", host, port),
-                            &health,
+                            &(),
                         ) {
                             match ep.kind {
                                 sb_core::outbound::endpoint::ProxyKind::Http => {

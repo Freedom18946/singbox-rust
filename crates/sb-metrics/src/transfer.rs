@@ -38,7 +38,10 @@ pub static BYTES_TOTAL_VEC: Lazy<IntCounterVec> = Lazy::new(|| {
 /// 简单的时窗吞吐观测（单位：字节/秒），建议用于 O(秒) 级别粗观测
 pub static THROUGHPUT_BPS: Lazy<Histogram> = Lazy::new(|| {
     // 桶：0.5KB/s 到 256MB/s，指数扩展
-    let buckets = prometheus::exponential_buckets(512.0, 2.0, 20).expect("bps buckets");
+    let buckets = prometheus::exponential_buckets(512.0, 2.0, 20).unwrap_or_else(|_| {
+        // Fallback to fixed buckets on exponential_buckets failure
+        vec![512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32768.0, 65536.0]
+    });
     register_histogram!(prometheus::HistogramOpts::new(
         "throughput_bps",
         "Observed coarse-grained throughput in bytes per second"

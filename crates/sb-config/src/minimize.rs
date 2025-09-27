@@ -8,7 +8,7 @@ fn fold_domains(v: &mut Vec<String>) {
     v.dedup();
 }
 
-fn fold_cidrs(_v: &mut Vec<String>) {
+fn fold_cidrs(_v: &mut [String]) {
     // TODO: 真实 CIDR 合并（区间树/前缀树）；此处先占位，保证接口稳定
     // 留空表示保持规范化顺序与去重，后续补充
 }
@@ -48,7 +48,7 @@ mod tests {
         let act = minimize_config(&mut cfg);
         match act {
             MinimizeAction::SkippedByNegation => {}
-            _ => panic!("should skip"),
+            _ => panic!("test should have skipped by negation"),
         }
         assert_eq!(cfg.route.rules[0].domain, vec!["a.com"]); // 仍完成规范化
     }

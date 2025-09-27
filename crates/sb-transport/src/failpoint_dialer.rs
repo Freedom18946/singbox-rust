@@ -15,9 +15,9 @@ use async_trait::async_trait;
 ///
 /// ## Failpoint Naming Convention
 /// Failpoints follow the pattern: `transport.dialer.{point}`
-/// - `transport.dialer.connect_start`: Fail before attempting connection
-/// - `transport.dialer.connect_timeout`: Simulate connection timeout
-/// - `transport.dialer.dns_failure`: Simulate DNS resolution failure
+        // - `transport.dialer.connect_start`: Fail before attempting connection
+        // - `transport.dialer.connect_timeout`: Simulate connection timeout
+        // - `transport.dialer.dns_failure`: Simulate DNS resolution failure
 pub struct FailpointDialer<D: Dialer> {
     /// The underlying dialer to wrap
     pub inner: D,

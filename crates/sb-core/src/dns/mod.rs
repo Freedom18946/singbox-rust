@@ -115,13 +115,13 @@ pub struct ResolverHandle {
     static_ttl: Duration,
     ipv6_enabled: bool,
     // Prefetch
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "dev-cli"))]
     prefetch_enabled: bool,
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "dev-cli"))]
     prefetch_before: Duration,
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "dev-cli"))]
     prefetch_sem: Arc<tokio::sync::Semaphore>,
-    #[allow(dead_code)]
+    #[cfg(any(test, feature = "dev-cli"))]
     prefetch_inflight: Arc<std::sync::Mutex<HashSet<String>>>,
     // Upstream health
     up_health: Arc<std::sync::Mutex<HashMap<String, UpHealth>>>,
@@ -139,8 +139,8 @@ impl std::fmt::Debug for ResolverHandle {
 }
 
 /// RAII 守卫：封装 DNS 并发门控（全局 + 每 host）
-/// - 构造时获取 permit 并打点 `dns_inflight{scope}`
-/// - Drop 自动释放 permit 并做对称打点
+        // - 构造时获取 permit 并打点 `dns_inflight{scope}`
+        // - Drop 自动释放 permit 并做对称打点
 struct InflightGuards {
     g: Option<tokio::sync::OwnedSemaphorePermit>,
     h: Option<tokio::sync::OwnedSemaphorePermit>,
@@ -182,8 +182,8 @@ impl Drop for InflightGuards {
 
 impl ResolverHandle {
     /// 从 env 初始化：
-    /// - SB_DNS_ENABLE=1 时启用；否则标记为 disabled（但仍提供 SystemResolver）
-    /// - 静态表通过 SB_DNS_STATIC 提供
+            // - SB_DNS_ENABLE=1 时启用；否则标记为 disabled（但仍提供 SystemResolver）
+            // - 静态表通过 SB_DNS_STATIC 提供
     pub fn from_env_or_default() -> Self {
         let enabled = std::env::var("SB_DNS_ENABLE")
             .ok()
@@ -250,16 +250,19 @@ impl ResolverHandle {
         #[cfg(feature = "dns_cache")]
         let cache = crate::dns::cache::DnsCache::new(_cap);
         let sys = system::SystemResolver::new(default_ttl);
+        #[cfg(any(test, feature = "dev-cli"))]
         let prefetch_enabled = std::env::var("SB_DNS_PREFETCH")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
+        #[cfg(any(test, feature = "dev-cli"))]
         let prefetch_before = Duration::from_millis(
             std::env::var("SB_DNS_PREFETCH_BEFORE_MS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(200),
         );
+        #[cfg(any(test, feature = "dev-cli"))]
         let prefetch_conc = std::env::var("SB_DNS_PREFETCH_CONCURRENCY")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
@@ -280,9 +283,13 @@ impl ResolverHandle {
             static_map,
             static_ttl,
             ipv6_enabled,
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_enabled,
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_before,
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_sem: Arc::new(tokio::sync::Semaphore::new(prefetch_conc)),
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
             up_health: Arc::new(std::sync::Mutex::new(HashMap::new())),
             inflight_global: Arc::new(tokio::sync::Semaphore::new(std::cmp::max(1, max_inflight))),
@@ -306,9 +313,13 @@ impl ResolverHandle {
             static_map: Default::default(),
             static_ttl: Duration::from_secs(300),
             ipv6_enabled: true,
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_enabled: false,
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_before: Duration::from_millis(200),
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_sem: Arc::new(tokio::sync::Semaphore::new(0)),
+            #[cfg(any(test, feature = "dev-cli"))]
             prefetch_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
             up_health: Arc::new(std::sync::Mutex::new(HashMap::new())),
             inflight_global: Arc::new(tokio::sync::Semaphore::new(64)),
@@ -322,17 +333,16 @@ impl ResolverHandle {
 
     pub async fn resolve(&self, host: &str) -> Result<DnsAnswer> {
         let key = host.to_ascii_lowercase();
+        let mut need_fallback = false;
         // 1) cache hit (scoped; drop lock before awaits)
         #[cfg(feature = "dns_cache")]
         {
-            let mut cache = match self.cache.lock() {
-                Ok(g) => g,
-                Err(_e) => {
-                    tracing::error!(target: "sb_core::dns", "cache lock poisoned on resolve/get");
-                    // skip cache path on lock failure
-                    return self.resolve_via_pool_or_system(host).await;
-                }
-            };
+            let mut cache_opt = self.cache.lock();
+            if cache_opt.is_err() {
+                tracing::error!(target: "sb_core::dns", "cache lock poisoned on resolve/get");
+                need_fallback = true;
+            }
+            if let Ok(mut cache) = cache_opt {
             if let Some(ent) = cache.get(&key) {
                 #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
@@ -348,30 +358,26 @@ impl ResolverHandle {
                         if self.prefetch_enabled {
                             let key_clone = key.clone();
                             let permit = self.prefetch_sem.clone().try_acquire_owned();
-                            let mut inflight = match self.prefetch_inflight.lock() {
-                                Ok(g) => g,
-                                Err(_e) => {
-                                    tracing::warn!(target: "sb_core::dns", "prefetch inflight lock poisoned; skip prefetch");
-                                    // behave as no prefetch capacity
-                                    drop(cache);
-                                    return self.resolve_via_pool_or_system(host).await;
-                                }
-                            };
-                            if let Ok(p) = permit {
-                                if inflight.insert(key_clone.clone()) {
-                                    #[cfg(feature = "metrics")]
-                                    ::metrics::counter!("dns_prefetch_total", "reason"=>"spawn")
-                                        .increment(1);
-                                    to_spawn = Some((p, key_clone));
+                            if let Ok(mut inflight) = self.prefetch_inflight.lock() {
+                                if let Ok(p) = permit {
+                                    if inflight.insert(key_clone.clone()) {
+                                        #[cfg(feature = "metrics")]
+                                        ::metrics::counter!("dns_prefetch_total", "reason"=>"spawn")
+                                            .increment(1);
+                                        to_spawn = Some((p, key_clone));
+                                    } else {
+                                        #[cfg(feature = "metrics")]
+                                        ::metrics::counter!("dns_prefetch_total", "reason"=>"skip")
+                                            .increment(1);
+                                    }
                                 } else {
                                     #[cfg(feature = "metrics")]
                                     ::metrics::counter!("dns_prefetch_total", "reason"=>"skip")
                                         .increment(1);
                                 }
                             } else {
-                                #[cfg(feature = "metrics")]
-                                ::metrics::counter!("dns_prefetch_total", "reason"=>"skip")
-                                    .increment(1);
+                                tracing::warn!(target: "sb_core::dns", "prefetch inflight lock poisoned; skip prefetch");
+                                need_fallback = true;
                             }
                         } else {
                             #[cfg(feature = "metrics")]
@@ -400,6 +406,8 @@ impl ResolverHandle {
                 });
             }
         }
+        }
+        if need_fallback { return self.resolve_via_pool_or_system(host).await; }
         // 2) static table
         if let Some(ips) = self.static_map.get(&key) {
             let mut ips = ips.clone();
@@ -638,12 +646,12 @@ async fn query_one(
     match up.clone() {
         Upstream::System => {
             // System resolver combines both families already
-            let mut iter = tokio::time::timeout(
+            let iter = tokio::time::timeout(
                 Duration::from_millis(timeout_ms),
                 tokio::net::lookup_host((host.as_str(), 0)),
             )
             .await??;
-            while let Some(sa) = iter.next() {
+            for sa in iter {
                 ips.push(sa.ip());
             }
             ttl = Duration::from_secs(
@@ -888,8 +896,7 @@ async fn resolve_race(
     let now = std::time::Instant::now();
     let eligible: Vec<_> = upstreams
         .iter()
-        .cloned()
-        .filter(|u| {
+        .filter(|&u| {
             let key = up_key(u);
             match h.up_health.lock() {
                 Ok(map) => match map.get(&key) {
@@ -899,6 +906,7 @@ async fn resolve_race(
                 Err(_) => true,
             }
         })
+        .cloned()
         .collect();
     let chosen = if eligible.is_empty() {
         #[cfg(feature = "metrics")]
@@ -998,23 +1006,21 @@ async fn resolve_fanout(
     let mut ips: Vec<IpAddr> = Vec::new();
     let mut min_ttl: Option<Duration> = None;
     let mut any_ok = false;
-    for r in results {
-        if let Ok((mut part, ttl)) = r {
-            any_ok = true;
-            for ip in part.drain(..) {
-                if !ips.contains(&ip) {
-                    ips.push(ip);
-                }
+    for (mut part, ttl) in results.into_iter().flatten() {
+        any_ok = true;
+        for ip in part.drain(..) {
+            if !ips.contains(&ip) {
+                ips.push(ip);
             }
-            min_ttl = Some(min_ttl.map(|x| x.min(ttl)).unwrap_or(ttl));
         }
+        min_ttl = Some(min_ttl.map_or(ttl, |x| x.min(ttl)));
     }
     if !any_ok {
         return Err(anyhow::anyhow!("dns/fanout: all failed"));
     }
     Ok(DnsAnswer {
         ips,
-        ttl: min_ttl.unwrap_or(Duration::from_secs(60)),
+        ttl: min_ttl.unwrap_or_else(|| Duration::from_secs(60)),
         source: cache::Source::Upstream,
         rcode: cache::Rcode::NoError,
     })

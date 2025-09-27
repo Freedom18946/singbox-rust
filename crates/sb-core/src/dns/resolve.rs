@@ -14,6 +14,7 @@ pub enum DnsBackend {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 enum QSel {
     A,
     AAAA,

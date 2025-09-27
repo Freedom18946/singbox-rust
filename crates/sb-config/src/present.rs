@@ -1,9 +1,9 @@
 // crates/sb-config/src/present.rs
 use crate::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleIR};
+ 
 use crate::{Config, Inbound, Outbound};
 use anyhow::Result;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
 
 /// Convert Config to ConfigIR for routing engine
 pub fn to_ir(cfg: &Config) -> Result<ConfigIR> {
@@ -236,6 +236,8 @@ impl InboundIR {
     }
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn parse_address(addr: &str) -> (String, String) {
     if let Some(rest) = addr.strip_prefix("udp://") {
         return ("udp".into(), rest.to_string());
@@ -250,6 +252,8 @@ fn parse_address(addr: &str) -> (String, String) {
     ("other".into(), addr.to_string())
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn fold_rule_singletons(r: &Value) -> Value {
     if let Some(obj) = r.as_object() {
         let mut m = obj.clone();
@@ -265,6 +269,8 @@ fn fold_rule_singletons(r: &Value) -> Value {
     r.clone()
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn insert_non_empty_val(root: &mut Map<String, Value>, k: &str, v: &Option<Value>) {
     if let Some(Value::Object(m)) = v {
         if !m.is_empty() {
@@ -272,7 +278,9 @@ fn insert_non_empty_val(root: &mut Map<String, Value>, k: &str, v: &Option<Value
         }
     }
 }
+#[cfg(any(test, feature = "dev-cli"))]
 #[allow(clippy::ptr_arg)]
+#[allow(dead_code)]
 fn insert_non_empty_arr(root: &mut Map<String, Value>, k: &str, v: &Vec<Value>) {
     if !v.is_empty() {
         root.insert(k.into(), Value::Array(v.clone()));
@@ -280,7 +288,10 @@ fn insert_non_empty_arr(root: &mut Map<String, Value>, k: &str, v: &Vec<Value>) 
 }
 
 /// 若 DNS server 未被规则引用，则移除（更贴近 sing-box format）
+#[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn prune_unused_dns_servers(root: &mut Map<String, Value>) {
+    use std::collections::HashSet;
     let mut used: HashSet<String> = HashSet::new();
     if let Some(rules) = root
         .get("dns")
@@ -312,6 +323,8 @@ fn prune_unused_dns_servers(root: &mut Map<String, Value>) {
 }
 
 /// 将 route.rules[*].protocol 的单元素数组折叠为标量
+#[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn fold_route_protocol_singletons(root: &mut Map<String, Value>) {
     if let Some(rules) = root
         .get_mut("route")
@@ -331,6 +344,8 @@ fn fold_route_protocol_singletons(root: &mut Map<String, Value>) {
 }
 
 /// 删除空的 inbounds/*/users
+#[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn prune_empty_inbound_users(root: &mut Map<String, Value>) {
     if let Some(inbounds) = root.get_mut("inbounds").and_then(|x| x.as_array_mut()) {
         for ib in inbounds {

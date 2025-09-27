@@ -4,6 +4,8 @@
 //! minimal disruption during hot reload operations.
 
 use super::{ConfigIR, InboundIR, OutboundIR, RuleIR};
+#[cfg(test)]
+use crate::ir::RouteIR;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -70,7 +72,7 @@ fn outbound_key(ob: &OutboundIR) -> String {
         (Some(server), Some(port)) => format!("{}:{}:{}", ob.ty_str(), server, port),
         (Some(server), None) => format!("{}:{}", ob.ty_str(), server),
         (None, Some(port)) => format!("{}:*:{}", ob.ty_str(), port),
-        (None, None) => format!("{}", ob.ty_str()),
+        (None, None) => ob.ty_str().to_string(),
     }
 }
 
@@ -298,7 +300,7 @@ mod tests {
                 name: Some("direct".to_string()),
                 ..Default::default()
             }],
-            route: super::RouteIR {
+            route: RouteIR {
                 rules: vec![RuleIR {
                     domain: vec!["example.com".to_string()],
                     outbound: Some("direct".to_string()),
@@ -324,7 +326,7 @@ mod tests {
                 port: Some(8080),
                 ..Default::default()
             }],
-            route: super::RouteIR {
+            route: RouteIR {
                 rules: vec![RuleIR {
                     domain: vec!["test.com".to_string()],
                     outbound: Some("proxy".to_string()),

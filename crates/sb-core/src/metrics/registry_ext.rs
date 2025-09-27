@@ -28,13 +28,13 @@ fn gauge_fallback_int() -> &'static IntGaugeVec {
         let help = "Fallback IntGaugeVec used when construction fails";
         loop {
             if let Ok(v) = IntGaugeVec::new(Opts::new(name, help), &["cause"]) {
-                let leaked = Box::leak(Box::new(v));
-                let _ = reg().register(Box::new(leaked.clone()));
+                let leaked: &'static IntGaugeVec = Box::leak(Box::new(v));
+                let _ = reg().register(Box::new((*leaked).clone()));
                 break leaked;
             }
             if let Ok(v2) = IntGaugeVec::new(Opts::new(name, help), &[]) {
-                let leaked = Box::leak(Box::new(v2));
-                let _ = reg().register(Box::new(leaked.clone()));
+                let leaked: &'static IntGaugeVec = Box::leak(Box::new(v2));
+                let _ = reg().register(Box::new((*leaked).clone()));
                 break leaked;
             }
             std::thread::yield_now();
@@ -49,13 +49,13 @@ fn gauge_fallback_float() -> &'static GaugeVec {
         let help = "Fallback GaugeVec used when construction fails";
         loop {
             if let Ok(v) = GaugeVec::new(Opts::new(name, help), &["cause"]) {
-                let leaked = Box::leak(Box::new(v));
-                let _ = reg().register(Box::new(leaked.clone()));
+                let leaked: &'static GaugeVec = Box::leak(Box::new(v));
+                let _ = reg().register(Box::new((*leaked).clone()));
                 break leaked;
             }
             if let Ok(v2) = GaugeVec::new(Opts::new(name, help), &[]) {
-                let leaked = Box::leak(Box::new(v2));
-                let _ = reg().register(Box::new(leaked.clone()));
+                let leaked: &'static GaugeVec = Box::leak(Box::new(v2));
+                let _ = reg().register(Box::new((*leaked).clone()));
                 break leaked;
             }
             std::thread::yield_now();
@@ -70,13 +70,13 @@ fn histogram_fallback() -> &'static HistogramVec {
         let help = "Fallback HistogramVec used when construction fails";
         loop {
             if let Ok(v) = HistogramVec::new(HistogramOpts::new(name, help), &["cause"]) {
-                let leaked = Box::leak(Box::new(v));
-                let _ = reg().register(Box::new(leaked.clone()));
+                let leaked: &'static HistogramVec = Box::leak(Box::new(v));
+                let _ = reg().register(Box::new((*leaked).clone()));
                 break leaked;
             }
             if let Ok(v2) = HistogramVec::new(HistogramOpts::new(name, help), &[]) {
-                let leaked = Box::leak(Box::new(v2));
-                let _ = reg().register(Box::new(leaked.clone()));
+                let leaked: &'static HistogramVec = Box::leak(Box::new(v2));
+                let _ = reg().register(Box::new((*leaked).clone()));
                 break leaked;
             }
             std::thread::yield_now();
@@ -93,8 +93,8 @@ pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'s
 
     let metric_ref: &'static IntGaugeVec = match IntGaugeVec::new(Opts::new(name, help), labels) {
         Ok(metric) => {
-            let leaked = Box::leak(Box::new(metric));
-            let _ = reg().register(Box::new(leaked.clone()));
+            let leaked: &'static IntGaugeVec = Box::leak(Box::new(metric));
+            let _ = reg().register(Box::new((*leaked).clone()));
             leaked
         }
         Err(err) => {
@@ -122,8 +122,8 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
 
     let metric_ref: &'static GaugeVec = match GaugeVec::new(Opts::new(name, help), labels) {
         Ok(metric) => {
-            let leaked = Box::leak(Box::new(metric));
-            let _ = reg().register(Box::new(leaked.clone()));
+            let leaked: &'static GaugeVec = Box::leak(Box::new(metric));
+            let _ = reg().register(Box::new((*leaked).clone()));
             leaked
         }
         Err(err) => {
@@ -150,8 +150,8 @@ pub fn get_or_register_counter_vec(name: &str, help: &str, labels: &[&str]) -> &
 
     let metric_ref: &'static IntCounterVec = match IntCounterVec::new(Opts::new(name, help), labels) {
         Ok(metric) => {
-            let leaked = Box::leak(Box::new(metric));
-            let _ = reg().register(Box::new(leaked.clone()));
+            let leaked: &'static IntCounterVec = Box::leak(Box::new(metric));
+            let _ = reg().register(Box::new((*leaked).clone()));
             leaked
         }
         Err(err) => {
@@ -164,20 +164,39 @@ pub fn get_or_register_counter_vec(name: &str, help: &str, labels: &[&str]) -> &
                 let help = "Fallback IntCounterVec used when construction fails";
                 match IntCounterVec::new(Opts::new(name, help), &["cause"]) {
                     Ok(v) => {
-                        let leaked = Box::leak(Box::new(v));
-                        let _ = reg().register(Box::new(leaked.clone()));
+                        let leaked: &'static IntCounterVec = Box::leak(Box::new(v));
+                        let _ = reg().register(Box::new((*leaked).clone()));
                         leaked
                     }
                     Err(_e) => match IntCounterVec::new(Opts::new(name, help), &[]) {
                         Ok(v2) => {
-                            let leaked = Box::leak(Box::new(v2));
-                            let _ = reg().register(Box::new(leaked.clone()));
+                            let leaked: &'static IntCounterVec = Box::leak(Box::new(v2));
+                            let _ = reg().register(Box::new((*leaked).clone()));
                             leaked
                         }
                         Err(_e2) => {
-                            let alt = IntCounterVec::new(Opts::new("sb_c_f_alt", "fallback"), &[])
-                                .expect("valid fallback IntCounterVec must construct");
-                            Box::leak(Box::new(alt))
+                            // metrics失败不应影响主流程，使用最简单的有效配置
+                            // 尝试创建一个没有标签的紧急后备指标
+                            let opts = Opts::new("sb_emergency_counter", "emergency fallback when all counter creation fails");
+                            match IntCounterVec::new(opts, &[]) {
+                                Ok(alt) => Box::leak(Box::new(alt)),
+                                Err(e) => {
+                                    // 如果连最简单的指标都无法创建，记录错误但返回一个预定义的fallback
+                                    eprintln!("metrics: critical failure, cannot create any IntCounterVec: {}", e);
+                                    static LAST_RESORT: OnceCell<&'static IntCounterVec> = OnceCell::new();
+                                    LAST_RESORT.get_or_init(|| {
+                                        // 最后一次尝试使用完全不同的名称
+                                        if let Ok(v) = IntCounterVec::new(Opts::new("x", "x"), &[]) {
+                                            Box::leak(Box::new(v))
+                                        } else {
+                                            // 如果系统metrics完全不可用，我们需要优雅地退出而不是panic
+                                            // 但IntCounterVec没有no-op实现，这是一个设计问题
+                                            // 暂时保持原有行为但添加更好的错误信息
+                                            panic!("System metrics are completely unusable - this indicates a serious system configuration problem")
+                                        }
+                                    })
+                                }
+                            }
                         }
                     },
                 }
@@ -213,8 +232,8 @@ pub fn get_or_register_histogram_vec(
 
     let metric_ref: &'static HistogramVec = match HistogramVec::new(opts, labels) {
         Ok(metric) => {
-            let leaked = Box::leak(Box::new(metric));
-            let _ = reg().register(Box::new(leaked.clone()));
+            let leaked: &'static HistogramVec = Box::leak(Box::new(metric));
+            let _ = reg().register(Box::new((*leaked).clone()));
             leaked
         }
         Err(err) => {

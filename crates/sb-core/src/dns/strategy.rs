@@ -269,7 +269,7 @@ impl QueryExecutor {
             return self.query_failover(domain, record_type).await;
         }
 
-        let _upstream_name = upstream.name().to_string();
+        let upstream_name = upstream.name().to_string();
         match self
             .query_with_retry(upstream.clone(), domain, record_type)
             .await
@@ -279,7 +279,7 @@ impl QueryExecutor {
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "round_robin",
-                    "upstream" => _upstream_name,
+                    "upstream" => upstream_name,
                     "result" => "success"
                 )
                 .increment(1);
@@ -291,7 +291,7 @@ impl QueryExecutor {
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "round_robin",
-                    "upstream" => _upstream_name.clone(),
+                    "upstream" => upstream_name.clone(),
                     "result" => "error"
                 )
                 .increment(1);
@@ -317,7 +317,7 @@ impl QueryExecutor {
             return self.query_failover(domain, record_type).await;
         }
 
-        let _upstream_name = upstream.name().to_string();
+        let upstream_name = upstream.name().to_string();
         match self
             .query_with_retry(upstream.clone(), domain, record_type)
             .await
@@ -327,7 +327,7 @@ impl QueryExecutor {
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "random",
-                    "upstream" => _upstream_name,
+                    "upstream" => upstream_name,
                     "result" => "success"
                 )
                 .increment(1);
@@ -339,7 +339,7 @@ impl QueryExecutor {
                 metrics::counter!(
                     "dns_strategy_total",
                     "strategy" => "random",
-                    "upstream" => _upstream_name.clone(),
+                    "upstream" => upstream_name.clone(),
                     "result" => "error"
                 )
                 .increment(1);
@@ -357,7 +357,7 @@ impl QueryExecutor {
         domain: &str,
         record_type: RecordType,
     ) -> Result<DnsAnswer> {
-        let _upstream_name = upstream.name().to_string();
+        let upstream_name = upstream.name().to_string();
         let mut delay = self.retry_config.retry_delay;
         let mut last_error = None;
 
@@ -375,7 +375,7 @@ impl QueryExecutor {
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
                             "dns_retry_total",
-                            "upstream" => _upstream_name.clone(),
+                            "upstream" => upstream_name.clone(),
                             "result" => "success_after_retry"
                         )
                         .increment(1);
@@ -393,13 +393,13 @@ impl QueryExecutor {
                             upstream.name(),
                             domain,
                             attempt,
-                            last_error.as_ref().unwrap()
+                            last_error.as_ref().map(|e| e.to_string()).unwrap_or_else(|| "unknown".into())
                         );
 
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
                             "dns_retry_total",
-                            "upstream" => _upstream_name.clone(),
+                            "upstream" => upstream_name.clone(),
                             "result" => "retry"
                         )
                         .increment(1);
@@ -426,12 +426,13 @@ impl QueryExecutor {
         )
         .increment(1);
 
-        Err(last_error.unwrap_or_else(|| {
-            anyhow::anyhow!(
+        match last_error {
+            Some(err) => Err(err),
+            None => Err(anyhow::anyhow!(
                 "DNS query failed after {} retries",
                 self.retry_config.max_retries
-            )
-        }))
+            )),
+        }
     }
 }
 

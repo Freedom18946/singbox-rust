@@ -84,11 +84,7 @@ pub enum OutboundKind {
     Ssh,
 }
 
-impl Default for OutboundKind {
-    fn default() -> Self {
-        OutboundKind::Direct
-    }
-}
+ 
 
 impl std::fmt::Display for OutboundKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

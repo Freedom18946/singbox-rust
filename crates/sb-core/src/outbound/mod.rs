@@ -156,8 +156,10 @@ async fn connect_with_keepalive(
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum OutboundKind {
+    #[default]
     Direct,
     Block,
     Socks,
@@ -182,12 +184,6 @@ pub enum OutboundKind {
     WireGuard,
     #[cfg(feature = "out_ssh")]
     Ssh,
-}
-
-impl Default for OutboundKind {
-    fn default() -> Self {
-        OutboundKind::Direct
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -239,16 +235,9 @@ pub enum OutboundImpl {
     Ssh(ssh_stub::SshConfig),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct OutboundRegistry {
     map: HashMap<String, OutboundImpl>,
-}
-impl Default for OutboundRegistry {
-    fn default() -> Self {
-        Self {
-            map: HashMap::new(),
-        }
-    }
 }
 impl OutboundRegistry {
     pub fn new(map: HashMap<String, OutboundImpl>) -> Self {
@@ -280,16 +269,19 @@ impl OutboundRegistryHandle {
         }
     }
     pub fn replace(&self, reg: OutboundRegistry) {
-        let mut w = self.inner.write().expect("outbound registry poisoned");
-        *w = reg;
+        if let Ok(mut w) = self.inner.write() {
+            *w = reg;
+        }
     }
     pub async fn connect_tcp(&self, target: &RouteTarget, ep: Endpoint) -> io::Result<TcpStream> {
         match target {
             RouteTarget::Kind(k) => connect_tcp_builtin(k, ep).await,
             RouteTarget::Named(name) => {
                 let imp = {
-                    let r = self.inner.read().expect("outbound registry poisoned");
-                    r.get(name).cloned()
+                    match self.inner.read() {
+                        Ok(r) => r.get(name).cloned(),
+                        Err(_) => None,
+                    }
                 };
                 match imp {
                     Some(OutboundImpl::Direct) => direct_connect(ep).await,

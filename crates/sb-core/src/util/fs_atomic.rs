@@ -19,7 +19,10 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, data: &[u8]) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;
-        // SAFETY: fsync on a valid file descriptor; safe on Unix
+        // SAFETY:
+                // - 不变量：f.as_raw_fd() 返回有效的文件描述符
+                // - 并发/别名：文件句柄独占访问，无数据竞争
+                // - FFI/平台契约：在 Unix 系统上 fsync 是安全的系统调用
         let _ = unsafe { libc::fsync(f.as_raw_fd()) };
     }
     #[cfg(target_os = "windows")]

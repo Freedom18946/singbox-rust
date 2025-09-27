@@ -1,12 +1,15 @@
 [advisories]
 version = 2
-ignore = []
+ignore = [
+  # Temporary allow: `atty` unmaintained/unsound warnings; plan to migrate to `is-terminal` upstream
+  "RUSTSEC-2021-0145"
+]
 yanked = "warn"
 unmaintained = "all"
 
 [licenses]
 version = 2
-allow = ["MIT","Apache-2.0","BSD-3-Clause","BSD-2-Clause","ISC","Unicode-DFS-2016","Zlib","OpenSSL"]
+allow = ["MIT","Apache-2.0","BSD-3-Clause","BSD-2-Clause","ISC","Unicode-DFS-2016","Unicode-3.0","CDLA-Permissive-2.0","Zlib","OpenSSL"]
 confidence-threshold = 0.8
 
 [bans]

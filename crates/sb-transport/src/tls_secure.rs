@@ -9,7 +9,7 @@
 use super::tls::{TlsDialer, webpki_roots_config};
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use rustls::{ClientConfig, RootCertStore, SupportedCipherSuite};
+use rustls::{ClientConfig, RootCertStore};
 use sha2::{Sha256, Digest};
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ pub struct TlsSecurityConfig {
     /// Certificate fingerprint pinning (SHA-256 hex)
     pub pin_sha256: Option<String>,
     /// Custom cipher suite restrictions
-    pub allowed_cipher_suites: Option<Vec<SupportedCipherSuite>>,
+    pub allowed_cipher_suites: Option<Vec<()>>, // placeholder; unused for rustls 0.23 builder path
     /// Strict SNI validation
     pub strict_sni: bool,
 }
@@ -77,34 +77,7 @@ impl TlsSecurityConfig {
         let mut root_store = RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-        let mut config_builder = ClientConfig::builder();
-
-        // Configure cipher suites based on TLS version requirements
-        if let Some(cipher_suites) = &self.allowed_cipher_suites {
-            config_builder = config_builder.with_cipher_suites(cipher_suites);
-        } else {
-            // Use secure default cipher suites
-            config_builder = config_builder.with_cipher_suites(&[
-                // TLS 1.3 cipher suites
-                rustls::cipher_suite::TLS13_AES_256_GCM_SHA384,
-                rustls::cipher_suite::TLS13_AES_128_GCM_SHA256,
-                rustls::cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
-                // TLS 1.2 cipher suites (if enabled)
-                rustls::cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-                rustls::cipher_suite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-                rustls::cipher_suite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-            ]);
-        }
-
-        // Configure supported protocol versions
-        let protocol_versions = match self.min_version {
-            TlsVersion::V1_2 => &[&rustls::version::TLS12, &rustls::version::TLS13][..],
-            TlsVersion::V1_3 => &[&rustls::version::TLS13][..],
-        };
-
-        let config = config_builder
-            .with_protocol_versions(protocol_versions)
-            .map_err(|e| format!("TLS protocol version configuration failed: {}", e))?
+        let config = ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 

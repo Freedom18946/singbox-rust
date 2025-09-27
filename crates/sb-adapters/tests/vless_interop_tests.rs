@@ -1,3 +1,4 @@
+#![cfg(feature = "adapter-vless")]
 //! VLESS protocol interoperability tests with Go version
 //!
 //! These tests verify that our VLESS implementation is compatible with

@@ -47,8 +47,8 @@ pub fn parse_proxy_from_env() -> ProxyChoice {
 }
 
 /// 从环境变量解析默认代理：
-/// - SB_ROUTER_DEFAULT_PROXY="direct" | "http://host:port" | "socks5://host:port"
-/// - 或 SB_ROUTER_DEFAULT_PROXY_KIND="http|socks5|direct" + SB_ROUTER_DEFAULT_PROXY_ADDR="host:port"
+        // - SB_ROUTER_DEFAULT_PROXY="direct" | "http://host:port" | "socks5://host:port"
+        // - 或 SB_ROUTER_DEFAULT_PROXY_KIND="http|socks5|direct" + SB_ROUTER_DEFAULT_PROXY_ADDR="host:port"
 pub fn init_default_proxy_from_env() {
     let choice = parse_proxy_from_env();
     let _ = GLOBAL_PROXY.set(Arc::new(choice));

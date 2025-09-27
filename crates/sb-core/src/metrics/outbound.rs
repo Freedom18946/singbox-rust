@@ -6,7 +6,11 @@
 )]
 
 #[cfg(feature = "metrics")]
-use crate::metrics::registry_ext::{get_or_register_counter_vec, get_or_register_histogram_vec};
+use crate::metrics::registry_ext::{
+    get_or_register_counter_vec, get_or_register_gauge_vec, get_or_register_histogram_vec,
+};
+#[cfg(feature = "metrics")]
+use metrics::{counter, histogram};
 
 // Reuse the real outbound kind type to avoid duplicate definitions
 pub use crate::outbound::OutboundKind;
@@ -21,7 +25,8 @@ pub enum OutboundErrorClass {
     Other,
 }
 
-#[allow(dead_code)] // preserved for JSON contract/future export
+#[cfg(any(test, feature = "dev-cli"))]
+#[deprecated(since = "0.1.0", note = "preserved for JSON contract/future export")]
 fn label_kind(k: OutboundKind) -> &'static str {
     match k {
         OutboundKind::Direct => "direct",
@@ -51,7 +56,8 @@ fn label_kind(k: OutboundKind) -> &'static str {
     }
 }
 
-#[allow(dead_code)] // preserved for JSON contract/future export
+#[cfg(any(test, feature = "dev-cli"))]
+#[deprecated(since = "0.1.0", note = "preserved for JSON contract/future export")]
 fn label_err(c: OutboundErrorClass) -> &'static str {
     match c {
         OutboundErrorClass::Timeout => "timeout",
@@ -144,8 +150,7 @@ pub struct SelectorMetrics {
     pub explore_total: IntCounterVec, // proxy_select_explore_total{mode}
 }
 
-#[cfg(feature = "metrics")]
-use crate::metrics::registry_ext::{get_or_register_counter_vec, get_or_register_gauge_vec};
+// (imports consolidated above)
 
 #[cfg(feature = "metrics")]
 pub fn params_gauge() -> &'static prometheus::IntGaugeVec {
@@ -438,12 +443,17 @@ pub fn record_ss_aead_op_duration(duration_ms: f64, cipher: &str, operation: &st
 
 // Generic AEAD operation metrics using static labels
 pub fn record_aead_encrypt_duration(
-    _duration_ms: f64,
-    _protocol: crate::metrics::labels::Proto,
-    _cipher: crate::metrics::labels::CipherType,
+    duration_ms: f64,
+    protocol: crate::metrics::labels::Proto,
+    cipher: crate::metrics::labels::CipherType,
 ) {
     #[cfg(feature = "metrics")]
-    histogram!("outbound_aead_encrypt_duration_ms", "protocol" => protocol.as_str(), "cipher" => cipher.as_str()).record(duration_ms);
+    histogram!(
+        "outbound_aead_encrypt_duration_ms",
+        "protocol" => protocol.as_str(),
+        "cipher" => cipher.as_str()
+    )
+    .record(duration_ms);
 }
 
 pub fn record_aead_decrypt_duration(

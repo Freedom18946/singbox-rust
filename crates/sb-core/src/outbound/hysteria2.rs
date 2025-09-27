@@ -327,7 +327,7 @@ impl Hysteria2Outbound {
             io::Error::new(io::ErrorKind::Other, format!("Auth write failed: {}", e))
         })?;
 
-        send_stream.finish().await.map_err(|e| {
+        send_stream.finish().map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Auth finish failed: {}", e))
         })?;
 
@@ -728,7 +728,11 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         use std::pin::Pin;
         use tokio::io::AsyncWrite;
 
-        Pin::new(&mut self.send_stream).poll_write(cx, buf)
+        match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
+            std::task::Poll::Ready(Ok(n)) => std::task::Poll::Ready(Ok(n)),
+            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            std::task::Poll::Pending => std::task::Poll::Pending,
+        }
     }
 
     fn poll_flush(
@@ -738,7 +742,11 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         use std::pin::Pin;
         use tokio::io::AsyncWrite;
 
-        Pin::new(&mut self.send_stream).poll_flush(cx)
+        match Pin::new(&mut self.send_stream).poll_flush(cx) {
+            std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
+            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            std::task::Poll::Pending => std::task::Poll::Pending,
+        }
     }
 
     fn poll_shutdown(
@@ -748,7 +756,11 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         use std::pin::Pin;
         use tokio::io::AsyncWrite;
 
-        Pin::new(&mut self.send_stream).poll_shutdown(cx)
+        match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
+            std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
+            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            std::task::Poll::Pending => std::task::Poll::Pending,
+        }
     }
 }
 

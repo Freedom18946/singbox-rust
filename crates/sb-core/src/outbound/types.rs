@@ -148,7 +148,8 @@ impl UdpBindRequest {
 
 impl Default for UdpBindRequest {
     fn default() -> Self {
-        Self::new("0.0.0.0:0".parse().unwrap())
+        let default_sa = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
+        Self::new("0.0.0.0:0".parse().unwrap_or(default_sa))
     }
 }
 

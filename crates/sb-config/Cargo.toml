@@ -2,6 +2,10 @@
 name = "sb-config"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.82"
+license = "Apache-2.0"
+description = "Configuration management for singbox-rust"
+repository = "https://github.com/singbox-rust/singbox-rust"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -14,3 +18,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 [features]
 default = []
 dns_http = ["reqwest"]
+dev-cli = []
+go1124_compat = []

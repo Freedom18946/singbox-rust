@@ -273,7 +273,7 @@ async fn handle_conn(
                     }
                 },
                 RDecision::Proxy(pool_name) => {
-                    if let Some(name) = pool_name {
+                    if let Some(name) = pool_name.map(String::from) {
                         // Named proxy pool selection
                         let sel = SELECTOR.get_or_init(|| {
                             let ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
@@ -284,7 +284,7 @@ async fn handle_conn(
                                 .ok()
                                 .and_then(|v| v.parse().ok())
                                 .unwrap_or(4096);
-                            PoolSelector::new(cap, ttl)
+                            PoolSelector::new_with_capacity(cap, std::time::Duration::from_millis(ttl))
                         });
                         let health = MultiHealthView;
                         let target_str = match &endpoint {
@@ -294,7 +294,7 @@ async fn handle_conn(
 
                         if let Some(reg) = registry::global() {
                             if let Some(pool) = reg.pools.get(&name) {
-                                if let Some(ep) = sel.select(pool, peer, &target_str, &health) {
+                                if let Some(ep) = sel.select(&name, peer, &target_str, &()) {
                                     match ep.kind {
                                         sb_core::outbound::endpoint::ProxyKind::Http => {
                                             match &endpoint {

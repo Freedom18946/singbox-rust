@@ -1,3 +1,4 @@
+#![cfg(feature = "tuic")]
 //! TUIC interoperability tests
 //!
 //! These tests verify TUIC protocol interoperability with Go version servers

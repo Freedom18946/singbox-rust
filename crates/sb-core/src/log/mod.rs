@@ -38,10 +38,10 @@ fn redact(s: &str) -> String {
 }
 
 fn ts_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_millis(),
+        Err(_) => 0,
+    }
 }
 
 static TARGET: OnceLock<String> = OnceLock::new();

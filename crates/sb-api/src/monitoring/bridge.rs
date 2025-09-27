@@ -374,6 +374,12 @@ impl MetricsBridge {
     }
 }
 
+impl Default for MetricsBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Handle for external components to access the metrics bridge
 pub struct MetricsBridgeHandle<'a> {
     bridge: &'a MetricsBridge,

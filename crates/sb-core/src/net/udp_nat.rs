@@ -164,8 +164,8 @@ impl NatMap {
                     if top.expiry > now && self.map.len() <= self.cap {
                         break;
                     }
-                    let item = h.pop().unwrap();
-            match self.try_evict(item, now).await {
+                    let Some(item) = h.pop() else { break; };
+                    match self.try_evict(item, now).await {
                         EvictResult::Removed(_reason) => {
                             removed += 1;
                             #[cfg(feature = "metrics")]

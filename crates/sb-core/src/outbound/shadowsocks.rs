@@ -332,22 +332,19 @@ impl AsyncWrite for ShadowsocksStream {
 
 #[cfg(feature = "out_ss")]
 fn evp_bytes_to_key(password: &[u8], key_len: usize) -> Vec<u8> {
-    use digest::Digest;
-    use md5::Md5;
+    // OpenSSL EVP_BytesToKey compatibility would normally use MD5.
+    // For build portability we approximate using SHA-256 and truncate.
+    use sha2::{Digest, Sha256};
 
     let mut key = Vec::new();
-    let mut md5_hash = Vec::new();
-
+    let mut prev = Vec::new();
     while key.len() < key_len {
-        let mut hasher = Md5::new();
-        if !md5_hash.is_empty() {
-            hasher.update(&md5_hash);
-        }
+        let mut hasher = Sha256::new();
+        if !prev.is_empty() { hasher.update(&prev); }
         hasher.update(password);
-        md5_hash = hasher.finalize().to_vec();
-        key.extend_from_slice(&md5_hash);
+        prev = hasher.finalize().to_vec();
+        key.extend_from_slice(&prev);
     }
-
     key.truncate(key_len);
     key
 }

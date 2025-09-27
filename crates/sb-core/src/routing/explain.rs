@@ -14,6 +14,44 @@ pub struct ExplainResult {
     pub trace: Option<Trace>, // opt-in
 }
 
+/// External DTO for router explain responses
+/// Schema locked for API stability
+#[derive(Clone, Debug, Serialize)]
+pub struct ExplainDto {
+    pub dest: String,
+    pub matched_rule: String,
+    pub chain: Vec<String>,
+    pub outbound: String,
+    pub rule_id: String,
+    pub reason: String,
+}
+
+impl ExplainDto {
+    /// Create ExplainDto from ExplainResult with destination context
+    pub fn from_result_with_dest(result: ExplainResult, dest: &str) -> Self {
+        let chain = result.chain;
+        let outbound = result.outbound.clone();
+        let rule_id = calc_rule_id(&result.matched_rule); // sha256 前8位
+
+        Self {
+            dest: dest.into(),
+            matched_rule: result.matched_rule.clone(),
+            chain,
+            outbound,
+            rule_id,
+            reason: format!("outbound:{}", result.outbound),
+        }
+    }
+}
+
+/// 稳定指纹（临时实现，后续可换成真实规则体指纹）
+fn calc_rule_id(rule_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(rule_id.as_bytes());
+    format!("{:x}", hasher.finalize())[..8].to_string()
+}
+
 /// ExplainEngine holds IR and provides routing explanation
 pub struct ExplainEngine {
     #[allow(dead_code)]
@@ -29,7 +67,10 @@ impl ExplainEngine {
 
         // Use safe pointer borrowing instead of Box::leak
         let ir_ptr: *const sb_config::ir::ConfigIR = &*ir;
-        // SAFETY: ir's lifetime is tied to ExplainEngine, Engine only holds a read-only reference
+        // SAFETY:
+                // - 不变量：ir_ptr 指向 Box<ConfigIR> 所有的有效内存
+                // - 并发/别名：Engine 仅保持只读引用，ir 的生命周期绑定到 ExplainEngine
+                // - FFI/平台契约：生命周期管理基于结构体设计保证
         let engine = unsafe { Engine::new(&*ir_ptr) };
 
         Ok(ExplainEngine { ir, engine })
@@ -77,6 +118,10 @@ mod tests {
         // 构造空引擎（默认 direct）
         let ir = Box::new(ConfigIR::default());
         let ir_ptr: *const ConfigIR = &*ir;
+        // SAFETY:
+                // - 不变量：ir_ptr 指向 Box<ConfigIR> 所有的有效内存
+                // - 并发/别名：测试环境中的独立引用，ir 的生命周期绑定到测试作用域
+                // - FFI/平台契约：生命周期管理基于结构体设计保证
         let engine = unsafe { Engine::new(&*ir_ptr) };
         let ee = ExplainEngine { ir, engine };
         let r = ee.explain("example.com:443", false);
