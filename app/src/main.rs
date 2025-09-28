@@ -47,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
             let code = cli::check::run(a)?;
             std::process::exit(code);
         }
+        #[cfg(feature = "prefetch")]
         cli::Commands::Prefetch(a) => cli::prefetch::main(a),
         cli::Commands::Auth(a) => cli::auth::main(a),
         cli::Commands::Prom(a) => cli::prom::main(a).await,

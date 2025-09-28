@@ -1,0 +1,12 @@
+```console
+$ for i in {1..5}; do curl -s -H "Authorization: Bearer test-admin-token-12345" -H "X-Request-ID: cli-test-rate-$i" http://127.0.0.1:0/__health; done | tail -1
+{
+  "ok": false,
+  "error": {
+    "kind": "RateLimit",
+    "msg": "Rate limit exceeded"
+  },
+  "request_id": "cli-test-rate-[..]"
+}
+
+```

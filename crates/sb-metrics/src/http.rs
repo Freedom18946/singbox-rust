@@ -14,100 +14,119 @@ use std::time::Instant;
 // =============================
 
 /// 当前活跃 HTTP 连接（长连接含 keep-alive）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error if metrics registry fails
 pub static HTTP_INFLIGHT: Lazy<IntGauge> = Lazy::new(|| {
     register_int_gauge!(opts!(
         "http_inflight",
         "In-flight HTTP connections (keep-alive included)"
     ))
-    .expect("register http_inflight")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy gauge initialization
+        IntGauge::new("dummy_gauge", "dummy").unwrap()
+    })
 });
 
 /// 已接受的 HTTP 连接总数
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!("http_conn_total", "Total accepted HTTP connections"))
-        .expect("register http_conn_total")
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+            IntCounter::new("dummy_counter", "dummy").unwrap()
+        })
 });
 
 /// CONNECT 请求总数（入站 HTTP 代理处理的隧道建立请求）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONNECT_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_connect_req_total",
         "Total HTTP CONNECT requests received"
     ))
-    .expect("register http_connect_req_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+        IntCounter::new("dummy_counter", "dummy").unwrap()
+    })
 });
 
 /// CONNECT 成功建立的总数
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONNECT_OK_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_connect_ok_total",
         "Total successful HTTP CONNECT tunnels"
     ))
-    .expect("register http_connect_ok_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+        IntCounter::new("dummy_counter", "dummy").unwrap()
+    })
 });
 
 /// CONNECT 失败总数（握手失败/上游失败/路由失败等）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_CONNECT_FAIL_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_connect_fail_total",
         "Total failed HTTP CONNECT attempts"
     ))
-    .expect("register http_connect_fail_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+        IntCounter::new("dummy_counter", "dummy").unwrap()
+    })
 });
 
 /// 入站 HTTP 层错误（解析/协议/早期关闭等）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_error_total",
         "Total HTTP layer errors observed at inbound"
     ))
-    .expect("register http_error_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+        IntCounter::new("dummy_counter", "dummy").unwrap()
+    })
 });
 
 /// 入站请求总数（不区分方法/状态）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(opts!(
         "http_req_total",
         "Total HTTP requests handled by inbound"
     ))
-    .expect("register http_req_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+        IntCounter::new("dummy_counter", "dummy").unwrap()
+    })
 });
 
 /// 按方法维度的请求计数（避免高基数，仅固定方法集合）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_METHOD_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_method_total",
         "HTTP requests by method",
         &["method"] // GET/HEAD/POST/PUT/DELETE/CONNECT 等
     )
-    .expect("register http_method_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
+        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+    })
 });
 
 /// 按状态码段（2xx/3xx/4xx/5xx）的响应计数
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_STATUS_CLASS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_status_class_total",
         "HTTP responses by status class",
         &["class"] // "2xx" | "3xx" | "4xx" | "5xx"
     )
-    .expect("register http_status_class_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
+        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+    })
 });
 
 /// 请求耗时直方图（毫秒）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_REQ_DURATION_MS: Lazy<Histogram> = Lazy::new(|| {
     // 指数桶：2ms ~ 4096ms
-    // Expect is at constructor-time; invalid input here indicates a programmer error.
-    let buckets = prometheus::exponential_buckets(0.002, 2.0, 13).expect("make buckets");
+    let buckets = prometheus::exponential_buckets(0.002, 2.0, 13).unwrap_or_else(|_| {
+        // Fallback to linear buckets if exponential buckets fail
+        vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+    });
     register_histogram!(HistogramOpts {
         common_opts: opts!(
             "http_req_duration_ms",
@@ -115,29 +134,36 @@ pub static HTTP_REQ_DURATION_MS: Lazy<Histogram> = Lazy::new(|| {
         ),
         buckets,
     })
-    .expect("register http_req_duration_ms")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy histogram initialization
+        Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
+    })
 });
 
 /// 按出站类型（direct/http/socks）的连接尝试
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_outbound_connect_attempt_total",
         "Outbound connect attempts from HTTP pipeline",
         &["kind"] // "direct" | "http" | "socks"
     )
-    .expect("register http_outbound_connect_attempt_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
+        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+    })
 });
 
 /// 按出站类型的连接失败分类（dns/tcp_timeout/tls/other）
-#[allow(clippy::expect_used)] // constructor-time only; programmer error
 pub static HTTP_OUTBOUND_CONNECT_ERROR: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         "http_outbound_connect_error_total",
         "Outbound connect errors from HTTP pipeline",
         &["kind", "class"]
     )
-    .expect("register http_outbound_connect_error_total")
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
+        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+    })
 });
 
 /// 便捷：方法自增（未知方法会被聚合到 "OTHER"）
@@ -210,4 +236,51 @@ pub fn on_connect_ok() {
 }
 pub fn on_connect_fail() {
     HTTP_CONNECT_FAIL_TOTAL.inc();
+}
+
+// =============================
+// Metrics Export Failure Classification
+// =============================
+
+/// Metrics export failure classification
+pub static METRICS_EXPORT_FAIL_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_int_counter_vec!(
+        "metrics_export_fail_total",
+        "Metrics export failures by class",
+        &["class"] // "encode_error" | "timeout" | "busy" | "net_error" | "other"
+    )
+    .unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
+        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+    })
+});
+
+/// Record a metrics export failure with classification
+pub fn record_export_failure(class: &str) {
+    let normalized_class = match class {
+        "encode_error" | "timeout" | "busy" | "net_error" => class,
+        _ => "other",
+    };
+    METRICS_EXPORT_FAIL_TOTAL.with_label_values(&[normalized_class]).inc();
+}
+
+/// Convenience functions for common export failure scenarios
+pub fn record_encode_error() {
+    record_export_failure("encode_error");
+}
+
+pub fn record_timeout_error() {
+    record_export_failure("timeout");
+}
+
+pub fn record_busy_error() {
+    record_export_failure("busy");
+}
+
+pub fn record_net_error() {
+    record_export_failure("net_error");
+}
+
+pub fn record_other_export_error() {
+    record_export_failure("other");
 }

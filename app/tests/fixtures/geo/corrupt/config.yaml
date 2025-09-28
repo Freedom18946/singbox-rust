@@ -1,0 +1,20 @@
+# Configuration that references corrupt GEO database files
+inbounds:
+  - type: socks
+    listen: "127.0.0.1:1080"
+    tag: "socks-in"
+
+outbounds:
+  - type: direct
+    tag: "direct"
+
+route:
+  geoip:
+    path: "app/tests/fixtures/geo/corrupt/corrupt-geoip.db"
+  geosite:
+    path: "app/tests/fixtures/geo/corrupt/corrupt-geosite.db"
+  rules:
+    - geoip: "CN"
+      outbound: "direct"
+    - geosite: "google"
+      outbound: "direct"

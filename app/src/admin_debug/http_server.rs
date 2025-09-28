@@ -1,4 +1,13 @@
-use crate::admin_debug::{endpoints, http_util::{respond, respond_json_error, respond_json_ok, is_networking_allowed, supported_patch_kinds}};
+use crate::admin_debug::{endpoints, http_util::{respond, respond_json_error}};
+#[cfg(feature = "auth")]
+use crate::admin_debug::auth::{AuthProvider, AuthConfig, AuthError, from_config};
+use crate::admin_debug::middleware::{
+    MiddlewareChain, RequestContext, send_error_response,
+    request_id::RequestIdMiddleware,
+    auth::AuthMiddleware,
+};
+#[cfg(feature = "rate_limit")]
+use crate::admin_debug::middleware::rate_limit::RateLimitMiddleware;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use std::sync::OnceLock;
@@ -93,6 +102,30 @@ impl AuthConf {
             Self::Mtls { .. } => "mtls",
         }
     }
+
+    /// Convert legacy AuthConf to new AuthConfig
+    #[cfg(feature = "auth")]
+    pub fn to_auth_config(&self) -> AuthConfig {
+        match self {
+            Self::Disabled | Self::Mtls { .. } => AuthConfig::None,
+            Self::Bearer { token } => AuthConfig::ApiKey {
+                key: token.clone(),
+                key_id: None,
+            },
+            Self::Hmac { secret } => AuthConfig::ApiKey {
+                key: secret.clone(),
+                key_id: None, // We'll use the existing HMAC implementation
+            },
+            Self::BearerAndHmac { token, secret: _ } => {
+                // For BearerAndHmac, prefer Bearer token for simplicity
+                // The existing check_auth_with_config handles the fallback
+                AuthConfig::ApiKey {
+                    key: token.clone(),
+                    key_id: None,
+                }
+            }
+        }
+    }
 }
 
 pub static START: OnceLock<std::time::Instant> = OnceLock::new();
@@ -125,6 +158,76 @@ pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
     }
 
     false
+}
+
+/// New contract-compliant authentication check
+/// Returns a Result that can be used to generate proper ResponseEnvelope errors
+#[cfg(feature = "auth")]
+pub fn check_auth_contract(
+    headers: &HashMap<String, String>,
+    path: &str,
+    auth_conf: &AuthConf,
+    request_id: Option<&str>
+) -> Result<(), sb_admin_contract::ResponseEnvelope<()>> {
+    // For mTLS, authentication is handled at TLS layer
+    if matches!(auth_conf, AuthConf::Mtls { enabled: true }) {
+        return Ok(());
+    }
+
+    // Convert to new auth config and create provider
+    let auth_config = auth_conf.to_auth_config();
+    let provider = match from_config(&auth_config) {
+        Ok(p) => p,
+        Err(auth_err) => {
+            let error_body: sb_admin_contract::ErrorBody = auth_err.into();
+            let mut envelope = sb_admin_contract::ResponseEnvelope::err(
+                error_body.kind,
+                error_body.msg
+            );
+            if let Some(id) = request_id {
+                envelope = envelope.with_request_id(id);
+            }
+            return Err(envelope);
+        }
+    };
+
+    // Check authentication using the new provider
+    match provider.check(headers, path) {
+        Ok(()) => Ok(()),
+        Err(auth_err) => {
+            let error_body: sb_admin_contract::ErrorBody = auth_err.into();
+            let mut envelope = sb_admin_contract::ResponseEnvelope::err(
+                error_body.kind,
+                error_body.msg
+            );
+            if let Some(hint) = error_body.hint {
+                envelope.error.as_mut().unwrap().hint = Some(hint);
+            }
+            if let Some(id) = request_id {
+                envelope = envelope.with_request_id(id);
+            }
+            Err(envelope)
+        }
+    }
+}
+
+/// Fallback for when auth feature is disabled
+#[cfg(not(feature = "auth"))]
+pub fn check_auth_contract(
+    headers: &HashMap<String, String>,
+    path: &str,
+    auth_conf: &AuthConf,
+    _request_id: Option<&str>
+) -> Result<(), sb_admin_contract::ResponseEnvelope<()>> {
+    // Fall back to legacy authentication
+    if check_auth_with_config(headers, path, auth_conf) {
+        Ok(())
+    } else {
+        Err(sb_admin_contract::ResponseEnvelope::err(
+            sb_admin_contract::ErrorKind::Auth,
+            "Authentication required"
+        ))
+    }
 }
 
 fn check_hmac_auth(hmac_auth: &str, path: &str) -> bool {
@@ -321,6 +424,75 @@ fn check_auth_with_config(headers: &HashMap<String, String>, path: &str, auth_co
     }
 }
 
+/// Extract request ID from headers
+fn extract_request_id(headers: &HashMap<String, String>) -> Option<String> {
+    headers.get("x-request-id").cloned()
+        .or_else(|| headers.get("request-id").cloned())
+}
+
+/// Generate a request ID if none provided
+fn generate_request_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("req-{:016x}-{:04x}", timestamp, rand::random::<u16>())
+}
+
+/// Build the middleware chain for admin debug server
+fn build_middleware_chain(auth_conf: &AuthConf) -> std::io::Result<MiddlewareChain> {
+    let mut chain = MiddlewareChain::new()
+        .add(RequestIdMiddleware::new());
+
+    // Add rate limiting middleware if enabled
+    #[cfg(feature = "rate_limit")]
+    {
+        if let Some(rate_limiter) = crate::admin_debug::middleware::rate_limit::from_env() {
+            tracing::info!(target = "admin", "rate limiting enabled");
+            chain = chain.add(rate_limiter);
+        }
+    }
+
+    // Add authentication middleware
+    match AuthMiddleware::from_env() {
+        Ok(auth_middleware) => {
+            tracing::info!(target = "admin", auth_mode = auth_conf.mode(), "authentication enabled");
+            chain = chain.add(auth_middleware);
+        }
+        Err(e) => {
+            tracing::error!(target = "admin", error = %e, "failed to create auth middleware");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("auth middleware creation failed: {}", e)
+            ));
+        }
+    }
+
+    Ok(chain)
+}
+
+/// Send authentication error response with contract compliance
+async fn respond_auth_error<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    envelope: sb_admin_contract::ResponseEnvelope<()>
+) -> std::io::Result<()> {
+    let body = serde_json::to_string(&envelope)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "JSON serialization failed"))?;
+
+    let response = format!(
+        "HTTP/1.1 401 Unauthorized\r\n\
+        Content-Type: application/json\r\n\
+        Content-Length: {}\r\n\
+        \r\n\
+        {}",
+        body.len(),
+        body
+    );
+
+    writer.write_all(response.as_bytes()).await
+}
+
 fn check_hmac_auth_with_secret(hmac_auth: &str, path: &str, secret: &str) -> bool {
     // Parse HMAC auth string: keyId:timestamp:signature
     let parts: Vec<&str> = hmac_auth.split(':').collect();
@@ -462,9 +634,20 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
                 // Bounded parsing
                 let (method, path, headers) = read_request_head(&mut s).await?;
 
-                // Unified authentication
-                if !check_auth(&headers, &path) {
-                    // Provide better feedback for mTLS
+                // Extract or generate request ID
+                let request_id = extract_request_id(&headers).unwrap_or_else(generate_request_id);
+
+                // Create auth config from environment for contract compliance
+                let auth_config = AuthConf::from_env();
+
+                // Contract-compliant authentication
+                #[cfg(feature = "auth")]
+                let auth_result = check_auth_contract(&headers, &path, &auth_config, Some(&request_id));
+                #[cfg(not(feature = "auth"))]
+                let auth_result = check_auth_contract(&headers, &path, &auth_config, Some(&request_id));
+
+                if let Err(auth_envelope) = auth_result {
+                    // For mTLS, provide specific error message
                     if std::env::var("SB_ADMIN_MTLS").ok().as_deref() == Some("1") {
                         s.write_all(b"HTTP/1.1 401 Unauthorized\r\n").await?;
                         s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n").await?;
@@ -472,7 +655,8 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
                         let body = "mTLS authentication required: valid client certificate needed";
                         s.write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes()).await?;
                     } else {
-                        respond(&mut s, 401, "text/plain", "Unauthorized").await?;
+                        // Use contract-compliant JSON response
+                        respond_auth_error(&mut s, auth_envelope).await?;
                     }
                     return Ok::<(), std::io::Error>(());
                 }
@@ -593,24 +777,51 @@ async fn serve_with_config(addr: &str, tls_conf: Option<TlsConf>, auth_conf: Aut
                 // Bounded parsing
                 let (method, path, headers) = read_request_head(&mut s).await?;
 
-                // Authentication using explicit config
-                if !check_auth_with_config(&headers, &path, &auth) {
-                    match auth {
-                        AuthConf::Mtls { .. } => {
-                            s.write_all(b"HTTP/1.1 401 Unauthorized\r\n").await?;
-                            s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n").await?;
-                            s.write_all(b"Content-Type: text/plain\r\n").await?;
-                            let body = "mTLS authentication required: valid client certificate needed";
-                            s.write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes()).await?;
-                        }
-                        _ => {
-                            respond(&mut s, 401, "text/plain", "Unauthorized").await?;
-                        }
+                // Build middleware chain and create request context
+                let middleware_chain = match build_middleware_chain(&auth) {
+                    Ok(chain) => chain,
+                    Err(e) => {
+                        tracing::error!(target = "admin", error = %e, "failed to build middleware chain");
+                        send_error_response(
+                            &mut s,
+                            sb_admin_contract::ResponseEnvelope::err(
+                                sb_admin_contract::ErrorKind::Internal,
+                                "Server configuration error"
+                            ),
+                            500
+                        ).await?;
+                        return Ok::<(), std::io::Error>(());
+                    }
+                };
+
+                let mut request_context = RequestContext::new(method.clone(), path.clone(), headers.clone());
+
+                // Execute middleware chain
+                if let Err(error_envelope) = middleware_chain.execute(&mut request_context) {
+                    // Handle middleware errors (auth, rate limit, etc.)
+                    let status_code = match &error_envelope.error {
+                        Some(error) => match error.kind {
+                            sb_admin_contract::ErrorKind::Auth => 401,
+                            sb_admin_contract::ErrorKind::RateLimit => 429,
+                            _ => 500,
+                        },
+                        None => 500,
+                    };
+
+                    // Special handling for mTLS
+                    if matches!(auth, AuthConf::Mtls { .. }) && status_code == 401 {
+                        s.write_all(b"HTTP/1.1 401 Unauthorized\r\n").await?;
+                        s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n").await?;
+                        s.write_all(b"Content-Type: text/plain\r\n").await?;
+                        let body = "mTLS authentication required: valid client certificate needed";
+                        s.write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes()).await?;
+                    } else {
+                        send_error_response(&mut s, error_envelope, status_code).await?;
                     }
                     return Ok::<(), std::io::Error>(());
                 }
 
-                // Route to endpoints (same as before)
+                // Route to endpoints with middleware-processed context
                 match (method.as_str(), path.as_str()) {
                     ("GET", "/__health")  => endpoints::handle_health(&mut s).await?,
                     ("GET", "/__metrics") => endpoints::metrics::handle(&mut s).await?,
@@ -726,27 +937,49 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
 
     tracing::debug!(path = %path_q, "admin debug request");
 
-    // Route to appropriate endpoint
-    if path_q == "/__health" {
-        if !check_auth(&headers, path_q) {
-            return respond(
+    // Create auth config from environment for contract compliance
+    let auth_config = AuthConf::from_env();
+
+    // Build middleware chain and create request context
+    let middleware_chain = match build_middleware_chain(&auth_config) {
+        Ok(chain) => chain,
+        Err(e) => {
+            tracing::error!(target = "admin", error = %e, "failed to build middleware chain");
+            send_error_response(
                 &mut stream,
-                401,
-                "text/plain",
-                "Unauthorized"
-            ).await;
+                sb_admin_contract::ResponseEnvelope::err(
+                    sb_admin_contract::ErrorKind::Internal,
+                    "Server configuration error"
+                ),
+                500
+            ).await?;
+            return Ok(());
         }
-        endpoints::handle_health(&mut stream).await?;
-    } else if path_q == "/__metrics" {
-        if !check_auth(&headers, path_q) {
-            return respond(
-                &mut stream,
-                401,
-                "text/plain",
-                "Unauthorized"
-            ).await;
+    };
+
+    let mut request_context = RequestContext::new("GET".to_string(), path_q.to_string(), headers.clone());
+
+    // Execute middleware chain for protected endpoints
+    if path_q == "/__health" || path_q == "/__metrics" {
+        if let Err(error_envelope) = middleware_chain.execute(&mut request_context) {
+            let status_code = match &error_envelope.error {
+                Some(error) => match error.kind {
+                    sb_admin_contract::ErrorKind::Auth => 401,
+                    sb_admin_contract::ErrorKind::RateLimit => 429,
+                    _ => 500,
+                },
+                None => 500,
+            };
+            send_error_response(&mut stream, error_envelope, status_code).await?;
+            return Ok(());
         }
-        endpoints::metrics::handle(&mut stream).await?;
+
+        // Handle the specific protected endpoint
+        match path_q {
+            "/__health" => endpoints::handle_health(&mut stream).await?,
+            "/__metrics" => endpoints::metrics::handle(&mut stream).await?,
+            _ => unreachable!(),
+        }
     } else if path_q.starts_with("/router/geoip") {
         endpoints::handle_geoip(path_q, &mut stream).await?;
     } else if path_q.starts_with("/router/rules/normalize") {

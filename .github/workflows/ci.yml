@@ -120,3 +120,101 @@ jobs:
           cargo test -p app --test cli_json_contract -- --nocapture
           cargo test -p app --test admin_contract -- --nocapture
           cargo test -p app --test bench_io_contract -- --nocapture
+
+  feature-matrix:
+    name: "Feature matrix (MSRV 1.90)"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["", "router", "admin_debug", "prefetch", "admin_debug,prefetch"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.90.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.90.0"
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (app)
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo build -p app
+          else
+            cargo build -p app --features "${{ matrix.features }}"
+          fi
+      - name: Clippy (app)
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo clippy -p app -- -D warnings
+          else
+            cargo clippy -p app --features "${{ matrix.features }}" -- -D warnings
+          fi
+
+  tests-app-focused:
+    name: "App tests (focused features, MSRV 1.90)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain 1.90.0
+        uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: "1.90.0" }
+      - uses: Swatinem/rust-cache@v2
+      - name: Admin auth contract tests
+        run: cargo test -p app --no-default-features --features "admin_debug,auth,rate_limit" --test admin_auth_contract -- -q
+      - name: CLI trycmd tests (focused)
+        run: cargo test -p app --no-default-features --features "admin_debug,auth,rate_limit" --lib --test cli -- -q
+
+  e2e-offline:
+    name: "E2E Offline Pipeline (auth + rate_limit)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: E2E offline test pipeline
+        env:
+          RUST_TEST_THREADS: 1
+        run: |
+          cargo run -p xtask -- e2e
+
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Install cargo-deny and cargo-public-api
+        run: |
+          cargo install cargo-deny --locked
+          cargo install cargo-public-api --locked
+      - name: Cargo clippy (strict lints for core packages)
+        run: |
+          cargo clippy -p sb-core --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+          cargo clippy -p sb-adapters --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+          cargo clippy -p sb-metrics --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+          cargo clippy -p sb-config --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+          cargo clippy -p sb-runtime --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+      - name: Guard no unwrap/expect/panic in production code
+        run: bash scripts/guard_no_unwrap.sh --baseline
+      - name: Cargo deny check (vulnerabilities, yanked, licenses)
+        run: cargo deny check
+      - name: Public API baseline check (sb-core)
+        run: |
+          if [ ! -f public-api-baseline.txt ]; then
+            echo "Creating initial public API baseline..."
+            cargo public-api -p sb-core > public-api-baseline.txt
+            echo "⚠️  Initial baseline created. Review and commit public-api-baseline.txt"
+          else
+            echo "Checking public API changes..."
+            cargo public-api -p sb-core | diff -u public-api-baseline.txt - || {
+              echo "❌ Public API changes detected!"
+              echo "Review the changes above. If they are intentional:"
+              echo "1. Update the baseline: cargo public-api -p sb-core > public-api-baseline.txt"
+              echo "2. Document the changes in your PR description"
+              exit 1
+            }
+          fi

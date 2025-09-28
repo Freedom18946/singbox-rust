@@ -1,0 +1,17 @@
+# Invalid JWT token for testing authentication failure
+# This token has various issues: malformed structure, invalid signature, etc.
+
+# Completely malformed token
+invalid.token.structure
+
+# Token with invalid base64 encoding
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.INVALID_BASE64_PAYLOAD.invalid-signature
+
+# Token with missing kid claim
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJpYXQiOjE2MDk0NTkyMDAsImV4cCI6OTk5OTk5OTk5OSwiYXVkIjoic2luZ2JveC1hZG1pbiIsImlzcyI6InNpbmdib3gtdGVzdCJ9.invalid-signature-for-testing
+
+# Token with wrong algorithm (none)
+eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJpYXQiOjE2MDk0NTkyMDAsImV4cCI6OTk5OTk5OTk5OSwiYXVkIjoic2luZ2JveC1hZG1pbiIsImlzcyI6InNpbmdib3gtdGVzdCJ9.
+
+# Token with unknown kid
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InVua25vd24ta2V5In0.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJpYXQiOjE2MDk0NTkyMDAsImV4cCI6OTk5OTk5OTk5OSwiYXVkIjoic2luZ2JveC1hZG1pbiIsImlzcyI6InNpbmdib3gtdGVzdCJ9.wrong-signature-for-unknown-key

@@ -1,0 +1,13 @@
+# Minimal valid configuration for testing
+apiVersion: singbox/v1
+kind: Configuration
+
+route:
+  rules:
+    - outbound: direct
+      domain_suffix:
+        - .example.com
+
+outbounds:
+  - name: direct
+    type: direct

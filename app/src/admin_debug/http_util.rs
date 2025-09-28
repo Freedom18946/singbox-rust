@@ -2,6 +2,30 @@ use percent_encoding::percent_decode_str;
 use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 use serde::Serialize;
+use sb_admin_contract::{ResponseEnvelope, ErrorBody, ErrorKind};
+
+// Request ID generation
+pub fn generate_request_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+
+    let count = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    format!("req-{:x}-{:x}", timestamp & 0xfffff, count & 0xfff)
+}
+
+// Extract request ID from headers or generate one
+pub fn get_or_generate_request_id(headers: &HashMap<String, String>) -> String {
+    headers
+        .get("x-request-id")
+        .or_else(|| headers.get("request-id"))
+        .and_then(|id| if id.trim().is_empty() { None } else { Some(id.clone()) })
+        .unwrap_or_else(generate_request_id)
+}
 
 pub fn parse_query(q: &str) -> HashMap<String, String> {
     let mut m = HashMap::new();
@@ -49,12 +73,49 @@ pub async fn respond_json_ok(
     respond(sock, 200, "application/json", std::str::from_utf8(&json).unwrap()).await
 }
 
+// Legacy JsonError for backward compatibility
 #[derive(Serialize)]
 struct JsonError<'a> {
     error: &'a str,
     detail: &'a str,
 }
 
+// Type aliases for sb-admin-contract types
+pub type AdminResponse<T> = ResponseEnvelope<T>;
+pub type AdminError = ErrorBody;
+
+// Convenience constructors for common error types
+pub fn admin_error_io(msg: impl Into<String>) -> AdminError {
+    ErrorBody { kind: ErrorKind::Io, msg: msg.into(), ptr: None, hint: None }
+}
+
+pub fn admin_error_parse(msg: impl Into<String>) -> AdminError {
+    ErrorBody { kind: ErrorKind::Decode, msg: msg.into(), ptr: None, hint: None }
+}
+
+pub fn admin_error_not_found(msg: impl Into<String>) -> AdminError {
+    ErrorBody { kind: ErrorKind::NotFound, msg: msg.into(), ptr: None, hint: None }
+}
+
+pub fn admin_error_conflict(msg: impl Into<String>) -> AdminError {
+    ErrorBody { kind: ErrorKind::Conflict, msg: msg.into(), ptr: None, hint: None }
+}
+
+pub fn admin_error_state(msg: impl Into<String>) -> AdminError {
+    ErrorBody { kind: ErrorKind::State, msg: msg.into(), ptr: None, hint: None }
+}
+
+pub fn admin_error_with_ptr(mut error: AdminError, ptr: impl Into<String>) -> AdminError {
+    error.ptr = Some(ptr.into());
+    error
+}
+
+pub fn admin_error_with_hint(mut error: AdminError, hint: impl Into<String>) -> AdminError {
+    error.hint = Some(hint.into());
+    error
+}
+
+// Legacy JSON error response (for backward compatibility)
 pub async fn respond_json_error(
     sock: &mut (impl AsyncWriteExt + Unpin),
     code: u16,
@@ -65,6 +126,84 @@ pub async fn respond_json_error(
     let payload = JsonError { error: msg, detail };
     let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{\"error\":\"unknown\",\"detail\":\"unknown\"}".into());
     respond(sock, code, "application/json", &json).await
+}
+
+// New unified admin response functions
+pub async fn respond_admin_success<T: Serialize>(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    data: T,
+) -> std::io::Result<()> {
+    respond_admin_success_with_request_id(sock, data, generate_request_id()).await
+}
+
+pub async fn respond_admin_success_with_request_id<T: Serialize>(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    data: T,
+    request_id: String,
+) -> std::io::Result<()> {
+    let response = ResponseEnvelope::ok(data).with_request_id(request_id);
+    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"ok":false,"error":{"kind":"io","msg":"serialization failed"}}"#.into());
+    respond(sock, 200, "application/json", &json).await
+}
+
+pub async fn respond_admin_error(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    code: u16,
+    error: AdminError,
+) -> std::io::Result<()> {
+    respond_admin_error_with_request_id(sock, code, error, generate_request_id()).await
+}
+
+pub async fn respond_admin_error_with_request_id(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    code: u16,
+    error: AdminError,
+    request_id: String,
+) -> std::io::Result<()> {
+    let response: AdminResponse<()> = ResponseEnvelope::err(error.kind, error.msg).with_request_id(request_id);
+    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"ok":false,"error":{"kind":"io","msg":"serialization failed"}}"#.into());
+    respond(sock, code, "application/json", &json).await
+}
+
+// Convenience function for common error patterns
+pub async fn respond_admin_parse_error(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    msg: impl Into<String>,
+    ptr: Option<impl Into<String>>,
+    hint: Option<impl Into<String>>,
+) -> std::io::Result<()> {
+    let mut error = admin_error_parse(msg);
+    if let Some(p) = ptr {
+        error = admin_error_with_ptr(error, p);
+    }
+    if let Some(h) = hint {
+        error = admin_error_with_hint(error, h);
+    }
+    respond_admin_error(sock, 400, error).await
+}
+
+pub async fn respond_admin_not_found(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    resource: impl Into<String>,
+    hint: Option<impl Into<String>>,
+) -> std::io::Result<()> {
+    let mut error = admin_error_not_found(format!("Resource not found: {}", resource.into()));
+    if let Some(h) = hint {
+        error = admin_error_with_hint(error, h);
+    }
+    respond_admin_error(sock, 404, error).await
+}
+
+pub async fn respond_admin_conflict(
+    sock: &mut (impl AsyncWriteExt + Unpin),
+    msg: impl Into<String>,
+    ptr: Option<impl Into<String>>,
+) -> std::io::Result<()> {
+    let mut error = admin_error_conflict(msg);
+    if let Some(p) = ptr {
+        error = admin_error_with_ptr(error, p);
+    }
+    respond_admin_error(sock, 409, error).await
 }
 
 /// Maximum allowed size for base64 inline content (512KB)

@@ -8,7 +8,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
-pub enum ErrorKind {
+pub enum SecurityErrorKind {
     Timeout,
     ConnectTimeout,
     TooManyRedirects,
@@ -21,7 +21,7 @@ pub enum ErrorKind {
     Other
 }
 
-impl ErrorKind {
+impl SecurityErrorKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Timeout => "timeout",
@@ -41,7 +41,7 @@ impl ErrorKind {
 #[derive(Serialize, Clone)]
 pub struct ErrorEntry {
     pub ts: u64,
-    pub kind: ErrorKind,
+    pub kind: SecurityErrorKind,
     pub url: String,
     pub msg: String,
 }
@@ -85,8 +85,8 @@ static LAST_OK_TS:     OnceCell<Mutex<u64>> = OnceCell::new();
 static RECENT_ERRORS:  OnceCell<Mutex<VecDeque<ErrorEntry>>> = OnceCell::new();
 
 // Error kind tracking with sampling
-static ERROR_KINDS: OnceCell<Mutex<BTreeMap<ErrorKind, u64>>> = OnceCell::new();
-static ERROR_KINDS_BY_HASH: OnceCell<Mutex<HashMap<(ErrorKind, u16), u64>>> = OnceCell::new();
+static ERROR_KINDS: OnceCell<Mutex<BTreeMap<SecurityErrorKind, u64>>> = OnceCell::new();
+static ERROR_KINDS_BY_HASH: OnceCell<Mutex<HashMap<(SecurityErrorKind, u16), u64>>> = OnceCell::new();
 
 // Latency histogram tracking with finer buckets
 static LATENCY_SNAPSHOT: OnceCell<(Vec<(f64, u64)>, u64, u64)> = OnceCell::new();
@@ -201,7 +201,7 @@ pub fn record_dns_latency_ms(ms: u64) {
 }
 
 // Sampled error recording for low-cardinality metrics (10% sampling)
-pub fn record_error_sampled(kind: ErrorKind, host: &str) {
+pub fn record_error_sampled(kind: SecurityErrorKind, host: &str) {
     let host_hash = host_to_hash(host);
 
     // Only sample 10% of errors (check last 4 bits for 0)
@@ -213,11 +213,11 @@ pub fn record_error_sampled(kind: ErrorKind, host: &str) {
     }
 }
 
-pub fn set_last_error(kind: ErrorKind, msg: impl Into<String>) {
+pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) {
     set_last_error_with_host(kind, "", msg)
 }
 
-pub fn set_last_error_with_host(kind: ErrorKind, host: &str, msg: impl Into<String>) {
+pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) {
     let message = msg.into();
     let s = LAST_ERROR.get_or_init(|| Mutex::new(String::new()));
     if let Ok(mut g) = s.lock() { *g = message.clone(); }
@@ -240,7 +240,7 @@ pub fn set_last_error_with_host(kind: ErrorKind, host: &str, msg: impl Into<Stri
     TOTAL_FAILS.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn set_last_error_with_url(kind: ErrorKind, url: &str, msg: impl Into<String>) {
+pub fn set_last_error_with_url(kind: SecurityErrorKind, url: &str, msg: impl Into<String>) {
     let message = msg.into();
     let s = LAST_ERROR.get_or_init(|| Mutex::new(String::new()));
     if let Ok(mut g) = s.lock() { *g = message.clone(); }
@@ -258,7 +258,7 @@ pub fn set_last_error_with_url(kind: ErrorKind, url: &str, msg: impl Into<String
     TOTAL_FAILS.fetch_add(1, Ordering::Relaxed);
 }
 
-fn add_recent_error(url: &str, msg: &str, ts: u64, kind: ErrorKind) {
+fn add_recent_error(url: &str, msg: &str, ts: u64, kind: SecurityErrorKind) {
     let errors = RECENT_ERRORS.get_or_init(|| Mutex::new(VecDeque::new()));
     if let Ok(mut e) = errors.lock() {
         e.push_back(ErrorEntry {
@@ -332,8 +332,8 @@ pub struct SecuritySnapshot {
     pub last_error_ts: Option<u64>,
     pub last_ok_ts: Option<u64>,
     pub last_errors: Vec<ErrorEntry>,
-    pub error_kinds: BTreeMap<ErrorKind, u64>,
-    pub error_kinds_by_hash: HashMap<(ErrorKind, u16), u64>,
+    pub error_kinds: BTreeMap<SecurityErrorKind, u64>,
+    pub error_kinds_by_hash: HashMap<(SecurityErrorKind, u16), u64>,
     pub latency_buckets: Vec<(f64, u64)>, // {"0.05","0.1","0.2","0.5","1","2","+Inf"}
     pub latency_count: u64,
     pub latency_sum_ms: u64,
@@ -479,14 +479,14 @@ mod tests {
             let should_sample = (host_hash & 0xF) == 0;
 
             // Call record_error_sampled
-            record_error_sampled(ErrorKind::Timeout, &test_host);
+            record_error_sampled(SecurityErrorKind::Timeout, &test_host);
 
             // Verify that sampling occurred if expected
             if should_sample {
                 // Should be recorded in ERROR_KINDS_BY_HASH
                 let map = ERROR_KINDS_BY_HASH.get().unwrap();
                 if let Ok(m) = map.lock() {
-                    let key = (ErrorKind::Timeout, host_hash);
+                    let key = (SecurityErrorKind::Timeout, host_hash);
                     assert!(m.contains_key(&key), "Sampled error should be recorded for host {}", test_host);
                 }
                 break; // Found at least one sampled case
@@ -499,16 +499,16 @@ mod tests {
         // Test that error kinds are properly tracked
         let host = "error-kind-test.com";
 
-        set_last_error_with_host(ErrorKind::Upstream4xx, host, "Test 4xx error");
-        set_last_error_with_host(ErrorKind::Upstream5xx, host, "Test 5xx error");
-        set_last_error_with_host(ErrorKind::Timeout, host, "Test timeout");
+        set_last_error_with_host(SecurityErrorKind::Upstream4xx, host, "Test 4xx error");
+        set_last_error_with_host(SecurityErrorKind::Upstream5xx, host, "Test 5xx error");
+        set_last_error_with_host(SecurityErrorKind::Timeout, host, "Test timeout");
 
         // Verify ERROR_KINDS tracking
         let kinds_map = ERROR_KINDS.get().unwrap();
         if let Ok(m) = kinds_map.lock() {
-            assert!(m.get(&ErrorKind::Upstream4xx).unwrap_or(&0) > &0);
-            assert!(m.get(&ErrorKind::Upstream5xx).unwrap_or(&0) > &0);
-            assert!(m.get(&ErrorKind::Timeout).unwrap_or(&0) > &0);
+            assert!(m.get(&SecurityErrorKind::Upstream4xx).unwrap_or(&0) > &0);
+            assert!(m.get(&SecurityErrorKind::Upstream5xx).unwrap_or(&0) > &0);
+            assert!(m.get(&SecurityErrorKind::Timeout).unwrap_or(&0) > &0);
         }
     }
 

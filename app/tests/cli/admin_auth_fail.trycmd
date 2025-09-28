@@ -1,0 +1,13 @@
+```console
+$ curl -s -H "X-Request-ID: cli-test-002" http://127.0.0.1:0/__health
+{
+  "ok": false,
+  "error": {
+    "kind": "Auth",
+    "msg": "Authentication required",
+    "hint": "Include Authorization header with valid credentials"
+  },
+  "request_id": "cli-test-002"
+}
+
+```

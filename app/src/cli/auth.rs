@@ -75,10 +75,10 @@ pub enum AuthCmd {
 pub fn main(a: AuthArgs) -> Result<()> {
     match a.cmd {
         AuthCmd::Sign { key_id, secret, header, env_file, algo, canon, body, body_file, body_hash } =>
-            sign_ex(key_id, secret, header, env_file, algo, canon, body, body_file, body_hash),
+            sign_ex(SignConfig { key_id, secret, header, env_file, algo, canon, body, body_file, body_hash }),
         AuthCmd::Replay { url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash } =>
             tokio::runtime::Runtime::new()?.block_on(
-                replay(url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash)
+                replay(ReplayConfig { url, key_id, secret, times, concurrency, rps, timeout_ms, status_only, hdrs, json, body, body_file, body_hash })
             ),
     }
 }
@@ -97,7 +97,6 @@ fn parse_env_file(p: &std::path::Path) -> BTreeMap<String,String> {
     m
 }
 
-#[must_use]
 pub(crate) fn read_body_inline(body: &Option<String>, body_file: &Option<PathBuf>) -> Result<Option<Vec<u8>>> {
     match (body, body_file) {
         (Some(b), None) => Ok(Some(b.as_bytes().to_vec())),
@@ -143,22 +142,33 @@ pub(crate) fn inject_body_hash(
     }
 }
 
-fn sign_ex(key_id: String, secret: String, mut header: Vec<String>,
-           env_file: Option<std::path::PathBuf>, algo: Algo, canon: bool,
-           body: Option<String>, body_file: Option<PathBuf>, body_hash: bool) -> Result<()> {
-    let mut key_id = key_id;
-    let mut secret = secret;
-    if let Some(p) = env_file.as_ref() {
+struct SignConfig {
+    key_id: String,
+    secret: String,
+    header: Vec<String>,
+    env_file: Option<std::path::PathBuf>,
+    algo: Algo,
+    canon: bool,
+    body: Option<String>,
+    body_file: Option<PathBuf>,
+    body_hash: bool,
+}
+
+fn sign_ex(config: SignConfig) -> Result<()> {
+    let mut key_id = config.key_id;
+    let mut secret = config.secret;
+    let mut header = config.header;
+    if let Some(p) = config.env_file.as_ref() {
         let m = parse_env_file(p);
         if let Some(v) = m.get("KEY_ID") { key_id = v.clone(); }
         if let Some(v) = m.get("KEY_SECRET") { secret = v.clone(); }
     }
-    let body_bytes = read_body_inline(&body, &body_file)?;
-    inject_body_hash(&mut header, &body_bytes, body_hash);
-    let ts = (chrono::Utc::now().timestamp()) as i64;
+    let body_bytes = read_body_inline(&config.body, &config.body_file)?;
+    inject_body_hash(&mut header, &body_bytes, config.body_hash);
+    let ts = chrono::Utc::now().timestamp();
     let nonce = format!("{:016x}", rand::random::<u64>());
     let (canon_str, _hdrs) = build_canonical(ts, &nonce, &header);
-    let sig_b64 = match algo {
+    let sig_b64 = match config.algo {
         Algo::HmacSha256 => {
             type H = Hmac<Sha256>;
             let mut mac = H::new_from_slice(secret.as_bytes())?;
@@ -175,11 +185,12 @@ fn sign_ex(key_id: String, secret: String, mut header: Vec<String>,
 
     println!("Authorization: SB-HMAC key_id=\"{}\", ts={}, nonce=\"{}\"", key_id, ts, nonce);
     println!("X-SB-Signature: {}", sig_b64);
-    if canon { println!("--- canonical ---\n{}", canon_str); }
+    if config.canon { println!("--- canonical ---\n{}", canon_str); }
     Ok(())
 }
 
 #[derive(Default, Clone)]
+#[allow(dead_code)] // Scaffolding for future replay functionality
 struct ReplayStats {
     ok2xx: u64, e4xx: u64, e5xx: u64, other: u64,
     total: u64, bytes: u64,
@@ -188,40 +199,56 @@ struct ReplayStats {
     per_sec: BTreeMap<u64, u64>,
 }
 
-async fn replay(_url: String, _key_id: String, _secret: String,
-                _times: u64, _concurrency: usize, _rps: u64, _timeout_ms: u64,
-                _status_only: bool, mut hdrs: Vec<String>, _json: bool,
-                body: Option<String>, body_file: Option<PathBuf>, body_hash: bool) -> Result<()> {
-    let body_bytes = read_body_inline(&body, &body_file)?;
-    inject_body_hash(&mut hdrs, &body_bytes, body_hash);
+#[allow(dead_code)] // Scaffolding for replay functionality
+struct ReplayConfig {
+    url: String,
+    key_id: String,
+    secret: String,
+    times: u64,
+    concurrency: usize,
+    rps: u64,
+    timeout_ms: u64,
+    status_only: bool,
+    hdrs: Vec<String>,
+    json: bool,
+    body: Option<String>,
+    body_file: Option<PathBuf>,
+    body_hash: bool,
+}
+
+async fn replay(config: ReplayConfig) -> Result<()> {
+    let mut hdrs = config.hdrs;
+    let body_bytes = read_body_inline(&config.body, &config.body_file)?;
+    inject_body_hash(&mut hdrs, &body_bytes, config.body_hash);
     #[cfg(feature = "reqwest")]
     {
         use std::time::{Duration, Instant};
-        let client = reqwest::Client::builder().timeout(Duration::from_millis(_timeout_ms)).build()?;
+        let client = reqwest::Client::builder().timeout(Duration::from_millis(config.timeout_ms)).build()?;
         // 令牌桶：一个后台 task 以 RPS 频率往信号量投放许可
-        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(if _rps == 0 { i32::MAX as usize } else { 0 }));
-        if _rps > 0 {
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(if config.rps == 0 { i32::MAX as usize } else { 0 }));
+        if config.rps > 0 {
             let sem_filler = sem.clone();
+            let rps = config.rps;
             tokio::spawn(async move {
-                let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / (_rps as f64)));
+                let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / (rps as f64)));
                 loop { ticker.tick().await; let _ = sem_filler.add_permits(1); }
             });
         }
         let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
         let stats = std::sync::Arc::new(parking_lot::Mutex::new(ReplayStats::default()));
         stats.lock().start_ms = Instant::now().elapsed().as_millis(); // 起点基准
-        let pb = if _json { None } else {
+        let pb = if config.json { None } else {
             let style = indicatif::ProgressStyle::with_template("{msg}   {wide_bar} {pos}/{len}  {per_sec}")?;
-            Some(indicatif::ProgressBar::new(_times).with_style(style))
+            Some(indicatif::ProgressBar::new(config.times).with_style(style))
         };
         let ts = (chrono::Utc::now().timestamp()) as i64;
         let nonce = format!("{:016x}", rand::random::<u64>());
         let mut join = Vec::new();
-        for _ in 0.._concurrency {
+        for _ in 0..config.concurrency {
             let client = client.clone();
-            let url = _url.clone();
-            let key_id = _key_id.clone();
-            let secret = _secret.clone();
+            let url = config.url.clone();
+            let key_id = config.key_id.clone();
+            let secret = config.secret.clone();
             let stats = stats.clone();
             let pb2 = pb.clone();
             let hdrs_vec = hdrs.clone();
@@ -234,7 +261,7 @@ async fn replay(_url: String, _key_id: String, _secret: String,
                 // 循环领取任务
                 loop {
                     let i = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if i >= _times { break; }
+                    if i >= config.times { break; }
                     // 限速：取令牌
                     let _p = match sem.acquire().await {
                         Ok(p) => p,
@@ -273,7 +300,7 @@ async fn replay(_url: String, _key_id: String, _secret: String,
                     match res {
                         Ok(r) => {
                             let sc = r.status().as_u16();
-                            let bytes_len = if !_status_only {
+                            let bytes_len = if !config.status_only {
                                 match r.bytes().await {
                                     Ok(b) => b.len() as u64,
                                     Err(_) => 0,
@@ -305,7 +332,7 @@ async fn replay(_url: String, _key_id: String, _secret: String,
             let qps_avg = (g.total as f64) / elapsed_s;
             let qps_peak = g.per_sec.values().copied().max().unwrap_or(0) as f64;
             g.qps_peak = qps_peak;
-            if _json {
+            if config.json {
                 println!("{}", serde_json::json!({
                   "ok2xx": g.ok2xx, "e4xx": g.e4xx, "e5xx": g.e5xx, "other": g.other,
                   "total": g.total, "bytes": g.bytes,

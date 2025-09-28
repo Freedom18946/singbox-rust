@@ -1,0 +1,12 @@
+```console
+$ cargo run --bin version -- --help
+[..]version[..]
+
+Usage: version[..]
+
+Options:
+[..]
+  -h, --help[..]Print help
+[..]
+
+```

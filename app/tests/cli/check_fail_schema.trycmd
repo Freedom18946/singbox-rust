@@ -1,0 +1,23 @@
+```console
+$ cargo run --bin check -- --config app/tests/cli/fixtures/invalid_config.json --format json
+? 1
+[..]
+{
+  "file": "[..]invalid_config.json",
+  "fingerprint": "[..]",
+  "issues": [
+    {
+      "code": "[..]",
+      "level": "error",
+      "message": "[..]",
+      "ptr": "[..]"
+    }[..]
+  ],
+  "ok": false,
+  "summary": {
+    "errors": [..],
+    "warnings": [..]
+  }
+}
+
+```

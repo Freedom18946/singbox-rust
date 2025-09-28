@@ -1,0 +1,8 @@
+# Expired JWT token for testing authentication failure
+# This token has an 'exp' claim set to a past timestamp
+
+# Header: {"alg":"HS256","typ":"JWT","kid":"test-key-3"}
+# Payload: {"sub":"test-user","iat":1609459200,"exp":1609462800,"aud":"singbox-admin","iss":"singbox-test"}
+# This token expired on 2021-01-01 01:00:00 UTC
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRlc3Qta2V5LTMifQ.eyJzdWIiOiJ0ZXN0LXVzZXIiLCJpYXQiOjE2MDk0NTkyMDAsImV4cCI6MTYwOTQ2MjgwMCwiYXVkIjoic2luZ2JveC1hZG1pbiIsImlzcyI6InNpbmdib3gtdGVzdCJ9.invalid-signature-for-expired-token-testing

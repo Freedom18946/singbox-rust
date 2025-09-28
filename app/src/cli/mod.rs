@@ -9,6 +9,7 @@ pub mod report;
 #[cfg(feature = "dev-cli")]
 pub mod health;
 pub mod json;
+#[cfg(feature = "prefetch")]
 pub mod prefetch;
 pub mod auth;
 pub mod prom;
@@ -48,6 +49,7 @@ pub enum Commands {
     /// Validate configuration without starting I/O
     Check(check::CheckArgs),
     /// 预取相关工具
+    #[cfg(feature = "prefetch")]
     Prefetch(prefetch::PrefetchArgs),
     /// 鉴权相关工具（签名/重放）
     Auth(auth::AuthArgs),

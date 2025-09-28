@@ -1,4 +1,6 @@
-#![cfg_attr(feature = "strict_warnings", deny(warnings))]
+#![deny(warnings)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![warn(clippy::pedantic, clippy::nursery)]
 #![cfg_attr(
     not(any(
         feature = "metrics",

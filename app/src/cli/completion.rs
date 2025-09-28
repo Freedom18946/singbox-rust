@@ -38,7 +38,7 @@ pub fn main(a: CompletionArgs) -> Result<()> {
     let mut cmd = crate::cli::Args::command();
     let bin = std::env::var("SB_CLI_BIN").unwrap_or_else(|_| cmd.get_name().to_string());
     if let Some(ref dir) = a.dir {
-        std::fs::create_dir_all(&dir)
+        std::fs::create_dir_all(dir)
             .with_context(|| format!("create completion output dir {:?}", dir))?;
         let path = |shell_name: &str| dir.join(format!("{}_{}.completion", bin, shell_name));
         macro_rules! write_file {

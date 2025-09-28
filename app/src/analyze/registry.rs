@@ -16,7 +16,7 @@ fn ensure_registry() -> &'static Mutex<HashMap<&'static str, BuilderFn>> {
     let m = REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
     {
         // 首次初始化：集中进行注册
-        let mut guard = m.lock().expect("registry lock");
+        let guard = m.lock().expect("registry lock");
         if guard.is_empty() {
             crate::analyze::builders::register_all();
         }

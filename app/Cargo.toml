@@ -12,11 +12,16 @@ minimal = []
 bench-cli = []
 manpage = []
 dev-cli = []
+prefetch = []
+admin_envelope = ["sb-admin-contract"]
+auth = ["admin_envelope"]
+rate_limit = ["admin_envelope"]
+jwt = ["jsonwebtoken", "rsa", "p256", "pkcs8", "pkcs1"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
 router  = ["sb-core", "sb-core/router"]
 observe = ["router", "sb-metrics"]
-admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http"]
+admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
 
 ## 子能力（从 observe 派生，按需组合）
 subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscribe"]   # /subs/fetch
@@ -135,6 +140,7 @@ anyhow      = { workspace = true }
 clap        = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
+sb-admin-contract = { workspace = true, optional = true }
 tokio       = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"], optional = true }
 thiserror   = { workspace = true }
@@ -158,7 +164,7 @@ sb-config   = { path = "../crates/sb-config", package = "sb-config" }
 sb-metrics  = { path = "../crates/sb-metrics", optional = true }
 sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
 sb-runtime  = { path = "../crates/sb-runtime", optional = true }
-reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream"], optional = true }
+reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream","json"], optional = true }
 url         = { version = "2", optional = true }
 bytes       = { version = "1", optional = true }
 futures-util= { version = "0.3", optional = true }
@@ -181,14 +187,33 @@ parking_lot = "0.12"
 atty = "0.2"
 chrono = { workspace = true }
 arc-swap = "1.7"
+# JWT dependencies (optional, for JWT auth provider)
+jsonwebtoken = { version = "9.3", optional = true }
+rsa = { version = "0.9", optional = true }
+p256 = { version = "0.13", optional = true }
+pkcs8 = { version = "0.10", optional = true }
+pkcs1 = { version = "0.7", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls","blocking"] }
 assert_cmd = { version = "2.0" }
+trycmd = "0.15"
 loom = "0.7"
 criterion = { version = "0.5", default-features = false }
+uuid = { version = "1.0", features = ["v4"] }
+sb-admin-contract = { workspace = true }
 
 [build-dependencies]
 chrono = { workspace = true }
+
+[[test]]
+name = "admin_auth_contract"
+path = "tests/admin_auth_contract.rs"
+required-features = ["admin_debug","auth","rate_limit"]
+
+[[test]]
+name = "cli"
+path = "tests/cli.rs"
+required-features = ["admin_debug","auth","rate_limit"]

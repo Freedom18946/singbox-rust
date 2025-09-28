@@ -1,0 +1,20 @@
+# Run with `cargo test -p app --test cli` if trycmd harness is set up.
+# Assumes the `prefetch` feature is enabled for this test target.
+status: success
+bin.name: app
+args: [
+  "prefetch",
+  "--format", "json",
+  "--limit", "2"
+]
+stdout: """
+{ "ok": true,
+  "data": {
+    "stats": { "total": 2, "succeeded": 2, "failed": 0 },
+    "samples": [
+      { "status": "ok" },
+      { "status": "ok" }
+    ]
+  }
+}
+"""

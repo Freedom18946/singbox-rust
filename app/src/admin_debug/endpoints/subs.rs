@@ -1,10 +1,10 @@
-use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size, validate_format, validate_kinds, supported_patch_kinds_hint, is_networking_allowed, validate_url_scheme};
+use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size, validate_format, is_networking_allowed, validate_url_scheme};
 use crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist;
 use crate::admin_debug::security_async::forbid_private_host_or_resolved_async;
 use crate::admin_debug::security_metrics::{
     inc_block_private_ip, inc_exceed_size, inc_timeout, inc_redirects, inc_connect_timeout,
     inc_upstream_4xx, inc_upstream_5xx, set_last_error, set_last_error_with_host, inc_total_requests, mark_last_ok,
-    ErrorKind, record_latency_ms, inc_cache_hit, inc_cache_miss, inc_breaker_block,
+    SecurityErrorKind, record_latency_ms, inc_cache_hit, inc_cache_miss, inc_breaker_block,
 };
 use crate::admin_debug::cache;
 use crate::admin_debug::breaker;
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 #[cfg(feature = "subs_http")]
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 #[cfg(feature = "subs_http")]
 use reqwest::{redirect::Policy, Client};
 #[cfg(feature = "subs_http")]
@@ -235,7 +235,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     // Rate limiting - acquire permits for both concurrency and RPS
     acquire_permits().await.map_err(|e| {
         crate::admin_debug::security_metrics::inc_rate_limited();
-        set_last_error(ErrorKind::RateLimited, format!("rate limit: {}", e));
+        set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {}", e));
         e
     })?;
     let parsed = url::Url::parse(url)?;
@@ -245,21 +245,21 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     if let Ok(mut br) = breaker::global().lock() {
         if !br.check(&host) {
             inc_breaker_block();
-            set_last_error_with_host(ErrorKind::Other, &host, "circuit breaker open");
+            set_last_error_with_host(SecurityErrorKind::Other, &host, "circuit breaker open");
             anyhow::bail!("circuit breaker open for host: {}", host);
         }
     }
     // 同步 allowlist 快速放行/拒绝 + 异步 DNS 私网校验
     if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
-        inc_block_private_ip(); set_last_error_with_host(ErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e)); return Err(e);
+        inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e)); return Err(e);
     }
     if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
-        inc_block_private_ip(); set_last_error_with_host(ErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e)); return Err(e);
+        inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e)); return Err(e);
     }
 
     // Get current configuration
     let config = reloadable::get();
-    let max_redirects = config.max_redirects;
+    let _max_redirects = config.max_redirects;
     let timeout_ms = config.timeout_ms;
     let size_limit = config.max_bytes;
 
@@ -293,7 +293,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         }
         crate::admin_debug::security_metrics::inc_head_total();
 
-        let head_resp = match tokio::time::timeout(
+        let _head_resp = match tokio::time::timeout(
             std::time::Duration::from_millis(timeout_ms / 2), // Shorter timeout for HEAD
             client.head(parsed.clone()).send()
         ).await {
@@ -337,8 +337,8 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
                 }
                 cur = src;
             }
-            if is_tmr { inc_redirects(); set_last_error_with_host(ErrorKind::TooManyRedirects, &host, "too many redirects"); }
-            if e.is_connect() { inc_connect_timeout(); set_last_error_with_host(ErrorKind::ConnectTimeout, &host, "connect timeout"); }
+            if is_tmr { inc_redirects(); set_last_error_with_host(SecurityErrorKind::TooManyRedirects, &host, "too many redirects"); }
+            if e.is_connect() { inc_connect_timeout(); set_last_error_with_host(SecurityErrorKind::ConnectTimeout, &host, "connect timeout"); }
             // Mark circuit breaker failure
             if let Ok(mut br) = breaker::global().lock() {
                 br.mark_failure(&host);
@@ -347,7 +347,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         }
         Err(_) => {
             inc_timeout();
-            set_last_error_with_host(ErrorKind::Timeout, &host, "overall timeout");
+            set_last_error_with_host(SecurityErrorKind::Timeout, &host, "overall timeout");
             // Mark circuit breaker failure
             if let Ok(mut br) = breaker::global().lock() {
                 br.mark_failure(&host);
@@ -378,18 +378,18 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     if resp.url() != &parsed {
         let redirect_host = resp.url().host_str().unwrap_or("").to_string();
         if let Err(e) = forbid_private_host_or_resolved_with_allowlist(resp.url()) {
-            inc_block_private_ip(); set_last_error_with_host(ErrorKind::PrivateBlocked, &redirect_host, format!("redirect->private: {}", e)); return Err(e);
+            inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &redirect_host, format!("redirect->private: {}", e)); return Err(e);
         }
         if let Err(e) = forbid_private_host_or_resolved_async(resp.url()).await {
-            inc_block_private_ip(); set_last_error_with_host(ErrorKind::PrivateBlocked, &redirect_host, format!("redirect->dns-private: {}", e)); return Err(e);
+            inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &redirect_host, format!("redirect->dns-private: {}", e)); return Err(e);
         }
     }
 
     if !resp.status().is_success() {
         let status = resp.status();
         let code = resp.status().as_u16();
-        if (400..500).contains(&code) { inc_upstream_4xx(); set_last_error_with_host(ErrorKind::Upstream4xx, &host, format!("upstream {}", status)); }
-        if (500..600).contains(&code) { inc_upstream_5xx(); set_last_error_with_host(ErrorKind::Upstream5xx, &host, format!("upstream {}", status)); }
+        if (400..500).contains(&code) { inc_upstream_4xx(); set_last_error_with_host(SecurityErrorKind::Upstream4xx, &host, format!("upstream {}", status)); }
+        if (500..600).contains(&code) { inc_upstream_5xx(); set_last_error_with_host(SecurityErrorKind::Upstream5xx, &host, format!("upstream {}", status)); }
         // Mark circuit breaker failure for server errors
         if (500..600).contains(&code) {
             if let Ok(mut br) = breaker::global().lock() {
@@ -404,7 +404,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
             let allowed = allow_list.iter().any(|pat| ct.starts_with(pat));
             if !allowed {
-                set_last_error_with_host(ErrorKind::MimeDeny, &host, format!("mime not allowed: {}", ct));
+                set_last_error_with_host(SecurityErrorKind::MimeDeny, &host, format!("mime not allowed: {}", ct));
                 anyhow::bail!("content-type not allowed: {}", ct);
             }
         }
@@ -415,13 +415,13 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
             let denied = deny_list.iter().any(|pat| ct.starts_with(pat));
             if denied {
-                set_last_error_with_host(ErrorKind::MimeDeny, &host, format!("mime denied: {}", ct));
+                set_last_error_with_host(SecurityErrorKind::MimeDeny, &host, format!("mime denied: {}", ct));
                 anyhow::bail!("content-type denied: {}", ct);
             }
         }
     }
     if let Some(cl) = resp.content_length() {
-        if cl as usize > size_limit { inc_exceed_size(); set_last_error_with_host(ErrorKind::SizeExceed, &host, "cl exceed"); anyhow::bail!("exceed size limit: {} bytes", size_limit); }
+        if cl as usize > size_limit { inc_exceed_size(); set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed"); anyhow::bail!("exceed size limit: {} bytes", size_limit); }
     }
     // Extract all data before consuming response
     let response_etag = resp.headers()
@@ -443,7 +443,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if body.len() + chunk.len() > size_limit {
-            inc_exceed_size(); set_last_error_with_host(ErrorKind::SizeExceed, &host, "stream exceed");
+            inc_exceed_size(); set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
             anyhow::bail!("exceed size limit: {} bytes", size_limit);
         }
         body.extend_from_slice(&chunk);
@@ -492,7 +492,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
     // Rate limiting - acquire permits for both concurrency and RPS
     acquire_permits().await.map_err(|e| {
         crate::admin_debug::security_metrics::inc_rate_limited();
-        set_last_error(ErrorKind::RateLimited, format!("rate limit: {}", e));
+        set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {}", e));
         e
     })?;
     let parsed = url::Url::parse(url)?;
@@ -502,7 +502,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
     if let Ok(mut br) = breaker::global().lock() {
         if !br.check(&host) {
             inc_breaker_block();
-            set_last_error_with_host(ErrorKind::Other, &host, "circuit breaker open");
+            set_last_error_with_host(SecurityErrorKind::Other, &host, "circuit breaker open");
             anyhow::bail!("circuit breaker open for host: {}", host);
         }
     }
@@ -510,18 +510,18 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
     // Async security checks
     if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
         inc_block_private_ip();
-        set_last_error_with_host(ErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e));
+        set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e));
         return Err(e);
     }
     if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
         inc_block_private_ip();
-        set_last_error_with_host(ErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e));
+        set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e));
         return Err(e);
     }
 
     // Get current configuration
     let config = reloadable::get();
-    let max_redirects = config.max_redirects;
+    let _max_redirects = config.max_redirects;
     let timeout_ms = config.timeout_ms;
     let size_limit = config.max_bytes;
 
@@ -562,7 +562,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
             // Handle various error types
             if e.is_connect() {
                 inc_connect_timeout();
-                set_last_error_with_host(ErrorKind::ConnectTimeout, &host, "connect timeout");
+                set_last_error_with_host(SecurityErrorKind::ConnectTimeout, &host, "connect timeout");
             }
             if let Ok(mut br) = breaker::global().lock() {
                 br.mark_failure(&host);
@@ -571,7 +571,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
         }
         Err(_) => {
             inc_timeout();
-            set_last_error_with_host(ErrorKind::Timeout, &host, "overall timeout");
+            set_last_error_with_host(SecurityErrorKind::Timeout, &host, "overall timeout");
             if let Ok(mut br) = breaker::global().lock() {
                 br.mark_failure(&host);
             }
@@ -616,7 +616,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 Ok(Err(e)) => {
                     if e.is_connect() {
                         inc_connect_timeout();
-                        set_last_error_with_host(ErrorKind::ConnectTimeout, &host, "connect timeout on fallback");
+                        set_last_error_with_host(SecurityErrorKind::ConnectTimeout, &host, "connect timeout on fallback");
                     }
                     if let Ok(mut br) = breaker::global().lock() {
                         br.mark_failure(&host);
@@ -625,7 +625,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 }
                 Err(_) => {
                     inc_timeout();
-                    set_last_error_with_host(ErrorKind::Timeout, &host, "timeout on fallback");
+                    set_last_error_with_host(SecurityErrorKind::Timeout, &host, "timeout on fallback");
                     if let Ok(mut br) = breaker::global().lock() {
                         br.mark_failure(&host);
                     }
@@ -638,11 +638,11 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 let code = fresh_resp.status().as_u16();
                 if (400..500).contains(&code) {
                     inc_upstream_4xx();
-                    set_last_error_with_host(ErrorKind::Upstream4xx, &host, format!("upstream {} on fallback", status));
+                    set_last_error_with_host(SecurityErrorKind::Upstream4xx, &host, format!("upstream {} on fallback", status));
                 }
                 if (500..600).contains(&code) {
                     inc_upstream_5xx();
-                    set_last_error_with_host(ErrorKind::Upstream5xx, &host, format!("upstream {} on fallback", status));
+                    set_last_error_with_host(SecurityErrorKind::Upstream5xx, &host, format!("upstream {} on fallback", status));
                 }
                 if (500..600).contains(&code) {
                     if let Ok(mut br) = breaker::global().lock() {
@@ -670,7 +670,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
             if let Some(cl) = fresh_resp.content_length() {
                 if cl as usize > size_limit {
                     inc_exceed_size();
-                    set_last_error_with_host(ErrorKind::SizeExceed, &host, "cl exceed on fallback");
+                    set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed on fallback");
                     anyhow::bail!("exceed size limit: {} bytes on fallback", size_limit);
                 }
             }
@@ -682,7 +682,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 let chunk = chunk?;
                 if body.len() + chunk.len() > size_limit {
                     inc_exceed_size();
-                    set_last_error_with_host(ErrorKind::SizeExceed, &host, "stream exceed on fallback");
+                    set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed on fallback");
                     anyhow::bail!("exceed size limit: {} bytes on fallback", size_limit);
                 }
                 body.extend_from_slice(&chunk);
@@ -727,11 +727,11 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
         let code = resp.status().as_u16();
         if (400..500).contains(&code) {
             inc_upstream_4xx();
-            set_last_error_with_host(ErrorKind::Upstream4xx, &host, format!("upstream {}", status));
+            set_last_error_with_host(SecurityErrorKind::Upstream4xx, &host, format!("upstream {}", status));
         }
         if (500..600).contains(&code) {
             inc_upstream_5xx();
-            set_last_error_with_host(ErrorKind::Upstream5xx, &host, format!("upstream {}", status));
+            set_last_error_with_host(SecurityErrorKind::Upstream5xx, &host, format!("upstream {}", status));
         }
         if (500..600).contains(&code) {
             if let Ok(mut br) = breaker::global().lock() {
@@ -759,7 +759,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
     if let Some(cl) = resp.content_length() {
         if cl as usize > size_limit {
             inc_exceed_size();
-            set_last_error_with_host(ErrorKind::SizeExceed, &host, "cl exceed");
+            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed");
             anyhow::bail!("exceed size limit: {} bytes", size_limit);
         }
     }
@@ -771,7 +771,7 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
         let chunk = chunk?;
         if body.len() + chunk.len() > size_limit {
             inc_exceed_size();
-            set_last_error_with_host(ErrorKind::SizeExceed, &host, "stream exceed");
+            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
             anyhow::bail!("exceed size limit: {} bytes", size_limit);
         }
         body.extend_from_slice(&chunk);

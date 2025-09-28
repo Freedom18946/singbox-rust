@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::Serialize;
-use crate::cli::{VersionArgs, Format};
+use crate::cli::VersionArgs;
 use crate::cli::buildinfo;
 use crate::cli::output;
 

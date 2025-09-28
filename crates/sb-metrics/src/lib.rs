@@ -1,6 +1,10 @@
 //! sb-metrics: 轻量 Prometheus 导出器 + 统一指标注册。
 //! - 默认不启；设置 `SB_METRICS_ADDR=127.0.0.1:9090` 时自动监听。
 
+#![deny(warnings)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![warn(clippy::pedantic, clippy::nursery)]
+
 pub mod constants;
 pub mod http;
 pub mod registry;
@@ -19,7 +23,7 @@ use prometheus::{
 };
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 
 /// Error rate limiter for metrics server to prevent log noise
 struct ErrorRateLimiter {

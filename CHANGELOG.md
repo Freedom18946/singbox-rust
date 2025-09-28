@@ -32,6 +32,25 @@ All notable changes to this project will be documented in this file.
 - Preflight checks ensure release consistency and artifact integrity
 
 ## Unreleased
+
+### 🔐 Security & Authentication (PROMPTS #30-31)
+- **JWT Authentication Provider**: Production-ready JWT validation with RS256/ES256/HS256 support, JWKS caching with rotation, and clock skew tolerance
+- **Security utilities crate** (`sb-security`): Credential redaction, memory-safe secret handling with ZeroizeOnDrop
+- **Enhanced cargo-deny policies**: Stricter vulnerability detection, license compliance, and supply chain security
+- **Log redaction system**: Automatic credential sanitization in application logs
+
+### 🧪 E2E Testing Enhancement (PROMPT #32)
+- **Offline E2E pipeline** via `xtask` utility: Comprehensive testing covering version→check→run→route→metrics→admin flows
+- **Authentication test scenarios**: Success (200), failure (401), and rate limiting (429) validation
+- **CI integration**: New `e2e-offline` job with admin debug features testing
+- **Offline configuration**: `examples/e2e/minimal.yaml` for deterministic testing without external dependencies
+
+### 📚 Documentation & Contracts (PROMPT #33)
+- **Admin API contract specification**: Complete endpoint documentation with authentication examples
+- **Security documentation**: Enhanced SECURITY.md with threat model and procedures
+- **E2E testing documentation**: Usage guidelines and configuration examples
+
+### 🔧 Infrastructure Improvements
 - Add e2e compatibility replay (P21) with optional Go reference.
 - Unify error mapping to SbError in sb-adapters/sb-api (P22).
 - Add Loom and Miri smoke tests (P23) and CI jobs.

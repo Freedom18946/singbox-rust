@@ -1,0 +1,25 @@
+# Route test configuration
+apiVersion: singbox/v1  
+kind: Configuration
+
+route:
+  rules:
+    - outbound: direct
+      domain_suffix:
+        - .example.com
+    - outbound: proxy
+      geoip:
+        - cn
+    - outbound: block
+      domain_keyword:
+        - ads
+
+outbounds:
+  - name: direct
+    type: direct
+  - name: proxy
+    type: socks
+    server: 127.0.0.1
+    server_port: 1080
+  - name: block
+    type: block

@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 use clap::{Args as ClapArgs, Subcommand};
-#[cfg(feature="dev-cli")]
-use serde::Serialize;
+
+#[cfg(all(feature = "admin_debug", feature = "prefetch"))]
+use self::types::PrefStats;
+#[cfg(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch"))]
+use self::types::SampleOut;
+
+#[cfg(feature = "admin_envelope")]
+use sb_admin_contract::ResponseEnvelope;
+
+#[cfg(feature = "prefetch")]
+mod types;
 
 #[derive(ClapArgs, Debug)]
 pub struct PrefetchArgs {
@@ -16,6 +25,9 @@ pub enum PrefetchCmd {
         /// 输出 JSON 格式而不是文本
         #[arg(long)]
         json: bool,
+        /// 输出格式: text | json
+        #[arg(long, default_value = "text")]
+        format: String,
     },
     /// 入队一个预取任务
     Enqueue {
@@ -91,12 +103,16 @@ pub enum PrefetchCmd {
         /// JSON 输出
         #[arg(long)]
         json: bool,
+        /// 输出格式: text | json
+        #[arg(long, default_value = "text")]
+        format: String,
     },
 }
 
+#[cfg(feature = "prefetch")]
 pub fn main(a: PrefetchArgs) -> anyhow::Result<()> {
     match a.cmd {
-        PrefetchCmd::Stats { json } => stats(json),
+        PrefetchCmd::Stats { json, format } => stats(json, format),
         PrefetchCmd::Enqueue { url, etag } => enqueue(url, etag),
         PrefetchCmd::Heat { url, concurrency, duration, rps, etag } => {
             heat(url, concurrency, duration, rps, etag)
@@ -104,16 +120,21 @@ pub fn main(a: PrefetchArgs) -> anyhow::Result<()> {
         PrefetchCmd::Watch { interval, duration, plain, json, ndjson } =>
             watch(interval, duration, plain, json, ndjson),
         PrefetchCmd::Drain { timeout, every, quiet } => drain(timeout, every, quiet),
-        PrefetchCmd::Sample { url, etag, window, wait_done, json } =>
-            sample(url, etag, window, wait_done, json),
+        PrefetchCmd::Sample { url, etag, window, wait_done, json, format } =>
+            sample(url, etag, window, wait_done, json, format),
     }
+}
+
+#[cfg(not(feature = "prefetch"))]
+pub fn main(_a: PrefetchArgs) -> anyhow::Result<()> {
+    feature_guard("prefetch")
 }
 
 fn feature_guard(feature: &str) -> anyhow::Result<()> {
     anyhow::bail!("该命令需要启用编译特性：{}", feature)
 }
 
-fn stats(_json: bool) -> anyhow::Result<()> {
+fn stats(_json: bool, _format: String) -> anyhow::Result<()> {
     // admin_debug 下导出指标；否则提示开启特性
     #[cfg(feature = "admin_debug")]
     {
@@ -122,9 +143,11 @@ fn stats(_json: bool) -> anyhow::Result<()> {
         let high = m::get_prefetch_queue_high_watermark();
         let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
 
-        if _json {
-            // 输出 JSON 格式
-            let json_obj = serde_json::json!({
+        let use_json = _json || _format == "json";
+        let use_envelope = _format == "json";
+
+        if use_json {
+            let stats_data = serde_json::json!({
                 "depth": depth,
                 "high_watermark": high,
                 "enq": enq,
@@ -133,7 +156,22 @@ fn stats(_json: bool) -> anyhow::Result<()> {
                 "fail": fail,
                 "retry": retry
             });
-            println!("{}", json_obj);
+
+            if use_envelope {
+                #[cfg(feature = "admin_envelope")]
+                {
+                    let response = ResponseEnvelope::ok(stats_data);
+                    println!("{}", serde_json::to_string(&response)?);
+                }
+                #[cfg(not(feature = "admin_envelope"))]
+                {
+                    // Fallback to raw JSON if admin_envelope feature not enabled
+                    println!("{}", stats_data);
+                }
+            } else {
+                // Legacy --json format
+                println!("{}", stats_data);
+            }
         } else {
             // 输出文本格式
             println!("sb_prefetch_queue_depth             {}", depth);
@@ -148,7 +186,7 @@ fn stats(_json: bool) -> anyhow::Result<()> {
     }
     #[cfg(not(feature = "admin_debug"))]
     {
-        return feature_guard("admin_debug");
+        feature_guard("admin_debug")
     }
 }
 
@@ -239,44 +277,41 @@ fn heat(_url: String, _concurrency: usize, _duration: u64, _rps: u64, _etag: Opt
     }
 }
 
-#[cfg(feature="dev-cli")]
-#[derive(Clone, Copy, Default, Serialize)]
-struct PrefStats {
-    depth: u64,
-    high: u64,
-    enq: u64,
-    drop: u64,
-    done: u64,
-    fail: u64,
-    retry: u64,
-}
 
-#[cfg(feature = "admin_debug")]
+#[cfg(all(feature = "admin_debug", feature = "prefetch"))]
 fn read_stats() -> PrefStats {
     use crate::admin_debug::security_metrics as m;
     let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
     PrefStats {
-        depth: m::get_prefetch_queue_depth(),
-        high: m::get_prefetch_queue_high_watermark(),
-        enq, drop, done, fail, retry,
+        total: enq + drop + done + fail + retry,
+        succeeded: done,
+        failed: fail,
+        skipped: drop,
+        bytes: 0, // TODO: implement actual byte counting
+        duration_ms: 0, // TODO: implement actual duration tracking
+        canceled: false,
     }
 }
 
 fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: bool) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
+        use crate::admin_debug::security_metrics as m;
         let iv = std::time::Duration::from_secs(_interval.max(1));
         let deadline = if _duration == 0 { None } else { Some(std::time::Instant::now() + std::time::Duration::from_secs(_duration)) };
         let mut series: Vec<u64> = Vec::with_capacity(1200);
         let is_tty = atty::is(atty::Stream::Stdout) && !_plain && !_json && !_ndjson;
         loop {
-            let s = read_stats();
-            series.push(s.depth);
+            let depth = m::get_prefetch_queue_depth();
+            let high = m::get_prefetch_queue_high_watermark();
+            let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
+
+            series.push(depth);
             while series.len() > 60 { series.remove(0); }
             if _json || _ndjson {
                 let line = serde_json::json!({
-                    "depth": s.depth, "high": s.high, "enq": s.enq, "drop": s.drop,
-                    "done": s.done, "fail": s.fail, "retry": s.retry,
+                    "depth": depth, "high": high, "enq": enq, "drop": drop,
+                    "done": done, "fail": fail, "retry": retry,
                     "ts_ms": (std::time::Instant::now().elapsed().as_millis() as u64)
                 });
                 println!("{}", line);
@@ -284,11 +319,11 @@ fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: boo
                 print!("\r\x1b[2K"); // clear line
                 let spark = sparkline(&series);
                 print!("depth {:>5}  high {:>5}  enq {:>8}  drop {:>6}  done {:>8}  fail {:>6} | {}",
-                    s.depth, s.high, s.enq, s.drop, s.done, s.fail, spark);
+                    depth, high, enq, drop, done, fail, spark);
                 std::io::Write::flush(&mut std::io::stdout())?;
             } else {
                 println!("depth={} high={} enq={} drop={} done={} fail={} retry={}",
-                    s.depth, s.high, s.enq, s.drop, s.done, s.fail, s.retry);
+                    depth, high, enq, drop, done, fail, retry);
             }
             if let Some(t) = deadline { if std::time::Instant::now() >= t { break; } }
             std::thread::sleep(iv);
@@ -302,13 +337,14 @@ fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: boo
     }
 }
 
+#[allow(dead_code)] // Helper function for TTY display
 fn sparkline(data: &[u64]) -> String {
     // unicode blocks ▁▂▃▄▅▆▇█
     const GLYPHS: &[char] = &['▁','▂','▃','▄','▅','▆','▇','█'];
     if data.is_empty() { return "".into(); }
     let min = *data.iter().min().unwrap_or(&0);
     let max = *data.iter().max().unwrap_or(&0);
-    if max == min { return std::iter::repeat('▁').take(data.len()).collect(); }
+    if max == min { return "▁".repeat(data.len()); }
     data.iter().map(|v| {
         let n = (((*v - min) as f64) / ((max - min) as f64) * (GLYPHS.len() as f64 - 1.0)).round() as usize;
         GLYPHS[n]
@@ -318,9 +354,10 @@ fn sparkline(data: &[u64]) -> String {
 fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
+        use crate::admin_debug::security_metrics as m;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(_timeout);
         loop {
-            let d = read_stats().depth;
+            let d = m::get_prefetch_queue_depth();
             if d == 0 {
                 if !_quiet { println!("queue drained"); }
                 return Ok(());
@@ -338,47 +375,60 @@ fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
     }
 }
 
-#[cfg(feature="dev-cli")]
-#[derive(Serialize)]
-struct SampleOut {
-    trigger: &'static str,
-    before: u64,
-    peak: u64,
-    after: u64,
-    enqueue_cost_ms: u128,
-}
 
-fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _json: bool) -> anyhow::Result<()> {
-    #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
+fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _json: bool, _format: String) -> anyhow::Result<()> {
+    #[cfg(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch"))]
     {
-        let before = read_stats().depth;
+        use crate::admin_debug::security_metrics as m;
+        let before = m::get_prefetch_queue_depth();
         let t0 = std::time::Instant::now();
         let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
         let t1 = t0.elapsed();
         let mut peak = before;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(_window);
         while std::time::Instant::now() < until {
-            let cur = read_stats();
-            peak = peak.max(cur.depth);
+            let cur = m::get_prefetch_queue_depth();
+            peak = peak.max(cur);
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        let mut after = read_stats().depth;
+        let mut after = m::get_prefetch_queue_depth();
         if _wait_done {
             let target = before.saturating_add(1); // 允许微小波动
             let end2 = std::time::Instant::now() + std::time::Duration::from_secs(_window);
             while std::time::Instant::now() < end2 {
-                after = read_stats().depth;
+                after = m::get_prefetch_queue_depth();
                 if after <= target { break; }
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
         }
-        if _json {
+
+        let use_json = _json || _format == "json";
+        let use_envelope = _format == "json";
+
+        if use_json {
             let out = SampleOut {
-                trigger: if ok { "enqueued" } else { "drop" },
-                before, peak, after,
-                enqueue_cost_ms: t1.as_millis(),
+                key: _url,
+                status: if ok { "enqueued".to_string() } else { "drop".to_string() },
+                latency_ms: t1.as_millis() as u32,
+                size: 0, // TODO: implement actual size tracking
+                hint: Some(format!("queue: before={} peak={} after={}", before, peak, after)),
             };
-            println!("{}", serde_json::to_string(&out)?);
+
+            if use_envelope {
+                #[cfg(feature = "admin_envelope")]
+                {
+                    let response = ResponseEnvelope::ok(out);
+                    println!("{}", serde_json::to_string(&response)?);
+                }
+                #[cfg(not(feature = "admin_envelope"))]
+                {
+                    // Fallback to raw JSON if admin_envelope feature not enabled
+                    println!("{}", serde_json::to_string(&out)?);
+                }
+            } else {
+                // Legacy --json format
+                println!("{}", serde_json::to_string(&out)?);
+            }
         } else {
             println!("trigger: {}", if ok { "enqueued" } else { "drop" });
             println!("queue: before={} peak={} after={}", before, peak, after);
@@ -386,8 +436,8 @@ fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _
         }
         Ok(())
     }
-    #[cfg(not(all(feature = "admin_debug", feature = "subs_http")))]
+    #[cfg(not(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch")))]
     {
-        feature_guard("admin_debug + subs_http")
+        feature_guard("admin_debug + subs_http + prefetch")
     }
 }

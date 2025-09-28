@@ -1,0 +1,12 @@
+```console
+$ cargo run --bin route-explain -- --help
+[..]route[..]explain[..]
+
+Usage: route-explain[..]
+
+Options:
+[..]
+  -h, --help[..]Print help
+[..]
+
+```

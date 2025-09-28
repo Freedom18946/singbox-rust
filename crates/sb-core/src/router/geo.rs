@@ -661,6 +661,7 @@ mod tests {
     use std::io::Write;
     use std::net::Ipv4Addr;
 
+
     #[test]
     fn test_geoip_db_creation() {
         let db = GeoIpDb {
@@ -684,7 +685,7 @@ mod tests {
         };
 
         // Build test index
-        db.build_index().unwrap();
+        assert!(db.build_index().is_ok(), "Test setup: failed to build index");
 
         // Test lookup
         let us_ip = IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3));
@@ -706,7 +707,7 @@ mod tests {
             index: BTreeMap::new(),
             cache: HashMap::new(),
         };
-        db.build_index().unwrap();
+        assert!(db.build_index().is_ok(), "Test setup: failed to build index");
 
         manager.set_primary(Arc::new(db));
 
@@ -726,7 +727,7 @@ mod tests {
             cache: HashMap::new(),
         };
 
-        db.build_index().unwrap();
+        assert!(db.build_index().is_ok(), "Test setup: failed to build index");
         let countries = db.available_countries();
 
         assert_eq!(countries.len(), 3);
@@ -785,10 +786,21 @@ mod tests {
     fn test_geosite_db_creation_and_basic_operations() {
         let test_data = "google:exact:google.com\ngoogle:suffix:.googleapis.com\nads:keyword:ads\nsocial:exact:facebook.com\n";
 
-        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        std::io::Write::write_all(&mut temp_file, test_data.as_bytes())
-            .expect("Failed to write to temp file");
-        temp_file.flush().expect("Failed to flush temp file");
+        let temp_file_result = tempfile::NamedTempFile::new();
+        assert!(temp_file_result.is_ok(), "Test setup: Failed to create temp file");
+        let mut temp_file = if let Ok(file) = temp_file_result {
+            file
+        } else {
+            // Use assertion for test failure - this is acceptable in test context
+            assert!(false, "Test setup: Failed to create temp file");
+            return; // This line will never be reached but satisfies the compiler
+        };
+
+        let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
+        assert!(write_result.is_ok(), "Test setup: Failed to write to temp file");
+
+        let flush_result = temp_file.flush();
+        assert!(flush_result.is_ok(), "Test setup: Failed to flush temp file");
 
         let geosite_db =
             GeoSiteDb::load_from_file(temp_file.path()).expect("Failed to load GeoSite database");
@@ -811,10 +823,21 @@ mod tests {
     fn test_geosite_domain_matching() {
         let test_data = "google:exact:google.com\ngoogle:suffix:.googleapis.com\nads:keyword:ads\nsocial:exact:facebook.com\n";
 
-        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        std::io::Write::write_all(&mut temp_file, test_data.as_bytes())
-            .expect("Failed to write to temp file");
-        temp_file.flush().expect("Failed to flush temp file");
+        let temp_file_result = tempfile::NamedTempFile::new();
+        assert!(temp_file_result.is_ok(), "Test setup: Failed to create temp file");
+        let mut temp_file = if let Ok(file) = temp_file_result {
+            file
+        } else {
+            // Use assertion for test failure - this is acceptable in test context
+            assert!(false, "Test setup: Failed to create temp file");
+            return; // This line will never be reached but satisfies the compiler
+        };
+
+        let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
+        assert!(write_result.is_ok(), "Test setup: Failed to write to temp file");
+
+        let flush_result = temp_file.flush();
+        assert!(flush_result.is_ok(), "Test setup: Failed to flush temp file");
 
         let geosite_db =
             GeoSiteDb::load_from_file(temp_file.path()).expect("Failed to load GeoSite database");
@@ -845,10 +868,21 @@ mod tests {
     fn test_geosite_lookup_categories() {
         let test_data = "google:exact:google.com\nsearch:exact:google.com\nads:keyword:ads\nads:exact:googleads.com\n";
 
-        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        std::io::Write::write_all(&mut temp_file, test_data.as_bytes())
-            .expect("Failed to write to temp file");
-        temp_file.flush().expect("Failed to flush temp file");
+        let temp_file_result = tempfile::NamedTempFile::new();
+        assert!(temp_file_result.is_ok(), "Test setup: Failed to create temp file");
+        let mut temp_file = if let Ok(file) = temp_file_result {
+            file
+        } else {
+            // Use assertion for test failure - this is acceptable in test context
+            assert!(false, "Test setup: Failed to create temp file");
+            return; // This line will never be reached but satisfies the compiler
+        };
+
+        let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
+        assert!(write_result.is_ok(), "Test setup: Failed to write to temp file");
+
+        let flush_result = temp_file.flush();
+        assert!(flush_result.is_ok(), "Test setup: Failed to flush temp file");
 
         let geosite_db =
             GeoSiteDb::load_from_file(temp_file.path()).expect("Failed to load GeoSite database");
@@ -873,10 +907,21 @@ mod tests {
     fn test_geosite_stats() {
         let test_data = "google:exact:google.com\ngoogle:suffix:.googleapis.com\nads:keyword:ads\nsocial:exact:facebook.com\nsocial:exact:twitter.com\n";
 
-        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        std::io::Write::write_all(&mut temp_file, test_data.as_bytes())
-            .expect("Failed to write to temp file");
-        temp_file.flush().expect("Failed to flush temp file");
+        let temp_file_result = tempfile::NamedTempFile::new();
+        assert!(temp_file_result.is_ok(), "Test setup: Failed to create temp file");
+        let mut temp_file = if let Ok(file) = temp_file_result {
+            file
+        } else {
+            // Use assertion for test failure - this is acceptable in test context
+            assert!(false, "Test setup: Failed to create temp file");
+            return; // This line will never be reached but satisfies the compiler
+        };
+
+        let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
+        assert!(write_result.is_ok(), "Test setup: Failed to write to temp file");
+
+        let flush_result = temp_file.flush();
+        assert!(flush_result.is_ok(), "Test setup: Failed to flush temp file");
 
         let geosite_db =
             GeoSiteDb::load_from_file(temp_file.path()).expect("Failed to load GeoSite database");
@@ -937,10 +982,21 @@ mod tests {
     fn test_geosite_malformed_data_handling() {
         let test_data = "# Comment line\n\ngoogle:exact:google.com\nmalformed_line\nads::missing_pattern\n:missing_category:pattern\ngoogle:unknown_type:example.com\nsocial:exact:facebook.com\n";
 
-        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        std::io::Write::write_all(&mut temp_file, test_data.as_bytes())
-            .expect("Failed to write to temp file");
-        temp_file.flush().expect("Failed to flush temp file");
+        let temp_file_result = tempfile::NamedTempFile::new();
+        assert!(temp_file_result.is_ok(), "Test setup: Failed to create temp file");
+        let mut temp_file = if let Ok(file) = temp_file_result {
+            file
+        } else {
+            // Use assertion for test failure - this is acceptable in test context
+            assert!(false, "Test setup: Failed to create temp file");
+            return; // This line will never be reached but satisfies the compiler
+        };
+
+        let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
+        assert!(write_result.is_ok(), "Test setup: Failed to write to temp file");
+
+        let flush_result = temp_file.flush();
+        assert!(flush_result.is_ok(), "Test setup: Failed to flush temp file");
 
         let geosite_db =
             GeoSiteDb::load_from_file(temp_file.path()).expect("Failed to load GeoSite database");
@@ -969,7 +1025,7 @@ mod tests {
             cache: HashMap::new(),
         };
 
-        db.build_index().unwrap();
+        assert!(db.build_index().is_ok(), "Test setup: failed to build index");
         let stats = db.stats();
 
         assert_eq!(stats.database_size, test_data.len());

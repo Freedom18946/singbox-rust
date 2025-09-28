@@ -1,0 +1,13 @@
+```console
+$ curl -s -H "Authorization: Bearer test-admin-token-12345" -H "X-Request-ID: cli-test-001" http://127.0.0.1:0/__health
+{
+  "ok": true,
+  "data": {
+    "status": "healthy",
+    "uptime_seconds": [..],
+    "timestamp": "[..]"
+  },
+  "request_id": "cli-test-001"
+}
+
+```

@@ -19,6 +19,9 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 cargo check --workspace --all-features
 bash scripts/ci-local.sh
 scripts/e2e-run.sh   # optional e2e summary → .e2e/summary.json
+
+# Run comprehensive E2E tests (auth + rate limiting)
+cargo run -p xtask -- e2e
 ```
 
 ### Logging & Docs
@@ -107,6 +110,22 @@ SB_PREFETCH_CAP=256 \
 SB_PREFETCH_WORKERS=2 \
 run --admin-impl debug --admin-listen 127.0.0.1:8088
 ```
+
+### 🔐 Authentication & Security
+
+**JWT Authentication**: Production-ready JWT validation with:
+- RS256/ES256/HS256 algorithm support with configurable allowlist
+- JWKS caching with automatic rotation and fallback mechanisms
+- Clock skew tolerance (±5 minutes) for robust timestamp validation
+- Memory-safe key loading from environment variables, files, or inline configuration
+
+**Security Features**:
+- Credential redaction in logs via `sb-security` crate
+- Supply chain security with `cargo-deny` policies
+- Memory protection with `ZeroizeOnDrop` for sensitive data
+- Rate limiting with configurable QPS and burst limits
+
+See [SECURITY.md](SECURITY.md) for complete security documentation and [docs/ADMIN_API_CONTRACT.md](docs/ADMIN_API_CONTRACT.md) for API authentication details.
 
 ### 预取（Prefetch）
 当 `/subs/...` 响应 `Cache-Control: max-age>=60` 时将触发异步预取，并在 `__metrics` 暴露：

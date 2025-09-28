@@ -2,7 +2,9 @@
 //! - 默认仅提供轻量 stub（不依赖 reqwest）
 //! - 当启用 `dns_http` 特性时，编译 HTTP DNS 客户端（使用 reqwest blocking + rustls）
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(feature = "dns_cache")]
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -333,7 +335,10 @@ impl ResolverHandle {
 
     pub async fn resolve(&self, host: &str) -> Result<DnsAnswer> {
         let key = host.to_ascii_lowercase();
+        #[cfg(feature = "dns_cache")]
         let mut need_fallback = false;
+        #[cfg(not(feature = "dns_cache"))]
+        let need_fallback = false;
         // 1) cache hit (scoped; drop lock before awaits)
         #[cfg(feature = "dns_cache")]
         {

@@ -1,0 +1,20 @@
+[package]
+name = "sb-security"
+version = "0.1.0"
+edition = "2021"
+description = "Security utilities for SingBox - credential redaction, secure loading, etc."
+
+[dependencies]
+# Core dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Security-focused dependencies
+subtle = "2.5"  # Constant-time operations
+zeroize = { version = "1.7", features = ["derive"] } # Secure memory clearing
+base64 = "0.22" # Base64 encoding/decoding
+
+[dev-dependencies]
+tempfile = "3.8"

@@ -1,0 +1,15 @@
+```console
+$ cargo run --bin check -- --config app/tests/cli/fixtures/minimal_good.json --format json
+[..]
+{
+  "file": "[..]minimal_good.json",
+  "fingerprint": "[..]",
+  "issues": [],
+  "ok": true,
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  }
+}
+
+```

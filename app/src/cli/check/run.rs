@@ -41,7 +41,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
             .allow_unknown
             .as_ref()
             .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|s| !s.is_empty()).collect())
-            .unwrap_or_else(|| Vec::new());
+            .unwrap_or_default();
         for issue_value in v2_issues {
             if let Some(mut converted_issue) = convert_v2_issue(&issue_value) {
                 // Downgrade UnknownField to warning when allowed by prefix
@@ -97,10 +97,9 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     validate_basic_config(&raw, &args, &mut issues)?;
 
     // Generate report
-    let ok = !issues
+    let ok = (issues.is_empty() || !args.strict) && !issues
         .iter()
-        .any(|i| matches!(i.kind, super::types::IssueKind::Error))
-        && !(args.strict && !issues.is_empty());
+        .any(|i| matches!(i.kind, super::types::IssueKind::Error));
 
     let fingerprint = if args.fingerprint {
         Some(fingerprint_of(&raw))
@@ -427,7 +426,7 @@ fn should_sort_array(path: &str) -> bool {
 }
 
 /// Sort array items for consistent fingerprinting
-fn sort_array_for_fingerprint(arr: &mut Vec<Value>) {
+fn sort_array_for_fingerprint(arr: &mut [Value]) {
     arr.sort_by(|a, b| {
         // Generate a stable sort key from the JSON value
         let key_a = json_sort_key(a);

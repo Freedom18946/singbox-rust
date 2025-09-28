@@ -1,0 +1,5 @@
+```console
+$ version
+{"build_info":{"build_ts":"[..]","git_sha":"[..]"},"features":[],"fingerprint":"[..]","license":"Apache-2.0","license_notice":"Licensed under the Apache License, Version 2.0. See LICENSES/THIRD-PARTY.md for third-party licenses.","name":"app","version":"0.1.0"}
+
+```

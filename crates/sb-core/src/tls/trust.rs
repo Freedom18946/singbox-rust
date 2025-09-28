@@ -57,7 +57,7 @@ impl TlsOpts {
 
 /// Create a unified TLS client configuration
 #[cfg(feature = "tls_rustls")]
-pub fn mk_client(opts: &TlsOpts) -> Arc<ClientConfig> {
+pub fn mk_client(opts: &TlsOpts) -> Result<Arc<ClientConfig>, crate::error::SbError> {
     // Initialize root certificate store
     let mut roots = RootCertStore::empty();
 
@@ -106,12 +106,16 @@ pub fn mk_client(opts: &TlsOpts) -> Arc<ClientConfig> {
         }
     }
 
-    Arc::new(config)
+    Ok(Arc::new(config))
 }
 
 #[cfg(not(feature = "tls_rustls"))]
-pub fn mk_client(_opts: &TlsOpts) -> Arc<()> {
-    panic!("TLS support not enabled. Enable 'tls_rustls' feature.");
+pub fn mk_client(_opts: &TlsOpts) -> Result<Arc<()>, crate::error::SbError> {
+    Err(crate::error::SbError::config(
+        crate::error::IssueCode::MissingRequired,
+        "/tls/enabled",
+        "TLS support not enabled. Enable 'tls_rustls' feature to use TLS functionality"
+    ))
 }
 
 /// Parse SHA256 pins from environment variable (comma-separated hex)

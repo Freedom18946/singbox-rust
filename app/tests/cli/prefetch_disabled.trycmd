@@ -1,0 +1,8 @@
+# Ensure behavior when feature is disabled:
+# Either the subcommand is not present in help, or returns a clear error.
+status: failure
+bin.name: app
+args: ["prefetch", "--format", "json"]
+stderr: """
+prefetch feature disabled
+"""

@@ -1,0 +1,15 @@
+# Simulate a failing invocation; adjust args to your CLI.
+status: failure
+bin.name: app
+args: [
+  "prefetch",
+  "--format", "json",
+  "--timeout", "1",
+  "--limit", "1"
+]
+stderr: """
+error
+"""
+stdout: """
+{ "ok": false, "error": { "kind": "Timeout" } }
+"""

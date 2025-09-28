@@ -1,0 +1,42 @@
+# Minimal offline config for E2E (adjust keys to your schema if necessary).
+# Goals:
+# - No external network dependencies
+# - Admin (auth+rate_limit) + Metrics endpoints
+# - A trivial routing rule to test `route --dest`
+
+admin:
+  listen: "127.0.0.1:18080"
+  # Authentication: API Key from environment for offline determinism
+  auth:
+    kind: "apikey"
+    source:
+      env: "APP_E2E_APIKEY"
+    # Optional HMAC mode (comment if unsupported in your build):
+    # hmac:
+    #   alg: "HMAC-SHA256"
+    #   header: "Authorization"
+    #   prefix: "Bearer "
+  # Basic rate limit to exercise 429 path quickly
+  rate_limit:
+    strategy: "endpoint"
+    qps: 3
+    burst: 5
+
+metrics:
+  listen: "127.0.0.1:19090"
+
+# Add minimal inbound to allow app to start
+inbounds:
+  - name: "http-in"
+    type: "http"
+    listen: "127.0.0.1:0"  # Use port 0 to auto-assign a free port
+
+router:
+  rules:
+    - match:
+        dest_ip: "1.1.1.1/32"
+      outbound: "direct"
+
+outbounds:
+  - name: "direct"
+    type: "direct"

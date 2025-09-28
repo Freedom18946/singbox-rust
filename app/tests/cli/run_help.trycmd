@@ -1,0 +1,12 @@
+```console
+$ cargo run --bin run -- --help
+[..]run[..]
+
+Usage: run[..]
+
+Options:
+[..]
+  -h, --help[..]Print help
+[..]
+
+```

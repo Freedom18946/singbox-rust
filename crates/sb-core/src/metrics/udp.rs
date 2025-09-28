@@ -132,9 +132,11 @@ pub fn inc_packets_out() {
 }
 
 pub enum UdpErrorClass {
-    Io,
     Timeout,
-    Upstream,
+    Io,
+    Decode,
+    NoRoute,
+    Canceled,
     Other,
 }
 pub fn record_upstream_failure(_class: UdpErrorClass) {
@@ -143,9 +145,11 @@ pub fn record_upstream_failure(_class: UdpErrorClass) {
         use crate::metrics::registry_ext::get_or_register_counter_vec;
         let class = _class;
         let c = match class {
-            UdpErrorClass::Io => "io",
             UdpErrorClass::Timeout => "timeout",
-            UdpErrorClass::Upstream => "upstream",
+            UdpErrorClass::Io => "io",
+            UdpErrorClass::Decode => "decode",
+            UdpErrorClass::NoRoute => "no_route",
+            UdpErrorClass::Canceled => "canceled",
             UdpErrorClass::Other => "other",
         };
         let cv = get_or_register_counter_vec(
@@ -168,6 +172,31 @@ pub fn record_flow_bytes(_dir: &str, _n: usize) {
 pub fn record_session_ttl(_ttl_seconds: f64) {
     #[cfg(feature = "metrics")]
     histogram!("udp_nat_ttl_seconds").record(_ttl_seconds);
+}
+
+// Convenience functions for common UDP failure scenarios
+pub fn record_timeout_failure() {
+    record_upstream_failure(UdpErrorClass::Timeout);
+}
+
+pub fn record_io_failure() {
+    record_upstream_failure(UdpErrorClass::Io);
+}
+
+pub fn record_decode_failure() {
+    record_upstream_failure(UdpErrorClass::Decode);
+}
+
+pub fn record_no_route_failure() {
+    record_upstream_failure(UdpErrorClass::NoRoute);
+}
+
+pub fn record_canceled_failure() {
+    record_upstream_failure(UdpErrorClass::Canceled);
+}
+
+pub fn record_other_failure() {
+    record_upstream_failure(UdpErrorClass::Other);
 }
 
 // Helper functions using registry_ext

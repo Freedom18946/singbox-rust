@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use sb_config::Config;
 use tracing::{info, warn};
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::{
     net::TcpStream,
     time::{timeout, Duration},
@@ -85,10 +85,10 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // 2) 起入站（HTTP / SOCKS），每个入站一个 stop 通道；当前不做热更新/回收
     for ib in cfg.inbounds {
         match ib {
-            sb_config::Inbound::Http { listen } => {
+            sb_config::Inbound::Http { listen: _listen } => {
                 #[cfg(feature = "http")]
                 {
-                    warn!(?listen, "HTTP inbound temporarily disabled for subs tests");
+                    warn!(?_listen, "HTTP inbound temporarily disabled for subs tests");
                     // TEMPORARILY SKIP HTTP INBOUND for subs security tests
                 }
                 #[cfg(not(feature = "http"))]
@@ -96,10 +96,10 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
                     warn!("http inbound present in config but feature `http` disabled");
                 }
             }
-            sb_config::Inbound::Socks { listen } => {
+            sb_config::Inbound::Socks { listen: _listen } => {
                 #[cfg(feature = "socks")]
                 {
-                    warn!(?listen, "SOCKS inbound temporarily disabled for subs tests");
+                    warn!(?_listen, "SOCKS inbound temporarily disabled for subs tests");
                     // TEMPORARILY SKIP SOCKS INBOUND for subs security tests
                 }
                 #[cfg(not(feature = "socks"))]

@@ -11,6 +11,11 @@ pub mod reloadable;
 pub mod audit;
 pub mod prefetch;
 
+#[cfg(feature = "auth")]
+pub mod auth;
+
+pub mod middleware;
+
 // Note: http_server contains the plain HTTP admin server functionality
 // while http/ contains redirect policies and other HTTP utilities
 
