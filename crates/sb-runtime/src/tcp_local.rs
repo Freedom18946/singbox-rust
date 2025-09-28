@@ -169,8 +169,17 @@ mod tests {
         let log = dir.path().join("hs.session.jsonl");
         let bind = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
         let addr = spawn_echo_once(bind, Some(0xAA)).await.unwrap();
+        let config = IoLocalConfig {
+            req_port: addr.port(),
+            seed: 42,
+            log_path: &log,
+            read_max: 64,
+            to_ms: 200,
+            spawn_echo: false,
+            xor_key: None,
+        };
         let (_addr, tx, rx) =
-            io_local_with_optional_echo(&hs, addr.port(), 42, &log, 64, 200, false, None)
+            io_local_with_optional_echo(&hs, config)
                 .await
                 .unwrap();
         assert!(tx > 0 && rx > 0);

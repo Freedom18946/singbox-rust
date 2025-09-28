@@ -68,11 +68,12 @@ pub enum ErrorKind {
 mod tests {
     use super::*;
     #[test]
-    fn roundtrip_ok() {
+    fn roundtrip_ok() -> Result<(), Box<dyn std::error::Error>> {
         let env = ResponseEnvelope::ok(serde_json::json!({"hello":"world"})).with_request_id("r-1");
-        let s = serde_json::to_string(&env).unwrap();
-        let de: ResponseEnvelope<serde_json::Value> = serde_json::from_str(&s).unwrap();
+        let s = serde_json::to_string(&env)?;
+        let de: ResponseEnvelope<serde_json::Value> = serde_json::from_str(&s)?;
         assert!(de.ok);
         assert_eq!(de.request_id.as_deref(), Some("r-1"));
+        Ok(())
     }
 }

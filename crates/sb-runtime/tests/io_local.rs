@@ -9,9 +9,18 @@ async fn io_local_echo_once() {
     let p = dir.path().join("io.session.jsonl");
     // 启动内置 echo（系统分配端口）
     let bind = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
-    let addr = tcp_local::spawn_echo_once(bind, Some(0xAA)).await.unwrap();
+    let addr = sb_runtime::tcp_local::spawn_echo_once(bind, Some(0xAA)).await.unwrap();
+    let config = sb_runtime::tcp_local::IoLocalConfig {
+        req_port: addr.port(),
+        seed: 42,
+        log_path: &p,
+        read_max: 64,
+        to_ms: 200,
+        spawn_echo: false,
+        xor_key: None,
+    };
     let (actual, tx, rx) =
-        tcp_local::io_local_with_optional_echo(&hs, addr.port(), 42, &p, 64, 200, false, None)
+        sb_runtime::tcp_local::io_local_with_optional_echo(&hs, config)
             .await
             .unwrap();
     assert_eq!(actual.port(), addr.port());

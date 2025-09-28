@@ -430,8 +430,8 @@ mod tests {
                     assert!(tun.is_active());
 
                     // Test packet I/O with protocol headers
-                    let ipv4_packet = vec![0x45, 0x00, 0x00, 0x14]; // IPv4 header start
-                    let mut read_buf = [0u8; 1500];
+                    let _ipv4_packet = [0x45, 0x00, 0x00, 0x14]; // IPv4 header start
+                    let _read_buf = [0u8; 1500];
 
                     // Note: Actual packet testing would require more setup
                     let _ = tun.close();

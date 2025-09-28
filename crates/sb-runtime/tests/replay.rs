@@ -26,11 +26,11 @@ fn test_replay_decode_strict_mode() -> Result<()> {
     logger.log_frame(&Frame::new(FrameDir::Rx, b"response data"))?;
 
     // Test non-strict mode (should not fail)
-    let (frames, errors) = replay_decode(&trojan, &log_path, false)?;
+    let (frames, _errors) = replay_decode(&trojan, &log_path, false)?;
     assert_eq!(frames, 1); // Only RX frames are processed
 
     // Test strict mode - this may fail depending on trojan implementation
-    let result = replay_decode(&trojan, &log_path, true);
+    let _result = replay_decode(&trojan, &log_path, true);
     // In strict mode, errors should cause immediate failure
     // The result depends on whether decode_ack accepts the test data
 
@@ -50,7 +50,7 @@ fn test_replay_with_loopback_session() -> Result<()> {
     let _metrics = run_once(&trojan, 42, Some(&log_path))?;
 
     // Replay the session in both modes
-    let (frames_loose, errors_loose) = replay_decode(&trojan, &log_path, false)?;
+    let (frames_loose, _errors_loose) = replay_decode(&trojan, &log_path, false)?;
     let (frames_strict, errors_strict) = replay_decode(&trojan, &log_path, true)?;
 
     // Both should process the same number of frames
