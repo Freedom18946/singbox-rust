@@ -11,8 +11,6 @@ use tracing::{error, info};
 
 use crate::bootstrap;
 #[cfg(feature = "dev-cli")]
-use crate::config_loader;
-#[cfg(feature = "dev-cli")]
 use crate::env_dump;
 use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 // Temporarily disabled for minimal CLI
@@ -54,6 +52,7 @@ async fn term_signal() {
     std::future::pending::<()>().await;
 }
 
+#[allow(dead_code)]
 fn file_mtime(path: &str) -> SystemTime {
     fs::metadata(path)
         .and_then(|m| m.modified())

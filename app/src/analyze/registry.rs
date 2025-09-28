@@ -63,7 +63,11 @@ pub fn supported_async_kinds() -> Vec<&'static str> {
 
 pub async fn build_by_kind_async(kind: &str, input: &Value) -> Result<Value> {
     if let Some(cell) = ASYNC_REGISTRY.get() {
-        if let Some(f) = cell.lock().expect("async registry").get(kind) {
+        let f = {
+            let guard = cell.lock().expect("async registry");
+            guard.get(kind).copied()
+        };
+        if let Some(f) = f {
             return f(input).await;
         }
     }

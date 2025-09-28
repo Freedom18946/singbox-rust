@@ -39,6 +39,7 @@ pub const LABEL_OUTBOUND: &str = "outbound";
 pub const LABEL_WHITELIST: &[&str] = &[LABEL_RULE, LABEL_REASON, LABEL_CLASS, LABEL_OUTBOUND];
 
 /// 校验给定标签是否在白名单中
+#[must_use]
 pub fn is_label_allowed(k: &str) -> bool {
     LABEL_WHITELIST.contains(&k)
 }

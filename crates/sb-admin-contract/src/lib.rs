@@ -20,7 +20,7 @@ pub struct ResponseEnvelope<T> {
 }
 
 impl<T> ResponseEnvelope<T> {
-    pub fn ok(data: T) -> Self {
+    pub const fn ok(data: T) -> Self {
         Self { ok: true, data: Some(data), error: None, request_id: None }
     }
     pub fn err(kind: ErrorKind, msg: impl Into<String>) -> Self {
@@ -31,6 +31,7 @@ impl<T> ResponseEnvelope<T> {
             request_id: None,
         }
     }
+    #[must_use]
     pub fn with_request_id(mut self, id: impl Into<String>) -> Self {
         self.request_id = Some(id.into());
         self

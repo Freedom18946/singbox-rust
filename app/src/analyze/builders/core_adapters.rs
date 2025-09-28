@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde_json::Value;
 use crate::analyze::builders::wrap_patch_text;
 use crate::analyze::registry::register;

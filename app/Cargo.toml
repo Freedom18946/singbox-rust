@@ -9,7 +9,7 @@ default = []
 minimal = []
 
 # Dev/auxiliary CLI feature gates
-bench-cli = []
+bench-cli = ["hdrhistogram", "metrics"]
 manpage = []
 dev-cli = []
 prefetch = []
@@ -40,6 +40,16 @@ io_local_alpha = ["sb-runtime/io_local_alpha"]
 handshake_alpha = ["sb-runtime", "sb-runtime/handshake_alpha"]
 preview_route = ["sb-core/preview_route"]
 failpoints = ["sb-core/chaos"]
+sbcore_rules_tool = []
+hardening = []
+panic_log = []
+schema-v2 = []
+metrics-support = ["metrics"]
+bench = ["hdrhistogram"]
+strict_warnings = []
+config_schema = ["jsonschema"]
+tls-rustls = []
+dns-proto = ["trust-dns-proto"]
 
 ## 新增组合预设（示例）
 cli_min = []                         # 仅 CLI，不拉业务依赖
@@ -187,6 +197,13 @@ parking_lot = "0.12"
 atty = "0.2"
 chrono = { workspace = true }
 arc-swap = "1.7"
+# Benchmarking and metrics dependencies
+hdrhistogram = { version = "7.5", optional = true }
+metrics = { version = "0.24", optional = true }
+# Schema validation dependencies
+jsonschema = { version = "0.25", optional = true }
+# DNS protocol support
+trust-dns-proto = { version = "0.23", optional = true }
 # JWT dependencies (optional, for JWT auth provider)
 jsonwebtoken = { version = "9.3", optional = true }
 rsa = { version = "0.9", optional = true }

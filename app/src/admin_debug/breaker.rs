@@ -77,7 +77,7 @@ pub fn clear_thread_local_clock() {
 #[derive(Debug, Clone)]
 enum State {
     Closed,
-    Open { until: Instant, backoff: Duration },
+    Open { until: Instant, _backoff: Duration },
     HalfOpen { probes: u32 },
 }
 
@@ -229,7 +229,7 @@ impl HostBreaker {
             State::HalfOpen { .. } => {
                 // Half-open probe failed, go back to OPEN with exponential backoff
                 stat.reopen_count += 1;
-                stat.state = State::Open { until: current_time + jittered_backoff, backoff: jittered_backoff };
+                stat.state = State::Open { until: current_time + jittered_backoff, _backoff: jittered_backoff };
 
                 // Record reopen metric
                 crate::admin_debug::security_metrics::inc_breaker_reopen();
@@ -244,7 +244,7 @@ impl HostBreaker {
                 if stat.failures >= self.failure_threshold || ratio >= self.failure_ratio {
                     // Trip circuit to OPEN state
                     stat.reopen_count = 1;
-                    stat.state = State::Open { until: current_time + initial_backoff, backoff: initial_backoff };
+                    stat.state = State::Open { until: current_time + initial_backoff, _backoff: initial_backoff };
 
                     // Record initial reopen metric
                     crate::admin_debug::security_metrics::inc_breaker_reopen();

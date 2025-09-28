@@ -1,14 +1,14 @@
 //! 通用传输统计指标：累计字节数与简单吞吐观测。
 //! 该模块不直接挂接具体协议，供 inbound/outbound/pipeline 在关键路径上自行上报。
-use once_cell::sync::Lazy;
 use prometheus::{
     opts, register_histogram, register_int_counter, register_int_counter_vec, Histogram,
     IntCounter, IntCounterVec,
 };
+use std::sync::LazyLock;
 use std::time::Instant;
 
 /// 全局累计下行字节（server->client）
-pub static BYTES_DOWN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static BYTES_DOWN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "bytes_down_total",
@@ -18,7 +18,7 @@ pub static BYTES_DOWN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 全局累计上行字节（client->server）
-pub static BYTES_UP_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static BYTES_UP_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     #[allow(clippy::expect_used)]
     register_int_counter!(opts!(
         "bytes_up_total",
@@ -28,7 +28,7 @@ pub static BYTES_UP_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 按方向与通道类型聚合的字节计数
-pub static BYTES_TOTAL_VEC: Lazy<IntCounterVec> = Lazy::new(|| {
+pub static BYTES_TOTAL_VEC: LazyLock<IntCounterVec> = LazyLock::new(|| {
     #[allow(clippy::expect_used)]
     register_int_counter_vec!(
         "bytes_total",
@@ -39,7 +39,7 @@ pub static BYTES_TOTAL_VEC: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 /// 简单的时窗吞吐观测（单位：字节/秒），建议用于 O(秒) 级别粗观测
-pub static THROUGHPUT_BPS: Lazy<Histogram> = Lazy::new(|| {
+pub static THROUGHPUT_BPS: LazyLock<Histogram> = LazyLock::new(|| {
     // 桶：0.5KB/s 到 256MB/s，指数扩展
     let buckets = prometheus::exponential_buckets(512.0, 2.0, 20).unwrap_or_else(|_| {
         // Fallback to fixed buckets on exponential_buckets failure
@@ -78,13 +78,14 @@ pub struct TxWindow {
     bytes: usize,
 }
 impl TxWindow {
+    #[must_use]
     pub fn start() -> Self {
         Self {
             t0: Instant::now(),
             bytes: 0,
         }
     }
-    pub fn add(&mut self, n: usize) {
+    pub const fn add(&mut self, n: usize) {
         self.bytes += n;
     }
 }
@@ -92,6 +93,7 @@ impl Drop for TxWindow {
     fn drop(&mut self) {
         let sec = self.t0.elapsed().as_secs_f64();
         if sec > 0.0 && self.bytes > 0 {
+            #[allow(clippy::cast_precision_loss)]
             let bps = (self.bytes as f64) / sec;
             THROUGHPUT_BPS.observe(bps);
         }

@@ -2,11 +2,11 @@
 //! 设计原则：
 //! - 低耦合：调用方只负责把事件打点进来，不依赖具体 HTTP 栈。
 //! - 标签控制：核心使用无标签 Counter/Gauge；少量场景用 `*_vec`，避免高基数炸表。
-use once_cell::sync::Lazy;
 use prometheus::{
     opts, register_histogram, register_int_counter, register_int_counter_vec, register_int_gauge,
     Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge,
 };
+use std::sync::LazyLock;
 use std::time::Instant;
 
 // =============================
@@ -14,7 +14,7 @@ use std::time::Instant;
 // =============================
 
 /// 当前活跃 HTTP 连接（长连接含 keep-alive）
-pub static HTTP_INFLIGHT: Lazy<IntGauge> = Lazy::new(|| {
+pub static HTTP_INFLIGHT: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(opts!(
         "http_inflight",
         "In-flight HTTP connections (keep-alive included)"
@@ -26,7 +26,7 @@ pub static HTTP_INFLIGHT: Lazy<IntGauge> = Lazy::new(|| {
 });
 
 /// 已接受的 HTTP 连接总数
-pub static HTTP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static HTTP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(opts!("http_conn_total", "Total accepted HTTP connections"))
         .unwrap_or_else(|_| {
             #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
@@ -35,7 +35,7 @@ pub static HTTP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// CONNECT 请求总数（入站 HTTP 代理处理的隧道建立请求）
-pub static HTTP_CONNECT_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static HTTP_CONNECT_REQ_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(opts!(
         "http_connect_req_total",
         "Total HTTP CONNECT requests received"
@@ -47,7 +47,7 @@ pub static HTTP_CONNECT_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// CONNECT 成功建立的总数
-pub static HTTP_CONNECT_OK_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static HTTP_CONNECT_OK_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(opts!(
         "http_connect_ok_total",
         "Total successful HTTP CONNECT tunnels"
@@ -59,7 +59,7 @@ pub static HTTP_CONNECT_OK_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// CONNECT 失败总数（握手失败/上游失败/路由失败等）
-pub static HTTP_CONNECT_FAIL_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static HTTP_CONNECT_FAIL_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(opts!(
         "http_connect_fail_total",
         "Total failed HTTP CONNECT attempts"
@@ -71,7 +71,7 @@ pub static HTTP_CONNECT_FAIL_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 入站 HTTP 层错误（解析/协议/早期关闭等）
-pub static HTTP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static HTTP_ERROR_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(opts!(
         "http_error_total",
         "Total HTTP layer errors observed at inbound"
@@ -83,7 +83,7 @@ pub static HTTP_ERROR_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 入站请求总数（不区分方法/状态）
-pub static HTTP_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+pub static HTTP_REQ_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(opts!(
         "http_req_total",
         "Total HTTP requests handled by inbound"
@@ -95,7 +95,7 @@ pub static HTTP_REQ_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 });
 
 /// 按方法维度的请求计数（避免高基数，仅固定方法集合）
-pub static HTTP_METHOD_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+pub static HTTP_METHOD_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "http_method_total",
         "HTTP requests by method",
@@ -108,7 +108,7 @@ pub static HTTP_METHOD_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 /// 按状态码段（2xx/3xx/4xx/5xx）的响应计数
-pub static HTTP_STATUS_CLASS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+pub static HTTP_STATUS_CLASS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "http_status_class_total",
         "HTTP responses by status class",
@@ -121,7 +121,7 @@ pub static HTTP_STATUS_CLASS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 /// 请求耗时直方图（毫秒）
-pub static HTTP_REQ_DURATION_MS: Lazy<Histogram> = Lazy::new(|| {
+pub static HTTP_REQ_DURATION_MS: LazyLock<Histogram> = LazyLock::new(|| {
     // 指数桶：2ms ~ 4096ms
     let buckets = prometheus::exponential_buckets(0.002, 2.0, 13).unwrap_or_else(|_| {
         // Fallback to linear buckets if exponential buckets fail
@@ -141,7 +141,7 @@ pub static HTTP_REQ_DURATION_MS: Lazy<Histogram> = Lazy::new(|| {
 });
 
 /// 按出站类型（direct/http/socks）的连接尝试
-pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: Lazy<IntCounterVec> = Lazy::new(|| {
+pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "http_outbound_connect_attempt_total",
         "Outbound connect attempts from HTTP pipeline",
@@ -153,8 +153,8 @@ pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: Lazy<IntCounterVec> = Lazy::new(|| {
     })
 });
 
-/// 按出站类型的连接失败分类（dns/tcp_timeout/tls/other）
-pub static HTTP_OUTBOUND_CONNECT_ERROR: Lazy<IntCounterVec> = Lazy::new(|| {
+/// 按出站类型的连接失败分类（`dns`/`tcp_timeout`/`tls`/`other`）
+pub static HTTP_OUTBOUND_CONNECT_ERROR: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "http_outbound_connect_error_total",
         "Outbound connect errors from HTTP pipeline",
@@ -190,6 +190,7 @@ pub fn inc_status(status: u16) {
 }
 
 /// 便捷：开始 HTTP 请求计时，返回 Drop 时上报
+#[must_use]
 pub fn start_req_timer() -> HttpReqTimer {
     HttpReqTimer { t0: Instant::now() }
 }
@@ -243,7 +244,7 @@ pub fn on_connect_fail() {
 // =============================
 
 /// Metrics export failure classification
-pub static METRICS_EXPORT_FAIL_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+pub static METRICS_EXPORT_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "metrics_export_fail_total",
         "Metrics export failures by class",

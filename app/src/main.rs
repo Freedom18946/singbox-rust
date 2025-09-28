@@ -30,10 +30,10 @@ async fn main() -> anyhow::Result<()> {
     sb_core::util::failpoint::init_from_env();
 
     #[cfg(feature = "panic_log")]
-    singbox_rust::panic::install();
+    app::panic::install();
 
     #[cfg(feature = "hardening")]
-    singbox_rust::hardening::apply();
+    app::hardening::apply();
 
     let ga = std::env::var("SB_GA_GUARD").unwrap_or_else(|_| "1".to_string());
     if ga == "0" {

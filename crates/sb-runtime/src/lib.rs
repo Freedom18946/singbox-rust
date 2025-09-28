@@ -23,9 +23,9 @@ pub mod protocols {
 #[cfg(feature = "handshake_alpha")]
 pub use handshake::*;
 #[cfg(feature = "handshake_alpha")]
-pub use jsonl::*;
+pub use jsonl::{stream_frames, basic_verify, replay_decode as jsonl_replay_decode};
 #[cfg(feature = "handshake_alpha")]
-pub use loopback::*;
+pub use loopback::{LoopConn, FrameDir, Frame, SessionLog, SessionMetrics, run_once, XorObfuscator, replay_decode as loopback_replay_decode};
 #[cfg(feature = "handshake_alpha")]
 pub use protocols::*;
 #[cfg(feature = "handshake_alpha")]
@@ -45,8 +45,8 @@ mod disabled {
 #[cfg(feature = "handshake_alpha")]
 pub mod prelude {
     pub use crate::handshake::*;
-    pub use crate::jsonl::*;
-    pub use crate::loopback::*;
+    pub use crate::jsonl::{stream_frames, basic_verify, replay_decode as jsonl_replay_decode};
+    pub use crate::loopback::{LoopConn, FrameDir, Frame, SessionLog, SessionMetrics, run_once, XorObfuscator, replay_decode as loopback_replay_decode};
     pub use crate::protocols::*;
     pub use crate::scenario::*;
     #[cfg(feature = "io_local_alpha")]

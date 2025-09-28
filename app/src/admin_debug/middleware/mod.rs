@@ -11,7 +11,7 @@ pub mod rate_limit;
 pub mod auth;
 
 use std::collections::HashMap;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::AsyncWrite;
 
 /// Result type for middleware operations
 pub type MiddlewareResult<T> = Result<T, sb_admin_contract::ResponseEnvelope<()>>;

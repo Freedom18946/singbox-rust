@@ -47,6 +47,7 @@ fn diff_is_empty(diff: &serde_json::Value) -> bool {
 }
 
 // Legacy function for compatibility
+#[allow(dead_code)]
 fn json_diff(before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
     json_diff_enhanced(before, after)
 }

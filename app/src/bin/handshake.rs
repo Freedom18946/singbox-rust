@@ -349,7 +349,7 @@ mod real {
         // 1) 外部文件优先
         if let Some(p) = from {
             let txt = std::fs::read_to_string(p).map_err(|e| anyhow!("read chaos-from failed: {e}"))?;
-            let mut v: serde_json::Value =
+            let v: serde_json::Value =
                 serde_json::from_str(&txt).map_err(|e| anyhow!("parse chaos-from json failed: {e}"))?;
             let rx_xor = v
                 .get("rx_xor")
@@ -848,7 +848,6 @@ mod real {
                 rx_xor,
             } => {
                 use sb_runtime::tcp_local::io_local_with_optional_echo;
-                use sb_runtime::tcp_local::ChaosSpec;
                 let xor = obf_xor.and_then(|s| u8::from_str_radix(s.trim_start_matches("0x"), 16).ok());
                 // 单线程 runtime 足够
                 let rt = tokio::runtime::Builder::new_current_thread()
@@ -919,8 +918,6 @@ mod real {
 }
 
 #[cfg(feature = "handshake_alpha")]
-pub use real::*;
-
 // Provide a real entrypoint when feature is enabled
 #[cfg(feature = "handshake_alpha")]
 fn main() {

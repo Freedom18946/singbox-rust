@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use sb_core::routing::{ExplainEngine, ExplainResult};
-use sb_core::routing::Trace;
+use sb_core::routing::ExplainEngine;
 
 #[derive(Parser, Debug, Clone)]
 pub struct RouteArgs {

@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::time::SystemTime;
+use std::backtrace::Backtrace;
 
 pub fn install() {
     if std::env::var("SB_PANIC_LOG").ok().as_deref() != Some("1") {
@@ -30,7 +31,7 @@ pub fn install() {
             body.push_str(&format!("trace_id={}\n", tid));
         }
         body.push_str(&format!("panic={}\n", info));
-        body.push_str(&format!("backtrace={:?}\n", backtrace::Backtrace::new()));
+        body.push_str(&format!("backtrace={:?}\n", Backtrace::capture()));
         if std::fs::write(&file, body).is_ok() {
             let max_keep = std::env::var("SB_PANIC_LOG_MAX")
                 .ok()

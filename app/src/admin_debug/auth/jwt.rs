@@ -10,16 +10,16 @@
 
 use super::{AuthProvider, AuthError};
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use std::sync::Arc;
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 #[cfg(feature = "jwt")]
 use jsonwebtoken::{
     decode, decode_header, DecodingKey, Validation, Algorithm,
-    TokenData, Header, errors::ErrorKind as JwtErrorKind
+    TokenData, errors::ErrorKind as JwtErrorKind
 };
 
 #[cfg(feature = "jwt")]
@@ -72,6 +72,7 @@ impl JwtAlgorithm {
 
 /// JWKS (JSON Web Key Set) entry
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct JsonWebKey {
     /// Key type (e.g., "RSA", "EC")
     kty: String,

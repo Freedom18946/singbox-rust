@@ -5,7 +5,6 @@ use tracing::{info, warn};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
 use tokio::{
     net::TcpStream,
     time::{timeout, Duration},
@@ -29,6 +28,7 @@ use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
 #[cfg(feature = "socks")]
 use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
 
+#[allow(dead_code)]
 async fn probe(addr: SocketAddr) -> bool {
     timeout(Duration::from_secs(1), TcpStream::connect(addr))
         .await
@@ -116,6 +116,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     })
 }
 
+#[allow(dead_code)]
 fn parse_addr(s: &str) -> SocketAddr {
     match s.parse::<SocketAddr>() {
         Ok(sa) => sa,

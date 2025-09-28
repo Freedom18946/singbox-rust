@@ -110,7 +110,7 @@ async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
 #[cfg(feature = "bench")]
 async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
     let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_UDP address");
-    let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
+    let _sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
         .await
         .expect("failed to bind UDP probe socket");
     let mut hist = histogram();
@@ -237,13 +237,6 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
 #[cfg(feature = "bench")]
 fn histogram() -> Histogram<u64> {
     Histogram::new_with_bounds(1, 60_000, 3).expect("failed to create histogram")
-}
-
-#[cfg(feature = "bench")]
-fn record_elapsed(hist: &mut Histogram<u64>, started: Instant) {
-    let elapsed = started.elapsed();
-    let value = elapsed.as_millis().max(1) as u64;
-    let _ = hist.record(value);
 }
 
 #[cfg(feature = "bench")]

@@ -1,15 +1,14 @@
 //! xtask: developer utilities.
 //! - `e2e`: offline pipeline covering version/check/run/route/metrics/admin(auth+ratelimit)
+//!
 //! MSRV = 1.90; blocking HTTP to avoid async/tokio deps here.
 
 use anyhow::{anyhow, Context, Result};
-use reqwest::blocking::Client;
 use std::env;
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -24,10 +23,6 @@ fn main() -> Result<()> {
 }
 
 // ---- E2E --------------------------------------------------------------------
-
-const ADMIN_URL: &str = "http://127.0.0.1:18080";
-const METRICS_URL: &str = "http://127.0.0.1:19090/metrics";
-const HEALTH_PATH: &str = "/__health";
 
 fn e2e() -> Result<()> {
     // 0) Build app once with focused features (add dsl_plus for complete feature set)
@@ -161,20 +156,6 @@ fn app_bin_path() -> Result<PathBuf> {
     }
 }
 
-fn run_ok(bin: &str, args: &[&str]) -> Result<()> {
-    let status = Command::new(bin)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("spawn {} {:?}", bin, args))?;
-    if !status.success() {
-        return Err(anyhow!("command failed: {} {:?}", bin, args));
-    }
-    Ok(())
-}
-
 fn run_capture(bin: &Path, args: &[&str]) -> Result<(i32, Vec<u8>, Vec<u8>)> {
     let out = Command::new(bin)
         .args(args)
@@ -276,169 +257,12 @@ impl Drop for ChildGuard {
     }
 }
 
-fn wait_admin_ready(guard: &mut ChildGuard, timeout: Duration) -> Result<String> {
-    let start = Instant::now();
-
-    // Try to read admin address from the child stdout
-    let child = guard.child.as_mut().ok_or_else(|| anyhow!("no child process"))?;
-    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
-
-    let mut reader = std::io::BufReader::new(stdout);
-    let mut line = String::new();
-
-    // Read stdout lines looking for ADMIN_LISTEN= output
-    loop {
-        if start.elapsed() > timeout {
-            return Err(anyhow!("timeout waiting for admin server to start"));
-        }
-
-        line.clear();
-        match reader.read_line(&mut line) {
-            Ok(0) => {
-                // EOF - process might have exited
-                thread::sleep(Duration::from_millis(100));
-                continue;
-            }
-            Ok(_) => {
-                // Check for admin server startup message
-                if line.contains("ADMIN_LISTEN=") {
-                    if let Some(addr) = line.split("ADMIN_LISTEN=").nth(1) {
-                        let addr = addr.trim();
-                        let admin_url = format!("http://{}", addr);
-
-                        // Wait for the actual HTTP endpoint to be ready
-                        // Try both health endpoint and root path
-                        let health_url = admin_url.clone() + HEALTH_PATH;
-                        let root_url = admin_url.clone();
-
-                        if wait_http_ready(&health_url, Duration::from_secs(2)).is_ok() {
-                            return Ok(admin_url);
-                        } else if wait_http_ready(&root_url, Duration::from_secs(2)).is_ok() {
-                            return Ok(admin_url);
-                        }
-
-                        // If neither worked, continue looking for more output
-                        continue;
-                    }
-                }
-            }
-            Err(_) => {
-                thread::sleep(Duration::from_millis(100));
-                continue;
-            }
-        }
-    }
-}
-
-fn wait_http_ready(url: &str, timeout: Duration) -> Result<()> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
-    let start = Instant::now();
-    loop {
-        if start.elapsed() > timeout {
-            return Err(anyhow!("timeout waiting for {}", url));
-        }
-        match client.get(url).send() {
-            Ok(resp) => {
-                let status = resp.status().as_u16();
-                // Accept 200 (OK), 401 (auth required), or 404 (endpoint exists but path not found)
-                if status == 200 || status == 401 || status == 404 {
-                    return Ok(());
-                }
-            }
-            Err(_) => {}
-        }
-        thread::sleep(Duration::from_millis(150));
-    }
-}
-
-fn http_get_text(url: &str, hdr: Option<(String, String)>) -> Result<String> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
-    let mut req = client.get(url);
-    if let Some((k, v)) = hdr {
-        req = req.header(k, v);
-    }
-    let resp = req.send()?;
-    let status = resp.status();
-    let text = resp.text()?;
-    if !status.is_success() {
-        return Err(anyhow!("GET {} => {}", url, status));
-    }
-    Ok(text)
-}
-
-fn http_get_raw(url: &str, hdr: Option<(String, String)>) -> Result<(u16, Vec<u8>)> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
-    let mut req = client.get(url);
-    if let Some((k, v)) = hdr {
-        req = req.header(k, v);
-    }
-    let mut resp = req.send()?;
-    let status = resp.status().as_u16();
-    let mut buf = Vec::new();
-    resp.copy_to(&mut buf)?;
-    Ok((status, buf))
-}
-
-fn http_get_json(url: &str, hdr: Option<(String, String)>) -> Result<serde_json::Value> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
-    let mut req = client.get(url);
-    if let Some((k, v)) = hdr {
-        req = req.header(k, v);
-    }
-    let resp = req.send()?;
-    let status = resp.status();
-    let v: serde_json::Value = resp.json()?;
-    if !(status.is_success() || status.as_u16() == 401 || status.as_u16() == 429) {
-        return Err(anyhow!("GET {} unexpected status {}", url, status));
-    }
-    Ok(v)
-}
-
 fn assert_json_has(v: &serde_json::Value, keys: &[&str]) -> Result<()> {
     let obj = v.as_object().ok_or_else(|| anyhow!("expected JSON object"))?;
     for k in keys {
         if !obj.contains_key(*k) {
             return Err(anyhow!("json missing key: {}", k));
         }
-    }
-    Ok(())
-}
-
-fn assert_envelope_ok(v: &serde_json::Value) -> Result<()> {
-    let ok = v.get("ok").and_then(|x| x.as_bool()).ok_or_else(|| anyhow!("missing ok"))?;
-    if !ok {
-        return Err(anyhow!("expected ok=true, got {}", v));
-    }
-    if v.get("request_id").and_then(|x| x.as_str()).unwrap_or("").is_empty() {
-        return Err(anyhow!("missing/empty request_id"));
-    }
-    Ok(())
-}
-
-fn assert_envelope_err_kind(v: &serde_json::Value, want: &str) -> Result<()> {
-    let ok = v.get("ok").and_then(|x| x.as_bool()).ok_or_else(|| anyhow!("missing ok"))?;
-    if ok {
-        return Err(anyhow!("expected ok=false, got {}", v));
-    }
-    let kind = v
-        .get("error")
-        .and_then(|e| e.get("kind"))
-        .and_then(|k| k.get("type").or_else(|| Some(k))) // support enum or string shape
-        .and_then(|x| x.as_str())
-        .unwrap_or("");
-    if !kind.eq_ignore_ascii_case(want) {
-        return Err(anyhow!("expected error.kind '{}', got {}", want, kind));
-    }
-    if v.get("request_id").and_then(|x| x.as_str()).unwrap_or("").is_empty() {
-        return Err(anyhow!("missing/empty request_id"));
     }
     Ok(())
 }

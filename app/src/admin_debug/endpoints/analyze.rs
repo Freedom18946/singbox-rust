@@ -144,7 +144,6 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         400,
                         &format!("patch build failed: {}", e),
                         Some(&hint),
-                        Some("patch_registry_required"),
                     ).await
                 }
             }

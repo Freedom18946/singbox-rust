@@ -11,12 +11,11 @@ pub mod registry;
 pub mod server;
 pub mod socks;
 pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线
-use std::{convert::Infallible, net::SocketAddr, sync::atomic::{AtomicU64, Ordering}, time::{Duration, Instant}};
+use std::{convert::Infallible, net::SocketAddr, sync::atomic::{AtomicU64, Ordering}, sync::LazyLock, time::{Duration, Instant}};
 
 use hyper::server::conn::Http;
 use hyper::service::service_fn;
 use hyper::{Body, Method, Request, Response, StatusCode};
-use once_cell::sync::Lazy;
 use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts, Registry,
     TextEncoder,
@@ -72,17 +71,17 @@ impl ErrorRateLimiter {
     }
 }
 
-static ERROR_RATE_LIMITER: Lazy<ErrorRateLimiter> = Lazy::new(ErrorRateLimiter::new);
+static ERROR_RATE_LIMITER: LazyLock<ErrorRateLimiter> = LazyLock::new(ErrorRateLimiter::new);
 
-pub static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
+pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 // ===================== Router Metrics =====================
 mod router {
-    use super::*;
+    use super::{LazyLock, IntCounterVec, REGISTRY};
     /// 路由命中计数：按规则类别与出站类型维度统计
-    /// labels: category = {"domain_suffix","ip_cidr","advanced","default",...},
+    /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
-    pub static ROUTER_MATCH_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    pub static ROUTER_MATCH_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let vec = IntCounterVec::new(
             prometheus::Opts::new(
                 "router_rule_match_total",
@@ -109,10 +108,10 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 
 // ===================== Outbound Metrics =====================
 mod outbound {
-    use super::*;
+    use super::{LazyLock, IntCounterVec, Opts, REGISTRY, HistogramVec, HistogramOpts};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
-    pub static CONNECT_ATTEMPT_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let v = IntCounterVec::new(
             Opts::new(
                 "outbound_connect_attempt_total",
@@ -129,7 +128,7 @@ mod outbound {
     });
 
     /// 出站连接失败计数
-    pub static CONNECT_ERROR_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    pub static CONNECT_ERROR_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let v = IntCounterVec::new(
             Opts::new("outbound_connect_error_total", "Outbound connect errors"),
             &["kind", "class"], // class: dns | timeout | io | tls | other
@@ -143,7 +142,7 @@ mod outbound {
     });
 
     /// 出站连接成功直方图（秒）
-    pub static CONNECT_SECONDS: Lazy<HistogramVec> = Lazy::new(|| {
+    pub static CONNECT_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
         // 预置桶：1ms~10s，覆盖直连与代理常见场景
         let opts = HistogramOpts::new(
             "outbound_connect_seconds",
@@ -208,11 +207,11 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 mod adapter {
-    use super::*;
+    use super::{LazyLock, IntCounterVec, REGISTRY, HistogramVec, HistogramOpts};
 
     /// Adapter dial total counter - tracks all dial attempts with results
-    /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "proto_err", "auth_err", "io_err"}
-    pub static DIAL_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
+    pub static DIAL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let vec = IntCounterVec::new(
             prometheus::Opts::new(
                 "adapter_dial_total",
@@ -230,7 +229,7 @@ mod adapter {
 
     /// Adapter dial latency histogram in milliseconds
     /// labels: adapter = {"socks5", "http"}
-    pub static DIAL_LATENCY_MS: Lazy<HistogramVec> = Lazy::new(|| {
+    pub static DIAL_LATENCY_MS: LazyLock<HistogramVec> = LazyLock::new(|| {
         let opts = HistogramOpts::new(
             "adapter_dial_latency_ms",
             "Adapter dial latency in milliseconds",
@@ -246,7 +245,7 @@ mod adapter {
 
     /// Adapter retry attempts counter
     /// labels: adapter = {"socks5", "http"}
-    pub static RETRIES_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    pub static RETRIES_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let vec = IntCounterVec::new(
             prometheus::Opts::new(
                 "adapter_retries_total",
@@ -299,12 +298,14 @@ pub fn classify_adapter_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static
 }
 
 /// Helper to start timing an adapter operation
+#[must_use]
 pub fn start_adapter_timer() -> Instant {
     Instant::now()
 }
 
 /// Helper to record the latency and result for an adapter operation
 pub fn record_adapter_dial(adapter: &str, start_time: Instant, result: Result<(), &dyn core::fmt::Display>) {
+    #[allow(clippy::cast_precision_loss)]
     let latency_ms = start_time.elapsed().as_millis() as f64;
     observe_adapter_dial_latency_ms(adapter, latency_ms);
 
@@ -317,10 +318,10 @@ pub fn record_adapter_dial(adapter: &str, start_time: Instant, result: Result<()
 
 // ===================== SOCKS Inbound Metrics =====================
 mod socks_in {
-    use super::*;
+    use super::{LazyLock, IntCounter, REGISTRY, IntCounterVec, Opts, IntGauge};
 
     /// SOCKS TCP 连接总数（握手成功即计数）
-    pub static TCP_CONN_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    pub static TCP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
         #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let c = IntCounter::new(
             "inbound_socks_tcp_connections_total",
@@ -332,7 +333,7 @@ mod socks_in {
     });
 
     /// UDP 关联创建总数
-    pub static UDP_ASSOC_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
+    pub static UDP_ASSOC_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
         #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let c = IntCounter::new(
             "inbound_socks_udp_associate_total",
@@ -344,7 +345,7 @@ mod socks_in {
     });
 
     /// UDP 包计数：方向 in -> server / out -> client
-    pub static UDP_PKTS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
+    pub static UDP_PKTS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let v = IntCounterVec::new(
             Opts::new(
@@ -359,7 +360,7 @@ mod socks_in {
     });
 
     /// UDP 当前关联估算（需要上层周期更新，可选）
-    pub static UDP_ASSOC_ESTIMATE: Lazy<IntGauge> = Lazy::new(|| {
+    pub static UDP_ASSOC_ESTIMATE: LazyLock<IntGauge> = LazyLock::new(|| {
         #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
         let g = IntGauge::new(
             "inbound_socks_udp_assoc_estimate",
@@ -383,7 +384,7 @@ pub fn inc_socks_udp_assoc() {
 pub fn inc_socks_udp_packet(dir: &str) {
     socks_in::UDP_PKTS_TOTAL.with_label_values(&[dir]).inc();
 }
-/// 便捷：设置 UDP 关联估算（上层有 map.size() 时可更新）
+/// 便捷：设置 UDP 关联估算（上层有 `map.size()` 时可更新）
 pub fn set_socks_udp_assoc_estimate(n: i64) {
     socks_in::UDP_ASSOC_ESTIMATE.set(n);
 }

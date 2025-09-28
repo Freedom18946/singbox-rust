@@ -207,7 +207,7 @@ pub fn run_file<P: AsRef<Path>>(p: P) -> Result<ScenarioSummary> {
 
 fn load_and_resolve<P: AsRef<Path>>(
     path: P,
-    base: &PathBuf,
+    base: &Path,
     stack: &mut Vec<PathBuf>,
 ) -> Result<ScenarioFile> {
     let abspath = if path.as_ref().is_absolute() {
@@ -226,7 +226,7 @@ fn load_and_resolve<P: AsRef<Path>>(
     stack.push(abspath.clone());
     let mut merged_steps = Vec::new();
     for inc in sc.include.drain(..) {
-        let sub = load_and_resolve(&inc, &abspath.parent().unwrap_or(base).to_path_buf(), stack)?;
+        let sub = load_and_resolve(&inc, abspath.parent().unwrap_or(base), stack)?;
         merged_steps.extend(sub.steps);
     }
     // resolve include_glob (仅允许 examples/scenarios/ 开头，避免越界)
@@ -239,18 +239,18 @@ fn load_and_resolve<P: AsRef<Path>>(
         }
         for entry in glob(&pat).map_err(|e| anyhow!("bad glob pattern {}: {e}", pat))? {
             let p = entry.map_err(|e| anyhow!("glob entry error: {e}"))?;
-            let sub = load_and_resolve(&p, &abspath.parent().unwrap_or(base).to_path_buf(), stack)?;
+            let sub = load_and_resolve(&p, abspath.parent().unwrap_or(base), stack)?;
             merged_steps.extend(sub.steps);
         }
     }
-    merged_steps.extend(sc.steps.drain(..));
+    merged_steps.append(&mut sc.steps);
     sc.steps = merged_steps;
     stack.pop();
     Ok(sc)
 }
 
 fn expand_vars_in_path(
-    p: &PathBuf,
+    p: &Path,
     vars: &HashMap<String, String>,
     out_dir: &Option<PathBuf>,
 ) -> PathBuf {

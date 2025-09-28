@@ -218,9 +218,9 @@ async fn handle(
 #[tokio::main]
 async fn main() {
     #[cfg(feature = "panic_log")]
-    singbox_rust::panic::install();
+    app::panic::install();
     #[cfg(feature = "hardening")]
-    singbox_rust::hardening::apply();
+    app::hardening::apply();
     let addr: SocketAddr = std::env::var("SB_DEBUG_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18089".into())
         .parse()

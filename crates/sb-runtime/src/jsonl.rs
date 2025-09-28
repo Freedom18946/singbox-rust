@@ -133,10 +133,10 @@ pub fn replay_decode<P: AsRef<Path>>(
         frames += 1;
         if matches!(f.dir, FrameDir::Rx) {
             // 用 tail8/head8 还原一个最小切片（与 loopback 生成规则解耦）
-            let buf_len = f.len.min(64).max(1);
-            let mut buf = vec![0u8; buf_len];
+            let buf_len = f.len.clamp(1, 64);
+            let buf = vec![0u8; buf_len];
             // 这里不做真实反序列化，只校验 decode_ack 的容错能力
-            if let Err(_) = proto.decode_ack(&buf[..buf_len.min(32)]) {
+            if proto.decode_ack(&buf[..buf_len.min(32)]).is_err() {
                 errors += 1;
                 if strict {
                     return Err(anyhow!("replay strict failed at frame #{frames}"));

@@ -110,11 +110,12 @@ fn main() -> Result<()> {
             let schema_json: Value =
                 serde_json::from_str(&schema_raw).map_err(|e| anyhow!("解析 schema 文件失败：{e}"))?;
 
-            let schema = jsonschema::JSONSchema::compile(&schema_json)
+            let validator = jsonschema::Validator::new(&schema_json)
                 .map_err(|e| anyhow!("编译 JSON Schema 失败：{e}"))?;
 
-            if let Err(validation_errors) = schema.validate(&v) {
-                let errors: Vec<String> = validation_errors
+            let validation_result = validator.validate(&v);
+            if validation_result.is_err() {
+                let errors: Vec<String> = validation_result.unwrap_err()
                     .take(5)
                     .map(|e| format!("{}", e))
                     .collect();

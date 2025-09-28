@@ -149,7 +149,7 @@ impl From<AuthError> for sb_admin_contract::ErrorBody {
 pub fn from_config(config: &AuthConfig) -> Result<Box<dyn AuthProvider>, AuthError> {
     match config {
         AuthConfig::None => Ok(Box::new(none::NoneProvider::new())),
-        AuthConfig::Jwt { secret, algorithm, expiry_seconds } => {
+        AuthConfig::Jwt { secret, algorithm, expiry_seconds: _ } => {
             let config = jwt::JwtConfig {
                 jwks_file: None,
                 jwks_url: None,

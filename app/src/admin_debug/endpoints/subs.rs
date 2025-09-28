@@ -1,4 +1,4 @@
-use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size, validate_format, is_networking_allowed, validate_url_scheme};
+use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size, validate_format, is_networking_allowed, validate_url_scheme, validate_kinds};
 use crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist;
 use crate::admin_debug::security_async::forbid_private_host_or_resolved_async;
 use crate::admin_debug::security_metrics::{
@@ -1066,8 +1066,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             }
 
             // Validate kinds
-            if let Err(err_msg) = validate_kinds(&kinds) {
-                return respond_json_error(sock, 400, "invalid kinds parameter", Some(&err_msg)).await;
+            if let Err(ref err_msg) = validate_kinds(&kinds) {
+                return respond_json_error(sock, 400, "invalid kinds parameter", Some(err_msg)).await;
             }
 
             if b64_content.is_empty() {

@@ -130,6 +130,7 @@ pub fn main(_a: PrefetchArgs) -> anyhow::Result<()> {
     feature_guard("prefetch")
 }
 
+#[allow(dead_code)]
 fn feature_guard(feature: &str) -> anyhow::Result<()> {
     anyhow::bail!("该命令需要启用编译特性：{}", feature)
 }
@@ -279,6 +280,7 @@ fn heat(_url: String, _concurrency: usize, _duration: u64, _rps: u64, _etag: Opt
 
 
 #[cfg(all(feature = "admin_debug", feature = "prefetch"))]
+#[allow(dead_code)]
 fn read_stats() -> PrefStats {
     use crate::admin_debug::security_metrics as m;
     let (enq, drop, done, fail, retry) = m::get_prefetch_counters();

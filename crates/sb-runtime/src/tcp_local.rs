@@ -25,6 +25,18 @@ pub struct ChaosSpec {
     pub rx_xor: Option<u8>,
 }
 
+/// Configuration for io_local operations
+#[derive(Debug)]
+pub struct IoLocalConfig<'a> {
+    pub req_port: u16,
+    pub seed: u64,
+    pub log_path: &'a std::path::Path,
+    pub read_max: usize,
+    pub to_ms: u64,
+    pub spawn_echo: bool,
+    pub xor_key: Option<u8>,
+}
+
 fn is_localhost(addr: &SocketAddr) -> bool {
     match addr.ip() {
         IpAddr::V4(ip) => ip == Ipv4Addr::LOCALHOST,
@@ -130,23 +142,17 @@ pub async fn spawn_echo_once(bind: SocketAddr, xor_key: Option<u8>) -> Result<So
 /// 组合：如需内置 echo 则先起服，再执行 io_local_once
 pub async fn io_local_with_optional_echo(
     proto: &dyn Handshake,
-    req_port: u16,
-    seed: u64,
-    log_path: &std::path::Path,
-    read_max: usize,
-    to_ms: u64,
-    spawn_echo: bool,
-    xor_key: Option<u8>,
+    config: IoLocalConfig<'_>,
 ) -> Result<(SocketAddr, usize, usize)> {
-    let mut target = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), req_port);
-    if spawn_echo {
+    let mut target = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.req_port);
+    if config.spawn_echo {
         // 允许 port=0 由系统分配
-        target.set_port(0u16.max(req_port));
-        let bound = spawn_echo_once(target, xor_key).await?;
+        target.set_port(config.req_port);
+        let bound = spawn_echo_once(target, config.xor_key).await?;
         target = bound;
     }
     // IoLocal 主流程：允许 Chaos 注入由上层传入（此处保持无注入）
-    let (tx, rx) = io_local_once(proto, target, seed, log_path, read_max, to_ms, None).await?;
+    let (tx, rx) = io_local_once(proto, target, config.seed, config.log_path, config.read_max, config.to_ms, None).await?;
     Ok((target, tx, rx))
 }
 

@@ -1,6 +1,4 @@
-use anyhow::Result;
 use serde_json::Value;
-use super::registry::{BuilderFn, register};
 
 mod core_adapters;
 pub use core_adapters::register_core_adapters;

@@ -1,13 +1,11 @@
-use crate::admin_debug::{endpoints, http_util::{respond, respond_json_error}};
+use crate::admin_debug::{endpoints, http_util::respond_json_error};
 #[cfg(feature = "auth")]
-use crate::admin_debug::auth::{AuthProvider, AuthConfig, AuthError, from_config};
+use crate::admin_debug::auth::{AuthConfig, from_config};
 use crate::admin_debug::middleware::{
     MiddlewareChain, RequestContext, send_error_response,
     request_id::RequestIdMiddleware,
     auth::AuthMiddleware,
 };
-#[cfg(feature = "rate_limit")]
-use crate::admin_debug::middleware::rate_limit::RateLimitMiddleware;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use std::sync::OnceLock;
@@ -385,45 +383,6 @@ async fn build_tls_acceptor_from_config(tls_conf: &TlsConf) -> std::io::Result<t
     Ok(tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(cfg)))
 }
 
-fn check_auth_with_config(headers: &HashMap<String, String>, path: &str, auth_conf: &AuthConf) -> bool {
-    match auth_conf {
-        AuthConf::Disabled => true,
-        AuthConf::Mtls { .. } => true, // mTLS auth is handled at TLS layer
-        AuthConf::Bearer { token } => {
-            if let Some(auth_header) = headers.get("authorization") {
-                if let Some(provided_token) = auth_header.trim().strip_prefix("Bearer ") {
-                    return provided_token.trim() == token;
-                }
-            }
-            false
-        }
-        AuthConf::Hmac { secret } => {
-            if let Some(auth_header) = headers.get("authorization") {
-                if let Some(hmac_part) = auth_header.trim().strip_prefix("SB-HMAC ") {
-                    return check_hmac_auth_with_secret(hmac_part.trim(), path, secret);
-                }
-            }
-            false
-        }
-        AuthConf::BearerAndHmac { token, secret } => {
-            if let Some(auth_header) = headers.get("authorization") {
-                let auth_header = auth_header.trim();
-                // Try Bearer token first
-                if let Some(provided_token) = auth_header.strip_prefix("Bearer ") {
-                    if provided_token.trim() == token {
-                        return true;
-                    }
-                }
-                // Try HMAC authentication
-                if let Some(hmac_part) = auth_header.strip_prefix("SB-HMAC ") {
-                    return check_hmac_auth_with_secret(hmac_part.trim(), path, secret);
-                }
-            }
-            false
-        }
-    }
-}
-
 /// Extract request ID from headers
 fn extract_request_id(headers: &HashMap<String, String>) -> Option<String> {
     headers.get("x-request-id").cloned()
@@ -491,47 +450,6 @@ async fn respond_auth_error<W: AsyncWrite + Unpin>(
     );
 
     writer.write_all(response.as_bytes()).await
-}
-
-fn check_hmac_auth_with_secret(hmac_auth: &str, path: &str, secret: &str) -> bool {
-    // Parse HMAC auth string: keyId:timestamp:signature
-    let parts: Vec<&str> = hmac_auth.split(':').collect();
-    if parts.len() != 3 {
-        return false;
-    }
-
-    let (_key_id, timestamp_str, provided_signature) = (parts[0], parts[1], parts[2]);
-
-    // Parse timestamp
-    let timestamp = match timestamp_str.parse::<u64>() {
-        Ok(ts) => ts,
-        Err(_) => return false,
-    };
-
-    // Check time window (5 minutes = 300 seconds)
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    if now.abs_diff(timestamp) > 300 {
-        return false; // Outside 5-minute window
-    }
-
-    // Create message to sign: timestamp||path
-    let message = format!("{}{}", timestamp, path);
-
-    // Calculate expected signature using real HMAC-SHA256
-    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
-        Ok(m) => m,
-        Err(_) => return false,
-    };
-    mac.update(message.as_bytes());
-    let expected = mac.finalize().into_bytes();
-    let expected_hex = hex::encode(expected);
-
-    // Constant-time comparison
-    expected_hex.as_bytes().ct_eq(provided_signature.as_bytes()).into()
 }
 
 async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(String, String, HashMap<String, String>)> {

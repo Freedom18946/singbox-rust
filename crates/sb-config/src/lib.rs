@@ -21,6 +21,7 @@ pub mod rule;
 pub mod subscribe;
 pub mod validator;
 pub mod compat;
+pub mod schema_v2;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {

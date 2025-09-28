@@ -16,7 +16,6 @@ use parking_lot::Mutex;
 use serde::Serialize;
 #[cfg(feature = "reqwest")]
 use reqwest::Method;
-use std::fs;
 use std::str::FromStr;
 
 #[derive(ClapArgs, Debug)]
@@ -119,6 +118,7 @@ pub(crate) fn parse_buckets(s: &str) -> Result<Vec<f64>> {
 
 /// testhooks: 根据采样延迟与边界，计算直方图（counts/cdf）
 #[must_use]
+#[allow(dead_code)]
 pub(crate) fn compute_hist(lat_ms: &[u64], buckets: &[f64]) -> Hist {
     let mut counts = vec![0u64; buckets.len()];
     for &lat in lat_ms {
