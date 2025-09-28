@@ -1381,9 +1381,23 @@ pub struct HotReloader {
 
 impl HotReloader {
     pub fn spawn(path: PathBuf, h: RouterHandle) {
-        // TODO: 实现热重载逻辑
-        // 暂存参数用于将来实现
-        let _ = (path, h);
+        // 实现热重载逻辑：创建热重载器实例并在后台运行
+        let reloader = HotReloader {
+            config_path: path.clone(),
+            handle: h,
+            last_ok_checksum: 0,
+            backoff_ms: 0,
+            jitter_ms: 0,
+        };
+
+        // 在后台任务中运行热重载器
+        tokio::spawn(async move {
+            tracing::debug!("Starting router hot reloader task for {:?}", path);
+            reloader.run().await;
+            tracing::warn!("Router hot reloader task ended for {:?}", path);
+        });
+
+        tracing::info!("Router hot reloader started for path: {:?}", path);
     }
 
     async fn run(mut self) {

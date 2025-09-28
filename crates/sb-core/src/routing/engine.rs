@@ -152,16 +152,23 @@ impl<'a> Engine<'a> {
             if let Some(ip) = is_ip {
                 for c in &r.ipcidr {
                     // 简化的CIDR匹配：先检查IP地址前缀
-                    if let Some(prefix_str) = c.split('/').next() {
-                        if ip.to_string() == prefix_str {
+                    // 实现真正的CIDR子网匹配
+                    if let Ok(network) = c.parse::<std::net::IpAddr>() {
+                        // 处理单个IP地址（没有子网掩码）
+                        if ip == network {
                             m = true;
                             break;
                         }
-                        // TODO: 实现真正的CIDR子网匹配，而不是简单的前缀字符串匹配
-                        // 这里应该使用 ipnet crate 进行正确的网络匹配
-                        if ip.to_string().starts_with(prefix_str) {
-                            m = true;
-                            break;
+                    } else if let Some((network_str, prefix_len_str)) = c.split_once('/') {
+                        // 处理CIDR格式（IP/prefix_length）
+                        if let (Ok(network_ip), Ok(prefix_len)) = (
+                            network_str.parse::<std::net::IpAddr>(),
+                            prefix_len_str.parse::<u8>()
+                        ) {
+                            if Self::ip_in_cidr(ip, network_ip, prefix_len) {
+                                m = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -331,6 +338,44 @@ impl<'a> Engine<'a> {
             matched_rule: "00000000".into(),
             chain: vec![],
             trace: None,
+        }
+    }
+
+    /// 检查IP地址是否在指定的CIDR子网内
+    fn ip_in_cidr(ip: std::net::IpAddr, network_ip: std::net::IpAddr, prefix_len: u8) -> bool {
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+        match (ip, network_ip) {
+            (IpAddr::V4(ip4), IpAddr::V4(net4)) => {
+                if prefix_len > 32 {
+                    return false;
+                }
+                if prefix_len == 0 {
+                    return true; // 0.0.0.0/0 matches all IPv4
+                }
+
+                let ip_bits = u32::from(ip4);
+                let net_bits = u32::from(net4);
+                let mask = !((1u32 << (32 - prefix_len)) - 1);
+
+                (ip_bits & mask) == (net_bits & mask)
+            }
+            (IpAddr::V6(ip6), IpAddr::V6(net6)) => {
+                if prefix_len > 128 {
+                    return false;
+                }
+                if prefix_len == 0 {
+                    return true; // ::/0 matches all IPv6
+                }
+
+                let ip_bits = u128::from(ip6);
+                let net_bits = u128::from(net6);
+                let mask = !((1u128 << (128 - prefix_len)) - 1);
+
+                (ip_bits & mask) == (net_bits & mask)
+            }
+            // IPv4与IPv6之间不匹配
+            _ => false,
         }
     }
 }

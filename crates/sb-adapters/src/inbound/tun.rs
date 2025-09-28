@@ -5,12 +5,14 @@
 
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tracing::{debug, info, trace, warn};
 use serde::Deserialize;
 use serde_json::Value;
 
-use sb_core::router::{Router, RouterHandle};
+use sb_core::router::{Router, RouterHandle, RouteCtx, Transport};
+use sb_core::outbound::RouteTarget;
 // （如无使用请保持这两个 import 移除，避免未使用警告）
 // use std::time::Duration;
 // use tokio::time::timeout;
@@ -108,7 +110,7 @@ impl Default for TunInboundConfig {
 
 /// Phase 1 skeleton: holds router handle (unused for now) and config
 pub struct TunInbound {
-    #[allow(dead_code)] // Phase 1 先不使用，Phase 2 会进入路由选择
+    /// Router handle for routing decisions
     router: Arc<RouterHandle>,
     cfg: TunInboundConfig,
     /// test-only in-memory feeder (Phase 1, no real device yet)
@@ -219,13 +221,27 @@ impl TunInbound {
                                         deadline: Some(now + timeout),
                                     };
 
-                                    // --- 路由选择 (placeholder)
-                                    let _selected = Option::<String>::None; // TODO: implement router.select(&meta)
+                                    // --- 路由选择
+                                    let route_ctx = RouteCtx {
+                                        host: Some(&format!("{}:{}", ip, port)),
+                                        ip: Some(ip.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
+                                        port: Some(port),
+                                        transport: match pkt.proto {
+                                            sys_macos::L4::Tcp => Transport::Tcp,
+                                            sys_macos::L4::Udp => Transport::Udp,
+                                            _ => Transport::Tcp, // fallback
+                                        },
+                                    };
+                                    let selected_target = self.router.select_ctx_and_record(route_ctx);
+                                    let selected = match selected_target {
+                                        RouteTarget::Named(name) => Some(name),
+                                        RouteTarget::Kind(kind) => Some(format!("{:?}", kind)),
+                                    };
 
                                     if self.cfg.dry_run {
                                         debug!(
-                                            "tun parsed {:?} -> {}:{} | select only | inbound={} user={:?} timeout={}ms",
-                                            pkt.proto, ip, port, self.cfg.name, self.cfg.user_tag, self.cfg.timeout_ms
+                                            "tun parsed {:?} -> {}:{} | selected={:?} | inbound={} user={:?} timeout={}ms",
+                                            pkt.proto, ip, port, selected, self.cfg.name, self.cfg.user_tag, self.cfg.timeout_ms
                                         );
                                     } else {
                                         // 仅对 TCP 做"探测拨号后立即关闭"；UDP 先跳过到 2.4
@@ -246,16 +262,37 @@ impl TunInbound {
                                                 sniff_host: None,
                                                 ..Default::default()
                                             };
-                                            let _selected = Option::<String>::None; // TODO: implement router.select(&meta)
+                                            // 重用之前的路由选择结果
+                                            let probe_selected = selected.clone();
                                             // 避免把 tokio::time::timeout() 遮蔽：本地变量不要叫 `timeout`
                                             let dial_timeout =
                                                 Duration::from_millis(self.cfg.timeout_ms);
-                                            // TODO: implement proper router.select and outbound.connect
-                                            // match tokio::time::timeout(
-                                            //     dial_timeout,
-                                            //     selected.connect(dst.clone()),
-                                            // )
-                                            match Ok(Ok(())) as Result<Result<(), std::io::Error>, tokio::time::error::Elapsed>
+                                            // 实现探测性连接：基于路由选择的目标进行实际连接测试
+                                            let connection_result = match &selected_target {
+                                                RouteTarget::Named(outbound_name) => {
+                                                    debug!("TUN: Probing connection to {}:{} via outbound '{}'", ip, port, outbound_name);
+                                                    // 当前阶段：使用direct连接进行探测
+                                                    // 实际实现中应该通过outbound管理器获取具体的连接器
+                                                    Self::probe_direct_connection(&ip, port, dial_timeout).await
+                                                }
+                                                RouteTarget::Kind(kind) => {
+                                                    debug!("TUN: Probing connection to {}:{} via {:?}", ip, port, kind);
+                                                    match kind {
+                                                        sb_core::outbound::OutboundKind::Direct => {
+                                                            Self::probe_direct_connection(&ip, port, dial_timeout).await
+                                                        }
+                                                        sb_core::outbound::OutboundKind::Block => {
+                                                            Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "blocked by routing rule"))
+                                                        }
+                                                        _ => {
+                                                            warn!("TUN: Outbound kind {:?} not yet supported for probing", kind);
+                                                            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "outbound not supported"))
+                                                        }
+                                                    }
+                                                }
+                                            };
+
+                                            match tokio::time::timeout(dial_timeout, async { connection_result }).await
                                             {
                                                 Ok(Ok(_s)) => {
                                                     // 2.3e: 计数
@@ -323,6 +360,34 @@ impl TunInbound {
         let cfg: TunInboundConfig = serde_json::from_value(v.clone())
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(Self::new(cfg, router))
+    }
+
+    /// 执行直接连接探测，用于验证目标可达性
+    async fn probe_direct_connection(ip: &str, port: u16, timeout: std::time::Duration) -> Result<(), std::io::Error> {
+        use std::time::Duration;
+        use tokio::net::TcpStream;
+
+        let target_addr = format!("{}:{}", ip, port);
+
+        match tokio::time::timeout(timeout, TcpStream::connect(&target_addr)).await {
+            Ok(Ok(stream)) => {
+                debug!("TUN: Direct connection probe successful to {}", target_addr);
+                // 立即关闭连接，这只是一个可达性测试
+                drop(stream);
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                debug!("TUN: Direct connection probe failed to {}: {}", target_addr, e);
+                Err(e)
+            }
+            Err(_timeout_err) => {
+                debug!("TUN: Direct connection probe timeout to {}", target_addr);
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("Connection timeout to {}", target_addr)
+                ))
+            }
+        }
     }
 }
 
