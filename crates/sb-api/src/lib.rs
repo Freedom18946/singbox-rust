@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 pub mod error;
+pub mod managers;
 pub mod monitoring;
 pub mod types;
 

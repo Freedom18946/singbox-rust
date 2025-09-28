@@ -114,7 +114,7 @@ pub struct SelectProxyRequest {
 }
 
 /// Traffic statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TrafficStats {
     /// Total bytes uploaded
     pub up: u64,
@@ -128,6 +128,15 @@ pub struct TrafficStats {
     pub down_speed: u64,
     /// Timestamp when these stats were recorded
     pub timestamp: u64,
+}
+
+impl TrafficStats {
+    /// Add traffic data to current statistics
+    pub fn add_traffic(&self, upload: u64, download: u64) {
+        // Note: In a real implementation, this would need proper atomic operations
+        // For now, this is a placeholder for the interface
+        log::trace!("Traffic update: +{} up, +{} down", upload, download);
+    }
 }
 
 /// Log entry

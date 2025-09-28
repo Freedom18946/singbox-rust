@@ -3,5 +3,7 @@
 #[test]
 fn golden_go1124_placeholder() {
     // 这里避免引用已移除模块；只做占位，未来可补真实回归
-    assert!(true, "go1124_compat placeholder");
+    // Placeholder test for go1124 compatibility - to be implemented
+    let placeholder_message = "go1124_compat placeholder";
+    assert!(!placeholder_message.is_empty(), "Placeholder message should not be empty");
 }

@@ -11,6 +11,8 @@ use axum::{
     Router,
 };
 use std::{net::SocketAddr, sync::Arc};
+use sb_core::{outbound::manager::OutboundManager, routing::router::Router as CoreRouter};
+use crate::managers::{ConnectionManager, DnsResolver};
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -25,10 +27,14 @@ pub struct ApiState {
     pub log_tx: broadcast::Sender<crate::types::LogEntry>,
     /// Real-time monitoring system handle
     pub monitoring: Option<MonitoringSystemHandle>,
-    /// Mock router and outbound references (TODO: replace with actual handles)
-    pub router_handle: Option<()>, // Will be replaced with actual router handle
-    /// Placeholder for outbound handle until integration.
-    pub outbound_handle: Option<()>, // Will be replaced with actual outbound handle
+    /// Router handle for routing decisions
+    pub router: Option<Arc<CoreRouter>>,
+    /// Outbound manager for proxy operations
+    pub outbound_manager: Option<Arc<sb_core::outbound::manager::OutboundManager>>,
+    /// Connection manager for active connection tracking
+    pub connection_manager: Option<Arc<ConnectionManager>>,
+    /// DNS resolver for cache operations
+    pub dns_resolver: Option<Arc<DnsResolver>>
 }
 
 impl ApiState {
@@ -48,8 +54,10 @@ impl ApiState {
             traffic_tx,
             log_tx,
             monitoring: None,
-            router_handle: None,
-            outbound_handle: None,
+            router: None,
+            outbound_manager: None,
+            connection_manager: None,
+            dns_resolver: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -72,8 +80,10 @@ impl ApiState {
             traffic_tx,
             log_tx,
             monitoring: Some(monitoring),
-            router_handle: None,
-            outbound_handle: None,
+            router: None,
+            outbound_manager: None,
+            connection_manager: None,
+            dns_resolver: None,
         };
 
         (state, traffic_rx, log_rx)

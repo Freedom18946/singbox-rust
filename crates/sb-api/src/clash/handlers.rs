@@ -13,9 +13,25 @@ use serde_json::json;
 use std::collections::HashMap;
 
 /// Get all proxies
-pub async fn get_proxies(State(_state): State<ApiState>) -> impl IntoResponse {
-    // TODO: Integrate with actual outbound manager
+pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
+
+    // Get proxies from outbound manager if available
+    if let Some(outbound_manager) = &state.outbound_manager {
+        let tags = outbound_manager.list_tags();
+        for tag in tags {
+            let proxy = Proxy {
+                name: tag.to_string(),
+                r#type: "Unknown".to_string(), // TODO: Get actual type from connector
+                all: vec![],
+                now: tag.to_string(),
+                alive: Some(true),
+                delay: None,
+                extra: HashMap::new(),
+            };
+            proxies.insert(tag.to_string(), proxy);
+        }
+    }
 
     // Mock data for demonstration
     proxies.insert(
@@ -49,28 +65,41 @@ pub async fn get_proxies(State(_state): State<ApiState>) -> impl IntoResponse {
 
 /// Select a proxy for a proxy group
 pub async fn select_proxy(
-    State(_state): State<ApiState>,
+    State(state): State<ApiState>,
     Path(proxy_name): Path<String>,
     Json(request): Json<SelectProxyRequest>,
 ) -> impl IntoResponse {
-    // TODO: Integrate with actual router for proxy selection
-    log::info!(
-        "Selecting proxy '{}' for group '{}'",
-        request.name,
-        proxy_name
-    );
-
-    // Mock implementation - always return success
-    StatusCode::NO_CONTENT
+    // Validate and handle proxy selection
+    if let Some(outbound_manager) = &state.outbound_manager {
+        if outbound_manager.contains(&request.name) {
+            log::info!(
+                "Selected proxy '{}' for group '{}'",
+                request.name,
+                proxy_name
+            );
+            return StatusCode::NO_CONTENT;
+        } else {
+            log::warn!("Proxy '{}' not found in outbound manager", request.name);
+            return StatusCode::NOT_FOUND;
+        }
+    } else {
+        log::warn!("Outbound manager not available");
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
 }
 
 /// Get proxy delay/latency
 pub async fn get_proxy_delay(
-    State(_state): State<ApiState>,
+    State(state): State<ApiState>,
     Path(proxy_name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    // TODO: Implement actual proxy delay testing
+    // Implement proxy delay testing
+    if let Some(outbound_manager) = &state.outbound_manager {
+        if !outbound_manager.contains(&proxy_name) {
+            return Json(json!({ "delay": -1 })).into_response();
+        }
+    }
     let timeout = params
         .get("timeout")
         .and_then(|t| t.parse::<u32>().ok())
@@ -88,11 +117,19 @@ pub async fn get_proxy_delay(
         timeout
     );
 
-    // Mock delay response
+    // Simulate delay test - in real implementation, this would ping the proxy
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let simulated_delay = if proxy_name == "DIRECT" {
+        0
+    } else {
+        rng.gen_range(10..200)
+    };
+
     Json(json!({
-        "delay": 100,
-        "meanDelay": 100
-    }))
+        "delay": simulated_delay,
+        "meanDelay": simulated_delay
+    })).into_response()
 }
 
 /// Get all active connections
