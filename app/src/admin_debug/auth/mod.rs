@@ -8,13 +8,13 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-pub mod jwt;
 pub mod apikey;
+pub mod jwt;
 pub mod none;
 
-use thiserror::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use thiserror::Error;
 
 /// Unified authentication provider trait
 pub trait AuthProvider: Send + Sync {
@@ -86,22 +86,30 @@ pub enum AuthError {
 impl AuthError {
     /// Create an invalid credentials error
     pub fn invalid(message: impl Into<String>) -> Self {
-        Self::InvalidCredentials { message: message.into() }
+        Self::InvalidCredentials {
+            message: message.into(),
+        }
     }
 
     /// Create a missing credentials error
     pub fn missing(message: impl Into<String>) -> Self {
-        Self::MissingCredentials { message: message.into() }
+        Self::MissingCredentials {
+            message: message.into(),
+        }
     }
 
     /// Create an expired credentials error
     pub fn expired(message: impl Into<String>) -> Self {
-        Self::ExpiredCredentials { message: message.into() }
+        Self::ExpiredCredentials {
+            message: message.into(),
+        }
     }
 
     /// Create an internal error
     pub fn internal(message: impl Into<String>) -> Self {
-        Self::Internal { message: message.into() }
+        Self::Internal {
+            message: message.into(),
+        }
     }
 
     /// Get the error message
@@ -117,10 +125,18 @@ impl AuthError {
     /// Get a hint for the error
     pub fn hint(&self) -> Option<String> {
         match self {
-            Self::MissingCredentials { .. } => Some("Include Authorization header with valid credentials".to_string()),
-            Self::InvalidCredentials { .. } => Some("Check your authentication credentials and try again".to_string()),
-            Self::ExpiredCredentials { .. } => Some("Refresh your authentication token and try again".to_string()),
-            Self::Internal { .. } => Some("Contact system administrator if this persists".to_string()),
+            Self::MissingCredentials { .. } => {
+                Some("Include Authorization header with valid credentials".to_string())
+            }
+            Self::InvalidCredentials { .. } => {
+                Some("Check your authentication credentials and try again".to_string())
+            }
+            Self::ExpiredCredentials { .. } => {
+                Some("Refresh your authentication token and try again".to_string())
+            }
+            Self::Internal { .. } => {
+                Some("Contact system administrator if this persists".to_string())
+            }
         }
     }
 }
@@ -149,7 +165,11 @@ impl From<AuthError> for sb_admin_contract::ErrorBody {
 pub fn from_config(config: &AuthConfig) -> Result<Box<dyn AuthProvider>, AuthError> {
     match config {
         AuthConfig::None => Ok(Box::new(none::NoneProvider::new())),
-        AuthConfig::Jwt { secret, algorithm, expiry_seconds: _ } => {
+        AuthConfig::Jwt {
+            secret,
+            algorithm,
+            expiry_seconds: _,
+        } => {
             let config = jwt::JwtConfig {
                 jwks_file: None,
                 jwks_url: None,
@@ -160,9 +180,10 @@ pub fn from_config(config: &AuthConfig) -> Result<Box<dyn AuthProvider>, AuthErr
             };
             Ok(Box::new(jwt::JwtProvider::new(config)?))
         }
-        AuthConfig::ApiKey { key, key_id } => {
-            Ok(Box::new(apikey::ApiKeyProvider::new(key.clone(), key_id.clone())))
-        }
+        AuthConfig::ApiKey { key, key_id } => Ok(Box::new(apikey::ApiKeyProvider::new(
+            key.clone(),
+            key_id.clone(),
+        ))),
     }
 }
 
@@ -200,7 +221,12 @@ mod tests {
             expiry_seconds: default_jwt_expiry(),
         };
 
-        if let AuthConfig::Jwt { algorithm, expiry_seconds, .. } = config {
+        if let AuthConfig::Jwt {
+            algorithm,
+            expiry_seconds,
+            ..
+        } = config
+        {
             assert_eq!(algorithm, "HS256");
             assert_eq!(expiry_seconds, 3600);
         } else {

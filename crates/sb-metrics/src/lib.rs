@@ -11,7 +11,13 @@ pub mod registry;
 pub mod server;
 pub mod socks;
 pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线
-use std::{convert::Infallible, net::SocketAddr, sync::atomic::{AtomicU64, Ordering}, sync::LazyLock, time::{Duration, Instant}};
+use std::{
+    convert::Infallible,
+    net::SocketAddr,
+    sync::atomic::{AtomicU64, Ordering},
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 
 use hyper::server::conn::Http;
 use hyper::service::service_fn;
@@ -77,7 +83,7 @@ pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
 // ===================== Router Metrics =====================
 mod router {
-    use super::{LazyLock, IntCounterVec, REGISTRY};
+    use super::{IntCounterVec, LazyLock, REGISTRY};
     /// 路由命中计数：按规则类别与出站类型维度统计
     /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
@@ -108,7 +114,7 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 
 // ===================== Outbound Metrics =====================
 mod outbound {
-    use super::{LazyLock, IntCounterVec, Opts, REGISTRY, HistogramVec, HistogramOpts};
+    use super::{HistogramOpts, HistogramVec, IntCounterVec, LazyLock, Opts, REGISTRY};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
     pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -207,7 +213,7 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 mod adapter {
-    use super::{LazyLock, IntCounterVec, REGISTRY, HistogramVec, HistogramOpts};
+    use super::{HistogramOpts, HistogramVec, IntCounterVec, LazyLock, REGISTRY};
 
     /// Adapter dial total counter - tracks all dial attempts with results
     /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
@@ -247,10 +253,7 @@ mod adapter {
     /// labels: adapter = {"socks5", "http"}
     pub static RETRIES_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let vec = IntCounterVec::new(
-            prometheus::Opts::new(
-                "adapter_retries_total",
-                "Adapter retry attempts total",
-            ),
+            prometheus::Opts::new("adapter_retries_total", "Adapter retry attempts total"),
             &["adapter"],
         )
         .unwrap_or_else(|_| {
@@ -278,9 +281,7 @@ pub fn observe_adapter_dial_latency_ms(adapter: &str, latency_ms: f64) {
 
 /// Record adapter retry attempt
 pub fn inc_adapter_retries_total(adapter: &str) {
-    adapter::RETRIES_TOTAL
-        .with_label_values(&[adapter])
-        .inc();
+    adapter::RETRIES_TOTAL.with_label_values(&[adapter]).inc();
 }
 
 /// Helper function to classify adapter errors into metric result categories
@@ -304,7 +305,11 @@ pub fn start_adapter_timer() -> Instant {
 }
 
 /// Helper to record the latency and result for an adapter operation
-pub fn record_adapter_dial(adapter: &str, start_time: Instant, result: Result<(), &dyn core::fmt::Display>) {
+pub fn record_adapter_dial(
+    adapter: &str,
+    start_time: Instant,
+    result: Result<(), &dyn core::fmt::Display>,
+) {
     #[allow(clippy::cast_precision_loss)]
     let latency_ms = start_time.elapsed().as_millis() as f64;
     observe_adapter_dial_latency_ms(adapter, latency_ms);
@@ -318,7 +323,7 @@ pub fn record_adapter_dial(adapter: &str, start_time: Instant, result: Result<()
 
 // ===================== SOCKS Inbound Metrics =====================
 mod socks_in {
-    use super::{LazyLock, IntCounter, REGISTRY, IntCounterVec, Opts, IntGauge};
+    use super::{IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, REGISTRY};
 
     /// SOCKS TCP 连接总数（握手成功即计数）
     pub static TCP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -396,8 +401,10 @@ async fn metrics_http(req: Request<Body>) -> Result<Response<Body>, Infallible> 
             let mut buf = Vec::new();
             let encoder = TextEncoder::new();
             if encoder.encode(&metric_families, &mut buf).is_err() {
-                return Ok(Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("encoding error")).unwrap_or_default());
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("encoding error"))
+                    .unwrap_or_default());
             }
             Ok(Response::builder()
                 .status(StatusCode::OK)

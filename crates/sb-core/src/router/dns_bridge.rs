@@ -131,6 +131,7 @@ impl Resolver for EnhancedDnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::IpAddr;
     use std::time::Duration;
 
     struct MockResolver {
@@ -157,6 +158,8 @@ mod tests {
             response: Ok(DnsAnswer {
                 ips: vec!["1.2.3.4".parse().unwrap()],
                 ttl: Duration::from_secs(300),
+                source: crate::dns::cache::Source::System,
+                rcode: crate::dns::cache::Rcode::NoError,
             }),
         });
 
@@ -178,6 +181,8 @@ mod tests {
             response: Ok(DnsAnswer {
                 ips: vec![],
                 ttl: Duration::from_secs(300),
+                source: crate::dns::cache::Source::System,
+                rcode: crate::dns::cache::Rcode::NoError,
             }),
         });
 

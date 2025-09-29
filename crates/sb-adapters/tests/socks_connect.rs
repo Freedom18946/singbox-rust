@@ -55,11 +55,14 @@ async fn test_socks5_no_auth_connect() {
         assert_eq!(port, 80);
 
         // Respond: success
-        stream.write_all(&[
-            0x05, 0x00, 0x00, 0x01, // VER, REP=success, RSV, ATYP=IPv4
-            127, 0, 0, 1,            // Bound IP
-            0x00, 0x50               // Bound port (80)
-        ]).await.unwrap();
+        stream
+            .write_all(&[
+                0x05, 0x00, 0x00, 0x01, // VER, REP=success, RSV, ATYP=IPv4
+                127, 0, 0, 1, // Bound IP
+                0x00, 0x50, // Bound port (80)
+            ])
+            .await
+            .unwrap();
 
         // Keep connection alive for the test
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -74,7 +77,11 @@ async fn test_socks5_no_auth_connect() {
     let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
 
     let result = connector.dial(target, opts).await;
-    assert!(result.is_ok(), "SOCKS5 connection should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "SOCKS5 connection should succeed: {:?}",
+        result.err()
+    );
 
     let _stream = result.unwrap();
     // Stream should be usable (this is verified by the mock server protocol exchange)
@@ -133,11 +140,14 @@ async fn test_socks5_with_auth_connect() {
         assert!(n > 0); // Should have read the rest of the CONNECT request
 
         // Respond: success
-        stream.write_all(&[
-            0x05, 0x00, 0x00, 0x01, // VER, REP=success, RSV, ATYP=IPv4
-            127, 0, 0, 1,            // Bound IP
-            0x00, 0x50               // Bound port (80)
-        ]).await.unwrap();
+        stream
+            .write_all(&[
+                0x05, 0x00, 0x00, 0x01, // VER, REP=success, RSV, ATYP=IPv4
+                127, 0, 0, 1, // Bound IP
+                0x00, 0x50, // Bound port (80)
+            ])
+            .await
+            .unwrap();
 
         tokio::time::sleep(Duration::from_millis(100)).await;
     });
@@ -150,7 +160,11 @@ async fn test_socks5_with_auth_connect() {
     let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
 
     let result = connector.dial(target, opts).await;
-    assert!(result.is_ok(), "SOCKS5 auth connection should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "SOCKS5 auth connection should succeed: {:?}",
+        result.err()
+    );
 
     let _stream = result.unwrap();
 }
@@ -174,11 +188,14 @@ async fn test_socks5_connect_failure() {
         let _n = stream.read(&mut buf).await.unwrap();
 
         // Respond with connection refused
-        stream.write_all(&[
-            0x05, 0x05, 0x00, 0x01, // VER, REP=connection refused, RSV, ATYP=IPv4
-            0, 0, 0, 0,              // Bound IP
-            0x00, 0x00               // Bound port
-        ]).await.unwrap();
+        stream
+            .write_all(&[
+                0x05, 0x05, 0x00, 0x01, // VER, REP=connection refused, RSV, ATYP=IPv4
+                0, 0, 0, 0, // Bound IP
+                0x00, 0x00, // Bound port
+            ])
+            .await
+            .unwrap();
     });
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -191,7 +208,11 @@ async fn test_socks5_connect_failure() {
     assert!(result.is_err(), "SOCKS5 connection should fail");
 
     if let Err(AdapterError::Protocol(msg)) = result {
-        assert!(msg.contains("Connection refused"), "Should indicate connection refused: {}", msg);
+        assert!(
+            msg.contains("Connection refused"),
+            "Should indicate connection refused: {}",
+            msg
+        );
     } else {
         panic!("Expected Protocol error with connection refused message");
     }

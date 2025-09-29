@@ -7,7 +7,7 @@
 //! - Enable/disable switch behavior
 
 use sb_transport::dialer::{Dialer, RetryableTcpDialer};
-use sb_transport::retry::{RetryPolicy, retry_conditions};
+use sb_transport::retry::{retry_conditions, RetryPolicy};
 use std::env;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -140,7 +140,10 @@ async fn test_retry_conditions() {
     let connection_refused = DialError::Io(Error::new(ErrorKind::ConnectionRefused, "refused"));
     assert!(retry_conditions::is_retriable_error(&connection_refused));
 
-    let dns_error = DialError::Io(Error::new(ErrorKind::Other, "failed to lookup address information"));
+    let dns_error = DialError::Io(Error::new(
+        ErrorKind::Other,
+        "failed to lookup address information",
+    ));
     assert!(retry_conditions::is_retriable_error(&dns_error));
 
     let tls_error = DialError::Tls("certificate error".to_string());
@@ -178,9 +181,7 @@ async fn test_jitter_distribution_basic() {
     };
 
     // Collect multiple delay calculations
-    let delays: Vec<Duration> = (0..50)
-        .map(|_| policy.calculate_delay(1))
-        .collect();
+    let delays: Vec<Duration> = (0..50).map(|_| policy.calculate_delay(1)).collect();
 
     // All delays should be within [50ms, 150ms] range
     for delay in &delays {
@@ -197,7 +198,11 @@ async fn test_jitter_distribution_basic() {
     let range = max_delay.saturating_sub(*min_delay);
 
     // Expect at least 20ms of variation in a 100ms range with 50% jitter
-    assert!(range >= Duration::from_millis(20), "Insufficient jitter variation: {:?}", range);
+    assert!(
+        range >= Duration::from_millis(20),
+        "Insufficient jitter variation: {:?}",
+        range
+    );
 }
 
 #[tokio::test]

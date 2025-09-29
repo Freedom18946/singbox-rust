@@ -7,7 +7,6 @@
 #[cfg(feature = "router")]
 pub use sb_core::router::*;
 
-
 // Re-export specific routing modules at top level for easier access
 #[cfg(feature = "router")]
 pub mod explain {
@@ -211,8 +210,7 @@ pub fn router_captured_rules() -> Option<Vec<String>> {
 
 #[cfg(not(feature = "router"))]
 #[allow(dead_code)] // Scaffolding placeholder
-pub fn get_index() {
-}
+pub fn get_index() {}
 
 #[cfg(not(feature = "router"))]
 #[allow(dead_code)] // Scaffolding placeholder

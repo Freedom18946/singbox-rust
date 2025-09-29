@@ -1,4 +1,3 @@
-#![cfg(feature = "explain")]
 #![cfg_attr(
     any(test),
     allow(dead_code, unused_imports, unused_variables, unused_must_use)

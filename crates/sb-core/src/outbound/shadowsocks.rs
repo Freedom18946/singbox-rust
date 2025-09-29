@@ -340,7 +340,9 @@ fn evp_bytes_to_key(password: &[u8], key_len: usize) -> Vec<u8> {
     let mut prev = Vec::new();
     while key.len() < key_len {
         let mut hasher = Sha256::new();
-        if !prev.is_empty() { hasher.update(&prev); }
+        if !prev.is_empty() {
+            hasher.update(&prev);
+        }
         hasher.update(password);
         prev = hasher.finalize().to_vec();
         key.extend_from_slice(&prev);

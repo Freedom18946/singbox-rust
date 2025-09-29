@@ -1,5 +1,5 @@
-use tokio::io::AsyncWriteExt;
 use serde::Serialize;
+use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize)]
 struct Health {
@@ -26,14 +26,14 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
     let pid = std::process::id();
     let uptime_secs = proc_uptime();
     // 在未启用 router/sbcore_rules_tool 时提供空集，避免特性未开启导致的编译错误
-    #[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
     let kinds = crate::analyze::registry::supported_kinds();
-    #[cfg(not(any(feature="router", feature="sbcore_rules_tool")))]
+    #[cfg(not(any(feature = "router", feature = "sbcore_rules_tool")))]
     let kinds: Vec<&'static str> = vec![];
 
-    #[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+    #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
     let async_kinds = crate::analyze::registry::supported_async_kinds();
-    #[cfg(not(any(feature="router", feature="sbcore_rules_tool")))]
+    #[cfg(not(any(feature = "router", feature = "sbcore_rules_tool")))]
     let async_kinds: Vec<&'static str> = vec![];
     let auth_mode = crate::admin_debug::http_server::get_auth_mode();
 

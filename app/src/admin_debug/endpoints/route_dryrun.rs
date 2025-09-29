@@ -8,7 +8,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 
     #[cfg(not(feature = "route_sandbox"))]
     {
-        return respond_json_error(sock, 501, "route_sandbox feature not enabled", Some("enable route_sandbox feature")).await;
+        return respond_json_error(
+            sock,
+            501,
+            "route_sandbox feature not enabled",
+            Some("enable route_sandbox feature"),
+        )
+        .await;
     }
 
     #[cfg(feature = "route_sandbox")]
@@ -27,19 +33,28 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             .unwrap_or(false);
 
         if connect && !allow_net {
-            return respond_json_error(sock, 403, "network connection not allowed", Some("set SB_ADMIN_ALLOW_NET=1 to enable networking")).await;
+            return respond_json_error(
+                sock,
+                403,
+                "network connection not allowed",
+                Some("set SB_ADMIN_ALLOW_NET=1 to enable networking"),
+            )
+            .await;
         }
 
         let target = params.get("target").cloned().unwrap_or_default();
         if target.is_empty() {
-            return respond_json_error(sock, 400, "missing target parameter", Some("provide target in ?target parameter")).await;
+            return respond_json_error(
+                sock,
+                400,
+                "missing target parameter",
+                Some("provide target in ?target parameter"),
+            )
+            .await;
         }
 
         // Enhanced implementation for testing routing decisions
-        let protocol = params
-            .get("protocol")
-            .map(|s| s.as_str())
-            .unwrap_or("auto");
+        let protocol = params.get("protocol").map(|s| s.as_str()).unwrap_or("auto");
 
         let port = params
             .get("port")
@@ -54,7 +69,12 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 }
 
 /// Production-level route analysis implementation
-async fn perform_route_analysis(target: &str, port: u16, protocol: &str, test_connect: bool) -> String {
+async fn perform_route_analysis(
+    target: &str,
+    port: u16,
+    protocol: &str,
+    test_connect: bool,
+) -> String {
     use std::net::ToSocketAddrs;
     use std::time::{Duration, Instant};
 
@@ -121,7 +141,10 @@ async fn perform_route_analysis(target: &str, port: u16, protocol: &str, test_co
     analysis["analysis_time_ms"] = start_time.elapsed().as_millis();
 
     serde_json::to_string_pretty(&analysis).unwrap_or_else(|_| {
-        format!(r#"{{"error":"failed to serialize analysis","target":"{}"}}"#, target)
+        format!(
+            r#"{{"error":"failed to serialize analysis","target":"{}"}}"#,
+            target
+        )
     })
 }
 
@@ -142,7 +165,10 @@ fn analyze_route_decision(target: &str, port: u16, protocol: &str) -> serde_json
             decision = "direct";
             reason = "china_domain";
             rule_matched = true;
-        } else if target.contains("google") || target.contains("youtube") || target.contains("twitter") {
+        } else if target.contains("google")
+            || target.contains("youtube")
+            || target.contains("twitter")
+        {
             decision = "proxy";
             reason = "blocked_domain";
             rule_matched = true;
@@ -165,13 +191,18 @@ fn analyze_route_decision(target: &str, port: u16, protocol: &str) -> serde_json
 
 /// Test actual connectivity to target
 async fn test_connectivity(target: &str, port: u16, _protocol: &str) -> serde_json::Value {
-    use tokio::time::timeout;
     use tokio::net::TcpStream;
+    use tokio::time::timeout;
 
     let start_time = Instant::now();
     let connect_timeout = Duration::from_secs(5);
 
-    match timeout(connect_timeout, TcpStream::connect(format!("{}:{}", target, port))).await {
+    match timeout(
+        connect_timeout,
+        TcpStream::connect(format!("{}:{}", target, port)),
+    )
+    .await
+    {
         Ok(Ok(_stream)) => {
             serde_json::json!({
                 "status": "success",
@@ -261,7 +292,7 @@ fn categorize_port(port: u16) -> &'static str {
         1080 => "socks",
         3128 | 8118 => "proxy",
         _ if port < 1024 => "system",
-        _ => "user"
+        _ => "user",
     }
 }
 
@@ -299,6 +330,6 @@ fn get_recommended_ports(protocol: &str) -> Vec<u16> {
         "ss2022" => vec![8388, 1080, 443],
         "socks5" => vec![1080],
         "ssh" => vec![22],
-        _ => vec![]
+        _ => vec![],
     }
 }

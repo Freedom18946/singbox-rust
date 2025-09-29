@@ -90,7 +90,9 @@ pub fn init() -> anyhow::Result<()> {
 }
 
 /// Get a reference to the global GeoIP service
-pub fn service() -> Option<&'static GeoIpService> { GEOIP_SERVICE.get() }
+pub fn service() -> Option<&'static GeoIpService> {
+    GEOIP_SERVICE.get()
+}
 
 /// Lookup with metrics
 pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {

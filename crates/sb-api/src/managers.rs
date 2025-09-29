@@ -376,7 +376,11 @@ impl ProviderManager {
     }
 
     /// Health check provider
-    pub async fn health_check_provider(&self, name: &str, is_proxy_provider: bool) -> ApiResult<bool> {
+    pub async fn health_check_provider(
+        &self,
+        name: &str,
+        is_proxy_provider: bool,
+    ) -> ApiResult<bool> {
         if is_proxy_provider {
             let mut providers = self.proxy_providers.write().await;
             if let Some(provider) = providers.get_mut(name) {

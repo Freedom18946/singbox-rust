@@ -1,4 +1,3 @@
-#![cfg(feature = "selector_p3")]
 #![cfg_attr(
     any(test),
     allow(dead_code, unused_imports, unused_variables, unused_must_use)

@@ -4,9 +4,9 @@
 //! These tests create mock HTTP CONNECT proxy servers to verify that the connector
 //! can successfully establish connections using the HTTP CONNECT method.
 
-use sb_adapters::outbound::prelude::*;
-use sb_adapters::outbound::http::HttpProxyConnector;
 use base64::Engine;
+use sb_adapters::outbound::http::HttpProxyConnector;
+use sb_adapters::outbound::prelude::*;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -55,7 +55,11 @@ async fn test_http_connect_no_auth() {
     let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
 
     let result = connector.dial(target, opts).await;
-    assert!(result.is_ok(), "HTTP CONNECT should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "HTTP CONNECT should succeed: {:?}",
+        result.err()
+    );
 
     let _stream = result.unwrap();
 }
@@ -86,7 +90,10 @@ async fn test_http_connect_with_auth() {
             if header.starts_with("Proxy-Authorization: Basic ") {
                 found_auth = true;
                 // Verify the base64 encoded credentials
-                let auth_part = header.trim().strip_prefix("Proxy-Authorization: Basic ").unwrap();
+                let auth_part = header
+                    .trim()
+                    .strip_prefix("Proxy-Authorization: Basic ")
+                    .unwrap();
                 // testuser:testpass in base64
                 let expected_auth = base64::prelude::BASE64_STANDARD.encode(b"testuser:testpass");
                 assert_eq!(auth_part, expected_auth);
@@ -110,7 +117,11 @@ async fn test_http_connect_with_auth() {
     let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
 
     let result = connector.dial(target, opts).await;
-    assert!(result.is_ok(), "HTTP CONNECT with auth should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "HTTP CONNECT with auth should succeed: {:?}",
+        result.err()
+    );
 
     let _stream = result.unwrap();
 }
@@ -186,11 +197,17 @@ async fn test_http_connect_bad_response() {
     let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
 
     let result = connector.dial(target, opts).await;
-    assert!(result.is_err(), "HTTP CONNECT should fail with bad response");
+    assert!(
+        result.is_err(),
+        "HTTP CONNECT should fail with bad response"
+    );
 
     if let Err(AdapterError::Protocol(msg)) = result {
-        assert!(msg.contains("Invalid HTTP response") || msg.contains("HTTP CONNECT failed"),
-               "Should indicate invalid response: {}", msg);
+        assert!(
+            msg.contains("Invalid HTTP response") || msg.contains("HTTP CONNECT failed"),
+            "Should indicate invalid response: {}",
+            msg
+        );
     } else {
         panic!("Expected Protocol error");
     }

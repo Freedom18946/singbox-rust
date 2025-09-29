@@ -54,7 +54,9 @@ impl OutboundConnector for TrojanConnector {
 
     async fn start(&self) -> Result<()> {
         #[cfg(not(feature = "adapter-trojan"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-trojan" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-trojan",
+        });
 
         #[cfg(feature = "adapter-trojan")]
         Ok(())
@@ -62,12 +64,16 @@ impl OutboundConnector for TrojanConnector {
 
     async fn dial(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-trojan"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-trojan" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-trojan",
+        });
 
         #[cfg(feature = "adapter-trojan")]
         {
             // For now, return not implemented - full implementation would go here
-            Err(AdapterError::NotImplemented { what: "Trojan dial" })
+            Err(AdapterError::NotImplemented {
+                what: "Trojan dial",
+            })
         }
     }
 }

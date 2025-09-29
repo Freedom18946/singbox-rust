@@ -7,9 +7,9 @@
 //! - no_route: No route available for destination
 //! - canceled: Operation was canceled
 
-use std::time::Duration;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use tokio::time::{pause, advance, resume, timeout};
+use std::time::Duration;
+use tokio::time::{advance, pause, resume, timeout};
 
 use sb_core::error::{SbError, SbResult};
 
@@ -44,37 +44,35 @@ impl MockUdpProcessor {
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 Ok(b"response".to_vec())
             }
-            FailureBehavior::IoError => {
-                Err(SbError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NetworkUnreachable,
-                    "mock error",
-                )))
-            }
-            FailureBehavior::DecodeError => {
-                Err(SbError::Parse {
-                    message: "Invalid packet format".to_string(),
-                })
-            }
-            FailureBehavior::NoRoute => {
-                Err(SbError::Network {
-                    class: sb_core::error::ErrorClass::Connection,
-                    msg: "No route to destination 1.1.1.1:53".to_string(),
-                })
-            }
-            FailureBehavior::Canceled => {
-                Err(SbError::Canceled {
-                    operation: "UDP operation".to_string(),
-                })
-            }
-            FailureBehavior::Success => {
-                Ok(b"success response".to_vec())
-            }
+            FailureBehavior::IoError => Err(SbError::Io(std::io::Error::new(
+                std::io::ErrorKind::NetworkUnreachable,
+                "mock error",
+            ))),
+            FailureBehavior::DecodeError => Err(SbError::Parse {
+                message: "Invalid packet format".to_string(),
+            }),
+            FailureBehavior::NoRoute => Err(SbError::Network {
+                class: sb_core::error::ErrorClass::Connection,
+                msg: "No route to destination 1.1.1.1:53".to_string(),
+            }),
+            FailureBehavior::Canceled => Err(SbError::Canceled {
+                operation: "UDP operation".to_string(),
+            }),
+            FailureBehavior::Success => Ok(b"success response".to_vec()),
         }
     }
 }
 
-async fn simulate_udp_operation(processor: &MockUdpProcessor, timeout_duration: Duration) -> SbResult<Vec<u8>> {
-    match timeout(timeout_duration, processor.process_packet(b"test data", test_addr(53))).await {
+async fn simulate_udp_operation(
+    processor: &MockUdpProcessor,
+    timeout_duration: Duration,
+) -> SbResult<Vec<u8>> {
+    match timeout(
+        timeout_duration,
+        processor.process_packet(b"test data", test_addr(53)),
+    )
+    .await
+    {
         Ok(result) => result,
         Err(_) => Err(SbError::Timeout {
             operation: "UDP operation".to_string(),

@@ -26,7 +26,10 @@ pub struct Report {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "analyze_json", derive(serde::Serialize))]
+#[cfg_attr(
+    any(feature = "analyze_json", feature = "rules_tool"),
+    derive(serde::Serialize)
+)]
 pub struct Shadow {
     pub kind: &'static str, // "suffix_over_exact" | "cidr_over_ip" ...
     pub victim: String,
@@ -34,7 +37,10 @@ pub struct Shadow {
 }
 
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "analyze_json", derive(serde::Serialize))]
+#[cfg_attr(
+    any(feature = "analyze_json", feature = "rules_tool"),
+    derive(serde::Serialize)
+)]
 pub struct Conflict {
     pub key: String,
     pub a: String,
@@ -66,7 +72,7 @@ impl Report {
     }
 }
 
-#[cfg(feature = "analyze_json")]
+#[cfg(any(feature = "analyze_json", feature = "rules_tool"))]
 impl serde::Serialize for Report {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

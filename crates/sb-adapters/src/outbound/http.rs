@@ -73,7 +73,11 @@ impl HttpProxyConnector {
     }
 
     /// Create a connector with username/password authentication
-    pub fn with_auth(server: impl Into<String>, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn with_auth(
+        server: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
             config: HttpProxyConfig {
                 server: server.into(),
@@ -88,7 +92,11 @@ impl HttpProxyConnector {
 
     /// Create a TLS connector with username/password authentication
     #[cfg(feature = "http-tls")]
-    pub fn with_auth_tls(server: impl Into<String>, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn with_auth_tls(
+        server: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
             config: HttpProxyConfig {
                 server: server.into(),
@@ -116,7 +124,9 @@ impl OutboundConnector for HttpProxyConnector {
 
     async fn start(&self) -> Result<()> {
         #[cfg(not(feature = "adapter-http"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-http" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-http",
+        });
 
         #[cfg(feature = "adapter-http")]
         Ok(())
@@ -124,7 +134,9 @@ impl OutboundConnector for HttpProxyConnector {
 
     async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-http"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-http" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-http",
+        });
 
         #[cfg(feature = "adapter-http")]
         {
@@ -135,7 +147,9 @@ impl OutboundConnector for HttpProxyConnector {
             let start_time = sb_metrics::start_adapter_timer();
 
             if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol("HTTP proxy only supports TCP".to_string()));
+                return Err(AdapterError::Protocol(
+                    "HTTP proxy only supports TCP".to_string(),
+                ));
             }
 
             let dial_result = async {
@@ -156,31 +170,40 @@ impl OutboundConnector for HttpProxyConnector {
                             .with_context(|| format!("Invalid HTTPS proxy URL: {}", proxy_url))
                             .map_err(|e| AdapterError::Other(e.to_string()))?;
 
-                        let host = url.host_str()
-                            .ok_or_else(|| AdapterError::InvalidConfig("HTTPS proxy URL missing host"))?;
+                        let host = url.host_str().ok_or_else(|| {
+                            AdapterError::InvalidConfig("HTTPS proxy URL missing host")
+                        })?;
                         let port = url.port().unwrap_or(443);
                         let proxy_addr = SocketAddr::new(
-                            host.parse().map_err(|_| AdapterError::InvalidConfig("Invalid proxy host"))?,
-                            port
+                            host.parse()
+                                .map_err(|_| AdapterError::InvalidConfig("Invalid proxy host"))?,
+                            port,
                         );
 
                         // Connect to proxy server with timeout
-                        let tcp_stream = tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
-                            .await
-                            .with_context(|| format!("Failed to connect to HTTPS proxy {}", proxy_addr))
-                            .map_err(|e| AdapterError::Other(e.to_string()))?
-                            .with_context(|| format!("TCP connection to HTTPS proxy {} failed", proxy_addr))
-                            .map_err(|e| AdapterError::Other(e.to_string()))?;
+                        let tcp_stream = tokio::time::timeout(
+                            opts.connect_timeout,
+                            TcpStream::connect(proxy_addr),
+                        )
+                        .await
+                        .with_context(|| format!("Failed to connect to HTTPS proxy {}", proxy_addr))
+                        .map_err(|e| AdapterError::Other(e.to_string()))?
+                        .with_context(|| {
+                            format!("TCP connection to HTTPS proxy {} failed", proxy_addr)
+                        })
+                        .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                         // Create TLS config
                         let mut root_store = rustls::RootCertStore::empty();
-                        root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-                            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                                ta.subject,
-                                ta.spki,
-                                ta.name_constraints,
-                            )
-                        }));
+                        root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
+                            |ta| {
+                                rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                                    ta.subject,
+                                    ta.spki,
+                                    ta.name_constraints,
+                                )
+                            },
+                        ));
 
                         let config = ClientConfig::builder()
                             .with_safe_defaults()
@@ -189,37 +212,52 @@ impl OutboundConnector for HttpProxyConnector {
 
                         let connector = TlsConnector::from(Arc::new(config));
 
-                        let server_name = ServerName::try_from(host)
-                            .map_err(|_| AdapterError::InvalidConfig("Invalid server name for TLS"))?;
+                        let server_name = ServerName::try_from(host).map_err(|_| {
+                            AdapterError::InvalidConfig("Invalid server name for TLS")
+                        })?;
 
                         // Perform TLS handshake
-                        let tls_stream = tokio::time::timeout(opts.connect_timeout, connector.connect(server_name, tcp_stream))
-                            .await
-                            .with_context(|| format!("TLS handshake timeout with HTTPS proxy {}", host))
-                            .map_err(|e| AdapterError::Other(e.to_string()))?
-                            .with_context(|| format!("TLS handshake failed with HTTPS proxy {}", host))
-                            .map_err(|e| AdapterError::Other(e.to_string()))?;
+                        let tls_stream = tokio::time::timeout(
+                            opts.connect_timeout,
+                            connector.connect(server_name, tcp_stream),
+                        )
+                        .await
+                        .with_context(|| format!("TLS handshake timeout with HTTPS proxy {}", host))
+                        .map_err(|e| AdapterError::Other(e.to_string()))?
+                        .with_context(|| format!("TLS handshake failed with HTTPS proxy {}", host))
+                        .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                         // Send HTTP CONNECT request over TLS
                         let mut boxed_stream = Box::new(tls_stream) as BoxedStream;
-                        self.http_connect_generic(&mut boxed_stream, &target, &opts).await?;
+                        self.http_connect_generic(&mut boxed_stream, &target, &opts)
+                            .await?;
 
                         // Return the TLS stream
                         Ok(boxed_stream)
                     }
                 } else {
                     // Regular HTTP proxy
-                    let proxy_addr: SocketAddr = self.config.server.parse()
-                        .with_context(|| format!("Invalid HTTP proxy address: {}", self.config.server))
+                    let proxy_addr: SocketAddr = self
+                        .config
+                        .server
+                        .parse()
+                        .with_context(|| {
+                            format!("Invalid HTTP proxy address: {}", self.config.server)
+                        })
                         .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                     // Connect to proxy server with timeout
-                    let mut stream = tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
-                        .await
-                        .with_context(|| format!("Failed to connect to HTTP proxy {}", proxy_addr))
-                        .map_err(|e| AdapterError::Other(e.to_string()))?
-                        .with_context(|| format!("TCP connection to HTTP proxy {} failed", proxy_addr))
-                        .map_err(|e| AdapterError::Other(e.to_string()))?;
+                    let mut stream =
+                        tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
+                            .await
+                            .with_context(|| {
+                                format!("Failed to connect to HTTP proxy {}", proxy_addr)
+                            })
+                            .map_err(|e| AdapterError::Other(e.to_string()))?
+                            .with_context(|| {
+                                format!("TCP connection to HTTP proxy {} failed", proxy_addr)
+                            })
+                            .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                     // Send HTTP CONNECT request
                     self.http_connect(&mut stream, &target, &opts).await?;
@@ -227,7 +265,8 @@ impl OutboundConnector for HttpProxyConnector {
                     // Return the connected stream
                     Ok(Box::new(stream) as BoxedStream)
                 }
-            }.await;
+            }
+            .await;
 
             // Record metrics for the dial attempt (both success and failure)
             #[cfg(feature = "metrics")]
@@ -270,7 +309,12 @@ impl OutboundConnector for HttpProxyConnector {
 #[cfg(feature = "adapter-http")]
 impl HttpProxyConnector {
     /// Send HTTP CONNECT request and parse response
-    async fn http_connect(&self, stream: &mut TcpStream, target: &Target, opts: &DialOpts) -> Result<()> {
+    async fn http_connect(
+        &self,
+        stream: &mut TcpStream,
+        target: &Target,
+        opts: &DialOpts,
+    ) -> Result<()> {
         // Determine target address based on resolve mode
         let (connect_host, host_header) = match opts.resolve_mode {
             ResolveMode::Local => {
@@ -285,11 +329,17 @@ impl HttpProxyConnector {
                             if let Some(addr) = addrs.next() {
                                 (addr.ip().to_string(), target.host.clone())
                             } else {
-                                return Err(AdapterError::Network(format!("Failed to resolve {}", target.host)));
+                                return Err(AdapterError::Network(format!(
+                                    "Failed to resolve {}",
+                                    target.host
+                                )));
                             }
                         }
                         Err(e) => {
-                            return Err(AdapterError::Network(format!("DNS resolution failed for {}: {}", target.host, e)));
+                            return Err(AdapterError::Network(format!(
+                                "DNS resolution failed for {}: {}",
+                                target.host, e
+                            )));
                         }
                     }
                 }
@@ -319,7 +369,12 @@ impl HttpProxyConnector {
         // Send request with timeout
         tokio::time::timeout(opts.connect_timeout, stream.write_all(request.as_bytes()))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTP request write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "HTTP request write timeout",
+                ))
+            })??;
 
         // Read and parse response
         let mut reader = BufReader::new(stream);
@@ -327,17 +382,28 @@ impl HttpProxyConnector {
 
         tokio::time::timeout(opts.connect_timeout, reader.read_line(&mut status_line))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTP response read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "HTTP response read timeout",
+                ))
+            })??;
 
         // Parse HTTP status line
         let parts: Vec<&str> = status_line.trim().split_whitespace().collect();
         if parts.len() < 3 {
-            return Err(AdapterError::Protocol("Invalid HTTP response format".to_string()));
+            return Err(AdapterError::Protocol(
+                "Invalid HTTP response format".to_string(),
+            ));
         }
 
         let status_code = parts[1];
         if status_code != "200" {
-            return Err(AdapterError::Protocol(format!("HTTP CONNECT failed: {} {}", status_code, parts.get(2).unwrap_or(&""))));
+            return Err(AdapterError::Protocol(format!(
+                "HTTP CONNECT failed: {} {}",
+                status_code,
+                parts.get(2).unwrap_or(&"")
+            )));
         }
 
         // Skip remaining headers until empty line
@@ -345,7 +411,12 @@ impl HttpProxyConnector {
             let mut header_line = String::new();
             tokio::time::timeout(opts.connect_timeout, reader.read_line(&mut header_line))
                 .await
-                .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTP headers read timeout")))??;
+                .map_err(|_| {
+                    AdapterError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "HTTP headers read timeout",
+                    ))
+                })??;
 
             if header_line.trim().is_empty() {
                 break; // End of headers
@@ -356,7 +427,12 @@ impl HttpProxyConnector {
     }
 
     /// Send HTTP CONNECT request on a generic stream (works with both TCP and TLS)
-    async fn http_connect_generic(&self, stream: &mut BoxedStream, target: &Target, opts: &DialOpts) -> Result<()> {
+    async fn http_connect_generic(
+        &self,
+        stream: &mut BoxedStream,
+        target: &Target,
+        opts: &DialOpts,
+    ) -> Result<()> {
         // Determine target address based on resolve mode
         let (connect_host, host_header) = match opts.resolve_mode {
             ResolveMode::Local => {
@@ -371,11 +447,17 @@ impl HttpProxyConnector {
                             if let Some(addr) = addrs.next() {
                                 (addr.ip().to_string(), target.host.clone())
                             } else {
-                                return Err(AdapterError::Network(format!("Failed to resolve {}", target.host)));
+                                return Err(AdapterError::Network(format!(
+                                    "Failed to resolve {}",
+                                    target.host
+                                )));
                             }
                         }
                         Err(e) => {
-                            return Err(AdapterError::Network(format!("DNS resolution failed for {}: {}", target.host, e)));
+                            return Err(AdapterError::Network(format!(
+                                "DNS resolution failed for {}: {}",
+                                target.host, e
+                            )));
                         }
                     }
                 }
@@ -405,7 +487,12 @@ impl HttpProxyConnector {
         // Send request with timeout
         tokio::time::timeout(opts.connect_timeout, stream.write_all(request.as_bytes()))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTPS request write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "HTTPS request write timeout",
+                ))
+            })??;
 
         // Read and parse response
         let mut reader = BufReader::new(stream);
@@ -413,17 +500,28 @@ impl HttpProxyConnector {
 
         tokio::time::timeout(opts.connect_timeout, reader.read_line(&mut status_line))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTPS response read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "HTTPS response read timeout",
+                ))
+            })??;
 
         // Parse HTTP status line
         let parts: Vec<&str> = status_line.trim().split_whitespace().collect();
         if parts.len() < 3 {
-            return Err(AdapterError::Protocol("Invalid HTTPS response format".to_string()));
+            return Err(AdapterError::Protocol(
+                "Invalid HTTPS response format".to_string(),
+            ));
         }
 
         let status_code = parts[1];
         if status_code != "200" {
-            return Err(AdapterError::Protocol(format!("HTTPS CONNECT failed: {} {}", status_code, parts.get(2).unwrap_or(&""))));
+            return Err(AdapterError::Protocol(format!(
+                "HTTPS CONNECT failed: {} {}",
+                status_code,
+                parts.get(2).unwrap_or(&"")
+            )));
         }
 
         // Skip remaining headers until empty line
@@ -431,7 +529,12 @@ impl HttpProxyConnector {
             let mut header_line = String::new();
             tokio::time::timeout(opts.connect_timeout, reader.read_line(&mut header_line))
                 .await
-                .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTPS headers read timeout")))??;
+                .map_err(|_| {
+                    AdapterError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "HTTPS headers read timeout",
+                    ))
+                })??;
 
             if header_line.trim().is_empty() {
                 break; // End of headers

@@ -1,10 +1,10 @@
 #![cfg(feature = "explain")]
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
+use app::http_util;
 use hyper::{Body, Request, Response, StatusCode};
 use sb_core::router::explain as ex;
 use sb_core::router::explain::{ExplainQuery, ExplainResult};
 use serde_json::{Map, Value};
-use app::http_util;
 use std::{net::SocketAddr, str::FromStr};
 use url::form_urlencoded;
 

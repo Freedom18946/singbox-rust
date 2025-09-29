@@ -11,8 +11,19 @@ fn check_migrate_and_write_normalized_produces_v2() {
     let cfg = dir.path().join("v1.json");
     fs::write(&cfg, v1).unwrap();
     let out = dir.path().join("out.json");
-    Command::cargo_bin("singbox-rust").unwrap()
-        .args(["check","--migrate","--write-normalized","--config", cfg.to_str().unwrap(), "--out", out.to_str().unwrap(), "--format","json"]) 
+    Command::cargo_bin("singbox-rust")
+        .unwrap()
+        .args([
+            "check",
+            "--migrate",
+            "--write-normalized",
+            "--config",
+            cfg.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success();
     let s = fs::read_to_string(&out).unwrap();
@@ -21,4 +32,3 @@ fn check_migrate_and_write_normalized_produces_v2() {
     assert_eq!(v["schema_version"], 2);
     assert!(v.get("route").is_some());
 }
-

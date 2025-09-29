@@ -3,9 +3,9 @@
 //! Tests for resilient handling of missing, corrupt, and legacy GEO database files.
 //! Ensures that the system fails gracefully with proper error codes and diagnostics.
 
+use serde_json::Value;
 use std::process::Command;
 use std::str;
-use serde_json::Value;
 use tempfile::TempDir;
 
 // Helper to get the path to the check binary
@@ -30,7 +30,10 @@ async fn test_missing_geoip_database() {
         .output()
         .expect("Failed to execute check command");
 
-    assert!(!output.status.success(), "Check should fail with missing database");
+    assert!(
+        !output.status.success(),
+        "Check should fail with missing database"
+    );
 
     let stdout = str::from_utf8(&output.stdout).expect("Invalid UTF-8 in stdout");
     let result: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
@@ -44,8 +47,7 @@ async fn test_missing_geoip_database() {
 
     // Check for NotFound error code
     let has_not_found = issues.iter().any(|issue| {
-        issue["code"].as_str() == Some("NotFound")
-            || issue["level"].as_str() == Some("error")
+        issue["code"].as_str() == Some("NotFound") || issue["level"].as_str() == Some("error")
     });
     assert!(has_not_found, "Should have NotFound or error issue");
 
@@ -70,7 +72,10 @@ async fn test_corrupt_geoip_database() {
         .output()
         .expect("Failed to execute check command");
 
-    assert!(!output.status.success(), "Check should fail with corrupt database");
+    assert!(
+        !output.status.success(),
+        "Check should fail with corrupt database"
+    );
 
     let stdout = str::from_utf8(&output.stdout).expect("Invalid UTF-8 in stdout");
     let result: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
@@ -103,7 +108,10 @@ async fn test_legacy_geoip_database() {
         .output()
         .expect("Failed to execute check command");
 
-    assert!(!output.status.success(), "Check should fail with legacy database");
+    assert!(
+        !output.status.success(),
+        "Check should fail with legacy database"
+    );
 
     let stdout = str::from_utf8(&output.stdout).expect("Invalid UTF-8 in stdout");
     let result: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
@@ -138,15 +146,24 @@ async fn test_route_explain_missing_database() {
         .output()
         .expect("Failed to execute route-explain command");
 
-    assert!(!output.status.success(), "Route-explain should fail with missing database");
+    assert!(
+        !output.status.success(),
+        "Route-explain should fail with missing database"
+    );
 
     // Check that it doesn't panic and produces some output
     let stderr = str::from_utf8(&output.stderr).unwrap_or("");
     let stdout = str::from_utf8(&output.stdout).unwrap_or("");
 
     // Should not contain panic messages
-    assert!(!stderr.contains("panic"), "Should not panic on missing database");
-    assert!(!stdout.contains("panic"), "Should not panic on missing database");
+    assert!(
+        !stderr.contains("panic"),
+        "Should not panic on missing database"
+    );
+    assert!(
+        !stdout.contains("panic"),
+        "Should not panic on missing database"
+    );
 }
 
 #[tokio::test]
@@ -163,14 +180,23 @@ async fn test_route_explain_corrupt_database() {
         .output()
         .expect("Failed to execute route-explain command");
 
-    assert!(!output.status.success(), "Route-explain should fail with corrupt database");
+    assert!(
+        !output.status.success(),
+        "Route-explain should fail with corrupt database"
+    );
 
     let stderr = str::from_utf8(&output.stderr).unwrap_or("");
     let stdout = str::from_utf8(&output.stdout).unwrap_or("");
 
     // Should not contain panic messages
-    assert!(!stderr.contains("panic"), "Should not panic on corrupt database");
-    assert!(!stdout.contains("panic"), "Should not panic on corrupt database");
+    assert!(
+        !stderr.contains("panic"),
+        "Should not panic on corrupt database"
+    );
+    assert!(
+        !stdout.contains("panic"),
+        "Should not panic on corrupt database"
+    );
 }
 
 #[tokio::test]
@@ -212,11 +238,20 @@ async fn test_json_output_structure() {
 
     // Check required fields
     assert!(result["ok"].is_boolean(), "Should have 'ok' boolean field");
-    assert!(result["issues"].is_array(), "Should have 'issues' array field");
+    assert!(
+        result["issues"].is_array(),
+        "Should have 'issues' array field"
+    );
 
     if let Some(summary) = result.get("summary") {
-        assert!(summary["errors"].is_number(), "Summary should have errors count");
-        assert!(summary["warnings"].is_number(), "Summary should have warnings count");
+        assert!(
+            summary["errors"].is_number(),
+            "Summary should have errors count"
+        );
+        assert!(
+            summary["warnings"].is_number(),
+            "Summary should have warnings count"
+        );
     }
 
     // Check issue structure
@@ -242,34 +277,34 @@ async fn test_exit_codes() {
 
     // Missing database
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/missing/config.yaml",
-        ])
+        .args(["--config", "app/tests/fixtures/geo/missing/config.yaml"])
         .output()
         .expect("Failed to execute check command");
 
-    assert!(!output.status.success(), "Missing database should return non-zero exit code");
+    assert!(
+        !output.status.success(),
+        "Missing database should return non-zero exit code"
+    );
 
     // Corrupt database
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/corrupt/config.yaml",
-        ])
+        .args(["--config", "app/tests/fixtures/geo/corrupt/config.yaml"])
         .output()
         .expect("Failed to execute check command");
 
-    assert!(!output.status.success(), "Corrupt database should return non-zero exit code");
+    assert!(
+        !output.status.success(),
+        "Corrupt database should return non-zero exit code"
+    );
 
     // Legacy database
     let output = Command::new(check_binary_path())
-        .args([
-            "--config",
-            "app/tests/fixtures/geo/legacy/config.yaml",
-        ])
+        .args(["--config", "app/tests/fixtures/geo/legacy/config.yaml"])
         .output()
         .expect("Failed to execute check command");
 
-    assert!(!output.status.success(), "Legacy database should return non-zero exit code");
+    assert!(
+        !output.status.success(),
+        "Legacy database should return non-zero exit code"
+    );
 }

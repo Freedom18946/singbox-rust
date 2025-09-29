@@ -119,7 +119,6 @@ impl ProcessRouter {
 mod tests {
     use super::*;
     use crate::router::rules::{Rule, RuleKind};
-    use std::net::{IpAddr, Ipv4Addr};
 
     #[tokio::test]
     async fn test_process_router_creation() {

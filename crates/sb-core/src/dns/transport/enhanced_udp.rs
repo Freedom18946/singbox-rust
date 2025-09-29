@@ -190,7 +190,10 @@ impl DnsTransport for EnhancedUdpTransport {
         }
 
         // All servers and retries failed
-        let final_error = match last_error { Some(e) => e, None => anyhow!("No DNS servers available") };
+        let final_error = match last_error {
+            Some(e) => e,
+            None => anyhow!("No DNS servers available"),
+        };
         let error_class = Self::classify_error(&final_error);
         record_error(error_class);
 

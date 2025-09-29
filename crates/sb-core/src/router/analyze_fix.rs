@@ -198,7 +198,11 @@ pub fn build_lint_autofix_patch(
 
             // Mark unreachable rules for removal or reordering
             if let Some(rule_idx) = extract_rule_index(suggestion) {
-                let _ = writeln!(&mut patch_text, "# Move rule[{}] to earlier position", rule_idx);
+                let _ = writeln!(
+                    &mut patch_text,
+                    "# Move rule[{}] to earlier position",
+                    rule_idx
+                );
             }
         } else if suggestion.contains("optimize") {
             has_fixes = true;
@@ -206,7 +210,10 @@ pub fn build_lint_autofix_patch(
 
             // Generate optimization patches
             if suggestion.contains("combine rules") {
-                let _ = writeln!(&mut patch_text, "# Combine similar rules for better performance");
+                let _ = writeln!(
+                    &mut patch_text,
+                    "# Combine similar rules for better performance"
+                );
             }
         } else if suggestion.contains("format") || suggestion.contains("style") {
             has_fixes = true;

@@ -39,7 +39,7 @@ pub fn merge(base: Config, sub: Config) -> Config {
 
     Config {
         schema_version: base.schema_version.max(sub.schema_version), // 取较高版本
-        inbounds: base.inbounds, // 本地掌控
+        inbounds: base.inbounds,                                     // 本地掌控
         outbounds,
         rules: sub.rules, // 订阅覆盖
         default_outbound: sub.default_outbound.or(base.default_outbound),

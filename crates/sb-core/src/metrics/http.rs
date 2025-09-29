@@ -7,15 +7,13 @@
 
 #[cfg(feature = "metrics")]
 use crate::metrics::registry_ext::{
-    get_or_register_counter_vec,
-    get_or_register_gauge_vec_f64,
-    get_or_register_histogram_vec,
+    get_or_register_counter_vec, get_or_register_gauge_vec_f64, get_or_register_histogram_vec,
 };
 
 #[cfg(feature = "metrics")]
-use once_cell::sync::Lazy;
+use metrics::{counter, Counter};
 #[cfg(feature = "metrics")]
-use metrics::{Counter, counter};
+use once_cell::sync::Lazy;
 
 #[cfg(feature = "metrics")]
 static HTTP_RESPOND_405_TOTAL: Lazy<Counter> = Lazy::new(|| counter!("http_respond_405_total"));
@@ -40,9 +38,8 @@ static HTTP_REQUESTS_TOTAL: Lazy<&'static prometheus::IntCounterVec> = Lazy::new
 });
 
 #[cfg(feature = "metrics")]
-static HTTP_ERRORS_TOTAL: Lazy<&'static prometheus::IntCounterVec> = Lazy::new(|| {
-    get_or_register_counter_vec("http_errors_total", "http errors total", &["class"])
-});
+static HTTP_ERRORS_TOTAL: Lazy<&'static prometheus::IntCounterVec> =
+    Lazy::new(|| get_or_register_counter_vec("http_errors_total", "http errors total", &["class"]));
 
 #[cfg(feature = "metrics")]
 static HTTP_ACTIVE_CONNECTIONS: Lazy<&'static prometheus::GaugeVec> = Lazy::new(|| {
@@ -70,7 +67,9 @@ pub fn inc_405_responses() {
 /// Record HTTP connection duration
 pub fn record_connect_duration(_duration_ms: f64) {
     #[cfg(feature = "metrics")]
-    HTTP_CONNECT_DURATION_MS.with_label_values(&[]).observe(_duration_ms);
+    HTTP_CONNECT_DURATION_MS
+        .with_label_values(&[])
+        .observe(_duration_ms);
 }
 
 /// Increment total HTTP requests
@@ -94,7 +93,9 @@ pub fn inc_errors(_class: &str) {
 /// Set active HTTP connections count
 pub fn set_active_connections(_count: usize) {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[]).set(_count as f64);
+    HTTP_ACTIVE_CONNECTIONS
+        .with_label_values(&[])
+        .set(_count as f64);
 }
 
 /// Increment active connections
@@ -144,6 +145,8 @@ pub fn record_error(error_class: HttpErrorClass) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "metrics")]
+    use prometheus::Encoder;
 
     #[test]
     fn test_error_classification() {

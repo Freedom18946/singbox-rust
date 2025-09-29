@@ -270,9 +270,15 @@ async fn test_v2ray_api_error_handling() {
     for counter_name in test_cases {
         if counter_name.is_empty() {
             // Empty is invalid now
-            let bad = sb_api::v2ray::simple::SimpleStatsRequest { name: String::new(), reset: false };
+            let bad = sb_api::v2ray::simple::SimpleStatsRequest {
+                name: String::new(),
+                reset: false,
+            };
             let err = server.get_stats(bad).await.err();
-            assert!(matches!(err, Some(sb_api::error::ApiError::InvalidField { .. })));
+            assert!(matches!(
+                err,
+                Some(sb_api::error::ApiError::InvalidField { .. })
+            ));
             continue;
         }
         // Test getting stats

@@ -1,31 +1,35 @@
-use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size, validate_format, is_networking_allowed, validate_url_scheme, validate_kinds};
+use crate::admin_debug::breaker;
+use crate::admin_debug::cache;
+use crate::admin_debug::http_util::{
+    is_networking_allowed, parse_query, respond, respond_json_error, validate_decoded_size,
+    validate_format, validate_inline_size_estimate, validate_kinds, validate_url_scheme,
+};
+use crate::admin_debug::reloadable;
 use crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist;
 use crate::admin_debug::security_async::forbid_private_host_or_resolved_async;
 use crate::admin_debug::security_metrics::{
-    inc_block_private_ip, inc_exceed_size, inc_timeout, inc_redirects, inc_connect_timeout,
-    inc_upstream_4xx, inc_upstream_5xx, set_last_error, set_last_error_with_host, inc_total_requests, mark_last_ok,
-    SecurityErrorKind, record_latency_ms, inc_cache_hit, inc_cache_miss, inc_breaker_block,
+    inc_block_private_ip, inc_breaker_block, inc_cache_hit, inc_cache_miss, inc_connect_timeout,
+    inc_exceed_size, inc_redirects, inc_timeout, inc_total_requests, inc_upstream_4xx,
+    inc_upstream_5xx, mark_last_ok, record_latency_ms, set_last_error, set_last_error_with_host,
+    SecurityErrorKind,
 };
-use crate::admin_debug::cache;
-use crate::admin_debug::breaker;
-use crate::admin_debug::reloadable;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use tokio::io::AsyncWriteExt;
 use once_cell::sync::OnceCell;
+use tokio::io::AsyncWriteExt;
 
 #[cfg(feature = "subs_http")]
-use tokio::sync::{Semaphore, RwLock};
-#[cfg(feature = "subs_http")]
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "subs_http")]
 use std::sync::Arc;
 #[cfg(feature = "subs_http")]
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+#[cfg(feature = "subs_http")]
+use tokio::sync::{RwLock, Semaphore};
 
 #[cfg(feature = "subs_http")]
-use std::net::IpAddr;
-#[cfg(feature = "subs_http")]
 use reqwest::{redirect::Policy, Client};
+#[cfg(feature = "subs_http")]
+use std::net::IpAddr;
 #[cfg(feature = "subs_http")]
 use tokio::time::timeout;
 
@@ -47,17 +51,26 @@ static RPS_LAST_TICK: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(feature = "subs_http")]
 fn parse_env_usize(key: &str, def: usize) -> usize {
-    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(def)
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(def)
 }
 
 #[cfg(feature = "subs_http")]
 fn parse_env_u64(key: &str, def: u64) -> u64 {
-    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(def)
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(def)
 }
 
 #[cfg(feature = "subs_http")]
 fn parse_env_bool(key: &str, def: bool) -> bool {
-    std::env::var(key).ok().map(|v| v != "0" && v.to_lowercase() != "false").unwrap_or(def)
+    std::env::var(key)
+        .ok()
+        .map(|v| v != "0" && v.to_lowercase() != "false")
+        .unwrap_or(def)
 }
 
 #[cfg(feature = "subs_http")]
@@ -148,7 +161,11 @@ async fn acquire_permits() -> anyhow::Result<()> {
 
     loop {
         let bal = RPS_CURRENT.load(Ordering::Relaxed);
-        if bal > 0 && RPS_CURRENT.compare_exchange(bal, bal-1, Ordering::SeqCst, Ordering::Relaxed).is_ok() {
+        if bal > 0
+            && RPS_CURRENT
+                .compare_exchange(bal, bal - 1, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok()
+        {
             break;
         }
 
@@ -169,7 +186,8 @@ async fn acquire_permits() -> anyhow::Result<()> {
     // add permits to enable hot expansion without waiting for next reload
     if available < desired {
         let to_add = desired.saturating_sub(available);
-        if to_add > 0 && to_add <= 32 { // Limit expansion to prevent abuse
+        if to_add > 0 && to_add <= 32 {
+            // Limit expansion to prevent abuse
             sem.add_permits(to_add);
             tracing::debug!(desired = %desired, available = %available, added = %to_add, "Hot-expanded semaphore capacity");
         }
@@ -187,7 +205,13 @@ async fn acquire_permits() -> anyhow::Result<()> {
 fn parse_allow_hosts() -> Vec<String> {
     std::env::var("SB_ADMIN_URL_ALLOW_HOSTS")
         .ok()
-        .map(|s| s.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).map(|s| s.to_string()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect()
+        })
         .unwrap_or_else(|| vec![])
 }
 
@@ -195,9 +219,8 @@ fn parse_allow_hosts() -> Vec<String> {
 fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            v4.is_loopback()
-                || v4.is_private()
-                || v4.octets()[0] == 169 && v4.octets()[1] == 254 // link-local 169.254/16
+            v4.is_loopback() || v4.is_private() || v4.octets()[0] == 169 && v4.octets()[1] == 254
+            // link-local 169.254/16
         }
         IpAddr::V6(v6) => {
             v6.is_loopback()
@@ -216,7 +239,9 @@ async fn resolve_and_check_host(host: &str) -> Result<(), &'static str> {
     }
     if parse_env_bool("SB_ADMIN_URL_DENY_PRIVATE", true) {
         // 简化：仅解析 A/AAAA 第一条记录进行判定（已足够提升安全基线）
-        let addrs = tokio::net::lookup_host((host, 80)).await.map_err(|_| "dns resolve failed")?;
+        let addrs = tokio::net::lookup_host((host, 80))
+            .await
+            .map_err(|_| "dns resolve failed")?;
         for addr in addrs {
             if is_private_ip(addr.ip()) {
                 return Err("target resolves to private/loopback address");
@@ -251,10 +276,22 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     }
     // 同步 allowlist 快速放行/拒绝 + 异步 DNS 私网校验
     if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
-        inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e)); return Err(e);
+        inc_block_private_ip();
+        set_last_error_with_host(
+            SecurityErrorKind::PrivateBlocked,
+            &host,
+            format!("private/loopback: {}", e),
+        );
+        return Err(e);
     }
     if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
-        inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e)); return Err(e);
+        inc_block_private_ip();
+        set_last_error_with_host(
+            SecurityErrorKind::PrivateBlocked,
+            &host,
+            format!("dns-private: {}", e),
+        );
+        return Err(e);
     }
 
     // Get current configuration
@@ -265,7 +302,8 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
 
     // Build HTTP client with SafeRedirect policy
     use crate::admin_debug::http::redirect::SafeRedirect;
-    let redirect = SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
+    let redirect =
+        SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(redirect))
         .connect_timeout(std::time::Duration::from_millis(timeout_ms.min(1500)))
@@ -295,10 +333,13 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
 
         let _head_resp = match tokio::time::timeout(
             std::time::Duration::from_millis(timeout_ms / 2), // Shorter timeout for HEAD
-            client.head(parsed.clone()).send()
-        ).await {
+            client.head(parsed.clone()).send(),
+        )
+        .await
+        {
             Ok(Ok(r)) if r.status().is_success() => {
-                head_etag = r.headers()
+                head_etag = r
+                    .headers()
                     .get(reqwest::header::ETAG)
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
@@ -320,8 +361,10 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
 
     let resp = match tokio::time::timeout(
         std::time::Duration::from_millis(timeout_ms),
-        request_builder.send()
-    ).await {
+        request_builder.send(),
+    )
+    .await
+    {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
             // 识别 TooManyRedirects (更稳定的类型检查)
@@ -330,15 +373,31 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             while let Some(src) = cur.source() {
                 if src.is::<reqwest::Error>() {
                     // 检查 reqwest error 是否为 redirect 类型
-                    if src.to_string().contains("too many redirects") || src.to_string().contains("redirect") {
+                    if src.to_string().contains("too many redirects")
+                        || src.to_string().contains("redirect")
+                    {
                         is_tmr = true;
                         break;
                     }
                 }
                 cur = src;
             }
-            if is_tmr { inc_redirects(); set_last_error_with_host(SecurityErrorKind::TooManyRedirects, &host, "too many redirects"); }
-            if e.is_connect() { inc_connect_timeout(); set_last_error_with_host(SecurityErrorKind::ConnectTimeout, &host, "connect timeout"); }
+            if is_tmr {
+                inc_redirects();
+                set_last_error_with_host(
+                    SecurityErrorKind::TooManyRedirects,
+                    &host,
+                    "too many redirects",
+                );
+            }
+            if e.is_connect() {
+                inc_connect_timeout();
+                set_last_error_with_host(
+                    SecurityErrorKind::ConnectTimeout,
+                    &host,
+                    "connect timeout",
+                );
+            }
             // Mark circuit breaker failure
             if let Ok(mut br) = breaker::global().lock() {
                 br.mark_failure(&host);
@@ -361,7 +420,10 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
         if let Ok(mut lru) = cache::global().lock() {
             if let Some(cached_tier_entry) = lru.get(resp.url().as_str()) {
                 // Handle both memory and disk cached entries
-                let cached_body = cached_tier_entry.get_body().await.map_err(|e| anyhow::anyhow!("Failed to read cached body: {}", e))?;
+                let cached_body = cached_tier_entry
+                    .get_body()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to read cached body: {}", e))?;
                 let cached_string = String::from_utf8_lossy(&cached_body).to_string();
                 record_latency_ms(t0.elapsed().as_millis() as u64);
                 mark_last_ok();
@@ -378,18 +440,44 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     if resp.url() != &parsed {
         let redirect_host = resp.url().host_str().unwrap_or("").to_string();
         if let Err(e) = forbid_private_host_or_resolved_with_allowlist(resp.url()) {
-            inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &redirect_host, format!("redirect->private: {}", e)); return Err(e);
+            inc_block_private_ip();
+            set_last_error_with_host(
+                SecurityErrorKind::PrivateBlocked,
+                &redirect_host,
+                format!("redirect->private: {}", e),
+            );
+            return Err(e);
         }
         if let Err(e) = forbid_private_host_or_resolved_async(resp.url()).await {
-            inc_block_private_ip(); set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &redirect_host, format!("redirect->dns-private: {}", e)); return Err(e);
+            inc_block_private_ip();
+            set_last_error_with_host(
+                SecurityErrorKind::PrivateBlocked,
+                &redirect_host,
+                format!("redirect->dns-private: {}", e),
+            );
+            return Err(e);
         }
     }
 
     if !resp.status().is_success() {
         let status = resp.status();
         let code = resp.status().as_u16();
-        if (400..500).contains(&code) { inc_upstream_4xx(); set_last_error_with_host(SecurityErrorKind::Upstream4xx, &host, format!("upstream {}", status)); }
-        if (500..600).contains(&code) { inc_upstream_5xx(); set_last_error_with_host(SecurityErrorKind::Upstream5xx, &host, format!("upstream {}", status)); }
+        if (400..500).contains(&code) {
+            inc_upstream_4xx();
+            set_last_error_with_host(
+                SecurityErrorKind::Upstream4xx,
+                &host,
+                format!("upstream {}", status),
+            );
+        }
+        if (500..600).contains(&code) {
+            inc_upstream_5xx();
+            set_last_error_with_host(
+                SecurityErrorKind::Upstream5xx,
+                &host,
+                format!("upstream {}", status),
+            );
+        }
         // Mark circuit breaker failure for server errors
         if (500..600).contains(&code) {
             if let Ok(mut br) = breaker::global().lock() {
@@ -401,10 +489,18 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
 
     // Check MIME allow list using reloadable config
     if let Some(allow_list) = &config.mime_allow {
-        if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
+        if let Some(ct) = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+        {
             let allowed = allow_list.iter().any(|pat| ct.starts_with(pat));
             if !allowed {
-                set_last_error_with_host(SecurityErrorKind::MimeDeny, &host, format!("mime not allowed: {}", ct));
+                set_last_error_with_host(
+                    SecurityErrorKind::MimeDeny,
+                    &host,
+                    format!("mime not allowed: {}", ct),
+                );
                 anyhow::bail!("content-type not allowed: {}", ct);
             }
         }
@@ -412,24 +508,38 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
 
     // Check MIME deny list using reloadable config
     if let Some(deny_list) = &config.mime_deny {
-        if let Some(ct) = resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()) {
+        if let Some(ct) = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+        {
             let denied = deny_list.iter().any(|pat| ct.starts_with(pat));
             if denied {
-                set_last_error_with_host(SecurityErrorKind::MimeDeny, &host, format!("mime denied: {}", ct));
+                set_last_error_with_host(
+                    SecurityErrorKind::MimeDeny,
+                    &host,
+                    format!("mime denied: {}", ct),
+                );
                 anyhow::bail!("content-type denied: {}", ct);
             }
         }
     }
     if let Some(cl) = resp.content_length() {
-        if cl as usize > size_limit { inc_exceed_size(); set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed"); anyhow::bail!("exceed size limit: {} bytes", size_limit); }
+        if cl as usize > size_limit {
+            inc_exceed_size();
+            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed");
+            anyhow::bail!("exceed size limit: {} bytes", size_limit);
+        }
     }
     // Extract all data before consuming response
-    let response_etag = resp.headers()
+    let response_etag = resp
+        .headers()
         .get(reqwest::header::ETAG)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let response_content_type = resp.headers()
+    let response_content_type = resp
+        .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
@@ -443,7 +553,8 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if body.len() + chunk.len() > size_limit {
-            inc_exceed_size(); set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
+            inc_exceed_size();
+            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
             anyhow::bail!("exceed size limit: {} bytes", size_limit);
         }
         body.extend_from_slice(&chunk);
@@ -484,7 +595,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
 }
 
 #[cfg(feature = "subs_http")]
-pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_prefetch: bool) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
+pub async fn fetch_with_limits_to_cache(
+    url: &str,
+    etag: Option<String>,
+    is_prefetch: bool,
+) -> anyhow::Result<crate::admin_debug::cache::CacheEntry> {
     inc_total_requests();
 
     let t0 = Instant::now();
@@ -510,12 +625,20 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
     // Async security checks
     if let Err(e) = forbid_private_host_or_resolved_with_allowlist(&parsed) {
         inc_block_private_ip();
-        set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("private/loopback: {}", e));
+        set_last_error_with_host(
+            SecurityErrorKind::PrivateBlocked,
+            &host,
+            format!("private/loopback: {}", e),
+        );
         return Err(e);
     }
     if let Err(e) = forbid_private_host_or_resolved_async(&parsed).await {
         inc_block_private_ip();
-        set_last_error_with_host(SecurityErrorKind::PrivateBlocked, &host, format!("dns-private: {}", e));
+        set_last_error_with_host(
+            SecurityErrorKind::PrivateBlocked,
+            &host,
+            format!("dns-private: {}", e),
+        );
         return Err(e);
     }
 
@@ -527,7 +650,8 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
 
     // Build HTTP client with SafeRedirect policy
     use crate::admin_debug::http::redirect::SafeRedirect;
-    let redirect = SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
+    let redirect =
+        SafeRedirect::new(vec!["example.com".into(), "githubusercontent.com".into()]).policy();
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(redirect))
         .connect_timeout(std::time::Duration::from_millis(timeout_ms.min(1500)))
@@ -555,14 +679,20 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
 
     let resp = match tokio::time::timeout(
         std::time::Duration::from_millis(timeout_ms),
-        request_builder.send()
-    ).await {
+        request_builder.send(),
+    )
+    .await
+    {
         Ok(Ok(r)) => r,
         Ok(Err(e)) => {
             // Handle various error types
             if e.is_connect() {
                 inc_connect_timeout();
-                set_last_error_with_host(SecurityErrorKind::ConnectTimeout, &host, "connect timeout");
+                set_last_error_with_host(
+                    SecurityErrorKind::ConnectTimeout,
+                    &host,
+                    "connect timeout",
+                );
             }
             if let Ok(mut br) = breaker::global().lock() {
                 br.mark_failure(&host);
@@ -590,7 +720,10 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
         };
 
         if let Some(cached_tier_entry) = cached_entry {
-            let cached_body = cached_tier_entry.get_body().await.map_err(|e| anyhow::anyhow!("Failed to read cached body: {}", e))?;
+            let cached_body = cached_tier_entry
+                .get_body()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to read cached body: {}", e))?;
             record_latency_ms(t0.elapsed().as_millis() as u64);
             mark_last_ok();
             // Trigger prefetch for successful 304 response
@@ -610,13 +743,19 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
             // Fallback: make a fresh request without If-None-Match for main path
             let fresh_resp = match tokio::time::timeout(
                 std::time::Duration::from_millis(timeout_ms),
-                client.get(parsed.clone()).send()
-            ).await {
+                client.get(parsed.clone()).send(),
+            )
+            .await
+            {
                 Ok(Ok(r)) => r,
                 Ok(Err(e)) => {
                     if e.is_connect() {
                         inc_connect_timeout();
-                        set_last_error_with_host(SecurityErrorKind::ConnectTimeout, &host, "connect timeout on fallback");
+                        set_last_error_with_host(
+                            SecurityErrorKind::ConnectTimeout,
+                            &host,
+                            "connect timeout on fallback",
+                        );
                     }
                     if let Ok(mut br) = breaker::global().lock() {
                         br.mark_failure(&host);
@@ -625,7 +764,11 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 }
                 Err(_) => {
                     inc_timeout();
-                    set_last_error_with_host(SecurityErrorKind::Timeout, &host, "timeout on fallback");
+                    set_last_error_with_host(
+                        SecurityErrorKind::Timeout,
+                        &host,
+                        "timeout on fallback",
+                    );
                     if let Ok(mut br) = breaker::global().lock() {
                         br.mark_failure(&host);
                     }
@@ -638,11 +781,19 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 let code = fresh_resp.status().as_u16();
                 if (400..500).contains(&code) {
                     inc_upstream_4xx();
-                    set_last_error_with_host(SecurityErrorKind::Upstream4xx, &host, format!("upstream {} on fallback", status));
+                    set_last_error_with_host(
+                        SecurityErrorKind::Upstream4xx,
+                        &host,
+                        format!("upstream {} on fallback", status),
+                    );
                 }
                 if (500..600).contains(&code) {
                     inc_upstream_5xx();
-                    set_last_error_with_host(SecurityErrorKind::Upstream5xx, &host, format!("upstream {} on fallback", status));
+                    set_last_error_with_host(
+                        SecurityErrorKind::Upstream5xx,
+                        &host,
+                        format!("upstream {} on fallback", status),
+                    );
                 }
                 if (500..600).contains(&code) {
                     if let Ok(mut br) = breaker::global().lock() {
@@ -653,12 +804,14 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
             }
 
             // Process the fresh response like a normal success response
-            let response_etag = fresh_resp.headers()
+            let response_etag = fresh_resp
+                .headers()
                 .get(reqwest::header::ETAG)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
 
-            let response_content_type = fresh_resp.headers()
+            let response_content_type = fresh_resp
+                .headers()
                 .get(reqwest::header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
@@ -670,7 +823,11 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
             if let Some(cl) = fresh_resp.content_length() {
                 if cl as usize > size_limit {
                     inc_exceed_size();
-                    set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "cl exceed on fallback");
+                    set_last_error_with_host(
+                        SecurityErrorKind::SizeExceed,
+                        &host,
+                        "cl exceed on fallback",
+                    );
                     anyhow::bail!("exceed size limit: {} bytes on fallback", size_limit);
                 }
             }
@@ -682,7 +839,11 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
                 let chunk = chunk?;
                 if body.len() + chunk.len() > size_limit {
                     inc_exceed_size();
-                    set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed on fallback");
+                    set_last_error_with_host(
+                        SecurityErrorKind::SizeExceed,
+                        &host,
+                        "stream exceed on fallback",
+                    );
                     anyhow::bail!("exceed size limit: {} bytes on fallback", size_limit);
                 }
                 body.extend_from_slice(&chunk);
@@ -715,7 +876,10 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
             let et_local: Option<String> = response_etag.clone();
             if let Some(ma) = cache_control_max_age(&fresh_resp_headers) {
                 if ma >= 60 {
-                    crate::admin_debug::prefetch::enqueue_prefetch(fresh_resp_url.as_str(), et_local);
+                    crate::admin_debug::prefetch::enqueue_prefetch(
+                        fresh_resp_url.as_str(),
+                        et_local,
+                    );
                 }
             }
             return Ok(cache_entry);
@@ -727,11 +891,19 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
         let code = resp.status().as_u16();
         if (400..500).contains(&code) {
             inc_upstream_4xx();
-            set_last_error_with_host(SecurityErrorKind::Upstream4xx, &host, format!("upstream {}", status));
+            set_last_error_with_host(
+                SecurityErrorKind::Upstream4xx,
+                &host,
+                format!("upstream {}", status),
+            );
         }
         if (500..600).contains(&code) {
             inc_upstream_5xx();
-            set_last_error_with_host(SecurityErrorKind::Upstream5xx, &host, format!("upstream {}", status));
+            set_last_error_with_host(
+                SecurityErrorKind::Upstream5xx,
+                &host,
+                format!("upstream {}", status),
+            );
         }
         if (500..600).contains(&code) {
             if let Ok(mut br) = breaker::global().lock() {
@@ -742,12 +914,14 @@ pub async fn fetch_with_limits_to_cache(url: &str, etag: Option<String>, is_pref
     }
 
     // Extract all data before consuming response
-    let response_etag = resp.headers()
+    let response_etag = resp
+        .headers()
         .get(reqwest::header::ETAG)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let response_content_type = resp.headers()
+    let response_content_type = resp
+        .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
@@ -822,7 +996,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
     if path_q.starts_with("/subs/fetch") {
         // Check if networking is allowed
         if !is_networking_allowed() {
-            return respond_json_error(sock, 501, "networking disabled", Some("set SB_ADMIN_ALLOW_NET=1 to enable networking")).await;
+            return respond_json_error(
+                sock,
+                501,
+                "networking disabled",
+                Some("set SB_ADMIN_ALLOW_NET=1 to enable networking"),
+            )
+            .await;
         }
 
         #[cfg(feature = "subs_http")]
@@ -830,16 +1010,30 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             let params = parse_query(q);
             let url = params.get("url").cloned().unwrap_or_default();
             if url.is_empty() {
-                return respond_json_error(sock, 400, "missing url parameter", Some("provide url in ?url parameter")).await;
+                return respond_json_error(
+                    sock,
+                    400,
+                    "missing url parameter",
+                    Some("provide url in ?url parameter"),
+                )
+                .await;
             }
 
             // Validate URL scheme for security
             if let Err(_) = validate_url_scheme(&url) {
-                return respond_json_error(sock, 400, "invalid URL scheme", Some("only http:// and https:// schemes are allowed")).await;
+                return respond_json_error(
+                    sock,
+                    400,
+                    "invalid URL scheme",
+                    Some("only http:// and https:// schemes are allowed"),
+                )
+                .await;
             }
 
             // 解析主机并安全检查
-            let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(|s| s.to_string()))
+            let host = url::Url::parse(&url)
+                .ok()
+                .and_then(|u| u.host_str().map(|s| s.to_string()))
                 .ok_or_else(|| std::io::Error::other("invalid url"))?;
             if let Err(e) = resolve_and_check_host(&host).await {
                 return respond_json_error(sock, 400, "unsafe target", Some(e)).await;
@@ -863,7 +1057,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     let url = attempt.url();
                     if let Some(host) = url.host_str() {
                         // Host allowlist check
-                        if !allow_hosts_clone.is_empty() && !allow_hosts_clone.iter().any(|h| h == &host.to_lowercase()) {
+                        if !allow_hosts_clone.is_empty()
+                            && !allow_hosts_clone.iter().any(|h| h == &host.to_lowercase())
+                        {
                             return attempt.error("redirect host not in allowlist");
                         }
 
@@ -871,10 +1067,12 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         if deny_private {
                             // Note: this is a sync operation in async context,
                             // but reqwest redirect policy requires sync
-                            if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, 80)) {
+                            if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, 80))
+                            {
                                 for addr in addrs {
                                     if is_private_ip(addr.ip()) {
-                                        return attempt.error("redirect to private/loopback address");
+                                        return attempt
+                                            .error("redirect to private/loopback address");
                                     }
                                 }
                             }
@@ -890,12 +1088,29 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             let fut = client.get(&url).send();
             let resp = match timeout(std::time::Duration::from_millis(timeout_ms), fut).await {
                 Ok(Ok(r)) => r,
-                Ok(Err(e)) => return respond_json_error(sock, 502, "fetch failed", Some(&e.to_string())).await,
-                Err(_) => return respond_json_error(sock, 504, "fetch timeout", Some("increase SB_ADMIN_FETCH_TIMEOUT_MS")).await,
+                Ok(Err(e)) => {
+                    return respond_json_error(sock, 502, "fetch failed", Some(&e.to_string()))
+                        .await
+                }
+                Err(_) => {
+                    return respond_json_error(
+                        sock,
+                        504,
+                        "fetch timeout",
+                        Some("increase SB_ADMIN_FETCH_TIMEOUT_MS"),
+                    )
+                    .await
+                }
             };
 
             if !resp.status().is_success() {
-                return respond_json_error(sock, resp.status().as_u16(), "upstream error", Some("non-2xx status")).await;
+                return respond_json_error(
+                    sock,
+                    resp.status().as_u16(),
+                    "upstream error",
+                    Some("non-2xx status"),
+                )
+                .await;
             }
 
             // 体积限制读取
@@ -907,7 +1122,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 let chunk = chunk.map_err(|e| std::io::Error::other(e.to_string()))?;
                 total += chunk.len();
                 if total > max_bytes {
-                    return respond_json_error(sock, 413, "fetched content too large", Some("increase SB_ADMIN_FETCH_MAX_BYTES")).await;
+                    return respond_json_error(
+                        sock,
+                        413,
+                        "fetched content too large",
+                        Some("increase SB_ADMIN_FETCH_MAX_BYTES"),
+                    )
+                    .await;
                 }
                 buf.extend_from_slice(&chunk);
             }
@@ -916,7 +1137,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         }
         #[cfg(not(feature = "subs_http"))]
         {
-            respond_json_error(sock, 501, "subs_http feature not enabled", Some("enable subs_http feature")).await
+            respond_json_error(
+                sock,
+                501,
+                "subs_http feature not enabled",
+                Some("enable subs_http feature"),
+            )
+            .await
         }
     } else if path_q.starts_with("/subs/convert") {
         let params = parse_query(q);
@@ -929,26 +1156,58 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 
         // Validate format
         if let Err(_) = validate_format(&format) {
-            return respond_json_error(sock, 400, "invalid format", Some("format must be 'clash' or 'singbox'")).await;
+            return respond_json_error(
+                sock,
+                400,
+                "invalid format",
+                Some("format must be 'clash' or 'singbox'"),
+            )
+            .await;
         }
 
         if b64_content.is_empty() {
-            return respond_json_error(sock, 400, "missing inline parameter", Some("provide base64 content in ?inline parameter")).await;
+            return respond_json_error(
+                sock,
+                400,
+                "missing inline parameter",
+                Some("provide base64 content in ?inline parameter"),
+            )
+            .await;
         }
 
         // Validate size estimate before decoding
         if let Err(_) = validate_inline_size_estimate(&b64_content) {
-            return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+            return respond_json_error(
+                sock,
+                413,
+                "inline content too large",
+                Some("maximum size is 512KB"),
+            )
+            .await;
         }
 
         let bytes: Vec<u8> = match STANDARD.decode(b64_content.as_bytes()) {
             Ok(b) => b,
-            Err(_) => return respond_json_error(sock, 400, "invalid base64 encoding", Some("provide valid base64 in ?inline parameter")).await,
+            Err(_) => {
+                return respond_json_error(
+                    sock,
+                    400,
+                    "invalid base64 encoding",
+                    Some("provide valid base64 in ?inline parameter"),
+                )
+                .await
+            }
         };
 
         // Validate actual decoded size
         if let Err(_) = validate_decoded_size(&bytes) {
-            return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+            return respond_json_error(
+                sock,
+                413,
+                "inline content too large",
+                Some("maximum size is 512KB"),
+            )
+            .await;
         }
 
         let text = String::from_utf8_lossy(&bytes).to_string();
@@ -961,7 +1220,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 }
                 #[cfg(not(feature = "subs_clash"))]
                 {
-                    Err::<sb_subscribe::model::Profile, _>(sb_subscribe::model::SubsError::Unsupported)
+                    Err::<sb_subscribe::model::Profile, _>(
+                        sb_subscribe::model::SubsError::Unsupported,
+                    )
                 }
             }
             "singbox" => {
@@ -971,7 +1232,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 }
                 #[cfg(not(feature = "subs_singbox"))]
                 {
-                    Err::<sb_subscribe::model::Profile, _>(sb_subscribe::model::SubsError::Unsupported)
+                    Err::<sb_subscribe::model::Profile, _>(
+                        sb_subscribe::model::SubsError::Unsupported,
+                    )
                 }
             }
             _ => Err(sb_subscribe::model::SubsError::Unsupported),
@@ -988,7 +1251,15 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 let norm = joined; // TODO: implement rules normalization when router is available
                 respond(sock, 200, "text/plain", &norm).await
             }
-            Err(_) => respond_json_error(sock, 400, "unsupported format or parse error", Some("check format parameter and content")).await,
+            Err(_) => {
+                respond_json_error(
+                    sock,
+                    400,
+                    "unsupported format or parse error",
+                    Some("check format parameter and content"),
+                )
+                .await
+            }
         }
     } else if path_q.starts_with("/subs/parse") {
         let params = parse_query(q);
@@ -1000,22 +1271,48 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         let b64_content = params.get("inline").cloned().unwrap_or_default();
 
         if b64_content.is_empty() {
-            return respond_json_error(sock, 400, "missing inline parameter", Some("provide base64 content in ?inline parameter")).await;
+            return respond_json_error(
+                sock,
+                400,
+                "missing inline parameter",
+                Some("provide base64 content in ?inline parameter"),
+            )
+            .await;
         }
 
         // Validate size estimate before decoding
         if let Err(_) = validate_inline_size_estimate(&b64_content) {
-            return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+            return respond_json_error(
+                sock,
+                413,
+                "inline content too large",
+                Some("maximum size is 512KB"),
+            )
+            .await;
         }
 
         let bytes: Vec<u8> = match STANDARD.decode(b64_content.as_bytes()) {
             Ok(b) => b,
-            Err(_) => return respond_json_error(sock, 400, "invalid base64 encoding", Some("provide valid base64 in ?inline parameter")).await,
+            Err(_) => {
+                return respond_json_error(
+                    sock,
+                    400,
+                    "invalid base64 encoding",
+                    Some("provide valid base64 in ?inline parameter"),
+                )
+                .await
+            }
         };
 
         // Validate actual decoded size
         if let Err(_) = validate_decoded_size(&bytes) {
-            return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+            return respond_json_error(
+                sock,
+                413,
+                "inline content too large",
+                Some("maximum size is 512KB"),
+            )
+            .await;
         }
 
         let text = String::from_utf8_lossy(&bytes).to_string();
@@ -1028,7 +1325,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 }
                 #[cfg(not(feature = "subs_clash"))]
                 {
-                    Err::<sb_subscribe::model::Profile, _>(sb_subscribe::model::SubsError::Unsupported)
+                    Err::<sb_subscribe::model::Profile, _>(
+                        sb_subscribe::model::SubsError::Unsupported,
+                    )
                 }
             }
             "singbox" => {
@@ -1038,7 +1337,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 }
                 #[cfg(not(feature = "subs_singbox"))]
                 {
-                    Err::<sb_subscribe::model::Profile, _>(sb_subscribe::model::SubsError::Unsupported)
+                    Err::<sb_subscribe::model::Profile, _>(
+                        sb_subscribe::model::SubsError::Unsupported,
+                    )
                 }
             }
             _ => Err(sb_subscribe::model::SubsError::Unsupported),
@@ -1047,10 +1348,22 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         match profile {
             Ok(pf) => {
                 // TODO: use proper JSON serialization when minijson is available
-                let body = format!(r#"{{"rules":{},"outbounds":{}}}"#, pf.rules.len(), pf.outbounds.len());
+                let body = format!(
+                    r#"{{"rules":{},"outbounds":{}}}"#,
+                    pf.rules.len(),
+                    pf.outbounds.len()
+                );
                 respond(sock, 200, "application/json", &body).await
             }
-            Err(_) => respond_json_error(sock, 400, "unsupported format or parse error", Some("check format parameter and content")).await,
+            Err(_) => {
+                respond_json_error(
+                    sock,
+                    400,
+                    "unsupported format or parse error",
+                    Some("check format parameter and content"),
+                )
+                .await
+            }
         }
     } else if path_q.starts_with("/subs/plan") {
         #[cfg(feature = "sbcore_rules_tool")]
@@ -1062,31 +1375,64 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 
             // Validate format
             if let Err(_) = validate_format(&format) {
-                return respond_json_error(sock, 400, "invalid format", Some("format must be 'clash' or 'singbox'")).await;
+                return respond_json_error(
+                    sock,
+                    400,
+                    "invalid format",
+                    Some("format must be 'clash' or 'singbox'"),
+                )
+                .await;
             }
 
             // Validate kinds
             if let Err(ref err_msg) = validate_kinds(&kinds) {
-                return respond_json_error(sock, 400, "invalid kinds parameter", Some(err_msg)).await;
+                return respond_json_error(sock, 400, "invalid kinds parameter", Some(err_msg))
+                    .await;
             }
 
             if b64_content.is_empty() {
-                return respond_json_error(sock, 400, "missing inline parameter", Some("provide base64 content in ?inline parameter")).await;
+                return respond_json_error(
+                    sock,
+                    400,
+                    "missing inline parameter",
+                    Some("provide base64 content in ?inline parameter"),
+                )
+                .await;
             }
 
             // Validate size estimate before decoding
             if let Err(_) = validate_inline_size_estimate(&b64_content) {
-                return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+                return respond_json_error(
+                    sock,
+                    413,
+                    "inline content too large",
+                    Some("maximum size is 512KB"),
+                )
+                .await;
             }
 
             let bytes: Vec<u8> = match STANDARD.decode(b64_content.as_bytes()) {
                 Ok(b) => b,
-                Err(_) => return respond_json_error(sock, 400, "invalid base64 encoding", Some("provide valid base64 in ?inline parameter")).await,
+                Err(_) => {
+                    return respond_json_error(
+                        sock,
+                        400,
+                        "invalid base64 encoding",
+                        Some("provide valid base64 in ?inline parameter"),
+                    )
+                    .await
+                }
             };
 
             // Validate actual decoded size
             if let Err(_) = validate_decoded_size(&bytes) {
-                return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+                return respond_json_error(
+                    sock,
+                    413,
+                    "inline content too large",
+                    Some("maximum size is 512KB"),
+                )
+                .await;
             }
 
             let text = String::from_utf8_lossy(&bytes).to_string();
@@ -1099,7 +1445,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     }
                     #[cfg(not(feature = "subs_clash"))]
                     {
-                        Err::<sb_subscribe::model::Profile, _>(sb_subscribe::model::SubsError::Unsupported)
+                        Err::<sb_subscribe::model::Profile, _>(
+                            sb_subscribe::model::SubsError::Unsupported,
+                        )
                     }
                 }
                 "singbox" => {
@@ -1109,7 +1457,9 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     }
                     #[cfg(not(feature = "subs_singbox"))]
                     {
-                        Err::<sb_subscribe::model::Profile, _>(sb_subscribe::model::SubsError::Unsupported)
+                        Err::<sb_subscribe::model::Profile, _>(
+                            sb_subscribe::model::SubsError::Unsupported,
+                        )
                     }
                 }
                 _ => Err(sb_subscribe::model::SubsError::Unsupported),
@@ -1139,7 +1489,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                     respond(sock, 200, "application/json", &body).await
                 }
                 Err(_) => {
-                    respond_json_error(sock, 400, "unsupported format or parse error", Some("check format parameter and content")).await
+                    respond_json_error(
+                        sock,
+                        400,
+                        "unsupported format or parse error",
+                        Some("check format parameter and content"),
+                    )
+                    .await
                 }
             }
         }
@@ -1175,9 +1531,7 @@ mod tests {
 
         // Should be able to get 2 permits
         for _ in 0..2 {
-            let task = tokio::spawn(async {
-                acquire_permits().await.is_ok()
-            });
+            let task = tokio::spawn(async { acquire_permits().await.is_ok() });
             tasks.push(task);
         }
 
@@ -1189,18 +1543,22 @@ mod tests {
 
         // Now should be able to get more permits
         for _ in 0..6 {
-            let task = tokio::spawn(async {
-                acquire_permits().await.is_ok()
-            });
+            let task = tokio::spawn(async { acquire_permits().await.is_ok() });
             tasks.push(task);
         }
 
         // Wait for all tasks
         let results: Vec<_> = futures_util::future::join_all(tasks).await;
-        let success_count = results.iter().filter(|r| *r.as_ref().unwrap_or(&false)).count();
+        let success_count = results
+            .iter()
+            .filter(|r| *r.as_ref().unwrap_or(&false))
+            .count();
 
         // Should have at least some successful acquisitions
-        assert!(success_count >= 2, "Expected at least 2 successful permit acquisitions");
+        assert!(
+            success_count >= 2,
+            "Expected at least 2 successful permit acquisitions"
+        );
     }
 
     #[cfg(feature = "subs_http")]
@@ -1233,7 +1591,10 @@ mod tests {
 
         // Should either succeed after waiting or fail quickly
         if result2.is_err() {
-            assert!(duration.as_millis() > 500, "Should have waited at least 500ms before failing");
+            assert!(
+                duration.as_millis() > 500,
+                "Should have waited at least 500ms before failing"
+            );
         }
 
         // Wait for next second and try again - should work
@@ -1246,13 +1607,15 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_resize_operations() {
         // Test thread safety of resize operations
-        let handles: Vec<_> = (0..10).map(|i| {
-            tokio::spawn(async move {
-                resize_limiters(i + 1, (i + 1) as u64);
-                sleep(Duration::from_millis(10)).await;
-                resize_rps((i + 5) as u64);
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                tokio::spawn(async move {
+                    resize_limiters(i + 1, (i + 1) as u64);
+                    sleep(Duration::from_millis(10)).await;
+                    resize_rps((i + 5) as u64);
+                })
             })
-        }).collect();
+            .collect();
 
         futures_util::future::join_all(handles).await;
 
@@ -1267,9 +1630,9 @@ mod tests {
     #[tokio::test]
     async fn test_semi_hot_expansion_logic() {
         // Test the semi-hot expansion logic that dynamically adds permits
+        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
         use tokio::sync::Semaphore;
-        use std::sync::atomic::{AtomicUsize, Ordering};
 
         // Create a test scenario where desired concurrency increases
         resize_limiters(2, 10);
@@ -1278,20 +1641,26 @@ mod tests {
         DESIRED_CONCURRENCY.store(8, Ordering::Relaxed);
 
         // Start with multiple tasks that should trigger expansion
-        let tasks: Vec<_> = (0..6).map(|i| {
-            tokio::spawn(async move {
-                // Each acquire_permits call should potentially trigger expansion
-                let result = acquire_permits().await;
-                sleep(Duration::from_millis(50 * (i + 1) as u64)).await; // Stagger releases
-                result
+        let tasks: Vec<_> = (0..6)
+            .map(|i| {
+                tokio::spawn(async move {
+                    // Each acquire_permits call should potentially trigger expansion
+                    let result = acquire_permits().await;
+                    sleep(Duration::from_millis(50 * (i + 1) as u64)).await; // Stagger releases
+                    result
+                })
             })
-        }).collect();
+            .collect();
 
         let results = futures_util::future::join_all(tasks).await;
         let success_count = results.iter().filter(|r| matches!(r, Ok(Ok(())))).count();
 
         // Should have successful acquisitions due to semi-hot expansion
-        assert!(success_count >= 2, "Semi-hot expansion should allow at least 2 acquisitions, got {}", success_count);
+        assert!(
+            success_count >= 2,
+            "Semi-hot expansion should allow at least 2 acquisitions, got {}",
+            success_count
+        );
     }
 
     #[cfg(feature = "subs_http")]
@@ -1307,7 +1676,10 @@ mod tests {
         let result = acquire_permits().await;
 
         // Should still work but not add 100 permits at once
-        assert!(result.is_ok(), "Acquisition should succeed even with high desired concurrency");
+        assert!(
+            result.is_ok(),
+            "Acquisition should succeed even with high desired concurrency"
+        );
 
         // Reset to reasonable value
         DESIRED_CONCURRENCY.store(4, Ordering::Relaxed);
@@ -1328,11 +1700,9 @@ mod tests {
         assert_eq!(RPS_CAP.load(Ordering::Relaxed), initial_rps);
 
         // Verify initial capacity works
-        let initial_tasks: Vec<_> = (0..2).map(|_| {
-            tokio::spawn(async {
-                acquire_permits().await.is_ok()
-            })
-        }).collect();
+        let initial_tasks: Vec<_> = (0..2)
+            .map(|_| tokio::spawn(async { acquire_permits().await.is_ok() }))
+            .collect();
 
         sleep(Duration::from_millis(50)).await;
 
@@ -1344,21 +1714,28 @@ mod tests {
         assert_eq!(RPS_CAP.load(Ordering::Relaxed), new_rps);
 
         // Should now support higher concurrency
-        let expanded_tasks: Vec<_> = (0..8).map(|_| {
-            tokio::spawn(async {
-                acquire_permits().await.is_ok()
-            })
-        }).collect();
+        let expanded_tasks: Vec<_> = (0..8)
+            .map(|_| tokio::spawn(async { acquire_permits().await.is_ok() }))
+            .collect();
 
         // Wait for all tasks and count successes
         let initial_results = futures_util::future::join_all(initial_tasks).await;
         let expanded_results = futures_util::future::join_all(expanded_tasks).await;
 
-        let initial_success = initial_results.iter().filter(|r| *r.as_ref().unwrap_or(&false)).count();
-        let expanded_success = expanded_results.iter().filter(|r| *r.as_ref().unwrap_or(&false)).count();
+        let initial_success = initial_results
+            .iter()
+            .filter(|r| *r.as_ref().unwrap_or(&false))
+            .count();
+        let expanded_success = expanded_results
+            .iter()
+            .filter(|r| *r.as_ref().unwrap_or(&false))
+            .count();
 
         assert!(initial_success >= 1, "Initial tasks should succeed");
-        assert!(expanded_success >= 4, "Expanded capacity should support more concurrent tasks");
+        assert!(
+            expanded_success >= 4,
+            "Expanded capacity should support more concurrent tasks"
+        );
     }
 
     #[cfg(feature = "subs_http")]
@@ -1385,8 +1762,10 @@ mod tests {
 
         // Should be able to make requests again immediately
         let result = acquire_permits().await;
-        assert!(result.is_ok() || matches!(result, Err(e) if e.to_string().contains("rate limited")),
-                "Should either succeed or be rate limited, not other errors");
+        assert!(
+            result.is_ok() || matches!(result, Err(e) if e.to_string().contains("rate limited")),
+            "Should either succeed or be rate limited, not other errors"
+        );
     }
 
     #[cfg(feature = "subs_http")]
@@ -1412,7 +1791,10 @@ mod tests {
             let sem_guard = sem_lock.read().await;
             // We can't directly check the semaphore capacity, but it should be functioning
             let available = sem_guard.available_permits();
-            assert!(available <= new_conc, "Available permits should not exceed new concurrency limit");
+            assert!(
+                available <= new_conc,
+                "Available permits should not exceed new concurrency limit"
+            );
         }
     }
 }
@@ -1425,7 +1807,9 @@ pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
     for d in s.split(',') {
         let d = d.trim();
         if let Some(v) = d.strip_prefix("max-age=") {
-            if let Ok(n) = v.parse::<u64>() { return Some(n); }
+            if let Ok(n) = v.parse::<u64>() {
+                return Some(n);
+            }
         }
     }
     None
@@ -1436,7 +1820,10 @@ pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
 pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: &Option<String>) {
     if let Some(ma) = cache_control_max_age(resp.headers()) {
         if ma >= 60 {
-            crate::admin_debug::prefetch::enqueue_prefetch(resp.url().as_str(), response_etag.clone());
+            crate::admin_debug::prefetch::enqueue_prefetch(
+                resp.url().as_str(),
+                response_etag.clone(),
+            );
         }
     }
 }

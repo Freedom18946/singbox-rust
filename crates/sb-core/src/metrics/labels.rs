@@ -91,7 +91,8 @@ pub fn record_handshake_duration(_proto: Proto, _duration_ms: f64) {
     #[cfg(feature = "metrics")]
     {
         use metrics::histogram;
-        histogram!("outbound_handshake_duration_ms", "proto" => _proto.as_str()).record(_duration_ms);
+        histogram!("outbound_handshake_duration_ms", "proto" => _proto.as_str())
+            .record(_duration_ms);
     }
 }
 

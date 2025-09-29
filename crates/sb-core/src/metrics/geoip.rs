@@ -27,21 +27,24 @@ pub fn geoip_country_lookup_total(country: &str) {
 /// Record provider success metrics
 #[cfg(feature = "metrics")]
 pub fn geoip_provider_success(provider: &str, duration: f64) {
-    metrics::counter!("geoip_provider_success_total", "provider" => provider.to_string()).increment(1);
+    metrics::counter!("geoip_provider_success_total", "provider" => provider.to_string())
+        .increment(1);
     metrics::histogram!("geoip_provider_duration_seconds", "provider" => provider.to_string(), "result" => "success").record(duration);
 }
 
 /// Record provider failure metrics
 #[cfg(feature = "metrics")]
 pub fn geoip_provider_failure(provider: &str, duration: f64) {
-    metrics::counter!("geoip_provider_failure_total", "provider" => provider.to_string()).increment(1);
+    metrics::counter!("geoip_provider_failure_total", "provider" => provider.to_string())
+        .increment(1);
     metrics::histogram!("geoip_provider_duration_seconds", "provider" => provider.to_string(), "result" => "failure").record(duration);
 }
 
 /// Record fastest provider selection
 #[cfg(feature = "metrics")]
 pub fn geoip_fastest_provider(provider: &str, duration: f64) {
-    metrics::counter!("geoip_fastest_provider_total", "provider" => provider.to_string()).increment(1);
+    metrics::counter!("geoip_fastest_provider_total", "provider" => provider.to_string())
+        .increment(1);
     metrics::histogram!("geoip_fastest_provider_duration_seconds", "provider" => provider.to_string()).record(duration);
 }
 
@@ -67,7 +70,8 @@ pub fn geoip_cache_size(size: usize) {
 #[cfg(feature = "metrics")]
 pub fn geoip_database_loaded(db_type: &str, file_size: u64) {
     metrics::counter!("geoip_database_loaded_total", "type" => db_type.to_string()).increment(1);
-    metrics::gauge!("geoip_database_size_bytes", "type" => db_type.to_string()).set(file_size as f64);
+    metrics::gauge!("geoip_database_size_bytes", "type" => db_type.to_string())
+        .set(file_size as f64);
 }
 
 /// Record database load errors

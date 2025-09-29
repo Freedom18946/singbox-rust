@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
@@ -6,7 +6,9 @@ use std::time::Duration;
 fn bench_connect_loopback(c: &mut Criterion) {
     // Set up a local listener on a random port
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind listener");
-    let addr = listener.local_addr().expect("Failed to get listener address");
+    let addr = listener
+        .local_addr()
+        .expect("Failed to get listener address");
 
     // Spawn a simple echo server
     thread::spawn(move || {

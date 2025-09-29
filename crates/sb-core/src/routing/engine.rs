@@ -163,7 +163,7 @@ impl<'a> Engine<'a> {
                         // 处理CIDR格式（IP/prefix_length）
                         if let (Ok(network_ip), Ok(prefix_len)) = (
                             network_str.parse::<std::net::IpAddr>(),
-                            prefix_len_str.parse::<u8>()
+                            prefix_len_str.parse::<u8>(),
                         ) {
                             if Self::ip_in_cidr(ip, network_ip, prefix_len) {
                                 m = true;
@@ -343,7 +343,7 @@ impl<'a> Engine<'a> {
 
     /// 检查IP地址是否在指定的CIDR子网内
     fn ip_in_cidr(ip: std::net::IpAddr, network_ip: std::net::IpAddr, prefix_len: u8) -> bool {
-        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+        use std::net::IpAddr;
 
         match (ip, network_ip) {
             (IpAddr::V4(ip4), IpAddr::V4(net4)) => {

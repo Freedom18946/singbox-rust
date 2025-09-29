@@ -6,8 +6,8 @@
 use crate::outbound::prelude::*;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
-use tokio::net::{TcpStream, UdpSocket};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpStream, UdpSocket};
 
 /// DNS transport protocols
 #[derive(Debug, Clone, PartialEq)]
@@ -84,7 +84,10 @@ impl DnsConnector {
 
     /// Get the DNS server address with port
     fn server_addr(&self) -> SocketAddr {
-        let port = self.config.port.unwrap_or_else(|| self.config.transport.default_port());
+        let port = self
+            .config
+            .port
+            .unwrap_or_else(|| self.config.transport.default_port());
         SocketAddr::new(self.config.server, port)
     }
 
@@ -96,33 +99,36 @@ impl DnsConnector {
             DnsTransport::Udp => {
                 // UDP DNS typically doesn't maintain persistent connections
                 // For UDP, we create a connected UDP socket that behaves like a stream
-                let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(AdapterError::Io)?;
+                let socket = UdpSocket::bind("0.0.0.0:0")
+                    .await
+                    .map_err(AdapterError::Io)?;
 
-                socket.connect(server_addr).await.map_err(AdapterError::Io)?;
+                socket
+                    .connect(server_addr)
+                    .await
+                    .map_err(AdapterError::Io)?;
 
                 // Wrap UDP socket to behave like a stream
                 Ok(Box::new(UdpStreamWrapper::new(socket)))
             }
             DnsTransport::Tcp => {
                 // TCP DNS connection
-                let stream = tokio::time::timeout(
-                    self.config.timeout,
-                    TcpStream::connect(server_addr)
-                ).await
-                .map_err(|_| AdapterError::Timeout(self.config.timeout))?
-                .map_err(AdapterError::Io)?;
+                let stream =
+                    tokio::time::timeout(self.config.timeout, TcpStream::connect(server_addr))
+                        .await
+                        .map_err(|_| AdapterError::Timeout(self.config.timeout))?
+                        .map_err(AdapterError::Io)?;
 
                 Ok(Box::new(stream))
             }
             DnsTransport::DoT => {
                 // DNS over TLS - for now, fallback to TCP
                 tracing::warn!("DNS over TLS not fully implemented, falling back to TCP");
-                let stream = tokio::time::timeout(
-                    self.config.timeout,
-                    TcpStream::connect(server_addr)
-                ).await
-                .map_err(|_| AdapterError::Timeout(self.config.timeout))?
-                .map_err(AdapterError::Io)?;
+                let stream =
+                    tokio::time::timeout(self.config.timeout, TcpStream::connect(server_addr))
+                        .await
+                        .map_err(|_| AdapterError::Timeout(self.config.timeout))?
+                        .map_err(AdapterError::Io)?;
 
                 Ok(Box::new(stream))
             }
@@ -148,11 +154,14 @@ impl DnsConnector {
         }
 
         if self.config.query_timeout.is_zero() {
-            return Err(AdapterError::InvalidConfig("DNS query timeout cannot be zero"));
+            return Err(AdapterError::InvalidConfig(
+                "DNS query timeout cannot be zero",
+            ));
         }
 
         if matches!(self.config.transport, DnsTransport::DoT | DnsTransport::DoH)
-            && self.config.tls_server_name.is_none() {
+            && self.config.tls_server_name.is_none()
+        {
             tracing::warn!("TLS server name not specified for encrypted DNS transport");
         }
 
@@ -177,10 +186,9 @@ impl OutboundConnector for DnsConnector {
         self.validate_config()?;
 
         // Test connectivity to DNS server
-        if let Err(e) = tokio::time::timeout(
-            self.config.timeout,
-            TcpStream::connect(self.server_addr())
-        ).await {
+        if let Err(e) =
+            tokio::time::timeout(self.config.timeout, TcpStream::connect(self.server_addr())).await
+        {
             tracing::warn!("DNS server connectivity test failed: {:?}", e);
             // Don't fail startup for connectivity issues
         }

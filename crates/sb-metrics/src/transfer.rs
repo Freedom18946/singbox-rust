@@ -43,7 +43,9 @@ pub static THROUGHPUT_BPS: LazyLock<Histogram> = LazyLock::new(|| {
     // 桶：0.5KB/s 到 256MB/s，指数扩展
     let buckets = prometheus::exponential_buckets(512.0, 2.0, 20).unwrap_or_else(|_| {
         // Fallback to fixed buckets on exponential_buckets failure
-        vec![512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32768.0, 65536.0]
+        vec![
+            512.0, 1024.0, 2048.0, 4096.0, 8192.0, 16384.0, 32768.0, 65536.0,
+        ]
     });
     #[allow(clippy::expect_used)]
     register_histogram!(prometheus::HistogramOpts::new(

@@ -3,17 +3,17 @@
 //! Measures SOCKS5 and HTTP CONNECT performance with mock proxies
 //! to establish baseline performance metrics for adapter implementations.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use anyhow;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use sb_adapters::{
     outbound::{http::HttpProxyConnector, socks5::Socks5Connector},
-    traits::{DialOpts, OutboundConnector, Target, ResolveMode, RetryPolicy},
+    traits::{DialOpts, OutboundConnector, ResolveMode, RetryPolicy, Target},
     Result,
 };
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
 
 /// Mock SOCKS5 proxy server for benchmarking
@@ -126,9 +126,7 @@ async fn bench_socks_connect(proxy_addr: &str, concurrency: usize) -> Result<()>
             let target = target.clone();
             let opts = opts.clone();
 
-            let handle = tokio::spawn(async move {
-                connector.dial(target, opts).await
-            });
+            let handle = tokio::spawn(async move { connector.dial(target, opts).await });
             handles.push(handle);
         }
 
@@ -164,9 +162,7 @@ async fn bench_http_connect(proxy_addr: &str, concurrency: usize) -> Result<()> 
             let target = target.clone();
             let opts = opts.clone();
 
-            let handle = tokio::spawn(async move {
-                connector.dial(target, opts).await
-            });
+            let handle = tokio::spawn(async move { connector.dial(target, opts).await });
             handles.push(handle);
         }
 

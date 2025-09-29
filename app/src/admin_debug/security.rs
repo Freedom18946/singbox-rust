@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
+use ipnet::IpNet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 use url::Url;
-use ipnet::IpNet;
 
 /// IDNA normalization for internationalized domain names
 pub fn normalize_host(host: &str) -> Result<String> {
@@ -36,7 +36,10 @@ fn is_private_ipv6(ip: Ipv6Addr) -> bool {
 
 // Helper function to check if IPv6 address is IPv4-mapped (::ffff:x.y.z.w)
 fn is_ipv4_mapped_ipv6(ip: Ipv6Addr) -> bool {
-    matches!(ip.octets(), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, _, _, _, _])
+    matches!(
+        ip.octets(),
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, _, _, _, _]
+    )
 }
 
 pub fn is_private_ip(ip: IpAddr) -> bool {
@@ -55,7 +58,8 @@ pub fn forbid_private_host(url: &Url) -> Result<()> {
             }
         } else {
             // Apply IDNA normalization for domain names
-            let _normalized = normalize_host(host).with_context(|| format!("IDNA normalization failed for host: {}", host))?;
+            let _normalized = normalize_host(host)
+                .with_context(|| format!("IDNA normalization failed for host: {}", host))?;
         }
         Ok(())
     } else {
@@ -72,10 +76,12 @@ pub fn forbid_private_host_or_resolved(url: &Url) -> Result<()> {
             let resolved_host = if host.parse::<IpAddr>().is_ok() {
                 host.to_string() // IP address, use as-is
             } else {
-                normalize_host(host).with_context(|| format!("IDNA normalization failed for host: {}", host))?
+                normalize_host(host)
+                    .with_context(|| format!("IDNA normalization failed for host: {}", host))?
             };
 
-            let addrs = (resolved_host.as_str(), port).to_socket_addrs()
+            let addrs = (resolved_host.as_str(), port)
+                .to_socket_addrs()
                 .with_context(|| format!("resolve host failed: {resolved_host}"))?;
             for addr in addrs {
                 if is_private_ip(addr.ip()) {
@@ -91,22 +97,32 @@ pub fn forbid_private_host_or_resolved(url: &Url) -> Result<()> {
 
 #[derive(Clone)]
 struct Allow {
-    domains: Vec<String>,   // 精确或后缀（以 . 开头）
-    cidrs:   Vec<IpNet>,    // 10.0.0.0/8, fd00::/8 等
-    ips:     Vec<std::net::IpAddr>, // 精确 IP
+    domains: Vec<String>,       // 精确或后缀（以 . 开头）
+    cidrs: Vec<IpNet>,          // 10.0.0.0/8, fd00::/8 等
+    ips: Vec<std::net::IpAddr>, // 精确 IP
 }
 
 fn parse_private_allowlist() -> Allow {
     let raw = std::env::var("SB_SUBS_PRIVATE_ALLOWLIST").unwrap_or_default();
     let mut domains = Vec::new();
-    let mut cidrs   = Vec::new();
-    let mut ips     = Vec::new();
+    let mut cidrs = Vec::new();
+    let mut ips = Vec::new();
     for item in raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        if let Ok(net) = item.parse::<IpNet>() { cidrs.push(net); continue; }
-        if let Ok(ip)  = item.parse::<std::net::IpAddr>() { ips.push(ip); continue; }
+        if let Ok(net) = item.parse::<IpNet>() {
+            cidrs.push(net);
+            continue;
+        }
+        if let Ok(ip) = item.parse::<std::net::IpAddr>() {
+            ips.push(ip);
+            continue;
+        }
         domains.push(item.trim_end_matches('.').to_lowercase());
     }
-    Allow { domains, cidrs, ips }
+    Allow {
+        domains,
+        cidrs,
+        ips,
+    }
 }
 
 fn host_matches_allowlist(host: &str, ip: Option<IpAddr>, allow: &Allow) -> bool {
@@ -117,12 +133,20 @@ fn host_matches_allowlist(host: &str, ip: Option<IpAddr>, allow: &Allow) -> bool
         host.trim_end_matches('.').to_lowercase()
     };
 
-    if allow.domains.iter().any(|a| (a.starts_with('.') && normalized_host.ends_with(a)) || normalized_host == *a) {
+    if allow
+        .domains
+        .iter()
+        .any(|a| (a.starts_with('.') && normalized_host.ends_with(a)) || normalized_host == *a)
+    {
         return true;
     }
     if let Some(ip) = ip {
-        if allow.ips.iter().any(|x| *x == ip) { return true; }
-        if allow.cidrs.iter().any(|net| net.contains(&ip)) { return true; }
+        if allow.ips.iter().any(|x| *x == ip) {
+            return true;
+        }
+        if allow.cidrs.iter().any(|net| net.contains(&ip)) {
+            return true;
+        }
     }
     false
 }
@@ -133,7 +157,9 @@ pub fn forbid_private_host_or_resolved_with_allowlist(url: &Url) -> Result<()> {
     if let Some(host) = url.host_str() {
         // 直连 IP 且在 allowlist → 放行
         if let Ok(ip) = host.parse::<IpAddr>() {
-            if host_matches_allowlist(host, Some(ip), &allow) { return Ok(()); }
+            if host_matches_allowlist(host, Some(ip), &allow) {
+                return Ok(());
+            }
         } else if host_matches_allowlist(host, None, &allow) {
             return Ok(());
         }

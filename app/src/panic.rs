@@ -1,6 +1,6 @@
+use std::backtrace::Backtrace;
 use std::path::Path;
 use std::time::SystemTime;
-use std::backtrace::Backtrace;
 
 pub fn install() {
     if std::env::var("SB_PANIC_LOG").ok().as_deref() != Some("1") {

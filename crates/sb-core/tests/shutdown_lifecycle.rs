@@ -18,18 +18,13 @@ async fn repeated_init_and_shutdown_no_leak() {
         .await
         .expect("start supervisor #1");
     let h1 = sup1.handle();
-    h1
-        .shutdown_graceful(std::time::Duration::from_millis(100))
+    h1.shutdown_graceful(std::time::Duration::from_millis(100))
         .await
         .expect("shutdown #1");
 
-    let sup2 = Supervisor::start(ir)
-        .await
-        .expect("start supervisor #2");
+    let sup2 = Supervisor::start(ir).await.expect("start supervisor #2");
     let h2 = sup2.handle();
-    h2
-        .shutdown_graceful(std::time::Duration::from_millis(100))
+    h2.shutdown_graceful(std::time::Duration::from_millis(100))
         .await
         .expect("shutdown #2");
 }
-

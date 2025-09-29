@@ -1,6 +1,9 @@
-use once_cell::sync::OnceCell;
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use arc_swap::ArcSwap;
+use once_cell::sync::OnceCell;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 fn json_diff_enhanced(before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
     use serde_json::{json, Value};
@@ -37,9 +40,18 @@ fn json_diff_enhanced(before: &serde_json::Value, after: &serde_json::Value) -> 
 
 fn diff_is_empty(diff: &serde_json::Value) -> bool {
     if let Some(obj) = diff.as_object() {
-        let add_empty = obj.get("add").and_then(|v| v.as_object()).map_or(true, |o| o.is_empty());
-        let remove_empty = obj.get("remove").and_then(|v| v.as_object()).map_or(true, |o| o.is_empty());
-        let replace_empty = obj.get("replace").and_then(|v| v.as_object()).map_or(true, |o| o.is_empty());
+        let add_empty = obj
+            .get("add")
+            .and_then(|v| v.as_object())
+            .map_or(true, |o| o.is_empty());
+        let remove_empty = obj
+            .get("remove")
+            .and_then(|v| v.as_object())
+            .map_or(true, |o| o.is_empty());
+        let replace_empty = obj
+            .get("replace")
+            .and_then(|v| v.as_object())
+            .map_or(true, |o| o.is_empty());
         add_empty && remove_empty && replace_empty
     } else {
         true
@@ -145,17 +157,21 @@ static CONFIG: OnceCell<ArcSwap<EnvConfig>> = OnceCell::new();
 static VERSION: OnceCell<AtomicU64> = OnceCell::new();
 
 pub fn get() -> EnvConfig {
-    let cfg = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env())).load();
+    let cfg = CONFIG
+        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()))
+        .load();
     (**cfg).clone()
 }
 #[allow(dead_code)]
 pub fn get_arc() -> Arc<EnvConfig> {
-    (*CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env())).load()).clone()
+    (*CONFIG
+        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()))
+        .load())
+    .clone()
 }
 
 pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Result<String, String> {
-    let arc = CONFIG
-        .get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
+    let arc = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
     let mut config = (**arc.load()).clone();
     let mut changes = Vec::new();
 
@@ -253,20 +269,28 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
     }
 
     // Apply hot updates to subsystems
-    #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
+    #[cfg(any(
+        feature = "subs_http",
+        feature = "subs_clash",
+        feature = "subs_singbox"
+    ))]
     crate::admin_debug::endpoints::subs::resize_limiters(config.max_concurrency, config.rps);
 
     tracing::info!(changes = ?changes, "Configuration applied via API");
 
     // commit atomically
     arc.store(Arc::new(config));
-    VERSION.get_or_init(|| AtomicU64::new(0)).fetch_add(1, Ordering::Relaxed);
+    VERSION
+        .get_or_init(|| AtomicU64::new(0))
+        .fetch_add(1, Ordering::Relaxed);
 
     Ok(format!("Applied changes: {}", changes.join(", ")))
 }
 
 pub fn version() -> u64 {
-    VERSION.get_or_init(|| AtomicU64::new(0)).load(Ordering::Relaxed)
+    VERSION
+        .get_or_init(|| AtomicU64::new(0))
+        .load(Ordering::Relaxed)
 }
 
 #[derive(serde::Serialize)]
@@ -278,7 +302,10 @@ pub struct ApplyResult {
     pub diff: serde_json::Value,
 }
 
-fn apply_to_config(config: &mut EnvConfig, delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Result<Vec<String>, String> {
+fn apply_to_config(
+    config: &mut EnvConfig,
+    delta: &crate::admin_debug::endpoints::config::ConfigDelta,
+) -> Result<Vec<String>, String> {
     let mut changes = Vec::new();
 
     if let Some(max_redirects) = delta.max_redirects {
@@ -372,7 +399,10 @@ fn apply_to_config(config: &mut EnvConfig, delta: &crate::admin_debug::endpoints
     Ok(changes)
 }
 
-pub fn apply_with_dryrun(delta: &crate::admin_debug::endpoints::config::ConfigDelta, dry_run: bool) -> Result<ApplyResult, String> {
+pub fn apply_with_dryrun(
+    delta: &crate::admin_debug::endpoints::config::ConfigDelta,
+    dry_run: bool,
+) -> Result<ApplyResult, String> {
     let arc = CONFIG.get_or_init(|| ArcSwap::from_pointee(EnvConfig::from_env()));
     let ctr = VERSION.get_or_init(|| AtomicU64::new(0));
 
@@ -427,7 +457,11 @@ pub fn reload() {
     if let Some(arc) = CONFIG.get() {
         arc.store(Arc::new(cfg.clone()));
         tracing::info!("Configuration reloaded from environment variables");
-        #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
+        #[cfg(any(
+            feature = "subs_http",
+            feature = "subs_clash",
+            feature = "subs_singbox"
+        ))]
         crate::admin_debug::endpoints::subs::resize_limiters(cfg.max_concurrency, cfg.rps);
     } else {
         CONFIG.get_or_init(|| ArcSwap::from_pointee(cfg));
@@ -528,7 +562,11 @@ mod tests_apply_dryrun {
         assert!(res.changed, "dryrun should detect changes");
         assert_eq!(version(), before_ver, "version not bumped on dryrun");
         // Verify diff contains the field in the new format
-        assert!(res.diff.get("replace").and_then(|m| m.get("timeout_ms")).is_some());
+        assert!(res
+            .diff
+            .get("replace")
+            .and_then(|m| m.get("timeout_ms"))
+            .is_some());
     }
 
     #[test]
@@ -568,15 +606,26 @@ mod tests_idempotent {
         let res1 = apply_with_dryrun(&delta, false).expect("first apply ok");
         assert!(res1.ok);
         assert!(res1.changed, "first apply should show changes");
-        assert_eq!(version(), start_ver + 1, "version should increment on first apply");
+        assert_eq!(
+            version(),
+            start_ver + 1,
+            "version should increment on first apply"
+        );
 
         // Second apply with same delta - should not change
         let res2 = apply_with_dryrun(&delta, false).expect("second apply ok");
         assert!(res2.ok);
         assert!(!res2.changed, "second apply should show no changes");
         assert_eq!(res2.msg, "no changes");
-        assert_eq!(version(), start_ver + 1, "version should not increment on second apply");
-        assert!(diff_is_empty(&res2.diff), "diff should be empty on second apply");
+        assert_eq!(
+            version(),
+            start_ver + 1,
+            "version should not increment on second apply"
+        );
+        assert!(
+            diff_is_empty(&res2.diff),
+            "diff should be empty on second apply"
+        );
     }
 
     #[test]
@@ -594,7 +643,11 @@ mod tests_idempotent {
         assert!(!res.ok, "dry run should return ok=false");
         assert_eq!(res.msg, "dryrun");
         assert!(res.changed, "dry run should detect changes");
-        assert_eq!(version(), start_ver, "version should not increment on dry run");
+        assert_eq!(
+            version(),
+            start_ver,
+            "version should not increment on dry run"
+        );
         assert!(!diff_is_empty(&res.diff), "diff should show the changes");
 
         // Verify config wasn't actually changed
@@ -610,7 +663,7 @@ mod tests_idempotent {
         // Get current config values
         let cfg = get();
         let delta = crate::admin_debug::endpoints::config::ConfigDelta {
-            timeout_ms: Some(cfg.timeout_ms), // Same as current
+            timeout_ms: Some(cfg.timeout_ms),       // Same as current
             max_redirects: Some(cfg.max_redirects), // Same as current
             ..Default::default()
         };
@@ -619,8 +672,15 @@ mod tests_idempotent {
         assert!(res.ok);
         assert!(!res.changed, "no actual changes should show changed=false");
         assert_eq!(res.msg, "no changes");
-        assert_eq!(version(), start_ver, "version should not increment when no changes");
-        assert!(diff_is_empty(&res.diff), "diff should be empty when no changes");
+        assert_eq!(
+            version(),
+            start_ver,
+            "version should not increment when no changes"
+        );
+        assert!(
+            diff_is_empty(&res.diff),
+            "diff should be empty when no changes"
+        );
     }
 
     #[test]
@@ -689,7 +749,9 @@ mod tests_concurrency_and_rollback {
             .expect("apply ok");
         }
 
-        for j in readers { let _ = j.join(); }
+        for j in readers {
+            let _ = j.join();
+        }
         assert!(version() >= start + 10);
     }
 
@@ -699,7 +761,10 @@ mod tests_concurrency_and_rollback {
         let before = get();
         // invalid value
         let res = apply_with_dryrun(
-            &crate::admin_debug::endpoints::config::ConfigDelta { max_redirects: Some(1000), ..Default::default() },
+            &crate::admin_debug::endpoints::config::ConfigDelta {
+                max_redirects: Some(1000),
+                ..Default::default()
+            },
             false,
         );
         assert!(res.is_err());
@@ -723,11 +788,19 @@ mod loom_smoke {
                 hs.push(thread::spawn(move || {
                     let _ = get();
                     if i == 0 {
-                        let _ = apply_with_dryrun(&crate::admin_debug::endpoints::config::ConfigDelta{ rps: Some(5), ..Default::default() }, false);
+                        let _ = apply_with_dryrun(
+                            &crate::admin_debug::endpoints::config::ConfigDelta {
+                                rps: Some(5),
+                                ..Default::default()
+                            },
+                            false,
+                        );
                     }
                 }));
             }
-            for h in hs { let _ = h.join(); }
+            for h in hs {
+                let _ = h.join();
+            }
         });
     }
 }

@@ -25,6 +25,8 @@ impl MockDnsResolver {
             Ok(DnsAnswer {
                 ips,
                 ttl: Duration::from_secs(ttl_secs),
+                source: sb_core::dns::cache::Source::System,
+                rcode: sb_core::dns::cache::Rcode::NoError,
             }),
         );
     }

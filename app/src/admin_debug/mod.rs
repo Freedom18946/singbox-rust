@@ -1,15 +1,15 @@
+pub mod audit;
+pub mod breaker;
+pub mod cache;
+pub mod endpoints;
 pub mod http;
 pub mod http_server;
 pub mod http_util;
-pub mod endpoints;
+pub mod prefetch;
+pub mod reloadable;
 pub mod security;
 pub mod security_async;
 pub mod security_metrics;
-pub mod cache;
-pub mod breaker;
-pub mod reloadable;
-pub mod audit;
-pub mod prefetch;
 
 #[cfg(feature = "auth")]
 pub mod auth;

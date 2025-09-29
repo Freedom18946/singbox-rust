@@ -31,7 +31,8 @@ fn fold_cidrs(v: &mut Vec<String>) {
 
     // 按网络地址排序
     parsed_cidrs.sort_by(|a, b| {
-        a.network_addr.cmp(&b.network_addr)
+        a.network_addr
+            .cmp(&b.network_addr)
             .then_with(|| a.prefix_len.cmp(&b.prefix_len))
     });
 
@@ -61,15 +62,17 @@ struct ParsedCidr {
     original: String,
 }
 
-impl ParsedCidr {
-    fn to_string(&self) -> String {
-        self.original.clone()
+impl std::fmt::Display for ParsedCidr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.original)
     }
 }
 
 impl Ord for ParsedCidr {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.network_addr.to_string().cmp(&other.network_addr.to_string())
+        self.network_addr
+            .to_string()
+            .cmp(&other.network_addr.to_string())
             .then_with(|| self.prefix_len.cmp(&other.prefix_len))
     }
 }
@@ -83,9 +86,11 @@ impl PartialOrd for ParsedCidr {
 /// 解析CIDR字符串
 fn parse_cidr(cidr_str: &str) -> Result<ParsedCidr, &'static str> {
     if let Some((network_str, prefix_str)) = cidr_str.split_once('/') {
-        let network_addr = network_str.parse::<std::net::IpAddr>()
+        let network_addr = network_str
+            .parse::<std::net::IpAddr>()
             .map_err(|_| "invalid IP address")?;
-        let prefix_len = prefix_str.parse::<u8>()
+        let prefix_len = prefix_str
+            .parse::<u8>()
             .map_err(|_| "invalid prefix length")?;
 
         // 验证前缀长度是否合理
@@ -104,7 +109,8 @@ fn parse_cidr(cidr_str: &str) -> Result<ParsedCidr, &'static str> {
         })
     } else {
         // 尝试解析为单个IP地址
-        let network_addr = cidr_str.parse::<std::net::IpAddr>()
+        let network_addr = cidr_str
+            .parse::<std::net::IpAddr>()
             .map_err(|_| "invalid IP address")?;
         let prefix_len = match network_addr {
             std::net::IpAddr::V4(_) => 32,
@@ -121,7 +127,7 @@ fn parse_cidr(cidr_str: &str) -> Result<ParsedCidr, &'static str> {
 
 /// 检查一个CIDR是否被另一个包含
 fn is_cidr_contained(inner: &ParsedCidr, outer: &ParsedCidr) -> bool {
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::net::IpAddr;
 
     // 只有相同IP版本的网络才能包含
     match (inner.network_addr, outer.network_addr) {

@@ -65,13 +65,18 @@ impl TrojanOutbound {
             .with_root_certificates(roots)
             .with_no_client_auth();
 
-        let insecure_env = std::env::var("SB_TROJAN_SKIP_CERT_VERIFY").ok().map(|v| v=="1"||v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        let insecure_env = std::env::var("SB_TROJAN_SKIP_CERT_VERIFY")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         if config.skip_cert_verify || insecure_env {
             tracing::warn!("Trojan: insecure mode enabled, certificate verification disabled");
             #[cfg(feature = "tls_rustls")]
             {
                 let v = crate::tls::danger::NoVerify::new();
-                tls_config.dangerous().set_certificate_verifier(std::sync::Arc::new(v));
+                tls_config
+                    .dangerous()
+                    .set_certificate_verifier(std::sync::Arc::new(v));
             }
         }
 
@@ -187,7 +192,6 @@ impl TrojanOutbound {
                 // Received proper 200 OK response
                 #[cfg(feature = "metrics")]
                 {
-                    
                     metrics::counter!("trojan_handshake_total", "result" => "ok", "response" => "200").increment(1);
                 }
             }
@@ -195,7 +199,6 @@ impl TrojanOutbound {
                 // Received response but not 200 OK, tolerate it
                 #[cfg(feature = "metrics")]
                 {
-                    
                     metrics::counter!("trojan_handshake_total", "result" => "ok", "response" => "non_200").increment(1);
                 }
             }
@@ -203,7 +206,6 @@ impl TrojanOutbound {
                 // No response or timeout, tolerate it for compatibility
                 #[cfg(feature = "metrics")]
                 {
-                    
                     metrics::counter!("trojan_handshake_total", "result" => "ok", "response" => "empty").increment(1);
                 }
             }

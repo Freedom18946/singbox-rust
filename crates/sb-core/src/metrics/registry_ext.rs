@@ -1,4 +1,3 @@
-#![cfg(feature = "metrics")]
 //! Thread-safe metric registry extensions without lifetime tricks.
 //!
 //! - Uses `OnceCell + DashMap` to memoize metric vectors by name.
@@ -98,7 +97,10 @@ pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'s
             leaked
         }
         Err(err) => {
-            eprintln!("metrics: failed to construct IntGaugeVec '{}': {}", name, err);
+            eprintln!(
+                "metrics: failed to construct IntGaugeVec '{}': {}",
+                name, err
+            );
             gauge_fallback_int()
         }
     };
@@ -141,21 +143,29 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
     }
 }
 
-pub fn get_or_register_counter_vec(name: &str, help: &str, labels: &[&str]) -> &'static IntCounterVec {
+pub fn get_or_register_counter_vec(
+    name: &str,
+    help: &str,
+    labels: &[&str],
+) -> &'static IntCounterVec {
     let map = COUNTER_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
         return *existing;
     }
 
-    let metric_ref: &'static IntCounterVec = match IntCounterVec::new(Opts::new(name, help), labels) {
+    let metric_ref: &'static IntCounterVec = match IntCounterVec::new(Opts::new(name, help), labels)
+    {
         Ok(metric) => {
             let leaked: &'static IntCounterVec = Box::leak(Box::new(metric));
             let _ = reg().register(Box::new((*leaked).clone()));
             leaked
         }
         Err(err) => {
-            eprintln!("metrics: failed to construct IntCounterVec '{}': {}", name, err);
+            eprintln!(
+                "metrics: failed to construct IntCounterVec '{}': {}",
+                name, err
+            );
             // Fall back to a shared, known-good GaugeVec is not type-compatible,
             // so we provide no counter fallback and keep a separate counter-only fallback.
             static CELL: OnceCell<&'static IntCounterVec> = OnceCell::new();
@@ -237,7 +247,10 @@ pub fn get_or_register_histogram_vec(
             leaked
         }
         Err(err) => {
-            eprintln!("metrics: failed to construct HistogramVec '{}': {}", name, err);
+            eprintln!(
+                "metrics: failed to construct HistogramVec '{}': {}",
+                name, err
+            );
             histogram_fallback()
         }
     };
@@ -257,11 +270,9 @@ mod tests {
 
     #[test]
     fn repeated_registration_returns_same_instance() {
-        let a = get_or_register_gauge_vec("t_repeat_gauge", "help", &["l1", "l2"])
-            as *const IntGaugeVec;
-        let b = get_or_register_gauge_vec("t_repeat_gauge", "help", &["l1", "l2"])
-            as *const IntGaugeVec;
-        assert_eq!(a, b);
+        let a = get_or_register_gauge_vec("t_repeat_gauge", "help", &["l1", "l2"]);
+        let b = get_or_register_gauge_vec("t_repeat_gauge", "help", &["l1", "l2"]);
+        assert_eq!(a as *const IntGaugeVec, b as *const IntGaugeVec);
     }
 
     #[test]
@@ -271,38 +282,34 @@ mod tests {
 
         let name = "t_concurrent_counter";
         let mut handles = Vec::new();
-        let out: Arc<DashMap<usize, *const IntCounterVec>> = Arc::new(DashMap::new());
+        let out: Arc<DashMap<usize, usize>> = Arc::new(DashMap::new());
         for i in 0..8 {
             let out = out.clone();
             handles.push(thread::spawn(move || {
-                let p = get_or_register_counter_vec(name, "help", &["l"])
-                    as *const IntCounterVec;
-                out.insert(i, p);
+                let p = get_or_register_counter_vec(name, "help", &["l"]);
+                let addr = p as *const IntCounterVec as usize;
+                out.insert(i, addr);
             }));
         }
         for h in handles {
             let _ = h.join();
         }
-        let first = out.iter().next().map(|kv| *kv.1).unwrap();
-        assert!(out.iter().all(|kv| *kv.1 == first));
+        let first = out.iter().next().map(|kv| *kv.value()).unwrap();
+        assert!(out.iter().all(|kv| *kv.value() == first));
     }
 
     #[test]
     fn histogram_repeated_buckets_ignored_after_first() {
-        let h1 = get_or_register_histogram_vec(
-            "t_hist",
-            "help",
-            &["l"],
-            Some(vec![1.0, 2.0, 5.0]),
-        ) as *const HistogramVec;
-        let h2 = get_or_register_histogram_vec("t_hist", "help", &["l"], None) as *const _;
-        assert_eq!(h1, h2);
+        let h1 = get_or_register_histogram_vec("t_hist", "help", &["l"], Some(vec![1.0, 2.0, 5.0]));
+        let h2 = get_or_register_histogram_vec("t_hist", "help", &["l"], None);
+        assert_eq!(h1 as *const HistogramVec, h2 as *const HistogramVec);
     }
 }
 
 #[cfg(feature = "loom")]
+#[allow(unused_imports)]
 mod loom_smoke {
-    use super::*;
+    use super::get_or_register_counter_vec;
     use loom::thread;
 
     #[test]
@@ -317,7 +324,14 @@ mod loom_smoke {
                 }));
             }
             let mut first: Option<usize> = None;
-            for h in hs { let v = h.join().unwrap(); if first.is_none() { first = Some(v); } else { assert_eq!(first.unwrap(), v); } }
+            for h in hs {
+                let v = h.join().unwrap();
+                if first.is_none() {
+                    first = Some(v);
+                } else {
+                    assert_eq!(first.unwrap(), v);
+                }
+            }
         });
     }
 }

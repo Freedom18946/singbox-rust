@@ -10,8 +10,8 @@
 //! - `crate::admin::http`      —— 管理端点相关
 
 // 重导出现有子模块，便于上层通过 `sb_core::http::metrics` / `sb_core::http::admin` 访问
+pub use crate::admin::http as admin;
 pub use crate::metrics::http as metrics;
-pub use crate::admin::http   as admin;
 
 // 将来可在此扩展通用 HTTP 组件：
 // pub mod client;

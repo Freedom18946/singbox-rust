@@ -1,4 +1,4 @@
-#![cfg(feature="dev-cli")]
+#![cfg(feature = "dev-cli")]
 use std::sync::OnceLock;
 
 /// Ensure tracing is initialized only once across the application
@@ -11,9 +11,18 @@ static METRICS: OnceLock<()> = OnceLock::new();
 pub fn init_tracing_once() {
     TRACING.get_or_init(|| {
         let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
-        let fmt_json = std::env::var("SB_TRACING_FORMAT").ok().map(|v| v=="json").unwrap_or(false);
-        let builder = tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::new(filter)).with_target(true);
-        let _ = if fmt_json { builder.json().try_init() } else { builder.compact().try_init() };
+        let fmt_json = std::env::var("SB_TRACING_FORMAT")
+            .ok()
+            .map(|v| v == "json")
+            .unwrap_or(false);
+        let builder = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new(filter))
+            .with_target(true);
+        let _ = if fmt_json {
+            builder.json().try_init()
+        } else {
+            builder.compact().try_init()
+        };
         tracing::debug!("tracing initialized (json={})", fmt_json);
     });
 }
@@ -21,11 +30,18 @@ pub fn init_tracing_once() {
 /// Initialize tracing with custom filter, safe to call multiple times
 pub fn init_tracing_once_with_filter(filter: &str) {
     TRACING.get_or_init(|| {
-        let fmt_json = std::env::var("SB_TRACING_FORMAT").ok().map(|v| v=="json").unwrap_or(false);
+        let fmt_json = std::env::var("SB_TRACING_FORMAT")
+            .ok()
+            .map(|v| v == "json")
+            .unwrap_or(false);
         let builder = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(filter))
             .with_target(true);
-        let _ = if fmt_json { builder.json().try_init() } else { builder.compact().try_init() };
+        let _ = if fmt_json {
+            builder.json().try_init()
+        } else {
+            builder.compact().try_init()
+        };
         tracing::debug!("tracing initialized with custom filter (json={})", fmt_json);
     });
 }

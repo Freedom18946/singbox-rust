@@ -141,8 +141,8 @@ impl std::fmt::Debug for ResolverHandle {
 }
 
 /// RAII 守卫：封装 DNS 并发门控（全局 + 每 host）
-        // - 构造时获取 permit 并打点 `dns_inflight{scope}`
-        // - Drop 自动释放 permit 并做对称打点
+// - 构造时获取 permit 并打点 `dns_inflight{scope}`
+// - Drop 自动释放 permit 并做对称打点
 struct InflightGuards {
     g: Option<tokio::sync::OwnedSemaphorePermit>,
     h: Option<tokio::sync::OwnedSemaphorePermit>,
@@ -184,8 +184,8 @@ impl Drop for InflightGuards {
 
 impl ResolverHandle {
     /// 从 env 初始化：
-            // - SB_DNS_ENABLE=1 时启用；否则标记为 disabled（但仍提供 SystemResolver）
-            // - 静态表通过 SB_DNS_STATIC 提供
+    // - SB_DNS_ENABLE=1 时启用；否则标记为 disabled（但仍提供 SystemResolver）
+    // - 静态表通过 SB_DNS_STATIC 提供
     pub fn from_env_or_default() -> Self {
         let enabled = std::env::var("SB_DNS_ENABLE")
             .ok()
@@ -348,71 +348,73 @@ impl ResolverHandle {
                 need_fallback = true;
             }
             if let Ok(cache) = cache_opt {
-            if let Some(ent) = cache.get(&key) {
-                #[cfg(feature = "metrics")]
+                if let Some(ent) = cache.get(&key) {
+                    #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
-                let ips = if self.ipv6_enabled {
-                    ent.ips.clone()
-                } else {
-                    ent.ips.iter().cloned().filter(|ip| ip.is_ipv4()).collect()
-                };
-                let mut to_spawn: Option<(tokio::sync::OwnedSemaphorePermit, String)> = None;
-                // Optional prefetch on near-expiry
-                if let Some(rem) = cache.peek_remaining(&key) {
-                    if rem <= self.prefetch_before {
-                        if self.prefetch_enabled {
-                            let key_clone = key.clone();
-                            let permit = self.prefetch_sem.clone().try_acquire_owned();
-                            if let Ok(mut inflight) = self.prefetch_inflight.lock() {
-                                if let Ok(p) = permit {
-                                    if inflight.insert(key_clone.clone()) {
-                                        #[cfg(feature = "metrics")]
+                    let ips = if self.ipv6_enabled {
+                        ent.ips.clone()
+                    } else {
+                        ent.ips.iter().cloned().filter(|ip| ip.is_ipv4()).collect()
+                    };
+                    let mut to_spawn: Option<(tokio::sync::OwnedSemaphorePermit, String)> = None;
+                    // Optional prefetch on near-expiry
+                    if let Some(rem) = cache.peek_remaining(&key) {
+                        if rem <= self.prefetch_before {
+                            if self.prefetch_enabled {
+                                let key_clone = key.clone();
+                                let permit = self.prefetch_sem.clone().try_acquire_owned();
+                                if let Ok(mut inflight) = self.prefetch_inflight.lock() {
+                                    if let Ok(p) = permit {
+                                        if inflight.insert(key_clone.clone()) {
+                                            #[cfg(feature = "metrics")]
                                         ::metrics::counter!("dns_prefetch_total", "reason"=>"spawn")
                                             .increment(1);
-                                        to_spawn = Some((p, key_clone));
+                                            to_spawn = Some((p, key_clone));
+                                        } else {
+                                            #[cfg(feature = "metrics")]
+                                        ::metrics::counter!("dns_prefetch_total", "reason"=>"skip")
+                                            .increment(1);
+                                        }
                                     } else {
                                         #[cfg(feature = "metrics")]
                                         ::metrics::counter!("dns_prefetch_total", "reason"=>"skip")
                                             .increment(1);
                                     }
                                 } else {
-                                    #[cfg(feature = "metrics")]
-                                    ::metrics::counter!("dns_prefetch_total", "reason"=>"skip")
-                                        .increment(1);
+                                    tracing::warn!(target: "sb_core::dns", "prefetch inflight lock poisoned; skip prefetch");
+                                    // 预取锁被毒化，但我们仍然可以返回缓存结果，只是无法进行预取
                                 }
                             } else {
-                                tracing::warn!(target: "sb_core::dns", "prefetch inflight lock poisoned; skip prefetch");
-                                need_fallback = true;
+                                #[cfg(feature = "metrics")]
+                                ::metrics::counter!("dns_prefetch_total", "reason"=>"hit_stale")
+                                    .increment(1);
                             }
-                        } else {
-                            #[cfg(feature = "metrics")]
-                            ::metrics::counter!("dns_prefetch_total", "reason"=>"hit_stale")
-                                .increment(1);
                         }
                     }
-                }
-                // drop lock before spawning
-                drop(cache);
-                if let Some((permit, key_spawn)) = to_spawn {
-                    let handle = self.clone();
-                    tokio::spawn(async move {
-                        let _p = permit;
-                        let _ = handle.resolve_via_pool_or_system(&key_spawn).await;
-                        if let Ok(mut s) = handle.prefetch_inflight.lock() {
-                            let _ = s.remove(&key_spawn);
-                        }
+                    // drop lock before spawning
+                    drop(cache);
+                    if let Some((permit, key_spawn)) = to_spawn {
+                        let handle = self.clone();
+                        tokio::spawn(async move {
+                            let _p = permit;
+                            let _ = handle.resolve_via_pool_or_system(&key_spawn).await;
+                            if let Ok(mut s) = handle.prefetch_inflight.lock() {
+                                let _ = s.remove(&key_spawn);
+                            }
+                        });
+                    }
+                    return Ok(DnsAnswer {
+                        ips,
+                        ttl: std::time::Duration::from_secs(0),
+                        source: cache::Source::Static,
+                        rcode: cache::Rcode::NoError,
                     });
                 }
-                return Ok(DnsAnswer {
-                    ips,
-                    ttl: std::time::Duration::from_secs(0),
-                    source: cache::Source::Static,
-                    rcode: cache::Rcode::NoError,
-                });
             }
         }
+        if need_fallback {
+            return self.resolve_via_pool_or_system(host).await;
         }
-        if need_fallback { return self.resolve_via_pool_or_system(host).await; }
         // 2) static table
         if let Some(ips) = self.static_map.get(&key) {
             let mut ips = ips.clone();
@@ -452,7 +454,11 @@ impl ResolverHandle {
                 }
                 if ips.is_empty() {
                     #[cfg(feature = "dns_cache")]
-                    if let Ok(c) = self.cache.lock() { c.put_negative(&key); } else { tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative"); }
+                    if let Ok(c) = self.cache.lock() {
+                        c.put_negative(&key);
+                    } else {
+                        tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative");
+                    }
                     #[cfg(feature = "metrics")]
                     ::metrics::counter!("dns_error_total", "class"=>"empty").increment(1);
                     #[cfg(feature = "metrics")]
@@ -472,7 +478,11 @@ impl ResolverHandle {
                             source: cache::Source::System,
                             rcode: cache::Rcode::NoError,
                         };
-                        if let Ok(c) = self.cache.lock() { c.put(&key, answer); } else { tracing::error!(target: "sb_core::dns", "cache lock poisoned on put"); }
+                        if let Ok(c) = self.cache.lock() {
+                            c.put(&key, answer);
+                        } else {
+                            tracing::error!(target: "sb_core::dns", "cache lock poisoned on put");
+                        }
                     }
                     #[cfg(feature = "metrics")]
                     ::metrics::counter!("dns_query_total", "hit"=>"miss", "family"=>"ANY", "source"=>"system", "rcode"=>"ok").increment(1);
@@ -486,7 +496,11 @@ impl ResolverHandle {
             }
             Err(_e) => {
                 #[cfg(feature = "dns_cache")]
-                if let Ok(c) = self.cache.lock() { c.put_negative(&key); } else { tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative"); }
+                if let Ok(c) = self.cache.lock() {
+                    c.put_negative(&key);
+                } else {
+                    tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative");
+                }
                 #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_error_total", "class"=>"resolve").increment(1);
                 #[cfg(feature = "metrics")]

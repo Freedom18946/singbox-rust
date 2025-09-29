@@ -1,11 +1,14 @@
-use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size, supported_patch_kinds};
-#[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+use crate::admin_debug::http_util::{
+    parse_query, respond, respond_json_error, supported_patch_kinds, validate_decoded_size,
+    validate_inline_size_estimate,
+};
+#[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 use crate::analyze::registry::{build_by_kind, build_by_kind_async, supported_kinds};
 use base64::Engine;
 use tokio::io::AsyncWriteExt;
 
 /// Build a single patch based on kind, prioritizing async, delegating to registry
-#[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+#[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 async fn build_single_patch_json_async(
     kind: &str,
     report: &sb_core::router::analyze::Report,
@@ -26,12 +29,12 @@ async fn build_single_patch_json_async(
         Err(_) => match build_by_kind(kind, &input) {
             Ok(result) => Ok((result, false)),
             Err(e) => Err(e),
-        }
+        },
     }
 }
 
 /// Legacy fallback for when registry features are disabled
-#[cfg(not(any(feature="router", feature="sbcore_rules_tool")))]
+#[cfg(not(any(feature = "router", feature = "sbcore_rules_tool")))]
 fn build_single_patch_json(
     kind: &str,
     _report: &sb_core::router::analyze::Report,
@@ -72,13 +75,23 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             let kind = params.get("kind").cloned().unwrap_or_default();
 
             if kind.is_empty() {
-                return respond_json_error(sock, 400, "missing kind parameter", Some("provide kind in ?kind parameter")).await;
+                return respond_json_error(
+                    sock,
+                    400,
+                    "missing kind parameter",
+                    Some("provide kind in ?kind parameter"),
+                )
+                .await;
             }
 
             // Validate that the kind is supported
             let supported = supported_patch_kinds();
             if !supported.iter().any(|s| s.as_str() == kind) {
-                let supported_list = supported.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                let supported_list = supported
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 let hint = format!("supported kinds: [{}]", supported_list);
                 return respond_json_error(sock, 400, "unsupported patch kind", Some(&hint)).await;
             }
@@ -86,19 +99,37 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             let text = if let Some(b64) = params.get("inline") {
                 // Validate size estimate before decoding
                 if let Err(_) = validate_inline_size_estimate(b64) {
-                    return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+                    return respond_json_error(
+                        sock,
+                        413,
+                        "inline content too large",
+                        Some("maximum size is 512KB"),
+                    )
+                    .await;
                 }
 
                 let bytes = match base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()) {
                     Ok(bytes) => bytes,
                     Err(_) => {
-                        return respond_json_error(sock, 400, "invalid base64 encoding", Some("provide valid base64 in ?inline parameter")).await
+                        return respond_json_error(
+                            sock,
+                            400,
+                            "invalid base64 encoding",
+                            Some("provide valid base64 in ?inline parameter"),
+                        )
+                        .await
                     }
                 };
 
                 // Validate actual decoded size
                 if let Err(_) = validate_decoded_size(&bytes) {
-                    return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+                    return respond_json_error(
+                        sock,
+                        413,
+                        "inline content too large",
+                        Some("maximum size is 512KB"),
+                    )
+                    .await;
                 }
 
                 String::from_utf8_lossy(&bytes).to_string()
@@ -133,7 +164,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         "async": used_async,
                         "patch": patch_json
                     });
-                    let body = serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_string());
+                    let body =
+                        serde_json::to_string(&response).unwrap_or_else(|_| "{}".to_string());
                     respond(sock, 200, "application/json", &body).await
                 }
                 Err(e) => {
@@ -144,7 +176,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         400,
                         &format!("patch build failed: {}", e),
                         Some(&hint),
-                    ).await
+                    )
+                    .await
                 }
             }
         }
@@ -164,17 +197,37 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         let text = if let Some(b64) = params.get("inline") {
             // Validate size estimate before decoding
             if let Err(_) = validate_inline_size_estimate(b64) {
-                return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+                return respond_json_error(
+                    sock,
+                    413,
+                    "inline content too large",
+                    Some("maximum size is 512KB"),
+                )
+                .await;
             }
 
             let bytes = match base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()) {
                 Ok(bytes) => bytes,
-                Err(_) => return respond_json_error(sock, 400, "invalid base64 encoding", Some("provide valid base64 in ?inline parameter")).await,
+                Err(_) => {
+                    return respond_json_error(
+                        sock,
+                        400,
+                        "invalid base64 encoding",
+                        Some("provide valid base64 in ?inline parameter"),
+                    )
+                    .await
+                }
             };
 
             // Validate actual decoded size
             if let Err(_) = validate_decoded_size(&bytes) {
-                return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+                return respond_json_error(
+                    sock,
+                    413,
+                    "inline content too large",
+                    Some("maximum size is 512KB"),
+                )
+                .await;
             }
 
             String::from_utf8_lossy(&bytes).to_string()

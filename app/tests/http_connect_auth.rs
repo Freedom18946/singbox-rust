@@ -3,7 +3,7 @@ use sb_config::ir::{
 };
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
-use sb_core::runtime::Runtime;
+use sb_core::runtime::{switchboard::OutboundSwitchboard, Runtime};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;
@@ -72,7 +72,8 @@ fn http_inbound_basic_auth_required() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng);
-    let rt = Runtime::new(eng, br).start();
+    let switchboard = OutboundSwitchboard::new();
+    let rt = Runtime::new(eng, br, switchboard).start();
     thread::sleep(Duration::from_millis(80));
     // no auth → 407
     {

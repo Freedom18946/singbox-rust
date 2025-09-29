@@ -92,9 +92,9 @@ fn check_bad_config_contract() {
     // Verify all expected issue codes are present
     for expected_issue in expected_issues {
         let expected_code = expected_issue.get("code").unwrap().as_str().unwrap();
-        let found = actual_issues.iter().any(|issue| {
-            issue.get("code").unwrap().as_str().unwrap() == expected_code
-        });
+        let found = actual_issues
+            .iter()
+            .any(|issue| issue.get("code").unwrap().as_str().unwrap() == expected_code);
         assert!(found, "Expected issue code {} not found", expected_code);
     }
 }

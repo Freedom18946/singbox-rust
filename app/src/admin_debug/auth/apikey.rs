@@ -3,11 +3,11 @@
 //! This provider supports Bearer token authentication and HMAC-SHA256 signature verification.
 //! Compatible with the existing authentication system in http_server.rs.
 
-use super::{AuthProvider, AuthError};
-use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use super::{AuthError, AuthProvider};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -59,7 +59,9 @@ impl ApiKeyProvider {
         // Parse HMAC auth string: keyId:timestamp:signature
         let parts: Vec<&str> = hmac_auth.split(':').collect();
         if parts.len() != 3 {
-            return Err(AuthError::invalid("HMAC authentication format must be keyId:timestamp:signature"));
+            return Err(AuthError::invalid(
+                "HMAC authentication format must be keyId:timestamp:signature",
+            ));
         }
 
         let (provided_key_id, timestamp_str, provided_signature) = (parts[0], parts[1], parts[2]);
@@ -72,7 +74,8 @@ impl ApiKeyProvider {
         }
 
         // Parse and validate timestamp
-        let timestamp = timestamp_str.parse::<u64>()
+        let timestamp = timestamp_str
+            .parse::<u64>()
             .map_err(|_| AuthError::invalid("Invalid timestamp format"))?;
 
         // Check time window (5 minutes = 300 seconds)
@@ -82,7 +85,9 @@ impl ApiKeyProvider {
             .as_secs();
 
         if now.abs_diff(timestamp) > 300 {
-            return Err(AuthError::expired("Authentication timestamp outside 5-minute window"));
+            return Err(AuthError::expired(
+                "Authentication timestamp outside 5-minute window",
+            ));
         }
 
         // Create message to sign: timestamp||path
@@ -96,7 +101,11 @@ impl ApiKeyProvider {
         let expected_hex = hex::encode(expected);
 
         // Constant-time comparison to prevent timing attacks
-        if expected_hex.as_bytes().ct_eq(provided_signature.as_bytes()).into() {
+        if expected_hex
+            .as_bytes()
+            .ct_eq(provided_signature.as_bytes())
+            .into()
+        {
             Ok(())
         } else {
             Err(AuthError::invalid("Invalid HMAC signature"))
@@ -106,7 +115,8 @@ impl ApiKeyProvider {
 
 impl AuthProvider for ApiKeyProvider {
     fn check(&self, headers: &HashMap<String, String>, path: &str) -> Result<(), AuthError> {
-        let auth_header = headers.get("authorization")
+        let auth_header = headers
+            .get("authorization")
             .ok_or_else(|| AuthError::missing("Authorization header required"))?;
 
         let auth_header = auth_header.trim();
@@ -121,7 +131,9 @@ impl AuthProvider for ApiKeyProvider {
             return self.check_hmac(auth_header, path);
         }
 
-        Err(AuthError::invalid("Unsupported authentication method. Use Bearer token or SB-HMAC"))
+        Err(AuthError::invalid(
+            "Unsupported authentication method. Use Bearer token or SB-HMAC",
+        ))
     }
 }
 
@@ -146,14 +158,20 @@ mod tests {
 
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("Invalid Bearer token"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("Invalid Bearer token"));
     }
 
     #[test]
     fn test_bearer_auth_with_whitespace() {
         let provider = ApiKeyProvider::new("secret123".to_string(), None);
         let mut headers = HashMap::new();
-        headers.insert("authorization".to_string(), "  Bearer   secret123  ".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "  Bearer   secret123  ".to_string(),
+        );
 
         assert!(provider.check(&headers, "/test").is_ok());
     }
@@ -165,7 +183,10 @@ mod tests {
 
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("Authorization header required"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("Authorization header required"));
     }
 
     #[test]
@@ -174,16 +195,28 @@ mod tests {
         let mut headers = HashMap::new();
 
         // Invalid format: too few parts
-        headers.insert("authorization".to_string(), "SB-HMAC admin:123456".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "SB-HMAC admin:123456".to_string(),
+        );
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("keyId:timestamp:signature"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("keyId:timestamp:signature"));
 
         // Invalid timestamp
-        headers.insert("authorization".to_string(), "SB-HMAC admin:notanumber:sig".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "SB-HMAC admin:notanumber:sig".to_string(),
+        );
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("Invalid timestamp format"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("Invalid timestamp format"));
     }
 
     #[test]
@@ -191,21 +224,36 @@ mod tests {
         let provider = ApiKeyProvider::new("testsecret".to_string(), Some("testkey".to_string()));
         let mut headers = HashMap::new();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         // Too old (more than 5 minutes)
         let old_timestamp = now - 400; // 400 seconds ago
-        headers.insert("authorization".to_string(), format!("SB-HMAC testkey:{}:somesig", old_timestamp));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC testkey:{}:somesig", old_timestamp),
+        );
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("outside 5-minute window"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("outside 5-minute window"));
 
         // Future timestamp (more than 5 minutes ahead)
         let future_timestamp = now + 400; // 400 seconds in future
-        headers.insert("authorization".to_string(), format!("SB-HMAC testkey:{}:somesig", future_timestamp));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC testkey:{}:somesig", future_timestamp),
+        );
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("outside 5-minute window"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("outside 5-minute window"));
     }
 
     #[test]
@@ -213,7 +261,10 @@ mod tests {
         let provider = ApiKeyProvider::new("testsecret".to_string(), Some("testkey".to_string()));
         let mut headers = HashMap::new();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let path = "/test";
 
         // Generate correct signature
@@ -224,25 +275,41 @@ mod tests {
         let correct_signature = hex::encode(expected);
 
         // Valid signature
-        headers.insert("authorization".to_string(), format!("SB-HMAC testkey:{}:{}", now, correct_signature));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC testkey:{}:{}", now, correct_signature),
+        );
         assert!(provider.check(&headers, path).is_ok());
 
         // Invalid signature
-        headers.insert("authorization".to_string(), format!("SB-HMAC testkey:{}:invalidsig", now));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC testkey:{}:invalidsig", now),
+        );
         let result = provider.check(&headers, path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("Invalid HMAC signature"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("Invalid HMAC signature"));
     }
 
     #[test]
     fn test_hmac_auth_key_id_validation() {
-        let provider = ApiKeyProvider::new("testsecret".to_string(), Some("expected_key".to_string()));
+        let provider =
+            ApiKeyProvider::new("testsecret".to_string(), Some("expected_key".to_string()));
         let mut headers = HashMap::new();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         // Wrong key ID
-        headers.insert("authorization".to_string(), format!("SB-HMAC wrong_key:{}:sig", now));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC wrong_key:{}:sig", now),
+        );
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
         assert!(result.unwrap_err().message().contains("Invalid key ID"));
@@ -252,10 +319,16 @@ mod tests {
     fn test_unsupported_auth_method() {
         let provider = ApiKeyProvider::new("secret".to_string(), None);
         let mut headers = HashMap::new();
-        headers.insert("authorization".to_string(), "Basic dXNlcjpwYXNz".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "Basic dXNlcjpwYXNz".to_string(),
+        );
 
         let result = provider.check(&headers, "/test");
         assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("Unsupported authentication method"));
+        assert!(result
+            .unwrap_err()
+            .message()
+            .contains("Unsupported authentication method"));
     }
 }

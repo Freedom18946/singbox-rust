@@ -112,6 +112,8 @@ mod tests {
             Ok(DnsAnswer {
                 ips: vec!["1.2.3.4".parse().unwrap()],
                 ttl: Duration::from_secs(300),
+                source: crate::dns::cache::Source::System,
+                rcode: crate::dns::cache::Rcode::NoError,
             })
         }
 

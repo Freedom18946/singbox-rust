@@ -46,10 +46,7 @@ async fn test_happy_eyeballs_ipv4_only() {
     // Test IPv4-only connection
     env::remove_var("SB_HE_DISABLE");
     let dialer = TcpDialer;
-    let result = timeout(
-        Duration::from_secs(5),
-        dialer.connect("127.0.0.1", port)
-    ).await;
+    let result = timeout(Duration::from_secs(5), dialer.connect("127.0.0.1", port)).await;
 
     assert!(result.is_ok(), "IPv4-only connection should succeed");
     assert!(result.unwrap().is_ok(), "Connection result should be Ok");
@@ -73,10 +70,7 @@ async fn test_happy_eyeballs_ipv6_only() {
     // Test IPv6-only connection
     env::remove_var("SB_HE_DISABLE");
     let dialer = TcpDialer;
-    let result = timeout(
-        Duration::from_secs(5),
-        dialer.connect("::1", port)
-    ).await;
+    let result = timeout(Duration::from_secs(5), dialer.connect("::1", port)).await;
 
     assert!(result.is_ok(), "IPv6-only connection should succeed");
     assert!(result.unwrap().is_ok(), "Connection result should be Ok");
@@ -131,17 +125,17 @@ async fn test_happy_eyeballs_dual_stack_ipv6_fast() {
 
     let dialer = TcpDialer;
     let start = std::time::Instant::now();
-    let result = timeout(
-        Duration::from_secs(5),
-        dialer.connect("localhost", port)
-    ).await;
+    let result = timeout(Duration::from_secs(5), dialer.connect("localhost", port)).await;
     let elapsed = start.elapsed();
 
     assert!(result.is_ok(), "Dual-stack connection should succeed");
     assert!(result.unwrap().is_ok(), "Connection result should be Ok");
 
     // Should complete relatively quickly since IPv6 is faster
-    assert!(elapsed < Duration::from_secs(2), "Connection should be fast when IPv6 responds quickly");
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "Connection should be fast when IPv6 responds quickly"
+    );
 
     ipv6_task.await.ok();
     ipv4_task.await.ok();
@@ -163,12 +157,12 @@ async fn test_happy_eyeballs_disabled() {
     env::set_var("SB_HE_DISABLE", "1");
 
     let dialer = TcpDialer;
-    let result = timeout(
-        Duration::from_secs(5),
-        dialer.connect("127.0.0.1", port)
-    ).await;
+    let result = timeout(Duration::from_secs(5), dialer.connect("127.0.0.1", port)).await;
 
-    assert!(result.is_ok(), "Connection with Happy Eyeballs disabled should succeed");
+    assert!(
+        result.is_ok(),
+        "Connection with Happy Eyeballs disabled should succeed"
+    );
     assert!(result.unwrap().is_ok(), "Connection result should be Ok");
 
     // Clean up environment
@@ -193,12 +187,12 @@ async fn test_happy_eyeballs_custom_delay() {
     });
 
     let dialer = TcpDialer;
-    let result = timeout(
-        Duration::from_secs(5),
-        dialer.connect("127.0.0.1", port)
-    ).await;
+    let result = timeout(Duration::from_secs(5), dialer.connect("127.0.0.1", port)).await;
 
-    assert!(result.is_ok(), "Connection with custom delay should succeed");
+    assert!(
+        result.is_ok(),
+        "Connection with custom delay should succeed"
+    );
     assert!(result.unwrap().is_ok(), "Connection result should be Ok");
 
     // Clean up
@@ -213,9 +207,14 @@ async fn test_happy_eyeballs_no_address_resolution() {
     env::remove_var("SB_HE_DISABLE");
 
     let dialer = TcpDialer;
-    let result = dialer.connect("invalid.nonexistent.example.invalid", 80).await;
+    let result = dialer
+        .connect("invalid.nonexistent.example.invalid", 80)
+        .await;
 
-    assert!(result.is_err(), "Connection to invalid hostname should fail");
+    assert!(
+        result.is_err(),
+        "Connection to invalid hostname should fail"
+    );
 }
 
 #[tokio::test]
@@ -226,9 +225,13 @@ async fn test_happy_eyeballs_connection_refused() {
     let dialer = TcpDialer;
     let result = timeout(
         Duration::from_secs(5),
-        dialer.connect("127.0.0.1", 1) // Port 1 should be closed
-    ).await;
+        dialer.connect("127.0.0.1", 1), // Port 1 should be closed
+    )
+    .await;
 
     assert!(result.is_ok(), "Timeout should not occur");
-    assert!(result.unwrap().is_err(), "Connection to closed port should fail");
+    assert!(
+        result.unwrap().is_err(),
+        "Connection to closed port should fail"
+    );
 }

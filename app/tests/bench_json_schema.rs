@@ -39,4 +39,3 @@ fn bench_io_json_schema_fields_exist() {
         assert!(v.get(k).is_some(), "missing key: {k}");
     }
 }
-

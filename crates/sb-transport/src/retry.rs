@@ -12,9 +12,9 @@
 //! Only use for idempotent operations (GET requests, connection establishment, etc.)
 //! Non-idempotent operations are disabled by default.
 
+use rand::Rng;
 use std::time::Duration;
 use tracing::{debug, warn};
-use rand::Rng;
 
 /// Retry policy configuration
 #[derive(Debug, Clone)]
@@ -87,7 +87,8 @@ impl RetryPolicy {
         }
 
         // Exponential backoff: base_delay * 2^(attempt-1)
-        let base_delay = self.base_delay_ms as f64 * (1u64 << (attempt.saturating_sub(1).min(10))) as f64;
+        let base_delay =
+            self.base_delay_ms as f64 * (1u64 << (attempt.saturating_sub(1).min(10))) as f64;
 
         // Add jitter: ±jitter% of the base delay
         let mut rng = rand::thread_rng();
@@ -120,14 +121,17 @@ impl RetryPolicy {
             match operation().await {
                 Ok(result) => {
                     if attempt > 0 {
-                        debug!("Operation '{}' succeeded after {} retries", operation_kind, attempt);
-                        #[cfg(feature="metrics")]
+                        debug!(
+                            "Operation '{}' succeeded after {} retries",
+                            operation_kind, attempt
+                        );
+                        #[cfg(feature = "metrics")]
                         {
                             use sb_core::metrics::registry_ext::get_or_register_counter_vec;
                             let ctr = get_or_register_counter_vec(
                                 "retry_attempts_total",
                                 "Total retry attempts",
-                                &["kind", "result"]
+                                &["kind", "result"],
                             );
                             ctr.with_label_values(&[operation_kind, "success"]).inc();
                         }
@@ -136,13 +140,13 @@ impl RetryPolicy {
                 }
                 Err(error) => {
                     // Record the attempt
-                    #[cfg(feature="metrics")]
+                    #[cfg(feature = "metrics")]
                     {
                         use sb_core::metrics::registry_ext::get_or_register_counter_vec;
                         let ctr = get_or_register_counter_vec(
                             "retry_attempts_total",
                             "Total retry attempts",
-                            &["kind", "result"]
+                            &["kind", "result"],
                         );
                         ctr.with_label_values(&[operation_kind, "error"]).inc();
                     }
@@ -183,8 +187,8 @@ impl RetryPolicy {
 
 /// Helper for common retry conditions
 pub mod retry_conditions {
-    use std::io::ErrorKind;
     use crate::dialer::DialError;
+    use std::io::ErrorKind;
 
     /// Should retry on common transient network errors
     pub fn is_transient_network_error(error: &DialError) -> bool {
@@ -214,9 +218,7 @@ pub mod retry_conditions {
                 // DNS resolution errors often appear as "failed to lookup address information"
                 io_error.to_string().contains("failed to lookup address")
             }
-            DialError::Other(msg) => {
-                msg.contains("dns") || msg.contains("resolve")
-            }
+            DialError::Other(msg) => msg.contains("dns") || msg.contains("resolve"),
             _ => false,
         }
     }
@@ -295,9 +297,7 @@ mod tests {
         };
 
         // With 50% jitter, delay should be in range [50ms, 150ms]
-        let delays: Vec<Duration> = (0..100)
-            .map(|_| policy.calculate_delay(1))
-            .collect();
+        let delays: Vec<Duration> = (0..100).map(|_| policy.calculate_delay(1)).collect();
 
         // Check that all delays are within expected range
         for delay in &delays {

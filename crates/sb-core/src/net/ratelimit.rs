@@ -15,7 +15,11 @@ impl Bucket {
     fn new(bytes_q_s: u64, pkts_q_s: u64) -> Self {
         // 换算到 100ms 片的配额（向上取整）
         let to_slice = |per_s: u64| -> u64 {
-            if per_s == 0 { 0 } else { per_s.div_ceil(10) }
+            if per_s == 0 {
+                0
+            } else {
+                per_s.div_ceil(10)
+            }
         };
         Self {
             epoch_tick: AtomicU64::new(Self::now_tick()),
@@ -92,4 +96,6 @@ fn global_bucket() -> &'static Bucket {
 }
 
 /// 对外接口：检查是否应当丢弃该 UDP 出站（返回 Some(reason) 表示应丢弃）
-pub fn maybe_drop_udp(len: usize) -> Option<&'static str> { global_bucket().try_consume(len).err() }
+pub fn maybe_drop_udp(len: usize) -> Option<&'static str> {
+    global_bucket().try_consume(len).err()
+}

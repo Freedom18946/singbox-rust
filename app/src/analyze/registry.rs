@@ -1,9 +1,9 @@
+use anyhow::{bail, Result};
+use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{OnceLock, Mutex};
 use std::future::Future;
 use std::pin::Pin;
-use serde_json::Value;
-use anyhow::{bail, Result};
+use std::sync::{Mutex, OnceLock};
 
 /// builder 签名：输入 analyze 请求 JSON（或片段），返回补丁 JSON
 pub type BuilderFn = fn(&Value) -> Result<Value>;
@@ -40,7 +40,9 @@ pub fn supported_kinds() -> Vec<&'static str> {
 
 pub fn build_by_kind(kind: &str, input: &Value) -> Result<Value> {
     let g = ensure_registry().lock().expect("registry lock");
-    if let Some(f) = g.get(kind) { return f(input); }
+    if let Some(f) = g.get(kind) {
+        return f(input);
+    }
     bail!("unsupported kind: {kind}");
 }
 

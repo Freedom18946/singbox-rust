@@ -1,7 +1,7 @@
-#[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+#[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 use serde_json::json;
 
-#[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+#[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 #[test]
 fn register_builder_and_use() {
     // 直接使用 app::analyze::registry（无需 sb-core）

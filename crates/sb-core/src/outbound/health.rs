@@ -171,7 +171,9 @@ async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
         ProxyKind::Socks5 => check_socks5(ep.clone()).await,
     };
 
-    let Some(states) = STATES.get() else { return Ok(()); };
+    let Some(states) = STATES.get() else {
+        return Ok(());
+    };
     let ent = states.entry(key.to_string()).or_insert_with(|| EpState {
         up: AtomicBool::new(true),
         consecutive_fail: parking_lot::Mutex::new(0),
@@ -248,9 +250,9 @@ async fn check_http(ep: ProxyEndpoint) -> anyhow::Result<()> {
             let (version, status_code) = parts;
             if version == "HTTP/1.0" || version == "HTTP/1.1" {
                 // 2xx (success) or 407 (proxy auth required - indicates connectivity) = healthy
-            if (200..300).contains(&status_code) || status_code == 407 {
-                return Ok(());
-            }
+                if (200..300).contains(&status_code) || status_code == 407 {
+                    return Ok(());
+                }
             }
         }
     }

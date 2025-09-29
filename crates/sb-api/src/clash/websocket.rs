@@ -11,10 +11,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::{
-    sync::broadcast,
-    time::interval,
-};
+use tokio::{sync::broadcast, time::interval};
 
 /// Handle traffic WebSocket connections
 pub async fn traffic_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>) -> Response {

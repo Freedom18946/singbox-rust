@@ -1,2 +1,2 @@
-pub mod registry;
 pub mod builders;
+pub mod registry;

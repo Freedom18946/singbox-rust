@@ -4,8 +4,8 @@
 //! from various sources (environment variables, files, inline configuration) with
 //! proper security considerations.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use thiserror::Error;
 use zeroize::ZeroizeOnDrop;
 
@@ -279,14 +279,17 @@ impl SecretLoader {
 
     /// Load from file
     fn load_from_file(&self, path: &str, trim: bool) -> Result<LoadedSecret, KeyLoadingError> {
-        let content = std::fs::read_to_string(path).map_err(|source| {
-            KeyLoadingError::FileReadError {
+        let content =
+            std::fs::read_to_string(path).map_err(|source| KeyLoadingError::FileReadError {
                 path: path.to_string(),
                 source,
-            }
-        })?;
+            })?;
 
-        let final_content = if trim { content.trim().to_string() } else { content };
+        let final_content = if trim {
+            content.trim().to_string()
+        } else {
+            content
+        };
 
         if final_content.is_empty() {
             return Err(KeyLoadingError::EmptyKeyFile {
@@ -323,12 +326,11 @@ impl SecretLoader {
         {
             use std::os::unix::fs::PermissionsExt;
 
-            let metadata = std::fs::metadata(path).map_err(|source| {
-                KeyLoadingError::FileReadError {
+            let metadata =
+                std::fs::metadata(path).map_err(|source| KeyLoadingError::FileReadError {
                     path: path.to_string(),
                     source,
-                }
-            })?;
+                })?;
 
             let permissions = metadata.permissions();
             let mode = permissions.mode();
@@ -338,7 +340,8 @@ impl SecretLoader {
                 return Err(KeyLoadingError::InsecureConfiguration {
                     reason: format!(
                         "Key file '{}' has insecure permissions {:o} (should be 0o600 or similar)",
-                        path, mode & 0o777
+                        path,
+                        mode & 0o777
                     ),
                 });
             }
@@ -348,7 +351,10 @@ impl SecretLoader {
         {
             // On non-Unix systems, we can't check file permissions in the same way
             // Just log a warning but don't fail
-            tracing::warn!("File permission validation not available on this platform for: {}", path);
+            tracing::warn!(
+                "File permission validation not available on this platform for: {}",
+                path
+            );
         }
 
         Ok(())
@@ -381,8 +387,10 @@ pub mod validators {
     /// Validate that a secret is a valid base64 string
     pub fn base64() -> impl Fn(&str) -> Result<(), String> {
         |secret: &str| {
-            use base64::{Engine as _, engine::general_purpose::STANDARD};
-            STANDARD.decode(secret.trim()).map_err(|e| format!("Invalid base64: {}", e))?;
+            use base64::{engine::general_purpose::STANDARD, Engine as _};
+            STANDARD
+                .decode(secret.trim())
+                .map_err(|e| format!("Invalid base64: {}", e))?;
             Ok(())
         }
     }
@@ -405,8 +413,8 @@ pub mod validators {
             // For now, just check basic patterns
             match regex {
                 r"^[A-Za-z0-9+/]*={0,2}$" => base64()(secret), // Base64 pattern
-                r"^[0-9a-fA-F]+$" => hex()(secret),             // Hex pattern
-                _ => Ok(()), // For now, accept any other pattern
+                r"^[0-9a-fA-F]+$" => hex()(secret),            // Hex pattern
+                _ => Ok(()),                                   // For now, accept any other pattern
             }
         }
     }
@@ -443,7 +451,10 @@ mod tests {
             KeySource::env_with_fallback("API_KEY", "default").description(),
             "env:API_KEY (with fallback)"
         );
-        assert_eq!(KeySource::file("/path/to/key").description(), "file:/path/to/key");
+        assert_eq!(
+            KeySource::file("/path/to/key").description(),
+            "file:/path/to/key"
+        );
         assert_eq!(KeySource::inline("secret").description(), "inline:***");
     }
 
@@ -522,11 +533,13 @@ mod tests {
             Err(other) => {
                 std::eprintln!("Expected InsecureConfiguration error, got: {:?}", other);
                 // Use assertion that clippy will accept
-                assert_eq!(std::mem::discriminant(&other),
-                          std::mem::discriminant(&KeyLoadingError::InsecureConfiguration {
-                              reason: String::new()
-                          }),
-                          "Wrong error type");
+                assert_eq!(
+                    std::mem::discriminant(&other),
+                    std::mem::discriminant(&KeyLoadingError::InsecureConfiguration {
+                        reason: String::new()
+                    }),
+                    "Wrong error type"
+                );
             }
             Ok(_) => {
                 // Use assertion with meaningful message

@@ -26,7 +26,11 @@ fn main() -> Result<()> {
 
 fn e2e() -> Result<()> {
     // 0) Build app once with focused features (add dsl_plus for complete feature set)
-    cargo_build_app(&["--no-default-features", "--features", "admin_debug,auth,rate_limit,preview_route,dsl_analyze,dsl_derive,dsl_plus"])?;
+    cargo_build_app(&[
+        "--no-default-features",
+        "--features",
+        "admin_debug,auth,rate_limit,preview_route,dsl_analyze,dsl_derive,dsl_plus",
+    ])?;
     let app_bin = app_bin_path()?;
     println!("▶ Using app binary: {}", app_bin.display());
 
@@ -57,7 +61,10 @@ fn e2e() -> Result<()> {
     let child = spawn_app(
         &app_bin,
         &["run", "--config", "examples/e2e/minimal.yaml"],
-        &[("APP_E2E_APIKEY", apikey), ("ADMIN_LISTEN", "127.0.0.1:18080")],
+        &[
+            ("APP_E2E_APIKEY", apikey),
+            ("ADMIN_LISTEN", "127.0.0.1:18080"),
+        ],
     )?;
     let guard = ChildGuard { child: Some(child) };
 
@@ -190,11 +197,11 @@ fn run_app_json(app_bin: &Path, args: &[&str]) -> Result<serde_json::Value> {
             json_lines.clear();
             json_lines.push(line);
             brace_count = trimmed.chars().filter(|&c| c == '{').count() as i32
-                        - trimmed.chars().filter(|&c| c == '}').count() as i32;
+                - trimmed.chars().filter(|&c| c == '}').count() as i32;
         } else if in_json {
             json_lines.push(line);
             brace_count += trimmed.chars().filter(|&c| c == '{').count() as i32
-                        - trimmed.chars().filter(|&c| c == '}').count() as i32;
+                - trimmed.chars().filter(|&c| c == '}').count() as i32;
 
             if brace_count <= 0 {
                 break;
@@ -222,7 +229,9 @@ fn spawn_app(app_bin: &Path, args: &[&str], envs: &[(&str, &str)]) -> Result<std
     for (k, v) in envs {
         cmd.env(k, v);
     }
-    let child = cmd.spawn().with_context(|| format!("spawn {} {:?}", app_bin.display(), args))?;
+    let child = cmd
+        .spawn()
+        .with_context(|| format!("spawn {} {:?}", app_bin.display(), args))?;
     Ok(child)
 }
 
@@ -258,7 +267,9 @@ impl Drop for ChildGuard {
 }
 
 fn assert_json_has(v: &serde_json::Value, keys: &[&str]) -> Result<()> {
-    let obj = v.as_object().ok_or_else(|| anyhow!("expected JSON object"))?;
+    let obj = v
+        .as_object()
+        .ok_or_else(|| anyhow!("expected JSON object"))?;
     for k in keys {
         if !obj.contains_key(*k) {
             return Err(anyhow!("json missing key: {}", k));

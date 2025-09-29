@@ -1,7 +1,11 @@
 use once_cell::sync::OnceCell;
-use std::{collections::HashMap, time::{Duration, Instant}, sync::Mutex};
-use std::path::PathBuf;
 use std::path::Path;
+use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone)]
 pub struct CacheEntry {
@@ -90,7 +94,13 @@ impl Lru {
         let disk_backing = std::env::var("SB_SUBS_CACHE_DISK")
             .ok()
             .filter(|s| s != "0")
-            .map(|s| if s == "1" { "/tmp/sb-subs-cache".to_string() } else { s })
+            .map(|s| {
+                if s == "1" {
+                    "/tmp/sb-subs-cache".to_string()
+                } else {
+                    s
+                }
+            })
             .map(PathBuf::from);
 
         // Create disk backing directory if enabled
@@ -130,7 +140,9 @@ impl Lru {
 
     fn put_tier_entry(&mut self, key: String, entry: TierEntry, entry_size: usize) {
         // Evict entries if necessary to make room
-        while (self.map.len() >= self.cap_items || self.cur_bytes + entry_size > self.cap_bytes) && !self.map.is_empty() {
+        while (self.map.len() >= self.cap_items || self.cur_bytes + entry_size > self.cap_bytes)
+            && !self.map.is_empty()
+        {
             self.evict_one();
         }
 
@@ -143,7 +155,8 @@ impl Lru {
 
     fn evict_one(&mut self) {
         // Find the oldest entry to evict (LRU)
-        let oldest_key = self.map
+        let oldest_key = self
+            .map
             .iter()
             .min_by_key(|(_, (_, timestamp))| *timestamp)
             .map(|(k, _)| k.clone());
@@ -219,12 +232,16 @@ impl Lru {
     }
 
     pub fn byte_usage(&self) -> (usize, usize) {
-        let mem_bytes = self.map.values()
+        let mem_bytes = self
+            .map
+            .values()
             .filter(|(entry, _)| matches!(entry, TierEntry::Mem(_)))
             .map(|(entry, _)| entry.body_len())
             .sum();
 
-        let disk_bytes = self.map.values()
+        let disk_bytes = self
+            .map
+            .values()
             .filter(|(entry, _)| matches!(entry, TierEntry::Disk { .. }))
             .map(|(entry, _)| entry.body_len())
             .sum();
@@ -461,12 +478,18 @@ mod tests {
         std::env::set_var("SB_SUBS_CACHE_DISK", "1");
         let lru_with_disk = Lru::with_byte_limit(10, 1000, 1024);
         assert!(lru_with_disk.disk_backing.is_some());
-        assert_eq!(lru_with_disk.disk_backing.unwrap().to_str().unwrap(), "/tmp/sb-subs-cache");
+        assert_eq!(
+            lru_with_disk.disk_backing.unwrap().to_str().unwrap(),
+            "/tmp/sb-subs-cache"
+        );
 
         // Test with custom path
         std::env::set_var("SB_SUBS_CACHE_DISK", "/custom/cache/path");
         let lru_custom = Lru::with_byte_limit(10, 1000, 1024);
-        assert_eq!(lru_custom.disk_backing.unwrap().to_str().unwrap(), "/custom/cache/path");
+        assert_eq!(
+            lru_custom.disk_backing.unwrap().to_str().unwrap(),
+            "/custom/cache/path"
+        );
 
         // Cleanup
         std::env::remove_var("SB_SUBS_CACHE_DISK");
@@ -509,7 +532,10 @@ mod tests {
 
         // Check byte usage tracking
         let (mem_bytes, disk_bytes) = lru.byte_usage();
-        assert!(mem_bytes > 0 || disk_bytes > 0, "Should have bytes tracked in some tier");
+        assert!(
+            mem_bytes > 0 || disk_bytes > 0,
+            "Should have bytes tracked in some tier"
+        );
 
         // Cleanup
         std::env::remove_var("SB_SUBS_CACHE_DISK");
@@ -607,13 +633,19 @@ mod tests {
 
         // Verify metrics have changed
         let (mem_evicts_final, _disk_evicts_final, head_count_final) = lru.metrics();
-        assert!(mem_evicts_final > 0, "Should have memory evictions from capacity limits");
+        assert!(
+            mem_evicts_final > 0,
+            "Should have memory evictions from capacity limits"
+        );
         assert_eq!(head_count_final, 3, "Should track HEAD count correctly");
 
         // Verify byte usage tracking
         let (mem_bytes, disk_bytes) = lru.byte_usage();
         assert!(mem_bytes > 0, "Should have memory usage");
-        assert!(mem_bytes <= 100, "Should not exceed byte limit significantly"); // Some tolerance for overhead
+        assert!(
+            mem_bytes <= 100,
+            "Should not exceed byte limit significantly"
+        ); // Some tolerance for overhead
     }
 
     #[tokio::test]
@@ -636,7 +668,10 @@ mod tests {
         };
 
         // Test async body retrieval
-        let retrieved_body = disk_entry.get_body().await.expect("Failed to read disk entry body");
+        let retrieved_body = disk_entry
+            .get_body()
+            .await
+            .expect("Failed to read disk entry body");
         assert_eq!(retrieved_body, test_content);
 
         // Test other accessors
@@ -691,17 +726,29 @@ mod tests {
 
         // Verify: large entry should still be accessible (moved to disk, not evicted)
         let retrieved_large = lru.get("large");
-        assert!(retrieved_large.is_some(), "Large entry should still be accessible from disk");
+        assert!(
+            retrieved_large.is_some(),
+            "Large entry should still be accessible from disk"
+        );
 
         // Verify: small entry should be in memory
         let retrieved_small = lru.get("small");
-        assert!(retrieved_small.is_some(), "Small entry should be accessible from memory");
+        assert!(
+            retrieved_small.is_some(),
+            "Small entry should be accessible from memory"
+        );
 
         // Since large entry was moved to disk (not truly evicted), mem_evicts should NOT increase
         // Only cur_bytes should be properly maintained: large (5000) + small (50) = 5050
-        assert_eq!(mem_evicts_2, mem_evicts_1, "Large entry migration to disk should not count as memory eviction");
+        assert_eq!(
+            mem_evicts_2, mem_evicts_1,
+            "Large entry migration to disk should not count as memory eviction"
+        );
         assert_eq!(disk_evicts_2, disk_evicts_1, "No disk evictions yet");
-        assert_eq!(final_bytes, 5050, "cur_bytes should include both memory and disk entries");
+        assert_eq!(
+            final_bytes, 5050,
+            "cur_bytes should include both memory and disk entries"
+        );
 
         // Test 2: Actual disk eviction should update evict_count_disk and cur_bytes
         // Force another eviction by adding more entries
@@ -717,17 +764,22 @@ mod tests {
         let (mem_evicts_3, disk_evicts_3, _) = lru.metrics();
 
         // Should have triggered actual evictions now due to capacity constraints
-        assert!(mem_evicts_3 > mem_evicts_2 || disk_evicts_3 > disk_evicts_2,
-               "Should have triggered some evictions due to capacity/byte limits");
+        assert!(
+            mem_evicts_3 > mem_evicts_2 || disk_evicts_3 > disk_evicts_2,
+            "Should have triggered some evictions due to capacity/byte limits"
+        );
 
         // Test 3: Verify cache_bytes_{mem|disk} sum ≤ quota
         let (mem_bytes, disk_bytes) = lru.byte_usage();
         let total_bytes = mem_bytes + disk_bytes;
 
         // The quota check - should be roughly within limits (allowing some tolerance for timing)
-        assert!(total_bytes <= lru.cap_bytes + 1000,
-               "Total bytes {} should not significantly exceed cap_bytes {}",
-               total_bytes, lru.cap_bytes);
+        assert!(
+            total_bytes <= lru.cap_bytes + 1000,
+            "Total bytes {} should not significantly exceed cap_bytes {}",
+            total_bytes,
+            lru.cap_bytes
+        );
 
         // Cleanup
         std::env::remove_var("SB_SUBS_CACHE_DISK");

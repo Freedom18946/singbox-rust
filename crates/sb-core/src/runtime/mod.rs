@@ -33,7 +33,11 @@ pub struct Runtime<'a> {
 
 #[cfg(feature = "router")]
 impl<'a> Runtime<'a> {
-    pub fn new(engine: Engine<'a>, bridge: Bridge, switchboard: switchboard::OutboundSwitchboard) -> Self {
+    pub fn new(
+        engine: Engine<'a>,
+        bridge: Bridge,
+        switchboard: switchboard::OutboundSwitchboard,
+    ) -> Self {
         Self {
             engine,
             bridge: Arc::new(bridge),
@@ -154,9 +158,9 @@ impl<'a> Engine<'a> {
     /// The caller must ensure that the referenced ConfigIR outlives the returned Engine<'static>.
     pub fn clone_as_static(&self) -> Engine<'static> {
         // SAFETY:
-                // - 不变量：self.cfg 指向有效的 ConfigIR，设计上具有进程生命周期
-                // - 并发/别名：调用者必须确保 ConfigIR 的生命周期长于返回的 Engine<'static>
-                // - FFI/平台契约：生命周期转换基于设计保证，不涉及内存布局变更
+        // - 不变量：self.cfg 指向有效的 ConfigIR，设计上具有进程生命周期
+        // - 并发/别名：调用者必须确保 ConfigIR 的生命周期长于返回的 Engine<'static>
+        // - FFI/平台契约：生命周期转换基于设计保证，不涉及内存布局变更
         let static_cfg: &'static ConfigIR = unsafe { std::mem::transmute(self.cfg) };
         Engine::new(static_cfg)
     }

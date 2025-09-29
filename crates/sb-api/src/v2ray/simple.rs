@@ -353,14 +353,20 @@ mod tests {
         let server = SimpleV2RayApiServer::new(config).unwrap();
 
         // Empty name should yield InvalidField
-        let bad = SimpleStatsRequest { name: "  ".to_string(), reset: false };
+        let bad = SimpleStatsRequest {
+            name: "  ".to_string(),
+            reset: false,
+        };
         match server.get_stats(bad).await.err().expect("must error") {
             crate::error::ApiError::InvalidField { field, .. } => assert_eq!(field, "name"),
             e => panic!("unexpected error: {e}"),
         }
 
         // Pattern containing control char should yield Parse
-        let badq = SimpleQueryStatsRequest { pattern: "\u{0001}".to_string(), reset: false };
+        let badq = SimpleQueryStatsRequest {
+            pattern: "\u{0001}".to_string(),
+            reset: false,
+        };
         match server.query_stats(badq).await.err().expect("must error") {
             crate::error::ApiError::Parse { .. } => {}
             e => panic!("unexpected error: {e}"),

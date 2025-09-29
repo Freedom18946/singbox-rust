@@ -174,7 +174,9 @@ impl LinuxProcessMatcher {
 
 impl Default for LinuxProcessMatcher {
     fn default() -> Self {
-        Self { inode_cache: std::sync::Mutex::new(HashMap::new()) }
+        Self {
+            inode_cache: std::sync::Mutex::new(HashMap::new()),
+        }
     }
 }
 

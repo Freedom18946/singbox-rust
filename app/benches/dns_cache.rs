@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use sb_core::router::dns::DnsCache;
 use std::time::Duration;
 
@@ -16,4 +16,3 @@ fn bench_dns_cache(c: &mut Criterion) {
 
 criterion_group!(benches, bench_dns_cache);
 criterion_main!(benches);
-

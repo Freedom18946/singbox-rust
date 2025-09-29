@@ -1,22 +1,21 @@
-use crate::admin_debug::{endpoints, http_util::respond_json_error};
 #[cfg(feature = "auth")]
-use crate::admin_debug::auth::{AuthConfig, from_config};
+use crate::admin_debug::auth::{from_config, AuthConfig};
 use crate::admin_debug::middleware::{
-    MiddlewareChain, RequestContext, send_error_response,
-    request_id::RequestIdMiddleware,
-    auth::AuthMiddleware,
+    auth::AuthMiddleware, request_id::RequestIdMiddleware, send_error_response, MiddlewareChain,
+    RequestContext,
 };
+use crate::admin_debug::{endpoints, http_util::respond_json_error};
+use hex;
+use hmac::{Hmac, Mac};
+use httparse;
+use sha2::Sha256;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
+use subtle::ConstantTimeEq;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use std::sync::OnceLock;
-use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::path::PathBuf;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use subtle::ConstantTimeEq;
-use hex;
-use httparse;
 
 trait StreamTrait: AsyncRead + AsyncWrite + Unpin + Send {}
 
@@ -45,7 +44,8 @@ impl TlsConf {
     }
 
     pub fn from_env() -> Self {
-        let enabled = std::env::var("SB_ADMIN_TLS_CERT").is_ok() && std::env::var("SB_ADMIN_TLS_KEY").is_ok();
+        let enabled =
+            std::env::var("SB_ADMIN_TLS_CERT").is_ok() && std::env::var("SB_ADMIN_TLS_KEY").is_ok();
 
         if !enabled {
             return Self::disabled();
@@ -53,7 +53,9 @@ impl TlsConf {
 
         Self {
             enabled,
-            cert: std::env::var("SB_ADMIN_TLS_CERT").unwrap_or_default().into(),
+            cert: std::env::var("SB_ADMIN_TLS_CERT")
+                .unwrap_or_default()
+                .into(),
             key: std::env::var("SB_ADMIN_TLS_KEY").unwrap_or_default().into(),
             ca: std::env::var("SB_ADMIN_TLS_CA").ok().map(PathBuf::from),
             require_client_cert: std::env::var("SB_ADMIN_MTLS").ok().as_deref() == Some("1"),
@@ -84,7 +86,10 @@ impl AuthConf {
         let secret = std::env::var("SB_ADMIN_HMAC_SECRET").ok();
 
         match (token, secret) {
-            (Some(t), Some(s)) => Self::BearerAndHmac { token: t, secret: s },
+            (Some(t), Some(s)) => Self::BearerAndHmac {
+                token: t,
+                secret: s,
+            },
             (Some(t), None) => Self::Bearer { token: t },
             (None, Some(s)) => Self::Hmac { secret: s },
             (None, None) => Self::Disabled,
@@ -165,7 +170,7 @@ pub fn check_auth_contract(
     headers: &HashMap<String, String>,
     path: &str,
     auth_conf: &AuthConf,
-    request_id: Option<&str>
+    request_id: Option<&str>,
 ) -> Result<(), sb_admin_contract::ResponseEnvelope<()>> {
     // For mTLS, authentication is handled at TLS layer
     if matches!(auth_conf, AuthConf::Mtls { enabled: true }) {
@@ -178,10 +183,8 @@ pub fn check_auth_contract(
         Ok(p) => p,
         Err(auth_err) => {
             let error_body: sb_admin_contract::ErrorBody = auth_err.into();
-            let mut envelope = sb_admin_contract::ResponseEnvelope::err(
-                error_body.kind,
-                error_body.msg
-            );
+            let mut envelope =
+                sb_admin_contract::ResponseEnvelope::err(error_body.kind, error_body.msg);
             if let Some(id) = request_id {
                 envelope = envelope.with_request_id(id);
             }
@@ -194,10 +197,8 @@ pub fn check_auth_contract(
         Ok(()) => Ok(()),
         Err(auth_err) => {
             let error_body: sb_admin_contract::ErrorBody = auth_err.into();
-            let mut envelope = sb_admin_contract::ResponseEnvelope::err(
-                error_body.kind,
-                error_body.msg
-            );
+            let mut envelope =
+                sb_admin_contract::ResponseEnvelope::err(error_body.kind, error_body.msg);
             if let Some(hint) = error_body.hint {
                 envelope.error.as_mut().unwrap().hint = Some(hint);
             }
@@ -215,7 +216,7 @@ pub fn check_auth_contract(
     headers: &HashMap<String, String>,
     path: &str,
     auth_conf: &AuthConf,
-    _request_id: Option<&str>
+    _request_id: Option<&str>,
 ) -> Result<(), sb_admin_contract::ResponseEnvelope<()>> {
     // Fall back to legacy authentication
     if check_auth_with_config(headers, path, auth_conf) {
@@ -223,7 +224,7 @@ pub fn check_auth_contract(
     } else {
         Err(sb_admin_contract::ResponseEnvelope::err(
             sb_admin_contract::ErrorKind::Auth,
-            "Authentication required"
+            "Authentication required",
         ))
     }
 }
@@ -272,7 +273,10 @@ fn check_hmac_auth(hmac_auth: &str, path: &str) -> bool {
     let expected_hex = hex::encode(expected);
 
     // Constant-time comparison
-    expected_hex.as_bytes().ct_eq(provided_signature.as_bytes()).into()
+    expected_hex
+        .as_bytes()
+        .ct_eq(provided_signature.as_bytes())
+        .into()
 }
 
 pub fn get_auth_mode() -> &'static str {
@@ -280,7 +284,9 @@ pub fn get_auth_mode() -> &'static str {
         "disabled"
     } else if std::env::var("SB_ADMIN_MTLS").ok().as_deref() == Some("1") {
         "mtls"
-    } else if std::env::var("SB_ADMIN_HMAC_SECRET").ok().is_some() && std::env::var("SB_ADMIN_TOKEN").ok().is_some() {
+    } else if std::env::var("SB_ADMIN_HMAC_SECRET").ok().is_some()
+        && std::env::var("SB_ADMIN_TOKEN").ok().is_some()
+    {
         "bearer+hmac"
     } else if std::env::var("SB_ADMIN_HMAC_SECRET").ok().is_some() {
         "hmac"
@@ -293,11 +299,18 @@ pub fn get_auth_mode() -> &'static str {
 
 async fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
     use std::{fs::File, io::BufReader};
-    use tokio_rustls::rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer}};
+    use tokio_rustls::rustls::{
+        pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+        ServerConfig,
+    };
 
-    let cert_path = std::env::var("SB_ADMIN_TLS_CERT").map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, "SB_ADMIN_TLS_CERT not set"))?;
-    let key_path  = std::env::var("SB_ADMIN_TLS_KEY").map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, "SB_ADMIN_TLS_KEY not set"))?;
-    let ca_path   = std::env::var("SB_ADMIN_TLS_CA").ok();
+    let cert_path = std::env::var("SB_ADMIN_TLS_CERT").map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "SB_ADMIN_TLS_CERT not set")
+    })?;
+    let key_path = std::env::var("SB_ADMIN_TLS_KEY").map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "SB_ADMIN_TLS_KEY not set")
+    })?;
+    let ca_path = std::env::var("SB_ADMIN_TLS_CA").ok();
 
     let mut cert_reader = BufReader::new(File::open(cert_path)?);
     let certs: Vec<CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
@@ -307,11 +320,12 @@ async fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
     let mut key_reader = BufReader::new(File::open(key_path)?);
     let key = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
         .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "no private key found"))??;
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "no private key found")
+        })??;
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.secret_pkcs8_der().to_vec()));
 
-    let cfg_builder = ServerConfig::builder()
-        .with_no_client_auth(); // Default: no client auth required
+    let cfg_builder = ServerConfig::builder().with_no_client_auth(); // Default: no client auth required
 
     // If mTLS is enabled, require client certificates
     let cfg_builder = if std::env::var("SB_ADMIN_MTLS").ok().as_deref() == Some("1") {
@@ -320,13 +334,24 @@ async fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
         if let Some(ca) = ca_path {
             let mut r = BufReader::new(File::open(ca)?);
             for c in rustls_pemfile::certs(&mut r) {
-                roots.add(c?).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid CA cert"))?;
+                roots.add(c?).map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid CA cert")
+                })?;
             }
         } else {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "SB_ADMIN_TLS_CA required for mTLS"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "SB_ADMIN_TLS_CA required for mTLS",
+            ));
         }
-        let verifier = WebPkiClientVerifier::builder(roots.into()).build()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "failed to build client verifier"))?;
+        let verifier = WebPkiClientVerifier::builder(roots.into())
+            .build()
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to build client verifier",
+                )
+            })?;
         ServerConfig::builder().with_client_cert_verifier(verifier)
     } else {
         cfg_builder
@@ -341,9 +366,14 @@ async fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
     Ok(tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(cfg)))
 }
 
-async fn build_tls_acceptor_from_config(tls_conf: &TlsConf) -> std::io::Result<tokio_rustls::TlsAcceptor> {
+async fn build_tls_acceptor_from_config(
+    tls_conf: &TlsConf,
+) -> std::io::Result<tokio_rustls::TlsAcceptor> {
     use std::{fs::File, io::BufReader};
-    use tokio_rustls::rustls::{ServerConfig, pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer}};
+    use tokio_rustls::rustls::{
+        pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+        ServerConfig,
+    };
 
     let mut cert_reader = BufReader::new(File::open(&tls_conf.cert)?);
     let certs: Vec<CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
@@ -353,7 +383,9 @@ async fn build_tls_acceptor_from_config(tls_conf: &TlsConf) -> std::io::Result<t
     let mut key_reader = BufReader::new(File::open(&tls_conf.key)?);
     let key = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
         .next()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "no private key found"))??;
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "no private key found")
+        })??;
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.secret_pkcs8_der().to_vec()));
 
     let cfg_builder = if tls_conf.require_client_cert {
@@ -362,13 +394,24 @@ async fn build_tls_acceptor_from_config(tls_conf: &TlsConf) -> std::io::Result<t
         if let Some(ca_path) = &tls_conf.ca {
             let mut r = BufReader::new(File::open(ca_path)?);
             for c in rustls_pemfile::certs(&mut r) {
-                roots.add(c?).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid CA cert"))?;
+                roots.add(c?).map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid CA cert")
+                })?;
             }
         } else {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "CA cert required for mTLS"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "CA cert required for mTLS",
+            ));
         }
-        let verifier = WebPkiClientVerifier::builder(roots.into()).build()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "failed to build client verifier"))?;
+        let verifier = WebPkiClientVerifier::builder(roots.into())
+            .build()
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to build client verifier",
+                )
+            })?;
         ServerConfig::builder().with_client_cert_verifier(verifier)
     } else {
         ServerConfig::builder().with_no_client_auth()
@@ -385,7 +428,9 @@ async fn build_tls_acceptor_from_config(tls_conf: &TlsConf) -> std::io::Result<t
 
 /// Extract request ID from headers
 fn extract_request_id(headers: &HashMap<String, String>) -> Option<String> {
-    headers.get("x-request-id").cloned()
+    headers
+        .get("x-request-id")
+        .cloned()
         .or_else(|| headers.get("request-id").cloned())
 }
 
@@ -401,8 +446,7 @@ fn generate_request_id() -> String {
 
 /// Build the middleware chain for admin debug server
 fn build_middleware_chain(auth_conf: &AuthConf) -> std::io::Result<MiddlewareChain> {
-    let mut chain = MiddlewareChain::new()
-        .add(RequestIdMiddleware::new());
+    let mut chain = MiddlewareChain::new().add(RequestIdMiddleware::new());
 
     // Add rate limiting middleware if enabled
     #[cfg(feature = "rate_limit")]
@@ -416,14 +460,18 @@ fn build_middleware_chain(auth_conf: &AuthConf) -> std::io::Result<MiddlewareCha
     // Add authentication middleware
     match AuthMiddleware::from_env() {
         Ok(auth_middleware) => {
-            tracing::info!(target = "admin", auth_mode = auth_conf.mode(), "authentication enabled");
+            tracing::info!(
+                target = "admin",
+                auth_mode = auth_conf.mode(),
+                "authentication enabled"
+            );
             chain = chain.add(auth_middleware);
         }
         Err(e) => {
             tracing::error!(target = "admin", error = %e, "failed to create auth middleware");
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("auth middleware creation failed: {}", e)
+                format!("auth middleware creation failed: {}", e),
             ));
         }
     }
@@ -434,10 +482,11 @@ fn build_middleware_chain(auth_conf: &AuthConf) -> std::io::Result<MiddlewareCha
 /// Send authentication error response with contract compliance
 async fn respond_auth_error<W: AsyncWrite + Unpin>(
     writer: &mut W,
-    envelope: sb_admin_contract::ResponseEnvelope<()>
+    envelope: sb_admin_contract::ResponseEnvelope<()>,
 ) -> std::io::Result<()> {
-    let body = serde_json::to_string(&envelope)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "JSON serialization failed"))?;
+    let body = serde_json::to_string(&envelope).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "JSON serialization failed")
+    })?;
 
     let response = format!(
         "HTTP/1.1 401 Unauthorized\r\n\
@@ -452,7 +501,9 @@ async fn respond_auth_error<W: AsyncWrite + Unpin>(
     writer.write_all(response.as_bytes()).await
 }
 
-async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(String, String, HashMap<String, String>)> {
+async fn read_request_head<R: AsyncRead + Unpin>(
+    r: &mut R,
+) -> std::io::Result<(String, String, HashMap<String, String>)> {
     let mut buf = Vec::with_capacity(2048);
     let mut tmp = [0u8; 512];
     let mut total = 0usize;
@@ -462,27 +513,43 @@ async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(
     loop {
         let now = std::time::Instant::now();
         if now >= deadline {
-            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "first line timeout"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "first line timeout",
+            ));
         }
         let remain = deadline.saturating_duration_since(now);
         let n = tokio::time::timeout(remain, tokio::io::AsyncReadExt::read(r, &mut tmp))
             .await
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "first line timeout"))??;
-        if n == 0 { break; }
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "first line timeout")
+            })??;
+        if n == 0 {
+            break;
+        }
         buf.extend_from_slice(&tmp[..n]);
         total += n;
 
-        if total > max_h { // header limit
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "header too large"));
+        if total > max_h {
+            // header limit
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "header too large",
+            ));
         }
 
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") { break; }
-        if buf.len() > 0 && n < tmp.len() { continue; }
+        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+        if buf.len() > 0 && n < tmp.len() {
+            continue;
+        }
     }
 
     let mut headers = [httparse::EMPTY_HEADER; 64]; // 64 header limit
     let mut req = httparse::Request::new(&mut headers);
-    let _ = req.parse(&buf)
+    let _ = req
+        .parse(&buf)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad header"))?;
 
     let method = req.method.unwrap_or("GET").to_string();
@@ -490,18 +557,29 @@ async fn read_request_head<R: AsyncRead + Unpin>(r: &mut R) -> std::io::Result<(
     let mut map = HashMap::new();
 
     for h in req.headers.iter() {
-        if h.name.len() > 256 || h.value.len() > 16 * 1024 { // Per-header size limit
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "header line too large"));
+        if h.name.len() > 256 || h.value.len() > 16 * 1024 {
+            // Per-header size limit
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "header line too large",
+            ));
         }
-        map.insert(h.name.to_ascii_lowercase(), String::from_utf8_lossy(h.value).trim().to_string());
+        map.insert(
+            h.name.to_ascii_lowercase(),
+            String::from_utf8_lossy(h.value).trim().to_string(),
+        );
     }
 
     Ok((method, path, map))
 }
 
-async fn read_request_body<R: AsyncRead + Unpin>(r: &mut R, headers: &HashMap<String, String>) -> std::io::Result<bytes::Bytes> {
+async fn read_request_body<R: AsyncRead + Unpin>(
+    r: &mut R,
+    headers: &HashMap<String, String>,
+) -> std::io::Result<bytes::Bytes> {
     let (_max_h, max_b, _fl, read_ms) = admin_limits();
-    let content_length = headers.get("content-length")
+    let content_length = headers
+        .get("content-length")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(0);
 
@@ -509,14 +587,21 @@ async fn read_request_body<R: AsyncRead + Unpin>(r: &mut R, headers: &HashMap<St
         return Ok(bytes::Bytes::new());
     }
 
-    if content_length > max_b { // size limit
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "request body too large"));
+    if content_length > max_b {
+        // size limit
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "request body too large",
+        ));
     }
 
     let mut body = vec![0u8; content_length];
-    tokio::time::timeout(std::time::Duration::from_millis(read_ms), tokio::io::AsyncReadExt::read_exact(r, &mut body))
-        .await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "body read timeout"))??;
+    tokio::time::timeout(
+        std::time::Duration::from_millis(read_ms),
+        tokio::io::AsyncReadExt::read_exact(r, &mut body),
+    )
+    .await
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "body read timeout"))??;
     Ok(bytes::Bytes::from(body))
 }
 
@@ -530,12 +615,18 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     // Print and optionally write port for test discovery
     println!("ADMIN_LISTEN={}", actual_addr);
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
-        if let Err(e) = sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes()) {
+        if let Err(e) =
+            sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes())
+        {
             tracing::warn!(portfile = %portfile, error = %e, "failed to write admin port file");
         }
     }
 
-    let tls_acceptor = if use_mtls { Some(build_tls_acceptor().await?) } else { None };
+    let tls_acceptor = if use_mtls {
+        Some(build_tls_acceptor().await?)
+    } else {
+        None
+    };
 
     loop {
         let (stream, _) = listener.accept().await?;
@@ -560,18 +651,24 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
 
                 // Contract-compliant authentication
                 #[cfg(feature = "auth")]
-                let auth_result = check_auth_contract(&headers, &path, &auth_config, Some(&request_id));
+                let auth_result =
+                    check_auth_contract(&headers, &path, &auth_config, Some(&request_id));
                 #[cfg(not(feature = "auth"))]
-                let auth_result = check_auth_contract(&headers, &path, &auth_config, Some(&request_id));
+                let auth_result =
+                    check_auth_contract(&headers, &path, &auth_config, Some(&request_id));
 
                 if let Err(auth_envelope) = auth_result {
                     // For mTLS, provide specific error message
                     if std::env::var("SB_ADMIN_MTLS").ok().as_deref() == Some("1") {
                         s.write_all(b"HTTP/1.1 401 Unauthorized\r\n").await?;
-                        s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n").await?;
+                        s.write_all(b"WWW-Authenticate: mtls realm=\"sb-admin\"\r\n")
+                            .await?;
                         s.write_all(b"Content-Type: text/plain\r\n").await?;
                         let body = "mTLS authentication required: valid client certificate needed";
-                        s.write_all(format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes()).await?;
+                        s.write_all(
+                            format!("Content-Length: {}\r\n\r\n{}", body.len(), body).as_bytes(),
+                        )
+                        .await?;
                     } else {
                         // Use contract-compliant JSON response
                         respond_auth_error(&mut s, auth_envelope).await?;
@@ -581,23 +678,41 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
 
                 // Route to endpoints
                 match (method.as_str(), path.as_str()) {
-                    ("GET", "/__health")  => endpoints::handle_health(&mut s).await?,
+                    ("GET", "/__health") => endpoints::handle_health(&mut s).await?,
                     ("GET", "/__metrics") => endpoints::metrics::handle(&mut s).await?,
                     ("GET", "/__config") => endpoints::handle_config_get(&mut s).await?,
                     ("PUT", "/__config") => {
                         let body = read_request_body(&mut s, &headers).await?;
                         endpoints::handle_config_put(&mut s, body, &headers).await?;
                     }
-                    (_, p) if p.starts_with("/router/geoip") => endpoints::handle_geoip(p, &mut s).await?,
-                    (_, p) if p.starts_with("/router/rules/normalize") => endpoints::handle_normalize(p, &mut s).await?,
+                    (_, p) if p.starts_with("/router/geoip") => {
+                        endpoints::handle_geoip(p, &mut s).await?
+                    }
+                    (_, p) if p.starts_with("/router/rules/normalize") => {
+                        endpoints::handle_normalize(p, &mut s).await?
+                    }
                     (_, p) if p.starts_with("/subs/") => {
-                        #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
+                        #[cfg(any(
+                            feature = "subs_http",
+                            feature = "subs_clash",
+                            feature = "subs_singbox"
+                        ))]
                         {
                             endpoints::handle_subs(p, &mut s).await?;
                         }
-                        #[cfg(not(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox")))]
+                        #[cfg(not(any(
+                            feature = "subs_http",
+                            feature = "subs_clash",
+                            feature = "subs_singbox"
+                        )))]
                         {
-                            respond_json_error(&mut s, 501, "subscription features not enabled", Some("enable subs_http, subs_clash, or subs_singbox feature")).await?;
+                            respond_json_error(
+                                &mut s,
+                                501,
+                                "subscription features not enabled",
+                                Some("enable subs_http, subs_clash, or subs_singbox feature"),
+                            )
+                            .await?;
                         }
                     }
                     (_, p) if p.starts_with("/router/analyze") => {
@@ -607,7 +722,13 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
                         }
                         #[cfg(not(feature = "sbcore_rules_tool"))]
                         {
-                            respond_json_error(&mut s, 501, "sbcore_rules_tool feature not enabled", Some("enable sbcore_rules_tool feature")).await?;
+                            respond_json_error(
+                                &mut s,
+                                501,
+                                "sbcore_rules_tool feature not enabled",
+                                Some("enable sbcore_rules_tool feature"),
+                            )
+                            .await?;
                         }
                     }
                     (_, p) if p.starts_with("/route/dryrun") => {
@@ -617,14 +738,21 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
                         }
                         #[cfg(not(feature = "route_sandbox"))]
                         {
-                            respond_json_error(&mut s, 501, "route_sandbox feature not enabled", Some("enable route_sandbox feature")).await?;
+                            respond_json_error(
+                                &mut s,
+                                501,
+                                "route_sandbox feature not enabled",
+                                Some("enable route_sandbox feature"),
+                            )
+                            .await?;
                         }
                     }
                     _ => respond_json_error(&mut s, 404, "endpoint not found", None).await?,
                 }
 
                 Ok::<_, std::io::Error>(())
-            }.await;
+            }
+            .await;
 
             if let Err(e) = res {
                 tracing::warn!(%e, "admin http error");
@@ -648,7 +776,11 @@ pub fn spawn(
     Ok(())
 }
 
-async fn serve_with_config(addr: &str, tls_conf: Option<TlsConf>, auth_conf: AuthConf) -> std::io::Result<()> {
+async fn serve_with_config(
+    addr: &str,
+    tls_conf: Option<TlsConf>,
+    auth_conf: AuthConf,
+) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
 
@@ -658,7 +790,9 @@ async fn serve_with_config(addr: &str, tls_conf: Option<TlsConf>, auth_conf: Aut
     // Print and optionally write port for test discovery
     println!("ADMIN_LISTEN={}", actual_addr);
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
-        if let Err(e) = sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes()) {
+        if let Err(e) =
+            sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes())
+        {
             tracing::warn!(portfile = %portfile, error = %e, "failed to write admin port file");
         }
     }
@@ -801,7 +935,9 @@ pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
     // Print and optionally write port for test discovery
     println!("ADMIN_LISTEN={}", actual_addr);
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
-        if let Err(e) = sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes()) {
+        if let Err(e) =
+            sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes())
+        {
             tracing::warn!(portfile = %portfile, error = %e, "failed to write admin port file");
         }
     }
@@ -825,13 +961,7 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
     let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
 
     if parts.len() < 2 || parts[0] != "GET" {
-        respond_json_error(
-            &mut stream,
-            400,
-            "Only GET requests supported",
-            None,
-        )
-        .await?;
+        respond_json_error(&mut stream, 400, "Only GET requests supported", None).await?;
         return Ok(());
     }
 
@@ -867,15 +997,17 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
                 &mut stream,
                 sb_admin_contract::ResponseEnvelope::err(
                     sb_admin_contract::ErrorKind::Internal,
-                    "Server configuration error"
+                    "Server configuration error",
                 ),
-                500
-            ).await?;
+                500,
+            )
+            .await?;
             return Ok(());
         }
     };
 
-    let mut request_context = RequestContext::new("GET".to_string(), path_q.to_string(), headers.clone());
+    let mut request_context =
+        RequestContext::new("GET".to_string(), path_q.to_string(), headers.clone());
 
     // Execute middleware chain for protected endpoints
     if path_q == "/__health" || path_q == "/__metrics" {
@@ -997,7 +1129,10 @@ mod tests {
     fn test_bearer_auth_with_whitespace() {
         std::env::set_var("SB_ADMIN_TOKEN", "secret123");
         let mut headers = HashMap::new();
-        headers.insert("authorization".to_string(), "  Bearer   secret123  ".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "  Bearer   secret123  ".to_string(),
+        );
         assert!(check_auth(&headers, "/test"));
         std::env::remove_var("SB_ADMIN_TOKEN");
     }
@@ -1008,15 +1143,24 @@ mod tests {
         let mut headers = HashMap::new();
 
         // Invalid format: too few parts
-        headers.insert("authorization".to_string(), "SB-HMAC admin:123456".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "SB-HMAC admin:123456".to_string(),
+        );
         assert!(!check_auth(&headers, "/test"));
 
         // Invalid format: too many parts
-        headers.insert("authorization".to_string(), "SB-HMAC admin:123456:sig:extra".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "SB-HMAC admin:123456:sig:extra".to_string(),
+        );
         assert!(!check_auth(&headers, "/test"));
 
         // Invalid timestamp
-        headers.insert("authorization".to_string(), "SB-HMAC admin:notanumber:sig".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "SB-HMAC admin:notanumber:sig".to_string(),
+        );
         assert!(!check_auth(&headers, "/test"));
 
         std::env::remove_var("SB_ADMIN_HMAC_SECRET");
@@ -1029,16 +1173,25 @@ mod tests {
         std::env::set_var("SB_ADMIN_HMAC_SECRET", "testsecret");
         let mut headers = HashMap::new();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         // Too old (more than 5 minutes)
         let old_timestamp = now - 400; // 400 seconds ago
-        headers.insert("authorization".to_string(), format!("SB-HMAC admin:{}:somesig", old_timestamp));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC admin:{}:somesig", old_timestamp),
+        );
         assert!(!check_auth(&headers, "/test"));
 
         // Future timestamp (more than 5 minutes ahead)
         let future_timestamp = now + 400; // 400 seconds in future
-        headers.insert("authorization".to_string(), format!("SB-HMAC admin:{}:somesig", future_timestamp));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC admin:{}:somesig", future_timestamp),
+        );
         assert!(!check_auth(&headers, "/test"));
 
         std::env::remove_var("SB_ADMIN_HMAC_SECRET");
@@ -1051,7 +1204,10 @@ mod tests {
         std::env::set_var("SB_ADMIN_HMAC_SECRET", "testsecret");
         let mut headers = HashMap::new();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let path = "/test";
 
         // Generate correct signature using real HMAC-SHA256
@@ -1062,11 +1218,17 @@ mod tests {
         let correct_signature = hex::encode(expected);
 
         // Valid signature
-        headers.insert("authorization".to_string(), format!("SB-HMAC admin:{}:{}", now, correct_signature));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC admin:{}:{}", now, correct_signature),
+        );
         assert!(check_auth(&headers, path));
 
         // Invalid signature
-        headers.insert("authorization".to_string(), format!("SB-HMAC admin:{}:invalidsig", now));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC admin:{}:invalidsig", now),
+        );
         assert!(!check_auth(&headers, path));
 
         std::env::remove_var("SB_ADMIN_HMAC_SECRET");
@@ -1121,7 +1283,10 @@ mod tests {
         std::env::set_var("SB_ADMIN_HMAC_SECRET", "testsecret");
         let mut headers = HashMap::new();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         // Generate signature for path1
         let path1 = "/health";
@@ -1138,12 +1303,18 @@ mod tests {
         let sig2 = hex::encode(mac2.finalize().into_bytes());
 
         // Signature for path1 should work only for path1
-        headers.insert("authorization".to_string(), format!("SB-HMAC admin:{}:{}", now, sig1));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC admin:{}:{}", now, sig1),
+        );
         assert!(check_auth(&headers, path1));
         assert!(!check_auth(&headers, path2)); // Should fail for different path
 
         // Signature for path2 should work only for path2
-        headers.insert("authorization".to_string(), format!("SB-HMAC admin:{}:{}", now, sig2));
+        headers.insert(
+            "authorization".to_string(),
+            format!("SB-HMAC admin:{}:{}", now, sig2),
+        );
         assert!(check_auth(&headers, path2));
         assert!(!check_auth(&headers, path1)); // Should fail for different path
 

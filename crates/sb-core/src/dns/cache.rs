@@ -493,6 +493,8 @@ mod tests {
         let answer = DnsAnswer {
             ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
             ttl: Duration::from_secs(300),
+            source: Source::System,
+            rcode: Rcode::NoError,
         };
         cache.put(domain, answer.clone());
 
@@ -527,6 +529,8 @@ mod tests {
         let answer = DnsAnswer {
             ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
             ttl: Duration::from_millis(10),
+            source: Source::System,
+            rcode: Rcode::NoError,
         };
         cache.put(domain, answer);
 
@@ -550,6 +554,8 @@ mod tests {
             let answer = DnsAnswer {
                 ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, i as u8))],
                 ttl: Duration::from_secs(300),
+                source: Source::System,
+                rcode: Rcode::NoError,
             };
             cache.put(&domain, answer);
         }
@@ -569,12 +575,14 @@ mod tests {
         std::env::set_var("SB_DNS_MIN_TTL_S", "0");
 
         let cache = Arc::new(DnsCache::new(10));
-        let manager = CacheManager::new(cache.clone());
+        let _manager = CacheManager::new(cache.clone());
 
         // 添加一个短 TTL 的条目
         let answer = DnsAnswer {
             ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
             ttl: Duration::from_millis(50),
+            source: Source::System,
+            rcode: Rcode::NoError,
         };
         cache.put("example.com", answer);
 

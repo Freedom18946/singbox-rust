@@ -99,7 +99,10 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
             sb_config::Inbound::Socks { listen: _listen } => {
                 #[cfg(feature = "socks")]
                 {
-                    warn!(?_listen, "SOCKS inbound temporarily disabled for subs tests");
+                    warn!(
+                        ?_listen,
+                        "SOCKS inbound temporarily disabled for subs tests"
+                    );
                     // TEMPORARILY SKIP SOCKS INBOUND for subs security tests
                 }
                 #[cfg(not(feature = "socks"))]

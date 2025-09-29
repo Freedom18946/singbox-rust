@@ -1,11 +1,11 @@
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 use ignore::WalkBuilder;
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 use regex::Regex;
 use serde::Serialize;
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 use std::fs;
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Default)]
@@ -68,7 +68,7 @@ pub struct ReportMetrics {
     pub security_flags: SecurityFlags,
 }
 
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 #[derive(Serialize)]
 pub struct FsReport {
     pub root: String,
@@ -76,15 +76,17 @@ pub struct FsReport {
     pub metrics: ReportMetrics,
 }
 
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 pub struct Scanner {
     root: PathBuf,
 }
 
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 impl Scanner {
     pub fn new(root: impl AsRef<Path>) -> Self {
-        Self { root: root.as_ref().to_path_buf() }
+        Self {
+            root: root.as_ref().to_path_buf(),
+        }
     }
 
     pub fn run(&self) -> anyhow::Result<FsReport> {
@@ -97,13 +99,29 @@ impl Scanner {
         let mut subs_guard = false;
 
         // Parse environment variables for security limits
-        let max_redirects = std::env::var("SB_SUBS_MAX_REDIRECTS").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
-        let timeout_ms = std::env::var("SB_SUBS_TIMEOUT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(4000);
-        let max_bytes = std::env::var("SB_SUBS_MAX_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(512 * 1024);
-        let subs_limits = SubsLimits { max_redirects, timeout_ms, max_bytes: max_bytes as u64 };
+        let max_redirects = std::env::var("SB_SUBS_MAX_REDIRECTS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3);
+        let timeout_ms = std::env::var("SB_SUBS_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4000);
+        let max_bytes = std::env::var("SB_SUBS_MAX_BYTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(512 * 1024);
+        let subs_limits = SubsLimits {
+            max_redirects,
+            timeout_ms,
+            max_bytes: max_bytes as u64,
+        };
 
         let private_allowlist = if let Ok(s) = std::env::var("SB_SUBS_PRIVATE_ALLOWLIST") {
-            s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+            s.split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect()
         } else {
             vec![]
         };
@@ -138,11 +156,14 @@ impl Scanner {
                 Err(_) => continue,
             };
             let path = entry.path();
-            if !is_source_file(path) { continue; }
+            if !is_source_file(path) {
+                continue;
+            }
             // 允许清单：排除 Prometheus 导出器与当前扫描器自身文件，避免"自污染"与合法用例
             if let Some(p) = path.to_str() {
                 if p.ends_with("crates/sb-core/src/metrics/http_exporter.rs")
-                    || p.ends_with("app/src/cli/fs_scan.rs") {
+                    || p.ends_with("app/src/cli/fs_scan.rs")
+                {
                     continue;
                 }
             }
@@ -150,13 +171,19 @@ impl Scanner {
                 summary.files_scanned += 1;
                 summary.bytes_total += meta.len();
             }
-            let Ok(s) = fs::read_to_string(path) else { continue; };
+            let Ok(s) = fs::read_to_string(path) else {
+                continue;
+            };
             // respond_json_error 计数 + 文件清单
             let json_err_cnt = s.matches("respond_json_error(").count() as u64;
             if json_err_cnt > 0 {
                 respond_json_error_calls += json_err_cnt;
                 json_error_call_files.push(Occur {
-                    path: path.strip_prefix(&self.root).unwrap_or(path).display().to_string(),
+                    path: path
+                        .strip_prefix(&self.root)
+                        .unwrap_or(path)
+                        .display()
+                        .to_string(),
                     count: json_err_cnt,
                 });
             }
@@ -165,7 +192,11 @@ impl Scanner {
             if text_plain_cnt > 0 {
                 text_plain_occurrences += text_plain_cnt;
                 text_plain_files.push(Occur {
-                    path: path.strip_prefix(&self.root).unwrap_or(path).display().to_string(),
+                    path: path
+                        .strip_prefix(&self.root)
+                        .unwrap_or(path)
+                        .display()
+                        .to_string(),
                     count: text_plain_cnt,
                 });
             }
@@ -174,7 +205,11 @@ impl Scanner {
             if bsp_cnt > 0 {
                 build_single_patch_matches += bsp_cnt;
                 build_single_patch_files.push(Occur {
-                    path: path.strip_prefix(&self.root).unwrap_or(path).display().to_string(),
+                    path: path
+                        .strip_prefix(&self.root)
+                        .unwrap_or(path)
+                        .display()
+                        .to_string(),
                     count: bsp_cnt,
                 });
             }
@@ -218,7 +253,7 @@ impl Scanner {
     }
 }
 
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 fn is_source_file(p: &Path) -> bool {
     match p.extension().and_then(|s| s.to_str()) {
         Some("rs" | "toml" | "sh" | "yml" | "yaml") => true,
@@ -228,17 +263,34 @@ fn is_source_file(p: &Path) -> bool {
     }
 }
 
-#[cfg(feature="dev-cli")]
+#[cfg(feature = "dev-cli")]
 fn parse_bin_gates_toml(toml_path: PathBuf) -> BinGates {
-    let mut g = BinGates { minimal_bins: vec![], router_gated_bins: vec![] };
-    let Ok(s) = fs::read_to_string(&toml_path) else { return g; };
-    let Ok(t) = s.parse::<toml::Value>() else { return g; };
+    let mut g = BinGates {
+        minimal_bins: vec![],
+        router_gated_bins: vec![],
+    };
+    let Ok(s) = fs::read_to_string(&toml_path) else {
+        return g;
+    };
+    let Ok(t) = s.parse::<toml::Value>() else {
+        return g;
+    };
     if let Some(bins) = t.get("bin").and_then(|x| x.as_array()) {
         for b in bins {
-            let name = b.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            let req = b.get("required-features")
+            let name = b
+                .get("name")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            let req = b
+                .get("required-features")
                 .and_then(|x| x.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect::<Vec<_>>())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             if req.iter().any(|f| f == "router") {
                 g.router_gated_bins.push(name);

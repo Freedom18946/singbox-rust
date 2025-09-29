@@ -44,13 +44,13 @@ pub enum PrefetchCmd {
         #[arg(long)]
         url: String,
         /// 并发度
-        #[arg(long, default_value_t=8)]
+        #[arg(long, default_value_t = 8)]
         concurrency: usize,
         /// 压测时长（秒）
-        #[arg(long, default_value_t=20)]
+        #[arg(long, default_value_t = 20)]
         duration: u64,
         /// 每秒入队速率（0 表示尽力）
-        #[arg(long, default_value_t=0)]
+        #[arg(long, default_value_t = 0)]
         rps: u64,
         /// 可选 ETag
         #[arg(long)]
@@ -59,10 +59,10 @@ pub enum PrefetchCmd {
     /// 实时观测（刷新曲线/文本/JSON/NDJSON）
     Watch {
         /// 刷新间隔秒
-        #[arg(long, default_value_t=1)]
+        #[arg(long, default_value_t = 1)]
         interval: u64,
         /// 总时长秒（0 表示无限）
-        #[arg(long, default_value_t=0)]
+        #[arg(long, default_value_t = 0)]
         duration: u64,
         /// 纯文本输出（非 TTY 友好）
         #[arg(long)]
@@ -77,10 +77,10 @@ pub enum PrefetchCmd {
     /// 等待队列排空（或超时）
     Drain {
         /// 超时时间（秒）
-        #[arg(long, default_value_t=30)]
+        #[arg(long, default_value_t = 30)]
         timeout: u64,
         /// 轮询间隔（毫秒）
-        #[arg(long, default_value_t=200)]
+        #[arg(long, default_value_t = 200)]
         every: u64,
         /// 静默模式（仅用退出码表示结果）
         #[arg(long)]
@@ -95,7 +95,7 @@ pub enum PrefetchCmd {
         #[arg(long)]
         etag: Option<String>,
         /// 观测窗口（秒）
-        #[arg(long, default_value_t=3)]
+        #[arg(long, default_value_t = 3)]
         window: u64,
         /// 等待深度回落到初值 ±Δ（Δ=1）
         #[arg(long)]
@@ -114,14 +114,33 @@ pub fn main(a: PrefetchArgs) -> anyhow::Result<()> {
     match a.cmd {
         PrefetchCmd::Stats { json, format } => stats(json, format),
         PrefetchCmd::Enqueue { url, etag } => enqueue(url, etag),
-        PrefetchCmd::Heat { url, concurrency, duration, rps, etag } => {
-            heat(url, concurrency, duration, rps, etag)
-        }
-        PrefetchCmd::Watch { interval, duration, plain, json, ndjson } =>
-            watch(interval, duration, plain, json, ndjson),
-        PrefetchCmd::Drain { timeout, every, quiet } => drain(timeout, every, quiet),
-        PrefetchCmd::Sample { url, etag, window, wait_done, json, format } =>
-            sample(url, etag, window, wait_done, json, format),
+        PrefetchCmd::Heat {
+            url,
+            concurrency,
+            duration,
+            rps,
+            etag,
+        } => heat(url, concurrency, duration, rps, etag),
+        PrefetchCmd::Watch {
+            interval,
+            duration,
+            plain,
+            json,
+            ndjson,
+        } => watch(interval, duration, plain, json, ndjson),
+        PrefetchCmd::Drain {
+            timeout,
+            every,
+            quiet,
+        } => drain(timeout, every, quiet),
+        PrefetchCmd::Sample {
+            url,
+            etag,
+            window,
+            wait_done,
+            json,
+            format,
+        } => sample(url, etag, window, wait_done, json, format),
     }
 }
 
@@ -201,7 +220,8 @@ fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
         }
 
         // 检查队列容量配置
-        let queue_cap = std::env::var("SB_PREFETCH_CAP").ok()
+        let queue_cap = std::env::var("SB_PREFETCH_CAP")
+            .ok()
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(128);
 
@@ -223,7 +243,13 @@ fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
     }
 }
 
-fn heat(_url: String, _concurrency: usize, _duration: u64, _rps: u64, _etag: Option<String>) -> anyhow::Result<()> {
+fn heat(
+    _url: String,
+    _concurrency: usize,
+    _duration: u64,
+    _rps: u64,
+    _etag: Option<String>,
+) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
     {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -242,10 +268,18 @@ fn heat(_url: String, _concurrency: usize, _duration: u64, _rps: u64, _etag: Opt
                 let mut enq = 0u64;
                 let mut drop = 0u64;
                 let mut last = std::time::Instant::now();
-                let interval = if _rps == 0 { std::time::Duration::from_millis(0) } else { std::time::Duration::from_secs_f64(1.0 / (_rps as f64).max(1.0)) };
+                let interval = if _rps == 0 {
+                    std::time::Duration::from_millis(0)
+                } else {
+                    std::time::Duration::from_secs_f64(1.0 / (_rps as f64).max(1.0))
+                };
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                     let ok = crate::admin_debug::prefetch::enqueue_prefetch(&url, etag.clone());
-                    if ok { enq += 1; } else { drop += 1; }
+                    if ok {
+                        enq += 1;
+                    } else {
+                        drop += 1;
+                    }
                     if _rps > 0 {
                         let target = interval;
                         let spent = last.elapsed();
@@ -278,7 +312,6 @@ fn heat(_url: String, _concurrency: usize, _duration: u64, _rps: u64, _etag: Opt
     }
 }
 
-
 #[cfg(all(feature = "admin_debug", feature = "prefetch"))]
 #[allow(dead_code)]
 fn read_stats() -> PrefStats {
@@ -289,18 +322,28 @@ fn read_stats() -> PrefStats {
         succeeded: done,
         failed: fail,
         skipped: drop,
-        bytes: 0, // TODO: implement actual byte counting
+        bytes: 0,       // TODO: implement actual byte counting
         duration_ms: 0, // TODO: implement actual duration tracking
         canceled: false,
     }
 }
 
-fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: bool) -> anyhow::Result<()> {
+fn watch(
+    _interval: u64,
+    _duration: u64,
+    _plain: bool,
+    _json: bool,
+    _ndjson: bool,
+) -> anyhow::Result<()> {
     #[cfg(feature = "admin_debug")]
     {
         use crate::admin_debug::security_metrics as m;
         let iv = std::time::Duration::from_secs(_interval.max(1));
-        let deadline = if _duration == 0 { None } else { Some(std::time::Instant::now() + std::time::Duration::from_secs(_duration)) };
+        let deadline = if _duration == 0 {
+            None
+        } else {
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(_duration))
+        };
         let mut series: Vec<u64> = Vec::with_capacity(1200);
         let is_tty = atty::is(atty::Stream::Stdout) && !_plain && !_json && !_ndjson;
         loop {
@@ -309,7 +352,9 @@ fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: boo
             let (enq, drop, done, fail, retry) = m::get_prefetch_counters();
 
             series.push(depth);
-            while series.len() > 60 { series.remove(0); }
+            while series.len() > 60 {
+                series.remove(0);
+            }
             if _json || _ndjson {
                 let line = serde_json::json!({
                     "depth": depth, "high": high, "enq": enq, "drop": drop,
@@ -320,17 +365,27 @@ fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: boo
             } else if is_tty {
                 print!("\r\x1b[2K"); // clear line
                 let spark = sparkline(&series);
-                print!("depth {:>5}  high {:>5}  enq {:>8}  drop {:>6}  done {:>8}  fail {:>6} | {}",
-                    depth, high, enq, drop, done, fail, spark);
+                print!(
+                    "depth {:>5}  high {:>5}  enq {:>8}  drop {:>6}  done {:>8}  fail {:>6} | {}",
+                    depth, high, enq, drop, done, fail, spark
+                );
                 std::io::Write::flush(&mut std::io::stdout())?;
             } else {
-                println!("depth={} high={} enq={} drop={} done={} fail={} retry={}",
-                    depth, high, enq, drop, done, fail, retry);
+                println!(
+                    "depth={} high={} enq={} drop={} done={} fail={} retry={}",
+                    depth, high, enq, drop, done, fail, retry
+                );
             }
-            if let Some(t) = deadline { if std::time::Instant::now() >= t { break; } }
+            if let Some(t) = deadline {
+                if std::time::Instant::now() >= t {
+                    break;
+                }
+            }
             std::thread::sleep(iv);
         }
-        if is_tty { println!(); }
+        if is_tty {
+            println!();
+        }
         Ok(())
     }
     #[cfg(not(feature = "admin_debug"))]
@@ -342,15 +397,22 @@ fn watch(_interval: u64, _duration: u64, _plain: bool, _json: bool, _ndjson: boo
 #[allow(dead_code)] // Helper function for TTY display
 fn sparkline(data: &[u64]) -> String {
     // unicode blocks ▁▂▃▄▅▆▇█
-    const GLYPHS: &[char] = &['▁','▂','▃','▄','▅','▆','▇','█'];
-    if data.is_empty() { return "".into(); }
+    const GLYPHS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if data.is_empty() {
+        return "".into();
+    }
     let min = *data.iter().min().unwrap_or(&0);
     let max = *data.iter().max().unwrap_or(&0);
-    if max == min { return "▁".repeat(data.len()); }
-    data.iter().map(|v| {
-        let n = (((*v - min) as f64) / ((max - min) as f64) * (GLYPHS.len() as f64 - 1.0)).round() as usize;
-        GLYPHS[n]
-    }).collect()
+    if max == min {
+        return "▁".repeat(data.len());
+    }
+    data.iter()
+        .map(|v| {
+            let n = (((*v - min) as f64) / ((max - min) as f64) * (GLYPHS.len() as f64 - 1.0))
+                .round() as usize;
+            GLYPHS[n]
+        })
+        .collect()
 }
 
 fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
@@ -361,11 +423,15 @@ fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
         loop {
             let d = m::get_prefetch_queue_depth();
             if d == 0 {
-                if !_quiet { println!("queue drained"); }
+                if !_quiet {
+                    println!("queue drained");
+                }
                 return Ok(());
             }
             if std::time::Instant::now() >= until {
-                if !_quiet { eprintln!("timeout waiting for drain; depth={}", d); }
+                if !_quiet {
+                    eprintln!("timeout waiting for drain; depth={}", d);
+                }
                 std::process::exit(2);
             }
             std::thread::sleep(std::time::Duration::from_millis(_every_ms.max(50)));
@@ -377,8 +443,14 @@ fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
     }
 }
 
-
-fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _json: bool, _format: String) -> anyhow::Result<()> {
+fn sample(
+    _url: String,
+    _etag: Option<String>,
+    _window: u64,
+    _wait_done: bool,
+    _json: bool,
+    _format: String,
+) -> anyhow::Result<()> {
     #[cfg(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch"))]
     {
         use crate::admin_debug::security_metrics as m;
@@ -399,7 +471,9 @@ fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _
             let end2 = std::time::Instant::now() + std::time::Duration::from_secs(_window);
             while std::time::Instant::now() < end2 {
                 after = m::get_prefetch_queue_depth();
-                if after <= target { break; }
+                if after <= target {
+                    break;
+                }
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
         }
@@ -410,10 +484,17 @@ fn sample(_url: String, _etag: Option<String>, _window: u64, _wait_done: bool, _
         if use_json {
             let out = SampleOut {
                 key: _url,
-                status: if ok { "enqueued".to_string() } else { "drop".to_string() },
+                status: if ok {
+                    "enqueued".to_string()
+                } else {
+                    "drop".to_string()
+                },
                 latency_ms: t1.as_millis() as u32,
                 size: 0, // TODO: implement actual size tracking
-                hint: Some(format!("queue: before={} peak={} after={}", before, peak, after)),
+                hint: Some(format!(
+                    "queue: before={} peak={} after={}",
+                    before, peak, after
+                )),
             };
 
             if use_envelope {

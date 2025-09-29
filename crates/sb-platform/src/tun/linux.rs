@@ -35,9 +35,9 @@ impl LinuxTun {
 
         // Create the TUN interface
         // SAFETY:
-                // - 不变量：file 是有效的文件句柄，ifr 是正确初始化的 IfrData 结构
-                // - 并发/别名：ifr 为局部变量，file 由当前线程独占访问
-                // - FFI/平台契约：TUNSETIFF 是 Linux 上有效的 ioctl 命令，返回值已检查
+        // - 不变量：file 是有效的文件句柄，ifr 是正确初始化的 IfrData 结构
+        // - 并发/别名：ifr 为局部变量，file 由当前线程独占访问
+        // - FFI/平台契约：TUNSETIFF 是 Linux 上有效的 ioctl 命令，返回值已检查
         unsafe {
             let result = libc::ioctl(file.as_raw_fd(), TUNSETIFF, &ifr);
             if result < 0 {
@@ -182,7 +182,12 @@ mod tests {
         // the IfrData and calling into ioctl failure path would be handled.
         // We simulate the open failure by trying to open a bogus device, which should
         // return IoError/DeviceNotFound and not panic.
-        let cfg = TunConfig { name: "tun-test".to_string(), mtu: 1500, ipv4: None, ipv6: None };
+        let cfg = TunConfig {
+            name: "tun-test".to_string(),
+            mtu: 1500,
+            ipv4: None,
+            ipv6: None,
+        };
         // open_tun_device is private; exercise create() via TunDevice trait which calls it.
         // This should fail on typical CI runners where /dev/net/tun is unavailable.
         let res = LinuxTun::create(&cfg);
@@ -287,9 +292,9 @@ impl IfrData {
 
     fn get_name(&self) -> Option<String> {
         // SAFETY:
-                // - 不变量：ifr_name 是长度为 IF_NAMESIZE 的有效数组，转换为 u8 切片
-                // - 并发/别名：self 为不可变引用，数组内容在调用期间稳定
-                // - FFI/平台契约：从 c_char 数组创建 u8 切片在内存布局上是安全的
+        // - 不变量：ifr_name 是长度为 IF_NAMESIZE 的有效数组，转换为 u8 切片
+        // - 并发/别名：self 为不可变引用，数组内容在调用期间稳定
+        // - FFI/平台契约：从 c_char 数组创建 u8 切片在内存布局上是安全的
         let name_bytes = unsafe {
             std::slice::from_raw_parts(self.ifr_name.as_ptr() as *const u8, libc::IF_NAMESIZE)
         };

@@ -60,7 +60,10 @@ async fn concurrent_eviction_metrics() {
 
     // Assert that eviction metrics increased
     let final_evictions = M().udp_evict_total.snapshot().len();
-    assert!(final_evictions > initial_evictions, "Eviction metrics should have increased");
+    assert!(
+        final_evictions > initial_evictions,
+        "Eviction metrics should have increased"
+    );
 
     // Verify table is cleaned up
     assert_eq!(table.active_count(), 0, "All sessions should be evicted");
@@ -108,9 +111,15 @@ async fn ttl_expiration_metrics() {
 
     // Verify TTL metrics were recorded
     let final_ttl_recordings = M().udp_ttl_histogram.snapshot().count();
-    assert!(final_ttl_recordings > initial_ttl_recordings,
-           "TTL metrics should be recorded for expired sessions");
+    assert!(
+        final_ttl_recordings > initial_ttl_recordings,
+        "TTL metrics should be recorded for expired sessions"
+    );
 
     // Verify table is empty
-    assert_eq!(table.active_count(), 0, "Table should be empty after all expirations");
+    assert_eq!(
+        table.active_count(),
+        0,
+        "Table should be empty after all expirations"
+    );
 }

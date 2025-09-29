@@ -1,4 +1,3 @@
-#![cfg(feature = "selector_p3")]
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 

@@ -1,9 +1,6 @@
 //! HTTP handlers for Clash API endpoints
 
-use crate::{
-    clash::server::ApiState,
-    types::*,
-};
+use crate::{clash::server::ApiState, types::*};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -129,7 +126,8 @@ pub async fn get_proxy_delay(
     Json(json!({
         "delay": simulated_delay,
         "meanDelay": simulated_delay
-    })).into_response()
+    }))
+    .into_response()
 }
 
 /// Get all active connections

@@ -70,7 +70,11 @@ impl OutboundConnector for DirectConnector {
         let _permit = tokio::time::timeout(Duration::from_millis(q_ms), sem.acquire())
             .await
             .map_err(|_| SbError::timeout("outbound_queue", q_ms))
-            .and_then(|r| r.map_err(|_| SbError::Canceled { operation: "acquire_semaphore".to_string() }))?;
+            .and_then(|r| {
+                r.map_err(|_| SbError::Canceled {
+                    operation: "acquire_semaphore".to_string(),
+                })
+            })?;
         let addr = self.resolve_endpoint(&ctx.dst).await?;
 
         let stream = timeout(self.connect_timeout, TcpStream::connect(addr))
@@ -105,8 +109,15 @@ impl OutboundConnector for DirectConnector {
 fn global_limiters() -> (&'static tokio::sync::Semaphore, u64) {
     use std::sync::OnceLock;
     static SEM: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
-    let max = std::env::var("SB_OUT_MAX_CONCURRENCY").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(256).max(1);
-    let q_ms = std::env::var("SB_OUT_QUEUE_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(5_000);
+    let max = std::env::var("SB_OUT_MAX_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(256)
+        .max(1);
+    let q_ms = std::env::var("SB_OUT_QUEUE_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(5_000);
     let sem = SEM.get_or_init(|| tokio::sync::Semaphore::new(max));
     (sem, q_ms)
 }
@@ -162,7 +173,7 @@ impl UdpTransport for DirectUdpTransport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Host, Network};
+    use crate::types::Host;
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]

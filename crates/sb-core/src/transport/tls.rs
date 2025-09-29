@@ -85,7 +85,10 @@ impl TlsClient {
                     code: crate::error_map::IssueCode::TlsHandshakeProtocol,
                     class: "proto",
                 });
-                return TlsResult { error: Some(fallback), negotiated_alpn: None };
+                return TlsResult {
+                    error: Some(fallback),
+                    negotiated_alpn: None,
+                };
             }
         };
 

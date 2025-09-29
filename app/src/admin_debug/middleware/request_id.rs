@@ -9,7 +9,8 @@ use std::collections::HashMap;
 
 /// Extract request ID from headers or generate a new one
 pub fn extract_or_generate(headers: &HashMap<String, String>) -> String {
-    headers.get("x-request-id")
+    headers
+        .get("x-request-id")
         .or_else(|| headers.get("request-id"))
         .cloned()
         .unwrap_or_else(generate_request_id)
@@ -115,11 +116,7 @@ mod tests {
     #[test]
     fn test_middleware_process() {
         let middleware = RequestIdMiddleware::new();
-        let mut ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test".to_string(),
-            HashMap::new(),
-        );
+        let mut ctx = RequestContext::new("GET".to_string(), "/test".to_string(), HashMap::new());
 
         let result = middleware.process(&mut ctx);
         assert!(result.is_ok());

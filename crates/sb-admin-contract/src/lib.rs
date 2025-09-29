@@ -21,13 +21,23 @@ pub struct ResponseEnvelope<T> {
 
 impl<T> ResponseEnvelope<T> {
     pub const fn ok(data: T) -> Self {
-        Self { ok: true, data: Some(data), error: None, request_id: None }
+        Self {
+            ok: true,
+            data: Some(data),
+            error: None,
+            request_id: None,
+        }
     }
     pub fn err(kind: ErrorKind, msg: impl Into<String>) -> Self {
         Self {
             ok: false,
             data: None,
-            error: Some(ErrorBody { kind, msg: msg.into(), ptr: None, hint: None }),
+            error: Some(ErrorBody {
+                kind,
+                msg: msg.into(),
+                ptr: None,
+                hint: None,
+            }),
             request_id: None,
         }
     }

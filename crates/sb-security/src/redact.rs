@@ -209,11 +209,20 @@ mod tests {
 
         // Long token (13+ chars)
         assert_eq!(redact_token("abcdefghijklm"), "abcd*****jklm");
-        assert_eq!(redact_token("abcdefghijklmnopqrstuvwxyz"), "abcd********wxyz");
+        assert_eq!(
+            redact_token("abcdefghijklmnopqrstuvwxyz"),
+            "abcd********wxyz"
+        );
 
         // Real-world examples
-        assert_eq!(redact_token("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"), "Bear********VCJ9");
-        assert_eq!(redact_token("sk-1234567890abcdef1234567890abcdef"), "sk-1********cdef");
+        assert_eq!(
+            redact_token("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"),
+            "Bear********VCJ9"
+        );
+        assert_eq!(
+            redact_token("sk-1234567890abcdef1234567890abcdef"),
+            "sk-1********cdef"
+        );
     }
 
     #[test]
@@ -222,7 +231,10 @@ mod tests {
         assert_eq!(redact_key(""), "[KEY:0]");
 
         // RSA key
-        assert_eq!(redact_key("-----BEGIN RSA PRIVATE KEY-----"), "RSA-[KEY:31]");
+        assert_eq!(
+            redact_key("-----BEGIN RSA PRIVATE KEY-----"),
+            "RSA-[KEY:31]"
+        );
         assert_eq!(redact_key("rsa-sha256-key-material"), "RSA-[KEY:23]");
 
         // EC key

@@ -5,10 +5,10 @@
 //!
 //! All middleware failures return contract-compliant ResponseEnvelope errors.
 
-pub mod request_id;
+pub mod auth;
 #[cfg(feature = "rate_limit")]
 pub mod rate_limit;
-pub mod auth;
+pub mod request_id;
 
 use std::collections::HashMap;
 use tokio::io::AsyncWrite;
@@ -90,8 +90,9 @@ pub async fn send_error_response<W: AsyncWrite + Unpin>(
 ) -> std::io::Result<()> {
     use tokio::io::AsyncWriteExt;
 
-    let body = serde_json::to_string(&envelope)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "JSON serialization failed"))?;
+    let body = serde_json::to_string(&envelope).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "JSON serialization failed")
+    })?;
 
     let status_text = match status_code {
         401 => "Unauthorized",
@@ -128,7 +129,7 @@ mod tests {
             if self.should_fail {
                 Err(sb_admin_contract::ResponseEnvelope::err(
                     sb_admin_contract::ErrorKind::Internal,
-                    "test failure"
+                    "test failure",
                 ))
             } else {
                 Ok(())
@@ -142,11 +143,7 @@ mod tests {
             .add(TestMiddleware { should_fail: false })
             .add(TestMiddleware { should_fail: false });
 
-        let mut ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test".to_string(),
-            HashMap::new(),
-        );
+        let mut ctx = RequestContext::new("GET".to_string(), "/test".to_string(), HashMap::new());
 
         assert!(chain.execute(&mut ctx).is_ok());
     }
@@ -157,11 +154,7 @@ mod tests {
             .add(TestMiddleware { should_fail: false })
             .add(TestMiddleware { should_fail: true });
 
-        let mut ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test".to_string(),
-            HashMap::new(),
-        );
+        let mut ctx = RequestContext::new("GET".to_string(), "/test".to_string(), HashMap::new());
 
         assert!(chain.execute(&mut ctx).is_err());
     }
@@ -171,11 +164,7 @@ mod tests {
         let mut headers = HashMap::new();
         headers.insert("x-request-id".to_string(), "test-id".to_string());
 
-        let ctx = RequestContext::new(
-            "POST".to_string(),
-            "/api/test".to_string(),
-            headers,
-        );
+        let ctx = RequestContext::new("POST".to_string(), "/api/test".to_string(), headers);
 
         assert_eq!(ctx.method, "POST");
         assert_eq!(ctx.path, "/api/test");

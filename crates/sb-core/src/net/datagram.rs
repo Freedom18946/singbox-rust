@@ -38,8 +38,8 @@ pub struct UdpNatMap {
 
 impl UdpNatMap {
     /// 兼容两种调用方式：
-            // - UdpNatMap::new()                       // 无参
-            // - UdpNatMap::new(Duration::from_secs(x)) // 旧调用点传入 TTL，我们忽略该参数
+    // - UdpNatMap::new()                       // 无参
+    // - UdpNatMap::new(Duration::from_secs(x)) // 旧调用点传入 TTL，我们忽略该参数
     pub fn new<T>(_maybe_ttl: T) -> Self
     where
         T: Into<Option<Duration>>,

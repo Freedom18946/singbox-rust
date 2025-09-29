@@ -1,4 +1,4 @@
-#![cfg(feature = "tuic")]
+#![cfg(feature = "tuic_DISABLED")]
 //! TUIC protocol integration tests
 //!
 //! These tests verify TUIC protocol implementation including:

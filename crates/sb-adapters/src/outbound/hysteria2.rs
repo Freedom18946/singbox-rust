@@ -24,10 +24,14 @@ impl OutboundConnector for Hysteria2Connector {
     }
 
     async fn start(&self) -> Result<()> {
-        Err(AdapterError::NotImplemented { what: "adapter-hysteria2" })
+        Err(AdapterError::NotImplemented {
+            what: "adapter-hysteria2",
+        })
     }
 
     async fn dial(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        Err(AdapterError::NotImplemented { what: "Hysteria2 dial" })
+        Err(AdapterError::NotImplemented {
+            what: "Hysteria2 dial",
+        })
     }
 }

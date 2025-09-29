@@ -27,6 +27,12 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
 
         respond(sock, 200, "application/json", &body).await
     } else {
-        respond_json_error(sock, 400, "invalid IP address", Some("provide valid IP in ?ip parameter")).await
+        respond_json_error(
+            sock,
+            400,
+            "invalid IP address",
+            Some("provide valid IP in ?ip parameter"),
+        )
+        .await
     }
 }

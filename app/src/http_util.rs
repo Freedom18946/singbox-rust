@@ -35,7 +35,8 @@ pub fn write_400(s: &mut std::net::TcpStream, msg: &str) {
         "code": 400,
         "trace_id": "legacy_plain"
     });
-    let body_str = serde_json::to_string(&json_body).unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string());
+    let body_str =
+        serde_json::to_string(&json_body).unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string());
     let _ = write!(
         s,
         "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
@@ -60,7 +61,10 @@ pub fn bad_request(msg: &str) -> Response<Body> {
     Response::builder()
         .status(StatusCode::BAD_REQUEST)
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_string(&json_body).unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string())))
+        .body(Body::from(
+            serde_json::to_string(&json_body)
+                .unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string()),
+        ))
         .unwrap()
 }
 
@@ -75,7 +79,10 @@ pub fn text(status: StatusCode, msg: String) -> Response<Body> {
     Response::builder()
         .status(status)
         .header("content-type", "application/json")
-        .body(Body::from(serde_json::to_string(&json_body).unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string())))
+        .body(Body::from(
+            serde_json::to_string(&json_body)
+                .unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string()),
+        ))
         .unwrap()
 }
 

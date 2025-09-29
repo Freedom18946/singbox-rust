@@ -3,11 +3,11 @@
 #[cfg(feature = "handshake_alpha")]
 use anyhow::Result;
 #[cfg(feature = "handshake_alpha")]
+use sb_runtime::jsonl::replay_decode;
+#[cfg(feature = "handshake_alpha")]
 use sb_runtime::prelude::*;
 #[cfg(feature = "handshake_alpha")]
 use sb_runtime::trojan::Trojan;
-#[cfg(feature = "handshake_alpha")]
-use sb_runtime::jsonl::replay_decode;
 #[cfg(feature = "handshake_alpha")]
 use std::env;
 #[cfg(feature = "handshake_alpha")]

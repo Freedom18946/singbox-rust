@@ -21,8 +21,8 @@
 /// 提供了 `Dialer` trait 和各种拨号器实现
 pub mod dialer;
 pub mod pool {
-    pub mod limit;
     pub mod circuit_breaker;
+    pub mod limit;
 }
 
 #[cfg(feature = "failpoints")]
@@ -67,10 +67,10 @@ pub use tls::*;
 #[cfg(feature = "transport_tls")]
 pub use tls_secure::*;
 
-pub use mem::*;
-pub use retry::*;
 pub use circuit_breaker::*;
+pub use mem::*;
 pub use resource_pressure::*;
+pub use retry::*;
 pub use util::*;
 
 #[cfg(feature = "failpoints")]

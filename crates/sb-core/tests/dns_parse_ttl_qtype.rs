@@ -62,6 +62,8 @@ fn dns_cache_basic_operations() {
     let answer = DnsAnswer {
         ips: vec![ipv4],
         ttl: Duration::from_secs(30),
+        source: sb_core::dns::cache::Source::System,
+        rcode: sb_core::dns::cache::Rcode::NoError,
     };
 
     // Put and get from cache

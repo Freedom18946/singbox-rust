@@ -114,7 +114,7 @@ pub fn mk_client(_opts: &TlsOpts) -> Result<Arc<()>, crate::error::SbError> {
     Err(crate::error::SbError::config(
         crate::error::IssueCode::MissingRequired,
         "/tls/enabled",
-        "TLS support not enabled. Enable 'tls_rustls' feature to use TLS functionality"
+        "TLS support not enabled. Enable 'tls_rustls' feature to use TLS functionality",
     ))
 }
 

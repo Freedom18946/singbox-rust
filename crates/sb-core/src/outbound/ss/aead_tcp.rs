@@ -12,7 +12,6 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce as AesNonce};
-use chacha20poly1305::aead::Aead as ChachaAead;
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChachaNonce};
 
 /// Shadowsocks AEAD cipher types

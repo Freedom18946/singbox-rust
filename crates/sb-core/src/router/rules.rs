@@ -345,8 +345,8 @@ pub fn global() -> Option<&'static Engine> {
 }
 
 /// 从 ENV 初始化（可选）：
-        // - SB_ROUTER_RULES_ENABLE=1 开关
-        // - SB_ROUTER_RULES_FILE=/path/to/rules  或  SB_ROUTER_RULES_TEXT=内联文本
+// - SB_ROUTER_RULES_ENABLE=1 开关
+// - SB_ROUTER_RULES_FILE=/path/to/rules  或  SB_ROUTER_RULES_TEXT=内联文本
 pub fn init_from_env() {
     let enable = std::env::var("SB_ROUTER_RULES_ENABLE")
         .ok()

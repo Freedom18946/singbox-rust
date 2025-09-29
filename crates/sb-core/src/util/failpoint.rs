@@ -1,4 +1,3 @@
-#![cfg(feature = "chaos")]
 use std::sync::OnceLock;
 use std::time::Duration;
 

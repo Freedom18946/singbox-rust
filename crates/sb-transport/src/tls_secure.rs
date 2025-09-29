@@ -6,11 +6,11 @@
 //! - Secure cipher suite configuration
 //! - Environment-based security policy configuration
 
-use super::tls::{TlsDialer, webpki_roots_config};
 use super::dialer::{DialError, Dialer, IoStream};
+use super::tls::{webpki_roots_config, TlsDialer};
 use async_trait::async_trait;
 use rustls::{ClientConfig, RootCertStore};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 /// TLS security baseline configuration
@@ -73,7 +73,9 @@ impl TlsSecurityConfig {
     }
 
     /// Build rustls ClientConfig with security enhancements
-    pub fn build_client_config(&self) -> Result<Arc<ClientConfig>, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn build_client_config(
+        &self,
+    ) -> Result<Arc<ClientConfig>, Box<dyn std::error::Error + Send + Sync>> {
         let mut root_store = RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
@@ -104,11 +106,9 @@ impl<D: Dialer> SecureTlsDialer<D> {
                 inner,
                 config: tls_config,
                 sni_override: std::env::var("SB_TLS_SNI").ok(),
-                alpn: std::env::var("SB_TLS_ALPN").ok().map(|s| {
-                    s.split(',')
-                        .map(|p| p.trim().as_bytes().to_vec())
-                        .collect()
-                }),
+                alpn: std::env::var("SB_TLS_ALPN")
+                    .ok()
+                    .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect()),
             },
             security_config,
         })
@@ -171,10 +171,14 @@ impl<D: Dialer + Send + Sync> Dialer for SecureTlsDialer<D> {
                 if let Some(cert) = peer_certs.first() {
                     self.verify_certificate_pin(cert.as_ref())?;
                 } else {
-                    return Err(DialError::Tls("No peer certificate for pin verification".to_string()));
+                    return Err(DialError::Tls(
+                        "No peer certificate for pin verification".to_string(),
+                    ));
                 }
             } else {
-                return Err(DialError::Tls("No peer certificates available for pinning".to_string()));
+                return Err(DialError::Tls(
+                    "No peer certificates available for pinning".to_string(),
+                ));
             }
         }
 
@@ -191,7 +195,10 @@ mod tests {
     fn test_tls_security_config_from_env() {
         // Set environment variables for testing
         std::env::set_var("SB_TLS_MIN", "1.3");
-        std::env::set_var("SB_TLS_PIN_SHA256", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
+        std::env::set_var(
+            "SB_TLS_PIN_SHA256",
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        );
 
         let config = TlsSecurityConfig::from_env();
         assert_eq!(config.min_version, TlsVersion::V1_3);

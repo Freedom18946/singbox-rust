@@ -48,7 +48,9 @@ struct Limits {
 }
 
 fn env_usize(key: &str) -> Option<usize> {
-    std::env::var(key).ok().and_then(|v| v.parse::<usize>().ok())
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
 }
 fn env_u64(key: &str) -> Option<u64> {
     std::env::var(key).ok().and_then(|v| v.parse::<u64>().ok())
@@ -58,8 +60,12 @@ fn limits() -> Limits {
     Limits {
         max_header_bytes: env_usize("SB_ADMIN_MAX_HEADER_BYTES").unwrap_or(64 * 1024),
         max_body_bytes: env_usize("SB_ADMIN_MAX_BODY_BYTES").unwrap_or(2 * 1024 * 1024),
-        first_byte_timeout: Duration::from_millis(env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS").unwrap_or(1500)),
-        first_line_timeout: Duration::from_millis(env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS").unwrap_or(3000)),
+        first_byte_timeout: Duration::from_millis(
+            env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS").unwrap_or(1500),
+        ),
+        first_line_timeout: Duration::from_millis(
+            env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS").unwrap_or(3000),
+        ),
         read_timeout: Duration::from_millis(env_u64("SB_ADMIN_READ_TIMEOUT_MS").unwrap_or(4000)),
         write_timeout: Duration::from_millis(env_u64("SB_ADMIN_WRITE_TIMEOUT_MS").unwrap_or(4000)),
         max_conn_per_ip: env_usize("SB_ADMIN_MAX_CONN_PER_IP").unwrap_or(8),
@@ -361,10 +367,14 @@ fn handle(
                     return Ok(());
                 }
             };
-            let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_else(|_| serde_json::json!({}));
+            let v: serde_json::Value =
+                serde_json::from_slice(&body).unwrap_or_else(|_| serde_json::json!({}));
             let dest = v.get("dest").and_then(|x| x.as_str()).unwrap_or("");
             let network = v.get("network").and_then(|x| x.as_str()).unwrap_or("tcp");
-            let protocol = v.get("protocol").and_then(|x| x.as_str()).unwrap_or("admin");
+            let protocol = v
+                .get("protocol")
+                .and_then(|x| x.as_str())
+                .unwrap_or("admin");
             let (host, port) = if let Some((h, p)) = dest.rsplit_once(':') {
                 (h.to_string(), p.parse::<u16>().unwrap_or(0))
             } else {

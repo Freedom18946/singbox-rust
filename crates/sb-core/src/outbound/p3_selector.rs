@@ -194,7 +194,7 @@ mod tests {
             s.record_rtt("b", 25.0 - (i as f64 * 0.2).max(0.0));
             s.record_rtt("a", 22.0 + (i as f64 * 0.1));
         }
-        let p2 = s.pick();
+        let _p2 = s.pick();
         // 可能仍为 a（抖动阈），再喂几轮
         for _ in 0..20 {
             s.record_rtt("b", 10.0);

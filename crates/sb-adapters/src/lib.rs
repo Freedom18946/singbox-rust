@@ -9,4 +9,4 @@ pub mod util;
 
 // Re-export commonly used types
 pub use error::{AdapterError, Result};
-pub use traits::{OutboundConnector, OutboundDatagram, Target, TransportKind, BoxedStream};
+pub use traits::{BoxedStream, OutboundConnector, OutboundDatagram, Target, TransportKind};

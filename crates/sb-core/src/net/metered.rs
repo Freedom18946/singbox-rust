@@ -51,9 +51,9 @@ where
 }
 
 /// 双向拷贝（带可选读/写超时与取消传播）。
-        // - 当读侧在 `read_timeout` 内无进展，返回 TimedOut
-        // - 当写侧在 `write_timeout` 内无法完成，返回 TimedOut
-        // - 当收到 `cancel` 取消，返回 Interrupted
+// - 当读侧在 `read_timeout` 内无进展，返回 TimedOut
+// - 当写侧在 `write_timeout` 内无法完成，返回 TimedOut
+// - 当收到 `cancel` 取消，返回 Interrupted
 pub async fn copy_bidirectional_streaming_ctl<A, B>(
     a: &mut A,
     b: &mut B,
@@ -205,8 +205,22 @@ where
     // 并行两路拷贝（不 spawn，直接 join，避免 'static 约束）
     let up_c = up.clone();
     let down_c = down.clone();
-    let up_fut = pump(&mut ar, &mut bw, up_c, read_timeout, write_timeout, cancel.clone());
-    let down_fut = pump(&mut br, &mut aw, down_c, read_timeout, write_timeout, cancel.clone());
+    let up_fut = pump(
+        &mut ar,
+        &mut bw,
+        up_c,
+        read_timeout,
+        write_timeout,
+        cancel.clone(),
+    );
+    let down_fut = pump(
+        &mut br,
+        &mut aw,
+        down_c,
+        read_timeout,
+        write_timeout,
+        cancel.clone(),
+    );
 
     let res = tokio::try_join!(up_fut, down_fut);
 
@@ -330,7 +344,7 @@ pub fn wrap_stream<T>(label: &'static str, io: T) -> MeteredStream<T> {
 #[cfg(test)]
 mod tests_timeouts {
     use super::*;
-    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{duplex, AsyncWriteExt};
 
     #[tokio::test]
     async fn read_timeout_triggers() {
@@ -399,12 +413,9 @@ mod tests_timeouts {
     async fn peer_half_close_propagates_shutdown() {
         let (mut a, mut b) = duplex(8);
 
-        // 对端半关闭：在后台对 b 执行 shutdown 写，使得 a 的读返回 0
-        let mut b_clone = b.clone();
-        let closer = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            let _ = AsyncWriteExt::shutdown(&mut b_clone).await;
-        });
+        // 简化测试：直接在主线程执行，不需要克隆流
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let _ = AsyncWriteExt::shutdown(&mut b).await;
 
         let r = copy_bidirectional_streaming_ctl(
             &mut a,
@@ -416,7 +427,6 @@ mod tests_timeouts {
             None,
         )
         .await;
-        let _ = closer.await;
         // 应当正常结束（非错误），或最少不崩溃
         assert!(r.is_ok());
     }

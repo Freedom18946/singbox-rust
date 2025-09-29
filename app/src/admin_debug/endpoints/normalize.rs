@@ -1,4 +1,6 @@
-use crate::admin_debug::http_util::{parse_query, respond, respond_json_error, validate_inline_size_estimate, validate_decoded_size};
+use crate::admin_debug::http_util::{
+    parse_query, respond, respond_json_error, validate_decoded_size, validate_inline_size_estimate,
+};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use tokio::io::AsyncWriteExt;
@@ -14,17 +16,37 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
     let text = if let Some(b64) = params.get("inline") {
         // Validate size estimate before decoding
         if let Err(_) = validate_inline_size_estimate(b64) {
-            return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+            return respond_json_error(
+                sock,
+                413,
+                "inline content too large",
+                Some("maximum size is 512KB"),
+            )
+            .await;
         }
 
         let bytes: Vec<u8> = match STANDARD.decode(b64.as_bytes()) {
             Ok(bytes) => bytes,
-            Err(_) => return respond_json_error(sock, 400, "invalid base64 encoding", Some("provide valid base64 in ?inline parameter")).await,
+            Err(_) => {
+                return respond_json_error(
+                    sock,
+                    400,
+                    "invalid base64 encoding",
+                    Some("provide valid base64 in ?inline parameter"),
+                )
+                .await
+            }
         };
 
         // Validate actual decoded size
         if let Err(_) = validate_decoded_size(&bytes) {
-            return respond_json_error(sock, 413, "inline content too large", Some("maximum size is 512KB")).await;
+            return respond_json_error(
+                sock,
+                413,
+                "inline content too large",
+                Some("maximum size is 512KB"),
+            )
+            .await;
         }
 
         String::from_utf8_lossy(&bytes).to_string()
@@ -41,7 +63,13 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
     };
 
     if text.is_empty() {
-        return respond_json_error(sock, 400, "no rules text provided", Some("provide rules via ?inline parameter")).await;
+        return respond_json_error(
+            sock,
+            400,
+            "no rules text provided",
+            Some("provide rules via ?inline parameter"),
+        )
+        .await;
     }
 
     // Production-level rules normalization implementation
@@ -64,7 +92,8 @@ fn normalize_rules(input: &str) -> String {
     let mut dns_rules = Vec::new();
     let mut other_rules = Vec::new();
 
-    let lines: Vec<&str> = input.lines()
+    let lines: Vec<&str> = input
+        .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .collect();

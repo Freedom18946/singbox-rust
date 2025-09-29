@@ -1,8 +1,8 @@
-use anyhow::Result;
-use serde::Serialize;
-use crate::cli::VersionArgs;
 use crate::cli::buildinfo;
 use crate::cli::output;
+use crate::cli::VersionArgs;
+use anyhow::Result;
+use serde::Serialize;
 
 #[derive(Serialize, Debug)]
 pub struct VersionInfo {
@@ -27,15 +27,20 @@ pub fn run(args: VersionArgs) -> Result<()> {
         features,
     };
 
-    output::emit(args.format, || {
-        format!("{} {} ({})\nBuilt: {}\nFeatures: {}",
-            version_info.name,
-            version_info.version,
-            version_info.commit,
-            version_info.date,
-            version_info.features.join(", ")
-        )
-    }, &version_info);
+    output::emit(
+        args.format,
+        || {
+            format!(
+                "{} {} ({})\nBuilt: {}\nFeatures: {}",
+                version_info.name,
+                version_info.version,
+                version_info.commit,
+                version_info.date,
+                version_info.features.join(", ")
+            )
+        },
+        &version_info,
+    );
 
     Ok(())
 }

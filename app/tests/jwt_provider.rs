@@ -5,14 +5,14 @@
 
 #![cfg(all(feature = "admin_debug", feature = "auth", feature = "jwt"))]
 
-use std::time::Duration;
-use std::collections::HashMap;
-use app::admin_debug::auth::jwt::{JwtProvider, JwtConfig, JwtAlgorithm};
+use app::admin_debug::auth::jwt::{JwtAlgorithm, JwtConfig, JwtProvider};
 use app::admin_debug::auth::AuthProvider;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::json;
-use tempfile::NamedTempFile;
+use std::collections::HashMap;
 use std::io::Write;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use std::time::Duration;
+use tempfile::NamedTempFile;
 
 /// Create a mock JWKS file for testing
 fn create_mock_jwks_file() -> Result<NamedTempFile, std::io::Error> {
@@ -124,14 +124,22 @@ async fn test_jwt_token_extraction() {
     let provider = JwtProvider::new(config).unwrap();
 
     // Test valid Bearer token extraction
-    let token = provider.extract_token("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature");
+    let token =
+        provider.extract_token("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature");
     assert!(token.is_ok());
-    assert_eq!(token.unwrap(), "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature");
+    assert_eq!(
+        token.unwrap(),
+        "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature"
+    );
 
     // Test Bearer token with extra whitespace
-    let token = provider.extract_token("Bearer   eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature   ");
+    let token =
+        provider.extract_token("Bearer   eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature   ");
     assert!(token.is_ok());
-    assert_eq!(token.unwrap(), "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature");
+    assert_eq!(
+        token.unwrap(),
+        "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.signature"
+    );
 
     // Test empty Bearer token
     let result = provider.extract_token("Bearer ");
@@ -225,14 +233,19 @@ async fn test_jwt_verification_malformed_token() {
     // Test malformed JWT (not enough parts)
     let headers = {
         let mut map = HashMap::new();
-        map.insert("authorization".to_string(), "Bearer invalid.jwt".to_string());
+        map.insert(
+            "authorization".to_string(),
+            "Bearer invalid.jwt".to_string(),
+        );
         map
     };
 
     let result = provider.check(&headers, "/test");
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert!(error.message().contains("Invalid JWT header") || error.message().contains("JWT token"));
+    assert!(
+        error.message().contains("Invalid JWT header") || error.message().contains("JWT token")
+    );
 }
 
 #[tokio::test]
@@ -260,7 +273,10 @@ async fn test_jwt_verification_unsupported_algorithm() {
     let result = provider.check(&headers, "/test");
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert!(error.message().contains("Algorithm HS256 not allowed") || error.message().contains("not allowed"));
+    assert!(
+        error.message().contains("Algorithm HS256 not allowed")
+            || error.message().contains("not allowed")
+    );
 }
 
 #[tokio::test]
@@ -301,7 +317,8 @@ async fn test_jwt_verification_unknown_kid() {
     let provider = JwtProvider::new(config).unwrap();
 
     // Create a JWT header with unknown kid
-    let header_unknown_kid = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT","kid":"unknown-key"}"#);
+    let header_unknown_kid =
+        URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","typ":"JWT","kid":"unknown-key"}"#);
     let payload = URL_SAFE_NO_PAD.encode(r#"{"sub":"test","exp":9999999999}"#);
     let token = format!("{}.{}.signature", header_unknown_kid, payload);
 
@@ -364,7 +381,10 @@ async fn test_error_mapping_and_security() {
     // Test that internal errors are mapped to Auth errors (security requirement)
     let headers = {
         let mut map = HashMap::new();
-        map.insert("authorization".to_string(), "Bearer invalid-token-format".to_string());
+        map.insert(
+            "authorization".to_string(),
+            "Bearer invalid-token-format".to_string(),
+        );
         map
     };
 

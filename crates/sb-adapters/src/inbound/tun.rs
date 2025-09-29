@@ -7,12 +7,13 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tracing::{debug, info, trace, warn};
 use serde::Deserialize;
 use serde_json::Value;
+use tracing::{debug, info, trace, warn};
 
-use sb_core::router::{Router, RouterHandle, RouteCtx, Transport};
 use sb_core::outbound::RouteTarget;
+use sb_core::router::engine::{RouteCtx, Transport};
+use sb_core::router::{Router, RouterHandle};
 // （如无使用请保持这两个 import 移除，避免未使用警告）
 // use std::time::Duration;
 // use tokio::time::timeout;
@@ -23,7 +24,10 @@ static PACKETS_SEEN: AtomicU64 = AtomicU64::new(0);
 static TCP_PROBE_OK: AtomicU64 = AtomicU64::new(0);
 static TCP_PROBE_FAIL: AtomicU64 = AtomicU64::new(0);
 
-#[deprecated(since = "0.1.0", note = "metrics collection interface; kept for compatibility")]
+#[deprecated(
+    since = "0.1.0",
+    note = "metrics collection interface; kept for compatibility"
+)]
 pub fn tun_metrics_snapshot() -> (u64, u64, u64) {
     (
         PACKETS_SEEN.load(Ordering::Relaxed),
@@ -222,9 +226,10 @@ impl TunInbound {
                                     };
 
                                     // --- 路由选择
+                                    let host_str = format!("{}:{}", ip, port);
                                     let route_ctx = RouteCtx {
-                                        host: Some(&format!("{}:{}", ip, port)),
-                                        ip: Some(ip.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
+                                        host: Some(&host_str),
+                                        ip: Some(ip),
                                         port: Some(port),
                                         transport: match pkt.proto {
                                             sys_macos::L4::Tcp => Transport::Tcp,
@@ -232,9 +237,10 @@ impl TunInbound {
                                             _ => Transport::Tcp, // fallback
                                         },
                                     };
-                                    let selected_target = self.router.select_ctx_and_record(route_ctx);
-                                    let selected = match selected_target {
-                                        RouteTarget::Named(name) => Some(name),
+                                    let selected_target =
+                                        self.router.select_ctx_and_record(route_ctx);
+                                    let selected = match &selected_target {
+                                        RouteTarget::Named(name) => Some(name.clone()),
                                         RouteTarget::Kind(kind) => Some(format!("{:?}", kind)),
                                     };
 
@@ -273,13 +279,21 @@ impl TunInbound {
                                                     debug!("TUN: Probing connection to {}:{} via outbound '{}'", ip, port, outbound_name);
                                                     // 当前阶段：使用direct连接进行探测
                                                     // 实际实现中应该通过outbound管理器获取具体的连接器
-                                                    Self::probe_direct_connection(&ip, port, dial_timeout).await
+                                                    Self::probe_direct_connection(
+                                                        &ip.to_string(),
+                                                        port,
+                                                        dial_timeout,
+                                                    )
+                                                    .await
                                                 }
                                                 RouteTarget::Kind(kind) => {
-                                                    debug!("TUN: Probing connection to {}:{} via {:?}", ip, port, kind);
+                                                    debug!(
+                                                        "TUN: Probing connection to {}:{} via {:?}",
+                                                        ip, port, kind
+                                                    );
                                                     match kind {
                                                         sb_core::outbound::OutboundKind::Direct => {
-                                                            Self::probe_direct_connection(&ip, port, dial_timeout).await
+                                                            Self::probe_direct_connection(&ip.to_string(), port, dial_timeout).await
                                                         }
                                                         sb_core::outbound::OutboundKind::Block => {
                                                             Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "blocked by routing rule"))
@@ -292,7 +306,10 @@ impl TunInbound {
                                                 }
                                             };
 
-                                            match tokio::time::timeout(dial_timeout, async { connection_result }).await
+                                            match tokio::time::timeout(dial_timeout, async {
+                                                connection_result
+                                            })
+                                            .await
                                             {
                                                 Ok(Ok(_s)) => {
                                                     // 2.3e: 计数
@@ -363,7 +380,11 @@ impl TunInbound {
     }
 
     /// 执行直接连接探测，用于验证目标可达性
-    async fn probe_direct_connection(ip: &str, port: u16, timeout: std::time::Duration) -> Result<(), std::io::Error> {
+    async fn probe_direct_connection(
+        ip: &str,
+        port: u16,
+        timeout: std::time::Duration,
+    ) -> Result<(), std::io::Error> {
         use std::time::Duration;
         use tokio::net::TcpStream;
 
@@ -377,14 +398,17 @@ impl TunInbound {
                 Ok(())
             }
             Ok(Err(e)) => {
-                debug!("TUN: Direct connection probe failed to {}: {}", target_addr, e);
+                debug!(
+                    "TUN: Direct connection probe failed to {}: {}",
+                    target_addr, e
+                );
                 Err(e)
             }
             Err(_timeout_err) => {
                 debug!("TUN: Direct connection probe timeout to {}", target_addr);
                 Err(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    format!("Connection timeout to {}", target_addr)
+                    format!("Connection timeout to {}", target_addr),
                 ))
             }
         }
@@ -433,16 +457,16 @@ mod sys_macos {
     #[cfg(feature = "tun")]
     pub async fn open_async_fd(name_hint: &str, mtu: u32) -> io::Result<AsyncFd<std::fs::File>> {
         // SAFETY:
-                // - 不变量：open_utun 执行系统调用并返回有效的文件描述符
-                // - 并发/别名：fd 是新分配的，无数据竞争
-                // - FFI/平台契约：系统调用错误已正确处理
+        // - 不变量：open_utun 执行系统调用并返回有效的文件描述符
+        // - 并发/别名：fd 是新分配的，无数据竞争
+        // - FFI/平台契约：系统调用错误已正确处理
         let fd = unsafe { open_utun(name_hint)? };
         set_nonblocking(fd)?;
         tracing::info!("utun opened fd={}, mtu={}", fd, mtu);
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，from_raw_fd 转移所有权
-                // - 并发/别名：AsyncFd 将管理文件描述符生命周期
-                // - FFI/平台契约：文件描述符所有权正确转移
+        // - 不变量：fd 是有效的文件描述符，from_raw_fd 转移所有权
+        // - 并发/别名：AsyncFd 将管理文件描述符生命周期
+        // - FFI/平台契约：文件描述符所有权正确转移
         let async_fd =
             unsafe { AsyncFd::with_interest(std::fs::File::from_raw_fd(fd), Interest::READABLE) }
                 .map_err(io::Error::other)?;
@@ -519,17 +543,17 @@ mod sys_macos {
     #[cfg(feature = "tun")]
     fn set_nonblocking(fd: RawFd) -> io::Result<()> {
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，F_GETFL 是标准 fcntl 操作
-                // - 并发/别名：fd 由当前线程独占访问
-                // - FFI/平台契约：fcntl 系统调用在 Unix 系统上是安全的
+        // - 不变量：fd 是有效的文件描述符，F_GETFL 是标准 fcntl 操作
+        // - 并发/别名：fd 由当前线程独占访问
+        // - FFI/平台契约：fcntl 系统调用在 Unix 系统上是安全的
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
         if flags < 0 {
             return Err(io::Error::last_os_error());
         }
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，flags 为有效的标志位组合
-                // - 并发/别名：fd 由当前线程独占访问
-                // - FFI/平台契约：F_SETFL 设置非阻塞模式是标准操作
+        // - 不变量：fd 是有效的文件描述符，flags 为有效的标志位组合
+        // - 并发/别名：fd 由当前线程独占访问
+        // - FFI/平台契约：F_SETFL 设置非阻塞模式是标准操作
         let r = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
         if r < 0 {
             return Err(io::Error::last_os_error());

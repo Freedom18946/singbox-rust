@@ -10,14 +10,11 @@
 #[cfg(test)]
 #[cfg(feature = "out_hysteria2")]
 mod tests {
-    use super::*;
-    use crate::outbound::crypto_types::HostPort;
     use crate::outbound::hysteria2::{
         BandwidthLimiter, BrutalConfig, CongestionControl, Hysteria2Config, Hysteria2Outbound,
     };
     use crate::outbound::types::OutboundTcp;
     use std::time::Duration;
-    use tokio::time::timeout;
 
     #[test]
     fn test_hysteria2_config_creation() {
@@ -365,7 +362,9 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "out_hysteria2")]
 mod integration_tests {
-    use super::*;
+    use crate::outbound::hysteria2::{Hysteria2Config, Hysteria2Outbound};
+    use crate::outbound::types::HostPort;
+    use crate::outbound::types::OutboundTcp;
     use tokio::time::{timeout, Duration};
 
     // These tests would require a real Hysteria2 server for full integration testing

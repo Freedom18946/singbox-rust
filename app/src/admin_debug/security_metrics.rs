@@ -1,11 +1,11 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
 use once_cell::sync::OnceCell;
 use serde::Serialize;
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::collections::{VecDeque, BTreeMap, HashMap};
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum SecurityErrorKind {
@@ -18,7 +18,7 @@ pub enum SecurityErrorKind {
     SizeExceed,
     PrivateBlocked,
     RateLimited,
-    Other
+    Other,
 }
 
 impl SecurityErrorKind {
@@ -33,7 +33,7 @@ impl SecurityErrorKind {
             Self::SizeExceed => "size_exceed",
             Self::PrivateBlocked => "private_blocked",
             Self::RateLimited => "rate_limited",
-            Self::Other => "other"
+            Self::Other => "other",
         }
     }
 }
@@ -49,22 +49,22 @@ pub struct ErrorEntry {
 const MAX_ERRORS: usize = 32;
 
 static SUBS_BLOCK_PRIVATE_IP: AtomicU64 = AtomicU64::new(0);
-static SUBS_EXCEED_SIZE:     AtomicU64 = AtomicU64::new(0);
-static SUBS_TIMEOUT:         AtomicU64 = AtomicU64::new(0);
+static SUBS_EXCEED_SIZE: AtomicU64 = AtomicU64::new(0);
+static SUBS_TIMEOUT: AtomicU64 = AtomicU64::new(0);
 static SUBS_TOO_MANY_REDIRECTS: AtomicU64 = AtomicU64::new(0);
 static SUBS_CONNECT_TIMEOUT: AtomicU64 = AtomicU64::new(0);
-static SUBS_UPSTREAM_4XX:    AtomicU64 = AtomicU64::new(0);
-static SUBS_UPSTREAM_5XX:    AtomicU64 = AtomicU64::new(0);
-static SUBS_RATE_LIMITED:    AtomicU64 = AtomicU64::new(0);
-static SUBS_CACHE_HIT:       AtomicU64 = AtomicU64::new(0);
-static SUBS_CACHE_MISS:      AtomicU64 = AtomicU64::new(0);
-static DNS_CACHE_HIT:        AtomicU64 = AtomicU64::new(0);
-static DNS_CACHE_MISS:       AtomicU64 = AtomicU64::new(0);
+static SUBS_UPSTREAM_4XX: AtomicU64 = AtomicU64::new(0);
+static SUBS_UPSTREAM_5XX: AtomicU64 = AtomicU64::new(0);
+static SUBS_RATE_LIMITED: AtomicU64 = AtomicU64::new(0);
+static SUBS_CACHE_HIT: AtomicU64 = AtomicU64::new(0);
+static SUBS_CACHE_MISS: AtomicU64 = AtomicU64::new(0);
+static DNS_CACHE_HIT: AtomicU64 = AtomicU64::new(0);
+static DNS_CACHE_MISS: AtomicU64 = AtomicU64::new(0);
 static SUBS_CACHE_EVICT_MEM: AtomicU64 = AtomicU64::new(0);
 static SUBS_CACHE_EVICT_DISK: AtomicU64 = AtomicU64::new(0);
-static SUBS_HEAD_TOTAL:      AtomicU64 = AtomicU64::new(0);
-static SUBS_BREAKER_BLOCK:   AtomicU64 = AtomicU64::new(0);
-static SUBS_BREAKER_REOPEN:  AtomicU64 = AtomicU64::new(0);
+static SUBS_HEAD_TOTAL: AtomicU64 = AtomicU64::new(0);
+static SUBS_BREAKER_BLOCK: AtomicU64 = AtomicU64::new(0);
+static SUBS_BREAKER_REOPEN: AtomicU64 = AtomicU64::new(0);
 
 // Prefetch metrics
 static PREFETCH_ENQUEUE: AtomicU64 = AtomicU64::new(0);
@@ -79,14 +79,15 @@ static PREFETCH_RUN_COUNTS: OnceCell<Mutex<Vec<u64>>> = OnceCell::new();
 static PREFETCH_RUN_BUCKETS: [u32; 7] = [50, 100, 200, 500, 1000, 2000, u32::MAX]; // milliseconds
 static LAST_ERROR: OnceCell<Mutex<String>> = OnceCell::new();
 static TOTAL_REQUESTS: AtomicU64 = AtomicU64::new(0);
-static TOTAL_FAILS:    AtomicU64 = AtomicU64::new(0);
-static LAST_ERR_TS:    OnceCell<Mutex<u64>> = OnceCell::new();
-static LAST_OK_TS:     OnceCell<Mutex<u64>> = OnceCell::new();
-static RECENT_ERRORS:  OnceCell<Mutex<VecDeque<ErrorEntry>>> = OnceCell::new();
+static TOTAL_FAILS: AtomicU64 = AtomicU64::new(0);
+static LAST_ERR_TS: OnceCell<Mutex<u64>> = OnceCell::new();
+static LAST_OK_TS: OnceCell<Mutex<u64>> = OnceCell::new();
+static RECENT_ERRORS: OnceCell<Mutex<VecDeque<ErrorEntry>>> = OnceCell::new();
 
 // Error kind tracking with sampling
 static ERROR_KINDS: OnceCell<Mutex<BTreeMap<SecurityErrorKind, u64>>> = OnceCell::new();
-static ERROR_KINDS_BY_HASH: OnceCell<Mutex<HashMap<(SecurityErrorKind, u16), u64>>> = OnceCell::new();
+static ERROR_KINDS_BY_HASH: OnceCell<Mutex<HashMap<(SecurityErrorKind, u16), u64>>> =
+    OnceCell::new();
 
 // Latency histogram tracking with finer buckets
 static LATENCY_SNAPSHOT: OnceCell<(Vec<(f64, u64)>, u64, u64)> = OnceCell::new();
@@ -99,7 +100,7 @@ static LAT_SUM_MS: AtomicU64 = AtomicU64::new(0);
 static DNS_BUCKETS: &[u64] = &[50, 100, 200, 500, 1000, 2000, u64::MAX];
 static DNS_COUNTS: OnceCell<Mutex<Vec<u64>>> = OnceCell::new();
 static DNS_COUNT: AtomicU64 = AtomicU64::new(0);
-static DNS_SUM_MS: AtomicU64  = AtomicU64::new(0);
+static DNS_SUM_MS: AtomicU64 = AtomicU64::new(0);
 
 // Host hash calculation for low cardinality
 fn host_to_hash(host: &str) -> u16 {
@@ -108,21 +109,51 @@ fn host_to_hash(host: &str) -> u16 {
     (hasher.finish() % 1024) as u16
 }
 
-pub fn inc_block_private_ip() { SUBS_BLOCK_PRIVATE_IP.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_exceed_size()     { SUBS_EXCEED_SIZE.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_timeout()         { SUBS_TIMEOUT.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_redirects()       { SUBS_TOO_MANY_REDIRECTS.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_connect_timeout() { SUBS_CONNECT_TIMEOUT.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_upstream_4xx()    { SUBS_UPSTREAM_4XX.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_upstream_5xx()    { SUBS_UPSTREAM_5XX.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_rate_limited()    { SUBS_RATE_LIMITED.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_cache_hit()       { SUBS_CACHE_HIT.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_cache_miss()      { SUBS_CACHE_MISS.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_cache_evict_mem() { SUBS_CACHE_EVICT_MEM.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_cache_evict_disk() { SUBS_CACHE_EVICT_DISK.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_head_total()      { SUBS_HEAD_TOTAL.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_breaker_block()   { SUBS_BREAKER_BLOCK.fetch_add(1, Ordering::Relaxed); }
-pub fn inc_breaker_reopen()  { SUBS_BREAKER_REOPEN.fetch_add(1, Ordering::Relaxed); }
+pub fn inc_block_private_ip() {
+    SUBS_BLOCK_PRIVATE_IP.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_exceed_size() {
+    SUBS_EXCEED_SIZE.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_timeout() {
+    SUBS_TIMEOUT.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_redirects() {
+    SUBS_TOO_MANY_REDIRECTS.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_connect_timeout() {
+    SUBS_CONNECT_TIMEOUT.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_upstream_4xx() {
+    SUBS_UPSTREAM_4XX.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_upstream_5xx() {
+    SUBS_UPSTREAM_5XX.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_rate_limited() {
+    SUBS_RATE_LIMITED.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_cache_hit() {
+    SUBS_CACHE_HIT.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_cache_miss() {
+    SUBS_CACHE_MISS.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_cache_evict_mem() {
+    SUBS_CACHE_EVICT_MEM.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_cache_evict_disk() {
+    SUBS_CACHE_EVICT_DISK.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_head_total() {
+    SUBS_HEAD_TOTAL.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_breaker_block() {
+    SUBS_BREAKER_BLOCK.fetch_add(1, Ordering::Relaxed);
+}
+pub fn inc_breaker_reopen() {
+    SUBS_BREAKER_REOPEN.fetch_add(1, Ordering::Relaxed);
+}
 
 // Prefetch metrics functions
 pub fn init_prefetch_metrics() {
@@ -131,11 +162,21 @@ pub fn init_prefetch_metrics() {
 
 pub fn prefetch_inc(event: &str) {
     match event {
-        "enq" => { PREFETCH_ENQUEUE.fetch_add(1, Ordering::Relaxed); }
-        "drop" => { PREFETCH_DROP.fetch_add(1, Ordering::Relaxed); }
-        "done" => { PREFETCH_DONE.fetch_add(1, Ordering::Relaxed); }
-        "fail" => { PREFETCH_FAIL.fetch_add(1, Ordering::Relaxed); }
-        "retry" => { PREFETCH_RETRY.fetch_add(1, Ordering::Relaxed); }
+        "enq" => {
+            PREFETCH_ENQUEUE.fetch_add(1, Ordering::Relaxed);
+        }
+        "drop" => {
+            PREFETCH_DROP.fetch_add(1, Ordering::Relaxed);
+        }
+        "done" => {
+            PREFETCH_DONE.fetch_add(1, Ordering::Relaxed);
+        }
+        "fail" => {
+            PREFETCH_FAIL.fetch_add(1, Ordering::Relaxed);
+        }
+        "retry" => {
+            PREFETCH_RETRY.fetch_add(1, Ordering::Relaxed);
+        }
         _ => {}
     }
 }
@@ -177,7 +218,7 @@ pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) {
         PREFETCH_DROP.load(Ordering::Relaxed),
         PREFETCH_DONE.load(Ordering::Relaxed),
         PREFETCH_FAIL.load(Ordering::Relaxed),
-        PREFETCH_RETRY.load(Ordering::Relaxed)
+        PREFETCH_RETRY.load(Ordering::Relaxed),
     )
 }
 
@@ -193,7 +234,10 @@ pub fn record_dns_latency_ms(ms: u64) {
     let v = DNS_COUNTS.get_or_init(|| Mutex::new(vec![0; DNS_BUCKETS.len()]));
     if let Ok(mut c) = v.lock() {
         for (i, b) in DNS_BUCKETS.iter().enumerate() {
-            if ms <= *b { c[i] += 1; break; }
+            if ms <= *b {
+                c[i] += 1;
+                break;
+            }
         }
     }
     DNS_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -220,17 +264,26 @@ pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) {
 pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) {
     let message = msg.into();
     let s = LAST_ERROR.get_or_init(|| Mutex::new(String::new()));
-    if let Ok(mut g) = s.lock() { *g = message.clone(); }
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    if let Ok(mut g) = s.lock() {
+        *g = message.clone();
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let ts = LAST_ERR_TS.get_or_init(|| Mutex::new(0));
-    if let Ok(mut t) = ts.lock() { *t = now; }
+    if let Ok(mut t) = ts.lock() {
+        *t = now;
+    }
 
     // Add to recent errors ring buffer with kind
     add_recent_error(host, &message, now, kind);
 
     // Update error kinds counter
     let m = ERROR_KINDS.get_or_init(|| Mutex::new(BTreeMap::new()));
-    if let Ok(mut map) = m.lock() { *map.entry(kind).or_insert(0) += 1; }
+    if let Ok(mut map) = m.lock() {
+        *map.entry(kind).or_insert(0) += 1;
+    }
 
     // Record sampled error by host hash (only for failures)
     if !host.is_empty() {
@@ -243,17 +296,26 @@ pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl I
 pub fn set_last_error_with_url(kind: SecurityErrorKind, url: &str, msg: impl Into<String>) {
     let message = msg.into();
     let s = LAST_ERROR.get_or_init(|| Mutex::new(String::new()));
-    if let Ok(mut g) = s.lock() { *g = message.clone(); }
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    if let Ok(mut g) = s.lock() {
+        *g = message.clone();
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let ts = LAST_ERR_TS.get_or_init(|| Mutex::new(0));
-    if let Ok(mut t) = ts.lock() { *t = now; }
+    if let Ok(mut t) = ts.lock() {
+        *t = now;
+    }
 
     // Add to recent errors ring buffer with kind
     add_recent_error(url, &message, now, kind);
 
     // Update error kinds counter
     let m = ERROR_KINDS.get_or_init(|| Mutex::new(BTreeMap::new()));
-    if let Ok(mut map) = m.lock() { *map.entry(kind).or_insert(0) += 1; }
+    if let Ok(mut map) = m.lock() {
+        *map.entry(kind).or_insert(0) += 1;
+    }
 
     TOTAL_FAILS.fetch_add(1, Ordering::Relaxed);
 }
@@ -275,7 +337,9 @@ fn add_recent_error(url: &str, msg: &str, ts: u64, kind: SecurityErrorKind) {
     }
 }
 
-pub fn inc_total_requests() { TOTAL_REQUESTS.fetch_add(1, Ordering::Relaxed); }
+pub fn inc_total_requests() {
+    TOTAL_REQUESTS.fetch_add(1, Ordering::Relaxed);
+}
 
 pub fn record_latency_ms(ms: u64) {
     let v = LAT_COUNTS.get_or_init(|| Mutex::new(vec![0; LAT_BUCKETS.len()]));
@@ -291,22 +355,35 @@ pub fn record_latency_ms(ms: u64) {
     LAT_SUM_MS.fetch_add(ms, Ordering::Relaxed);
 
     // Update snapshot
-    let buckets: Vec<(f64, u64)> = LAT_COUNTS.get().unwrap().lock().ok()
-        .map(|c| LAT_BUCKETS.iter().zip(c.iter())
-            .map(|(b, v)| ((*b as f64) / 1000.0, *v))
-            .collect())
+    let buckets: Vec<(f64, u64)> = LAT_COUNTS
+        .get()
+        .unwrap()
+        .lock()
+        .ok()
+        .map(|c| {
+            LAT_BUCKETS
+                .iter()
+                .zip(c.iter())
+                .map(|(b, v)| ((*b as f64) / 1000.0, *v))
+                .collect()
+        })
         .unwrap_or_default();
     let _ = LATENCY_SNAPSHOT.set((
         buckets,
         LAT_COUNT.load(Ordering::Relaxed),
-        LAT_SUM_MS.load(Ordering::Relaxed)
+        LAT_SUM_MS.load(Ordering::Relaxed),
     ));
 }
 
 pub fn mark_last_ok() {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let ts = LAST_OK_TS.get_or_init(|| Mutex::new(0));
-    if let Ok(mut t) = ts.lock() { *t = now; }
+    if let Ok(mut t) = ts.lock() {
+        *t = now;
+    }
 }
 
 #[derive(serde::Serialize, Default)]
@@ -389,28 +466,48 @@ pub fn reset_metrics() {
 
     // Reset mutex-protected data
     if let Some(m) = LAT_COUNTS.get() {
-        if let Ok(mut v) = m.lock() { for x in v.iter_mut() { *x = 0; } }
+        if let Ok(mut v) = m.lock() {
+            for x in v.iter_mut() {
+                *x = 0;
+            }
+        }
     }
     if let Some(m) = DNS_COUNTS.get() {
-        if let Ok(mut v) = m.lock() { for x in v.iter_mut() { *x = 0; } }
+        if let Ok(mut v) = m.lock() {
+            for x in v.iter_mut() {
+                *x = 0;
+            }
+        }
     }
     if let Some(m) = LAST_ERROR.get() {
-        if let Ok(mut s) = m.lock() { s.clear(); }
+        if let Ok(mut s) = m.lock() {
+            s.clear();
+        }
     }
     if let Some(m) = LAST_ERR_TS.get() {
-        if let Ok(mut ts) = m.lock() { *ts = 0; }
+        if let Ok(mut ts) = m.lock() {
+            *ts = 0;
+        }
     }
     if let Some(m) = LAST_OK_TS.get() {
-        if let Ok(mut ts) = m.lock() { *ts = 0; }
+        if let Ok(mut ts) = m.lock() {
+            *ts = 0;
+        }
     }
     if let Some(m) = RECENT_ERRORS.get() {
-        if let Ok(mut v) = m.lock() { v.clear(); }
+        if let Ok(mut v) = m.lock() {
+            v.clear();
+        }
     }
     if let Some(m) = ERROR_KINDS.get() {
-        if let Ok(mut map) = m.lock() { map.clear(); }
+        if let Ok(mut map) = m.lock() {
+            map.clear();
+        }
     }
     if let Some(m) = ERROR_KINDS_BY_HASH.get() {
-        if let Ok(mut map) = m.lock() { map.clear(); }
+        if let Ok(mut map) = m.lock() {
+            map.clear();
+        }
     }
 }
 
@@ -434,11 +531,22 @@ mod tests {
     #[test]
     fn test_host_to_hash_cardinality() {
         // Test that host_to_hash produces values in expected range
-        let hosts = ["test1.com", "test2.com", "example.org", "api.service.local", "cdn.provider.net"];
+        let hosts = [
+            "test1.com",
+            "test2.com",
+            "example.org",
+            "api.service.local",
+            "cdn.provider.net",
+        ];
 
         for host in &hosts {
             let hash = host_to_hash(host);
-            assert!(hash < 1024, "Host hash {} for '{}' should be < 1024", hash, host);
+            assert!(
+                hash < 1024,
+                "Host hash {} for '{}' should be < 1024",
+                hash,
+                host
+            );
         }
 
         // Test that different hosts produce different hashes (mostly)
@@ -468,7 +576,7 @@ mod tests {
 
         // Test sampling with known host hashes
         let test_cases = [
-            ("sampled-host-0.com", true),   // This should be sampled (need to find a host that gives hash & 0xF == 0)
+            ("sampled-host-0.com", true), // This should be sampled (need to find a host that gives hash & 0xF == 0)
             ("not-sampled-host.com", false), // This might not be sampled
         ];
 
@@ -487,7 +595,11 @@ mod tests {
                 let map = ERROR_KINDS_BY_HASH.get().unwrap();
                 if let Ok(m) = map.lock() {
                     let key = (SecurityErrorKind::Timeout, host_hash);
-                    assert!(m.contains_key(&key), "Sampled error should be recorded for host {}", test_host);
+                    assert!(
+                        m.contains_key(&key),
+                        "Sampled error should be recorded for host {}",
+                        test_host
+                    );
                 }
                 break; // Found at least one sampled case
             }
@@ -516,11 +628,14 @@ mod tests {
     fn test_latency_histogram_buckets() {
         // Test that latency buckets are as expected
         let expected_buckets = [50, 100, 200, 500, 1000, 2000, u64::MAX];
-        assert_eq!(LAT_BUCKETS, &expected_buckets, "Latency buckets should match expected fine-grained values");
+        assert_eq!(
+            LAT_BUCKETS, &expected_buckets,
+            "Latency buckets should match expected fine-grained values"
+        );
 
         // Test latency recording
-        record_latency_ms(75);   // Should go in 100ms bucket
-        record_latency_ms(150);  // Should go in 200ms bucket
+        record_latency_ms(75); // Should go in 100ms bucket
+        record_latency_ms(150); // Should go in 200ms bucket
         record_latency_ms(1500); // Should go in 2000ms bucket
         record_latency_ms(3000); // Should go in +Inf bucket
 
@@ -546,9 +661,13 @@ mod tests {
         let sampling_rate = sampled_count as f64 / total_count as f64;
 
         // Should be approximately 1/16 = 0.0625, allow some variance
-        assert!(sampling_rate >= 0.04 && sampling_rate <= 0.10,
-                "Sampling rate should be ~6.25%, got {:.1}% ({}/{})",
-                sampling_rate * 100.0, sampled_count, total_count);
+        assert!(
+            sampling_rate >= 0.04 && sampling_rate <= 0.10,
+            "Sampling rate should be ~6.25%, got {:.1}% ({}/{})",
+            sampling_rate * 100.0,
+            sampled_count,
+            total_count
+        );
     }
 
     #[test]
@@ -570,30 +689,57 @@ mod tests {
 }
 
 fn get_current_concurrency() -> u64 {
-    #[cfg(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox"))]
+    #[cfg(any(
+        feature = "subs_http",
+        feature = "subs_clash",
+        feature = "subs_singbox"
+    ))]
     {
         crate::admin_debug::endpoints::subs::get_current_concurrency()
     }
-    #[cfg(not(any(feature = "subs_http", feature = "subs_clash", feature = "subs_singbox")))]
+    #[cfg(not(any(
+        feature = "subs_http",
+        feature = "subs_clash",
+        feature = "subs_singbox"
+    )))]
     {
         0
     }
 }
 
 pub fn snapshot() -> SecuritySnapshot {
-    let last = LAST_ERROR.get().and_then(|m| m.lock().ok()).map(|s| s.clone());
+    let last = LAST_ERROR
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|s| s.clone());
     let err_ts = LAST_ERR_TS.get().and_then(|m| m.lock().ok()).map(|x| *x);
-    let ok_ts  = LAST_OK_TS.get().and_then(|m| m.lock().ok()).map(|x| *x);
-    let recent = RECENT_ERRORS.get().and_then(|m| m.lock().ok()).map(|v| v.iter().cloned().collect()).unwrap_or_default();
-    let kinds = ERROR_KINDS.get().and_then(|m| m.lock().ok()).map(|m| m.clone()).unwrap_or_default();
-    let kinds_by_hash = ERROR_KINDS_BY_HASH.get().and_then(|m| m.lock().ok()).map(|m| m.clone()).unwrap_or_default();
-    let (buckets, count, sum) = LATENCY_SNAPSHOT.get().map(|s| s.clone()).unwrap_or_else(|| {
-        // Initialize with zero counts if no latency has been recorded yet
-        let empty_buckets: Vec<(f64, u64)> = LAT_BUCKETS.iter()
-            .map(|&b| (b as f64 / 1000.0, 0))
-            .collect();
-        (empty_buckets, 0, 0)
-    });
+    let ok_ts = LAST_OK_TS.get().and_then(|m| m.lock().ok()).map(|x| *x);
+    let recent = RECENT_ERRORS
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|v| v.iter().cloned().collect())
+        .unwrap_or_default();
+    let kinds = ERROR_KINDS
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|m| m.clone())
+        .unwrap_or_default();
+    let kinds_by_hash = ERROR_KINDS_BY_HASH
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|m| m.clone())
+        .unwrap_or_default();
+    let (buckets, count, sum) = LATENCY_SNAPSHOT
+        .get()
+        .map(|s| s.clone())
+        .unwrap_or_else(|| {
+            // Initialize with zero counts if no latency has been recorded yet
+            let empty_buckets: Vec<(f64, u64)> = LAT_BUCKETS
+                .iter()
+                .map(|&b| (b as f64 / 1000.0, 0))
+                .collect();
+            (empty_buckets, 0, 0)
+        });
 
     // Get cache byte usage
     let (cache_bytes_mem, cache_bytes_disk) = crate::admin_debug::cache::global()
@@ -603,7 +749,8 @@ pub fn snapshot() -> SecuritySnapshot {
 
     // Get breaker states with host hash for low cardinality
     let breaker_states = if let Ok(breaker) = crate::admin_debug::breaker::global().lock() {
-        breaker.state_stats()
+        breaker
+            .state_stats()
             .into_iter()
             .map(|(host, state, reopen_count)| {
                 let host_hash = host_to_hash(&host);
@@ -618,12 +765,22 @@ pub fn snapshot() -> SecuritySnapshot {
     let limiter_current_concurrency = get_current_concurrency();
 
     // Get DNS latency buckets
-    let dns_buckets = DNS_COUNTS.get()
+    let dns_buckets = DNS_COUNTS
+        .get()
         .and_then(|m| m.lock().ok())
-        .map(|c| DNS_BUCKETS.iter().zip(c.iter()).map(|(b,v)| ((*b as f64)/1000.0, *v)).collect())
+        .map(|c| {
+            DNS_BUCKETS
+                .iter()
+                .zip(c.iter())
+                .map(|(b, v)| ((*b as f64) / 1000.0, *v))
+                .collect()
+        })
         .unwrap_or_else(|| {
             // Initialize with zero counts if no DNS latency has been recorded yet
-            DNS_BUCKETS.iter().map(|&b| (b as f64 / 1000.0, 0)).collect()
+            DNS_BUCKETS
+                .iter()
+                .map(|&b| (b as f64 / 1000.0, 0))
+                .collect()
         });
 
     SecuritySnapshot {
@@ -668,9 +825,21 @@ pub fn snapshot() -> SecuritySnapshot {
         prefetch_fail: PREFETCH_FAIL.load(Ordering::Relaxed),
         prefetch_retry: PREFETCH_RETRY.load(Ordering::Relaxed),
         prefetch_queue_depth: PREFETCH_QUEUE_DEPTH.load(Ordering::Relaxed),
-        prefetch_run_buckets: PREFETCH_RUN_COUNTS.get()
+        prefetch_run_buckets: PREFETCH_RUN_COUNTS
+            .get()
             .and_then(|m| m.lock().ok())
-            .map(|c| PREFETCH_RUN_BUCKETS.iter().zip(c.iter()).map(|(b,v)| ((*b as f64)/1000.0, *v)).collect())
-            .unwrap_or_else(|| PREFETCH_RUN_BUCKETS.iter().map(|&b| (b as f64 / 1000.0, 0)).collect()),
+            .map(|c| {
+                PREFETCH_RUN_BUCKETS
+                    .iter()
+                    .zip(c.iter())
+                    .map(|(b, v)| ((*b as f64) / 1000.0, *v))
+                    .collect()
+            })
+            .unwrap_or_else(|| {
+                PREFETCH_RUN_BUCKETS
+                    .iter()
+                    .map(|&b| (b as f64 / 1000.0, 0))
+                    .collect()
+            }),
     }
 }

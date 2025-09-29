@@ -262,7 +262,9 @@ pub fn record_export_failure(class: &str) {
         "encode_error" | "timeout" | "busy" | "net_error" => class,
         _ => "other",
     };
-    METRICS_EXPORT_FAIL_TOTAL.with_label_values(&[normalized_class]).inc();
+    METRICS_EXPORT_FAIL_TOTAL
+        .with_label_values(&[normalized_class])
+        .inc();
 }
 
 /// Convenience functions for common export failure scenarios

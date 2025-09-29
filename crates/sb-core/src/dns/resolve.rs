@@ -368,6 +368,7 @@ async fn resolve_with_cache<F, Fut>(
     port: u16,
     timeout: u64,
     qsel: QSel,
+    #[allow(unused_variables)] // TODO: 参数设计用于扩展性，当前未实现自定义执行逻辑
     run: F,
 ) -> Result<Vec<SocketAddr>>
 where
@@ -392,7 +393,7 @@ where
             if let Ok(v) = rb {
                 out.extend(v);
             }
-            return Ok(out);
+            Ok(out)
         }
         QSel::A => {
             return resolve_cached_qtype(cache, backend, &host, port, timeout, QType::A).await;
@@ -413,6 +414,9 @@ async fn resolve_cached_qtype(
     qtype_key: QType,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::cache::{Key, QType as CacheQType};
+    // TODO: 设计不一致 - 创建了包含查询类型的键但缓存API只使用域名
+    // 这导致A/AAAA查询共享同一缓存条目，可能需要重构缓存API
+    #[allow(unused_variables)]
     let ck = Key {
         name: host.to_string(),
         qtype: match qtype_key {
@@ -480,8 +484,10 @@ async fn resolve_cached_qtype(
 }
 
 #[cfg(feature = "dns_cache")]
+#[allow(dead_code)] // 缓存刷新功能当前未被使用，但保留用于未来实现
 async fn refresh_cached_qtype(
     cache: &'static DnsCache,
+    #[allow(unused_variables)] // TODO: 缓存键设计用于按查询类型刷新，当前未实现
     ck: super::cache::Key,
     backend: DnsBackend,
     host: &str,
@@ -527,8 +533,10 @@ async fn refresh_cached_qtype(
 }
 
 #[cfg(feature = "dns_cache")]
+#[allow(dead_code)] // 缓存刷新功能当前未被使用，但保留用于未来实现
 async fn refresh<F, Fut>(
     cache: &'static DnsCache,
+    #[allow(unused_variables)] // TODO: 缓存键设计用于按查询类型刷新，当前未实现
     ck: super::cache::Key,
     backend: DnsBackend,
     run: F,

@@ -47,16 +47,16 @@ impl MacOsTun {
 
         // Get control info
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，ctl_info 是正确初始化的 C 结构体
-                // - 并发/别名：ctl_info 独占访问，fd 由当前线程拥有
-                // - FFI/平台契约：CTLIOCGINFO 是 macOS 上有效的 ioctl 命令
+        // - 不变量：fd 是有效的文件描述符，ctl_info 是正确初始化的 C 结构体
+        // - 并发/别名：ctl_info 独占访问，fd 由当前线程拥有
+        // - FFI/平台契约：CTLIOCGINFO 是 macOS 上有效的 ioctl 命令
         let result = unsafe { libc::ioctl(fd, CTLIOCGINFO, &mut ctl_info) };
 
         if result < 0 {
             // SAFETY:
-                    // - 不变量：fd 是有效的文件描述符
-                    // - 并发/别名：close 是幂等的，当前线程拥有 fd
-                    // - FFI/平台契约：close 系统调用在所有平台上都是安全的
+            // - 不变量：fd 是有效的文件描述符
+            // - 并发/别名：close 是幂等的，当前线程拥有 fd
+            // - FFI/平台契约：close 系统调用在所有平台上都是安全的
             unsafe {
                 libc::close(fd);
             }
@@ -74,9 +74,9 @@ impl MacOsTun {
         };
 
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，addr 指向有效的 SockaddrCtl 结构体
-                // - 并发/别名：addr 为局部变量，由当前线程独占访问
-                // - FFI/平台契约：connect 系统调用参数类型转换合法
+        // - 不变量：fd 是有效的文件描述符，addr 指向有效的 SockaddrCtl 结构体
+        // - 并发/别名：addr 为局部变量，由当前线程独占访问
+        // - FFI/平台契约：connect 系统调用参数类型转换合法
         let result = unsafe {
             libc::connect(
                 fd,
@@ -87,9 +87,9 @@ impl MacOsTun {
 
         if result < 0 {
             // SAFETY:
-                    // - 不变量：fd 是有效的文件描述符
-                    // - 并发/别名：close 是幂等的，当前线程拥有 fd
-                    // - FFI/平台契约：close 系统调用在所有平台上都是安全的
+            // - 不变量：fd 是有效的文件描述符
+            // - 并发/别名：close 是幂等的，当前线程拥有 fd
+            // - FFI/平台契约：close 系统调用在所有平台上都是安全的
             unsafe {
                 libc::close(fd);
             }
@@ -104,9 +104,9 @@ impl MacOsTun {
         };
 
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，from_raw_fd 转移所有权
-                // - 并发/别名：File 的 Drop 实现将管理文件描述符生命周期
-                // - FFI/平台契约：文件描述符所有权正确转移
+        // - 不变量：fd 是有效的文件描述符，from_raw_fd 转移所有权
+        // - 并发/别名：File 的 Drop 实现将管理文件描述符生命周期
+        // - FFI/平台契约：文件描述符所有权正确转移
         let file = unsafe { File::from_raw_fd(fd) };
         Ok((file, actual_name))
     }
@@ -138,9 +138,9 @@ impl MacOsTun {
         let mut len = libc::IF_NAMESIZE as libc::socklen_t;
 
         // SAFETY:
-                // - 不变量：fd 是有效的文件描述符，ifname 是大小为 IF_NAMESIZE 的可变缓冲区
-                // - 并发/别名：ifname 为局部变量，由当前线程独占访问
-                // - FFI/平台契约：getsockopt 系统调用参数类型和大小正确
+        // - 不变量：fd 是有效的文件描述符，ifname 是大小为 IF_NAMESIZE 的可变缓冲区
+        // - 并发/别名：ifname 为局部变量，由当前线程独占访问
+        // - FFI/平台契约：getsockopt 系统调用参数类型和大小正确
         let result = unsafe {
             libc::getsockopt(
                 fd,

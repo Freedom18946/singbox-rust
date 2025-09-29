@@ -8,8 +8,9 @@ use std::path::Path;
 // Removed sb_core dependencies to break circular dependency
 // TODO: These will be reintroduced when sb-core depends on sb-config
 
-pub mod defaults;
+pub mod compat;
 pub mod de;
+pub mod defaults;
 pub mod ir;
 pub mod merge;
 pub mod minimize;
@@ -18,10 +19,9 @@ pub mod normalize;
 pub mod outbound;
 pub mod present;
 pub mod rule;
+pub mod schema_v2;
 pub mod subscribe;
 pub mod validator;
-pub mod compat;
-pub mod schema_v2;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
@@ -264,34 +264,74 @@ impl Config {
     /// - 将 Config 转换为 IR（ConfigIR/RouteIR/RuleIR），保证规则可被路由层消费
     /// - 为上层提供“构建已通过”的语义（此处不返回具体路由器实例）
     pub fn build_registry_and_router(&self) -> Result<()> {
-        use crate::ir::{ConfigIR, InboundIR, OutboundIR as OIR, OutboundType as OT, RouteIR, RuleIR};
+        use crate::ir::{
+            ConfigIR, InboundIR, OutboundIR as OIR, OutboundType as OT, RouteIR, RuleIR,
+        };
         self.validate()?;
 
         // 转换 Outbound → IR
         let mut outs: Vec<OIR> = Vec::new();
         for o in &self.outbounds {
             match o {
-                Outbound::Direct { name } => outs.push(OIR { ty: OT::Direct, server: None, port: None, udp: None, name: Some(name.clone()), members: None, credentials: None }),
-                Outbound::Block { name } => outs.push(OIR { ty: OT::Block, server: None, port: None, udp: None, name: Some(name.clone()), members: None, credentials: None }),
-                Outbound::Socks5 { name, server, port, auth } => outs.push(OIR {
+                Outbound::Direct { name } => outs.push(OIR {
+                    ty: OT::Direct,
+                    server: None,
+                    port: None,
+                    udp: None,
+                    name: Some(name.clone()),
+                    members: None,
+                    credentials: None,
+                }),
+                Outbound::Block { name } => outs.push(OIR {
+                    ty: OT::Block,
+                    server: None,
+                    port: None,
+                    udp: None,
+                    name: Some(name.clone()),
+                    members: None,
+                    credentials: None,
+                }),
+                Outbound::Socks5 {
+                    name,
+                    server,
+                    port,
+                    auth,
+                } => outs.push(OIR {
                     ty: OT::Socks,
                     server: Some(server.clone()),
                     port: Some(*port),
                     udp: Some("socks5-upstream".into()),
                     name: Some(name.clone()),
                     members: None,
-                    credentials: auth.as_ref().map(|a| crate::ir::Credentials { username: Some(a.username.clone()), password: Some(a.password.clone()), username_env: None, password_env: None }),
+                    credentials: auth.as_ref().map(|a| crate::ir::Credentials {
+                        username: Some(a.username.clone()),
+                        password: Some(a.password.clone()),
+                        username_env: None,
+                        password_env: None,
+                    }),
                 }),
-                Outbound::Http { name, server, port, auth } => outs.push(OIR {
+                Outbound::Http {
+                    name,
+                    server,
+                    port,
+                    auth,
+                } => outs.push(OIR {
                     ty: OT::Http,
                     server: Some(server.clone()),
                     port: Some(*port),
                     udp: None,
                     name: Some(name.clone()),
                     members: None,
-                    credentials: auth.as_ref().map(|a| crate::ir::Credentials { username: Some(a.username.clone()), password: Some(a.password.clone()), username_env: None, password_env: None }),
+                    credentials: auth.as_ref().map(|a| crate::ir::Credentials {
+                        username: Some(a.username.clone()),
+                        password: Some(a.password.clone()),
+                        username_env: None,
+                        password_env: None,
+                    }),
                 }),
-                Outbound::Vless { name, server, port, .. } => outs.push(OIR {
+                Outbound::Vless {
+                    name, server, port, ..
+                } => outs.push(OIR {
                     ty: OT::Direct, // 先按直连导出，避免未落地导致构建失败（再由路由决策控制）
                     server: Some(server.clone()),
                     port: Some(*port),
@@ -330,15 +370,24 @@ impl Config {
             });
         }
 
-        let route_ir = RouteIR { rules: rules_ir, default: self.default_outbound.clone() };
-        let cfg_ir = ConfigIR { inbounds: Vec::<InboundIR>::new(), outbounds: outs, route: route_ir };
+        let route_ir = RouteIR {
+            rules: rules_ir,
+            default: self.default_outbound.clone(),
+        };
+        let cfg_ir = ConfigIR {
+            inbounds: Vec::<InboundIR>::new(),
+            outbounds: outs,
+            route: route_ir,
+        };
         // 轻量一致性检查：确保 default 在 outbounds 中
         if let Some(def) = &cfg_ir.route.default {
             let exists = cfg_ir
                 .outbounds
                 .iter()
                 .any(|o| o.name.as_deref() == Some(def.as_str()));
-            if !exists { return Err(anyhow!("default_outbound '{}' not defined", def)); }
+            if !exists {
+                return Err(anyhow!("default_outbound '{}' not defined", def));
+            }
         }
         // 最终：丢弃 IR（实际消费在 sb-core），仅以可构建通过为准
         Ok(())
@@ -375,7 +424,9 @@ fn default_vless_network() -> String {
     "tcp".to_string()
 }
 
-fn default_schema_version() -> u32 { 2 }
+fn default_schema_version() -> u32 {
+    2
+}
 
 #[cfg(test)]
 mod tests {

@@ -92,10 +92,11 @@ impl UdpUpstream {
         let mut packet = Vec::new();
 
         // DNS Header (12 bytes)
-        let transaction_id_val: u16 = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-            Ok(d) => d.as_nanos() as u16,
-            Err(_) => 0,
-        };
+        let transaction_id_val: u16 =
+            match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(d) => d.as_nanos() as u16,
+                Err(_) => 0,
+            };
         let transaction_id = transaction_id_val.to_be_bytes();
 
         packet.extend_from_slice(&transaction_id); // Transaction ID
@@ -389,9 +390,15 @@ impl DnsUpstream for DotUpstream {
 
 #[cfg(feature = "dns_dot")]
 impl DotUpstream {
-    async fn query_dot(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
-        // 这里需要实现 DoT 查询逻辑
-        // 由于需要 TLS 支持，暂时返回错误
+    async fn query_dot(
+        &self,
+        #[allow(unused_variables)] // TODO: 等待DoT功能实现
+        domain: &str,
+        #[allow(unused_variables)] // TODO: 等待DoT功能实现
+        record_type: RecordType,
+    ) -> Result<DnsAnswer> {
+        // TODO: 这里需要实现 DoT 查询逻辑
+        // 当前由于需要 TLS 支持，暂时返回错误
         Err(anyhow::anyhow!(
             "DoT implementation requires TLS library integration"
         ))
@@ -480,7 +487,9 @@ impl DohUpstream {
     async fn query_doh(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
         // 构建 DNS 查询包
         let temp_upstream = {
-            let addr = "0.0.0.0:53".parse().map_err(|e| anyhow::anyhow!("invalid DoH bind address: {}", e))?;
+            let addr = "0.0.0.0:53"
+                .parse()
+                .map_err(|e| anyhow::anyhow!("invalid DoH bind address: {}", e))?;
             UdpUpstream::new(addr)
         };
         let query_packet = temp_upstream.build_query_packet(domain, record_type)?;
@@ -537,7 +546,9 @@ impl SystemUpstream {
 }
 
 impl Default for SystemUpstream {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]

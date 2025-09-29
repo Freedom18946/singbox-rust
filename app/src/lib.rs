@@ -17,11 +17,10 @@
 
 #[cfg(feature = "admin_debug")]
 pub mod admin_debug;
-#[cfg(any(feature="router", feature="sbcore_rules_tool"))]
+#[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 pub mod analyze;
 pub mod cli;
 pub mod config_loader;
-pub mod util;
 #[cfg(feature = "dev-cli")]
 pub mod env_dump;
 #[cfg(feature = "hardening")]
@@ -33,6 +32,7 @@ pub mod panic;
 pub mod telemetry;
 #[cfg(feature = "dev-cli")]
 pub mod tracing_init;
+pub mod util;
 
 // Router facade - available always, but functionality gated by feature
 pub mod router;

@@ -284,7 +284,10 @@ async fn handle_conn(
                                 .ok()
                                 .and_then(|v| v.parse().ok())
                                 .unwrap_or(4096);
-                            PoolSelector::new_with_capacity(cap, std::time::Duration::from_millis(ttl))
+                            PoolSelector::new_with_capacity(
+                                cap,
+                                std::time::Duration::from_millis(ttl),
+                            )
                         });
                         let health = MultiHealthView;
                         let target_str = match &endpoint {
@@ -522,7 +525,13 @@ async fn handle_conn(
                 std::env::var(key)
                     .ok()
                     .and_then(|v| v.parse::<u64>().ok())
-                    .and_then(|ms| if ms > 0 { Some(std::time::Duration::from_millis(ms)) } else { None })
+                    .and_then(|ms| {
+                        if ms > 0 {
+                            Some(std::time::Duration::from_millis(ms))
+                        } else {
+                            None
+                        }
+                    })
             }
 
             let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");

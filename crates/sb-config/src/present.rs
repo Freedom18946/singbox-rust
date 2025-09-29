@@ -1,6 +1,6 @@
 // crates/sb-config/src/present.rs
 use crate::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleIR};
- 
+
 use crate::{Config, Inbound, Outbound};
 use anyhow::Result;
 use serde_json::{Map, Value};

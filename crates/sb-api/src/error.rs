@@ -5,9 +5,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use sb_core::error::SbError;
 use serde_json::json;
 use thiserror::Error;
-use sb_core::error::SbError;
 
 /// Result type for API operations
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -182,6 +182,8 @@ impl IntoResponse for ApiError {
 impl From<SbError> for ApiError {
     fn from(e: SbError) -> Self {
         // Preserve source via anyhow wrapping, keep external signature intact
-        ApiError::Internal { source: anyhow::Error::from(e) }
+        ApiError::Internal {
+            source: anyhow::Error::from(e),
+        }
     }
 }

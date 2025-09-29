@@ -9,7 +9,13 @@ fn write_cfg(content: &str) -> tempfile::NamedTempFile {
 
 #[test]
 fn version_json_field_order_locked() {
-    let out = Command::cargo_bin("version").unwrap().assert().success().get_output().stdout.clone();
+    let out = Command::cargo_bin("version")
+        .unwrap()
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
     let s = String::from_utf8(out).unwrap();
     // Expect top-level ok then data fields inside
     let ok_pos = s.find("\"ok\"").unwrap();
@@ -50,4 +56,3 @@ fn route_explain_json_field_order_locked() {
     let ob = s.find("\"outbound\"").unwrap();
     assert!(dest < mr && mr < chain && chain < ob);
 }
-

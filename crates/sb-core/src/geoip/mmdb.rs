@@ -62,19 +62,18 @@ impl MmdbReader {
 
     fn try_load_databases(&mut self) -> anyhow::Result<()> {
         // Common database locations
-        let common_paths = [
-            "/usr/share/GeoIP",
-            "/var/lib/GeoIP",
-            "/opt/GeoIP",
-            ".",
-        ];
+        let common_paths = ["/usr/share/GeoIP", "/var/lib/GeoIP", "/opt/GeoIP", "."];
 
         for base_path in &common_paths {
             // Try country database
             let country_path = Path::new(base_path).join("GeoLite2-Country.mmdb");
             if country_path.exists() {
                 if let Err(e) = self.load_country_db(&country_path) {
-                    tracing::warn!("Failed to load country database from {}: {}", country_path.display(), e);
+                    tracing::warn!(
+                        "Failed to load country database from {}: {}",
+                        country_path.display(),
+                        e
+                    );
                 }
             }
 
@@ -82,7 +81,11 @@ impl MmdbReader {
             let city_path = Path::new(base_path).join("GeoLite2-City.mmdb");
             if city_path.exists() {
                 if let Err(e) = self.load_city_db(&city_path) {
-                    tracing::warn!("Failed to load city database from {}: {}", city_path.display(), e);
+                    tracing::warn!(
+                        "Failed to load city database from {}: {}",
+                        city_path.display(),
+                        e
+                    );
                 }
             }
 
@@ -90,7 +93,11 @@ impl MmdbReader {
             let asn_path = Path::new(base_path).join("GeoLite2-ASN.mmdb");
             if asn_path.exists() {
                 if let Err(e) = self.load_asn_db(&asn_path) {
-                    tracing::warn!("Failed to load ASN database from {}: {}", asn_path.display(), e);
+                    tracing::warn!(
+                        "Failed to load ASN database from {}: {}",
+                        asn_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -102,7 +109,8 @@ impl MmdbReader {
         let data = std::fs::read(path)?;
         let reader = maxminddb::Reader::from_source(data)?;
         self.country_db = Some(reader);
-        self.db_paths.insert("country".to_string(), path.to_path_buf());
+        self.db_paths
+            .insert("country".to_string(), path.to_path_buf());
         tracing::info!("Loaded GeoIP country database from {}", path.display());
         Ok(())
     }
@@ -185,30 +193,36 @@ impl GeoIpProvider for MmdbProvider {
         let asn_info = self.reader.lookup_asn(ip);
 
         let geo_info = GeoInfo {
-            country_code: country_info.as_ref()
+            country_code: country_info
+                .as_ref()
                 .and_then(|c| c.country.as_ref())
                 .and_then(|c| c.iso_code.clone()),
-            country_name: country_info.as_ref()
+            country_name: country_info
+                .as_ref()
                 .and_then(|c| c.country.as_ref())
                 .and_then(|c| c.names.as_ref())
                 .and_then(|names| names.get("en"))
                 .cloned(),
-            city: city_info.as_ref()
+            city: city_info
+                .as_ref()
                 .and_then(|c| c.city.as_ref())
                 .and_then(|c| c.names.as_ref())
                 .and_then(|names| names.get("en"))
                 .cloned(),
-            region: city_info.as_ref()
+            region: city_info
+                .as_ref()
                 .and_then(|c| c.subdivisions.as_ref())
                 .and_then(|subdivisions| subdivisions.first())
                 .and_then(|subdivision| subdivision.names.as_ref())
                 .and_then(|names| names.get("en"))
                 .cloned(),
-            continent_code: country_info.as_ref()
+            continent_code: country_info
+                .as_ref()
                 .and_then(|c| c.continent.as_ref())
                 .and_then(|c| c.code.clone()),
             asn: asn_info.as_ref().and_then(|a| a.autonomous_system_number),
-            organization: asn_info.as_ref()
+            organization: asn_info
+                .as_ref()
                 .and_then(|a| a.autonomous_system_organization.clone()),
         };
 
@@ -295,7 +309,11 @@ impl GeoIp {
     }
 
     /// Open a GeoIP database from file path with cache configuration
-    pub fn open(path: &std::path::Path, cache_capacity: usize, _ttl: std::time::Duration) -> anyhow::Result<Self> {
+    pub fn open(
+        path: &std::path::Path,
+        cache_capacity: usize,
+        _ttl: std::time::Duration,
+    ) -> anyhow::Result<Self> {
         // Create a custom MMDB reader that loads the specific database file
         let data = std::fs::read(path)
             .map_err(|e| anyhow::anyhow!("Failed to read MMDB database at {:?}: {}", path, e))?;
@@ -312,36 +330,45 @@ impl GeoIp {
         };
 
         // Determine database type based on filename and load appropriately
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_lowercase();
 
         if filename.contains("country") {
             mmdb_reader.country_db = Some(reader);
-            mmdb_reader.db_paths.insert("country".to_string(), path.to_path_buf());
+            mmdb_reader
+                .db_paths
+                .insert("country".to_string(), path.to_path_buf());
         } else if filename.contains("city") {
             mmdb_reader.city_db = Some(reader);
-            mmdb_reader.db_paths.insert("city".to_string(), path.to_path_buf());
+            mmdb_reader
+                .db_paths
+                .insert("city".to_string(), path.to_path_buf());
         } else if filename.contains("asn") {
             mmdb_reader.asn_db = Some(reader);
-            mmdb_reader.db_paths.insert("asn".to_string(), path.to_path_buf());
+            mmdb_reader
+                .db_paths
+                .insert("asn".to_string(), path.to_path_buf());
         } else {
             // Default to country database
             mmdb_reader.country_db = Some(reader);
-            mmdb_reader.db_paths.insert("country".to_string(), path.to_path_buf());
+            mmdb_reader
+                .db_paths
+                .insert("country".to_string(), path.to_path_buf());
         }
 
         let provider = MmdbProvider {
             reader: Arc::new(mmdb_reader),
             cache: std::sync::Mutex::new(
                 // SAFETY: if cache_capacity is zero, fallback to 1024 (>0)
-                lru::LruCache::new(
-                    std::num::NonZeroUsize::new(cache_capacity).unwrap_or_else(|| {
+                lru::LruCache::new(std::num::NonZeroUsize::new(cache_capacity).unwrap_or_else(
+                    || {
                         // SAFETY: 1024 is a non-zero constant; NonZeroUsize::new_unchecked(1024) is sound
                         unsafe { std::num::NonZeroUsize::new_unchecked(1024) }
-                    })
-                )
+                    },
+                )),
             ),
         };
 

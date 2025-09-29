@@ -7,9 +7,7 @@
 
 #[cfg(feature = "metrics")]
 use crate::metrics::registry_ext::{
-    get_or_register_counter_vec,
-    get_or_register_gauge_vec_f64,
-    get_or_register_histogram_vec,
+    get_or_register_counter_vec, get_or_register_gauge_vec_f64, get_or_register_histogram_vec,
 };
 #[cfg(feature = "metrics")]
 use metrics::counter;
@@ -137,8 +135,6 @@ pub fn register_metrics() {
 // Optional Prometheus registry for cache metrics (legacy experiments)
 #[cfg(feature = "metrics")]
 use prometheus::IntCounterVec;
-
-
 
 #[cfg(feature = "metrics")]
 pub fn dns_query_total() -> &'static prometheus::IntCounterVec {

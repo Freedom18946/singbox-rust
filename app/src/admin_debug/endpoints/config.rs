@@ -1,7 +1,11 @@
-use tokio::io::{AsyncRead, AsyncWrite};
-use crate::admin_debug::{http_util::{respond, respond_json_ok, respond_json_error}, reloadable, audit};
-use serde::{Serialize, Deserialize};
+use crate::admin_debug::{
+    audit,
+    http_util::{respond, respond_json_error, respond_json_ok},
+    reloadable,
+};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 #[derive(Serialize)]
 pub struct ConfigView {
@@ -46,8 +50,7 @@ pub async fn handle_put(
     sock: &mut (impl AsyncRead + AsyncWrite + Unpin),
     body: bytes::Bytes,
     headers: &HashMap<String, String>,
-) -> std::io::Result<()>
-{
+) -> std::io::Result<()> {
     let t_start = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -58,9 +61,27 @@ pub async fn handle_put(
     if role != "admin" {
         // Stable error schema
         #[derive(serde::Serialize)]
-        struct Resp<'a> { status: &'a str, applied: bool, errors: Vec<&'a str>, start_ms: u128, dur_ms: u128 }
-        let resp = Resp { status: "error", applied: false, errors: vec!["X-Role: admin required"], start_ms: t_start, dur_ms: t0.elapsed().as_millis() };
-        return crate::admin_debug::http_util::respond(sock, 403, "application/json", &serde_json::to_string(&resp).unwrap_or_else(|_|"{}".into())).await;
+        struct Resp<'a> {
+            status: &'a str,
+            applied: bool,
+            errors: Vec<&'a str>,
+            start_ms: u128,
+            dur_ms: u128,
+        }
+        let resp = Resp {
+            status: "error",
+            applied: false,
+            errors: vec!["X-Role: admin required"],
+            start_ms: t_start,
+            dur_ms: t0.elapsed().as_millis(),
+        };
+        return crate::admin_debug::http_util::respond(
+            sock,
+            403,
+            "application/json",
+            &serde_json::to_string(&resp).unwrap_or_else(|_| "{}".into()),
+        )
+        .await;
     }
 
     // Dry-run toggle
@@ -73,7 +94,13 @@ pub async fn handle_put(
     let delta: ConfigDelta = match serde_json::from_slice(&body) {
         Ok(d) => d,
         Err(e) => {
-            return respond_json_error(sock, 400, "Invalid JSON in request body", Some(&e.to_string())).await;
+            return respond_json_error(
+                sock,
+                400,
+                "Invalid JSON in request body",
+                Some(&e.to_string()),
+            )
+            .await;
         }
     };
 
@@ -87,15 +114,28 @@ pub async fn handle_put(
                 serde_json::to_value(&delta).unwrap_or(serde_json::json!({})),
                 app.ok,
                 &app.msg,
-            ).with_changed(app.changed);
+            )
+            .with_changed(app.changed);
             audit::log(entry);
 
             // Respond with fixed schema and stable field order
             #[derive(serde::Serialize)]
-            struct Resp<'a> { status: &'a str, applied: bool, errors: &'a[&'a str], start_ms: u128, dur_ms: u128 }
+            struct Resp<'a> {
+                status: &'a str,
+                applied: bool,
+                errors: &'a [&'a str],
+                start_ms: u128,
+                dur_ms: u128,
+            }
             let status = if app.ok { "ok" } else { "error" };
             let applied = app.ok && !dry && app.changed;
-            let resp = Resp { status, applied, errors: &[], start_ms: t_start, dur_ms: t0.elapsed().as_millis() };
+            let resp = Resp {
+                status,
+                applied,
+                errors: &[],
+                start_ms: t_start,
+                dur_ms: t0.elapsed().as_millis(),
+            };
             respond_json_ok(sock, &resp).await
         }
         Err(e) => {
@@ -105,13 +145,32 @@ pub async fn handle_put(
                 serde_json::to_value(&delta).unwrap_or(serde_json::json!({})),
                 false,
                 &e,
-            ).with_changed(false);
+            )
+            .with_changed(false);
             audit::log(entry);
             // Fixed schema error
             #[derive(serde::Serialize)]
-            struct Resp<'a> { status: &'a str, applied: bool, errors: [&'a str;1], start_ms: u128, dur_ms: u128 }
-            let resp = Resp { status: "error", applied: false, errors: [&*e], start_ms: t_start, dur_ms: t0.elapsed().as_millis() };
-            crate::admin_debug::http_util::respond(sock, 400, "application/json", &serde_json::to_string(&resp).unwrap_or_else(|_|"{}".into())).await
+            struct Resp<'a> {
+                status: &'a str,
+                applied: bool,
+                errors: [&'a str; 1],
+                start_ms: u128,
+                dur_ms: u128,
+            }
+            let resp = Resp {
+                status: "error",
+                applied: false,
+                errors: [&*e],
+                start_ms: t_start,
+                dur_ms: t0.elapsed().as_millis(),
+            };
+            crate::admin_debug::http_util::respond(
+                sock,
+                400,
+                "application/json",
+                &serde_json::to_string(&resp).unwrap_or_else(|_| "{}".into()),
+            )
+            .await
         }
     }
 }

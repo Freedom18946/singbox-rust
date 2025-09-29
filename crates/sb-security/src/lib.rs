@@ -7,8 +7,8 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-pub mod redact;
 pub mod key_loading;
+pub mod redact;
 
-pub use redact::{redact_token, redact_key, redact_credential};
-pub use key_loading::{KeySource, SecretLoader, LoadedSecret};
+pub use key_loading::{KeySource, LoadedSecret, SecretLoader};
+pub use redact::{redact_credential, redact_key, redact_token};

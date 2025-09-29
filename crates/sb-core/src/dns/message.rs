@@ -202,7 +202,7 @@ mod tests {
     // example.com A 查询与解析
     #[test]
     fn parse_q_example_com() {
-        let query: [u8; 33] = [
+        let query: [u8; 29] = [
             0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0x07, b'e', b'x', b'a', b'm',
             b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00, 0x01, 0x00, 0x01,
         ];

@@ -1,8 +1,8 @@
+pub mod config;
 pub mod geoip;
-pub mod normalize;
 pub mod health;
 pub mod metrics;
-pub mod config;
+pub mod normalize;
 
 #[cfg(any(
     feature = "subs_http",
@@ -17,11 +17,11 @@ pub mod analyze;
 #[cfg(feature = "route_sandbox")]
 pub mod route_dryrun;
 
+pub use config::{handle_get as handle_config_get, handle_put as handle_config_put};
 pub use geoip::handle as handle_geoip;
-pub use normalize::handle as handle_normalize;
 pub use health::handle as handle_health;
 pub use metrics::handle as handle_metrics;
-pub use config::{handle_get as handle_config_get, handle_put as handle_config_put};
+pub use normalize::handle as handle_normalize;
 
 #[cfg(any(
     feature = "subs_http",

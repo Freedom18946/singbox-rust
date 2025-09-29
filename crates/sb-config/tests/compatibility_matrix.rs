@@ -87,12 +87,21 @@ fn test_v1_variants_pass_migration() {
     let mut pass_count = 0;
     for (i, case) in test_cases.iter().enumerate() {
         let result = sb_config::compat::migrate_to_v2(case);
-        assert_eq!(result["schema_version"], 2, "Test case {} should migrate to v2", i);
+        assert_eq!(
+            result["schema_version"], 2,
+            "Test case {} should migrate to v2",
+            i
+        );
 
         // Validation should pass
         let issues = sb_config::validator::v2::validate_v2(&result);
         let errors: Vec<_> = issues.iter().filter(|i| i["severity"] == "error").collect();
-        assert!(errors.is_empty(), "Test case {} should have no validation errors: {:?}", i, errors);
+        assert!(
+            errors.is_empty(),
+            "Test case {} should have no validation errors: {:?}",
+            i,
+            errors
+        );
 
         pass_count += 1;
     }
@@ -180,7 +189,12 @@ fn test_v2_variants_pass_validation() {
     for (i, case) in test_cases.iter().enumerate() {
         let issues = sb_config::validator::v2::validate_v2(case);
         let errors: Vec<_> = issues.iter().filter(|i| i["severity"] == "error").collect();
-        assert!(errors.is_empty(), "Test case {} should have no validation errors: {:?}", i, errors);
+        assert!(
+            errors.is_empty(),
+            "Test case {} should have no validation errors: {:?}",
+            i,
+            errors
+        );
 
         pass_count += 1;
     }
@@ -208,20 +222,41 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() {
 
     let issues = sb_config::validator::v2::validate_v2(&config); // Note: would need allow_unknown option
 
-    let warnings: Vec<_> = issues.iter().filter(|i| i["severity"] == "warning").collect();
+    let warnings: Vec<_> = issues
+        .iter()
+        .filter(|i| i["severity"] == "warning")
+        .collect();
     let errors: Vec<_> = issues.iter().filter(|i| i["severity"] == "error").collect();
 
     // Should have warnings but no errors when allow_unknown is true
-    assert!(errors.is_empty(), "Should have no errors with allow_unknown=true");
-    assert!(!warnings.is_empty(), "Should have warnings for unknown fields");
-    assert!(warnings.len() <= 3, "Should have at most 3 warnings for unknown fields");
+    assert!(
+        errors.is_empty(),
+        "Should have no errors with allow_unknown=true"
+    );
+    assert!(
+        !warnings.is_empty(),
+        "Should have warnings for unknown fields"
+    );
+    assert!(
+        warnings.len() <= 3,
+        "Should have at most 3 warnings for unknown fields"
+    );
 
     // Check warning format includes pointer prefix
     for warning in &warnings {
-        assert!(warning["message"].as_str().unwrap().contains("unknown field"),
-                "Warning should mention unknown field: {:?}", warning);
-        assert!(warning.get("pointer").is_some() || warning.get("path").is_some(),
-                "Warning should include pointer/path information: {:?}", warning);
+        assert!(
+            warning["message"]
+                .as_str()
+                .unwrap()
+                .contains("unknown field"),
+            "Warning should mention unknown field: {:?}",
+            warning
+        );
+        assert!(
+            warning.get("pointer").is_some() || warning.get("path").is_some(),
+            "Warning should include pointer/path information: {:?}",
+            warning
+        );
     }
 }
 
@@ -239,10 +274,16 @@ fn test_compatibility_matrix_summary() {
         "warnings": warnings
     });
 
-    println!("Compatibility Matrix: {}", serde_json::to_string_pretty(&matrix).unwrap());
+    println!(
+        "Compatibility Matrix: {}",
+        serde_json::to_string_pretty(&matrix).unwrap()
+    );
 
     // Assertions for the spec requirements
     assert_eq!(v1_pass, 3, "Should have exactly 3 passing v1 variants");
     assert_eq!(v2_pass, 3, "Should have exactly 3 passing v2 variants");
-    assert!(warnings <= 3, "Should have <= 3 warnings for unknown fields");
+    assert!(
+        warnings <= 3,
+        "Should have <= 3 warnings for unknown fields"
+    );
 }

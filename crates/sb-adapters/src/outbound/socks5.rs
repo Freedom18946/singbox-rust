@@ -4,7 +4,7 @@
 //! It implements the SOCKS5 protocol as defined in RFC 1928.
 
 use crate::outbound::prelude::*;
-use crate::traits::{ResolveMode, OutboundDatagram};
+use crate::traits::{OutboundDatagram, ResolveMode};
 use anyhow::Context;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -34,12 +34,16 @@ impl Socks5Connector {
                 username: None,
                 password: None,
                 connect_timeout_sec: Some(30),
-            }
+            },
         }
     }
 
     /// Create a connector with username/password authentication
-    pub fn with_auth(server: impl Into<String>, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn with_auth(
+        server: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         Self {
             config: Socks5Config {
                 server: server.into(),
@@ -47,7 +51,7 @@ impl Socks5Connector {
                 username: Some(username.into()),
                 password: Some(password.into()),
                 connect_timeout_sec: Some(30),
-            }
+            },
         }
     }
 }
@@ -66,7 +70,9 @@ impl OutboundConnector for Socks5Connector {
 
     async fn start(&self) -> Result<()> {
         #[cfg(not(feature = "adapter-socks"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-socks" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-socks",
+        });
 
         #[cfg(feature = "adapter-socks")]
         Ok(())
@@ -74,7 +80,9 @@ impl OutboundConnector for Socks5Connector {
 
     async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-socks"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-socks" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-socks",
+        });
 
         #[cfg(feature = "adapter-socks")]
         {
@@ -89,31 +97,45 @@ impl OutboundConnector for Socks5Connector {
                 return Err(AdapterError::NotImplemented { what: "socks-udp" });
 
                 #[cfg(feature = "socks-udp")]
-                return Err(AdapterError::Protocol("Use dial_udp() for UDP connections".to_string()));
+                return Err(AdapterError::Protocol(
+                    "Use dial_udp() for UDP connections".to_string(),
+                ));
             }
 
             let dial_result = async {
                 // Parse proxy server address
-                let proxy_addr: SocketAddr = self.config.server.parse()
-                    .with_context(|| format!("Invalid SOCKS5 proxy address: {}", self.config.server))
+                let proxy_addr: SocketAddr = self
+                    .config
+                    .server
+                    .parse()
+                    .with_context(|| {
+                        format!("Invalid SOCKS5 proxy address: {}", self.config.server)
+                    })
                     .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                 // Connect to proxy server with timeout
-                let mut stream = tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
-                    .await
-                    .with_context(|| format!("Failed to connect to SOCKS5 proxy {}", proxy_addr))
-                    .map_err(|e| AdapterError::Other(e.to_string()))?
-                    .with_context(|| format!("TCP connection to SOCKS5 proxy {} failed", proxy_addr))
-                    .map_err(|e| AdapterError::Other(e.to_string()))?;
+                let mut stream =
+                    tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
+                        .await
+                        .with_context(|| {
+                            format!("Failed to connect to SOCKS5 proxy {}", proxy_addr)
+                        })
+                        .map_err(|e| AdapterError::Other(e.to_string()))?
+                        .with_context(|| {
+                            format!("TCP connection to SOCKS5 proxy {} failed", proxy_addr)
+                        })
+                        .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                 // Perform SOCKS5 handshake
-                self.socks5_handshake(&mut stream, opts.connect_timeout).await?;
+                self.socks5_handshake(&mut stream, opts.connect_timeout)
+                    .await?;
 
                 // Send CONNECT request
                 self.socks5_connect(&mut stream, &target, &opts).await?;
 
                 Ok(stream)
-            }.await;
+            }
+            .await;
 
             // Record metrics for the dial attempt (both success and failure)
             #[cfg(feature = "metrics")]
@@ -154,31 +176,45 @@ impl OutboundConnector for Socks5Connector {
 impl Socks5Connector {
     /// Create UDP datagram connection through SOCKS5 UDP ASSOCIATE
     #[cfg(feature = "socks-udp")]
-    pub async fn dial_udp(&self, target: Target, opts: DialOpts) -> Result<Arc<dyn OutboundDatagram>> {
-        let proxy_addr: SocketAddr = self.config.server.parse()
+    pub async fn dial_udp(
+        &self,
+        target: Target,
+        opts: DialOpts,
+    ) -> Result<Arc<dyn OutboundDatagram>> {
+        let proxy_addr: SocketAddr = self
+            .config
+            .server
+            .parse()
             .with_context(|| format!("Invalid SOCKS5 proxy address: {}", self.config.server))
             .map_err(|e| AdapterError::Other(e.to_string()))?;
 
         // Establish TCP control connection for UDP ASSOCIATE
-        let mut control_stream = tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
-            .await
-            .with_context(|| format!("Failed to connect to SOCKS5 proxy {}", proxy_addr))
-            .map_err(|e| AdapterError::Other(e.to_string()))?
-            .with_context(|| format!("TCP connection to SOCKS5 proxy {} failed", proxy_addr))
-            .map_err(|e| AdapterError::Other(e.to_string()))?;
+        let mut control_stream =
+            tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
+                .await
+                .with_context(|| format!("Failed to connect to SOCKS5 proxy {}", proxy_addr))
+                .map_err(|e| AdapterError::Other(e.to_string()))?
+                .with_context(|| format!("TCP connection to SOCKS5 proxy {} failed", proxy_addr))
+                .map_err(|e| AdapterError::Other(e.to_string()))?;
 
         // Perform SOCKS5 handshake
-        self.socks5_handshake(&mut control_stream, opts.connect_timeout).await?;
+        self.socks5_handshake(&mut control_stream, opts.connect_timeout)
+            .await?;
 
         // Send UDP ASSOCIATE request
-        let relay_addr = self.socks5_udp_associate(&mut control_stream, opts.connect_timeout).await?;
+        let relay_addr = self
+            .socks5_udp_associate(&mut control_stream, opts.connect_timeout)
+            .await?;
 
         // Create UDP socket
-        let udp_socket = UdpSocket::bind("0.0.0.0:0").await
+        let udp_socket = UdpSocket::bind("0.0.0.0:0")
+            .await
             .map_err(|e| AdapterError::Io(e))?;
 
         // Connect to relay address
-        udp_socket.connect(relay_addr).await
+        udp_socket
+            .connect(relay_addr)
+            .await
             .map_err(|e| AdapterError::Io(e))?;
 
         // Create SOCKS UDP wrapper
@@ -188,7 +224,8 @@ impl Socks5Connector {
             relay_addr,
             control_stream,
             opts.resolve_mode.clone(),
-        ).await?;
+        )
+        .await?;
 
         Ok(Arc::new(socks_udp))
     }
@@ -213,7 +250,8 @@ impl Socks5Connector {
             .map_err(|e| AdapterError::Other(e.to_string()))?;
 
         // Perform SOCKS5 handshake
-        self.socks5_handshake(&mut stream, opts.connect_timeout).await?;
+        self.socks5_handshake(&mut stream, opts.connect_timeout)
+            .await?;
 
         // Perform BIND and wait for incoming connection
         self.socks5_bind(&mut stream, &target, &opts).await?;
@@ -338,20 +376,29 @@ impl SocksUdp {
             0x03 => {
                 // Domain name
                 if offset >= packet.len() {
-                    return Err(AdapterError::Protocol("Invalid domain length position".to_string()));
+                    return Err(AdapterError::Protocol(
+                        "Invalid domain length position".to_string(),
+                    ));
                 }
                 let len = packet[offset] as usize;
                 offset += 1;
                 len
             }
-            _ => return Err(AdapterError::Protocol(format!("Invalid address type: {}", atyp))),
+            _ => {
+                return Err(AdapterError::Protocol(format!(
+                    "Invalid address type: {}",
+                    atyp
+                )))
+            }
         };
 
         // Skip address and port
         offset += addr_len + 2;
 
         if offset > packet.len() {
-            return Err(AdapterError::Protocol("UDP packet header too long".to_string()));
+            return Err(AdapterError::Protocol(
+                "UDP packet header too long".to_string(),
+            ));
         }
 
         Ok(&packet[offset..])
@@ -372,7 +419,7 @@ impl OutboundDatagram for SocksUdp {
                 } else {
                     Err(AdapterError::Io(std::io::Error::new(
                         std::io::ErrorKind::WriteZero,
-                        "Partial packet sent"
+                        "Partial packet sent",
                     )))
                 }
             }
@@ -417,16 +464,29 @@ impl Socks5Connector {
 
         tokio::time::timeout(timeout, stream.write_all(&request))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Handshake write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Handshake write timeout",
+                ))
+            })??;
 
         // Step 2: Read server response
         let mut response = [0u8; 2];
         tokio::time::timeout(timeout, stream.read_exact(&mut response))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Handshake read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Handshake read timeout",
+                ))
+            })??;
 
         if response[0] != 0x05 {
-            return Err(AdapterError::Protocol(format!("Invalid SOCKS version: {}", response[0])));
+            return Err(AdapterError::Protocol(format!(
+                "Invalid SOCKS version: {}",
+                response[0]
+            )));
         }
 
         match response[1] {
@@ -438,12 +498,13 @@ impl Socks5Connector {
                 // Username/password authentication required
                 self.socks5_auth(stream, timeout).await
             }
-            0xFF => {
-                Err(AdapterError::Protocol("No acceptable authentication methods".to_string()))
-            }
-            method => {
-                Err(AdapterError::Protocol(format!("Unsupported authentication method: {}", method)))
-            }
+            0xFF => Err(AdapterError::Protocol(
+                "No acceptable authentication methods".to_string(),
+            )),
+            method => Err(AdapterError::Protocol(format!(
+                "Unsupported authentication method: {}",
+                method
+            ))),
         }
     }
 
@@ -465,16 +526,29 @@ impl Socks5Connector {
 
         tokio::time::timeout(timeout, stream.write_all(&request))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Auth write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Auth write timeout",
+                ))
+            })??;
 
         // Read authentication response
         let mut response = [0u8; 2];
         tokio::time::timeout(timeout, stream.read_exact(&mut response))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Auth read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Auth read timeout",
+                ))
+            })??;
 
         if response[0] != 0x01 {
-            return Err(AdapterError::Protocol(format!("Invalid auth version: {}", response[0])));
+            return Err(AdapterError::Protocol(format!(
+                "Invalid auth version: {}",
+                response[0]
+            )));
         }
 
         if response[1] != 0x00 {
@@ -486,7 +560,11 @@ impl Socks5Connector {
 
     /// Perform UDP ASSOCIATE request and return relay address
     #[cfg(feature = "socks-udp")]
-    async fn socks5_udp_associate(&self, stream: &mut TcpStream, timeout: Duration) -> Result<SocketAddr> {
+    async fn socks5_udp_associate(
+        &self,
+        stream: &mut TcpStream,
+        timeout: Duration,
+    ) -> Result<SocketAddr> {
         // Build UDP ASSOCIATE request
         let mut request = vec![0x05, 0x03, 0x00]; // VER, CMD=UDP ASSOCIATE, RSV
 
@@ -498,16 +576,29 @@ impl Socks5Connector {
         // Send request
         tokio::time::timeout(timeout, stream.write_all(&request))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "UDP associate write timeout",
+                ))
+            })??;
 
         // Read response
         let mut response = [0u8; 4];
         tokio::time::timeout(timeout, stream.read_exact(&mut response))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "UDP associate read timeout",
+                ))
+            })??;
 
         if response[0] != 0x05 {
-            return Err(AdapterError::Protocol(format!("Invalid SOCKS version: {}", response[0])));
+            return Err(AdapterError::Protocol(format!(
+                "Invalid SOCKS version: {}",
+                response[0]
+            )));
         }
 
         if response[1] != 0x00 {
@@ -522,7 +613,10 @@ impl Socks5Connector {
                 0x08 => "Address type not supported",
                 _ => "Unknown error",
             };
-            return Err(AdapterError::Protocol(format!("UDP ASSOCIATE failed: {} (code: {})", error_msg, response[1])));
+            return Err(AdapterError::Protocol(format!(
+                "UDP ASSOCIATE failed: {} (code: {})",
+                error_msg, response[1]
+            )));
         }
 
         // Parse the relay address from the response
@@ -533,12 +627,22 @@ impl Socks5Connector {
                 let mut addr_bytes = [0u8; 4];
                 tokio::time::timeout(timeout, stream.read_exact(&mut addr_bytes))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate addr read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate addr read timeout",
+                        ))
+                    })??;
 
                 let mut port_bytes = [0u8; 2];
                 tokio::time::timeout(timeout, stream.read_exact(&mut port_bytes))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate port read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate port read timeout",
+                        ))
+                    })??;
 
                 let port = u16::from_be_bytes(port_bytes);
                 let ip = std::net::Ipv4Addr::from(addr_bytes);
@@ -549,12 +653,22 @@ impl Socks5Connector {
                 let mut addr_bytes = [0u8; 16];
                 tokio::time::timeout(timeout, stream.read_exact(&mut addr_bytes))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate addr read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate addr read timeout",
+                        ))
+                    })??;
 
                 let mut port_bytes = [0u8; 2];
                 tokio::time::timeout(timeout, stream.read_exact(&mut port_bytes))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate port read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate port read timeout",
+                        ))
+                    })??;
 
                 let port = u16::from_be_bytes(port_bytes);
                 let ip = std::net::Ipv6Addr::from(addr_bytes);
@@ -565,34 +679,63 @@ impl Socks5Connector {
                 let mut len_buf = [0u8; 1];
                 tokio::time::timeout(timeout, stream.read_exact(&mut len_buf))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate len read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate len read timeout",
+                        ))
+                    })??;
 
                 let len = len_buf[0] as usize;
                 let mut domain_buf = vec![0u8; len];
                 tokio::time::timeout(timeout, stream.read_exact(&mut domain_buf))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate domain read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate domain read timeout",
+                        ))
+                    })??;
 
                 let mut port_bytes = [0u8; 2];
                 tokio::time::timeout(timeout, stream.read_exact(&mut port_bytes))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "UDP associate port read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "UDP associate port read timeout",
+                        ))
+                    })??;
 
                 let port = u16::from_be_bytes(port_bytes);
                 let domain = String::from_utf8_lossy(&domain_buf).to_string();
 
                 // Try to resolve the domain
-                match tokio::net::lookup_host((domain.clone(), port)).await?.next() {
+                match tokio::net::lookup_host((domain.clone(), port))
+                    .await?
+                    .next()
+                {
                     Some(addr) => Ok(addr),
-                    None => Err(AdapterError::Network(format!("Failed to resolve relay domain: {}", domain))),
+                    None => Err(AdapterError::Network(format!(
+                        "Failed to resolve relay domain: {}",
+                        domain
+                    ))),
                 }
             }
-            _ => Err(AdapterError::Protocol(format!("Invalid address type in UDP ASSOCIATE response: {}", atyp))),
+            _ => Err(AdapterError::Protocol(format!(
+                "Invalid address type in UDP ASSOCIATE response: {}",
+                atyp
+            ))),
         }
     }
 
     /// Send CONNECT request and wait for response
-    async fn socks5_connect(&self, stream: &mut TcpStream, target: &Target, opts: &DialOpts) -> Result<()> {
+    async fn socks5_connect(
+        &self,
+        stream: &mut TcpStream,
+        target: &Target,
+        opts: &DialOpts,
+    ) -> Result<()> {
         // Build CONNECT request
         let mut request = vec![0x05, 0x01, 0x00]; // VER, CMD=CONNECT, RSV
 
@@ -628,11 +771,17 @@ impl Socks5Connector {
                                     }
                                 }
                             } else {
-                                return Err(AdapterError::Network(format!("Failed to resolve {}", target.host)));
+                                return Err(AdapterError::Network(format!(
+                                    "Failed to resolve {}",
+                                    target.host
+                                )));
                             }
                         }
                         Err(e) => {
-                            return Err(AdapterError::Network(format!("DNS resolution failed for {}: {}", target.host, e)));
+                            return Err(AdapterError::Network(format!(
+                                "DNS resolution failed for {}: {}",
+                                target.host, e
+                            )));
                         }
                     }
                 }
@@ -669,16 +818,29 @@ impl Socks5Connector {
         // Send request
         tokio::time::timeout(opts.connect_timeout, stream.write_all(&request))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Connect write timeout",
+                ))
+            })??;
 
         // Read response
         let mut response = [0u8; 4];
         tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut response))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Connect read timeout",
+                ))
+            })??;
 
         if response[0] != 0x05 {
-            return Err(AdapterError::Protocol(format!("Invalid SOCKS version: {}", response[0])));
+            return Err(AdapterError::Protocol(format!(
+                "Invalid SOCKS version: {}",
+                response[0]
+            )));
         }
 
         if response[1] != 0x00 {
@@ -693,7 +855,10 @@ impl Socks5Connector {
                 0x08 => "Address type not supported",
                 _ => "Unknown error",
             };
-            return Err(AdapterError::Protocol(format!("SOCKS connect failed: {} (code: {})", error_msg, response[1])));
+            return Err(AdapterError::Protocol(format!(
+                "SOCKS connect failed: {} (code: {})",
+                error_msg, response[1]
+            )));
         }
 
         // Skip the rest of the response (bound address and port)
@@ -706,27 +871,47 @@ impl Socks5Connector {
                 let mut len_buf = [0u8; 1];
                 tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut len_buf))
                     .await
-                    .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Response read timeout")))??;
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Response read timeout",
+                        ))
+                    })??;
                 len_buf[0] as usize + 2 // domain length + port (2 bytes)
             }
-            _ => return Err(AdapterError::Protocol(format!("Invalid address type: {}", atyp))),
+            _ => {
+                return Err(AdapterError::Protocol(format!(
+                    "Invalid address type: {}",
+                    atyp
+                )))
+            }
         };
 
         let mut skip_buf = vec![0u8; skip_len];
         tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut skip_buf))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Response read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Response read timeout",
+                ))
+            })??;
 
         Ok(())
     }
 
     /// Perform BIND command and wait for second reply indicating an incoming connection
     #[cfg(feature = "socks-bind")]
-    async fn socks5_bind(&self, stream: &mut TcpStream, target: &Target, opts: &DialOpts) -> Result<()> {
+    async fn socks5_bind(
+        &self,
+        stream: &mut TcpStream,
+        target: &Target,
+        opts: &DialOpts,
+    ) -> Result<()> {
         use std::time::Duration;
         // Build BIND request
         let mut request = vec![0x05, 0x02, 0x00]; // VER, CMD=BIND, RSV
-        // Address: allow remote resolution or send IP/domain based on ResolveMode
+                                                  // Address: allow remote resolution or send IP/domain based on ResolveMode
         match opts.resolve_mode {
             ResolveMode::Local => {
                 if let Ok(ip) = target.host.parse::<IpAddr>() {
@@ -761,7 +946,10 @@ impl Socks5Connector {
                             }
                         }
                     } else {
-                        return Err(AdapterError::Network(format!("Failed to resolve {}", target.host)));
+                        return Err(AdapterError::Network(format!(
+                            "Failed to resolve {}",
+                            target.host
+                        )));
                     }
                 }
             }
@@ -792,26 +980,62 @@ impl Socks5Connector {
         // Send BIND request
         tokio::time::timeout(opts.connect_timeout, stream.write_all(&request))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind write timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Bind write timeout",
+                ))
+            })??;
 
         // Read first reply (bind address)
         let mut head = [0u8; 4];
         tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut head))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind read timeout")))??;
-        if head[0] != 0x05 { return Err(AdapterError::Protocol(format!("Invalid SOCKS version: {}", head[0]))); }
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Bind read timeout",
+                ))
+            })??;
+        if head[0] != 0x05 {
+            return Err(AdapterError::Protocol(format!(
+                "Invalid SOCKS version: {}",
+                head[0]
+            )));
+        }
         if head[1] != 0x00 {
-            return Err(AdapterError::Protocol(format!("SOCKS bind failed (code: {})", head[1])));
+            return Err(AdapterError::Protocol(format!(
+                "SOCKS bind failed (code: {})",
+                head[1]
+            )));
         }
         // Skip bound addr in first reply
-        let skip = match head[3] { 0x01 => 6, 0x04 => 18, 0x03 => {
-            let mut l=[0u8;1]; tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut l)).await
-                .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind read timeout")))??;
-            l[0] as usize + 2 }, _ => return Err(AdapterError::Protocol("Invalid ATYP in bind reply".into())) };
+        let skip = match head[3] {
+            0x01 => 6,
+            0x04 => 18,
+            0x03 => {
+                let mut l = [0u8; 1];
+                tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut l))
+                    .await
+                    .map_err(|_| {
+                        AdapterError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Bind read timeout",
+                        ))
+                    })??;
+                l[0] as usize + 2
+            }
+            _ => return Err(AdapterError::Protocol("Invalid ATYP in bind reply".into())),
+        };
         let mut sink = vec![0u8; skip];
         tokio::time::timeout(opts.connect_timeout, stream.read_exact(&mut sink))
             .await
-            .map_err(|_| AdapterError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "Bind read timeout")))??;
+            .map_err(|_| {
+                AdapterError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Bind read timeout",
+                ))
+            })??;
 
         // Wait for second reply (incoming connection accepted). Use a generous timeout (connect_timeout * 2)
         let wait = opts
@@ -822,7 +1046,10 @@ impl Socks5Connector {
             let mut head2 = [0u8; 4];
             stream.read_exact(&mut head2).await?;
             if head2[0] != 0x05 || head2[1] != 0x00 {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "BIND not accepted"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "BIND not accepted",
+                ));
             }
             // Skip addr
             let skip2 = match head2[3] {
@@ -836,7 +1063,9 @@ impl Socks5Connector {
                 _ => 0,
             };
             let mut sink2 = vec![0u8; skip2];
-            if skip2 > 0 { stream.read_exact(&mut sink2).await?; }
+            if skip2 > 0 {
+                stream.read_exact(&mut sink2).await?;
+            }
             Ok::<(), std::io::Error>(())
         })
         .await

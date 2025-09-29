@@ -214,7 +214,9 @@ impl UdpNat {
         for (flow_key, session) in &self.sessions {
             if session.is_expired(self.session_ttl) {
                 expired_keys.push(flow_key.clone());
-                if expired_keys.len() >= limit { break; }
+                if expired_keys.len() >= limit {
+                    break;
+                }
             }
         }
 
@@ -294,7 +296,10 @@ impl UdpNat {
 
         loop {
             // Use infallible constructor to avoid parse().unwrap()
-            let addr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), self.next_port);
+            let addr = SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                self.next_port,
+            );
 
             // Check if port is already in use
             if !self.reverse_map.contains_key(&addr) {

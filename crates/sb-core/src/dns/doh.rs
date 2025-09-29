@@ -1,4 +1,3 @@
-#![cfg(feature = "dns_doh")]
 use anyhow::Result;
 use std::net::IpAddr;
 use std::time::Duration;

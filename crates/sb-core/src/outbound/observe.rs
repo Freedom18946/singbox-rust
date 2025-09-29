@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use super::selector::{Selector, PoolSelector};
+use super::selector::{PoolSelector, Selector};
 
 /// Wrap an async operation, measure its duration, and report observation
 /// to the selector. This is a lightweight helper with zero behavior change

@@ -1,7 +1,6 @@
-#![cfg(feature = "explain")]
 #![cfg_attr(test, allow(dead_code, unused_imports, unused_variables))]
-use std::net::IpAddr;
 use serde::Serialize;
+use std::net::IpAddr;
 
 #[derive(Clone, Debug)]
 pub struct ExplainQuery {
@@ -47,7 +46,9 @@ pub struct ExplainDto {
 
 impl From<ExplainResult> for ExplainDto {
     fn from(result: ExplainResult) -> Self {
-        let chain: Vec<String> = result.steps.iter()
+        let chain: Vec<String> = result
+            .steps
+            .iter()
             .filter(|step| step.matched)
             .map(|step| step.phase.to_string())
             .collect();
@@ -66,7 +67,12 @@ impl From<ExplainResult> for ExplainDto {
 impl ExplainDto {
     /// Create ExplainDto from ExplainResult with destination context
     pub fn from_result_with_dest(result: ExplainResult, dest: &str) -> Self {
-        let chain = result.steps.iter().filter(|s| s.matched).map(|s| s.phase.to_string()).collect();
+        let chain = result
+            .steps
+            .iter()
+            .filter(|s| s.matched)
+            .map(|s| s.phase.to_string())
+            .collect();
         let outbound = derive_outbound(&result);
         let rule_id = calc_rule_id(&result); // sha256 前8位
 

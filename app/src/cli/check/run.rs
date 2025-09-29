@@ -3,11 +3,11 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
 
-use app::util;
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode};
-use sb_config::validator::v2;
+use app::util;
 use sb_config::compat as cfg_compat;
+use sb_config::validator::v2;
 
 /// Main check function - returns exit code (0 = success, 1 = warnings, 2 = errors)
 pub fn run(args: CheckArgs) -> Result<i32> {
@@ -40,7 +40,12 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         let allow_prefixes: Vec<String> = args
             .allow_unknown
             .as_ref()
-            .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
         for issue_value in v2_issues {
             if let Some(mut converted_issue) = convert_v2_issue(&issue_value) {
@@ -97,9 +102,10 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     validate_basic_config(&raw, &args, &mut issues)?;
 
     // Generate report
-    let ok = (issues.is_empty() || !args.strict) && !issues
-        .iter()
-        .any(|i| matches!(i.kind, super::types::IssueKind::Error));
+    let ok = (issues.is_empty() || !args.strict)
+        && !issues
+            .iter()
+            .any(|i| matches!(i.kind, super::types::IssueKind::Error));
 
     let fingerprint = if args.fingerprint {
         Some(fingerprint_of(&raw))
@@ -134,12 +140,17 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         normalize_json(&mut out_json);
         // stamp schema_version when migrating or missing
         if out_json.get("schema_version").is_none() {
-            if let Some(obj) = out_json.as_object_mut() { obj.insert("schema_version".into(), Value::from(2)); }
+            if let Some(obj) = out_json.as_object_mut() {
+                obj.insert("schema_version".into(), Value::from(2));
+            }
         }
         let text = serde_json::to_string_pretty(&out_json)?;
-        let out = if let Some(o) = &args.out { o.clone() } else { format!("{}.normalized.json", &args.config) };
-        util::write_atomic(&out, text.as_bytes())
-            .with_context(|| format!("write {}", out))?;
+        let out = if let Some(o) = &args.out {
+            o.clone()
+        } else {
+            format!("{}.normalized.json", &args.config)
+        };
+        util::write_atomic(&out, text.as_bytes()).with_context(|| format!("write {}", out))?;
     }
 
     // Output results

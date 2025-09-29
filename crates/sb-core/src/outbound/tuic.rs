@@ -82,7 +82,8 @@ impl TuicOutbound {
         }
 
         // Use platform verifier for TLS roots; ALPN/SNI can be provided on connect.
-        Ok(quinn::ClientConfig::with_platform_verifier())
+        quinn::ClientConfig::try_with_platform_verifier()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
@@ -259,7 +260,7 @@ impl OutboundTcp for TuicOutbound {
             return Err(e.into());
         }
 
-    if let Err(e) = send_stream.finish() {
+        if let Err(e) = send_stream.finish() {
             record_connect_error(
                 crate::outbound::OutboundKind::Direct,
                 OutboundErrorClass::Protocol,
@@ -345,9 +346,7 @@ async fn tuic_quic_connect(
     endpoint.set_default_client_config(config.clone());
 
     // Connect to server
-    let connection = endpoint
-        .connect(server_addr, server_name)?
-        .await?;
+    let connection = endpoint.connect(server_addr, server_name)?.await?;
 
     tracing::debug!("QUIC connection established to {}", server_addr);
     Ok(connection)
@@ -385,7 +384,9 @@ impl tokio::io::AsyncWrite for TuicStream {
 
         match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => std::task::Poll::Ready(Ok(n)),
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            std::task::Poll::Ready(Err(e)) => {
+                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+            }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
@@ -399,7 +400,9 @@ impl tokio::io::AsyncWrite for TuicStream {
 
         match Pin::new(&mut self.send_stream).poll_flush(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            std::task::Poll::Ready(Err(e)) => {
+                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+            }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
@@ -413,7 +416,9 @@ impl tokio::io::AsyncWrite for TuicStream {
 
         match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string()))),
+            std::task::Poll::Ready(Err(e)) => {
+                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+            }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }

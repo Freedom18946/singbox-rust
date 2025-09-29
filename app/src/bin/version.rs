@@ -1,5 +1,5 @@
-use serde_json::json;
 use app::cli::{buildinfo, json as cli_json};
+use serde_json::json;
 
 fn main() {
     // 注意：features 可按需扩展（通过 cfg! 宏与 env 变量）

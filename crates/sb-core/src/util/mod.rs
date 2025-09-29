@@ -5,8 +5,8 @@ use std::time::Duration;
 pub mod env;
 #[cfg(feature = "chaos")]
 pub mod failpoint;
-pub mod token_bucket;
 pub mod fs_atomic;
+pub mod token_bucket;
 
 pub fn secs_opt_to_duration(v: Option<u64>, default: u64) -> Duration {
     Duration::from_secs(v.unwrap_or(default))

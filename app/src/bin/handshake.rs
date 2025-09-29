@@ -5,7 +5,9 @@
 #[cfg(not(feature = "handshake_alpha"))]
 fn main() {
     eprintln!("sb-handshake: built without `--features handshake_alpha` — stub running.");
-    eprintln!("Hint: enable `handshake_alpha` (and the required runtime features) to use this tool.");
+    eprintln!(
+        "Hint: enable `handshake_alpha` (and the required runtime features) to use this tool."
+    );
 }
 
 #[cfg(feature = "handshake_alpha")]
@@ -275,7 +277,10 @@ mod real {
     }
 
     #[cfg(feature = "handshake_alpha")]
-    fn generate_metrics_stream(jsonl_path: &PathBuf, head8_top: usize) -> Result<serde_json::Value> {
+    fn generate_metrics_stream(
+        jsonl_path: &PathBuf,
+        head8_top: usize,
+    ) -> Result<serde_json::Value> {
         use sb_runtime::loopback::Frame;
         use std::io::{BufRead, BufReader};
         let f = std::fs::File::open(jsonl_path)
@@ -300,8 +305,8 @@ mod real {
             if line.is_empty() {
                 continue;
             }
-            let frame: Frame =
-                serde_json::from_str(line).map_err(|e| anyhow!("Failed to parse JSONL line: {}", e))?;
+            let frame: Frame = serde_json::from_str(line)
+                .map_err(|e| anyhow!("Failed to parse JSONL line: {}", e))?;
             frames += 1;
             ts_min = Some(ts_min.map_or(frame.ts_ms, |x| x.min(frame.ts_ms)));
             ts_max = Some(ts_max.map_or(frame.ts_ms, |x| x.max(frame.ts_ms)));
@@ -348,9 +353,10 @@ mod real {
         use sb_runtime::tcp_local::ChaosSpec;
         // 1) 外部文件优先
         if let Some(p) = from {
-            let txt = std::fs::read_to_string(p).map_err(|e| anyhow!("read chaos-from failed: {e}"))?;
-            let v: serde_json::Value =
-                serde_json::from_str(&txt).map_err(|e| anyhow!("parse chaos-from json failed: {e}"))?;
+            let txt =
+                std::fs::read_to_string(p).map_err(|e| anyhow!("read chaos-from failed: {e}"))?;
+            let v: serde_json::Value = serde_json::from_str(&txt)
+                .map_err(|e| anyhow!("parse chaos-from json failed: {e}"))?;
             let rx_xor = v
                 .get("rx_xor")
                 .and_then(|x| x.as_str())
@@ -463,7 +469,8 @@ mod real {
             } => {
                 let hs = proto.make(host, port);
                 let bytes = hs.encode_init(seed);
-                fs::write(&out, &bytes).map_err(|e| anyhow!("write {} failed: {e}", out.display()))?;
+                fs::write(&out, &bytes)
+                    .map_err(|e| anyhow!("write {} failed: {e}", out.display()))?;
                 println!(
                     "HANDSHAKE_OK: proto={:?} bytes={} out='{}'",
                     proto,
@@ -476,7 +483,8 @@ mod real {
                 let hs = proto.make("example.com".into(), 443);
                 let bytes = hs.encode_init(seed);
                 hs.decode_ack(&bytes[..bytes.len().min(32)])?;
-                fs::write(&out, &bytes).map_err(|e| anyhow!("write {} failed: {e}", out.display()))?;
+                fs::write(&out, &bytes)
+                    .map_err(|e| anyhow!("write {} failed: {e}", out.display()))?;
                 println!(
                     "HANDSHAKE_OK: proto={:?} roundtrip bytes={} out='{}'",
                     proto,
@@ -519,7 +527,8 @@ mod real {
                 // 如果指定混淆，仅用于帧回环（encode_init → rx echo 前）
                 if let Some(spec) = obf.as_ref() {
                     // 读取 init bytes，手工回环并写日志（带 obf）
-                    let mut conn = sb_runtime::loopback::LoopConn::with_obfuscator(parse_obf(spec)?);
+                    let mut conn =
+                        sb_runtime::loopback::LoopConn::with_obfuscator(parse_obf(spec)?);
                     let bytes = hs.encode_init(seed);
                     let tx_len = conn.send(&bytes);
                     let echo = conn.recv(bytes.len().min(32));
@@ -757,7 +766,8 @@ mod real {
                 strict,
             } => {
                 let hs = proto.make(host, port);
-                let (frames, errors) = sb_runtime::loopback::replay_decode(hs.as_ref(), &from, strict)?;
+                let (frames, errors) =
+                    sb_runtime::loopback::replay_decode(hs.as_ref(), &from, strict)?;
                 println!(
                     "HS_OK: replay frames={} errors={} path='{}'",
                     frames,
@@ -848,7 +858,8 @@ mod real {
                 rx_xor,
             } => {
                 use sb_runtime::tcp_local::io_local_with_optional_echo;
-                let xor = obf_xor.and_then(|s| u8::from_str_radix(s.trim_start_matches("0x"), 16).ok());
+                let xor =
+                    obf_xor.and_then(|s| u8::from_str_radix(s.trim_start_matches("0x"), 16).ok());
                 // 单线程 runtime 足够
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_io()
@@ -892,16 +903,17 @@ mod real {
                         delay_tx_ms, delay_rx_ms, rx_drop, rx_trim,
                         rx_xor.unwrap_or_else(|| chaos_from.as_ref().map(|_| "file".into()).unwrap_or("-".into())));
                 } else {
-                    let (addr, tx, rx) = rt.block_on(io_local_with_optional_echo(
-                        hs.as_ref(),
-                        port,
+                    let config = sb_runtime::tcp_local::IoLocalConfig {
+                        req_port: port,
                         seed,
-                        &out,
+                        log_path: &out,
                         read_max,
-                        timeout_ms,
+                        to_ms: timeout_ms,
                         spawn_echo,
-                        xor,
-                    ))?;
+                        xor_key: xor,
+                    };
+                    let (addr, tx, rx) =
+                        rt.block_on(io_local_with_optional_echo(hs.as_ref(), config))?;
                     println!(
                         "HS_OK: io_local addr='{}' bytes_tx={} bytes_rx={} out='{}'",
                         addr,
@@ -914,7 +926,6 @@ mod real {
         }
         Ok(())
     }
-
 }
 
 #[cfg(feature = "handshake_alpha")]

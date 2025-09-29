@@ -16,4 +16,3 @@ fn test_missing_required_field_stats_request() {
     let parsed: Result<sb_api::v2ray::simple::SimpleStatsRequest, _> = serde_json::from_str(json);
     assert!(parsed.is_err(), "missing required `name` must be an error");
 }
-

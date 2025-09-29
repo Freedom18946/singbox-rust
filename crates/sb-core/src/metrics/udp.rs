@@ -217,6 +217,8 @@ pub fn register_metrics() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "metrics")]
+    use prometheus::Encoder;
 
     #[test]
     fn upstream_failure_counts_with_class() {

@@ -23,9 +23,12 @@ pub mod protocols {
 #[cfg(feature = "handshake_alpha")]
 pub use handshake::*;
 #[cfg(feature = "handshake_alpha")]
-pub use jsonl::{stream_frames, basic_verify, replay_decode as jsonl_replay_decode};
+pub use jsonl::{basic_verify, replay_decode as jsonl_replay_decode, stream_frames};
 #[cfg(feature = "handshake_alpha")]
-pub use loopback::{LoopConn, FrameDir, Frame, SessionLog, SessionMetrics, run_once, XorObfuscator, replay_decode as loopback_replay_decode};
+pub use loopback::{
+    replay_decode as loopback_replay_decode, run_once, Frame, FrameDir, LoopConn, SessionLog,
+    SessionMetrics, XorObfuscator,
+};
 #[cfg(feature = "handshake_alpha")]
 pub use protocols::*;
 #[cfg(feature = "handshake_alpha")]
@@ -45,8 +48,11 @@ mod disabled {
 #[cfg(feature = "handshake_alpha")]
 pub mod prelude {
     pub use crate::handshake::*;
-    pub use crate::jsonl::{stream_frames, basic_verify, replay_decode as jsonl_replay_decode};
-    pub use crate::loopback::{LoopConn, FrameDir, Frame, SessionLog, SessionMetrics, run_once, XorObfuscator, replay_decode as loopback_replay_decode};
+    pub use crate::jsonl::{basic_verify, replay_decode as jsonl_replay_decode, stream_frames};
+    pub use crate::loopback::{
+        replay_decode as loopback_replay_decode, run_once, Frame, FrameDir, LoopConn, SessionLog,
+        SessionMetrics, XorObfuscator,
+    };
     pub use crate::protocols::*;
     pub use crate::scenario::*;
     #[cfg(feature = "io_local_alpha")]

@@ -1,6 +1,10 @@
 use once_cell::sync::OnceCell;
-use std::{collections::HashMap, time::{Instant, Duration}, sync::Mutex};
 use rand::Rng;
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 /// Clock abstraction for testable time operations
 pub trait Clock: Send + Sync {
@@ -132,13 +136,16 @@ impl HostBreaker {
 
     pub fn check(&mut self, host: &str) -> bool {
         let current_time = now();
-        let stat = self.map.entry(host.to_string()).or_insert_with(|| HostStat {
-            successes: 0,
-            failures: 0,
-            window_start: current_time,
-            state: State::Closed,
-            reopen_count: 0,
-        });
+        let stat = self
+            .map
+            .entry(host.to_string())
+            .or_insert_with(|| HostStat {
+                successes: 0,
+                failures: 0,
+                window_start: current_time,
+                state: State::Closed,
+                reopen_count: 0,
+            });
 
         // Reset window if expired
         if current_time.duration_since(stat.window_start) > self.window {
@@ -154,7 +161,9 @@ impl HostBreaker {
                     false // Circuit is still open, block request
                 } else {
                     // Transition to half-open
-                    stat.state = State::HalfOpen { probes: self.half_open_probes };
+                    stat.state = State::HalfOpen {
+                        probes: self.half_open_probes,
+                    };
                     true // Allow first probe request
                 }
             }
@@ -199,7 +208,7 @@ impl HostBreaker {
                         let new_count = stat.reopen_count + 1;
                         (true, self.calculate_backoff(new_count))
                     }
-                    _ => (false, Duration::from_secs(0))
+                    _ => (false, Duration::from_secs(0)),
                 }
             } else {
                 (false, Duration::from_secs(0))
@@ -215,13 +224,16 @@ impl HostBreaker {
 
         let initial_backoff = self.apply_jitter(self.open_duration);
 
-        let stat = self.map.entry(host.to_string()).or_insert_with(|| HostStat {
-            successes: 0,
-            failures: 0,
-            window_start: current_time,
-            state: State::Closed,
-            reopen_count: 0,
-        });
+        let stat = self
+            .map
+            .entry(host.to_string())
+            .or_insert_with(|| HostStat {
+                successes: 0,
+                failures: 0,
+                window_start: current_time,
+                state: State::Closed,
+                reopen_count: 0,
+            });
 
         stat.failures += 1;
 
@@ -229,7 +241,10 @@ impl HostBreaker {
             State::HalfOpen { .. } => {
                 // Half-open probe failed, go back to OPEN with exponential backoff
                 stat.reopen_count += 1;
-                stat.state = State::Open { until: current_time + jittered_backoff, _backoff: jittered_backoff };
+                stat.state = State::Open {
+                    until: current_time + jittered_backoff,
+                    _backoff: jittered_backoff,
+                };
 
                 // Record reopen metric
                 crate::admin_debug::security_metrics::inc_breaker_reopen();
@@ -244,7 +259,10 @@ impl HostBreaker {
                 if stat.failures >= self.failure_threshold || ratio >= self.failure_ratio {
                     // Trip circuit to OPEN state
                     stat.reopen_count = 1;
-                    stat.state = State::Open { until: current_time + initial_backoff, _backoff: initial_backoff };
+                    stat.state = State::Open {
+                        until: current_time + initial_backoff,
+                        _backoff: initial_backoff,
+                    };
 
                     // Record initial reopen metric
                     crate::admin_debug::security_metrics::inc_breaker_reopen();
@@ -275,32 +293,46 @@ impl HostBreaker {
 
     pub fn stats(&self) -> Vec<(String, u32, u32, bool)> {
         let current_time = now();
-        self.map.iter().map(|(host, stat)| {
-            let is_open = matches!(
-                stat.state,
-                State::Open { until, .. } if current_time < until
-            );
-            (host.clone(), stat.successes, stat.failures, is_open)
-        }).collect()
+        self.map
+            .iter()
+            .map(|(host, stat)| {
+                let is_open = matches!(
+                    stat.state,
+                    State::Open { until, .. } if current_time < until
+                );
+                (host.clone(), stat.successes, stat.failures, is_open)
+            })
+            .collect()
     }
 
     pub fn state_stats(&self) -> Vec<(String, String, u32)> {
         let current_time = now();
-        self.map.iter().map(|(host, stat)| {
-            let state_name = match &stat.state {
-                State::Closed => "closed".to_string(),
-                State::Open { until, .. } => {
-                    if current_time < *until { "open".to_string() } else { "half_open".to_string() }
-                }
-                State::HalfOpen { .. } => "half_open".to_string(),
-            };
-            (host.clone(), state_name, stat.reopen_count)
-        }).collect()
+        self.map
+            .iter()
+            .map(|(host, stat)| {
+                let state_name = match &stat.state {
+                    State::Closed => "closed".to_string(),
+                    State::Open { until, .. } => {
+                        if current_time < *until {
+                            "open".to_string()
+                        } else {
+                            "half_open".to_string()
+                        }
+                    }
+                    State::HalfOpen { .. } => "half_open".to_string(),
+                };
+                (host.clone(), state_name, stat.reopen_count)
+            })
+            .collect()
     }
 
     // Compatibility aliases to ensure method name consistency
-    pub fn mark_fail(&mut self, host: &str) { self.mark_failure(host) }
-    pub fn mark_ok(&mut self, host: &str) { self.mark_success(host) }
+    pub fn mark_fail(&mut self, host: &str) {
+        self.mark_failure(host)
+    }
+    pub fn mark_ok(&mut self, host: &str) {
+        self.mark_success(host)
+    }
 }
 
 static BREAKER: OnceCell<Mutex<HostBreaker>> = OnceCell::new();
@@ -334,7 +366,7 @@ pub fn global() -> &'static Mutex<HostBreaker> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{thread, cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, thread};
 
     /// Controllable test clock for deterministic testing
     pub struct TestClock {
@@ -469,7 +501,10 @@ mod tests {
         assert!(br.check("half-open.com"));
 
         let state_stats = br.state_stats();
-        let stat = state_stats.iter().find(|(h, _, _)| h == "half-open.com").unwrap();
+        let stat = state_stats
+            .iter()
+            .find(|(h, _, _)| h == "half-open.com")
+            .unwrap();
         assert_eq!(stat.1, "closed");
     }
 
@@ -496,7 +531,10 @@ mod tests {
         assert!(!br.check("backoff.com"));
 
         let state_stats = br.state_stats();
-        let stat = state_stats.iter().find(|(h, _, _)| h == "backoff.com").unwrap();
+        let stat = state_stats
+            .iter()
+            .find(|(h, _, _)| h == "backoff.com")
+            .unwrap();
         assert_eq!(stat.1, "open");
         assert_eq!(stat.2, 2); // reopen_count should be 2
     }
@@ -535,7 +573,11 @@ mod tests {
 
         // Should allow exactly 3 probes (half_open_probes)
         for i in 0..3 {
-            assert!(br.check("probe-limit.com"), "Probe {} should be allowed", i + 1);
+            assert!(
+                br.check("probe-limit.com"),
+                "Probe {} should be allowed",
+                i + 1
+            );
         }
 
         // 4th probe should be blocked
@@ -571,13 +613,24 @@ mod tests {
         let jittered = br.apply_jitter(base_duration);
 
         // Should be in the 1200-1300ms range (1000ms * 1.2 to 1000ms * 1.3)
-        assert!(jittered.as_millis() >= 1200, "Jittered duration {} should be >= 1200ms", jittered.as_millis());
-        assert!(jittered.as_millis() <= 1300, "Jittered duration {} should be <= 1300ms", jittered.as_millis());
+        assert!(
+            jittered.as_millis() >= 1200,
+            "Jittered duration {} should be >= 1200ms",
+            jittered.as_millis()
+        );
+        assert!(
+            jittered.as_millis() <= 1300,
+            "Jittered duration {} should be <= 1300ms",
+            jittered.as_millis()
+        );
 
         // Test that base calculation is deterministic (without jitter)
         let backoff1 = br.calculate_backoff(2);
         let backoff2 = br.calculate_backoff(2);
-        assert_eq!(backoff1, backoff2, "Base backoff calculation should be deterministic");
+        assert_eq!(
+            backoff1, backoff2,
+            "Base backoff calculation should be deterministic"
+        );
 
         // Base backoff should be exactly 2000ms (1000ms * 2^1)
         assert_eq!(backoff1.as_millis(), 2000);
@@ -592,13 +645,25 @@ mod tests {
 
         // Should be capped at max_open_duration (without jitter)
         // max = 100ms * 32 = 3200ms
-        assert_eq!(backoff_high.as_millis(), 3200, "Backoff should be capped at max_open_duration");
+        assert_eq!(
+            backoff_high.as_millis(),
+            3200,
+            "Backoff should be capped at max_open_duration"
+        );
 
         // Test with jitter applied
         let jittered_high = br.apply_jitter(backoff_high);
         // With jitter = 3200ms * 1.2 to 3200ms * 1.3 = 3840ms to 4160ms
-        assert!(jittered_high.as_millis() >= 3840, "Jittered backoff should have minimum jitter, got {}ms", jittered_high.as_millis());
-        assert!(jittered_high.as_millis() <= 4160, "Jittered backoff should be capped, got {}ms", jittered_high.as_millis());
+        assert!(
+            jittered_high.as_millis() >= 3840,
+            "Jittered backoff should have minimum jitter, got {}ms",
+            jittered_high.as_millis()
+        );
+        assert!(
+            jittered_high.as_millis() <= 4160,
+            "Jittered backoff should be capped, got {}ms",
+            jittered_high.as_millis()
+        );
     }
 
     #[test]
@@ -628,10 +693,15 @@ mod tests {
 
         // Check state stats for metrics
         let stats = br.state_stats();
-        assert_eq!(stats.len(), 2, "Should have stats for 2 hosts that have been accessed");
+        assert_eq!(
+            stats.len(),
+            2,
+            "Should have stats for 2 hosts that have been accessed"
+        );
 
         // Verify states (order may vary)
-        let state_map: std::collections::HashMap<String, String> = stats.iter()
+        let state_map: std::collections::HashMap<String, String> = stats
+            .iter()
             .map(|(host, state, _)| (host.clone(), state.clone()))
             .collect();
 
@@ -687,7 +757,10 @@ mod tests {
 
         let stats = br.state_stats();
         let state = stats.iter().find(|(h, _, _)| h == host).unwrap();
-        assert_eq!(state.1, "closed", "Circuit should be closed after successful probes");
+        assert_eq!(
+            state.1, "closed",
+            "Circuit should be closed after successful probes"
+        );
     }
 
     #[test]
@@ -713,7 +786,10 @@ mod tests {
 
         let stats2 = br.state_stats();
         let reopen2 = stats2.iter().find(|(h, _, _)| h == host).unwrap().2;
-        assert_eq!(reopen2, 2, "Failed probe should increment reopen_count to 2");
+        assert_eq!(
+            reopen2, 2,
+            "Failed probe should increment reopen_count to 2"
+        );
 
         // Third cycle (need to wait longer due to exponential backoff + jitter)
         clock.advance(Duration::from_millis(200));
@@ -722,6 +798,9 @@ mod tests {
 
         let stats3 = br.state_stats();
         let reopen3 = stats3.iter().find(|(h, _, _)| h == host).unwrap().2;
-        assert_eq!(reopen3, 3, "Third failure should increment reopen_count to 3");
+        assert_eq!(
+            reopen3, 3,
+            "Third failure should increment reopen_count to 3"
+        );
     }
 }

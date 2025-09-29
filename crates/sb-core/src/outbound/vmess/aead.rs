@@ -97,7 +97,9 @@ pub fn validate_uuid(uuid_str: &str) -> anyhow::Result<Uuid> {
 // This preserves key length expectations without pulling an extra crate.
 fn md5_compat(chunks: &[&[u8]]) -> [u8; 16] {
     let mut h = Sha256::new();
-    for c in chunks { h.update(c); }
+    for c in chunks {
+        h.update(c);
+    }
     let out = h.finalize();
     let mut key = [0u8; 16];
     key.copy_from_slice(&out[..16]);

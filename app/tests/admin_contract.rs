@@ -54,9 +54,9 @@ fn admin_reloadable_applyresult_field_order_locked() {
     }
 }
 
+use sb_admin_contract::{ErrorBody, ErrorKind, ResponseEnvelope};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use sb_admin_contract::{ResponseEnvelope, ErrorBody, ErrorKind};
 
 // Test data types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,8 +106,9 @@ fn response_envelope_success_case() {
 
 #[test]
 fn response_envelope_error_case() {
-    let envelope: ResponseEnvelope<()> = ResponseEnvelope::err(ErrorKind::NotFound, "Resource not found")
-        .with_request_id("test-req-002");
+    let envelope: ResponseEnvelope<()> =
+        ResponseEnvelope::err(ErrorKind::NotFound, "Resource not found")
+            .with_request_id("test-req-002");
 
     let json = serde_json::to_string(&envelope).expect("serialize error envelope");
 
@@ -126,8 +127,8 @@ fn response_envelope_error_case() {
 
 #[test]
 fn response_envelope_field_order_locked() {
-    let envelope: ResponseEnvelope<String> = ResponseEnvelope::ok("test".to_string())
-        .with_request_id(Uuid::new_v4().to_string());
+    let envelope: ResponseEnvelope<String> =
+        ResponseEnvelope::ok("test".to_string()).with_request_id(Uuid::new_v4().to_string());
 
     let json = serde_json::to_string(&envelope).expect("serialize envelope");
 
@@ -172,8 +173,7 @@ fn cache_endpoint_contract() {
         size_bytes: 1048576,
     };
 
-    let success_envelope = ResponseEnvelope::ok(cache_data)
-        .with_request_id("cache-stats-001");
+    let success_envelope = ResponseEnvelope::ok(cache_data).with_request_id("cache-stats-001");
 
     let json = serde_json::to_string(&success_envelope).expect("serialize cache stats");
 
@@ -186,15 +186,18 @@ fn cache_endpoint_contract() {
     assert_eq!(parsed["requestId"], "cache-stats-001");
 
     // Test error case for cache endpoint
-    let error_envelope: ResponseEnvelope<CacheStats> = ResponseEnvelope::err(
-        ErrorKind::State,
-        "Cache is in maintenance mode"
-    ).with_request_id("cache-stats-002");
+    let error_envelope: ResponseEnvelope<CacheStats> =
+        ResponseEnvelope::err(ErrorKind::State, "Cache is in maintenance mode")
+            .with_request_id("cache-stats-002");
 
     let error_json = serde_json::to_string(&error_envelope).expect("serialize cache error");
-    let parsed_error: serde_json::Value = serde_json::from_str(&error_json).expect("parse error json");
+    let parsed_error: serde_json::Value =
+        serde_json::from_str(&error_json).expect("parse error json");
     assert_eq!(parsed_error["ok"], false);
-    assert!(parsed_error["error"]["msg"].as_str().unwrap().contains("maintenance mode"));
+    assert!(parsed_error["error"]["msg"]
+        .as_str()
+        .unwrap()
+        .contains("maintenance mode"));
 }
 
 #[test]
@@ -207,8 +210,7 @@ fn breaker_endpoint_contract() {
         next_attempt_time: Some("2024-01-15T10:35:00Z".to_string()),
     };
 
-    let envelope = ResponseEnvelope::ok(breaker_data)
-        .with_request_id("breaker-status-001");
+    let envelope = ResponseEnvelope::ok(breaker_data).with_request_id("breaker-status-001");
 
     let json = serde_json::to_string(&envelope).expect("serialize breaker status");
 
@@ -228,11 +230,12 @@ fn breaker_endpoint_contract() {
         next_attempt_time: None,
     };
 
-    let closed_envelope = ResponseEnvelope::ok(closed_breaker)
-        .with_request_id("breaker-status-002");
+    let closed_envelope =
+        ResponseEnvelope::ok(closed_breaker).with_request_id("breaker-status-002");
 
     let closed_json = serde_json::to_string(&closed_envelope).expect("serialize closed breaker");
-    let parsed_closed: serde_json::Value = serde_json::from_str(&closed_json).expect("parse closed json");
+    let parsed_closed: serde_json::Value =
+        serde_json::from_str(&closed_json).expect("parse closed json");
     assert_eq!(parsed_closed["data"]["state"], "closed");
     assert_eq!(parsed_closed["data"]["failure_count"], 0);
     // Optional fields should be omitted when None
@@ -246,16 +249,18 @@ fn request_id_uniqueness() {
 
     // Generate multiple envelopes and verify unique request IDs
     for i in 0..100 {
-        let envelope: ResponseEnvelope<i32> = ResponseEnvelope::ok(i)
-            .with_request_id(Uuid::new_v4().to_string());
+        let envelope: ResponseEnvelope<i32> =
+            ResponseEnvelope::ok(i).with_request_id(Uuid::new_v4().to_string());
 
         let request_id = envelope.request_id.clone().unwrap();
-        assert!(request_ids.insert(request_id.clone()),
-            "Duplicate request_id: {}", request_id);
+        assert!(
+            request_ids.insert(request_id.clone()),
+            "Duplicate request_id: {}",
+            request_id
+        );
 
         // Verify UUID format (basic check)
         assert_eq!(request_id.len(), 36);
         assert_eq!(request_id.chars().filter(|&c| c == '-').count(), 4);
     }
 }
-

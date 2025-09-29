@@ -5,7 +5,7 @@ use std::net::{Shutdown, TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
 
-use crate::adapter::{Bridge, InboundService, OutboundConnector};
+use crate::adapter::{Bridge, InboundService};
 use crate::log::{self, Level};
 use crate::routing::engine::{Engine, Input};
 

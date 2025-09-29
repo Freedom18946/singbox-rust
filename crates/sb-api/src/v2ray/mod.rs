@@ -21,7 +21,7 @@ pub mod generated {
     //! This module provides the necessary types and traits for V2Ray API
     //! without relying on problematic protobuf generation.
 
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
 
     // Core config types
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -170,9 +170,9 @@ pub mod generated {
     // Service trait modules
     pub mod stats_service_server {
         use super::*;
-        use tonic::{Request, Response, Status};
-        use tonic::body::BoxBody;
         use http_body::Body;
+        use tonic::body::BoxBody;
+        use tonic::{Request, Response, Status};
 
         #[tonic::async_trait]
         pub trait StatsService: Send + Sync + 'static {
@@ -219,16 +219,25 @@ pub mod generated {
             type Error = std::convert::Infallible;
             type Future = tonic::codegen::BoxFuture<Self::Response, Self::Error>;
 
-            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+            fn poll_ready(
+                &mut self,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Result<(), Self::Error>> {
                 std::task::Poll::Ready(Ok(()))
             }
 
-            fn call(&mut self, _req: tonic::codegen::http::Request<tonic::transport::Body>) -> Self::Future {
+            fn call(
+                &mut self,
+                _req: tonic::codegen::http::Request<tonic::transport::Body>,
+            ) -> Self::Future {
                 Box::pin(async move {
                     Ok(tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
-                        .body(BoxBody::new(http_body::Empty::new().map_err(|_| tonic::Status::internal("Empty body error"))))
+                        .body(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))
                         .unwrap())
                 })
             }
@@ -237,9 +246,9 @@ pub mod generated {
 
     pub mod handler_service_server {
         use super::*;
-        use tonic::{Request, Response, Status};
-        use tonic::body::BoxBody;
         use http_body::Body;
+        use tonic::body::BoxBody;
+        use tonic::{Request, Response, Status};
 
         #[tonic::async_trait]
         pub trait HandlerService: Send + Sync + 'static {
@@ -301,16 +310,25 @@ pub mod generated {
             type Error = std::convert::Infallible;
             type Future = tonic::codegen::BoxFuture<Self::Response, Self::Error>;
 
-            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+            fn poll_ready(
+                &mut self,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Result<(), Self::Error>> {
                 std::task::Poll::Ready(Ok(()))
             }
 
-            fn call(&mut self, _req: tonic::codegen::http::Request<tonic::transport::Body>) -> Self::Future {
+            fn call(
+                &mut self,
+                _req: tonic::codegen::http::Request<tonic::transport::Body>,
+            ) -> Self::Future {
                 Box::pin(async move {
                     Ok(tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
-                        .body(BoxBody::new(http_body::Empty::new().map_err(|_| tonic::Status::internal("Empty body error"))))
+                        .body(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))
                         .unwrap())
                 })
             }
@@ -319,14 +337,16 @@ pub mod generated {
 
     pub mod routing_service_server {
         use super::*;
-        use tonic::{Request, Response, Status};
-        use tonic::body::BoxBody;
         use http_body::Body;
         use tokio_stream::Stream;
+        use tonic::body::BoxBody;
+        use tonic::{Request, Response, Status};
 
         #[tonic::async_trait]
         pub trait RoutingService: Send + Sync + 'static {
-            type SubscribeRoutingStatsStream: Stream<Item = Result<RoutingContext, Status>> + Send + 'static;
+            type SubscribeRoutingStatsStream: Stream<Item = Result<RoutingContext, Status>>
+                + Send
+                + 'static;
 
             async fn subscribe_routing_stats(
                 &self,
@@ -366,16 +386,25 @@ pub mod generated {
             type Error = std::convert::Infallible;
             type Future = tonic::codegen::BoxFuture<Self::Response, Self::Error>;
 
-            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+            fn poll_ready(
+                &mut self,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Result<(), Self::Error>> {
                 std::task::Poll::Ready(Ok(()))
             }
 
-            fn call(&mut self, _req: tonic::codegen::http::Request<tonic::transport::Body>) -> Self::Future {
+            fn call(
+                &mut self,
+                _req: tonic::codegen::http::Request<tonic::transport::Body>,
+            ) -> Self::Future {
                 Box::pin(async move {
                     Ok(tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
-                        .body(BoxBody::new(http_body::Empty::new().map_err(|_| tonic::Status::internal("Empty body error"))))
+                        .body(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))
                         .unwrap())
                 })
             }
@@ -384,10 +413,10 @@ pub mod generated {
 
     pub mod logger_service_server {
         use super::*;
-        use tonic::{Request, Response, Status};
-        use tonic::body::BoxBody;
         use http_body::Body;
         use tokio_stream::Stream;
+        use tonic::body::BoxBody;
+        use tonic::{Request, Response, Status};
 
         #[tonic::async_trait]
         pub trait LoggerService: Send + Sync + 'static {
@@ -431,16 +460,25 @@ pub mod generated {
             type Error = std::convert::Infallible;
             type Future = tonic::codegen::BoxFuture<Self::Response, Self::Error>;
 
-            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+            fn poll_ready(
+                &mut self,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Result<(), Self::Error>> {
                 std::task::Poll::Ready(Ok(()))
             }
 
-            fn call(&mut self, _req: tonic::codegen::http::Request<tonic::transport::Body>) -> Self::Future {
+            fn call(
+                &mut self,
+                _req: tonic::codegen::http::Request<tonic::transport::Body>,
+            ) -> Self::Future {
                 Box::pin(async move {
                     Ok(tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
-                        .body(BoxBody::new(http_body::Empty::new().map_err(|_| tonic::Status::internal("Empty body error"))))
+                        .body(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))
                         .unwrap())
                 })
             }

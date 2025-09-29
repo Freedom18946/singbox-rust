@@ -38,7 +38,13 @@ impl CompiledRule {
         }
     }
 
-    fn matches(&self, host: Option<&str>, ip: Option<IpAddr>, port: Option<u16>, network: Option<&str>) -> bool {
+    fn matches(
+        &self,
+        host: Option<&str>,
+        ip: Option<IpAddr>,
+        port: Option<u16>,
+        network: Option<&str>,
+    ) -> bool {
         // Network filter
         if !self.networks.is_empty() {
             if let Some(n) = network {
@@ -62,11 +68,7 @@ impl CompiledRule {
         // IP/CIDR filter
         if !self.ipcidr.is_empty() {
             if let Some(ipaddr) = ip {
-                if !self
-                    .ipcidr
-                    .iter()
-                    .any(|n| n.contains(&ipaddr))
-                {
+                if !self.ipcidr.iter().any(|n| n.contains(&ipaddr)) {
                     return false;
                 }
             } else {
@@ -119,7 +121,13 @@ impl Matcher {
     }
 
     /// Decide an outbound name by target attributes
-    pub fn decide(&self, host: Option<&str>, ip: Option<IpAddr>, port: Option<u16>, network: Option<&str>) -> Option<&str> {
+    pub fn decide(
+        &self,
+        host: Option<&str>,
+        ip: Option<IpAddr>,
+        port: Option<u16>,
+        network: Option<&str>,
+    ) -> Option<&str> {
         for r in &self.rules {
             if r.matches(host, ip, port, network) {
                 if let Some(out) = &r.outbound {

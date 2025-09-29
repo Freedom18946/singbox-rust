@@ -6,27 +6,31 @@ use std::io::{Error, ErrorKind};
 #[inline]
 pub fn classify_io(err: &Error) -> &'static str {
     match err.kind() {
-        ErrorKind::ConnectionRefused   => "conn_refused",
-        ErrorKind::TimedOut            => "timeout",
-        ErrorKind::ConnectionReset     => "conn_reset",
-        ErrorKind::BrokenPipe          => "broken_pipe",
-        ErrorKind::AddrInUse           => "addr_in_use",
-        ErrorKind::AddrNotAvailable    => "addr_unavail",
-        ErrorKind::NotFound            => "not_found",
-        ErrorKind::PermissionDenied    => "perm",
-        ErrorKind::Interrupted         => "interrupted",
-        ErrorKind::WouldBlock          => "would_block",
-        ErrorKind::AlreadyExists       => "exists",
-        ErrorKind::InvalidInput        => "invalid_input",
-        ErrorKind::InvalidData         => "invalid_data",
-        ErrorKind::UnexpectedEof       => "unexpected_eof",
-        ErrorKind::WriteZero           => "write_zero",
+        ErrorKind::ConnectionRefused => "conn_refused",
+        ErrorKind::TimedOut => "timeout",
+        ErrorKind::ConnectionReset => "conn_reset",
+        ErrorKind::BrokenPipe => "broken_pipe",
+        ErrorKind::AddrInUse => "addr_in_use",
+        ErrorKind::AddrNotAvailable => "addr_unavail",
+        ErrorKind::NotFound => "not_found",
+        ErrorKind::PermissionDenied => "perm",
+        ErrorKind::Interrupted => "interrupted",
+        ErrorKind::WouldBlock => "would_block",
+        ErrorKind::AlreadyExists => "exists",
+        ErrorKind::InvalidInput => "invalid_input",
+        ErrorKind::InvalidData => "invalid_data",
+        ErrorKind::UnexpectedEof => "unexpected_eof",
+        ErrorKind::WriteZero => "write_zero",
         _ => {
             #[cfg(unix)]
             {
                 if let Some(code) = err.raw_os_error() {
-                    if code == 101 { return "net_unreach"; }  // ENETUNREACH
-                    if code == 113 { return "host_unreach"; } // EHOSTUNREACH
+                    if code == 101 {
+                        return "net_unreach";
+                    } // ENETUNREACH
+                    if code == 113 {
+                        return "host_unreach";
+                    } // EHOSTUNREACH
                 }
             }
             "other"

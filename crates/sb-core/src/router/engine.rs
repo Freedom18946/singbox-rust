@@ -93,12 +93,10 @@ impl RouterHandle {
             if use_cache {
                 Some(Mutex::new((
                     0u64,
-                    lru::LruCache::new(
-                        std::num::NonZeroUsize::new(cap).unwrap_or_else(|| {
-                            // SAFETY: 1024 is a non-zero constant; constructing NonZeroUsize is sound.
-                            unsafe { std::num::NonZeroUsize::new_unchecked(1024) }
-                        }),
-                    ),
+                    lru::LruCache::new(std::num::NonZeroUsize::new(cap).unwrap_or_else(|| {
+                        // SAFETY: 1024 is a non-zero constant; constructing NonZeroUsize is sound.
+                        unsafe { std::num::NonZeroUsize::new_unchecked(1024) }
+                    })),
                 )))
             } else {
                 None
@@ -1072,7 +1070,6 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
         shared_index()
             .read()
             .unwrap_or_else(|e| {
-                #[allow(clippy::print_stderr)]
                 eprintln!("RwLock poisoned; proceeding with inner guard");
                 e.into_inner()
             })
@@ -1157,7 +1154,6 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
             .idx
             .read()
             .unwrap_or_else(|e| {
-                #[allow(clippy::print_stderr)]
                 eprintln!("RwLock poisoned; proceeding with inner guard");
                 e.into_inner()
             })
@@ -1280,9 +1276,8 @@ impl RouterHandle {
     }
 
     /// Get a read lock on the router index for explain functionality
-    pub fn get_index(&self) -> std::sync::RwLockReadGuard<Arc<RouterIndex>> {
+    pub fn get_index(&self) -> std::sync::RwLockReadGuard<'_, Arc<RouterIndex>> {
         self.idx.read().unwrap_or_else(|e| {
-            #[allow(clippy::print_stderr)]
             eprintln!("RwLock poisoned; proceeding with inner guard");
             e.into_inner()
         })

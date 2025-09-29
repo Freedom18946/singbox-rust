@@ -6,14 +6,14 @@
 
 use sb_adapters::{
     outbound::socks5::Socks5Connector,
-    traits::{DialOpts, Target, ResolveMode},
+    traits::{DialOpts, ResolveMode, Target},
     Result,
 };
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::{TcpListener, UdpSocket};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, UdpSocket};
 
 /// Mock SOCKS5 server for testing UDP ASSOCIATE
 struct MockSocks5Server {
@@ -116,14 +116,10 @@ async fn test_socks5_udp_associate() -> Result<()> {
 
         // Start mock server tasks
         let server_clone = server.clone();
-        let tcp_task = tokio::spawn(async move {
-            server_clone.handle_udp_associate().await
-        });
+        let tcp_task = tokio::spawn(async move { server_clone.handle_udp_associate().await });
 
         let server_clone = server.clone();
-        let udp_task = tokio::spawn(async move {
-            server_clone.echo_udp_packets().await
-        });
+        let udp_task = tokio::spawn(async move { server_clone.echo_udp_packets().await });
 
         // Give server a moment to start
         tokio::time::sleep(Duration::from_millis(10)).await;

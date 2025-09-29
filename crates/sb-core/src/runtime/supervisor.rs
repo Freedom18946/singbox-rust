@@ -141,7 +141,12 @@ impl Supervisor {
             }
         });
 
-        Ok(Self { tx, handle, state, cancel })
+        Ok(Self {
+            tx,
+            handle,
+            state,
+            cancel,
+        })
     }
 
     /// Start supervisor with initial configuration (router feature disabled)
@@ -190,7 +195,12 @@ impl Supervisor {
             }
         });
 
-        Ok(Self { tx, handle, state, cancel })
+        Ok(Self {
+            tx,
+            handle,
+            state,
+            cancel,
+        })
     }
 
     /// Get a handle to this supervisor for operations that don't require ownership

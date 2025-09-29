@@ -1,10 +1,13 @@
-#![cfg(feature="dev-cli")]
+#![cfg(feature = "dev-cli")]
 use crate::cli::{buildinfo, fs_scan, health};
 use clap::Parser;
 use serde::Serialize;
 
 #[derive(Parser, Debug)]
-#[command(name="report", about="Emit structured JSON progress receipt for rust kernel migration")]
+#[command(
+    name = "report",
+    about = "Emit structured JSON progress receipt for rust kernel migration"
+)]
 pub struct Args {
     /// workspace root (default: current directory)
     #[arg(long)]
@@ -27,7 +30,11 @@ pub struct Receipt<'a> {
 fn fetch_admin_health() -> Option<serde_json::Value> {
     // 轻量方案：用系统 curl 抓取，避免在 report 二进制额外引入 reqwest 依赖
     let url = std::env::var("SB_ADMIN_URL").ok()?;
-    let out = std::process::Command::new("curl").arg("-s").arg(format!("{url}/__health")).output().ok()?;
+    let out = std::process::Command::new("curl")
+        .arg("-s")
+        .arg(format!("{url}/__health"))
+        .output()
+        .ok()?;
     serde_json::from_slice(&out.stdout).ok()
 }
 
@@ -43,18 +50,50 @@ pub fn main(args: Args) -> anyhow::Result<()> {
     ];
     // 把热点文件清单注入 hints，便于你复制到 PR
     if !repo.metrics.error_json.text_plain_files.is_empty() {
-        dyn_hints.push(format!("P1-hotspots (text/plain): {:?}",
-            repo.metrics.error_json.text_plain_files.iter().map(|o| &o.path).collect::<Vec<_>>()));
+        dyn_hints.push(format!(
+            "P1-hotspots (text/plain): {:?}",
+            repo.metrics
+                .error_json
+                .text_plain_files
+                .iter()
+                .map(|o| &o.path)
+                .collect::<Vec<_>>()
+        ));
     }
-    if !repo.metrics.analyze_dispatch.build_single_patch_files.is_empty() {
-        dyn_hints.push(format!("P2-hotspots (build_single_patch): {:?}",
-            repo.metrics.analyze_dispatch.build_single_patch_files.iter().map(|o| &o.path).collect::<Vec<_>>()));
+    if !repo
+        .metrics
+        .analyze_dispatch
+        .build_single_patch_files
+        .is_empty()
+    {
+        dyn_hints.push(format!(
+            "P2-hotspots (build_single_patch): {:?}",
+            repo.metrics
+                .analyze_dispatch
+                .build_single_patch_files
+                .iter()
+                .map(|o| &o.path)
+                .collect::<Vec<_>>()
+        ));
     }
     let health = if args.with_health {
-        Some(health::probe_from_portfile(std::env::var_os("SB_ADMIN_PORTFILE").as_deref().map(|s| s.as_ref()), 1500))
-    } else { None };
+        Some(health::probe_from_portfile(
+            std::env::var_os("SB_ADMIN_PORTFILE")
+                .as_deref()
+                .map(|s| s.as_ref()),
+            1500,
+        ))
+    } else {
+        None
+    };
     let hints_boxed: Vec<&str> = dyn_hints.iter().map(|s| s.as_str()).collect();
-    let receipt = Receipt { ok: true, build, repo, hints: &hints_boxed, health };
+    let receipt = Receipt {
+        ok: true,
+        build,
+        repo,
+        hints: &hints_boxed,
+        health,
+    };
 
     // Convert to serde_json::Value to allow dynamic modification
     let mut payload = serde_json::to_value(&receipt)?;

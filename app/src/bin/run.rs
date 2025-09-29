@@ -88,21 +88,29 @@ async fn main() -> Result<()> {
             "debug" => {
                 #[cfg(feature = "admin_debug")]
                 {
-                    let socket_addr: std::net::SocketAddr = addr.parse()
+                    let socket_addr: std::net::SocketAddr = addr
+                        .parse()
                         .map_err(|e| anyhow::anyhow!("Invalid admin listen address: {}", e))?;
 
                     let tls_conf = app::admin_debug::http_server::TlsConf::from_env();
                     let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
 
-                    let tls_opt = if tls_conf.enabled { Some(tls_conf) } else { None };
+                    let tls_opt = if tls_conf.enabled {
+                        Some(tls_conf)
+                    } else {
+                        None
+                    };
 
-                    app::admin_debug::http_server::spawn(socket_addr, tls_opt, auth_conf)
-                        .map_err(|e| anyhow::anyhow!("Failed to start admin debug server: {}", e))?;
+                    app::admin_debug::http_server::spawn(socket_addr, tls_opt, auth_conf).map_err(
+                        |e| anyhow::anyhow!("Failed to start admin debug server: {}", e),
+                    )?;
                     tracing::info!(addr = %socket_addr, impl = "debug", "Started admin debug server");
                 }
                 #[cfg(not(feature = "admin_debug"))]
                 {
-                    return Err(anyhow::anyhow!("admin_debug feature not enabled, cannot use --admin-impl=debug"));
+                    return Err(anyhow::anyhow!(
+                        "admin_debug feature not enabled, cannot use --admin-impl=debug"
+                    ));
                 }
             }
             "core" => {
@@ -124,7 +132,10 @@ async fn main() -> Result<()> {
                 tracing::info!(addr = %addr, impl = "core", "Started core admin server");
             }
             _ => {
-                return Err(anyhow::anyhow!("Invalid --admin-impl value: '{}'. Must be 'core' or 'debug'", admin_impl));
+                return Err(anyhow::anyhow!(
+                    "Invalid --admin-impl value: '{}'. Must be 'core' or 'debug'",
+                    admin_impl
+                ));
             }
         }
     }

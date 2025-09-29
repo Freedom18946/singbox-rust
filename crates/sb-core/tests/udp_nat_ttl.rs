@@ -3,9 +3,9 @@
 //! These tests use tokio::time::pause/advance to control time deterministically
 //! and test TTL-based eviction behavior without relying on real-time delays.
 
-use std::time::Duration;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use tokio::time::{pause, advance, resume};
+use std::time::Duration;
+use tokio::time::{advance, pause, resume};
 
 use sb_core::net::udp_nat_core::UdpNat;
 
@@ -143,7 +143,9 @@ async fn test_ttl_batch_eviction_limit() {
 
     // Create 10 sessions
     for i in 0..10 {
-        let _ = nat.create_mapping(test_addr(1000 + i), test_addr(2000 + i)).unwrap();
+        let _ = nat
+            .create_mapping(test_addr(1000 + i), test_addr(2000 + i))
+            .unwrap();
     }
     assert_eq!(nat.session_count(), 10);
 

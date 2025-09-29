@@ -1,6 +1,6 @@
 use once_cell::sync::OnceCell;
-use std::sync::Mutex;
 use std::collections::VecDeque;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_AUDIT_ENTRIES: usize = 100;
@@ -43,11 +43,7 @@ pub fn log(entry: AuditEntry) {
 pub fn recent(n: usize) -> Vec<AuditEntry> {
     let log = get_log();
     if let Ok(queue) = log.lock() {
-        queue.iter()
-            .rev()
-            .take(n)
-            .cloned()
-            .collect()
+        queue.iter().rev().take(n).cloned().collect()
     } else {
         Vec::new()
     }

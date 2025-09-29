@@ -72,7 +72,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
             .config_path
             .clone()
             .context("--check 需要指定 --config <path>")?;
-#[cfg(feature = "dev-cli")]
+        #[cfg(feature = "dev-cli")]
         {
             match crate::config_loader::check_only(&cfg_path) {
                 Ok((ib, ob, rules)) => {

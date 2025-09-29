@@ -8,4 +8,3 @@ fn dialerror_maps_to_sberror_kinds() {
     let se2: sb_core::error::SbError = e2.into();
     assert_eq!(se2.kind(), "Other");
 }
-

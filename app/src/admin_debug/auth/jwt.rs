@@ -8,18 +8,18 @@
 //! - Algorithm allowlist security
 //! - Fallback to cached JWKS on fetch failures
 
-use super::{AuthProvider, AuthError};
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
-use std::sync::Arc;
+use super::{AuthError, AuthProvider};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use parking_lot::RwLock;
 use serde::Deserialize;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 #[cfg(feature = "jwt")]
 use jsonwebtoken::{
-    decode, decode_header, DecodingKey, Validation, Algorithm,
-    TokenData, errors::ErrorKind as JwtErrorKind
+    decode, decode_header, errors::ErrorKind as JwtErrorKind, Algorithm, DecodingKey, TokenData,
+    Validation,
 };
 
 #[cfg(feature = "jwt")]
@@ -52,10 +52,13 @@ impl JwtAlgorithm {
             "RS256" => Ok(Self::RS256),
             "ES256" => Ok(Self::ES256),
             "HS256" => Ok(Self::HS256),
-            "NONE" | "NULL" | "" => {
-                Err(AuthError::invalid("Algorithm 'none' is not allowed for security reasons"))
-            }
-            other => Err(AuthError::invalid(format!("Unsupported JWT algorithm: {}", other))),
+            "NONE" | "NULL" | "" => Err(AuthError::invalid(
+                "Algorithm 'none' is not allowed for security reasons",
+            )),
+            other => Err(AuthError::invalid(format!(
+                "Unsupported JWT algorithm: {}",
+                other
+            ))),
         }
     }
 
@@ -120,9 +123,10 @@ impl CachedJwks {
 
     /// Find a key by kid
     fn find_key(&self, kid: &str) -> Option<&JsonWebKey> {
-        self.jwks.keys.iter().find(|key| {
-            key.kid.as_ref().map(|k| k == kid).unwrap_or(false)
-        })
+        self.jwks
+            .keys
+            .iter()
+            .find(|key| key.kid.as_ref().map(|k| k == kid).unwrap_or(false))
     }
 }
 
@@ -189,12 +193,16 @@ impl JwtProvider {
 
         // If HS256 is allowed, require HMAC secret
         if config.algo_allowlist.contains(&JwtAlgorithm::HS256) && config.hmac_secret.is_none() {
-            return Err(AuthError::internal("HMAC secret required when HS256 is allowed"));
+            return Err(AuthError::internal(
+                "HMAC secret required when HS256 is allowed",
+            ));
         }
 
         // Require either file or URL
         if config.jwks_file.is_none() && config.jwks_url.is_none() {
-            return Err(AuthError::internal("Either jwks_file or jwks_url must be specified"));
+            return Err(AuthError::internal(
+                "Either jwks_file or jwks_url must be specified",
+            ));
         }
 
         #[cfg(feature = "jwt")]
@@ -220,15 +228,18 @@ impl JwtProvider {
             }
             Ok(token.to_string())
         } else {
-            Err(AuthError::invalid("JWT token must be provided as Bearer token"))
+            Err(AuthError::invalid(
+                "JWT token must be provided as Bearer token",
+            ))
         }
     }
 
     /// Load JWKS from file
     #[cfg(feature = "jwt")]
     async fn load_jwks_from_file(&self, path: &str) -> Result<JwksResponse, AuthError> {
-        let content = tokio::fs::read_to_string(path).await
-            .map_err(|e| AuthError::internal(format!("Failed to read JWKS file {}: {}", path, e)))?;
+        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+            AuthError::internal(format!("Failed to read JWKS file {}: {}", path, e))
+        })?;
 
         serde_json::from_str(&content)
             .map_err(|e| AuthError::internal(format!("Invalid JWKS format in {}: {}", path, e)))
@@ -237,11 +248,9 @@ impl JwtProvider {
     /// Fetch JWKS from URL
     #[cfg(feature = "jwt")]
     async fn fetch_jwks_from_url(&self, url: &str) -> Result<JwksResponse, AuthError> {
-        let response = self.http_client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| AuthError::internal(format!("Failed to fetch JWKS from {}: {}", url, e)))?;
+        let response = self.http_client.get(url).send().await.map_err(|e| {
+            AuthError::internal(format!("Failed to fetch JWKS from {}: {}", url, e))
+        })?;
 
         if !response.status().is_success() {
             return Err(AuthError::internal(format!(
@@ -251,10 +260,9 @@ impl JwtProvider {
             )));
         }
 
-        let jwks: JwksResponse = response
-            .json()
-            .await
-            .map_err(|e| AuthError::internal(format!("Invalid JWKS response from {}: {}", url, e)))?;
+        let jwks: JwksResponse = response.json().await.map_err(|e| {
+            AuthError::internal(format!("Invalid JWKS response from {}: {}", url, e))
+        })?;
 
         Ok(jwks)
     }
@@ -314,39 +322,62 @@ impl JwtProvider {
 
     /// Convert JWK to DecodingKey
     #[cfg(feature = "jwt")]
-    fn jwk_to_decoding_key(&self, jwk: &JsonWebKey, algorithm: &JwtAlgorithm) -> Result<DecodingKey, AuthError> {
+    fn jwk_to_decoding_key(
+        &self,
+        jwk: &JsonWebKey,
+        algorithm: &JwtAlgorithm,
+    ) -> Result<DecodingKey, AuthError> {
         match algorithm {
             JwtAlgorithm::RS256 => {
-                let n = jwk.n.as_ref().ok_or_else(|| AuthError::internal("Missing 'n' in RSA key"))?;
-                let e = jwk.e.as_ref().ok_or_else(|| AuthError::internal("Missing 'e' in RSA key"))?;
+                let n = jwk
+                    .n
+                    .as_ref()
+                    .ok_or_else(|| AuthError::internal("Missing 'n' in RSA key"))?;
+                let e = jwk
+                    .e
+                    .as_ref()
+                    .ok_or_else(|| AuthError::internal("Missing 'e' in RSA key"))?;
 
                 // Decode base64url
-                let n_bytes = URL_SAFE_NO_PAD.decode(n)
-                    .map_err(|e| AuthError::internal(format!("Invalid base64 in RSA modulus: {}", e)))?;
-                let e_bytes = URL_SAFE_NO_PAD.decode(e)
-                    .map_err(|e| AuthError::internal(format!("Invalid base64 in RSA exponent: {}", e)))?;
+                let n_bytes = URL_SAFE_NO_PAD.decode(n).map_err(|e| {
+                    AuthError::internal(format!("Invalid base64 in RSA modulus: {}", e))
+                })?;
+                let e_bytes = URL_SAFE_NO_PAD.decode(e).map_err(|e| {
+                    AuthError::internal(format!("Invalid base64 in RSA exponent: {}", e))
+                })?;
 
                 // Build RSA public key
                 let public_key = rsa::RsaPublicKey::new(
                     rsa::BigUint::from_bytes_be(&n_bytes),
                     rsa::BigUint::from_bytes_be(&e_bytes),
-                ).map_err(|e| AuthError::internal(format!("Invalid RSA key: {}", e)))?;
+                )
+                .map_err(|e| AuthError::internal(format!("Invalid RSA key: {}", e)))?;
 
-                let pem = public_key.to_pkcs1_pem(pkcs1::LineEnding::LF)
+                let pem = public_key
+                    .to_pkcs1_pem(pkcs1::LineEnding::LF)
                     .map_err(|e| AuthError::internal(format!("Failed to encode RSA key: {}", e)))?;
 
-                DecodingKey::from_rsa_pem(pem.as_bytes())
-                    .map_err(|e| AuthError::internal(format!("Failed to create RSA decoding key: {}", e)))
+                DecodingKey::from_rsa_pem(pem.as_bytes()).map_err(|e| {
+                    AuthError::internal(format!("Failed to create RSA decoding key: {}", e))
+                })
             }
             JwtAlgorithm::ES256 => {
-                let x = jwk.x.as_ref().ok_or_else(|| AuthError::internal("Missing 'x' in EC key"))?;
-                let y = jwk.y.as_ref().ok_or_else(|| AuthError::internal("Missing 'y' in EC key"))?;
+                let x = jwk
+                    .x
+                    .as_ref()
+                    .ok_or_else(|| AuthError::internal("Missing 'x' in EC key"))?;
+                let y = jwk
+                    .y
+                    .as_ref()
+                    .ok_or_else(|| AuthError::internal("Missing 'y' in EC key"))?;
 
                 // Decode base64url
-                let x_bytes = URL_SAFE_NO_PAD.decode(x)
-                    .map_err(|e| AuthError::internal(format!("Invalid base64 in EC x coordinate: {}", e)))?;
-                let y_bytes = URL_SAFE_NO_PAD.decode(y)
-                    .map_err(|e| AuthError::internal(format!("Invalid base64 in EC y coordinate: {}", e)))?;
+                let x_bytes = URL_SAFE_NO_PAD.decode(x).map_err(|e| {
+                    AuthError::internal(format!("Invalid base64 in EC x coordinate: {}", e))
+                })?;
+                let y_bytes = URL_SAFE_NO_PAD.decode(y).map_err(|e| {
+                    AuthError::internal(format!("Invalid base64 in EC y coordinate: {}", e))
+                })?;
 
                 // Build P-256 public key
                 if x_bytes.len() != 32 || y_bytes.len() != 32 {
@@ -371,15 +402,19 @@ impl JwtProvider {
                     return Err(AuthError::internal("Invalid EC key"));
                 };
 
-                let pem = public_key.to_public_key_pem(pkcs8::LineEnding::LF)
+                let pem = public_key
+                    .to_public_key_pem(pkcs8::LineEnding::LF)
                     .map_err(|e| AuthError::internal(format!("Failed to encode EC key: {}", e)))?;
 
-                DecodingKey::from_ec_pem(pem.as_bytes())
-                    .map_err(|e| AuthError::internal(format!("Failed to create EC decoding key: {}", e)))
+                DecodingKey::from_ec_pem(pem.as_bytes()).map_err(|e| {
+                    AuthError::internal(format!("Failed to create EC decoding key: {}", e))
+                })
             }
             JwtAlgorithm::HS256 => {
-                let secret = self.config.hmac_secret.as_ref()
-                    .ok_or_else(|| AuthError::internal("HMAC secret not configured for HS256"))?;
+                let secret =
+                    self.config.hmac_secret.as_ref().ok_or_else(|| {
+                        AuthError::internal("HMAC secret not configured for HS256")
+                    })?;
                 Ok(DecodingKey::from_secret(secret.as_bytes()))
             }
         }
@@ -389,15 +424,17 @@ impl JwtProvider {
     #[cfg(feature = "jwt")]
     async fn verify_token(&self, token: &str) -> Result<(), AuthError> {
         // Decode header to get algorithm and kid
-        let header = decode_header(token)
-            .map_err(|_| AuthError::invalid("Invalid JWT header"))?;
+        let header = decode_header(token).map_err(|_| AuthError::invalid("Invalid JWT header"))?;
 
         // Check algorithm allowlist
         let alg_str = format!("{:?}", header.alg);
         let algorithm = JwtAlgorithm::from_str(&alg_str)?;
 
         if !self.config.algo_allowlist.contains(&algorithm) {
-            return Err(AuthError::invalid(format!("Algorithm {} not allowed", alg_str)));
+            return Err(AuthError::invalid(format!(
+                "Algorithm {} not allowed",
+                alg_str
+            )));
         }
 
         // Setup validation
@@ -410,24 +447,30 @@ impl JwtProvider {
         let decoding_key = match algorithm {
             JwtAlgorithm::HS256 => {
                 // Use HMAC secret directly
-                self.jwk_to_decoding_key(&JsonWebKey {
-                    kty: "oct".to_string(),
-                    kid: None,
-                    alg: None,
-                    n: None,
-                    e: None,
-                    crv: None,
-                    x: None,
-                    y: None,
-                }, &algorithm)?
+                self.jwk_to_decoding_key(
+                    &JsonWebKey {
+                        kty: "oct".to_string(),
+                        kid: None,
+                        alg: None,
+                        n: None,
+                        e: None,
+                        crv: None,
+                        x: None,
+                        y: None,
+                    },
+                    &algorithm,
+                )?
             }
             JwtAlgorithm::RS256 | JwtAlgorithm::ES256 => {
                 // Need to find key from JWKS
-                let kid = header.kid.ok_or_else(|| AuthError::invalid("Missing 'kid' in JWT header"))?;
+                let kid = header
+                    .kid
+                    .ok_or_else(|| AuthError::invalid("Missing 'kid' in JWT header"))?;
 
                 let jwks = self.get_jwks().await?;
-                let jwk = jwks.find_key(&kid)
-                    .ok_or_else(|| AuthError::invalid(format!("Key '{}' not found in JWKS", kid)))?;
+                let jwk = jwks.find_key(&kid).ok_or_else(|| {
+                    AuthError::invalid(format!("Key '{}' not found in JWKS", kid))
+                })?;
 
                 self.jwk_to_decoding_key(jwk, &algorithm)?
             }
@@ -436,16 +479,18 @@ impl JwtProvider {
         // Verify token
         let _token_data: TokenData<serde_json::Value> = decode(token, &decoding_key, &validation)
             .map_err(|e| match &e.kind() {
-                JwtErrorKind::ExpiredSignature => AuthError::invalid("JWT token has expired"),
-                JwtErrorKind::ImmatureSignature => AuthError::invalid("JWT token is not yet valid"),
-                JwtErrorKind::InvalidSignature => AuthError::invalid("JWT signature verification failed"),
-                JwtErrorKind::InvalidToken => AuthError::invalid("JWT token is malformed"),
-                _ => {
-                    // Log internal errors but don't expose details
-                    tracing::error!("JWT verification error: {}", e);
-                    AuthError::invalid("JWT token verification failed")
-                }
-            })?;
+            JwtErrorKind::ExpiredSignature => AuthError::invalid("JWT token has expired"),
+            JwtErrorKind::ImmatureSignature => AuthError::invalid("JWT token is not yet valid"),
+            JwtErrorKind::InvalidSignature => {
+                AuthError::invalid("JWT signature verification failed")
+            }
+            JwtErrorKind::InvalidToken => AuthError::invalid("JWT token is malformed"),
+            _ => {
+                // Log internal errors but don't expose details
+                tracing::error!("JWT verification error: {}", e);
+                AuthError::invalid("JWT token verification failed")
+            }
+        })?;
 
         Ok(())
     }
@@ -453,14 +498,17 @@ impl JwtProvider {
     /// Verify JWT token (fallback when JWT feature is disabled)
     #[cfg(not(feature = "jwt"))]
     async fn verify_token(&self, _token: &str) -> Result<(), AuthError> {
-        Err(AuthError::internal("JWT support not compiled (feature 'jwt' required)"))
+        Err(AuthError::internal(
+            "JWT support not compiled (feature 'jwt' required)",
+        ))
     }
 }
 
 impl AuthProvider for JwtProvider {
     fn check(&self, headers: &HashMap<String, String>, _path: &str) -> Result<(), AuthError> {
-        let auth_header = headers.get("authorization")
-            .ok_or_else(|| AuthError::missing("Authorization header required for JWT authentication"))?;
+        let auth_header = headers.get("authorization").ok_or_else(|| {
+            AuthError::missing("Authorization header required for JWT authentication")
+        })?;
 
         let token = self.extract_token(auth_header.trim())?;
 
@@ -478,12 +526,24 @@ mod tests {
 
     #[test]
     fn test_jwt_algorithm_parsing() {
-        assert_eq!(JwtAlgorithm::from_str("RS256").unwrap(), JwtAlgorithm::RS256);
-        assert_eq!(JwtAlgorithm::from_str("ES256").unwrap(), JwtAlgorithm::ES256);
-        assert_eq!(JwtAlgorithm::from_str("HS256").unwrap(), JwtAlgorithm::HS256);
+        assert_eq!(
+            JwtAlgorithm::from_str("RS256").unwrap(),
+            JwtAlgorithm::RS256
+        );
+        assert_eq!(
+            JwtAlgorithm::from_str("ES256").unwrap(),
+            JwtAlgorithm::ES256
+        );
+        assert_eq!(
+            JwtAlgorithm::from_str("HS256").unwrap(),
+            JwtAlgorithm::HS256
+        );
 
         // Case insensitive
-        assert_eq!(JwtAlgorithm::from_str("rs256").unwrap(), JwtAlgorithm::RS256);
+        assert_eq!(
+            JwtAlgorithm::from_str("rs256").unwrap(),
+            JwtAlgorithm::RS256
+        );
 
         // Reject unsafe algorithms
         assert!(JwtAlgorithm::from_str("none").is_err());

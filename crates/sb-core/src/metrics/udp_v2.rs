@@ -30,8 +30,9 @@ pub fn register_udp_nat_metrics() -> UdpNatMetrics {
     .expect("Failed to create udp_nat_gen_mismatch_total counter");
     let bytes_in = IntCounter::with_opts(Opts::new("udp_flow_bytes_in_total", "UDP flow bytes in"))
         .expect("Failed to create udp_flow_bytes_in_total counter");
-    let bytes_out = IntCounter::with_opts(Opts::new("udp_flow_bytes_out_total", "UDP flow bytes out"))
-        .expect("Failed to create udp_flow_bytes_out_total counter");
+    let bytes_out =
+        IntCounter::with_opts(Opts::new("udp_flow_bytes_out_total", "UDP flow bytes out"))
+            .expect("Failed to create udp_flow_bytes_out_total counter");
     reg.register(Box::new(size_gauge.clone())).ok();
     reg.register(Box::new(heap_len.clone())).ok();
     reg.register(Box::new(evicted_total.clone())).ok();

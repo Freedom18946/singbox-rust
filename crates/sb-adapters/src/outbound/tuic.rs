@@ -25,7 +25,9 @@ impl OutboundConnector for TuicConnector {
     }
 
     async fn start(&self) -> Result<()> {
-        Err(AdapterError::NotImplemented { what: "adapter-tuic" })
+        Err(AdapterError::NotImplemented {
+            what: "adapter-tuic",
+        })
     }
 
     async fn dial(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {

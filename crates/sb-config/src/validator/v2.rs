@@ -76,7 +76,10 @@ pub fn validate_v2(doc: &serde_json::Value) -> Vec<Value> {
         }
     }
     // 1) 根 additionalProperties=false
-    if let (Some(obj), Some(props)) = (doc.as_object(), schema.get("properties").and_then(|p| p.as_object())) {
+    if let (Some(obj), Some(props)) = (
+        doc.as_object(),
+        schema.get("properties").and_then(|p| p.as_object()),
+    ) {
         for k in obj.keys() {
             if !props.contains_key(k) {
                 issues.push(emit_issue(
@@ -162,23 +165,23 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 sniff: i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false),
                 udp: i.get("udp").and_then(|v| v.as_bool()).unwrap_or(false),
                 basic_auth: i.get("basicAuth").map(|a| Credentials {
-                        username: a
-                            .get("username")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        password: a
-                            .get("password")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        username_env: a
-                            .get("username_env")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        password_env: a
-                            .get("password_env")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                    }),
+                    username: a
+                        .get("username")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    password: a
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    username_env: a
+                        .get("username_env")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    password_env: a
+                        .get("password_env")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                }),
             });
         }
     }
@@ -209,23 +212,23 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .collect()
                 }),
                 credentials: o.get("credentials").map(|c| Credentials {
-                        username: c
-                            .get("username")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        password: c
-                            .get("password")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        username_env: c
-                            .get("username_env")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        password_env: c
-                            .get("password_env")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                    }),
+                    username: c
+                        .get("username")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    password: c
+                        .get("password")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    username_env: c
+                        .get("username_env")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    password_env: c
+                        .get("password_env")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                }),
             });
         }
     }

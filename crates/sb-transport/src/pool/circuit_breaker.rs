@@ -4,7 +4,7 @@
 //! to protect against cascading failures in outbound connections.
 
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerDecision};
-use crate::dialer::{Dialer, DialError, IoStream};
+use crate::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
@@ -60,7 +60,10 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                 match self.inner.connect(host, port).await {
                     Ok(stream) => {
                         let duration = start.elapsed();
-                        debug!("Connection to {}:{} succeeded in {:?}", host, port, duration);
+                        debug!(
+                            "Connection to {}:{} succeeded in {:?}",
+                            host, port, duration
+                        );
                         self.circuit_breaker.record_result(true, false);
                         Ok(stream)
                     }
@@ -85,7 +88,8 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                 Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "circuit breaker open - request rejected",
-                ).into())
+                )
+                .into())
             }
         }
     }
@@ -119,12 +123,17 @@ mod tests {
     async fn test_circuit_breaker_allows_successful_requests() {
         let success_dialer = FnDialer::new(|_host, _port| {
             Box::pin(async move {
-                Ok(Box::new(tokio::net::TcpStream::connect("127.0.0.1:80").await.unwrap_or_else(|_| {
-                    // Create a dummy stream for testing
-                    let (client, _server) = tokio::io::duplex(64);
-                    client
-                })) as IoStream)
-            }) as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+                Ok(Box::new(
+                    tokio::net::TcpStream::connect("127.0.0.1:80")
+                        .await
+                        .unwrap_or_else(|_| {
+                            // Create a dummy stream for testing
+                            let (client, _server) = tokio::io::duplex(64);
+                            client
+                        }),
+                ) as IoStream)
+            })
+                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
         });
 
         let cb_dialer = CircuitBreakerDialer::new(
@@ -147,7 +156,8 @@ mod tests {
             Box::pin(async move {
                 count.fetch_add(1, Ordering::Relaxed);
                 Err(DialError::Other("connection failed".to_string()))
-            }) as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+            })
+                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
         });
 
         let config = CircuitBreakerConfig {
@@ -157,11 +167,8 @@ mod tests {
             open_timeout_ms: 100,
         };
 
-        let cb_dialer = CircuitBreakerDialer::new(
-            failing_dialer,
-            "test-outbound".to_string(),
-            config,
-        );
+        let cb_dialer =
+            CircuitBreakerDialer::new(failing_dialer, "test-outbound".to_string(), config);
 
         // First two failures should go through
         let result1 = cb_dialer.connect("example.com", 80).await;
@@ -203,7 +210,8 @@ mod tests {
                     let (client, _server) = tokio::io::duplex(64);
                     Ok(Box::new(client) as IoStream)
                 }
-            }) as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+            })
+                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
         });
 
         let config = CircuitBreakerConfig {
@@ -213,11 +221,8 @@ mod tests {
             open_timeout_ms: 50, // Short timeout for fast test
         };
 
-        let cb_dialer = CircuitBreakerDialer::new(
-            recovering_dialer,
-            "test-outbound".to_string(),
-            config,
-        );
+        let cb_dialer =
+            CircuitBreakerDialer::new(recovering_dialer, "test-outbound".to_string(), config);
 
         // Trigger circuit breaker opening
         cb_dialer.connect("example.com", 80).await.unwrap_err();
@@ -238,9 +243,8 @@ mod tests {
     #[tokio::test]
     async fn test_timeout_error_classification() {
         let timeout_dialer = FnDialer::new(|_host, _port| {
-            Box::pin(async move {
-                Err(DialError::Other("timeout".to_string()))
-            }) as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+            Box::pin(async move { Err(DialError::Other("timeout".to_string())) })
+                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
         });
 
         let cb_dialer = CircuitBreakerDialer::new(

@@ -1,9 +1,12 @@
 // app/src/admin_debug/prefetch.rs
-use std::time::Duration;
-use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
-use once_cell::sync::OnceCell;
-use tokio::sync::{mpsc, mpsc::{Sender, Receiver}};
 use anyhow::Result;
+use once_cell::sync::OnceCell;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
+use tokio::sync::{
+    mpsc,
+    mpsc::{Receiver, Sender},
+};
 use url::Url;
 
 #[derive(Clone, Debug)]
@@ -24,19 +27,31 @@ static HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
 
 fn observe_depth(depth: u64) {
     let mut cur = HIGH_WATERMARK.load(Ordering::Relaxed);
-    while depth > cur && HIGH_WATERMARK
-        .compare_exchange(cur, depth, Ordering::Relaxed, Ordering::Relaxed).is_err()
-    { cur = HIGH_WATERMARK.load(Ordering::Relaxed); }
+    while depth > cur
+        && HIGH_WATERMARK
+            .compare_exchange(cur, depth, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        cur = HIGH_WATERMARK.load(Ordering::Relaxed);
+    }
     crate::admin_debug::security_metrics::set_prefetch_queue_depth(depth);
-    crate::admin_debug::security_metrics::set_prefetch_queue_high_watermark(HIGH_WATERMARK.load(Ordering::Relaxed));
+    crate::admin_debug::security_metrics::set_prefetch_queue_high_watermark(
+        HIGH_WATERMARK.load(Ordering::Relaxed),
+    );
 }
 
 impl Prefetcher {
     pub fn global() -> &'static Prefetcher {
         GLOBAL.get_or_init(|| {
-            let cap = std::env::var("SB_PREFETCH_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(128);
+            let cap = std::env::var("SB_PREFETCH_CAP")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(128);
             let (tx, rx) = mpsc::channel::<PrefetchJob>(cap);
-            let n = std::env::var("SB_PREFETCH_WORKERS").ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+            let n = std::env::var("SB_PREFETCH_WORKERS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(2);
 
             // Create shared receiver using Arc
             let rx = std::sync::Arc::new(tokio::sync::Mutex::new(rx));
@@ -86,7 +101,10 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
 
         let start = std::time::Instant::now();
         let mut ok = false;
-        let mut left = std::env::var("SB_PREFETCH_RETRIES").ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+        let mut left = std::env::var("SB_PREFETCH_RETRIES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2);
         loop {
             match do_prefetch(&job).await {
                 Ok(_) => {
@@ -96,11 +114,14 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
                 }
                 Err(_e) => {
                     crate::admin_debug::security_metrics::prefetch_inc("fail");
-                    if left == 0 { break; }
+                    if left == 0 {
+                        break;
+                    }
                     left -= 1;
                     crate::admin_debug::security_metrics::prefetch_inc("retry");
                     // 简单指数退避（避免与 breaker backoff 相互放大）
-                    let backoff_ms = 50u64.saturating_mul(1 << (job.tries.saturating_sub(left as u8) as u32));
+                    let backoff_ms =
+                        50u64.saturating_mul(1 << (job.tries.saturating_sub(left as u8) as u32));
                     tokio::time::sleep(Duration::from_millis(backoff_ms.min(1000))).await;
                 }
             }
@@ -145,15 +166,20 @@ pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
         deadline_ms: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis() as u64 + 60_000,
-        tries: std::env::var("SB_PREFETCH_RETRIES").ok()
+            .as_millis() as u64
+            + 60_000,
+        tries: std::env::var("SB_PREFETCH_RETRIES")
+            .ok()
             .and_then(|s| s.parse::<u8>().ok())
             .unwrap_or(3),
     };
     Prefetcher::global().enqueue(job)
 }
 
-async fn prefetch_once(url: &str, etag: Option<String>) -> Result<crate::admin_debug::cache::CacheEntry> {
+async fn prefetch_once(
+    url: &str,
+    etag: Option<String>,
+) -> Result<crate::admin_debug::cache::CacheEntry> {
     // 快速校验
     if url.len() > 2048 {
         anyhow::bail!("url too long");
@@ -164,7 +190,8 @@ async fn prefetch_once(url: &str, etag: Option<String>) -> Result<crate::admin_d
     // 真实抓取（含限流/熔断/缓存/ETag）
     #[cfg(feature = "subs_http")]
     {
-        return crate::admin_debug::endpoints::subs::fetch_with_limits_to_cache(url, etag, true).await;
+        return crate::admin_debug::endpoints::subs::fetch_with_limits_to_cache(url, etag, true)
+            .await;
     }
     #[cfg(not(feature = "subs_http"))]
     {
@@ -214,8 +241,18 @@ mod tests {
         let (tx, _rx) = mpsc::channel::<PrefetchJob>(1);
         let pf = Prefetcher { tx };
 
-        assert!(pf.enqueue(PrefetchJob{ url:"http://a".into(), etag:None, deadline_ms:0, tries:1 }));
+        assert!(pf.enqueue(PrefetchJob {
+            url: "http://a".into(),
+            etag: None,
+            deadline_ms: 0,
+            tries: 1
+        }));
         // 第二次应丢弃
-        assert!(!pf.enqueue(PrefetchJob{ url:"http://b".into(), etag:None, deadline_ms:0, tries:1 }));
+        assert!(!pf.enqueue(PrefetchJob {
+            url: "http://b".into(),
+            etag: None,
+            deadline_ms: 0,
+            tries: 1
+        }));
     }
 }

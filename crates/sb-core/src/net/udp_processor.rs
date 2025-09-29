@@ -54,10 +54,22 @@ impl UdpProcessor {
 
     /// Create with env overrides: SB_UDP_TTL_MS, SB_UDP_GC_MS (ms), SB_UDP_NAT_MAX
     pub fn from_env() -> (Self, Duration) {
-        let ttl_ms = std::env::var("SB_UDP_TTL_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(300_000);
-        let max = std::env::var("SB_UDP_NAT_MAX").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(1000);
-        let gc_ms = std::env::var("SB_UDP_GC_MS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(5_000);
-        (Self::new(max, Duration::from_millis(ttl_ms)), Duration::from_millis(gc_ms))
+        let ttl_ms = std::env::var("SB_UDP_TTL_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(300_000);
+        let max = std::env::var("SB_UDP_NAT_MAX")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(1000);
+        let gc_ms = std::env::var("SB_UDP_GC_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(5_000);
+        (
+            Self::new(max, Duration::from_millis(ttl_ms)),
+            Duration::from_millis(gc_ms),
+        )
     }
 
     /// Process inbound UDP packet (from client to server)
@@ -161,7 +173,9 @@ impl UdpProcessor {
                     let removed = nat.evict_expired_batch(256);
                     drop(nat);
                     total += removed;
-                    if removed < 256 { break; }
+                    if removed < 256 {
+                        break;
+                    }
                 }
                 let expired_count = total;
                 if expired_count > 0 {
@@ -354,7 +368,10 @@ mod tests {
     async fn burst_then_gc_falls_back() {
         let processor = UdpProcessor::new(200, Duration::from_millis(5));
         for i in 0..100u16 {
-            let _ = processor.process_inbound(test_packet(2000 + i, 53, b"req")).await.unwrap();
+            let _ = processor
+                .process_inbound(test_packet(2000 + i, 53, b"req"))
+                .await
+                .unwrap();
         }
         tokio::time::sleep(Duration::from_millis(8)).await;
         let start = processor.session_count().await;

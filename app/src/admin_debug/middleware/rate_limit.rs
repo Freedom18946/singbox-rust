@@ -150,8 +150,9 @@ impl RateLimitMiddleware {
     fn create_rate_limit_error(&self, request_id: &str) -> sb_admin_contract::ResponseEnvelope<()> {
         sb_admin_contract::ResponseEnvelope::err(
             sb_admin_contract::ErrorKind::RateLimit,
-            "Rate limit exceeded"
-        ).with_request_id(request_id)
+            "Rate limit exceeded",
+        )
+        .with_request_id(request_id)
     }
 }
 
@@ -161,16 +162,14 @@ impl Middleware for RateLimitMiddleware {
         let mut buckets = self.buckets.lock().map_err(|_| {
             sb_admin_contract::ResponseEnvelope::err(
                 sb_admin_contract::ErrorKind::Internal,
-                "Rate limiter lock error"
-            ).with_request_id(&ctx.request_id)
+                "Rate limiter lock error",
+            )
+            .with_request_id(&ctx.request_id)
         })?;
 
         // Get or create bucket for this key
         let bucket = buckets.entry(key.clone()).or_insert_with(|| {
-            TokenBucket::new(
-                self.config.get_capacity(),
-                self.config.get_refill_rate()
-            )
+            TokenBucket::new(self.config.get_capacity(), self.config.get_refill_rate())
         });
 
         // Try to consume a token
@@ -214,9 +213,7 @@ fn normalize_endpoint(path: &str) -> String {
 /// Create rate limiter from environment configuration
 pub fn from_env() -> Option<RateLimitMiddleware> {
     // Check if rate limiting is enabled
-    let enabled = std::env::var("SB_ADMIN_RATE_LIMIT_ENABLED")
-        .ok()
-        .as_deref() == Some("1");
+    let enabled = std::env::var("SB_ADMIN_RATE_LIMIT_ENABLED").ok().as_deref() == Some("1");
 
     if !enabled {
         return None;
@@ -245,8 +242,7 @@ pub fn from_env() -> Option<RateLimitMiddleware> {
         .ok()
         .and_then(|v| v.parse().ok());
 
-    let mut config = RateLimitConfig::new(max_requests, window_secs)
-        .with_strategy(strategy);
+    let mut config = RateLimitConfig::new(max_requests, window_secs).with_strategy(strategy);
 
     if let Some(burst_capacity) = burst {
         config = config.with_burst(burst_capacity);
@@ -292,7 +288,10 @@ mod tests {
     #[test]
     fn test_normalize_endpoint() {
         assert_eq!(normalize_endpoint("/router/geoip/test"), "/router/geoip");
-        assert_eq!(normalize_endpoint("/router/rules/normalize?param=1"), "/router/rules/normalize");
+        assert_eq!(
+            normalize_endpoint("/router/rules/normalize?param=1"),
+            "/router/rules/normalize"
+        );
         assert_eq!(normalize_endpoint("/subs/clash/config"), "/subs");
         assert_eq!(normalize_endpoint("/__health"), "/__health");
     }
@@ -311,15 +310,10 @@ mod tests {
 
     #[test]
     fn test_middleware_rate_limit_key() {
-        let config = RateLimitConfig::new(10, 60)
-            .with_strategy(RateLimitStrategy::ByPath);
+        let config = RateLimitConfig::new(10, 60).with_strategy(RateLimitStrategy::ByPath);
         let middleware = RateLimitMiddleware::new(config);
 
-        let ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test/path".to_string(),
-            HashMap::new(),
-        );
+        let ctx = RequestContext::new("GET".to_string(), "/test/path".to_string(), HashMap::new());
 
         assert_eq!(middleware.get_rate_limit_key(&ctx), "/test/path");
     }
@@ -329,11 +323,7 @@ mod tests {
         let config = RateLimitConfig::new(2, 60); // Very low limit for testing
         let middleware = RateLimitMiddleware::new(config);
 
-        let mut ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test".to_string(),
-            HashMap::new(),
-        );
+        let mut ctx = RequestContext::new("GET".to_string(), "/test".to_string(), HashMap::new());
 
         // First two requests should pass
         assert!(middleware.process(&mut ctx).is_ok());
@@ -346,7 +336,10 @@ mod tests {
         if let Err(envelope) = result {
             assert!(!envelope.ok);
             if let Some(error) = envelope.error {
-                assert!(matches!(error.kind, sb_admin_contract::ErrorKind::RateLimit));
+                assert!(matches!(
+                    error.kind,
+                    sb_admin_contract::ErrorKind::RateLimit
+                ));
             }
         }
     }

@@ -45,18 +45,28 @@ pub mod listen_addr {
         // Support "[::1]:1080" and "127.0.0.1:1080"
         if s.starts_with('[') {
             // IPv6 bracketed
-            let close = s.find(']').ok_or_else(|| "invalid listen addr: missing ']'".to_string())?;
+            let close = s
+                .find(']')
+                .ok_or_else(|| "invalid listen addr: missing ']'".to_string())?;
             let host = &s[1..close];
             let rest = &s[close + 1..];
-            let port = rest.strip_prefix(':').ok_or_else(|| "invalid listen addr: missing ':port'".to_string())?;
+            let port = rest
+                .strip_prefix(':')
+                .ok_or_else(|| "invalid listen addr: missing ':port'".to_string())?;
             let port: u16 = port.parse().map_err(|_| "invalid port".to_string())?;
-            return Ok(ListenAddr { addr: host.to_string(), port });
+            return Ok(ListenAddr {
+                addr: host.to_string(),
+                port,
+            });
         }
         // IPv4 or hostname with last ':' as separator
         let (host, port_str) = s
             .rsplit_once(':')
             .ok_or_else(|| "invalid listen addr, expect 'host:port'".to_string())?;
         let port: u16 = port_str.parse().map_err(|_| "invalid port".to_string())?;
-        Ok(ListenAddr { addr: host.to_string(), port })
+        Ok(ListenAddr {
+            addr: host.to_string(),
+            port,
+        })
     }
 }

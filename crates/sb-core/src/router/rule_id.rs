@@ -1,4 +1,3 @@
-#![cfg(feature = "explain")]
 use serde::Serialize;
 
 #[derive(Serialize)]

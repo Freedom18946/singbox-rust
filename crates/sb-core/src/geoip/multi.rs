@@ -117,7 +117,9 @@ impl GeoMux {
     pub fn set_provider_enabled(&self, name: &str, enabled: bool) {
         for provider in &self.providers {
             if provider.name == name {
-                provider.enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
+                provider
+                    .enabled
+                    .store(enabled, std::sync::atomic::Ordering::Relaxed);
                 break;
             }
         }
@@ -132,11 +134,7 @@ impl GeoMux {
                 priority: p.priority,
                 enabled: p.enabled.load(std::sync::atomic::Ordering::Relaxed),
                 failure_count: p.failure_count.load(std::sync::atomic::Ordering::Relaxed),
-                last_success: p
-                    .last_success
-                    .lock()
-                    .ok()
-                    .and_then(|g| *g),
+                last_success: p.last_success.lock().ok().and_then(|g| *g),
             })
             .collect()
     }
@@ -172,18 +170,26 @@ impl GeoMux {
 
                 #[cfg(feature = "metrics")]
                 {
-                    crate::metrics::geoip::geoip_provider_success(&provider.name, _duration.as_secs_f64());
+                    crate::metrics::geoip::geoip_provider_success(
+                        &provider.name,
+                        _duration.as_secs_f64(),
+                    );
                 }
 
                 Some(info)
             }
             None => {
                 // Increment failure count
-                provider.failure_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                provider
+                    .failure_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                 #[cfg(feature = "metrics")]
                 {
-                    crate::metrics::geoip::geoip_provider_failure(&provider.name, _duration.as_secs_f64());
+                    crate::metrics::geoip::geoip_provider_failure(
+                        &provider.name,
+                        _duration.as_secs_f64(),
+                    );
                 }
 
                 None
@@ -310,7 +316,10 @@ impl GeoMux {
         if let Some((_, info, _provider_name)) = best_result {
             #[cfg(feature = "metrics")]
             {
-                crate::metrics::geoip::geoip_fastest_provider(&_provider_name, best_duration.as_secs_f64());
+                crate::metrics::geoip::geoip_fastest_provider(
+                    &_provider_name,
+                    best_duration.as_secs_f64(),
+                );
             }
 
             Some(info)
@@ -434,21 +443,25 @@ mod tests {
         let mut mux = GeoMux::new(LookupStrategy::FirstSuccess);
 
         let provider1 = Arc::new(MockProvider::new("test1", Duration::ZERO, None));
-        let provider2 = Arc::new(MockProvider::new("test2", Duration::ZERO, Some(GeoInfo {
-            country_code: Some("US".to_string()),
-            country_name: Some("United States".to_string()),
-            city: None,
-            region: None,
-            continent_code: Some("NA".to_string()),
-            asn: None,
-            organization: None,
-        })));
+        let provider2 = Arc::new(MockProvider::new(
+            "test2",
+            Duration::ZERO,
+            Some(GeoInfo {
+                country_code: Some("US".to_string()),
+                country_name: Some("United States".to_string()),
+                city: None,
+                region: None,
+                continent_code: Some("NA".to_string()),
+                asn: None,
+                organization: None,
+            }),
+        ));
 
         mux.add_provider(provider1, "test1".to_string(), 1, Duration::from_secs(1));
         mux.add_provider(provider2, "test2".to_string(), 2, Duration::from_secs(1));
 
         let ip = "8.8.8.8".parse().unwrap();
-        let result = mux.lookup(ip);
+        let result = <GeoMux as GeoIpProvider>::lookup(&mux, ip);
 
         assert!(result.is_some());
         assert_eq!(result.unwrap().country_code, Some("US".to_string()));

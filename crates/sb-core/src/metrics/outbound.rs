@@ -81,6 +81,7 @@ pub fn record_connect_attempt(_kind: OutboundKind) {
             "outbound connect attempts/results",
             &["kind", "result"],
         );
+        #[allow(deprecated)] // 使用已弃用函数以维护JSON合约兼容性
         cv.with_label_values(&[label_kind(kind), "attempt"]).inc();
     }
 }
@@ -94,6 +95,7 @@ pub fn record_connect_success(_kind: OutboundKind) {
             "outbound connect attempts/results",
             &["kind", "result"],
         );
+        #[allow(deprecated)] // 使用已弃用函数以维护JSON合约兼容性
         cv.with_label_values(&[label_kind(kind), "success"]).inc();
     }
 }
@@ -107,6 +109,7 @@ pub fn record_connect_failure(_kind: OutboundKind) {
             "outbound connect attempts/results",
             &["kind", "result"],
         );
+        #[allow(deprecated)] // 使用已弃用函数以维护JSON合约兼容性
         cv.with_label_values(&[label_kind(kind), "failure"]).inc();
     }
 }
@@ -121,7 +124,9 @@ pub fn record_connect_error(_kind: OutboundKind, _class: OutboundErrorClass) {
             "outbound connect error total",
             &["kind", "class"],
         );
-        cv.with_label_values(&[label_kind(kind), label_err(class)]).inc();
+        #[allow(deprecated)] // 使用已弃用函数以维护JSON合约兼容性
+        cv.with_label_values(&[label_kind(kind), label_err(class)])
+            .inc();
     }
 }
 
@@ -503,6 +508,8 @@ pub fn record_aead_decrypt_total(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "metrics")]
+    use prometheus::Encoder;
 
     #[test]
     fn connect_success_increments_with_kind_label() {

@@ -1,5 +1,6 @@
 //! Clash API server implementation
 
+use crate::managers::{ConnectionManager, DnsResolver};
 use crate::{
     clash::{handlers, websocket},
     error::{ApiError, ApiResult},
@@ -10,9 +11,8 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use std::{net::SocketAddr, sync::Arc};
 use sb_core::{outbound::manager::OutboundManager, routing::router::Router as CoreRouter};
-use crate::managers::{ConnectionManager, DnsResolver};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -34,7 +34,7 @@ pub struct ApiState {
     /// Connection manager for active connection tracking
     pub connection_manager: Option<Arc<ConnectionManager>>,
     /// DNS resolver for cache operations
-    pub dns_resolver: Option<Arc<DnsResolver>>
+    pub dns_resolver: Option<Arc<DnsResolver>>,
 }
 
 impl ApiState {

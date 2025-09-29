@@ -16,7 +16,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tracing::{debug, warn, trace};
+use tracing::{debug, trace, warn};
 
 /// Circuit breaker state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +186,7 @@ pub struct CircuitBreaker {
 impl CircuitBreaker {
     /// Create a new circuit breaker for the given outbound
     pub fn new(outbound_name: String, config: CircuitBreakerConfig) -> Self {
-        let cfg = config.clone();  // 用于 state 初始化的只读快照
+        let cfg = config.clone(); // 用于 state 初始化的只读快照
         let circuit_breaker = Self {
             outbound_name: outbound_name.clone(),
             config,
@@ -217,31 +217,46 @@ impl CircuitBreaker {
 
         match state.state {
             CircuitState::Closed => {
-                trace!("Circuit breaker {} closed - allowing request", self.outbound_name);
+                trace!(
+                    "Circuit breaker {} closed - allowing request",
+                    self.outbound_name
+                );
                 CircuitBreakerDecision::Allow
             }
             CircuitState::Open => {
                 // Check if we should transition to half-open
                 let time_in_open = now.duration_since(state.state_changed_at);
                 if time_in_open >= Duration::from_millis(self.config.open_timeout_ms) {
-                    debug!("Circuit breaker {} transitioning from open to half-open", self.outbound_name);
+                    debug!(
+                        "Circuit breaker {} transitioning from open to half-open",
+                        self.outbound_name
+                    );
                     state.state = CircuitState::HalfOpen;
                     state.state_changed_at = now;
                     state.half_open_calls = 1;
                     self.update_metrics_locked(&mut state, CircuitState::HalfOpen);
                     CircuitBreakerDecision::Allow
                 } else {
-                    trace!("Circuit breaker {} open - rejecting request", self.outbound_name);
+                    trace!(
+                        "Circuit breaker {} open - rejecting request",
+                        self.outbound_name
+                    );
                     CircuitBreakerDecision::Reject
                 }
             }
             CircuitState::HalfOpen => {
                 if state.half_open_calls < self.config.half_open_max_calls {
                     state.half_open_calls += 1;
-                    trace!("Circuit breaker {} half-open - allowing probe request", self.outbound_name);
+                    trace!(
+                        "Circuit breaker {} half-open - allowing probe request",
+                        self.outbound_name
+                    );
                     CircuitBreakerDecision::Allow
                 } else {
-                    trace!("Circuit breaker {} half-open - rejecting request (max probes reached)", self.outbound_name);
+                    trace!(
+                        "Circuit breaker {} half-open - rejecting request (max probes reached)",
+                        self.outbound_name
+                    );
                     CircuitBreakerDecision::Reject
                 }
             }
@@ -273,7 +288,10 @@ impl CircuitBreaker {
         match state.state {
             CircuitState::HalfOpen => {
                 // Success in half-open means we can close the circuit
-                debug!("Circuit breaker {} half-open success - closing circuit", self.outbound_name);
+                debug!(
+                    "Circuit breaker {} half-open success - closing circuit",
+                    self.outbound_name
+                );
                 state.state = CircuitState::Closed;
                 state.state_changed_at = now;
                 state.half_open_calls = 0;
@@ -282,11 +300,17 @@ impl CircuitBreaker {
             }
             CircuitState::Closed => {
                 // Normal success in closed state
-                trace!("Circuit breaker {} success in closed state", self.outbound_name);
+                trace!(
+                    "Circuit breaker {} success in closed state",
+                    self.outbound_name
+                );
             }
             CircuitState::Open => {
                 // This shouldn't happen if allow_request is used correctly
-                warn!("Circuit breaker {} received success in open state", self.outbound_name);
+                warn!(
+                    "Circuit breaker {} received success in open state",
+                    self.outbound_name
+                );
             }
         }
     }
@@ -301,7 +325,10 @@ impl CircuitBreaker {
             state.failure_window.add_failure();
             trace!("Circuit breaker {} recorded failure", self.outbound_name);
         } else {
-            trace!("Circuit breaker {} ignoring failure (timeout/cancel)", self.outbound_name);
+            trace!(
+                "Circuit breaker {} ignoring failure (timeout/cancel)",
+                self.outbound_name
+            );
         }
 
         match state.state {
@@ -323,7 +350,10 @@ impl CircuitBreaker {
             CircuitState::HalfOpen => {
                 if should_count {
                     // Failure in half-open means we go back to open
-                    debug!("Circuit breaker {} half-open failure - returning to open", self.outbound_name);
+                    debug!(
+                        "Circuit breaker {} half-open failure - returning to open",
+                        self.outbound_name
+                    );
                     state.state = CircuitState::Open;
                     state.state_changed_at = now;
                     state.half_open_calls = 0;
@@ -332,7 +362,10 @@ impl CircuitBreaker {
             }
             CircuitState::Open => {
                 // Additional failure in open state
-                trace!("Circuit breaker {} additional failure in open state", self.outbound_name);
+                trace!(
+                    "Circuit breaker {} additional failure in open state",
+                    self.outbound_name
+                );
             }
         }
     }
@@ -372,15 +405,17 @@ impl CircuitBreaker {
 
     /// Update metrics
     fn update_metrics(&self, _state: CircuitState) {
-        #[cfg(feature="metrics")]
+        #[cfg(feature = "metrics")]
         {
             use sb_core::metrics::registry_ext::get_or_register_gauge_vec_f64;
             let gauge = get_or_register_gauge_vec_f64(
                 "circuit_state",
                 "Circuit breaker state",
-                &["outbound", "state"]
+                &["outbound", "state"],
             );
-            gauge.with_label_values(&[self.outbound_name.as_str(), _state.as_str()]).set(1.0);
+            gauge
+                .with_label_values(&[self.outbound_name.as_str(), _state.as_str()])
+                .set(1.0);
         }
     }
 
@@ -400,7 +435,10 @@ impl CircuitBreaker {
             Ok(g) => g,
             Err(_e) => return,
         };
-        debug!("Circuit breaker {} reset to closed state", self.outbound_name);
+        debug!(
+            "Circuit breaker {} reset to closed state",
+            self.outbound_name
+        );
         state.state = CircuitState::Closed;
         state.state_changed_at = Instant::now();
         state.half_open_calls = 0;

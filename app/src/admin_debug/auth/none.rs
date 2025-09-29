@@ -3,7 +3,7 @@
 //! This provider allows all requests to pass through without authentication.
 //! Used when authentication is disabled or as a fallback.
 
-use super::{AuthProvider, AuthError};
+use super::{AuthError, AuthProvider};
 use std::collections::HashMap;
 
 /// Authentication provider that allows all requests

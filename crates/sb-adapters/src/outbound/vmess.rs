@@ -4,11 +4,11 @@
 //! VMess is a stateful protocol used by V2Ray with strong encryption and obfuscation.
 
 use crate::outbound::prelude::*;
+use rand::Rng;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
-use rand::Rng;
 
 /// VMess security levels
 #[derive(Debug, Clone, PartialEq)]
@@ -268,15 +268,23 @@ impl VmessConnector {
         let request_header = self.build_request_header(target);
         let header_data = self.serialize_request_header(&request_header);
 
-        stream.write_all(&header_data).await.map_err(AdapterError::Io)?;
+        stream
+            .write_all(&header_data)
+            .await
+            .map_err(AdapterError::Io)?;
 
         // Read response
         let mut response = [0u8; 4];
-        stream.read_exact(&mut response).await.map_err(AdapterError::Io)?;
+        stream
+            .read_exact(&mut response)
+            .await
+            .map_err(AdapterError::Io)?;
 
         // Verify response authentication
         if response != request_header.response_auth {
-            return Err(AdapterError::Other("VMess authentication failed".to_string()));
+            return Err(AdapterError::Other(
+                "VMess authentication failed".to_string(),
+            ));
         }
 
         Ok(())
@@ -284,13 +292,17 @@ impl VmessConnector {
 
     /// Create connection to VMess server
     async fn create_connection(&self) -> Result<BoxedStream> {
-        let timeout = self.config.timeout.unwrap_or(std::time::Duration::from_secs(30));
+        let timeout = self
+            .config
+            .timeout
+            .unwrap_or(std::time::Duration::from_secs(30));
 
         // Connect with timeout
         let tcp_stream = tokio::time::timeout(
             timeout,
-            tokio::net::TcpStream::connect(self.config.server_addr)
-        ).await
+            tokio::net::TcpStream::connect(self.config.server_addr),
+        )
+        .await
         .map_err(|_| AdapterError::Timeout(timeout))?
         .map_err(AdapterError::Io)?;
 

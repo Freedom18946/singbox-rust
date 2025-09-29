@@ -7,7 +7,7 @@
 //! - Metrics collection
 
 use sb_transport::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
-use sb_transport::dialer::{Dialer, DialError, FnDialer, IoStream};
+use sb_transport::dialer::{DialError, Dialer, FnDialer, IoStream};
 use sb_transport::pool::circuit_breaker::CircuitBreakerDialer;
 use std::env;
 use std::pin::Pin;
@@ -195,11 +195,8 @@ async fn test_dialer_wrapper_integration() {
         open_timeout_ms: 50,
     };
 
-    let cb_dialer = CircuitBreakerDialer::new(
-        recovering_dialer,
-        "test-service".to_string(),
-        config,
-    );
+    let cb_dialer =
+        CircuitBreakerDialer::new(recovering_dialer, "test-service".to_string(), config);
 
     // First three calls should fail and trigger circuit breaker
     for _ in 0..3 {
@@ -277,13 +274,22 @@ async fn test_multiple_half_open_calls_limit() {
     sleep(Duration::from_millis(60)).await;
 
     // Should allow up to max_calls in half-open
-    assert!(matches!(cb.allow_request(), sb_transport::circuit_breaker::CircuitBreakerDecision::Allow));
+    assert!(matches!(
+        cb.allow_request(),
+        sb_transport::circuit_breaker::CircuitBreakerDecision::Allow
+    ));
     assert_eq!(cb.state(), CircuitState::HalfOpen);
 
-    assert!(matches!(cb.allow_request(), sb_transport::circuit_breaker::CircuitBreakerDecision::Allow));
+    assert!(matches!(
+        cb.allow_request(),
+        sb_transport::circuit_breaker::CircuitBreakerDecision::Allow
+    ));
 
     // Third call should be rejected
-    assert!(matches!(cb.allow_request(), sb_transport::circuit_breaker::CircuitBreakerDecision::Reject));
+    assert!(matches!(
+        cb.allow_request(),
+        sb_transport::circuit_breaker::CircuitBreakerDecision::Reject
+    ));
 }
 
 #[tokio::test]

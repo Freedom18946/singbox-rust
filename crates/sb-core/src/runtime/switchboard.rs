@@ -8,7 +8,7 @@ use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Transport type for connection requests
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,9 +150,15 @@ impl OutboundSwitchboard {
         let connector_name = connector.name();
         tokio::spawn(async move {
             if let Err(e) = connector_clone.start().await {
-                error!("Failed to initialize outbound connector '{}': {}", connector_name, e);
+                error!(
+                    "Failed to initialize outbound connector '{}': {}",
+                    connector_name, e
+                );
             } else {
-                info!("Outbound connector '{}' initialized successfully", connector_name);
+                info!(
+                    "Outbound connector '{}' initialized successfully",
+                    connector_name
+                );
             }
         });
 
@@ -173,9 +179,15 @@ impl OutboundSwitchboard {
         let connector_name = connector.name();
         tokio::spawn(async move {
             if let Err(e) = connector_clone.start().await {
-                error!("Failed to initialize default outbound connector '{}': {}", connector_name, e);
+                error!(
+                    "Failed to initialize default outbound connector '{}': {}",
+                    connector_name, e
+                );
             } else {
-                info!("Default outbound connector '{}' initialized successfully", connector_name);
+                info!(
+                    "Default outbound connector '{}' initialized successfully",
+                    connector_name
+                );
             }
         });
 
@@ -243,7 +255,9 @@ impl SwitchboardBuilder {
         // Add direct connector as default
         {
             let direct = DirectConnector;
-            builder.switchboard.set_default(direct)
+            builder
+                .switchboard
+                .set_default(direct)
                 .context("Failed to set direct connector as default")?;
         }
 
@@ -256,12 +270,16 @@ impl SwitchboardBuilder {
                     info!("Successfully registered outbound: {}", name);
                 }
                 Err(e) => {
-                    warn!("Failed to register outbound '{}': {}. Using 501 degraded mode.",
-                          name, e);
+                    warn!(
+                        "Failed to register outbound '{}': {}. Using 501 degraded mode.",
+                        name, e
+                    );
 
                     // Register a 501 degraded connector for this outbound
                     let degraded = DegradedConnector::new(name, e.to_string());
-                    builder.switchboard.register(name.to_string(), degraded)
+                    builder
+                        .switchboard
+                        .register(name.to_string(), degraded)
                         .context("Failed to register degraded connector")?;
                 }
             }
@@ -279,22 +297,27 @@ impl SwitchboardBuilder {
         match ir.ty {
             OutboundType::Http => {
                 // For now, register as degraded - actual implementation will be added later
-                let degraded = DegradedConnector::new(name, "HTTP connector not implemented yet".to_string());
-                self.switchboard.register(name.to_string(), degraded)
+                let degraded =
+                    DegradedConnector::new(name, "HTTP connector not implemented yet".to_string());
+                self.switchboard
+                    .register(name.to_string(), degraded)
                     .map_err(|e| AdapterError::Other(e.into()))?;
             }
 
             OutboundType::Socks => {
                 // For now, register as degraded - actual implementation will be added later
-                let degraded = DegradedConnector::new(name, "SOCKS connector not implemented yet".to_string());
-                self.switchboard.register(name.to_string(), degraded)
+                let degraded =
+                    DegradedConnector::new(name, "SOCKS connector not implemented yet".to_string());
+                self.switchboard
+                    .register(name.to_string(), degraded)
                     .map_err(|e| AdapterError::Other(e.into()))?;
             }
 
             _ => {
-                return Err(AdapterError::UnsupportedProtocol(
-                    format!("Outbound type {:?} not supported or feature not enabled", ir.ty)
-                ));
+                return Err(AdapterError::UnsupportedProtocol(format!(
+                    "Outbound type {:?} not supported or feature not enabled",
+                    ir.ty
+                )));
             }
         }
 
@@ -331,14 +354,11 @@ impl DegradedConnector {
 
 #[async_trait::async_trait]
 impl OutboundConnector for DegradedConnector {
-    async fn dial(
-        &self,
-        _target: Target,
-        _opts: DialOpts,
-    ) -> AdapterResult<BoxedStream> {
-        Err(AdapterError::NotImplemented(
-            format!("Outbound '{}' is in degraded mode: {}", self.name, self.error_reason)
-        ))
+    async fn dial(&self, _target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+        Err(AdapterError::NotImplemented(format!(
+            "Outbound '{}' is in degraded mode: {}",
+            self.name, self.error_reason
+        )))
     }
 
     fn name(&self) -> &'static str {
@@ -352,25 +372,20 @@ struct DirectConnector;
 
 #[async_trait::async_trait]
 impl OutboundConnector for DirectConnector {
-    async fn dial(
-        &self,
-        target: Target,
-        opts: DialOpts,
-    ) -> AdapterResult<BoxedStream> {
+    async fn dial(&self, target: Target, opts: DialOpts) -> AdapterResult<BoxedStream> {
         use tokio::net::TcpStream;
         use tokio::time::timeout;
 
         let addr = format!("{}:{}", target.host, target.port);
 
         let stream = match target.kind {
-            TransportKind::Tcp => {
-                timeout(opts.connect_timeout, TcpStream::connect(&addr)).await
-                    .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
-                    .map_err(AdapterError::Io)?
-            }
+            TransportKind::Tcp => timeout(opts.connect_timeout, TcpStream::connect(&addr))
+                .await
+                .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
+                .map_err(AdapterError::Io)?,
             TransportKind::Udp => {
                 return Err(AdapterError::UnsupportedProtocol(
-                    "DirectConnector does not support UDP".to_string()
+                    "DirectConnector does not support UDP".to_string(),
                 ));
             }
         };

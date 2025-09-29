@@ -35,7 +35,7 @@ fn json_bridge_priority_shortcircuit() {
     // suffix 命中
     assert!(matches!(
         decide_txt(j, Some("www.example.com"), false, Some(80)),
-        Decision::Proxy
+        Decision::Proxy(_)
     ));
     // keyword 拦截
     assert!(matches!(
@@ -66,7 +66,7 @@ fn json_bridge_transport_rules() {
     // TCP port 80 -> proxy
     assert!(matches!(
         decide_txt(j, None, false, Some(80)),
-        Decision::Proxy
+        Decision::Proxy(_)
     ));
     // UDP port 80 -> direct because TransportUdp rule matches first (from port 53 rule)
     // This is the current behavior due to how transport+port rules are split
@@ -94,7 +94,7 @@ fn json_bridge_port_variants() {
     // port range
     assert!(matches!(
         decide_txt(j, None, false, Some(1500)),
-        Decision::Proxy
+        Decision::Proxy(_)
     ));
     // port set
     assert!(matches!(
@@ -142,7 +142,7 @@ fn json_bridge_rule_aliases() {
     ));
     assert!(matches!(
         decide_txt(j, Some("www.example.org"), false, Some(80)),
-        Decision::Proxy
+        Decision::Proxy(_)
     ));
     assert!(matches!(
         decide_txt(j, Some("ads.tracker.com"), false, Some(80)),

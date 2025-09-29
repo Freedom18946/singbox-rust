@@ -1,8 +1,8 @@
 use percent_encoding::percent_decode_str;
+use sb_admin_contract::{ErrorBody, ErrorKind, ResponseEnvelope};
+use serde::Serialize;
 use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
-use serde::Serialize;
-use sb_admin_contract::{ResponseEnvelope, ErrorBody, ErrorKind};
 
 // Request ID generation
 pub fn generate_request_id() -> String {
@@ -23,7 +23,13 @@ pub fn get_or_generate_request_id(headers: &HashMap<String, String>) -> String {
     headers
         .get("x-request-id")
         .or_else(|| headers.get("request-id"))
-        .and_then(|id| if id.trim().is_empty() { None } else { Some(id.clone()) })
+        .and_then(|id| {
+            if id.trim().is_empty() {
+                None
+            } else {
+                Some(id.clone())
+            }
+        })
         .unwrap_or_else(generate_request_id)
 }
 
@@ -70,7 +76,13 @@ pub async fn respond_json_ok(
     body: &impl Serialize,
 ) -> std::io::Result<()> {
     let json = serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec());
-    respond(sock, 200, "application/json", std::str::from_utf8(&json).unwrap()).await
+    respond(
+        sock,
+        200,
+        "application/json",
+        std::str::from_utf8(&json).unwrap(),
+    )
+    .await
 }
 
 // Legacy JsonError for backward compatibility
@@ -86,23 +98,48 @@ pub type AdminError = ErrorBody;
 
 // Convenience constructors for common error types
 pub fn admin_error_io(msg: impl Into<String>) -> AdminError {
-    ErrorBody { kind: ErrorKind::Io, msg: msg.into(), ptr: None, hint: None }
+    ErrorBody {
+        kind: ErrorKind::Io,
+        msg: msg.into(),
+        ptr: None,
+        hint: None,
+    }
 }
 
 pub fn admin_error_parse(msg: impl Into<String>) -> AdminError {
-    ErrorBody { kind: ErrorKind::Decode, msg: msg.into(), ptr: None, hint: None }
+    ErrorBody {
+        kind: ErrorKind::Decode,
+        msg: msg.into(),
+        ptr: None,
+        hint: None,
+    }
 }
 
 pub fn admin_error_not_found(msg: impl Into<String>) -> AdminError {
-    ErrorBody { kind: ErrorKind::NotFound, msg: msg.into(), ptr: None, hint: None }
+    ErrorBody {
+        kind: ErrorKind::NotFound,
+        msg: msg.into(),
+        ptr: None,
+        hint: None,
+    }
 }
 
 pub fn admin_error_conflict(msg: impl Into<String>) -> AdminError {
-    ErrorBody { kind: ErrorKind::Conflict, msg: msg.into(), ptr: None, hint: None }
+    ErrorBody {
+        kind: ErrorKind::Conflict,
+        msg: msg.into(),
+        ptr: None,
+        hint: None,
+    }
 }
 
 pub fn admin_error_state(msg: impl Into<String>) -> AdminError {
-    ErrorBody { kind: ErrorKind::State, msg: msg.into(), ptr: None, hint: None }
+    ErrorBody {
+        kind: ErrorKind::State,
+        msg: msg.into(),
+        ptr: None,
+        hint: None,
+    }
 }
 
 pub fn admin_error_with_ptr(mut error: AdminError, ptr: impl Into<String>) -> AdminError {
@@ -124,7 +161,8 @@ pub async fn respond_json_error(
 ) -> std::io::Result<()> {
     let detail = hint.unwrap_or(msg);
     let payload = JsonError { error: msg, detail };
-    let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{\"error\":\"unknown\",\"detail\":\"unknown\"}".into());
+    let json = serde_json::to_string(&payload)
+        .unwrap_or_else(|_| "{\"error\":\"unknown\",\"detail\":\"unknown\"}".into());
     respond(sock, code, "application/json", &json).await
 }
 
@@ -142,7 +180,9 @@ pub async fn respond_admin_success_with_request_id<T: Serialize>(
     request_id: String,
 ) -> std::io::Result<()> {
     let response = ResponseEnvelope::ok(data).with_request_id(request_id);
-    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"ok":false,"error":{"kind":"io","msg":"serialization failed"}}"#.into());
+    let json = serde_json::to_string(&response).unwrap_or_else(|_| {
+        r#"{"ok":false,"error":{"kind":"io","msg":"serialization failed"}}"#.into()
+    });
     respond(sock, 200, "application/json", &json).await
 }
 
@@ -160,8 +200,11 @@ pub async fn respond_admin_error_with_request_id(
     error: AdminError,
     request_id: String,
 ) -> std::io::Result<()> {
-    let response: AdminResponse<()> = ResponseEnvelope::err(error.kind, error.msg).with_request_id(request_id);
-    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"ok":false,"error":{"kind":"io","msg":"serialization failed"}}"#.into());
+    let response: AdminResponse<()> =
+        ResponseEnvelope::err(error.kind, error.msg).with_request_id(request_id);
+    let json = serde_json::to_string(&response).unwrap_or_else(|_| {
+        r#"{"ok":false,"error":{"kind":"io","msg":"serialization failed"}}"#.into()
+    });
     respond(sock, code, "application/json", &json).await
 }
 
@@ -212,17 +255,27 @@ pub const MAX_INLINE_BYTES: usize = 512 * 1024;
 /// Validate base64 content size before decoding (estimation only)
 pub fn validate_inline_size_estimate(b64_content: &str) -> Result<(), &'static str> {
     let est = estimate_b64_decoded_size(b64_content);
-    if est <= MAX_INLINE_BYTES { Ok(()) } else { Err("inline content too large") }
+    if est <= MAX_INLINE_BYTES {
+        Ok(())
+    } else {
+        Err("inline content too large")
+    }
 }
 
 /// More robust Base64 size estimation (ignores whitespace and considers padding)
 fn estimate_b64_decoded_size(b64: &str) -> usize {
     // 去掉空白
-    let len = b64.as_bytes().iter().filter(|b| !b" \n\r\t".contains(b)).count();
+    let len = b64
+        .as_bytes()
+        .iter()
+        .filter(|b| !b" \n\r\t".contains(b))
+        .count();
     // 非法字符不要在此处拒绝，让解码报错；这里只做 rough estimate
     // Base64 4 chars -> 3 bytes，考虑填充
     let padding = b64.chars().rev().take_while(|&c| c == '=').count();
-    if len == 0 { return 0; }
+    if len == 0 {
+        return 0;
+    }
     // 向下取整的估算，但不小于0
     // 公式： decoded = (len/4)*3 - padding
     let blocks = len / 4;
@@ -320,7 +373,11 @@ pub fn validate_kinds(kinds_str: &str) -> Result<Vec<String>, String> {
         Err(format!(
             "unsupported kinds: {:?}; supported: [{}]",
             invalid,
-            supported.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            supported
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ))
     }
 }

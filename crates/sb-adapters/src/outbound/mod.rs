@@ -12,7 +12,7 @@
 pub mod prelude {
     //! Common imports for all adapter implementations
     pub use crate::error::{AdapterError, Result};
-    pub use crate::traits::{OutboundConnector, Target, TransportKind, BoxedStream, DialOpts};
+    pub use crate::traits::{BoxedStream, DialOpts, OutboundConnector, Target, TransportKind};
     pub use async_trait::async_trait;
     pub use std::fmt::Debug;
     pub use std::time::Duration;
@@ -32,24 +32,24 @@ pub(crate) fn span_dial(adapter: &'static str, target: &crate::traits::Target) -
 }
 
 // Feature-gated adapter modules
-#[cfg(feature = "adapter-http")]
-pub mod http;
-#[cfg(feature = "adapter-socks")]
-pub mod socks5;
-#[cfg(feature = "adapter-shadowsocks")]
-pub mod shadowsocks;
-#[cfg(feature = "adapter-trojan")]
-pub mod trojan;
-#[cfg(feature = "adapter-vmess")]
-pub mod vmess;
-#[cfg(feature = "adapter-vless")]
-pub mod vless;
-#[cfg(feature = "adapter-hysteria2")]
-pub mod hysteria2;
 #[cfg(feature = "adapter-dns")]
 pub mod dns;
+#[cfg(feature = "adapter-http")]
+pub mod http;
+#[cfg(feature = "adapter-hysteria2")]
+pub mod hysteria2;
+#[cfg(feature = "adapter-shadowsocks")]
+pub mod shadowsocks;
+#[cfg(feature = "adapter-socks")]
+pub mod socks5;
+#[cfg(feature = "adapter-trojan")]
+pub mod trojan;
 #[cfg(feature = "tuic")]
 pub mod tuic;
+#[cfg(feature = "adapter-vless")]
+pub mod vless;
+#[cfg(feature = "adapter-vmess")]
+pub mod vmess;
 
 // Re-export traits for easy access
 pub use crate::traits::*;
@@ -63,11 +63,17 @@ impl TryFrom<&sb_config::ir::OutboundIR> for http::HttpProxyConnector {
         use sb_config::ir::OutboundType;
 
         if ir.ty != OutboundType::Http {
-            return Err(crate::error::AdapterError::InvalidConfig("Expected HTTP outbound type"));
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected HTTP outbound type",
+            ));
         }
 
-        let server = ir.server.as_ref()
-            .ok_or(crate::error::AdapterError::InvalidConfig("HTTP proxy server address required"))?;
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "HTTP proxy server address required",
+            ))?;
         let port = ir.port.unwrap_or(8080);
 
         let server_addr = if server.contains(':') {
@@ -96,11 +102,17 @@ impl TryFrom<&sb_config::ir::OutboundIR> for socks5::Socks5Connector {
         use sb_config::ir::OutboundType;
 
         if ir.ty != OutboundType::Socks {
-            return Err(crate::error::AdapterError::InvalidConfig("Expected SOCKS outbound type"));
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected SOCKS outbound type",
+            ));
         }
 
-        let server = ir.server.as_ref()
-            .ok_or(crate::error::AdapterError::InvalidConfig("SOCKS5 proxy server address required"))?;
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "SOCKS5 proxy server address required",
+            ))?;
         let port = ir.port.unwrap_or(1080);
 
         let server_addr = if server.contains(':') {

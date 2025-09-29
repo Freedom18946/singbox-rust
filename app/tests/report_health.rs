@@ -1,10 +1,10 @@
 use assert_cmd::prelude::*;
 use std::fs;
-use std::net::{TcpListener, TcpStream};
 use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use std::process::Command;
 
 fn serve_once(addr: &str) {
     let listener = TcpListener::bind(addr).expect("bind");
@@ -12,7 +12,8 @@ fn serve_once(addr: &str) {
         if let Ok((mut s, _)) = listener.accept() {
             let mut buf = [0u8; 1024];
             let _ = s.read(&mut buf);
-            let body = r#"{"ok":true,"pid":123,"uptime_ms":1,"features":[],"supported_kinds_count":0}"#;
+            let body =
+                r#"{"ok":true,"pid":123,"uptime_ms":1,"features":[],"supported_kinds_count":0}"#;
             let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(), body

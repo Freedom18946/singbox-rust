@@ -104,5 +104,7 @@ impl Bridge {
 }
 
 impl Default for Bridge {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

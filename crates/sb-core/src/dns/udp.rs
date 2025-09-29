@@ -1,4 +1,3 @@
-#![cfg(feature = "dns_udp")]
 //! Minimal UDP DNS client (A/AAAA only) for tests/e2e and local validation.
 use anyhow::Result;
 use rand::{thread_rng, Rng};

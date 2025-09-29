@@ -162,7 +162,10 @@ impl VlessConnector {
 
         // Read response (VLESS response is typically just 1 byte for status)
         let mut response = [0u8; 1];
-        stream.read_exact(&mut response).await.map_err(AdapterError::Io)?;
+        stream
+            .read_exact(&mut response)
+            .await
+            .map_err(AdapterError::Io)?;
 
         // Check response status
         if response[0] != 0x00 {
@@ -182,8 +185,9 @@ impl VlessConnector {
         // Connect to server with timeout
         let tcp_stream = tokio::time::timeout(
             timeout,
-            tokio::net::TcpStream::connect(self.config.server_addr)
-        ).await
+            tokio::net::TcpStream::connect(self.config.server_addr),
+        )
+        .await
         .map_err(|_| AdapterError::Timeout(timeout))?
         .map_err(AdapterError::Io)?;
 

@@ -1,5 +1,4 @@
-#![cfg(feature = "explain")]
-use super::{RouterHandle, ip_in_v4net, ip_in_v6net};
+use super::{ip_in_v4net, ip_in_v6net, RouterHandle};
 use std::net::IpAddr;
 
 pub fn try_override(
@@ -42,10 +41,7 @@ pub fn try_cidr(_r: &RouterHandle, ip: Option<IpAddr>) -> Option<(String, String
             for (cidr, decision) in bucket {
                 if let IpAddr::V4(ipv4) = ip {
                     if ip_in_v4net(ipv4, *cidr) {
-                        return Some((
-                            decision.to_string(),
-                            format!("cidr4_bucket_{}_match", i)
-                        ));
+                        return Some((decision.to_string(), format!("cidr4_bucket_{}_match", i)));
                     }
                 }
             }
@@ -67,10 +63,7 @@ pub fn try_cidr(_r: &RouterHandle, ip: Option<IpAddr>) -> Option<(String, String
             for (cidr, decision) in bucket {
                 if let IpAddr::V6(ipv6) = ip {
                     if ip_in_v6net(ipv6, *cidr) {
-                        return Some((
-                            decision.to_string(),
-                            format!("cidr6_bucket_{}_match", i)
-                        ));
+                        return Some((decision.to_string(), format!("cidr6_bucket_{}_match", i)));
                     }
                 }
             }
@@ -100,14 +93,14 @@ pub fn try_geo(_r: &RouterHandle, ip: Option<IpAddr>) -> Option<(String, String)
         // Use the GeoIP lookup functionality
         if let Some(country_code) = crate::geoip::service()
             .and_then(|s| s.lookup(ip))
-            .and_then(|info| info.country_code) {
-
+            .and_then(|info| info.country_code)
+        {
             // Check if this rule matches the country
             // rule is (String, &'static str) where first element is country, second is decision
             if rule.0 == country_code {
                 return Some((
                     rule.1.to_string(),
-                    format!("geoip_country_{}", country_code)
+                    format!("geoip_country_{}", country_code),
                 ));
             }
         }
@@ -188,7 +181,10 @@ pub fn try_exact(_r: &RouterHandle, sni: &str) -> Option<(String, String)> {
     // Check case-insensitive exact match
     let lowercase = sni.to_lowercase();
     if let Some(decision) = idx.exact.get(&lowercase) {
-        return Some((decision.to_string(), "exact_case_insensitive_match".to_string()));
+        return Some((
+            decision.to_string(),
+            "exact_case_insensitive_match".to_string(),
+        ));
     }
 
     None

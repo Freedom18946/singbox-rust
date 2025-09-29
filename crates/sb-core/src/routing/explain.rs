@@ -68,9 +68,9 @@ impl ExplainEngine {
         // Use safe pointer borrowing instead of Box::leak
         let ir_ptr: *const sb_config::ir::ConfigIR = &*ir;
         // SAFETY:
-                // - 不变量：ir_ptr 指向 Box<ConfigIR> 所有的有效内存
-                // - 并发/别名：Engine 仅保持只读引用，ir 的生命周期绑定到 ExplainEngine
-                // - FFI/平台契约：生命周期管理基于结构体设计保证
+        // - 不变量：ir_ptr 指向 Box<ConfigIR> 所有的有效内存
+        // - 并发/别名：Engine 仅保持只读引用，ir 的生命周期绑定到 ExplainEngine
+        // - FFI/平台契约：生命周期管理基于结构体设计保证
         let engine = unsafe { Engine::new(&*ir_ptr) };
 
         Ok(ExplainEngine { ir, engine })
@@ -119,9 +119,9 @@ mod tests {
         let ir = Box::new(ConfigIR::default());
         let ir_ptr: *const ConfigIR = &*ir;
         // SAFETY:
-                // - 不变量：ir_ptr 指向 Box<ConfigIR> 所有的有效内存
-                // - 并发/别名：测试环境中的独立引用，ir 的生命周期绑定到测试作用域
-                // - FFI/平台契约：生命周期管理基于结构体设计保证
+        // - 不变量：ir_ptr 指向 Box<ConfigIR> 所有的有效内存
+        // - 并发/别名：测试环境中的独立引用，ir 的生命周期绑定到测试作用域
+        // - FFI/平台契约：生命周期管理基于结构体设计保证
         let engine = unsafe { Engine::new(&*ir_ptr) };
         let ee = ExplainEngine { ir, engine };
         let r = ee.explain("example.com:443", false);

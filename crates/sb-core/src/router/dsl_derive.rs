@@ -155,8 +155,8 @@ fn cut<T>(v: &Vec<T>, limit: Option<usize>) -> bool {
 }
 
 /// 为"对比两版 DSL"提供的目标集生成器：
-        // - 若传入 input_targets 非空，优先使用之；
-        // - 否则对两份 DSL 合并派生（limit 为上限）。
+// - 若传入 input_targets 非空，优先使用之；
+// - 否则对两份 DSL 合并派生（limit 为上限）。
 pub fn derive_compare_targets(
     dsl_a: &str,
     dsl_b: &str,

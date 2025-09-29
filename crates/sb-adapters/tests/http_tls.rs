@@ -5,13 +5,13 @@
 
 use sb_adapters::{
     outbound::http::HttpProxyConnector,
-    traits::{DialOpts, OutboundConnector, Target, ResolveMode},
+    traits::{DialOpts, OutboundConnector, ResolveMode, Target},
     Result,
 };
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::net::TcpListener;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
 
 /// Mock HTTP proxy server for testing
 struct MockHttpProxy {
@@ -22,7 +22,10 @@ struct MockHttpProxy {
 impl MockHttpProxy {
     async fn new(with_auth: bool) -> Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
-        Ok(Self { listener, with_auth })
+        Ok(Self {
+            listener,
+            with_auth,
+        })
     }
 
     fn addr(&self) -> SocketAddr {
@@ -94,9 +97,7 @@ async fn test_http_connect_basic() -> Result<()> {
         let proxy_addr = proxy.addr();
 
         // Start proxy server
-        let proxy_task = tokio::spawn(async move {
-            proxy.handle_connect().await
-        });
+        let proxy_task = tokio::spawn(async move { proxy.handle_connect().await });
 
         // Give server a moment to start
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -136,9 +137,7 @@ async fn test_http_connect_with_auth() -> Result<()> {
         let proxy_addr = proxy.addr();
 
         // Start proxy server
-        let proxy_task = tokio::spawn(async move {
-            proxy.handle_connect().await
-        });
+        let proxy_task = tokio::spawn(async move { proxy.handle_connect().await });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
@@ -161,17 +160,12 @@ async fn test_http_connect_with_auth() -> Result<()> {
         // Test with auth (mock server doesn't validate actual credentials)
         let proxy2 = MockHttpProxy::new(true).await?;
         let proxy2_addr = proxy2.addr().to_string();
-        let proxy_task2 = tokio::spawn(async move {
-            proxy2.handle_connect().await
-        });
+        let proxy_task2 = tokio::spawn(async move { proxy2.handle_connect().await });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        let connector_with_auth = HttpProxyConnector::with_auth(
-            proxy2_addr,
-            "testuser",
-            "testpass"
-        );
+        let connector_with_auth =
+            HttpProxyConnector::with_auth(proxy2_addr, "testuser", "testpass");
 
         let result = connector_with_auth.dial(target, opts).await;
         assert!(result.is_ok());

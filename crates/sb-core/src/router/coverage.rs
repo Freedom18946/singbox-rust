@@ -1,4 +1,3 @@
-#![cfg(feature = "rule_coverage")]
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use serde::Serialize;

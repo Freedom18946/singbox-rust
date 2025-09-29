@@ -152,7 +152,16 @@ pub async fn io_local_with_optional_echo(
         target = bound;
     }
     // IoLocal 主流程：允许 Chaos 注入由上层传入（此处保持无注入）
-    let (tx, rx) = io_local_once(proto, target, config.seed, config.log_path, config.read_max, config.to_ms, None).await?;
+    let (tx, rx) = io_local_once(
+        proto,
+        target,
+        config.seed,
+        config.log_path,
+        config.read_max,
+        config.to_ms,
+        None,
+    )
+    .await?;
     Ok((target, tx, rx))
 }
 
@@ -178,10 +187,7 @@ mod tests {
             spawn_echo: false,
             xor_key: None,
         };
-        let (_addr, tx, rx) =
-            io_local_with_optional_echo(&hs, config)
-                .await
-                .unwrap();
+        let (_addr, tx, rx) = io_local_with_optional_echo(&hs, config).await.unwrap();
         assert!(tx > 0 && rx > 0);
     }
 }

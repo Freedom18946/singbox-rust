@@ -5,7 +5,11 @@ use std::fmt::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use crate::constants::{is_label_allowed, BUILD_INFO, UDP_UPSTREAM_MAP_SIZE, UDP_EVICT_TOTAL, UDP_UPSTREAM_FAIL_TOTAL, UDP_TTL_SECONDS, ROUTE_EXPLAIN_TOTAL, PROM_HTTP_FAIL, TCP_CONNECT_DURATION, PROXY_SELECT_SCORE, PROXY_SELECT_TOTAL, OUTBOUND_UP};
+use crate::constants::{
+    is_label_allowed, BUILD_INFO, OUTBOUND_UP, PROM_HTTP_FAIL, PROXY_SELECT_SCORE,
+    PROXY_SELECT_TOTAL, ROUTE_EXPLAIN_TOTAL, TCP_CONNECT_DURATION, UDP_EVICT_TOTAL,
+    UDP_TTL_SECONDS, UDP_UPSTREAM_FAIL_TOTAL, UDP_UPSTREAM_MAP_SIZE,
+};
 
 /// 计数器类型
 #[derive(Default)]
@@ -63,9 +67,11 @@ impl LabeledGauges {
     pub fn snapshot(&self) -> Vec<(Vec<(String, String)>, f64)> {
         self.inner.lock().map_or_else(
             |_| Vec::new(), // Return empty on lock poison (graceful degradation)
-            |g| g.iter()
-                .map(|(k, v)| (k.clone(), f64::from_bits(v.get())))
-                .collect()
+            |g| {
+                g.iter()
+                    .map(|(k, v)| (k.clone(), f64::from_bits(v.get())))
+                    .collect()
+            },
         )
     }
 }
@@ -129,7 +135,7 @@ impl LabeledCounters {
     pub fn snapshot(&self) -> Vec<(Vec<(String, String)>, u64)> {
         self.inner.lock().map_or_else(
             |_| Vec::new(), // Return empty on lock poison (graceful degradation)
-            |g| g.iter().map(|(k, c)| (k.clone(), c.get())).collect()
+            |g| g.iter().map(|(k, c)| (k.clone(), c.get())).collect(),
         )
     }
 }
@@ -205,10 +211,7 @@ pub fn export_prometheus() -> String {
     }
     let _ = writeln!(out, "# TYPE {UDP_TTL_SECONDS} histogram");
     for (bucket, cnt) in r.udp_ttl_seconds.snapshot() {
-        let _ = writeln!(
-            out,
-            "{UDP_TTL_SECONDS}_bucket{{le=\"{bucket}\"}} {cnt}"
-        );
+        let _ = writeln!(out, "{UDP_TTL_SECONDS}_bucket{{le=\"{bucket}\"}} {cnt}");
     }
     let _ = writeln!(out, "# TYPE {ROUTE_EXPLAIN_TOTAL} counter");
     let _ = writeln!(out, "{ROUTE_EXPLAIN_TOTAL} {}", r.route_explain_total.get());

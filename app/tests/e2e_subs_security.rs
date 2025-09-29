@@ -1,11 +1,15 @@
-use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
 use std::time::{Duration, Instant};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+};
 
 async fn serve_once_302_to_loopback(port: u16) {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
     tokio::spawn(async move {
         if let Ok((mut s, _)) = listener.accept().await {
-            let mut buf = [0u8; 1024]; let _ = s.read(&mut buf).await;
+            let mut buf = [0u8; 1024];
+            let _ = s.read(&mut buf).await;
             let resp = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             let _ = s.write_all(resp.as_bytes()).await;
         }
@@ -16,9 +20,14 @@ async fn serve_once_large_body(port: u16, bytes: usize) {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
     tokio::spawn(async move {
         if let Ok((mut s, _)) = listener.accept().await {
-            let mut buf = [0u8; 1024]; let _ = s.read(&mut buf).await;
+            let mut buf = [0u8; 1024];
+            let _ = s.read(&mut buf).await;
             let body = "x".repeat(bytes);
-            let resp = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
             let _ = s.write_all(resp.as_bytes()).await;
         }
     });
@@ -43,7 +52,7 @@ async fn subs_size_limit() {
     {
         std::env::set_var("SB_SUBS_MAX_BYTES", "8192");
         let port = 19092;
-        serve_once_large_body(port, 16*1024).await;
+        serve_once_large_body(port, 16 * 1024).await;
         let url = format!("http://127.0.0.1:{port}/large");
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
         assert!(r.is_err(), "should exceed size limit");
@@ -56,14 +65,20 @@ async fn subs_timeout_limit() {
     #[cfg(feature = "subs_http")]
     {
         std::env::set_var("SB_SUBS_TIMEOUT_MS", "200");
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let port = 19100u16;
         let l = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         tokio::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
-            let mut _buf = [0u8; 1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx").await;
+            let _ = s
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx")
+                .await;
         });
         let url = format!("http://127.0.0.1:{port}/slow");
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
@@ -79,13 +94,21 @@ async fn subs_allowlist_pass() {
         // 直连到 127.0.0.1，但通过 allowlist 放行（仅示例：真实灰度请谨慎配置）
         std::env::set_var("SB_SUBS_PRIVATE_ALLOWLIST", "127.0.0.1");
         let port = 19101u16;
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let l = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         tokio::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
-            let mut _buf = [0u8; 1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             let body = "ok";
-            let resp = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
             let _ = s.write_all(resp.as_bytes()).await;
         });
         let url = format!("http://127.0.0.1:{port}/ok");
@@ -110,19 +133,25 @@ async fn subs_ipv6_block_loopback() {
 async fn subs_redirect_loop() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
-        let a = 19110u16; let b = 19111u16;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+        let a = 19110u16;
+        let b = 19111u16;
         let la = TcpListener::bind(("127.0.0.1", a)).await.unwrap();
         let lb = TcpListener::bind(("127.0.0.1", b)).await.unwrap();
         tokio::spawn(async move {
             let (mut s, _) = la.accept().await.unwrap();
-            let mut _buf = [0u8;1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             let resp = format!("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{}/next\r\nContent-Length: 0\r\n\r\n", b);
             let _ = s.write_all(resp.as_bytes()).await;
         });
         tokio::spawn(async move {
             let (mut s, _) = lb.accept().await.unwrap();
-            let mut _buf = [0u8;1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             let resp = format!("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{}/back\r\nContent-Length: 0\r\n\r\n", a);
             let _ = s.write_all(resp.as_bytes()).await;
         });
@@ -137,14 +166,20 @@ async fn subs_redirect_loop() {
 async fn subs_slow_loris_timeout() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let port = 19112u16;
         let l = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         tokio::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
-            let mut _buf = [0u8; 1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             // 只回 header，不发 body，拖时间
-            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n").await;
+            let _ = s
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n")
+                .await;
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
         });
         std::env::set_var("SB_SUBS_TIMEOUT_MS", "800");
@@ -159,12 +194,16 @@ async fn subs_slow_loris_timeout() {
 async fn subs_mime_allow() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let port = 19113u16;
         let l = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         tokio::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
-            let mut _buf = [0u8; 1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             let body = "{\"ok\":true}";
             let resp = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\n\r\n{}",
@@ -185,21 +224,29 @@ async fn subs_allowlist_cidr_pass() {
     {
         // 直连 127.0.0.1，CIDR 允许 127.0.0.0/8
         std::env::set_var("SB_SUBS_PRIVATE_ALLOWLIST", "127.0.0.0/8");
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let port = 19114u16;
         let l = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         tokio::spawn(async move {
             let (mut s, _) = l.accept().await.unwrap();
-            let mut _buf = [0u8; 1024]; let _ = s.read(&mut _buf).await;
+            let mut _buf = [0u8; 1024];
+            let _ = s.read(&mut _buf).await;
             let body = "ok";
-            let resp = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
             let _ = s.write_all(resp.as_bytes()).await;
         });
         let url = format!("http://127.0.0.1:{}/ok", port);
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
         assert!(r.is_ok());
     }
-}// === Package A: Observability Enhancement Tests ===
+} // === Package A: Observability Enhancement Tests ===
 
 #[tokio::test]
 async fn metrics_endpoint_prometheus_format() {
@@ -210,7 +257,9 @@ async fn metrics_endpoint_prometheus_format() {
         let mut cursor = Cursor::new(&mut buf);
 
         // Call the metrics handler
-        app::admin_debug::endpoints::metrics::handle("/__metrics", &mut cursor).await.unwrap();
+        app::admin_debug::endpoints::metrics::handle("/__metrics", &mut cursor)
+            .await
+            .unwrap();
         let output = String::from_utf8(buf).unwrap();
 
         // Verify Prometheus format
@@ -231,7 +280,7 @@ async fn security_metrics_error_ringbuffer() {
             app::admin_debug::security_metrics::set_last_error_with_url(
                 app::admin_debug::security_metrics::ErrorKind::Other,
                 &format!("http://example{}.com", i),
-                format!("test error {}", i)
+                format!("test error {}", i),
             );
         }
 
@@ -270,7 +319,11 @@ async fn subs_rate_limiting_concurrency() {
                         tokio::time::sleep(Duration::from_millis(500)).await;
 
                         let body = "slow response";
-                        let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                            body.len(),
+                            body
+                        );
                         let _ = stream.write_all(response.as_bytes()).await;
                     });
                 }
@@ -300,7 +353,10 @@ async fn subs_rate_limiting_concurrency() {
         // With concurrency limit of 2, requests should be serialized
         assert!(elapsed > Duration::from_millis(800)); // At least 2 batches of 500ms each
 
-        let successes = results.iter().filter(|r| r.as_ref().unwrap().is_ok()).count();
+        let successes = results
+            .iter()
+            .filter(|r| r.as_ref().unwrap().is_ok())
+            .count();
         assert!(successes >= 2); // At least some should succeed
     }
 }
@@ -309,7 +365,10 @@ async fn subs_rate_limiting_concurrency() {
 async fn subs_mime_denylist() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let port = 19121u16;
         let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
 
@@ -328,14 +387,21 @@ async fn subs_mime_denylist() {
         });
 
         // Set up denylist
-        std::env::set_var("SB_SUBS_MIME_DENY", "application/octet-stream,application/x-executable");
+        std::env::set_var(
+            "SB_SUBS_MIME_DENY",
+            "application/octet-stream,application/x-executable",
+        );
         std::env::remove_var("SB_SUBS_MIME_ALLOW"); // Clear allowlist
 
         let url = format!("http://127.0.0.1:{}/malicious", port);
         let result = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
 
         assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("content-type denied"));
+        assert!(result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("content-type denied"));
     }
 }
 
@@ -343,7 +409,10 @@ async fn subs_mime_denylist() {
 async fn subs_mime_denylist_overrides_allowlist() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let port = 19122u16;
         let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
 
@@ -369,7 +438,11 @@ async fn subs_mime_denylist_overrides_allowlist() {
         let result = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
 
         assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("content-type denied"));
+        assert!(result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("content-type denied"));
     }
 }
 
@@ -416,7 +489,7 @@ async fn idna_invalid_domain_rejection() {
             "invalid..domain",
             "domain.with.invalid.chars!",
             ".invalid.start",
-            &toolong_host
+            &toolong_host,
         ];
 
         for host in invalid_hosts {
@@ -431,7 +504,10 @@ async fn comprehensive_security_integration() {
     #[cfg(feature = "subs_http")]
     {
         // Integration test combining all security features
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
 
         // Set up comprehensive security config
         std::env::set_var("SB_SUBS_MAX_CONCURRENCY", "3");
@@ -453,7 +529,8 @@ async fn comprehensive_security_integration() {
                 let body = "valid content";
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-                    body.len(), body
+                    body.len(),
+                    body
                 );
                 let _ = stream.write_all(response.as_bytes()).await;
             }
@@ -480,7 +557,10 @@ async fn comprehensive_security_integration() {
 async fn subs_cache_etag_flow() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
 
         std::env::set_var("SB_SUBS_CACHE_CAP", "8");
         std::env::set_var("SB_SUBS_CACHE_TTL_MS", "60000");
@@ -537,7 +617,10 @@ async fn subs_cache_etag_flow() {
 async fn circuit_breaker_trips_and_blocks() {
     #[cfg(feature = "subs_http")]
     {
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
 
         std::env::set_var("SB_SUBS_BR_FAILS", "3");
         std::env::set_var("SB_SUBS_BR_OPEN_MS", "3000");
@@ -553,7 +636,8 @@ async fn circuit_breaker_trips_and_blocks() {
                     let mut buf = [0u8; 1024];
                     let _ = stream.read(&mut buf).await;
 
-                    let response = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+                    let response =
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
                     let _ = stream.write_all(response.as_bytes()).await;
                 }
             }
@@ -570,7 +654,11 @@ async fn circuit_breaker_trips_and_blocks() {
         // Next request should be blocked by circuit breaker
         let blocked = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
         assert!(blocked.is_err());
-        assert!(blocked.err().unwrap().to_string().contains("circuit breaker open"));
+        assert!(blocked
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("circuit breaker open"));
     }
 }
 
@@ -586,12 +674,18 @@ async fn admin_auth_bearer_token() {
     assert!(!result1);
 
     // Test with correct Bearer token - should pass
-    headers.insert("authorization".to_string(), "Bearer test-secret-token".to_string());
+    headers.insert(
+        "authorization".to_string(),
+        "Bearer test-secret-token".to_string(),
+    );
     let result2 = app::admin_debug::http::check_auth(&headers, "/__health");
     assert!(result2);
 
     // Test with incorrect token - should fail
-    headers.insert("authorization".to_string(), "Bearer wrong-token".to_string());
+    headers.insert(
+        "authorization".to_string(),
+        "Bearer wrong-token".to_string(),
+    );
     let result3 = app::admin_debug::http::check_auth(&headers, "/__health");
     assert!(!result3);
 

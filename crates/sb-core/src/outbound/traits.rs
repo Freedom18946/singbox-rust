@@ -33,7 +33,7 @@ pub trait UdpTransport: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Endpoint, Host, Network};
+    use crate::types::{Endpoint, Host};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use tokio::net::TcpStream;
 

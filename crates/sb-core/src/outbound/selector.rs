@@ -3,8 +3,8 @@
 //! - Policy: EMA RTT with failures as penalties; jitter; cold start guard.
 //! - Metrics: proxy_select_total{outbound,member} counter,
 //!   proxy_select_score{outbound,member} gauge (current score snapshot).
-use crate::adapter::OutboundConnector;
 use super::endpoint::ProxyEndpoint;
+use crate::adapter::OutboundConnector;
 use sb_metrics::registry::global as M;
 use std::collections::HashMap;
 use std::net::TcpStream;
@@ -151,9 +151,19 @@ impl Selector {
         self.on_result(member_name, dur, success);
         // Lightweight logs to aid debugging
         if success {
-            tracing::trace!(pool = pool_name, endpoint = endpoint_index, duration_ms = dur_ms, "selector observation: ok");
+            tracing::trace!(
+                pool = pool_name,
+                endpoint = endpoint_index,
+                duration_ms = dur_ms,
+                "selector observation: ok"
+            );
         } else {
-            tracing::debug!(pool = pool_name, endpoint = endpoint_index, duration_ms = dur_ms, "selector observation: fail");
+            tracing::debug!(
+                pool = pool_name,
+                endpoint = endpoint_index,
+                duration_ms = dur_ms,
+                "selector observation: fail"
+            );
         }
     }
 }
@@ -366,19 +376,38 @@ impl PoolSelector {
             .min_by(|a, b| {
                 let a_rtt = a.avg_rtt_ms.unwrap_or(f64::INFINITY);
                 let b_rtt = b.avg_rtt_ms.unwrap_or(f64::INFINITY);
-                a_rtt.partial_cmp(&b_rtt).unwrap_or(std::cmp::Ordering::Equal)
+                a_rtt
+                    .partial_cmp(&b_rtt)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
     }
 
-    pub fn record_observation(&mut self, pool_name: &str, endpoint_index: usize, dur_ms: u64, success: bool) {
+    pub fn record_observation(
+        &mut self,
+        pool_name: &str,
+        endpoint_index: usize,
+        dur_ms: u64,
+        success: bool,
+    ) {
         if let Some(pool) = self.get_pool_mut(pool_name) {
-            pool.update_endpoint_health(endpoint_index, success, if success { Some(dur_ms as f64) } else { None });
+            pool.update_endpoint_health(
+                endpoint_index,
+                success,
+                if success { Some(dur_ms as f64) } else { None },
+            );
         }
     }
 
     /// Select an endpoint from a specific pool
-    pub fn select(&self, pool_name: &str, _peer_addr: std::net::SocketAddr, _target: &str, _health: &()) -> Option<&ProxyEndpoint> {
-        self.select_healthy_endpoint(pool_name).map(|ep| &ep.endpoint)
+    pub fn select(
+        &self,
+        pool_name: &str,
+        _peer_addr: std::net::SocketAddr,
+        _target: &str,
+        _health: &(),
+    ) -> Option<&ProxyEndpoint> {
+        self.select_healthy_endpoint(pool_name)
+            .map(|ep| &ep.endpoint)
     }
 
     /// Check if a pool exists and has healthy endpoints

@@ -6,13 +6,26 @@ use std::path::{Path, PathBuf};
 /// Ensures data is fsynced before replace; on Windows falls back to remove+rename.
 pub fn write_atomic<P: AsRef<Path>>(path: P, data: &[u8]) -> io::Result<()> {
     let path = path.as_ref();
-    let dir = path.parent().ok_or_else(|| io::Error::other("no parent dir"))?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| io::Error::other("no parent dir"))?;
     let mut tmp: PathBuf = dir.to_path_buf();
     // Better unique temp name
-    tmp.push(format!(".sbtmp-{}-{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()));
+    tmp.push(format!(
+        ".sbtmp-{}-{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
 
     // Create and write
-    let mut f = OpenOptions::new().create(true).write(true).truncate(true).open(&tmp)?;
+    let mut f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&tmp)?;
     f.write_all(data)?;
     f.flush()?;
     // fsync file
@@ -20,9 +33,9 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, data: &[u8]) -> io::Result<()> {
     {
         use std::os::fd::AsRawFd;
         // SAFETY:
-                // - 不变量：f.as_raw_fd() 返回有效的文件描述符
-                // - 并发/别名：文件句柄独占访问，无数据竞争
-                // - FFI/平台契约：在 Unix 系统上 fsync 是安全的系统调用
+        // - 不变量：f.as_raw_fd() 返回有效的文件描述符
+        // - 并发/别名：文件句柄独占访问，无数据竞争
+        // - FFI/平台契约：在 Unix 系统上 fsync 是安全的系统调用
         let _ = unsafe { libc::fsync(f.as_raw_fd()) };
     }
     #[cfg(target_os = "windows")]
@@ -59,8 +72,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("out.json");
         let mut hs = Vec::new();
-        for i in 0..8u8 { let p = p.clone(); hs.push(thread::spawn(move || { let s = format!("{{\"i\":{}}}", i); write_atomic(&p, s.as_bytes()).unwrap(); })); }
-        for h in hs { let _ = h.join(); }
+        for i in 0..8u8 {
+            let p = p.clone();
+            hs.push(thread::spawn(move || {
+                let s = format!("{{\"i\":{}}}", i);
+                write_atomic(&p, s.as_bytes()).unwrap();
+            }));
+        }
+        for h in hs {
+            let _ = h.join();
+        }
         let s = fs::read_to_string(&p).unwrap();
         assert!(s.starts_with("{"));
         assert!(s.ends_with("}"));

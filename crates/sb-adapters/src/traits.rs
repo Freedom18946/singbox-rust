@@ -2,8 +2,8 @@
 
 use crate::error::Result;
 use async_trait::async_trait;
-use std::{fmt::Debug, time::Duration, str::FromStr, fmt::Display};
 use rand::Rng;
+use std::{fmt::Debug, fmt::Display, str::FromStr, time::Duration};
 
 /// Retry policy for connection attempts
 #[derive(Debug, Clone)]
@@ -106,7 +106,10 @@ impl FromStr for ResolveMode {
         match s.to_lowercase().as_str() {
             "local" => Ok(Self::Local),
             "remote" => Ok(Self::Remote),
-            _ => Err(format!("Invalid resolve mode: {}. Valid options: local, remote", s)),
+            _ => Err(format!(
+                "Invalid resolve mode: {}. Valid options: local, remote",
+                s
+            )),
         }
     }
 }
@@ -254,16 +257,17 @@ pub fn is_retryable_error(error: &crate::error::AdapterError) -> bool {
         // Network/IO errors are generally retryable
         AdapterError::Io(io_err) => {
             use std::io::ErrorKind;
-            matches!(io_err.kind(),
-                ErrorKind::TimedOut |
-                ErrorKind::ConnectionRefused |
-                ErrorKind::ConnectionReset |
-                ErrorKind::ConnectionAborted |
-                ErrorKind::NotConnected |
-                ErrorKind::AddrInUse |
-                ErrorKind::AddrNotAvailable |
-                ErrorKind::Interrupted |
-                ErrorKind::WouldBlock
+            matches!(
+                io_err.kind(),
+                ErrorKind::TimedOut
+                    | ErrorKind::ConnectionRefused
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::NotConnected
+                    | ErrorKind::AddrInUse
+                    | ErrorKind::AddrNotAvailable
+                    | ErrorKind::Interrupted
+                    | ErrorKind::WouldBlock
             )
         }
         // Timeout errors are retryable
@@ -273,10 +277,10 @@ pub fn is_retryable_error(error: &crate::error::AdapterError) -> bool {
         AdapterError::Network(_) => true,
 
         // Protocol errors usually aren't retryable (authentication, handshake failures)
-        AdapterError::InvalidConfig(_) |
-        AdapterError::UnsupportedProtocol(_) |
-        AdapterError::AuthenticationFailed |
-        AdapterError::Protocol(_) => false,
+        AdapterError::InvalidConfig(_)
+        | AdapterError::UnsupportedProtocol(_)
+        | AdapterError::AuthenticationFailed
+        | AdapterError::Protocol(_) => false,
 
         // Other errors might be retryable depending on context
         AdapterError::Other(_) => false,
@@ -285,10 +289,7 @@ pub fn is_retryable_error(error: &crate::error::AdapterError) -> bool {
 }
 
 /// Retry a future with exponential backoff and jitter
-pub async fn with_retry<F, Fut, T>(
-    retry_policy: &RetryPolicy,
-    mut operation: F,
-) -> Result<T>
+pub async fn with_retry<F, Fut, T>(retry_policy: &RetryPolicy, mut operation: F) -> Result<T>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,

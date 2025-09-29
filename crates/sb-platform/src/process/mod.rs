@@ -174,7 +174,8 @@ impl Default for ProcessMatcher {
             #[cfg(target_os = "macos")]
             macos_impl: macos::MacOsProcessMatcher::new().unwrap_or(macos::MacOsProcessMatcher),
             #[cfg(target_os = "windows")]
-            windows_impl: windows::WindowsProcessMatcher::new().unwrap_or(windows::WindowsProcessMatcher),
+            windows_impl: windows::WindowsProcessMatcher::new()
+                .unwrap_or(windows::WindowsProcessMatcher),
         })
     }
 }

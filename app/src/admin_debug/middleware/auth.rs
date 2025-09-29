@@ -5,7 +5,7 @@
 //! with ErrorKind::Auth.
 
 use super::{Middleware, MiddlewareResult, RequestContext};
-use crate::admin_debug::auth::{AuthProvider, AuthConfig, AuthError, from_config};
+use crate::admin_debug::auth::{from_config, AuthConfig, AuthError, AuthProvider};
 
 /// Authentication middleware implementation
 pub struct AuthMiddleware {
@@ -48,7 +48,7 @@ impl AuthMiddleware {
                     key: token,
                     key_id: None,
                 }
-            },
+            }
             AuthConf::Mtls { .. } => AuthConfig::None, // mTLS handled at TLS layer
         };
 
@@ -84,10 +84,8 @@ impl Middleware for AuthMiddleware {
 
                 // Convert AuthError to contract-compliant error
                 let error_body: sb_admin_contract::ErrorBody = auth_error.into();
-                let mut envelope = sb_admin_contract::ResponseEnvelope::err(
-                    error_body.kind,
-                    error_body.msg
-                );
+                let mut envelope =
+                    sb_admin_contract::ResponseEnvelope::err(error_body.kind, error_body.msg);
 
                 // Add hint if available
                 if let Some(hint) = error_body.hint {
@@ -142,7 +140,9 @@ impl SelectiveAuthMiddleware {
     }
 
     fn is_exempt(&self, path: &str) -> bool {
-        self.exempt_paths.iter().any(|exempt| path.starts_with(exempt))
+        self.exempt_paths
+            .iter()
+            .any(|exempt| path.starts_with(exempt))
     }
 }
 
@@ -198,11 +198,7 @@ mod tests {
         let config = AuthConfig::None;
         let middleware = AuthMiddleware::from_config(&config).unwrap();
 
-        let mut ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test".to_string(),
-            HashMap::new(),
-        );
+        let mut ctx = RequestContext::new("GET".to_string(), "/test".to_string(), HashMap::new());
 
         // None provider should allow all requests
         assert!(middleware.process(&mut ctx).is_ok());
@@ -212,11 +208,7 @@ mod tests {
     fn test_auth_middleware_disabled() {
         let middleware = AuthMiddleware::disabled().unwrap();
 
-        let mut ctx = RequestContext::new(
-            "GET".to_string(),
-            "/test".to_string(),
-            HashMap::new(),
-        );
+        let mut ctx = RequestContext::new("GET".to_string(), "/test".to_string(), HashMap::new());
 
         // Disabled auth should allow all requests
         assert!(middleware.process(&mut ctx).is_ok());

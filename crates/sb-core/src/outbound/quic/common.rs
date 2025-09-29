@@ -62,7 +62,8 @@ pub async fn connect(cfg: &QuicConfig) -> anyhow::Result<Connection> {
     }
     // Use platform verifier for TLS roots; feature flags can extend this
     // with custom root stores or pinning.
-    let client = quinn::ClientConfig::with_platform_verifier();
+    let client = quinn::ClientConfig::try_with_platform_verifier()
+        .map_err(|e| anyhow::anyhow!("Failed to create QUIC client config: {}", e))?;
 
     // 2) Create client endpoint
     let mut ep = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
@@ -70,7 +71,11 @@ pub async fn connect(cfg: &QuicConfig) -> anyhow::Result<Connection> {
 
     // 3) Resolve server and connect with appropriate SNI
     let server_name = if cfg.server.parse::<std::net::IpAddr>().is_ok() {
-        if cfg.allow_insecure { "localhost" } else { cfg.server.as_str() }
+        if cfg.allow_insecure {
+            "localhost"
+        } else {
+            cfg.server.as_str()
+        }
     } else {
         cfg.server.as_str()
     };
@@ -85,11 +90,12 @@ pub async fn connect(cfg: &QuicConfig) -> anyhow::Result<Connection> {
                 Ok(conn) => {
                     #[cfg(feature = "metrics")]
                     metrics::counter!("quic_connect_total", "result"=>"ok").increment(1);
-                    return Ok(conn)
+                    return Ok(conn);
                 }
                 Err(e) => {
                     #[cfg(feature = "metrics")]
-                    metrics::counter!("quic_connect_total", "result"=>"handshake_fail").increment(1);
+                    metrics::counter!("quic_connect_total", "result"=>"handshake_fail")
+                        .increment(1);
                     last_err = Some(anyhow::anyhow!("QUIC handshake failed: {e}"));
                     continue;
                 }

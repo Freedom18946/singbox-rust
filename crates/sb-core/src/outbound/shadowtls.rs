@@ -53,9 +53,7 @@ impl ShadowTlsOutbound {
         if config.skip_cert_verify || insecure_env {
             tracing::warn!("ShadowTLS: insecure mode enabled, certificate verification disabled");
             let v = crate::tls::danger::NoVerify::new();
-            tls_config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(v));
+            tls_config.dangerous().set_certificate_verifier(Arc::new(v));
         }
 
         if let Some(alpn) = &config.alpn {
@@ -149,10 +147,16 @@ impl OutboundTcp for ShadowTlsOutbound {
         if let Err(e) = tls_stream.write_all(connect_line.as_bytes()).await {
             #[cfg(feature = "metrics")]
             metrics::counter!("shadowtls_connect_total", "result" => "write_fail").increment(1);
-            return Err(io::Error::new(io::ErrorKind::Other, format!("tunnel header write failed: {}", e)));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("tunnel header write failed: {}", e),
+            ));
         }
         if let Err(e) = tls_stream.flush().await {
-            return Err(io::Error::new(io::ErrorKind::Other, format!("tunnel header flush failed: {}", e)));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("tunnel header flush failed: {}", e),
+            ));
         }
 
         Ok(tls_stream)

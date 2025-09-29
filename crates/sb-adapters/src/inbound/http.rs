@@ -41,7 +41,10 @@ use std::sync::atomic::AtomicUsize;
 use std::{net::SocketAddr, sync::Arc};
 
 #[cfg(feature = "metrics")]
-#[deprecated(since = "0.1.0", note = "kept for compatibility; metrics collection not yet implemented")]
+#[deprecated(
+    since = "0.1.0",
+    note = "kept for compatibility; metrics collection not yet implemented"
+)]
 static HTTP_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "metrics")]
@@ -317,7 +320,8 @@ async fn handle_client(
 
                 if let Some(reg) = registry::global() {
                     if let Some(pool) = reg.pools.get(&name) {
-                        let default_peer: std::net::SocketAddr = std::net::SocketAddr::from(([0,0,0,0], 0));
+                        let default_peer: std::net::SocketAddr =
+                            std::net::SocketAddr::from(([0, 0, 0, 0], 0));
                         if let Some(ep) = sel.select(
                             &name,
                             peer.unwrap_or(default_peer),
@@ -411,7 +415,13 @@ async fn handle_client(
         std::env::var(key)
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
-            .and_then(|ms| if ms > 0 { Some(std::time::Duration::from_millis(ms)) } else { None })
+            .and_then(|ms| {
+                if ms > 0 {
+                    Some(std::time::Duration::from_millis(ms))
+                } else {
+                    None
+                }
+            })
     }
     let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");

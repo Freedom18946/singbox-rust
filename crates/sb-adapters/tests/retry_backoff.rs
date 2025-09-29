@@ -6,13 +6,13 @@
 
 use sb_adapters::{
     outbound::socks5::Socks5Connector,
-    traits::{DialOpts, OutboundConnector, Target, TransportKind, ResolveMode, RetryPolicy},
+    traits::{DialOpts, OutboundConnector, ResolveMode, RetryPolicy, Target, TransportKind},
     Result,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 /// Mock SOCKS5 server that fails N times before succeeding
 struct FailingMockServer {
@@ -120,7 +120,7 @@ async fn test_retry_backoff_timing() -> Result<()> {
         let retry_policy = RetryPolicy::new()
             .with_max_retries(2)
             .with_base_delay(100) // 100ms base delay
-            .with_jitter(0.0);     // No jitter for predictable timing
+            .with_jitter(0.0); // No jitter for predictable timing
 
         let opts = DialOpts {
             connect_timeout: Duration::from_millis(50), // Short timeout to fail fast
@@ -260,14 +260,24 @@ async fn test_retry_policy_configuration() {
     assert_eq!(policy.max_delay_ms, 1000);
 
     // Test delay calculation (without jitter for predictability)
-    let policy_no_jitter = RetryPolicy::new()
-        .with_base_delay(100)
-        .with_jitter(0.0);
+    let policy_no_jitter = RetryPolicy::new().with_base_delay(100).with_jitter(0.0);
 
-    assert_eq!(policy_no_jitter.calculate_delay(0), Duration::from_millis(0)); // No delay for first attempt
-    assert_eq!(policy_no_jitter.calculate_delay(1), Duration::from_millis(100)); // Base delay for first retry
-    assert_eq!(policy_no_jitter.calculate_delay(2), Duration::from_millis(200)); // 2 * base delay for second retry
-    assert_eq!(policy_no_jitter.calculate_delay(3), Duration::from_millis(400)); // 4 * base delay for third retry
+    assert_eq!(
+        policy_no_jitter.calculate_delay(0),
+        Duration::from_millis(0)
+    ); // No delay for first attempt
+    assert_eq!(
+        policy_no_jitter.calculate_delay(1),
+        Duration::from_millis(100)
+    ); // Base delay for first retry
+    assert_eq!(
+        policy_no_jitter.calculate_delay(2),
+        Duration::from_millis(200)
+    ); // 2 * base delay for second retry
+    assert_eq!(
+        policy_no_jitter.calculate_delay(3),
+        Duration::from_millis(400)
+    ); // 4 * base delay for third retry
 }
 
 #[tokio::test]

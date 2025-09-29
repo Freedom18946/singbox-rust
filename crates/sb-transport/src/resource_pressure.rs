@@ -102,7 +102,10 @@ impl PressureTracker {
         let now = Instant::now();
         self.cleanup_old_events(now);
         let cutoff = now.checked_sub(window).unwrap_or(now);
-        self.events.iter().filter(|&&event_time| event_time >= cutoff).count() as u32
+        self.events
+            .iter()
+            .filter(|&&event_time| event_time >= cutoff)
+            .count() as u32
     }
 
     /// Remove events outside the window
@@ -164,13 +167,13 @@ impl ResourcePressureMonitor {
         }
 
         // Update metrics
-        #[cfg(feature="metrics")]
+        #[cfg(feature = "metrics")]
         {
             use sb_core::metrics::registry_ext::get_or_register_gauge_vec_f64;
             let gauge = get_or_register_gauge_vec_f64(
                 "resource_pressure_level",
                 "Resource pressure level",
-                &["type"]
+                &["type"],
             );
             gauge.with_label_values(&[resource_type.as_str()]).set(1.0);
         }
@@ -179,14 +182,10 @@ impl ResourcePressureMonitor {
     /// Check current pressure level for a resource type
     pub async fn check_pressure(&self, resource_type: ResourceType) -> PressureLevel {
         let (threshold, tracker) = match resource_type {
-            ResourceType::FileDescriptors => (
-                self.config.fd_pressure_threshold,
-                self.fd_tracker.clone(),
-            ),
-            ResourceType::Memory => (
-                self.config.mem_pressure_threshold,
-                self.mem_tracker.clone(),
-            ),
+            ResourceType::FileDescriptors => {
+                (self.config.fd_pressure_threshold, self.fd_tracker.clone())
+            }
+            ResourceType::Memory => (self.config.mem_pressure_threshold, self.mem_tracker.clone()),
         };
 
         let mut tracker = tracker.write().await;
@@ -218,12 +217,20 @@ impl ResourcePressureMonitor {
             }
             PressureLevel::Moderate => {
                 let delay = Duration::from_millis(self.config.moderate_throttle_ms);
-                debug!("Applying moderate throttle for {}: {:?}", resource_type.as_str(), delay);
+                debug!(
+                    "Applying moderate throttle for {}: {:?}",
+                    resource_type.as_str(),
+                    delay
+                );
                 tokio::time::sleep(delay).await;
             }
             PressureLevel::High => {
                 let delay = Duration::from_millis(self.config.high_throttle_ms);
-                warn!("Applying high throttle for {}: {:?}", resource_type.as_str(), delay);
+                warn!(
+                    "Applying high throttle for {}: {:?}",
+                    resource_type.as_str(),
+                    delay
+                );
                 tokio::time::sleep(delay).await;
             }
         }
@@ -250,9 +257,7 @@ pub mod error_analysis {
         match error {
             DialError::Io(io_error) => {
                 match io_error.kind() {
-                    ErrorKind::OutOfMemory => {
-                        Some(ResourceType::Memory)
-                    }
+                    ErrorKind::OutOfMemory => Some(ResourceType::Memory),
                     ErrorKind::AddrInUse | ErrorKind::AddrNotAvailable => {
                         // These can indicate FD exhaustion
                         Some(ResourceType::FileDescriptors)
@@ -260,12 +265,14 @@ pub mod error_analysis {
                     _ => {
                         // Check error message for known patterns
                         let error_msg = io_error.to_string().to_lowercase();
-                        if error_msg.contains("too many open files") ||
-                           error_msg.contains("file descriptor") ||
-                           error_msg.contains("emfile") {
+                        if error_msg.contains("too many open files")
+                            || error_msg.contains("file descriptor")
+                            || error_msg.contains("emfile")
+                        {
                             Some(ResourceType::FileDescriptors)
-                        } else if error_msg.contains("out of memory") ||
-                                  error_msg.contains("enomem") {
+                        } else if error_msg.contains("out of memory")
+                            || error_msg.contains("enomem")
+                        {
                             Some(ResourceType::Memory)
                         } else {
                             None
@@ -275,8 +282,9 @@ pub mod error_analysis {
             }
             DialError::Other(msg) => {
                 let msg_lower = msg.to_lowercase();
-                if msg_lower.contains("too many open files") ||
-                   msg_lower.contains("file descriptor") {
+                if msg_lower.contains("too many open files")
+                    || msg_lower.contains("file descriptor")
+                {
                     Some(ResourceType::FileDescriptors)
                 } else if msg_lower.contains("out of memory") {
                     Some(ResourceType::Memory)
@@ -380,14 +388,18 @@ mod tests {
 
         // No throttling when no pressure
         let start = Instant::now();
-        monitor.throttle_if_needed(ResourceType::FileDescriptors).await;
+        monitor
+            .throttle_if_needed(ResourceType::FileDescriptors)
+            .await;
         let elapsed = start.elapsed();
         assert!(elapsed < Duration::from_millis(10));
 
         // Moderate throttling
         monitor.record_pressure(ResourceType::FileDescriptors).await;
         let start = Instant::now();
-        monitor.throttle_if_needed(ResourceType::FileDescriptors).await;
+        monitor
+            .throttle_if_needed(ResourceType::FileDescriptors)
+            .await;
         let elapsed = start.elapsed();
         assert!(elapsed >= Duration::from_millis(45));
         assert!(elapsed < Duration::from_millis(70));
@@ -395,7 +407,9 @@ mod tests {
         // High throttling
         monitor.record_pressure(ResourceType::FileDescriptors).await;
         let start = Instant::now();
-        monitor.throttle_if_needed(ResourceType::FileDescriptors).await;
+        monitor
+            .throttle_if_needed(ResourceType::FileDescriptors)
+            .await;
         let elapsed = start.elapsed();
         assert!(elapsed >= Duration::from_millis(90));
         assert!(elapsed < Duration::from_millis(120));

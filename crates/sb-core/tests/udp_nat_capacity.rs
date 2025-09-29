@@ -2,9 +2,9 @@
 //!
 //! Tests capacity-driven eviction using LRU (Least Recently Used) strategy.
 
-use std::time::Duration;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use tokio::time::{pause, advance, resume};
+use std::time::Duration;
+use tokio::time::{advance, pause, resume};
 
 use sb_core::net::udp_nat_core::UdpNat;
 
@@ -99,7 +99,9 @@ async fn test_capacity_eviction_multiple_waves() {
 
     // Wave 1: Fill to capacity
     for i in 0..2 {
-        let mapped = nat.create_mapping(test_addr(1000 + i), test_addr(2000 + i)).unwrap();
+        let mapped = nat
+            .create_mapping(test_addr(1000 + i), test_addr(2000 + i))
+            .unwrap();
         all_mapped.push(mapped);
         advance(Duration::from_millis(100)).await;
     }
@@ -107,7 +109,9 @@ async fn test_capacity_eviction_multiple_waves() {
 
     // Wave 2: Add more sessions, triggering evictions
     for i in 2..5 {
-        let mapped = nat.create_mapping(test_addr(1000 + i), test_addr(2000 + i)).unwrap();
+        let mapped = nat
+            .create_mapping(test_addr(1000 + i), test_addr(2000 + i))
+            .unwrap();
         all_mapped.push(mapped);
         assert_eq!(nat.session_count(), 2); // Should stay at capacity
         advance(Duration::from_millis(100)).await;
@@ -152,11 +156,15 @@ async fn test_capacity_with_duplicate_flows() {
     assert_eq!(nat.session_count(), 1); // No new session created
 
     // Fill remaining capacity
-    let _mapped3 = nat.create_mapping(test_addr(1001), test_addr(2001)).unwrap();
+    let _mapped3 = nat
+        .create_mapping(test_addr(1001), test_addr(2001))
+        .unwrap();
     assert_eq!(nat.session_count(), 2);
 
     // Try to add one more unique session
-    let _mapped4 = nat.create_mapping(test_addr(1002), test_addr(2002)).unwrap();
+    let _mapped4 = nat
+        .create_mapping(test_addr(1002), test_addr(2002))
+        .unwrap();
     assert_eq!(nat.session_count(), 2); // At capacity, should evict LRU
 
     resume();
@@ -170,7 +178,9 @@ async fn test_mixed_ttl_and_capacity_eviction() {
 
     // Create sessions
     for i in 0..3 {
-        let _ = nat.create_mapping(test_addr(1000 + i), test_addr(2000 + i)).unwrap();
+        let _ = nat
+            .create_mapping(test_addr(1000 + i), test_addr(2000 + i))
+            .unwrap();
         advance(Duration::from_millis(500)).await;
     }
     assert_eq!(nat.session_count(), 3);
@@ -187,7 +197,9 @@ async fn test_mixed_ttl_and_capacity_eviction() {
     advance(Duration::from_secs(5)).await;
 
     // Add new session, which should trigger both TTL cleanup and potentially capacity eviction
-    let _new_mapped = nat.create_mapping(test_addr(1010), test_addr(2010)).unwrap();
+    let _new_mapped = nat
+        .create_mapping(test_addr(1010), test_addr(2010))
+        .unwrap();
 
     // Should have cleaned up expired sessions first, then added new one
     assert!(nat.session_count() <= 3);

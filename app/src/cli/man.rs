@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg(feature="manpage")]
-use clap::CommandFactory;
+#![cfg(feature = "manpage")]
 use anyhow::Result;
+use clap::CommandFactory;
 use std::io::Write;
 
 #[derive(clap::Args, Debug)]

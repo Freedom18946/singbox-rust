@@ -1,4 +1,4 @@
-#![cfg(feature="dev-cli")]
+#![cfg(feature = "dev-cli")]
 use std::sync::Once;
 
 static ONCE: Once = Once::new();

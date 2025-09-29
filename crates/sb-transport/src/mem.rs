@@ -35,19 +35,19 @@ use tokio::io::duplex;
 ///
 /// ## 使用模式
 /// 通常通过 `new_pair()` 创建，该方法返回：
-        // - 一个 `DuplexDialer` 实例（作为客户端）
-        // - 一个 `DuplexStream`（作为服务端）
+// - 一个 `DuplexDialer` 实例（作为客户端）
+// - 一个 `DuplexStream`（作为服务端）
 ///
 /// ## 线程安全性
 /// ⚠️ **重要**: 该实现使用了 `unsafe` 代码，不是线程安全的。
 /// 在测试中应避免：
-        // - 并发调用同一个实例的 `connect` 方法
-        // - 在多个线程中同时使用同一个实例
+// - 并发调用同一个实例的 `connect` 方法
+// - 在多个线程中同时使用同一个实例
 ///
 /// ## 限制和警告
-        // - **一次性使用**: 每个实例只能调用一次 `connect`
-        // - **仅用于测试**: 禁止在生产环境中使用
-        // - **没有真实网络**: 不涉及实际的网络 IO 操作
+// - **一次性使用**: 每个实例只能调用一次 `connect`
+// - **仅用于测试**: 禁止在生产环境中使用
+// - **没有真实网络**: 不涉及实际的网络 IO 操作
 pub struct DuplexDialer {
     /// 内部的客户端 DuplexStream
     /// 使用 Mutex<Option> 来实现内部可变性和一次性消费语义
@@ -59,8 +59,8 @@ impl DuplexDialer {
     /// 创建内存拨号器和服务端流对
     ///
     /// 该方法创建一个完整的内存通信对，包括：
-            // - 一个客户端拨号器（返回的 `DuplexDialer`）
-            // - 一个服务端流（返回的 `DuplexStream`）
+    // - 一个客户端拨号器（返回的 `DuplexDialer`）
+    // - 一个服务端流（返回的 `DuplexStream`）
     ///
     /// ## 工作原理
     /// 1. 使用 `tokio::io::duplex()` 创建一对内存管道
@@ -73,8 +73,8 @@ impl DuplexDialer {
     ///
     /// # 返回值
     /// 返回一个元组包含：
-            // - `DuplexDialer`: 客户端拨号器，可以调用 `connect` 方法
-            // - `DuplexStream`: 服务端流，可以直接用于读写操作
+    // - `DuplexDialer`: 客户端拨号器，可以调用 `connect` 方法
+    // - `DuplexStream`: 服务端流，可以直接用于读写操作
     ///
     /// # 使用示例
     /// ```rust,no_run
@@ -100,9 +100,9 @@ impl DuplexDialer {
     /// ```
     ///
     /// # 性能特性
-            // - **零延迟**: 完全在内存中运行，没有网络延迟
-            // - **高吞吐**: 受限于内存带宽和 CPU 性能
-            // - **可预测**: 没有网络抖动和丢包问题
+    // - **零延迟**: 完全在内存中运行，没有网络延迟
+    // - **高吞吐**: 受限于内存带宽和 CPU 性能
+    // - **可预测**: 没有网络抖动和丢包问题
     pub fn new_pair() -> (Self, tokio::io::DuplexStream) {
         // 创建一对内存管道，缓冲区大小为 4KB
         // 这个大小对于大多数测试场景都足够了
@@ -123,9 +123,9 @@ impl Dialer for DuplexDialer {
     /// 模拟网络连接并返回内存流
     ///
     /// 该方法实现了 `Dialer` trait，但与真实的网络拨号器不同：
-            // - **忽略参数**: host 和 port 参数被忽略，因为没有实际网络连接
-            // - **一次性消费**: 每个实例只能调用一次，第二次调用将返回错误
-            // - **立即返回**: 不涉及实际的网络 IO，立即返回结果
+    // - **忽略参数**: host 和 port 参数被忽略，因为没有实际网络连接
+    // - **一次性消费**: 每个实例只能调用一次，第二次调用将返回错误
+    // - **立即返回**: 不涉及实际的网络 IO，立即返回结果
     ///
     /// ## 安全性警告
     /// ⚠️ 该实现使用了 `unsafe` 代码来绕过 Rust 的借用检查器，
@@ -137,21 +137,21 @@ impl Dialer for DuplexDialer {
     ///
     /// ## 实现细节
     /// 使用 `Option::take()` 来实现一次性消费语义：
-            // - 第一次调用: `cli` 为 `Some`，返回内部的 DuplexStream
-            // - 第二次调用: `cli` 为 `None`，返回 `NotSupported` 错误
+    // - 第一次调用: `cli` 为 `Some`，返回内部的 DuplexStream
+    // - 第二次调用: `cli` 为 `None`，返回 `NotSupported` 错误
     ///
     /// # 参数
-            // - `_host`: 被忽略，因为没有实际网络连接
-            // - `_port`: 被忽略，因为没有实际网络连接
+    // - `_host`: 被忽略，因为没有实际网络连接
+    // - `_port`: 被忽略，因为没有实际网络连接
     ///
     /// # 返回值
-            // - `Ok(IoStream)`: 第一次调用时返回内部的 DuplexStream
-            // - `Err(DialError::NotSupported)`: 第二次及以后的调用
+    // - `Ok(IoStream)`: 第一次调用时返回内部的 DuplexStream
+    // - `Err(DialError::NotSupported)`: 第二次及以后的调用
     ///
     /// # 使用注意
-            // - 仅在测试中使用
-            // - 避免并发调用
-            // - 每个实例只调用一次 connect
+    // - 仅在测试中使用
+    // - 避免并发调用
+    // - 每个实例只调用一次 connect
     async fn connect(&self, _host: &str, _port: u16) -> Result<IoStream, DialError> {
         // 使用 Mutex 来实现内部可变性和线程安全
         // 这是处理在 &self 方法中需要修改内部状态的安全方式
@@ -187,9 +187,9 @@ mod tests_poison {
         let cli_ptr: *const Mutex<Option<tokio::io::DuplexStream>> = &dialer.cli;
         let _ = thread::spawn(move || {
             // SAFETY:
-                    // - 不变量：cli_ptr 指向 Arc 拥有的有效内存
-                    // - 并发/别名：仅在测试中使用，不存在数据竞争
-                    // - FFI/平台契约：解引用有效指针是安全的
+            // - 不变量：cli_ptr 指向 Arc 拥有的有效内存
+            // - 并发/别名：仅在测试中使用，不存在数据竞争
+            // - FFI/平台契约：解引用有效指针是安全的
             let m = unsafe { &*cli_ptr };
             let _g = m.lock().unwrap();
             panic!("intentional panic to poison mutex");

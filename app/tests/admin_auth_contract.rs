@@ -10,12 +10,12 @@
 
 #![cfg(feature = "admin_debug")]
 
+use reqwest::Client;
+use sb_admin_contract::{ErrorKind, ResponseEnvelope};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
-use reqwest::Client;
-use sb_admin_contract::{ResponseEnvelope, ErrorKind};
 
 /// Test configuration for admin server
 struct TestConfig {
@@ -39,7 +39,10 @@ impl TestConfig {
 
     fn auth_headers(&self) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert("authorization".to_string(), format!("Bearer {}", self.auth_token));
+        headers.insert(
+            "authorization".to_string(),
+            format!("Bearer {}", self.auth_token),
+        );
         headers.insert("x-request-id".to_string(), "test-req-001".to_string());
         headers
     }
@@ -52,7 +55,10 @@ impl TestConfig {
 
     fn wrong_auth_headers(&self) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert("authorization".to_string(), "Bearer wrong-token".to_string());
+        headers.insert(
+            "authorization".to_string(),
+            "Bearer wrong-token".to_string(),
+        );
         headers.insert("x-request-id".to_string(), "test-req-003".to_string());
         headers
     }
@@ -81,7 +87,7 @@ async fn start_test_server(config: &mut TestConfig) -> tokio::task::JoinHandle<(
 
         // Create auth and TLS configuration
         let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
-        let tls_conf = None;
+        let tls_conf: Option<app::admin_debug::http_server::TlsConf> = None;
 
         // Start the server using public API
         if let Err(e) = app::admin_debug::http_server::serve_plain(&addr.to_string()).await {
@@ -115,8 +121,12 @@ async fn make_request(
     let body_text = response.text().await?;
 
     // Parse as ResponseEnvelope
-    let envelope: ResponseEnvelope<Value> = serde_json::from_str(&body_text)
-        .map_err(|e| format!("Failed to parse response as ResponseEnvelope: {} (body: {})", e, body_text))?;
+    let envelope: ResponseEnvelope<Value> = serde_json::from_str(&body_text).map_err(|e| {
+        format!(
+            "Failed to parse response as ResponseEnvelope: {} (body: {})",
+            e, body_text
+        )
+    })?;
 
     Ok((status, envelope))
 }
@@ -138,8 +148,14 @@ async fn test_auth_success_scenario() {
     assert!(envelope.ok, "Response should have ok=true");
     assert!(envelope.data.is_some(), "Response should have data");
     assert!(envelope.error.is_none(), "Response should not have error");
-    assert!(envelope.request_id.is_some(), "Response should have request_id");
-    assert!(!envelope.request_id.as_ref().unwrap().is_empty(), "Request ID should not be empty");
+    assert!(
+        envelope.request_id.is_some(),
+        "Response should have request_id"
+    );
+    assert!(
+        !envelope.request_id.as_ref().unwrap().is_empty(),
+        "Request ID should not be empty"
+    );
 
     // Cleanup
     std::env::remove_var("SB_ADMIN_TOKEN");
@@ -167,7 +183,10 @@ async fn test_auth_missing_credentials() {
     let error = envelope.error.unwrap();
     assert_eq!(error.kind, ErrorKind::Auth, "Error kind should be Auth");
     assert!(!error.msg.is_empty(), "Error message should not be empty");
-    assert!(envelope.request_id.is_some(), "Response should have request_id");
+    assert!(
+        envelope.request_id.is_some(),
+        "Response should have request_id"
+    );
 
     // Cleanup
     std::env::remove_var("SB_ADMIN_TOKEN");
@@ -195,7 +214,10 @@ async fn test_auth_wrong_credentials() {
     let error = envelope.error.unwrap();
     assert_eq!(error.kind, ErrorKind::Auth, "Error kind should be Auth");
     assert!(!error.msg.is_empty(), "Error message should not be empty");
-    assert!(envelope.request_id.is_some(), "Response should have request_id");
+    assert!(
+        envelope.request_id.is_some(),
+        "Response should have request_id"
+    );
 
     // Cleanup
     std::env::remove_var("SB_ADMIN_TOKEN");
@@ -239,9 +261,16 @@ async fn test_rate_limit_scenario() {
     assert!(envelope.error.is_some(), "Response should have error");
 
     let error = envelope.error.unwrap();
-    assert_eq!(error.kind, ErrorKind::RateLimit, "Error kind should be RateLimit");
+    assert_eq!(
+        error.kind,
+        ErrorKind::RateLimit,
+        "Error kind should be RateLimit"
+    );
     assert!(!error.msg.is_empty(), "Error message should not be empty");
-    assert!(envelope.request_id.is_some(), "Response should have request_id");
+    assert!(
+        envelope.request_id.is_some(),
+        "Response should have request_id"
+    );
 
     // Cleanup
     std::env::remove_var("SB_ADMIN_TOKEN");
@@ -295,9 +324,18 @@ async fn test_response_envelope_schema_compliance() {
 
     // Verify success response schema
     assert!(success_envelope.ok, "Success response must have ok=true");
-    assert!(success_envelope.data.is_some(), "Success response must have data");
-    assert!(success_envelope.error.is_none(), "Success response must not have error");
-    assert!(success_envelope.request_id.is_some(), "Success response must have request_id");
+    assert!(
+        success_envelope.data.is_some(),
+        "Success response must have data"
+    );
+    assert!(
+        success_envelope.error.is_none(),
+        "Success response must not have error"
+    );
+    assert!(
+        success_envelope.request_id.is_some(),
+        "Success response must have request_id"
+    );
 
     // Test error case schema
     let (_, error_envelope) = make_request(&client, &url, &config.no_auth_headers())
@@ -306,14 +344,28 @@ async fn test_response_envelope_schema_compliance() {
 
     // Verify error response schema
     assert!(!error_envelope.ok, "Error response must have ok=false");
-    assert!(error_envelope.data.is_none(), "Error response must not have data");
-    assert!(error_envelope.error.is_some(), "Error response must have error");
-    assert!(error_envelope.request_id.is_some(), "Error response must have request_id");
+    assert!(
+        error_envelope.data.is_none(),
+        "Error response must not have data"
+    );
+    assert!(
+        error_envelope.error.is_some(),
+        "Error response must have error"
+    );
+    assert!(
+        error_envelope.request_id.is_some(),
+        "Error response must have request_id"
+    );
 
     let error = error_envelope.error.unwrap();
     assert!(!error.msg.is_empty(), "Error message must not be empty");
-    assert!(matches!(error.kind, ErrorKind::Auth | ErrorKind::RateLimit | ErrorKind::Internal),
-           "Error kind must be valid");
+    assert!(
+        matches!(
+            error.kind,
+            ErrorKind::Auth | ErrorKind::RateLimit | ErrorKind::Internal
+        ),
+        "Error kind must be valid"
+    );
 
     // Cleanup
     std::env::remove_var("SB_ADMIN_TOKEN");
@@ -339,19 +391,40 @@ async fn test_multiple_endpoints_consistency() {
 
         assert_eq!(status, 200, "Endpoint {} should return 200", endpoint);
         assert!(envelope.ok, "Endpoint {} should have ok=true", endpoint);
-        assert!(envelope.request_id.is_some(), "Endpoint {} should have request_id", endpoint);
+        assert!(
+            envelope.request_id.is_some(),
+            "Endpoint {} should have request_id",
+            endpoint
+        );
 
         // Test auth failure case
         let (status, envelope) = make_request(&client, &url, &config.no_auth_headers())
             .await
             .expect("Request should complete");
 
-        assert_eq!(status, 401, "Endpoint {} should return 401 for no auth", endpoint);
-        assert!(!envelope.ok, "Endpoint {} should have ok=false for no auth", endpoint);
-        assert!(envelope.error.is_some(), "Endpoint {} should have error for no auth", endpoint);
+        assert_eq!(
+            status, 401,
+            "Endpoint {} should return 401 for no auth",
+            endpoint
+        );
+        assert!(
+            !envelope.ok,
+            "Endpoint {} should have ok=false for no auth",
+            endpoint
+        );
+        assert!(
+            envelope.error.is_some(),
+            "Endpoint {} should have error for no auth",
+            endpoint
+        );
 
         let error = envelope.error.unwrap();
-        assert_eq!(error.kind, ErrorKind::Auth, "Endpoint {} should have Auth error", endpoint);
+        assert_eq!(
+            error.kind,
+            ErrorKind::Auth,
+            "Endpoint {} should have Auth error",
+            endpoint
+        );
     }
 
     // Cleanup

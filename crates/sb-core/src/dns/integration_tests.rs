@@ -47,6 +47,8 @@ mod tests {
         let answer = DnsAnswer {
             ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
             ttl: Duration::from_secs(300),
+            source: crate::dns::cache::Source::System,
+            rcode: crate::dns::cache::Rcode::NoError,
         };
         cache.put("example.com", answer.clone());
 
@@ -109,6 +111,8 @@ mod tests {
                 IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)),
             ],
             ttl: Duration::from_secs(300),
+            source: crate::dns::cache::Source::System,
+            rcode: crate::dns::cache::Rcode::NoError,
         };
 
         assert_eq!(answer.ips.len(), 2);

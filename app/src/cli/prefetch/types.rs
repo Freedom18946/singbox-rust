@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 
 /// Aggregate statistics for a prefetch session.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[cfg_attr(not(all(feature = "admin_debug", feature = "prefetch")), allow(dead_code))]
+#[cfg_attr(
+    not(all(feature = "admin_debug", feature = "prefetch")),
+    allow(dead_code)
+)]
 pub struct PrefStats {
     pub total: u64,
     pub succeeded: u64,
@@ -23,7 +26,10 @@ pub struct PrefStats {
 
 /// A representative sample output for a single prefetch item.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[cfg_attr(not(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch")), allow(dead_code))]
+#[cfg_attr(
+    not(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch")),
+    allow(dead_code)
+)]
 pub struct SampleOut {
     /// Logical key or URL.
     pub key: String,

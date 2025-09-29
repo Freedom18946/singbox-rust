@@ -7,18 +7,12 @@
 //! - Explicit flush on application exit
 //! - Environment-driven configuration
 
+use anyhow::{self, Result};
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 use tokio::sync::broadcast;
-use tracing_subscriber::{
-    fmt,
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-    Layer,
-    EnvFilter,
-};
-use anyhow::{self, Result};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 /// Global logging configuration
 static LOGGING_CONFIG: OnceLock<LoggingConfig> = OnceLock::new();
@@ -70,7 +64,10 @@ static SAMPLER: OnceLock<Mutex<SamplerState>> = OnceLock::new();
 impl LoggingConfig {
     /// Create logging configuration from environment variables
     pub fn from_env() -> Self {
-        let format = match std::env::var("SB_LOG_FORMAT").as_deref().unwrap_or("compact") {
+        let format = match std::env::var("SB_LOG_FORMAT")
+            .as_deref()
+            .unwrap_or("compact")
+        {
             "json" => LogFormat::Json,
             _ => LogFormat::Compact,
         };
@@ -124,9 +121,7 @@ pub fn init_logging() -> Result<()> {
                     .with(sampling_layer)
                     .init();
             } else {
-                tracing_subscriber::registry()
-                    .with(fmt_layer)
-                    .init();
+                tracing_subscriber::registry().with(fmt_layer).init();
             }
         }
         LogFormat::Compact => {
@@ -143,9 +138,7 @@ pub fn init_logging() -> Result<()> {
                     .with(sampling_layer)
                     .init();
             } else {
-                tracing_subscriber::registry()
-                    .with(fmt_layer)
-                    .init();
+                tracing_subscriber::registry().with(fmt_layer).init();
             }
         }
     }
@@ -170,11 +163,18 @@ impl<S> Layer<S> for SamplingLayer
 where
     S: tracing::Subscriber,
 {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
         let metadata = event.metadata();
 
         // Only sample info and debug levels
-        if !matches!(*metadata.level(), tracing::Level::INFO | tracing::Level::DEBUG) {
+        if !matches!(
+            *metadata.level(),
+            tracing::Level::INFO | tracing::Level::DEBUG
+        ) {
             return;
         }
 
@@ -190,10 +190,12 @@ where
 
 /// Check if a log event should be sampled based on rate limiting
 fn should_sample(target: &str, config: &SamplingConfig) -> bool {
-    let sampler_mutex = SAMPLER.get_or_init(|| Mutex::new(SamplerState {
-        samples: HashMap::new(),
-        window_start: Instant::now(),
-    }));
+    let sampler_mutex = SAMPLER.get_or_init(|| {
+        Mutex::new(SamplerState {
+            samples: HashMap::new(),
+            window_start: Instant::now(),
+        })
+    });
     let mut sampler = match sampler_mutex.lock() {
         Ok(g) => g,
         Err(_poison) => {
@@ -280,7 +282,8 @@ fn install_exit_hook() {
                 // If no async runtime, wait briefly to allow buffers to flush
                 std::thread::sleep(Duration::from_millis(100));
             }
-        }).join();
+        })
+        .join();
 
         original_hook(panic_info);
     }));
@@ -354,10 +357,12 @@ mod tests {
 
         // Reset sampler state
         {
-            let sampler_mutex = SAMPLER.get_or_init(|| Mutex::new(SamplerState {
-                samples: HashMap::new(),
-                window_start: Instant::now(),
-            }));
+            let sampler_mutex = SAMPLER.get_or_init(|| {
+                Mutex::new(SamplerState {
+                    samples: HashMap::new(),
+                    window_start: Instant::now(),
+                })
+            });
             let mut sampler = sampler_mutex.lock().unwrap();
             sampler.samples.clear();
             sampler.window_start = Instant::now();

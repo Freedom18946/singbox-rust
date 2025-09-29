@@ -1,5 +1,4 @@
-#![cfg(feature = "explain")]
-//! 旁路“重放”桥接：不入数据路径；从只读索引/助手获取真实匹配结果。
+//! 旁路"重放"桥接：不入数据路径；从只读索引/助手获取真实匹配结果。
 use super::explain::{ExplainQuery, ExplainResult, ExplainTrace};
 use super::explain_index::{self, ExplainIndex};
 use crate::router::RouterHandle;

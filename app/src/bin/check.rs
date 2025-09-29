@@ -105,17 +105,18 @@ fn main() -> Result<()> {
     if let Some(_schema_path) = &opt.config_schema {
         #[cfg(feature = "config_schema")]
         {
-            let schema_raw =
-                fs::read_to_string(_schema_path).map_err(|e| anyhow!("读取 schema 文件失败：{e}"))?;
-            let schema_json: Value =
-                serde_json::from_str(&schema_raw).map_err(|e| anyhow!("解析 schema 文件失败：{e}"))?;
+            let schema_raw = fs::read_to_string(_schema_path)
+                .map_err(|e| anyhow!("读取 schema 文件失败：{e}"))?;
+            let schema_json: Value = serde_json::from_str(&schema_raw)
+                .map_err(|e| anyhow!("解析 schema 文件失败：{e}"))?;
 
             let validator = jsonschema::Validator::new(&schema_json)
                 .map_err(|e| anyhow!("编译 JSON Schema 失败：{e}"))?;
 
             let validation_result = validator.validate(&v);
             if validation_result.is_err() {
-                let errors: Vec<String> = validation_result.unwrap_err()
+                let errors: Vec<String> = validation_result
+                    .unwrap_err()
                     .take(5)
                     .map(|e| format!("{}", e))
                     .collect();

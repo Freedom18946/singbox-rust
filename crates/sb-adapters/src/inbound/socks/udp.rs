@@ -8,6 +8,7 @@ use std::fmt;
 use anyhow::{bail, Result};
 use once_cell::sync::OnceCell as SyncOnceCell;
 use sb_core::net::ratelimit::maybe_drop_udp;
+use sb_core::net::udp_upstream_map::{Key as UpstreamKey, UdpUpstreamMap};
 use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
 use sb_core::outbound::health::MultiHealthView;
@@ -15,7 +16,6 @@ use sb_core::outbound::observe::{with_observation, with_pool_observation};
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::socks5_udp::UpSocksSession;
-use sb_core::net::udp_upstream_map::{Key as UpstreamKey, UdpUpstreamMap};
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -620,7 +620,8 @@ async fn ensure_upstream_session(
                 loop {
                     match sess_clone.recv_once(per_ms).await {
                         Ok(Some((reply_addr, payload))) => {
-                            let reply = encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), &payload);
+                            let reply =
+                                encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), &payload);
                             let _ = listen_sock.send_to(&reply, client).await;
                         }
                         Ok(None) => continue,

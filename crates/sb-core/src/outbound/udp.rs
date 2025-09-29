@@ -114,9 +114,9 @@ pub async fn direct_udp_socket_for(dst: &UdpTargetAddr) -> Result<UdpSocket> {
 }
 
 /// 直接转发一个 UDP 数据包到目标地址。
-        // - `sock`：入站绑定的 UdpSocket（共享同一 socket，便于回流）
-        // - `dst`：目标（域名或 IP）
-        // - `payload`：要发送的负载
+// - `sock`：入站绑定的 UdpSocket（共享同一 socket，便于回流）
+// - `dst`：目标（域名或 IP）
+// - `payload`：要发送的负载
 pub async fn direct_sendto(sock: &UdpSocket, dst: &UdpTargetAddr, payload: &[u8]) -> Result<usize> {
     if let Some(l) = udp_limiter() {
         if let Err(reason) = l.allow(payload.len()) {

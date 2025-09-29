@@ -119,4 +119,3 @@ fn per_ip_concurrency_is_limited() {
     assert!(text.contains("\"error\""));
     assert!(text.contains("\"detail\""));
 }
-

@@ -17,13 +17,13 @@ use std::sync::Arc;
 #[cfg(feature = "out_ssh")]
 use std::time::Duration;
 #[cfg(feature = "out_ssh")]
-use tokio::net::TcpStream;
-#[cfg(feature = "out_ssh")]
-use tokio::sync::Mutex;
-#[cfg(feature = "out_ssh")]
 use thrussh::{client, ChannelId};
 #[cfg(feature = "out_ssh")]
 use thrussh_keys::key;
+#[cfg(feature = "out_ssh")]
+use tokio::net::TcpStream;
+#[cfg(feature = "out_ssh")]
+use tokio::sync::Mutex;
 
 #[cfg(feature = "out_ssh")]
 use super::crypto_types::{HostPort, OutboundTcp};
@@ -63,12 +63,12 @@ impl Default for SshConfig {
     }
 }
 
-#[cfg(feature = "out_ssh")]
-use tokio::sync::{mpsc, Mutex as AsyncMutex};
-use std::path::PathBuf;
-use sha2::{Sha256, Digest as ShaDigest};
+use sha2::{Digest as ShaDigest, Sha256};
 use std::fs;
 use std::io::Write as _;
+use std::path::PathBuf;
+#[cfg(feature = "out_ssh")]
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
 
 struct SshShared {
     rx_map: AsyncMutex<HashMap<ChannelId, mpsc::Sender<Vec<u8>>>>,
@@ -79,7 +79,12 @@ struct SshShared {
 
 impl SshShared {
     fn new(host_id: String, known_hosts: Option<PathBuf>, verify: bool) -> Self {
-        Self { rx_map: AsyncMutex::new(HashMap::new()), host_id, known_hosts, verify }
+        Self {
+            rx_map: AsyncMutex::new(HashMap::new()),
+            host_id,
+            known_hosts,
+            verify,
+        }
     }
 }
 
@@ -91,8 +96,12 @@ struct SshClient {
 #[async_trait]
 impl client::Handler for SshClient {
     type Error = thrussh::Error;
-    type FutureBool = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Self, bool), Self::Error>> + Send>>;
-    type FutureUnit = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(Self, client::Session), Self::Error>> + Send>>;
+    type FutureBool = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<(Self, bool), Self::Error>> + Send>,
+    >;
+    type FutureUnit = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<(Self, client::Session), Self::Error>> + Send>,
+    >;
 
     fn check_server_key(self, server_public_key: &key::PublicKey) -> Self::FutureBool {
         // Trust-on-first-use known_hosts verification (optional)
@@ -110,7 +119,9 @@ impl client::Handler for SshClient {
             hex::encode(out)
         };
         let ok = (|| -> Result<bool, ()> {
-            let Some(path) = path_opt.as_ref() else { return Ok(true); };
+            let Some(path) = path_opt.as_ref() else {
+                return Ok(true);
+            };
             // Read existing entries
             if let Ok(txt) = fs::read_to_string(path) {
                 for line in txt.lines() {
@@ -123,12 +134,19 @@ impl client::Handler for SshClient {
                 }
             }
             // Not recorded: append
-            if let Some(dir) = path.parent() { let _ = fs::create_dir_all(dir); }
-            let mut f = fs::OpenOptions::new().create(true).append(true).open(path).map_err(|_| ())?;
+            if let Some(dir) = path.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            let mut f = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|_| ())?;
             let line = format!("{} {}\n", host, fp);
             let _ = f.write_all(line.as_bytes());
             Ok(true)
-        })().unwrap_or(true);
+        })()
+        .unwrap_or(true);
         self.finished_bool(ok)
     }
 
@@ -140,12 +158,7 @@ impl client::Handler for SshClient {
         Box::pin(async move { Ok((self, session)) })
     }
 
-    fn data(
-        self,
-        channel: ChannelId,
-        data: &[u8],
-        session: client::Session,
-    ) -> Self::FutureUnit {
+    fn data(self, channel: ChannelId, data: &[u8], session: client::Session) -> Self::FutureUnit {
         let shared = self.shared.clone();
         let bytes = data.to_vec();
         Box::pin(async move {
@@ -185,12 +198,19 @@ impl SshConnection {
     async fn new(config: SshConfig) -> anyhow::Result<Self> {
         let client_config = Arc::new(client::Config::default());
         let host_id = format!("{}:{}", config.server, config.port);
-        let known_hosts = std::env::var("SB_SSH_KNOWN_HOSTS").ok().map(PathBuf::from).or_else(|| {
-            std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".ssh").join("sb_known_hosts"))
-        });
+        let known_hosts = std::env::var("SB_SSH_KNOWN_HOSTS")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join(".ssh").join("sb_known_hosts"))
+            });
         let verify = config.host_key_verification;
         let shared = Arc::new(SshShared::new(host_id, known_hosts, verify));
-        let client_handler = SshClient { shared: shared.clone() };
+        let client_handler = SshClient {
+            shared: shared.clone(),
+        };
 
         let server_addr: SocketAddr = format!("{}:{}", config.server, config.port)
             .parse()
@@ -200,8 +220,9 @@ impl SshConnection {
 
         let mut session = tokio::time::timeout(
             timeout,
-            client::connect(client_config, server_addr, client_handler)
-        ).await
+            client::connect(client_config, server_addr, client_handler),
+        )
+        .await
         .map_err(|_| anyhow::anyhow!("Connection timeout"))?
         .map_err(|e| anyhow::anyhow!("SSH handshake failed: {}", e))?;
 
@@ -233,9 +254,7 @@ impl SshConnection {
                 .await
                 .map_err(|e| anyhow::anyhow!("Public key authentication failed: {}", e))?
         } else {
-            return Err(anyhow::anyhow!(
-                "No authentication method provided"
-            ));
+            return Err(anyhow::anyhow!("No authentication method provided"));
         };
 
         if !authenticated {
@@ -250,14 +269,19 @@ impl SshConnection {
     }
 
     async fn create_tunnel_tcp(&self, target: &HostPort) -> io::Result<TcpStream> {
-        use tokio::net::TcpListener;
         use tokio::io::{split, AsyncWriteExt};
+        use tokio::net::TcpListener;
 
         let mut session = self.session.lock().await;
         let channel = session
             .channel_open_direct_tcpip(&target.host, target.port as u32, "127.0.0.1", 0)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, format!("Failed to create SSH tunnel: {}", e)))?;
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::ConnectionRefused,
+                    format!("Failed to create SSH tunnel: {}", e),
+                )
+            })?;
         drop(session);
 
         // Register receiver for this channel
@@ -272,7 +296,10 @@ impl SshConnection {
 
         // Accept and bridge in background
         tokio::spawn(async move {
-            let (sock, _) = match listener.accept().await { Ok(x) => x, Err(_) => return };
+            let (sock, _) = match listener.accept().await {
+                Ok(x) => x,
+                Err(_) => return,
+            };
             let (mut rd, mut wr) = split(sock);
             let mut ch_writer = channel;
             // Task A: local->ssh
@@ -283,7 +310,9 @@ impl SshConnection {
             // Task B: ssh->local
             let b = async {
                 while let Some(buf) = rx.recv().await {
-                    if wr.write_all(&buf).await.is_err() { break; }
+                    if wr.write_all(&buf).await.is_err() {
+                        break;
+                    }
                 }
                 let _ = wr.shutdown().await;
             };
@@ -298,8 +327,6 @@ impl SshConnection {
 
 #[cfg(feature = "out_ssh")]
 // Removed SshTunnelStream in favor of loopback TcpStream bridging
-
-#[cfg(feature = "out_ssh")]
 pub struct SshOutbound {
     config: SshConfig,
     connection_pool: Arc<Mutex<HashMap<String, Vec<Arc<SshConnection>>>>>,
@@ -358,9 +385,12 @@ impl OutboundTcp for SshOutbound {
 
         let start = std::time::Instant::now();
 
-        let connection = self.get_or_create_connection().await
-            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused,
-                format!("Failed to establish SSH connection: {}", e)))?;
+        let connection = self.get_or_create_connection().await.map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                format!("Failed to establish SSH connection: {}", e),
+            )
+        })?;
 
         let stream = connection.create_tunnel_tcp(target).await?;
 
@@ -412,6 +442,8 @@ pub struct SshOutbound;
 #[cfg(not(feature = "out_ssh"))]
 impl SshOutbound {
     pub fn new(_config: SshConfig) -> anyhow::Result<Self> {
-        Err(anyhow::anyhow!("SSH support not compiled in. Enable 'out_ssh' feature."))
+        Err(anyhow::anyhow!(
+            "SSH support not compiled in. Enable 'out_ssh' feature."
+        ))
     }
 }

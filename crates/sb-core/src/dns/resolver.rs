@@ -152,7 +152,9 @@ impl DnsResolver {
         }
 
         // 所有上游都失败了
-        Err(last_error.unwrap_or_else(|| anyhow::Error::from(SbError::dns("No healthy DNS upstreams available"))))
+        Err(last_error.unwrap_or_else(|| {
+            anyhow::Error::from(SbError::dns("No healthy DNS upstreams available"))
+        }))
     }
 }
 
@@ -193,7 +195,7 @@ impl Resolver for DnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     // Mock upstream for testing
     struct MockUpstream {
@@ -257,6 +259,8 @@ mod tests {
                     Ok(DnsAnswer {
                         ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
                         ttl: Duration::from_secs(300),
+                        source: crate::dns::cache::Source::Upstream,
+                        rcode: crate::dns::cache::Rcode::NoError,
                     }),
                 )
                 .with_response(
@@ -265,6 +269,8 @@ mod tests {
                     Ok(DnsAnswer {
                         ips: vec![IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))],
                         ttl: Duration::from_secs(600),
+                        source: crate::dns::cache::Source::Upstream,
+                        rcode: crate::dns::cache::Rcode::NoError,
                     }),
                 ),
         );
@@ -285,6 +291,8 @@ mod tests {
             Ok(DnsAnswer {
                 ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
                 ttl: Duration::from_secs(300),
+                source: crate::dns::cache::Source::Upstream,
+                rcode: crate::dns::cache::Rcode::NoError,
             }),
         ));
 

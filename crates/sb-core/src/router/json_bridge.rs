@@ -91,7 +91,10 @@ fn to_rules(mut doc: JsonDoc) -> Vec<Rule> {
         };
         // 主体规则：支持大量别名
         let mut append = |rk: RuleKind| {
-            out.push(Rule { kind: rk, decision: decision.clone() });
+            out.push(Rule {
+                kind: rk,
+                decision: decision.clone(),
+            });
         };
         match k.as_str() {
             // domain exact

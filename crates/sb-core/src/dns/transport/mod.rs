@@ -42,7 +42,9 @@ impl DhcpResolver {
 }
 
 impl Default for DhcpResolver {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]

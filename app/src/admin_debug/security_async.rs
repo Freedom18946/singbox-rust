@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
-use url::Url;
-use std::net::IpAddr;
 use once_cell::sync::OnceCell;
-use trust_dns_resolver::{TokioAsyncResolver, config::{ResolverConfig, ResolverOpts}};
+use std::net::IpAddr;
 use std::time::Instant;
+use trust_dns_resolver::{
+    config::{ResolverConfig, ResolverOpts},
+    TokioAsyncResolver,
+};
+use url::Url;
 
 static RESOLVER: OnceCell<TokioAsyncResolver> = OnceCell::new();
 

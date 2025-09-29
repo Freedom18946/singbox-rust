@@ -34,7 +34,6 @@ pub enum SocksAuth {
     Users(Vec<User>),
 }
 
-
 /// Inbound wrapper with optional tag, flattening the concrete kind
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Inbound {
@@ -119,16 +118,22 @@ pub struct Config {
 
 impl Config {
     /// Normalize config to a fully-usable shape:
-            // - Ensure default outbounds exist ("direct", "block") if not provided
-            // - Leave inbounds as-is (defaults handled by serde)
+    // - Ensure default outbounds exist ("direct", "block") if not provided
+    // - Leave inbounds as-is (defaults handled by serde)
     pub fn normalize(mut self) -> Self {
         let has_direct = self.outbounds.iter().any(|o| o.tag == "direct");
         let has_block = self.outbounds.iter().any(|o| o.tag == "block");
         if !has_direct {
-            self.outbounds.push(Outbound { tag: "direct".into(), kind: OutboundDef::Direct });
+            self.outbounds.push(Outbound {
+                tag: "direct".into(),
+                kind: OutboundDef::Direct,
+            });
         }
         if !has_block {
-            self.outbounds.push(Outbound { tag: "block".into(), kind: OutboundDef::Block });
+            self.outbounds.push(Outbound {
+                tag: "block".into(),
+                kind: OutboundDef::Block,
+            });
         }
         self
     }

@@ -11,12 +11,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 // Crypto imports
+use aes_gcm::aead::{generic_array::GenericArray, Aead};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
-use aes_gcm::aead::{Aead, generic_array::GenericArray};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce as ChaNonce};
-use sha2::{Sha256, Digest};
-use hmac::{Hmac};
+use hmac::Hmac;
 use rand::RngCore;
+use sha2::{Digest, Sha256};
 
 /// Shadowsocks configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -47,21 +47,24 @@ impl CipherMethod {
         match method.to_lowercase().as_str() {
             "aes-256-gcm" => Ok(Self::Aes256Gcm),
             "chacha20-poly1305" | "chacha20-ietf-poly1305" => Ok(Self::ChaCha20Poly1305),
-            _ => Err(AdapterError::Protocol(format!("Unsupported cipher method: {}", method))),
+            _ => Err(AdapterError::Protocol(format!(
+                "Unsupported cipher method: {}",
+                method
+            ))),
         }
     }
 
     fn key_size(&self) -> usize {
         match self {
             Self::Aes256Gcm => 32,        // AES-256
-            Self::ChaCha20Poly1305 => 32,  // ChaCha20
+            Self::ChaCha20Poly1305 => 32, // ChaCha20
         }
     }
 
     fn nonce_size(&self) -> usize {
         match self {
             Self::Aes256Gcm => 12,        // GCM nonce
-            Self::ChaCha20Poly1305 => 12,  // ChaCha20 nonce
+            Self::ChaCha20Poly1305 => 12, // ChaCha20 nonce
         }
     }
 
@@ -117,7 +120,11 @@ impl ShadowsocksConnector {
     }
 
     /// Create a connector with simplified configuration
-    pub fn with_config(server: impl Into<String>, method: impl Into<String>, password: impl Into<String>) -> Result<Self> {
+    pub fn with_config(
+        server: impl Into<String>,
+        method: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Result<Self> {
         let config = ShadowsocksConfig {
             server: server.into(),
             tag: None,
@@ -155,7 +162,9 @@ impl OutboundConnector for ShadowsocksConnector {
 
     async fn start(&self) -> Result<()> {
         #[cfg(not(feature = "adapter-shadowsocks"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-shadowsocks" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-shadowsocks",
+        });
 
         #[cfg(feature = "adapter-shadowsocks")]
         Ok(())
@@ -163,7 +172,9 @@ impl OutboundConnector for ShadowsocksConnector {
 
     async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-shadowsocks"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-shadowsocks" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-shadowsocks",
+        });
 
         #[cfg(feature = "adapter-shadowsocks")]
         {
@@ -174,7 +185,9 @@ impl OutboundConnector for ShadowsocksConnector {
             let start_time = sb_metrics::start_adapter_timer();
 
             if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol("Shadowsocks outbound only supports TCP".to_string()));
+                return Err(AdapterError::Protocol(
+                    "Shadowsocks outbound only supports TCP".to_string(),
+                ));
             }
 
             // Clone target for logging before moving into async block
@@ -182,19 +195,30 @@ impl OutboundConnector for ShadowsocksConnector {
 
             let dial_result = async {
                 // Parse server address
-                let server_addr: SocketAddr = self.config.server.parse()
-                    .with_context(|| format!("Invalid Shadowsocks server address: {}", self.config.server))
+                let server_addr: SocketAddr = self
+                    .config
+                    .server
+                    .parse()
+                    .with_context(|| {
+                        format!("Invalid Shadowsocks server address: {}", self.config.server)
+                    })
                     .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                 // Connect to Shadowsocks server
-                let timeout = std::time::Duration::from_secs(
-                    self.config.connect_timeout_sec.unwrap_or(30)
-                );
+                let timeout =
+                    std::time::Duration::from_secs(self.config.connect_timeout_sec.unwrap_or(30));
                 let stream = tokio::time::timeout(timeout, TcpStream::connect(server_addr))
                     .await
-                    .with_context(|| format!("Failed to connect to Shadowsocks server {}", server_addr))
+                    .with_context(|| {
+                        format!("Failed to connect to Shadowsocks server {}", server_addr)
+                    })
                     .map_err(|e| AdapterError::Other(e.to_string()))?
-                    .with_context(|| format!("TCP connection to Shadowsocks server {} failed", server_addr))
+                    .with_context(|| {
+                        format!(
+                            "TCP connection to Shadowsocks server {} failed",
+                            server_addr
+                        )
+                    })
                     .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                 // Create encrypted stream wrapper
@@ -204,10 +228,12 @@ impl OutboundConnector for ShadowsocksConnector {
                     self.key.clone(),
                     target,
                     opts.resolve_mode.clone(),
-                ).await?;
+                )
+                .await?;
 
                 Ok(Box::new(encrypted_stream) as BoxedStream)
-            }.await;
+            }
+            .await;
 
             // Record metrics
             #[cfg(feature = "metrics")]
@@ -276,7 +302,9 @@ impl ShadowsocksStream {
         };
 
         // Build target address payload
-        let addr_payload = ss_stream.encode_target_address(&target, &resolve_mode).await?;
+        let addr_payload = ss_stream
+            .encode_target_address(&target, &resolve_mode)
+            .await?;
 
         // Encrypt and send initial payload
         ss_stream.send_encrypted_data(&addr_payload).await?;
@@ -285,7 +313,11 @@ impl ShadowsocksStream {
         Ok(ss_stream)
     }
 
-    async fn encode_target_address(&self, target: &Target, resolve_mode: &ResolveMode) -> Result<Vec<u8>> {
+    async fn encode_target_address(
+        &self,
+        target: &Target,
+        resolve_mode: &ResolveMode,
+    ) -> Result<Vec<u8>> {
         let mut payload = Vec::new();
 
         // Determine target address based on resolve mode
@@ -319,11 +351,17 @@ impl ShadowsocksStream {
                                     }
                                 }
                             } else {
-                                return Err(AdapterError::Network(format!("Failed to resolve {}", target.host)));
+                                return Err(AdapterError::Network(format!(
+                                    "Failed to resolve {}",
+                                    target.host
+                                )));
                             }
                         }
                         Err(e) => {
-                            return Err(AdapterError::Network(format!("DNS resolution failed for {}: {}", target.host, e)));
+                            return Err(AdapterError::Network(format!(
+                                "DNS resolution failed for {}: {}",
+                                target.host, e
+                            )));
                         }
                     }
                 }
@@ -348,7 +386,9 @@ impl ShadowsocksStream {
 
     async fn send_encrypted_data(&mut self, data: &[u8]) -> Result<()> {
         let encrypted_data = self.encrypt_data(data)?;
-        self.inner.write_all(&encrypted_data).await
+        self.inner
+            .write_all(&encrypted_data)
+            .await
             .map_err(|e| AdapterError::Io(e))?;
         Ok(())
     }
@@ -363,15 +403,17 @@ impl ShadowsocksStream {
             CipherMethod::Aes256Gcm => {
                 let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.key));
                 let nonce_array = Nonce::from_slice(&nonce);
-                cipher.encrypt(nonce_array, data)
+                cipher
+                    .encrypt(nonce_array, data)
                     .map_err(|_| AdapterError::Protocol("AES-GCM encryption failed".to_string()))?
             }
             CipherMethod::ChaCha20Poly1305 => {
                 let key_array = Key::from_slice(&self.key);
                 let cipher = ChaCha20Poly1305::new(key_array);
                 let nonce_array = ChaNonce::from_slice(&nonce);
-                cipher.encrypt(nonce_array, data)
-                    .map_err(|_| AdapterError::Protocol("ChaCha20-Poly1305 encryption failed".to_string()))?
+                cipher.encrypt(nonce_array, data).map_err(|_| {
+                    AdapterError::Protocol("ChaCha20-Poly1305 encryption failed".to_string())
+                })?
             }
         };
 
@@ -386,7 +428,9 @@ impl ShadowsocksStream {
     fn decrypt_data(&self, encrypted_data: &[u8]) -> Result<Vec<u8>> {
         let nonce_len = self.cipher_method.nonce_size();
         if encrypted_data.len() < nonce_len {
-            return Err(AdapterError::Protocol("Encrypted data too short".to_string()));
+            return Err(AdapterError::Protocol(
+                "Encrypted data too short".to_string(),
+            ));
         }
 
         let nonce = &encrypted_data[..nonce_len];
@@ -396,15 +440,17 @@ impl ShadowsocksStream {
             CipherMethod::Aes256Gcm => {
                 let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.key));
                 let nonce_array = Nonce::from_slice(nonce);
-                cipher.decrypt(nonce_array, ciphertext)
+                cipher
+                    .decrypt(nonce_array, ciphertext)
                     .map_err(|_| AdapterError::Protocol("AES-GCM decryption failed".to_string()))?
             }
             CipherMethod::ChaCha20Poly1305 => {
                 let key_array = Key::from_slice(&self.key);
                 let cipher = ChaCha20Poly1305::new(key_array);
                 let nonce_array = ChaNonce::from_slice(nonce);
-                cipher.decrypt(nonce_array, ciphertext)
-                    .map_err(|_| AdapterError::Protocol("ChaCha20-Poly1305 decryption failed".to_string()))?
+                cipher.decrypt(nonce_array, ciphertext).map_err(|_| {
+                    AdapterError::Protocol("ChaCha20-Poly1305 decryption failed".to_string())
+                })?
             }
         };
 
@@ -476,9 +522,18 @@ mod tests {
 
     #[test]
     fn test_cipher_method_parsing() {
-        assert_eq!(CipherMethod::from_str("aes-256-gcm").unwrap(), CipherMethod::Aes256Gcm);
-        assert_eq!(CipherMethod::from_str("chacha20-poly1305").unwrap(), CipherMethod::ChaCha20Poly1305);
-        assert_eq!(CipherMethod::from_str("chacha20-ietf-poly1305").unwrap(), CipherMethod::ChaCha20Poly1305);
+        assert_eq!(
+            CipherMethod::from_str("aes-256-gcm").unwrap(),
+            CipherMethod::Aes256Gcm
+        );
+        assert_eq!(
+            CipherMethod::from_str("chacha20-poly1305").unwrap(),
+            CipherMethod::ChaCha20Poly1305
+        );
+        assert_eq!(
+            CipherMethod::from_str("chacha20-ietf-poly1305").unwrap(),
+            CipherMethod::ChaCha20Poly1305
+        );
 
         assert!(CipherMethod::from_str("unsupported-method").is_err());
     }
@@ -497,11 +552,9 @@ mod tests {
 
     #[test]
     fn test_with_config_helper() {
-        let connector = ShadowsocksConnector::with_config(
-            "127.0.0.1:8388",
-            "aes-256-gcm",
-            "test-password"
-        ).expect("Failed to create connector");
+        let connector =
+            ShadowsocksConnector::with_config("127.0.0.1:8388", "aes-256-gcm", "test-password")
+                .expect("Failed to create connector");
 
         assert_eq!(connector.name(), "shadowsocks");
         assert_eq!(connector.config.server, "127.0.0.1:8388");

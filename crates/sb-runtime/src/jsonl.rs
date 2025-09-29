@@ -48,11 +48,11 @@ pub fn stream_frames<P: AsRef<Path>>(p: P) -> Result<impl Iterator<Item = Result
 }
 
 /// Basic verification (扩展版；保持旧键不变，仅新增键):
-        // - frames/tx/rx/ts_disorder/head8_modes(top5)【兼容】
-        // - ts_min/ts_max/ts_span_ms（新增）
-        // - len_min/len_max（新增）
-        // - head8_top: [{hex,count}]（新增，顺序稳定）
-        // - generated_at_ms: 生成时间（新增）
+// - frames/tx/rx/ts_disorder/head8_modes(top5)【兼容】
+// - ts_min/ts_max/ts_span_ms（新增）
+// - len_min/len_max（新增）
+// - head8_top: [{hex,count}]（新增，顺序稳定）
+// - generated_at_ms: 生成时间（新增）
 pub fn basic_verify<P: AsRef<Path>>(p: P) -> Result<serde_json::Value> {
     use crate::loopback::FrameDir;
     let mut frames = 0usize;

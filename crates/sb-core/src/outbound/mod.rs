@@ -156,7 +156,6 @@ async fn connect_with_keepalive(
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum OutboundKind {
     #[default]
@@ -935,8 +934,10 @@ async fn ssh_connect(cfg: &ssh_stub::SshConfig, ep: Endpoint) -> io::Result<TcpS
     let outbound = ssh_stub::SshOutbound::new(cfg.clone())
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("SSH setup failed: {}", e)))?;
 
-    outbound
-        .connect(&target)
-        .await
-        .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, format!("Failed to connect via SSH proxy: {}", e)))
+    outbound.connect(&target).await.map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            format!("Failed to connect via SSH proxy: {}", e),
+        )
+    })
 }

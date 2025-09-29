@@ -1,27 +1,27 @@
-pub mod check;
+pub mod auth;
+#[cfg(feature = "bench-cli")]
+pub mod bench;
 pub mod buildinfo;
-pub mod version;
-pub mod output;
+pub mod check;
+pub mod completion;
 #[cfg(feature = "dev-cli")]
 pub mod fs_scan;
 #[cfg(feature = "dev-cli")]
-pub mod report;
-#[cfg(feature = "dev-cli")]
 pub mod health;
 pub mod json;
-#[cfg(feature = "prefetch")]
-pub mod prefetch;
-pub mod auth;
-pub mod prom;
-#[cfg(feature = "bench-cli")]
-pub mod bench;
-pub mod completion;
 #[cfg(feature = "manpage")]
 pub mod man;
+pub mod output;
+#[cfg(feature = "prefetch")]
+pub mod prefetch;
+pub mod prom;
+#[cfg(feature = "dev-cli")]
+pub mod report;
 #[cfg(feature = "router")]
 pub mod route;
 #[cfg(feature = "router")]
 pub mod run;
+pub mod version;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
