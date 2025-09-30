@@ -4,17 +4,9 @@ use crate::adapter::OutboundConnector;
 use crate::transport::tcp::{DialResult, TcpDialer};
 use std::net::TcpStream;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Direct {
     dialer: TcpDialer,
-}
-
-impl Default for Direct {
-    fn default() -> Self {
-        Self {
-            dialer: TcpDialer::default(),
-        }
-    }
 }
 
 impl Clone for Direct {
@@ -31,12 +23,10 @@ impl Direct {
         let r: DialResult = self.dialer.dial(&addr);
         match (r.stream, r.error) {
             (Some(s), _) => Ok(s),
-            (None, Some(e)) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            (None, Some(e)) => Err(std::io::Error::other(
                 format!("direct connect fail: {}", e.class),
             )),
-            (None, None) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            (None, None) => Err(std::io::Error::other(
                 "unknown connect fail",
             )),
         }
@@ -49,12 +39,10 @@ impl OutboundConnector for Direct {
         let r: DialResult = self.dialer.dial(&addr);
         match (r.stream, r.error) {
             (Some(s), _) => Ok(s),
-            (None, Some(e)) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            (None, Some(e)) => Err(std::io::Error::other(
                 format!("direct connect fail: {}", e.class),
             )),
-            (None, None) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            (None, None) => Err(std::io::Error::other(
                 "unknown connect fail",
             )),
         }

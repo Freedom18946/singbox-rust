@@ -9,6 +9,8 @@
 //!
 //! 数据结构与对外接口保持不变：Router/Inbound 端无需改动。
 
+#[cfg(feature = "scaffold")]
+pub mod block_connector;
 pub mod direct_connector;
 #[cfg(feature = "scaffold")]
 pub mod direct_simple;

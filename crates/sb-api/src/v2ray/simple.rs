@@ -168,10 +168,14 @@ impl SimpleV2RayApiServer {
                 message: "empty".to_string(),
             });
         }
-        let stats = self.stats.lock().await;
+
+        let mut stats = self.stats.lock().await;
         let value = stats.get(&request.name).copied().unwrap_or(0);
 
-        // TODO: Implement reset functionality if request.reset is true
+        // Reset the counter if requested
+        if request.reset {
+            stats.insert(request.name.clone(), 0);
+        }
 
         let response = SimpleStatsResponse {
             stat: SimpleStat {
@@ -359,7 +363,7 @@ mod tests {
         };
         match server.get_stats(bad).await.err().expect("must error") {
             crate::error::ApiError::InvalidField { field, .. } => assert_eq!(field, "name"),
-            e => panic!("unexpected error: {e}"),
+            e => assert!(false, "unexpected error: {e}"),
         }
 
         // Pattern containing control char should yield Parse
@@ -369,13 +373,13 @@ mod tests {
         };
         match server.query_stats(badq).await.err().expect("must error") {
             crate::error::ApiError::Parse { .. } => {}
-            e => panic!("unexpected error: {e}"),
+            e => assert!(false, "unexpected error: {e}"),
         }
 
         // Unsupported version
         match server.negotiate_version("v42").err().expect("must error") {
             crate::error::ApiError::UnsupportedVersion { version } => assert_eq!(version, "v42"),
-            e => panic!("unexpected error: {e}"),
+            e => assert!(false, "unexpected error: {e}"),
         }
     }
 

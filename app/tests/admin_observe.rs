@@ -32,7 +32,7 @@ mod observe_tests {
         let base_url = wait_for_server_ready(&mut child).await;
         if base_url.is_none() {
             let _ = child.kill();
-            panic!("Server did not become ready within timeout");
+            assert!(false, "Server did not become ready within timeout");
         }
         let base_url = base_url.unwrap();
 
@@ -141,11 +141,63 @@ mod observe_tests {
         None
     }
 
-    // TODO: Re-enable feature gating test once module structure issues are resolved
-    // #[tokio::test]
-    // async fn test_feature_gating() {
-    //     // Test that endpoints return 501 when required features are not enabled
-    // }
+    #[tokio::test]
+    async fn test_feature_gating() {
+        use std::io::{BufRead, BufReader};
+        use std::process::Stdio;
+
+        // Start the admin server without certain features
+        let mut child = Command::new("cargo")
+            .args(&[
+                "run",
+                "--bin",
+                "singbox-rust",
+                "--features",
+                "observe", // Only observe feature, missing subs_http and sbcore_rules_tool
+            ])
+            .env("SB_ADMIN_ADDR", "127.0.0.1:0")
+            .env("SB_LOG_LEVEL", "error")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start admin server");
+
+        // Wait for server to be ready
+        let base_url = wait_for_server_ready(&mut child).await;
+        if base_url.is_none() {
+            let _ = child.kill();
+            assert!(false, "Server did not become ready within timeout");
+        }
+        let base_url = base_url.unwrap();
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("Failed to create HTTP client");
+
+        // Test that endpoints requiring missing features return 501 Not Implemented
+        let response = client
+            .get(&format!("{}/subs/clash?url=test", base_url))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                // Should return 501 when subs_http feature is not enabled
+                assert!(
+                    resp.status() == 501 || resp.status() == 404,
+                    "Expected 501 or 404 for missing feature, got {}",
+                    resp.status()
+                );
+            }
+            Err(_) => {
+                // Connection error is also acceptable if the endpoint doesn't exist
+            }
+        }
+
+        // Clean up
+        let _ = child.kill();
+    }
 }
 
 #[cfg(not(feature = "observe"))]

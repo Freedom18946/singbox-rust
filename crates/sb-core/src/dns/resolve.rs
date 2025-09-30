@@ -251,9 +251,9 @@ async fn dot_resolve_qtype(
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::dot::query_dot_once;
     #[cfg(any(test, feature = "dev-cli"))]
-    let addr = dot_addr_from_env().unwrap_or_else(|| "1.1.1.1:853".parse().unwrap());
+    let addr = dot_addr_from_env().unwrap_or_else(|| std::net::SocketAddr::from(([1, 1, 1, 1], 853)));
     #[cfg(not(any(test, feature = "dev-cli")))]
-    let addr = "1.1.1.1:853".parse().unwrap();
+    let addr = std::net::SocketAddr::from(([1, 1, 1, 1], 853));
     let (ips, _ttl) = query_dot_once(addr, host, qtype, timeout_ms).await?;
     Ok(ips
         .into_iter()
@@ -368,11 +368,10 @@ async fn resolve_with_cache<F, Fut>(
     port: u16,
     timeout: u64,
     qsel: QSel,
-    #[allow(unused_variables)] // TODO: 参数设计用于扩展性，当前未实现自定义执行逻辑
     run: F,
 ) -> Result<Vec<SocketAddr>>
 where
-    F: Fn(DnsBackend) -> Fut + Send + 'static,
+    F: Fn(DnsBackend) -> Fut + Send + Clone + 'static,
     Fut: std::future::Future<Output = Result<Vec<SocketAddr>>> + Send,
 {
     use std::sync::OnceLock;
@@ -382,9 +381,10 @@ where
     // For auto mode, we handle both A and AAAA separately in cache
     match qsel {
         QSel::Auto => {
-            // Auto: concurrent A/AAAA queries with cache
-            let a_fut = resolve_cached_qtype(cache, backend, &host, port, timeout, QType::A);
-            let aaaa_fut = resolve_cached_qtype(cache, backend, &host, port, timeout, QType::AAAA);
+            // Auto: concurrent A/AAAA queries with cache using custom run function
+            let run_clone = run.clone();
+            let a_fut = resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::A, run);
+            let aaaa_fut = resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::AAAA, run_clone);
             let (ra, rb) = tokio::join!(a_fut, aaaa_fut);
             let mut out = Vec::<SocketAddr>::new();
             if let Ok(v) = ra {
@@ -396,15 +396,78 @@ where
             Ok(out)
         }
         QSel::A => {
-            return resolve_cached_qtype(cache, backend, &host, port, timeout, QType::A).await;
+            return resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::A, run).await;
         }
         QSel::AAAA => {
-            return resolve_cached_qtype(cache, backend, &host, port, timeout, QType::AAAA).await;
+            return resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::AAAA, run).await;
         }
     }
 }
 
 #[cfg(feature = "dns_cache")]
+async fn resolve_cached_qtype_with_runner<F, Fut>(
+    cache: &'static DnsCache,
+    backend: DnsBackend,
+    host: &str,
+    port: u16,
+    _timeout: u64,
+    qtype_key: QType,
+    run: F,
+) -> Result<Vec<SocketAddr>>
+where
+    F: Fn(DnsBackend) -> Fut + Send + Clone + 'static,
+    Fut: std::future::Future<Output = Result<Vec<SocketAddr>>> + Send,
+{
+    use crate::dns::cache::{Key, QType as CacheQType};
+
+    let cache_key = Key {
+        name: host.to_string(),
+        qtype: match qtype_key {
+            QType::A => CacheQType::A,
+            QType::AAAA => CacheQType::AAAA,
+            _ => return Err(anyhow::anyhow!("Unsupported query type")),
+        },
+    };
+
+    // Check cache first
+    if let Some(answer) = cache.get(&cache_key) {
+        if !answer.is_expired() {
+            let port_sock: Vec<SocketAddr> = answer
+                .ips
+                .iter()
+                .map(|ip| SocketAddr::new(*ip, port))
+                .collect();
+            return Ok(port_sock);
+        }
+    }
+
+    // Cache miss or expired - use custom run function
+    let res = run(backend).await?;
+
+    // Cache the result
+    if res.is_empty() {
+        cache.put_negative(cache_key.clone());
+    } else {
+        let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(60);
+        let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
+        let answer = super::DnsAnswer::new(
+            ips,
+            std::time::Duration::from_secs(ttl as u64),
+            super::cache::Source::System,
+            super::cache::Rcode::NoError,
+        );
+        cache.put(cache_key, answer);
+    }
+
+    Ok(res)
+}
+
+#[cfg(feature = "dns_cache")]
+/// Resolves with cached DNS query type (reserved for future use)
+#[allow(dead_code)]
 async fn resolve_cached_qtype(
     cache: &'static DnsCache,
     backend: DnsBackend,
@@ -414,10 +477,8 @@ async fn resolve_cached_qtype(
     qtype_key: QType,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::cache::{Key, QType as CacheQType};
-    // TODO: 设计不一致 - 创建了包含查询类型的键但缓存API只使用域名
-    // 这导致A/AAAA查询共享同一缓存条目，可能需要重构缓存API
-    #[allow(unused_variables)]
-    let ck = Key {
+
+    let cache_key = Key {
         name: host.to_string(),
         qtype: match qtype_key {
             QType::A => CacheQType::A,
@@ -427,7 +488,7 @@ async fn resolve_cached_qtype(
     };
 
     // 命中缓存
-    if let Some(answer) = cache.get(host) {
+    if let Some(answer) = cache.get(&cache_key) {
         #[cfg(feature = "metrics")]
         metrics::counter!("dns_cache_hit_total").increment(1);
         return Ok(answer
@@ -464,7 +525,7 @@ async fn resolve_cached_qtype(
     };
     // 写回缓存
     if res.is_empty() {
-        cache.put_negative(host);
+        cache.put_negative(cache_key.clone());
     } else {
         // TTL：保守取 60s；如后端提供 TTL，可在 udp/dot/doh 解析处带回真实 TTL
         let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
@@ -472,13 +533,13 @@ async fn resolve_cached_qtype(
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(60);
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
-        let answer = super::DnsAnswer {
+        let answer = super::DnsAnswer::new(
             ips,
-            ttl: std::time::Duration::from_secs(ttl as u64),
-            source: super::cache::Source::System,
-            rcode: super::cache::Rcode::NoError,
-        };
-        cache.put(host, answer);
+            std::time::Duration::from_secs(ttl as u64),
+            super::cache::Source::System,
+            super::cache::Rcode::NoError,
+        );
+        cache.put(cache_key, answer);
     }
     Ok(res)
 }
@@ -487,7 +548,6 @@ async fn resolve_cached_qtype(
 #[allow(dead_code)] // 缓存刷新功能当前未被使用，但保留用于未来实现
 async fn refresh_cached_qtype(
     cache: &'static DnsCache,
-    #[allow(unused_variables)] // TODO: 缓存键设计用于按查询类型刷新，当前未实现
     ck: super::cache::Key,
     backend: DnsBackend,
     host: &str,
@@ -514,20 +574,20 @@ async fn refresh_cached_qtype(
         b => resolve_qsel_qtype(b, qsel, host, port, timeout).await?,
     };
     if res.is_empty() {
-        cache.put_negative(host);
+        cache.put_negative(ck.clone());
     } else {
         let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(60);
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
-        let answer = super::DnsAnswer {
+        let answer = super::DnsAnswer::new(
             ips,
-            ttl: std::time::Duration::from_secs(ttl as u64),
-            source: super::cache::Source::System,
-            rcode: super::cache::Rcode::NoError,
-        };
-        cache.put(host, answer);
+            std::time::Duration::from_secs(ttl as u64),
+            super::cache::Source::System,
+            super::cache::Rcode::NoError,
+        );
+        cache.put(ck, answer);
     }
     Ok(())
 }
@@ -536,7 +596,6 @@ async fn refresh_cached_qtype(
 #[allow(dead_code)] // 缓存刷新功能当前未被使用，但保留用于未来实现
 async fn refresh<F, Fut>(
     cache: &'static DnsCache,
-    #[allow(unused_variables)] // TODO: 缓存键设计用于按查询类型刷新，当前未实现
     ck: super::cache::Key,
     backend: DnsBackend,
     run: F,
@@ -560,20 +619,20 @@ where
         b => run(b).await?,
     };
     if res.is_empty() {
-        cache.put_negative(&ck.name);
+        cache.put_negative(ck.clone());
     } else {
         let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
             .ok()
             .and_then(|v| v.parse::<u32>().ok())
             .unwrap_or(60);
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
-        let answer = super::DnsAnswer {
+        let answer = super::DnsAnswer::new(
             ips,
-            ttl: std::time::Duration::from_secs(ttl as u64),
-            source: super::cache::Source::System,
-            rcode: super::cache::Rcode::NoError,
-        };
-        cache.put(&ck.name, answer);
+            std::time::Duration::from_secs(ttl as u64),
+            super::cache::Source::System,
+            super::cache::Rcode::NoError,
+        );
+        cache.put(ck, answer);
     }
     Ok(())
 }

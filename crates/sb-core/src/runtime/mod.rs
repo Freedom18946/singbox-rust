@@ -51,7 +51,12 @@ impl<'a> Runtime<'a> {
     /// Create runtime from configuration IR
     pub fn from_config_ir(ir: &'a ConfigIR) -> crate::error::SbResult<Self> {
         let engine = Engine::new(ir);
-        let bridge = Bridge::new(); // TODO: Initialize bridge from IR
+        let bridge = Bridge::new_from_config(ir)
+            .map_err(|e| crate::error::SbError::config(
+                sb_types::IssueCode::SchemaInvalid,
+                "bridge_init",
+                format!("Failed to initialize bridge from IR: {}", e)
+            ))?;
         let switchboard = switchboard::SwitchboardBuilder::from_config_ir(ir)?;
         Ok(Self::new(engine, bridge, switchboard))
     }

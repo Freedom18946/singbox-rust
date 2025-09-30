@@ -25,14 +25,14 @@ pub async fn resolve_checked(host: &str) -> Result<Vec<IpAddr>> {
     // Skip resolution if it's already an IP
     if let Ok(ip) = host.parse::<IpAddr>() {
         if super::security::is_private_ip(ip) {
-            anyhow::bail!("direct private ip not allowed: {}", ip);
+            anyhow::bail!("direct private ip not allowed: {ip}");
         }
         return Ok(vec![ip]);
     }
 
     // Apply IDNA normalization first
     let normalized_host = super::security::normalize_host(host)
-        .with_context(|| format!("IDNA normalization failed for host: {}", host))?;
+        .with_context(|| format!("IDNA normalization failed for host: {host}"))?;
 
     let t0 = Instant::now();
     let r = init_resolver();
@@ -42,13 +42,21 @@ pub async fn resolve_checked(host: &str) -> Result<Vec<IpAddr>> {
     match resp {
         Ok(ips) => {
             super::security_metrics::record_dns_latency_ms(ms);
-            super::security_metrics::inc_dns_cache_hit(); // TODO: distinguish hit/miss
+
+            // Heuristic to distinguish cache hit/miss based on response time
+            // Cache hits are typically very fast (<5ms), actual DNS queries take longer
+            if ms < 5 {
+                super::security_metrics::inc_dns_cache_hit();
+            } else {
+                super::security_metrics::inc_dns_cache_miss();
+            }
+
             let resolved_ips: Vec<IpAddr> = ips.iter().collect();
 
             // Check each resolved IP against private ranges
             for ip in &resolved_ips {
                 if super::security::is_private_ip(*ip) {
-                    anyhow::bail!("resolved to private ip: {}", ip);
+                    anyhow::bail!("resolved to private ip: {ip}");
                 }
             }
 
@@ -56,8 +64,10 @@ pub async fn resolve_checked(host: &str) -> Result<Vec<IpAddr>> {
         }
         Err(e) => {
             super::security_metrics::record_dns_latency_ms(ms);
+            // DNS resolution error - this is neither cache hit nor miss in the traditional sense
+            // but we'll count it as a miss since we didn't get a successful response
             super::security_metrics::inc_dns_cache_miss();
-            anyhow::bail!("dns resolution failed: {}", e)
+            anyhow::bail!("dns resolution failed: {e}")
         }
     }
 }

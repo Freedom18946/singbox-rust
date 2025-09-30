@@ -11,7 +11,7 @@ minimal = []
 # Dev/auxiliary CLI feature gates
 bench-cli = ["hdrhistogram", "metrics"]
 manpage = []
-dev-cli = []
+dev-cli = ["notify"]
 prefetch = []
 admin_envelope = ["sb-admin-contract"]
 auth = ["admin_envelope"]
@@ -29,6 +29,7 @@ subs_clash  = ["sb-subscribe/subs_clash"]
 subs_singbox= ["sb-subscribe/subs_singbox"]
 explain = ["sb-core/explain"]
 rule_coverage = ["sb-core/rule_coverage"]
+rules_capture = ["admin_debug", "sb-core/rules_capture"]
 dsl_plus = ["sb-core/dsl_plus"]
 dsl_analyze = ["sb-core/dsl_analyze"]
 dsl_derive = ["sb-core/dsl_derive"]
@@ -124,6 +125,10 @@ name = "version"
 path = "src/bin/version.rs"
 
 [[bin]]
+name = "sb-version"
+path = "src/bin/sb-version.rs"
+
+[[bin]]
 name = "handshake"
 path = "src/bin/handshake.rs"
 required-features = ["handshake_alpha"]
@@ -210,6 +215,8 @@ rsa = { version = "0.9", optional = true }
 p256 = { version = "0.13", optional = true }
 pkcs8 = { version = "0.10", optional = true }
 pkcs1 = { version = "0.7", optional = true }
+# File watching for hot reload
+notify = { version = "6.1", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

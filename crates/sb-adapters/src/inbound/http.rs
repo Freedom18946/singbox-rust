@@ -18,15 +18,17 @@ use tracing::{debug, info, warn};
 // SB_HTTP_SMOKE_405=1    -> 在 accept 后直接回 405（烟囱模式）
 // SB_HTTP_DISABLE_STOP=1 -> 调试时禁用 stop 打断（谨慎使用）
 use std::sync::OnceLock;
+#[allow(dead_code)] // Reserved for smoke testing
 static HTTP_FLAG_SMOKE_405: OnceLock<bool> = OnceLock::new();
+#[allow(dead_code)] // Reserved for graceful shutdown control
 static HTTP_FLAG_DISABLE_STOP: OnceLock<bool> = OnceLock::new();
 #[inline]
-#[cfg(any(test, feature = "dev-cli"))]
+#[cfg(test)]
 fn http_flag_smoke_405() -> bool {
     *HTTP_FLAG_SMOKE_405.get_or_init(|| std::env::var("SB_HTTP_SMOKE_405").is_ok())
 }
 #[inline]
-#[cfg(any(test, feature = "dev-cli"))]
+#[cfg(test)]
 fn http_flag_disable_stop() -> bool {
     *HTTP_FLAG_DISABLE_STOP.get_or_init(|| std::env::var("SB_HTTP_DISABLE_STOP").is_ok())
 }
@@ -45,6 +47,7 @@ use std::{net::SocketAddr, sync::Arc};
     since = "0.1.0",
     note = "kept for compatibility; metrics collection not yet implemented"
 )]
+#[allow(dead_code)] // Reserved for connection tracking
 static HTTP_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(feature = "metrics")]
@@ -53,13 +56,13 @@ use once_cell::sync::OnceCell;
 use sb_core::outbound::health as ob_health;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::outbound::{
-    self, direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
+    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
 use sb_core::outbound::{
     health::MultiHealthView,
     registry,
-    selector::{HealthView, PoolSelector},
+    selector::PoolSelector,
 };
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -87,7 +90,7 @@ fn http_disable_stop_enabled() -> bool {
     )
 }
 /// 回滚开关：降级为"只写 + 关"
-#[cfg(any(test, feature = "dev-cli"))]
+#[cfg(test)]
 fn http_legacy_write_enabled() -> bool {
     matches!(
         std::env::var("SB_HTTP_LEGACY_WRITE").ok().as_deref(),
@@ -103,6 +106,7 @@ fn should_short_circuit_405() -> bool {
 #[deprecated(since = "0.1.0", note = "reserved for future header size limits")]
 const MAX_HEADER: usize = 8 * 1024;
 #[deprecated(since = "0.1.0", note = "reserved for future timeout configuration")]
+#[allow(dead_code)] // Reserved for timeout enforcement
 const READ_HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
@@ -306,20 +310,20 @@ async fn handle_client(
             if let Some(name) = pool_name {
                 // Named proxy pool selection
                 let sel = SELECTOR.get_or_init(|| {
-                    let ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
+                    let _ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(10_000);
-                    let cap = std::env::var("SB_PROXY_STICKY_CAP")
+                    let _cap = std::env::var("SB_PROXY_STICKY_CAP")
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(4096);
                     PoolSelector::new("http_proxy".to_string(), "default".to_string())
                 });
-                let health = MultiHealthView;
+                let _health = MultiHealthView;
 
                 if let Some(reg) = registry::global() {
-                    if let Some(pool) = reg.pools.get(&name) {
+                    if let Some(_pool) = reg.pools.get(&name) {
                         let default_peer: std::net::SocketAddr =
                             std::net::SocketAddr::from(([0, 0, 0, 0], 0));
                         if let Some(ep) = sel.select(
@@ -481,6 +485,7 @@ async fn read_request_head(cli: &mut TcpStream) -> Result<(String, String, Strin
             return Err(anyhow!("client closed while reading header"));
         }
         buf.extend_from_slice(&tmp[..n]);
+        #[allow(deprecated)]
         if buf.len() > MAX_HEADER {
             return Err(anyhow!("header too large"));
         }
@@ -648,6 +653,7 @@ where
     Ok(())
 }
 
+#[allow(dead_code)] // Reserved for auth failures
 async fn respond_403(cli: &mut TcpStream) -> Result<()> {
     let body = b"Forbidden";
     let resp = format!(

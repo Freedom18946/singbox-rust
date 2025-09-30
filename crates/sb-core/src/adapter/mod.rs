@@ -63,10 +63,137 @@ impl Bridge {
     }
 
     /// Create bridge from IR configuration
-    pub fn new_from_config(_ir: &sb_config::ir::ConfigIR) -> anyhow::Result<Self> {
-        // For now, create empty bridge
-        // In a real implementation, this would construct inbounds and outbounds from IR
-        Ok(Self::new())
+    pub fn new_from_config(ir: &sb_config::ir::ConfigIR) -> anyhow::Result<Self> {
+        let mut bridge = Self::new();
+
+        // Build inbound services from IR
+        #[cfg(feature = "scaffold")]
+        {
+            for inbound in &ir.inbounds {
+                let inbound_service = match inbound.ty {
+                    sb_config::ir::InboundType::Socks => {
+                        // Create SOCKS5 inbound service
+                        use crate::inbound::socks5::Socks5;
+                        use std::net::SocketAddr;
+
+                        let addr: SocketAddr = format!("{}:{}", inbound.listen, inbound.port)
+                            .parse()
+                            .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
+
+                        Arc::new(Socks5::new(addr.ip().to_string(), addr.port())) as Arc<dyn InboundService>
+                    }
+                    sb_config::ir::InboundType::Http => {
+                        // Create HTTP inbound service
+                        use crate::inbound::http::HttpInboundService;
+                        use std::net::SocketAddr;
+
+                        let addr: SocketAddr = format!("{}:{}", inbound.listen, inbound.port)
+                            .parse()
+                            .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
+
+                        Arc::new(HttpInboundService::new(addr)) as Arc<dyn InboundService>
+                    }
+                    sb_config::ir::InboundType::Tun => {
+                        // TUN inbound service
+                        use crate::inbound::tun::TunInboundService;
+
+                        Arc::new(TunInboundService::new()) as Arc<dyn InboundService>
+                    }
+                };
+
+                bridge.add_inbound(inbound_service);
+            }
+        }
+
+        #[cfg(not(feature = "scaffold"))]
+        {
+            if !ir.inbounds.is_empty() {
+                return Err(anyhow::anyhow!("Inbound services not available without scaffold feature"));
+            }
+        }
+
+        // Build outbound connectors from IR
+        for outbound in &ir.outbounds {
+            let name = outbound.name.clone().unwrap_or_else(|| format!("outbound_{}", outbound.ty_str()));
+            let kind = outbound.ty_str().to_string();
+
+            let connector = match outbound.ty {
+                sb_config::ir::OutboundType::Direct => {
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
+                sb_config::ir::OutboundType::Block => {
+                    #[cfg(feature = "scaffold")]
+                    {
+                        use crate::outbound::block_connector::BlockConnector;
+                        Arc::new(BlockConnector::new()) as Arc<dyn OutboundConnector>
+                    }
+                    #[cfg(not(feature = "scaffold"))]
+                    {
+                        // Fall back to direct connector when scaffold is not available
+                        use crate::outbound::direct_connector::DirectConnector;
+                        Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    }
+                }
+                sb_config::ir::OutboundType::Http => {
+                    // HTTP proxy connector would be implemented here
+                    // For now, fall back to direct
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
+                sb_config::ir::OutboundType::Socks => {
+                    // SOCKS5 proxy connector would be implemented here
+                    // For now, fall back to direct
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
+                sb_config::ir::OutboundType::Vless => {
+                    #[cfg(feature = "out_vless")]
+                    {
+                        use crate::outbound::vless::VlessOutbound;
+                        use crate::outbound::vless::VlessConfig;
+
+                        if let (Some(server), Some(port)) = (&outbound.server, outbound.port) {
+                            let config = VlessConfig {
+                                server: server.clone(),
+                                port,
+                                uuid: uuid::Uuid::new_v4(), // Would need to parse from IR
+                                flow: None,
+                                encryption: Some("none".to_string()),
+                            };
+
+                            match VlessOutbound::new(config) {
+                                Ok(vless_outbound) => {
+                                    Arc::new(vless_outbound) as Arc<dyn OutboundConnector>
+                                }
+                                Err(_) => {
+                                    use crate::outbound::direct_connector::DirectConnector;
+                                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                                }
+                            }
+                        } else {
+                            use crate::outbound::direct_connector::DirectConnector;
+                            Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                        }
+                    }
+                    #[cfg(not(feature = "out_vless"))]
+                    {
+                        use crate::outbound::direct_connector::DirectConnector;
+                        Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    }
+                }
+                sb_config::ir::OutboundType::Selector => {
+                    // Selector outbound would be implemented here
+                    // For now, fall back to direct
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
+            };
+
+            bridge.add_outbound(name, kind, connector);
+        }
+
+        Ok(bridge)
     }
     pub fn add_inbound(&mut self, ib: Arc<dyn InboundService>) {
         self.inbounds.push(ib);

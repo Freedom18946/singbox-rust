@@ -26,6 +26,7 @@ pub enum Security {
 }
 
 impl Security {
+    #[allow(dead_code)]
     fn as_str(&self) -> &str {
         match self {
             Security::None => "none",
@@ -104,7 +105,7 @@ pub struct VmessConfig {
 impl Default for VmessConfig {
     fn default() -> Self {
         Self {
-            server_addr: "127.0.0.1:443".parse().unwrap(),
+            server_addr: SocketAddr::from(([127, 0, 0, 1], 443)),
             auth: VmessAuth {
                 uuid: Uuid::new_v4(),
                 alter_id: 0,
@@ -138,6 +139,7 @@ struct VmessRequestHeader {
 pub struct VmessConnector {
     config: VmessConfig,
     /// Cached authentication data
+    #[allow(dead_code)]
     auth_cache: Option<Vec<u8>>,
 }
 
@@ -155,7 +157,7 @@ impl VmessConnector {
         let mut auth_data = Vec::new();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // Add timestamp (8 bytes)
@@ -323,11 +325,8 @@ impl VmessConnector {
             return Err(AdapterError::InvalidConfig("VMess UUID cannot be nil"));
         }
 
-        if self.config.auth.alter_id > 65535 {
-            return Err(AdapterError::InvalidConfig(
-                "VMess alter_id must be between 0 and 65535",
-            ));
-        }
+        // alter_id is u16, so it's always <= 65535
+        // Validation passes automatically
 
         Ok(())
     }

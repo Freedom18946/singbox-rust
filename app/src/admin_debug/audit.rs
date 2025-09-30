@@ -23,7 +23,8 @@ fn get_log() -> &'static Mutex<VecDeque<AuditEntry>> {
     AUDIT_LOG.get_or_init(|| Mutex::new(VecDeque::with_capacity(MAX_AUDIT_ENTRIES)))
 }
 
-pub fn log(entry: AuditEntry) {
+#[allow(dead_code)]
+pub fn log(entry: &AuditEntry) {
     let log = get_log();
     if let Ok(mut queue) = log.lock() {
         queue.push_back(entry.clone());
@@ -40,24 +41,20 @@ pub fn log(entry: AuditEntry) {
     }
 }
 
+#[allow(dead_code)]
+#[must_use]
 pub fn recent(n: usize) -> Vec<AuditEntry> {
     let log = get_log();
-    if let Ok(queue) = log.lock() {
-        queue.iter().rev().take(n).cloned().collect()
-    } else {
-        Vec::new()
-    }
+    log.lock().map_or_else(|_| Vec::new(), |queue| queue.iter().rev().take(n).cloned().collect())
 }
 
+#[must_use]
 pub fn latest_ts() -> Option<u64> {
     let log = get_log();
-    if let Ok(queue) = log.lock() {
-        queue.back().map(|entry| entry.ts)
-    } else {
-        None
-    }
+    log.lock().map_or(None, |queue| queue.back().map(|entry| entry.ts))
 }
 
+#[allow(dead_code)]
 pub fn create_entry(
     actor: impl Into<String>,
     action: impl Into<String>,
@@ -82,7 +79,9 @@ pub fn create_entry(
 }
 
 impl AuditEntry {
-    pub fn with_changed(mut self, changed: bool) -> Self {
+    #[allow(dead_code)]
+    #[must_use] 
+    pub const fn with_changed(mut self, changed: bool) -> Self {
         self.changed = Some(changed);
         self
     }

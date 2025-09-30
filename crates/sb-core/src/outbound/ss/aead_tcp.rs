@@ -269,11 +269,18 @@ pub fn decrypt_aead(
 /// AEAD encrypted TCP stream
 pub struct SsAeadTcpStream {
     inner: tokio::net::TcpStream,
+    /// Encryption key for AEAD cipher
+    #[allow(dead_code)]
     key: [u8; 32],
+    #[allow(dead_code)]
     cipher: SsAeadCipher,
+    #[allow(dead_code)]
     write_nonce: u64,
+    #[allow(dead_code)]
     read_nonce: u64,
+    #[allow(dead_code)]
     read_buffer: Vec<u8>,
+    #[allow(dead_code)]
     write_buffer: Vec<u8>,
 }
 

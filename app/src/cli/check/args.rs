@@ -18,7 +18,7 @@ pub struct CheckArgs {
     /// Dump schema: v1 (hand), v2 (schemars). Requires --schema.
     #[arg(long = "schema-dump", value_parser = ["v1","v2"], default_value="v1")]
     pub schema_dump: String,
-    /// Check reference files (rules_text/rules_json/*file/*path)
+    /// Check reference files (`rules_text/rules_json`/*file/*path)
     #[arg(long = "check-refs")]
     pub check_refs: bool,
     /// Max reference file size in bytes (default 256 KiB)
@@ -66,10 +66,10 @@ pub struct CheckArgs {
     /// Apply a JSON-Patch plan (from stdin) to the loaded config and print result to stdout. No file writes.
     #[arg(long = "apply-plan")]
     pub apply_plan: bool,
-    /// Attach stable RuleID (sha256-8) to issues/graph to help mapping after reorder/minimize
+    /// Attach stable `RuleID` (sha256-8) to issues/graph to help mapping after reorder/minimize
     #[arg(long = "with-rule-id")]
     pub with_rule_id: bool,
-    /// Compare two configs (canonical) and print rule-level diff using RuleID
+    /// Compare two configs (canonical) and print rule-level diff using `RuleID`
     #[arg(long = "diff-config", value_names = ["OLD","NEW"])]
     pub diff_config: Vec<String>,
     /// Validate config against strong typed Schema v2 (feature: schema-v2). Automatically enabled with --deny-unknown.

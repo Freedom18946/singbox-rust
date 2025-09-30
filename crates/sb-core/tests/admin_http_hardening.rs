@@ -15,7 +15,7 @@ fn connect(addr: &str) -> TcpStream {
                 tries += 1;
                 thread::sleep(Duration::from_millis(20));
             }
-            Err(e) => panic!("connect failed: {e}"),
+            Err(e) => assert!(false, "Connection failed after retries: {e}"),
         }
     }
 }

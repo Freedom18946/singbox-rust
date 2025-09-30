@@ -49,7 +49,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         return Ok(());
     }
 
-    let q = path_q.splitn(2, '?').nth(1).unwrap_or("");
+    let q = path_q.split_once('?').map_or("", |x| x.1);
     let _params = parse_query(q);
 
     if path_q.starts_with("/router/analyze/kinds") {
@@ -89,16 +89,16 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             if !supported.iter().any(|s| s.as_str() == kind) {
                 let supported_list = supported
                     .iter()
-                    .map(|s| s.as_str())
+                    .map(std::string::String::as_str)
                     .collect::<Vec<_>>()
                     .join(", ");
-                let hint = format!("supported kinds: [{}]", supported_list);
+                let hint = format!("supported kinds: [{supported_list}]");
                 return respond_json_error(sock, 400, "unsupported patch kind", Some(&hint)).await;
             }
 
             let text = if let Some(b64) = params.get("inline") {
                 // Validate size estimate before decoding
-                if let Err(_) = validate_inline_size_estimate(b64) {
+                if validate_inline_size_estimate(b64).is_err() {
                     return respond_json_error(
                         sock,
                         413,
@@ -122,7 +122,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 };
 
                 // Validate actual decoded size
-                if let Err(_) = validate_decoded_size(&bytes) {
+                if validate_decoded_size(&bytes).is_err() {
                     return respond_json_error(
                         sock,
                         413,
@@ -170,11 +170,11 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 }
                 Err(e) => {
                     let supported_list = supported_kinds().join(", ");
-                    let hint = format!("supported kinds: [{}]", supported_list);
+                    let hint = format!("supported kinds: [{supported_list}]");
                     respond_json_error(
                         sock,
                         400,
-                        &format!("patch build failed: {}", e),
+                        &format!("patch build failed: {e}"),
                         Some(&hint),
                     )
                     .await
@@ -196,7 +196,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         let params = parse_query(q);
         let text = if let Some(b64) = params.get("inline") {
             // Validate size estimate before decoding
-            if let Err(_) = validate_inline_size_estimate(b64) {
+            if validate_inline_size_estimate(b64).is_err() {
                 return respond_json_error(
                     sock,
                     413,
@@ -220,7 +220,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             };
 
             // Validate actual decoded size
-            if let Err(_) = validate_decoded_size(&bytes) {
+            if validate_decoded_size(&bytes).is_err() {
                 return respond_json_error(
                     sock,
                     413,

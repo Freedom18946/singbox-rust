@@ -43,7 +43,7 @@ fn cache_stats_provider() -> cache_stats::CacheStats {
     }
 }
 
-pub fn register_router_hot_adapter(src: &'static dyn DecisionCacheSource) {
+pub fn register_router_hot_adapter(_src: &'static dyn DecisionCacheSource) {
     cache_hot::register_hot_provider(cache_hot_provider);
 }
 

@@ -16,6 +16,12 @@ use std::fmt;
 #[derive(Debug)]
 pub struct NoVerify;
 
+impl Default for NoVerify {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NoVerify {
     pub fn new() -> Self {
         Self

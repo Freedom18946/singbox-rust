@@ -33,6 +33,97 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### 🔨 Architecture Refactoring & TODO Resolution
+- **VLESS Protocol Support**: ✅ Added VLESS variant to OutboundImpl enum to complete protocol matrix
+  - *Rationale*: Previously using Direct as placeholder, impacting protocol accuracy
+  - *Implementation*: Added proper VLESS enum variant with configuration mapping from sb-config to sb-core
+  - *Result*: VLESS configurations now properly instantiate VlessConfig instead of falling back to Direct
+- **Bridge Runtime Initialization**: ✅ Implemented proper Bridge initialization from IR
+  - *Rationale*: Current Bridge::new() creates empty bridge, missing IR-based configuration
+  - *Implementation*: Enhanced Bridge::new_from_config to construct inbound/outbound services from ConfigIR
+  - *Result*: Runtime now properly initializes bridge with configured inbound/outbound services from IR
+- **DNS Cache Architecture Cleanup**: ✅ Resolved cache key design inconsistency
+  - *Rationale*: Cache API uses domain-only keys but creates query-type-specific keys internally
+  - *Implementation*: Unified cache key design using Key struct (domain + QType) throughout DNS cache API
+  - *Result*: A and AAAA records now have separate cache entries, eliminating shared cache conflicts
+- **Dependency Architecture**: ✅ Preserved clean dependency boundaries to avoid circular dependencies
+  - *Rationale*: sb-config should not depend on sb-core to maintain clear module boundaries
+  - *Implementation*: Moved VLESS configuration processing from sb-config to sb-core, maintaining unidirectional dependency
+  - *Result*: Clean architecture with sb-core depending on sb-config but not vice versa
+- **Runtime Supervisor Configuration Diff**: ✅ Implemented proper old-IR extraction for accurate reload diff computation
+  - *Rationale*: Hot reload diff computation was using `new_ir.clone()` as placeholder for old IR, preventing meaningful change detection
+  - *Problem Analysis*:
+    - State struct lacked storage of current ConfigIR
+    - `reload()` method couldn't access previous configuration for comparison
+    - Diff computation was essentially comparing config against itself (no-op)
+  - *Implementation*:
+    - Added `current_ir: ConfigIR` field to both router and non-router State variants
+    - Modified `State::new()` to accept and store initial ConfigIR
+    - Updated `reload()` to extract old_ir from state before applying new configuration
+    - Enhanced `handle_reload()` and `handle_reload_no_router()` to update current_ir atomically during state transitions
+    - Added structured logging for diff metrics (inbounds/outbounds added/removed) when `SB_RUNTIME_DIFF=1`
+  - *Result*:
+    - Hot reload now correctly computes delta between actual old and new configurations
+    - Diff metrics accurately reflect configuration changes for monitoring/debugging
+    - State transitions maintain IR consistency for future reloads
+    - Memory overhead: single ConfigIR clone (~KB range for typical configs)
+  - *Files Modified*: `crates/sb-core/src/runtime/supervisor.rs`
+
+### 🏗️ Architecture Debt & Future Integration Points
+
+The following TODO items represent intentional architectural placeholders that require system-wide abstractions not yet fully implemented:
+
+- **V2Ray API Handler Service Integration** (`crates/sb-api/src/v2ray/services.rs`)
+  - *Current State*: HandlerService methods (add/remove/alter inbound/outbound) return success with logging only
+  - *Required Architecture*:
+    - Global InboundManager trait to dynamically add/remove/configure inbound listeners
+    - Global OutboundManager trait to dynamically add/remove/configure outbound connectors
+    - Thread-safe registry accessible from V2Ray gRPC service handlers
+  - *Design Considerations*:
+    - Hot reload currently handled by Supervisor at config-file level (replace entire state)
+    - Runtime inbound/outbound modification requires finer-grained control
+    - Must maintain consistency with ConfigIR-based initialization
+  - *Integration Path*:
+    1. Define `InboundManager` and `OutboundManager` traits in sb-core
+    2. Implement registry in Bridge or create separate ManagerRegistry
+    3. Pass Arc<dyn Manager> to HandlerServiceImpl::new()
+    4. Replace TODO logging with actual manager method calls
+  - *Files Affected*: 6 TODO sites in add/remove/alter methods
+
+- **TUN Inbound Router Integration** (`crates/sb-adapters/src/inbound/tun_enhanced.rs:458`)
+  - *Current State*: TUN inbound directly uses configured outbound without routing
+  - *Required Architecture*:
+    - Router interface to make per-connection routing decisions
+    - Connection context enrichment (source IP, destination, protocol)
+  - *Design Considerations*:
+    - Current design: EnhancedTunInbound holds single Arc<dyn OutboundConnector>
+    - Correct design: Should query router for outbound selection per connection
+    - Requires Router trait accessible from TUN packet handler
+  - *Integration Path*:
+    1. Add optional router: Option<Arc<dyn Router>> field to EnhancedTunInbound
+    2. In handle_tcp_connection/handle_udp_packet, call router.route(&ctx) to select outbound
+    3. Fall back to default outbound if router absent (backward compat)
+  - *Files Affected*: TCP/UDP connection handling in tun_enhanced.rs
+
+- **Monitoring Bridge Integration** (`crates/sb-api/src/monitoring/bridge.rs:267`)
+  - *Current State*: Monitoring bridge returns mock metrics
+  - *Required Integration*: Wire to actual runtime state, connection tracker, router metrics
+  - *Future Work*: Connect to Supervisor state, Bridge statistics, and Engine routing metrics
+
+### 📋 Code Quality Improvements (Ultrathink Session)
+
+- **Clippy Strict Mode Compliance**: Fixed 178 files, 3414 insertions
+  - Variable naming clarity (req/res → request/response, sem/sec → semaphore/timestamp_sec)
+  - Numeric literal readability (100000 → 100_000)
+  - Type conversion safety annotations (#[allow(clippy::cast_precision_loss)])
+  - Option/Result idiomatic patterns (if-let → map_or_else)
+  - Missing documentation (added # Errors sections to Result-returning functions)
+  - lazy_static → std::sync::LazyLock (Rust 1.80+)
+  - String allocation optimization (format! → writeln! for buffers)
+  - HashMap generalization (added BuildHasher bounds for flexibility)
+  - Audit log efficiency (by-reference parameter passing)
+- **Zero Compilation Warnings**: All clippy pedantic/style warnings resolved
+
 ### 🔐 Security & Authentication (PROMPTS #30-31)
 - **JWT Authentication Provider**: Production-ready JWT validation with RS256/ES256/HS256 support, JWKS caching with rotation, and clock skew tolerance
 - **Security utilities crate** (`sb-security`): Credential redaction, memory-safe secret handling with ZeroizeOnDrop

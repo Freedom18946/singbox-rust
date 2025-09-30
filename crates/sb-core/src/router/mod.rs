@@ -125,8 +125,10 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::{Arc, RwLock},
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
+#[cfg(feature = "metrics")]
+use std::time::Instant;
 use tokio::fs as tfs;
 use tokio::time::sleep;
 
@@ -401,6 +403,7 @@ pub fn router_build_index_from_str(
     rules: &str,
     max: usize,
 ) -> Result<Arc<RouterIndex>, BuildError> {
+    #[cfg(feature = "metrics")]
     let build_start = Instant::now();
     // 现有索引容器
     let mut exact = HashMap::new();
@@ -780,7 +783,31 @@ pub fn router_build_index_from_str(
         rules_capture::capture(&expanded);
     }
     let checksum = blake3_checksum(&expanded /* 使用展开后的文本 */);
+    #[cfg(feature = "router_keyword")]
     let mut idx = RouterIndex {
+        exact,
+        suffix,
+        suffix_map,
+        port_rules,
+        port_ranges,
+        transport_tcp,
+        transport_udp,
+        cidr4,
+        cidr6,
+        cidr4_buckets: buckets4,
+        cidr6_buckets: buckets6,
+        geoip_rules: geoip,
+        geosite_rules: geosite,
+        #[cfg(feature = "router_keyword")]
+        keyword_rules,
+        #[cfg(feature = "router_keyword")]
+        keyword_idx: None,
+        default: default.unwrap_or("direct"),
+        gen: 0,
+        checksum,
+    };
+    #[cfg(not(feature = "router_keyword"))]
+    let idx = RouterIndex {
         exact,
         suffix,
         suffix_map,
@@ -868,7 +895,7 @@ fn v_unquote(s: &str) -> &str {
     }
 }
 
-fn expand_vars_on_line<'a>(line: &'a str, vars: &HashMap<String, String>) -> String {
+fn expand_vars_on_line(line: &str, vars: &HashMap<String, String>) -> String {
     // 支持两种形式：
     // 1) $NAME                          —— 未知变量：原样保留并计数 unknown_var
     // 2) ${NAME:-default value here}    —— 未知或空值时使用 default；default 不做递归替换
@@ -911,7 +938,7 @@ fn expand_vars_on_line<'a>(line: &'a str, vars: &HashMap<String, String>) -> Str
                         .get(name)
                         .map(String::as_str)
                         .or(default_val)
-                        .unwrap_or_else(|| {
+                        .unwrap_or({
                             #[cfg(feature = "metrics")]
                             incr_counter(
                                 "router_rules_invalid_total",
@@ -1074,9 +1101,9 @@ fn intern_dec(s: &str) -> &'static str {
 fn estimate_footprint_bytes(idx: &RouterIndex) -> usize {
     // 粗略估算：字符串 key 长度 + (指针/元组)开销；只求数量级，不追求精确
     let mut bytes = 0usize;
-    bytes += idx.exact.iter().map(|(k, _)| k.len()).sum::<usize>();
+    bytes += idx.exact.keys().map(|k| k.len()).sum::<usize>();
     bytes += idx.suffix.iter().map(|(k, _)| k.len()).sum::<usize>();
-    bytes += idx.suffix_map.iter().map(|(k, _)| k.len()).sum::<usize>();
+    bytes += idx.suffix_map.keys().map(|k| k.len()).sum::<usize>();
     bytes += idx.port_rules.len() * std::mem::size_of::<(u16, *const u8)>();
     bytes += idx.port_ranges.len() * std::mem::size_of::<(u16, u16, *const u8)>();
     bytes += idx.cidr4.len() * std::mem::size_of::<(Ipv4Net, *const u8)>();
@@ -1098,7 +1125,7 @@ fn estimate_footprint_bytes(idx: &RouterIndex) -> usize {
 #[inline]
 pub fn normalize_host_ascii<'a>(host: &'a str) -> std::borrow::Cow<'a, str> {
     // DNS 名字大小写不敏感；保持简单与可预测：ASCII 小写
-    if host.bytes().any(|b| b'A' <= b && b <= b'Z') {
+    if host.bytes().any(|b: u8| b.is_ascii_uppercase()) {
         std::borrow::Cow::Owned(host.to_ascii_lowercase())
     } else {
         std::borrow::Cow::Borrowed(host)
@@ -1107,7 +1134,7 @@ pub fn normalize_host_ascii<'a>(host: &'a str) -> std::borrow::Cow<'a, str> {
 
 #[cfg(feature = "idna")]
 #[inline]
-pub fn normalize_host<'a>(host: &'a str) -> String {
+pub fn normalize_host(host: &str) -> String {
     // 先 ASCII 小写，再 IDNA（domain_to_ascii 期望小写无所谓，但先做不伤害）
     let ascii = normalize_host_ascii(host);
     match idna::domain_to_ascii(&ascii) {
@@ -1118,7 +1145,7 @@ pub fn normalize_host<'a>(host: &'a str) -> String {
 
 #[cfg(not(feature = "idna"))]
 #[inline]
-pub fn normalize_host<'a>(host: &'a str) -> String {
+pub fn normalize_host(host: &str) -> String {
     normalize_host_ascii(host).into_owned()
 }
 
@@ -1369,6 +1396,7 @@ fn read_rules_with_includes<'a>(
     })
 }
 
+#[allow(dead_code)] // Fields used in hot reload implementation (run/try_reload_once methods)
 pub struct HotReloader {
     path: PathBuf,
     // ...
@@ -1380,31 +1408,44 @@ pub struct HotReloader {
 }
 
 impl HotReloader {
-    pub fn spawn(path: PathBuf, h: RouterHandle) {
+    pub fn spawn(path: PathBuf, router_handle: RouterHandle) {
         // 实现热重载逻辑：启动热重载监控
-        // 注意：实际的热重载逻辑已在其他地方实现，这里主要是启动监控任务
-
         tracing::info!("Router hot reloader configured for path: {:?}", path);
 
-        // 使用环境变量或其他机制来启用热重载
-        // 当前实现为标记配置完成，实际的热重载机制在router索引管理中
+        // 检查是否启用热重载
         if std::env::var("SB_ROUTER_HOT_RELOAD").is_ok() {
             tracing::info!("Hot reload enabled for router configuration");
+
+            // 创建热重载实例并启动监控任务
+            let reloader = Self {
+                path: path.clone(),
+                last_ok_checksum: [0; 32], // 初始为空checksum，首次reload会检测
+                backoff_ms: 0,
+                jitter_ms: 0,
+            };
+
+            // 在后台异步任务中运行热重载逻辑
+            tokio::spawn(async move {
+                // 集成RouterHandle到热重载逻辑中，用于应用新的路由索引
+                reloader.run_with_router_handle(router_handle).await;
+            });
         } else {
             tracing::debug!("Hot reload not enabled (set SB_ROUTER_HOT_RELOAD=1 to enable)");
+            // RouterHandle在热重载未启用时不需要使用，但保留接口一致性
+            // 未来如果有其他用途（如手动重载API）可以在这里处理
         }
-
-        // 保留RouterHandle用于后续可能的API调用
-        let _ = h; // 避免未使用变量警告
     }
 
-    async fn run(mut self) {
+    #[allow(dead_code)] // Hot reload implementation, to be activated when hot reload is enabled
+    /// Run hot reload loop with RouterHandle integration
+    async fn run_with_router_handle(mut self, router_handle: RouterHandle) {
         let mut interval = tokio::time::interval(Duration::from_millis(1000));
         let jitter_cap = std::env::var("SB_ROUTER_RULES_JITTER_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(0);
         self.jitter_ms = jitter_cap;
+
         loop {
             interval.tick().await;
             #[cfg(feature = "rand")]
@@ -1414,10 +1455,25 @@ impl HotReloader {
                     tokio::time::sleep(Duration::from_millis(j)).await;
                 }
             }
+
             match self.try_reload_once().await {
                 Ok(Some(newidx)) => {
-                    // 成功：切换并复位
-                    self.last_ok_checksum = newidx.checksum;
+                    // 成功重载新索引：应用到RouterHandle并复位退避
+                    tracing::info!("Hot reload: applying new router index (gen {})", newidx.gen);
+
+                    // Save checksum before moving newidx into Arc
+                    let checksum = newidx.checksum;
+
+                    if let Err(e) = router_handle.replace_index(newidx.clone()).await {
+                        tracing::error!("Failed to apply new router index: {}", e);
+                        // 即使应用失败，也更新checksum以避免重复尝试相同的配置
+                    } else {
+                        tracing::info!("Hot reload: successfully applied new router index");
+                        #[cfg(feature = "metrics")]
+                        incr_counter("router_rules_reload_success_total", &[]);
+                    }
+
+                    self.last_ok_checksum = checksum;
                     self.backoff_ms = 0;
                     #[cfg(feature = "metrics")]
                     set_gauge("router_rules_reload_backoff_ms", 0.0);
@@ -1425,22 +1481,29 @@ impl HotReloader {
                 Ok(None) => { /* 无变化 */ }
                 Err(e) => {
                     // 失败：记录并退避
-                    eprintln!("router reload failed: {}", e);
+                    tracing::error!("router reload failed: {}", e);
                     let cap = std::env::var("SB_ROUTER_RULES_BACKOFF_MAX_MS")
                         .ok()
                         .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(10_000);
-                    self.backoff_ms = next_backoff(self.backoff_ms, cap);
+                        .unwrap_or(30000);
+
+                    self.backoff_ms = std::cmp::min(
+                        if self.backoff_ms == 0 { 1000 } else { self.backoff_ms * 2 },
+                        cap,
+                    );
                     #[cfg(feature = "metrics")]
-                    set_gauge("router_rules_reload_backoff_ms", self.backoff_ms as f64);
-                    if self.backoff_ms > 0 {
-                        tokio::time::sleep(Duration::from_millis(self.backoff_ms)).await;
+                    {
+                        set_gauge("router_rules_reload_backoff_ms", self.backoff_ms as f64);
+                        incr_counter("router_rules_reload_error_total", &[]);
                     }
+                    tokio::time::sleep(Duration::from_millis(self.backoff_ms)).await;
                 }
             }
         }
     }
 
+
+    #[allow(dead_code)] // Hot reload implementation, to be activated when hot reload is enabled
     async fn try_reload_once(&mut self) -> Result<Option<Arc<RouterIndex>>, BuildError> {
         // 读取文件, mtime + checksum 判定是否变更；变更则构建
         let s = sfs::read_to_string(&self.path)?;
@@ -1461,17 +1524,6 @@ impl HotReloader {
     }
 }
 
-fn next_backoff(prev: u64, cap: u64) -> u64 {
-    if cap == 0 {
-        return 0;
-    }
-    let n = if prev == 0 {
-        250
-    } else {
-        prev.saturating_mul(2)
-    };
-    std::cmp::min(n, cap)
-}
 
 // ---------------- R11: bench feature 下的最小导出（不影响运行路径） ----------------
 #[cfg(feature = "bench")]
@@ -1524,7 +1576,7 @@ pub async fn spawn_rules_hot_reload(
                     Ok(text) => {
                         // 与当前 checksum 比较，避免无谓切换
                         let cur_sum =
-                            { (*shared.read().unwrap_or_else(|e| e.into_inner())).checksum };
+                            { shared.read().unwrap_or_else(|e| e.into_inner()).checksum };
                         let mut hasher = Blake3::new();
                         hasher.update(text.as_bytes());
                         let new_sum = *hasher.finalize().as_bytes();
@@ -1534,9 +1586,11 @@ pub async fn spawn_rules_hot_reload(
                                 .increment(1);
                             continue;
                         }
+                        #[cfg(feature = "metrics")]
                         let build_start = Instant::now();
                         match router_build_index_from_str(&text, max_rules) {
                             Ok(new_idx) => {
+                                #[cfg(feature = "metrics")]
                                 let elapsed = build_start.elapsed().as_millis() as f64;
                                 // 生成号 +1，并暴露 generation
                                 let mut w = shared.write().unwrap_or_else(|e| e.into_inner());
@@ -1738,7 +1792,7 @@ static RUNTIME_OVERRIDE: Lazy<Option<RuntimeOverride>> = Lazy::new(|| {
     let mut transport_udp = None;
     let mut default = None;
     // 支持逗号或分号分隔
-    let parts = raw.split(|c| c == ',' || c == ';');
+    let parts = raw.split([',', ';']);
     for seg in parts {
         let s = seg.trim();
         if s.is_empty() {
@@ -1995,13 +2049,22 @@ pub fn decide_http(target: &str) -> RouteDecision {
         }
     }
     // 传输/端口兜底（HTTP 场景：transport=tcp）
+    #[cfg(feature = "metrics")]
     if let Some((d, kind)) =
         router_index_decide_transport_port_with_kind(&idx, port_opt, Some("tcp"))
     {
-        #[cfg(feature = "metrics")]
         {
             metrics::counter!("router_decide_reason_total", "kind"=>kind).increment(1);
         }
+        return RouteDecision {
+            target: d.to_string(),
+            matched_rule: Some("matched".to_string()),
+        };
+    }
+    #[cfg(not(feature = "metrics"))]
+    if let Some((d, _)) =
+        router_index_decide_transport_port_with_kind(&idx, port_opt, Some("tcp"))
+    {
         return RouteDecision {
             target: d.to_string(),
             matched_rule: Some("matched".to_string()),
@@ -2086,8 +2149,8 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
         if _use_geoip {
             if let Some(lookup_cc) = crate::geoip::lookup_with_metrics_decision(ip) {
                 for (cc, decision) in &idx.geoip_rules {
-                    if cc == &lookup_cc {
-                        return *decision;
+                    if cc == lookup_cc {
+                        return decision;
                     }
                 }
             }

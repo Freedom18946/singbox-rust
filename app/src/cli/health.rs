@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Health monitoring utilities - work in progress
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
@@ -28,8 +30,9 @@ pub struct HealthReport {
 }
 
 #[cfg(feature = "dev-cli")]
+#[must_use] 
 pub fn probe_from_portfile(portfile: Option<&Path>, timeout_ms: u64) -> HealthReport {
-    let pf = portfile.map(|p| p.to_path_buf()).or_else(|| {
+    let pf = portfile.map(std::path::Path::to_path_buf).or_else(|| {
         let p = Path::new("/tmp/admin.port");
         if p.exists() {
             Some(p.to_path_buf())
@@ -60,7 +63,7 @@ pub fn probe_from_portfile(portfile: Option<&Path>, timeout_ms: u64) -> HealthRe
     let target = format!("http://{addr}/__health");
     let mut rep = HealthReport {
         tried: true,
-        target: Some(target.clone()),
+        target: Some(target),
         status_line: None,
         snapshot: None,
         error: None,
@@ -69,9 +72,9 @@ pub fn probe_from_portfile(portfile: Option<&Path>, timeout_ms: u64) -> HealthRe
         Ok(mut stream) => {
             let _ = stream.set_read_timeout(Some(Duration::from_millis(timeout_ms)));
             let _ = stream.set_write_timeout(Some(Duration::from_millis(timeout_ms)));
-            let req =
+            let http_request =
                 format!("GET /__health HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
-            if let Err(e) = stream.write_all(req.as_bytes()) {
+            if let Err(e) = stream.write_all(http_request.as_bytes()) {
                 rep.error = Some(format!("write error: {e}"));
                 return rep;
             }
@@ -83,7 +86,7 @@ pub fn probe_from_portfile(portfile: Option<&Path>, timeout_ms: u64) -> HealthRe
             let text = String::from_utf8_lossy(&buf);
             // 取首行状态 + JSON 体（简易解析）
             let mut lines = text.lines();
-            rep.status_line = lines.next().map(|s| s.to_string());
+            rep.status_line = lines.next().map(std::string::ToString::to_string);
             // 找到空行后面的 body
             if let Some(idx) = text.find("\r\n\r\n") {
                 let body = &text[idx + 4..];

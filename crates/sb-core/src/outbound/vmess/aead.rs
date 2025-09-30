@@ -5,7 +5,7 @@
 
 use digest::Digest;
 use hmac::{Hmac, Mac};
-use sha2::{Digest as ShaDigest, Sha256};
+use sha2::Sha256;
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;

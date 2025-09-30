@@ -126,7 +126,7 @@ where
         // Send CONNECT request
         let (host, port) = match &req.target {
             TargetAddr::Ip(sa) => (None, *sa),
-            TargetAddr::Domain(h, p) => (Some((h.clone(), *p)), "0.0.0.0:0".parse().unwrap()),
+            TargetAddr::Domain(h, p) => (Some((h.clone(), *p)), std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
         };
         let mut msg = Vec::with_capacity(22);
         msg.extend_from_slice(&[0x05, 0x01, 0x00]); // VER=5, CMD=CONNECT, RSV

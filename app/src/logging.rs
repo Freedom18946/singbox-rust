@@ -180,8 +180,7 @@ where
 
         if let Some(config) = LOGGING_CONFIG.get() {
             if let Some(sampling) = &config.sampling {
-                if !should_sample(metadata.target(), sampling) {
-                    return; // Skip this event
+                if !should_sample(metadata.target(), sampling) {// Skip this event
                 }
             }
         }
@@ -306,6 +305,7 @@ pub async fn flush_logs() {
 
 /// Force immediate flush of logs (for testing)
 #[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 pub fn flush_logs_sync() {
     // For synchronous environments, just add a small delay
     std::thread::sleep(Duration::from_millis(100));

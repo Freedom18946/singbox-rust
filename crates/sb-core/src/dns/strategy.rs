@@ -521,6 +521,7 @@ mod tests {
                 ttl: Duration::from_secs(300),
                 source: crate::dns::cache::Source::System,
                 rcode: crate::dns::cache::Rcode::NoError,
+                created_at: std::time::Instant::now(),
             }),
         ));
 
@@ -551,6 +552,7 @@ mod tests {
                 ttl: Duration::from_secs(300),
                 source: crate::dns::cache::Source::System,
                 rcode: crate::dns::cache::Rcode::NoError,
+                created_at: std::time::Instant::now(),
             }),
         ));
 
@@ -562,6 +564,7 @@ mod tests {
                 ttl: Duration::from_secs(300),
                 source: crate::dns::cache::Source::System,
                 rcode: crate::dns::cache::Rcode::NoError,
+                created_at: std::time::Instant::now(),
             }),
         ));
 

@@ -30,6 +30,8 @@ pub struct State {
     pub bridge: Arc<Bridge>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     pub started_at: Instant,
+    /// Current configuration IR for diff computation during reload
+    pub current_ir: sb_config::ir::ConfigIR,
 }
 
 #[cfg(not(feature = "router"))]
@@ -38,6 +40,8 @@ pub struct State {
     pub bridge: Arc<Bridge>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     pub started_at: Instant,
+    /// Current configuration IR for diff computation during reload
+    pub current_ir: sb_config::ir::ConfigIR,
 }
 
 /// Supervisor manages runtime state and hot reload/shutdown
@@ -58,23 +62,25 @@ pub struct SupervisorHandle {
 
 #[cfg(feature = "router")]
 impl State {
-    pub fn new(engine: Engine<'static>, bridge: Bridge) -> Self {
+    pub fn new(engine: Engine<'static>, bridge: Bridge, ir: sb_config::ir::ConfigIR) -> Self {
         Self {
             engine,
             bridge: Arc::new(bridge),
             health: None,
             started_at: Instant::now(),
+            current_ir: ir,
         }
     }
 }
 
 #[cfg(not(feature = "router"))]
 impl State {
-    pub fn new(_engine: (), bridge: Bridge) -> Self {
+    pub fn new(_engine: (), bridge: Bridge, ir: sb_config::ir::ConfigIR) -> Self {
         Self {
             bridge: Arc::new(bridge),
             health: None,
             started_at: Instant::now(),
+            current_ir: ir,
         }
     }
 }
@@ -92,7 +98,7 @@ impl Supervisor {
 
         let bridge = Bridge::from_ir(&ir).context("failed to build bridge from initial config")?;
 
-        let initial_state = State::new(engine_static, bridge);
+        let initial_state = State::new(engine_static, bridge, ir);
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
@@ -156,7 +162,7 @@ impl Supervisor {
         let cancel = CancellationToken::new();
 
         let bridge = Bridge::from_ir(&ir).context("failed to build bridge from initial config")?;
-        let initial_state = State::new((), bridge);
+        let initial_state = State::new((), bridge, ir);
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
@@ -214,22 +220,34 @@ impl Supervisor {
 
     /// Trigger hot reload with new configuration
     pub async fn reload(&self, new_ir: sb_config::ir::ConfigIR) -> Result<Diff> {
+        // Extract old IR from current state before applying new config
+        let old_ir = {
+            let state_guard = self.state.read().await;
+            state_guard.current_ir.clone()
+        };
+
         // Always apply the new IR to the runtime
         self.tx
             .send(ReloadMsg::Apply(new_ir.clone()))
             .await
             .context("failed to send reload message")?;
 
-        // For now, we don't compute a meaningful diff without exposing old IR.
-        // Keep the prior behavior but remove unreachable code paths.
+        // Compute diff between old and new configuration
         if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() != Some("1") {
+            // Fast path: skip diff computation unless explicitly requested
             let _ = &new_ir; // mark as used in minimal path
             Ok(Diff::default())
         } else {
-            // Best-effort placeholder: compute diff against itself.
-            // TODO: wire old IR extraction from state when available.
-            let old_ir = new_ir.clone();
+            // Compute actual diff for debugging/monitoring purposes
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
+            tracing::debug!(
+                target: "sb_core::runtime",
+                added_inbounds = diff.inbounds.added.len(),
+                removed_inbounds = diff.inbounds.removed.len(),
+                added_outbounds = diff.outbounds.added.len(),
+                removed_outbounds = diff.outbounds.removed.len(),
+                "Configuration diff computed"
+            );
             Ok(diff)
         }
     }
@@ -291,9 +309,10 @@ impl Supervisor {
                 old_health.abort();
             }
 
-            // Replace engine and bridge
+            // Replace engine, bridge, and current IR
             state_guard.engine = new_engine_static;
             state_guard.bridge = new_bridge_arc;
+            state_guard.current_ir = new_ir;
 
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
@@ -340,8 +359,9 @@ impl Supervisor {
                 old_health.abort();
             }
 
-            // Replace bridge (no engine field in non-router State)
+            // Replace bridge and current IR (no engine field in non-router State)
             state_guard.bridge = new_bridge_arc;
+            state_guard.current_ir = new_ir;
 
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {

@@ -14,13 +14,13 @@ fn pos_and_neg_cache() {
     let (e, kind) = c.get(&k).unwrap();
     match (e, kind) {
         (Entry::Pos(pe), HitKind::Pos) => assert_eq!(pe.addrs.len(), 1),
-        _ => panic!("expect pos"),
+        _ => assert!(false, "Expected positive DNS cache entry"),
     }
     // 负缓存覆盖
     c.put_neg(k.clone(), 3);
     let (e, kind) = c.get(&k).unwrap();
     match (e, kind) {
         (Entry::Neg(_), HitKind::Neg) => {}
-        _ => panic!("expect neg"),
+        _ => assert!(false, "Expected negative DNS cache entry"),
     }
 }

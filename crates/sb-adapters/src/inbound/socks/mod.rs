@@ -28,9 +28,9 @@ use sb_core::outbound::{
 use sb_core::outbound::{
     health::MultiHealthView,
     registry,
-    selector::{HealthView, PoolSelector},
+    selector::PoolSelector,
 };
-use sb_core::outbound::{Endpoint, OutboundKind, OutboundRegistryHandle, RouteTarget};
+use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
@@ -289,14 +289,14 @@ async fn handle_conn(
                                 std::time::Duration::from_millis(ttl),
                             )
                         });
-                        let health = MultiHealthView;
+                        let _health = MultiHealthView;
                         let target_str = match &endpoint {
                             Endpoint::Domain(host, port) => format!("{}:{}", host, port),
                             Endpoint::Ip(sa) => sa.to_string(),
                         };
 
                         if let Some(reg) = registry::global() {
-                            if let Some(pool) = reg.pools.get(&name) {
+                            if let Some(_pool) = reg.pools.get(&name) {
                                 if let Some(ep) = sel.select(&name, peer, &target_str, &()) {
                                     match ep.kind {
                                         sb_core::outbound::endpoint::ProxyKind::Http => {
@@ -629,6 +629,7 @@ async fn read_u16(s: &mut TcpStream) -> io::Result<u16> {
 }
 
 // 构造 RouteCtx 的小助手（避免借用/解引用细节）
+#[allow(dead_code)] // Reserved for context building
 fn route_ctx_from_endpoint(ep: &Endpoint) -> RouteCtx<'_> {
     match ep {
         Endpoint::Domain(h, p) => RouteCtx {

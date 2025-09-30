@@ -29,7 +29,7 @@ mod tests {
                 assert_eq!(msg, "Unknown field 'unknown_field'");
                 assert_eq!(hint, &Some("Did you mean 'listen'?".to_string()));
             }
-            _ => panic!("Expected Config error"),
+            _ => assert!(false, "Expected Config error from malformed configuration"),
         }
 
         // Test other error types

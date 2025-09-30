@@ -39,6 +39,8 @@ pub struct ConfigDelta {
     pub breaker_ratio: Option<f32>,
 }
 
+/// # Errors
+/// Returns an IO error if the response cannot be written to the socket
 pub async fn handle_get(sock: &mut (impl AsyncWrite + Unpin)) -> std::io::Result<()> {
     let cfg = reloadable::get();
     let view = ConfigView { cfg };
@@ -46,18 +48,23 @@ pub async fn handle_get(sock: &mut (impl AsyncWrite + Unpin)) -> std::io::Result
     respond(sock, 200, "application/json", &body).await
 }
 
-pub async fn handle_put(
+/// # Errors
+/// Returns an IO error if the response cannot be written to the socket
+pub async fn handle_put<S>(
     sock: &mut (impl AsyncRead + AsyncWrite + Unpin),
     body: bytes::Bytes,
-    headers: &HashMap<String, String>,
-) -> std::io::Result<()> {
+    headers: &std::collections::HashMap<String, String, S>,
+) -> std::io::Result<()>
+where
+    S: std::hash::BuildHasher,
+{
     let t_start = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let t0 = tokio::time::Instant::now();
     // Check RBAC - X-Role header should be admin
-    let role = headers.get("x-role").map(|s| s.as_str()).unwrap_or("");
+    let role = headers.get("x-role").map_or("", std::string::String::as_str);
     if role != "admin" {
         // Stable error schema
         #[derive(serde::Serialize)]
@@ -87,8 +94,7 @@ pub async fn handle_put(
     // Dry-run toggle
     let dry = headers
         .get("x-config-dryrun")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
     // Parse the delta
     let delta: ConfigDelta = match serde_json::from_slice(&body) {
@@ -111,12 +117,12 @@ pub async fn handle_put(
             let entry = audit::create_entry(
                 "admin",
                 if dry { "config_dryrun" } else { "config_apply" },
-                serde_json::to_value(&delta).unwrap_or(serde_json::json!({})),
+                serde_json::to_value(&delta).unwrap_or_else(|_| serde_json::json!({})),
                 app.ok,
                 &app.msg,
             )
             .with_changed(app.changed);
-            audit::log(entry);
+            audit::log(&entry);
 
             // Respond with fixed schema and stable field order
             #[derive(serde::Serialize)]
@@ -142,12 +148,12 @@ pub async fn handle_put(
             let entry = audit::create_entry(
                 "admin",
                 if dry { "config_dryrun" } else { "config_apply" },
-                serde_json::to_value(&delta).unwrap_or(serde_json::json!({})),
+                serde_json::to_value(&delta).unwrap_or_else(|_| serde_json::json!({})),
                 false,
                 &e,
             )
             .with_changed(false);
-            audit::log(entry);
+            audit::log(&entry);
             // Fixed schema error
             #[derive(serde::Serialize)]
             struct Resp<'a> {

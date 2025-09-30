@@ -33,7 +33,7 @@ pub struct PrefStats {
 pub struct SampleOut {
     /// Logical key or URL.
     pub key: String,
-    /// Final status label: "ok" | "timeout" | "io" | "decode" | "not_found" | "canceled" | "other".
+    /// Final status label: "ok" | "timeout" | "io" | "decode" | "`not_found`" | "canceled" | "other".
     pub status: String,
     /// Measured latency in ms (0 if not applicable).
     pub latency_ms: u32,

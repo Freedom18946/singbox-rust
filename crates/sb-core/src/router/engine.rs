@@ -34,10 +34,13 @@ pub struct RouterHandle {
     #[cfg(feature = "geoip_mmdb")]
     geoip_source: Option<String>,
     #[cfg(not(feature = "geoip_mmdb"))]
+    #[allow(dead_code)] // Placeholder when geoip_mmdb feature is disabled
     geoip: Option<()>,
     #[cfg(not(feature = "geoip_mmdb"))]
+    #[allow(dead_code)] // Placeholder when geoip_mmdb feature is disabled
     geoip_mux: Option<()>,
     #[cfg(not(feature = "geoip_mmdb"))]
+    #[allow(dead_code)] // Placeholder when geoip_mmdb feature is disabled
     geoip_source: Option<()>,
     /// Enhanced GeoIP database support
     geoip_db: Option<std::sync::Arc<crate::router::geo::GeoIpDb>>,
@@ -104,7 +107,28 @@ impl RouterHandle {
         };
         #[cfg(not(feature = "router_cache_lru_demo"))]
         let cache = None;
+        #[cfg(feature = "geoip_mmdb")]
         let mut handle = Self {
+            idx: shared,
+            resolver: None,
+            cache,
+            #[cfg(feature = "geoip_mmdb")]
+            geoip: None,
+            #[cfg(feature = "geoip_mmdb")]
+            geoip_mux: None,
+            #[cfg(feature = "geoip_mmdb")]
+            geoip_source: None,
+            #[cfg(not(feature = "geoip_mmdb"))]
+            geoip: None,
+            #[cfg(not(feature = "geoip_mmdb"))]
+            geoip_mux: None,
+            #[cfg(not(feature = "geoip_mmdb"))]
+            geoip_source: None,
+            geoip_db: None,
+            geosite_db: None,
+        };
+        #[cfg(not(feature = "geoip_mmdb"))]
+        let handle = Self {
             idx: shared,
             resolver: None,
             cache,
@@ -129,6 +153,8 @@ impl RouterHandle {
     }
 
     #[cfg(feature = "router_cache_lru_demo")]
+    /// Returns LRU cache snapshot for diagnostics
+    #[allow(dead_code)]
     pub(crate) fn lru_snapshot(&self) -> Option<(usize, usize, u64, u64)> {
         if let Some(c) = &self.cache {
             let g = c.lock().unwrap_or_else(|e| e.into_inner());
@@ -139,6 +165,8 @@ impl RouterHandle {
     }
 
     #[cfg(feature = "router_cache_lru_demo")]
+    /// Clears LRU cache
+    #[allow(dead_code)]
     pub(crate) fn lru_clear(&self) {
         if let Some(c) = &self.cache {
             let mut g = c.lock().unwrap_or_else(|e| e.into_inner());
@@ -821,7 +849,7 @@ impl RouterHandle {
         let mut ov_default: Option<String> = None;
         if let Ok(raw) = std::env::var("SB_ROUTER_OVERRIDE") {
             if !raw.trim().is_empty() {
-                for seg in raw.split(|c| c == ',' || c == ';') {
+                for seg in raw.split([',', ';']) {
                     let s = seg.trim();
                     if s.is_empty() {
                         continue;

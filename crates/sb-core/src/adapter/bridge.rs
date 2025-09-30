@@ -34,6 +34,7 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
         OutboundType::Socks => "socks",
         OutboundType::Block => "block",
         OutboundType::Selector => "selector",
+        OutboundType::Vless => "vless",
     }
     .to_string();
     (
@@ -49,7 +50,7 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
 }
 
 #[cfg(feature = "adapter")]
-fn try_adapter_inbound(p: &InboundParam) -> Option<Arc<dyn InboundService>> {
+fn try_adapter_inbound(_p: &InboundParam) -> Option<Arc<dyn InboundService>> {
     // 假定 sb-adapter 提供如下接口（若命名不同，可在此桥接）
     // sb_adapter::registry::inbound_create(p.kind.as_str(), &p.listen, p.port)
     None // placeholder until sb-adapter is available
@@ -60,7 +61,7 @@ fn try_adapter_inbound(_p: &InboundParam) -> Option<Arc<dyn InboundService>> {
 }
 
 #[cfg(feature = "adapter")]
-fn try_adapter_outbound(p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>> {
+fn try_adapter_outbound(_p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>> {
     // let server = p.server.clone().unwrap_or_default();
     // let port = p.port.unwrap_or(0);
     // sb_adapter::registry::outbound_create(p.kind.as_str(), p.name.as_deref(), if server.is_empty(){None}else{Some(server.as_str())}, port)

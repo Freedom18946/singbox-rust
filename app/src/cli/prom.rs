@@ -71,8 +71,8 @@ pub enum HistFormat {
 impl fmt::Display for HistFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HistFormat::Text => f.write_str("text"),
-            HistFormat::Json => f.write_str("json"),
+            Self::Text => f.write_str("text"),
+            Self::Json => f.write_str("json"),
         }
     }
 }
@@ -139,7 +139,7 @@ pub(crate) fn parse_labels_text(label_text: &str) -> BTreeMap<String, String> {
 #[must_use]
 pub(crate) fn labels_match(all: &BTreeMap<String, String>, sel: &BTreeMap<String, String>) -> bool {
     sel.iter()
-        .all(|(k, want)| all.get(k).map(|v| v == want).unwrap_or(false))
+        .all(|(k, want)| all.get(k).is_some_and(|v| v == want))
 }
 
 async fn scrape(
@@ -152,7 +152,7 @@ async fn scrape(
 ) -> Result<()> {
     let txt = http_get_text(&url).await?;
     let re =
-        Regex::new(r#"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+]?\d+(\.\d+)?|NaN|\+?Inf)$"#)
+        Regex::new(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+]?\d+(\.\d+)?|NaN|\+?Inf)$")
             .context("invalid regex pattern for metrics parsing")?;
     let mut out: Vec<Sample> = Vec::new();
     let filter_re = filter.and_then(|f| Regex::new(&f).ok());
@@ -165,7 +165,7 @@ async fn scrape(
         }
         if let Some(cap) = re.captures(line) {
             let name = &cap[1];
-            let label_str = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+            let label_str = cap.get(2).map_or("", |m| m.as_str());
             let value_str = &cap[3];
             let value: f64 = match value_str {
                 "NaN" => f64::NAN,
@@ -254,15 +254,15 @@ async fn hist(
     let rx_for = |m: &str| -> Result<(Regex, Regex, Regex)> {
         Ok((
             Regex::new(&format!(
-                r#"^{}_bucket\{{([^}}]*)\}}\s+([-\+]?\d+(\.\d+)?)$"#,
+                r"^{}_bucket\{{([^}}]*)\}}\s+([-\+]?\d+(\.\d+)?)$",
                 regex::escape(m)
             ))?,
             Regex::new(&format!(
-                r#"^{}_sum\{{([^}}]*)\}}\s+([-\+]?\d+(\.\d+)?)$"#,
+                r"^{}_sum\{{([^}}]*)\}}\s+([-\+]?\d+(\.\d+)?)$",
                 regex::escape(m)
             ))?,
             Regex::new(&format!(
-                r#"^{}_count\{{([^}}]*)\}}\s+([-\+]?\d+(\.\d+)?)$"#,
+                r"^{}_count\{{([^}}]*)\}}\s+([-\+]?\d+(\.\d+)?)$",
                 regex::escape(m)
             ))?,
         ))
@@ -281,7 +281,7 @@ async fn hist(
                 continue;
             };
             if let Some(cap) = re_b.captures(line) {
-                let lbl = parse_labels_text(cap.get(1).map(|m| m.as_str()).unwrap_or(""));
+                let lbl = parse_labels_text(cap.get(1).map_or("", |m| m.as_str()));
                 if !label_sel.is_empty() && !labels_match(&lbl, &label_sel) {
                     continue;
                 }
@@ -303,7 +303,7 @@ async fn hist(
                 break;
             }
             if let Some(cap) = re_s.captures(line) {
-                let lbl = parse_labels_text(cap.get(1).map(|m| m.as_str()).unwrap_or(""));
+                let lbl = parse_labels_text(cap.get(1).map_or("", |m| m.as_str()));
                 if !label_sel.is_empty() && !labels_match(&lbl, &label_sel) {
                     continue;
                 }
@@ -321,7 +321,7 @@ async fn hist(
                 break;
             }
             if let Some(cap) = re_c.captures(line) {
-                let lbl = parse_labels_text(cap.get(1).map(|m| m.as_str()).unwrap_or(""));
+                let lbl = parse_labels_text(cap.get(1).map_or("", |m| m.as_str()));
                 if !label_sel.is_empty() && !labels_match(&lbl, &label_sel) {
                     continue;
                 }
@@ -342,7 +342,7 @@ async fn hist(
     }
 
     let mut outs = Vec::<GroupOut>::new();
-    for (metric, groups) in store.iter_mut() {
+    for (metric, groups) in &mut store {
         for (gk, agg) in groups {
             let mut buckets = agg.buckets.clone();
             buckets.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -410,7 +410,7 @@ async fn http_get_text(_url: &str) -> Result<String> {
             .get(_url)
             .send()
             .await
-            .with_context(|| format!("GET {}", _url))?
+            .with_context(|| format!("GET {_url}"))?
             .text()
             .await?;
         Ok(txt)

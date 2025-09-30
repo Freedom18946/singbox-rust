@@ -42,8 +42,8 @@ pub fn main(a: CompletionArgs) -> Result<()> {
     let bin = std::env::var("SB_CLI_BIN").unwrap_or_else(|_| cmd.get_name().to_string());
     if let Some(ref dir) = a.dir {
         std::fs::create_dir_all(dir)
-            .with_context(|| format!("create completion output dir {:?}", dir))?;
-        let path = |shell_name: &str| dir.join(format!("{}_{}.completion", bin, shell_name));
+            .with_context(|| format!("create completion output dir {dir:?}"))?;
+        let path = |shell_name: &str| dir.join(format!("{bin}_{shell_name}.completion"));
         macro_rules! write_file {
             ($sh:expr, $name:expr) => {{
                 let mut f = std::fs::File::create(path($name))?;
@@ -96,20 +96,16 @@ fn print_install_hints(_a: &CompletionArgs) {
     let exe = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "app".into());
     eprintln!("# install hints (macOS/Linux)");
     eprintln!(
-        "# Bash   : ~/.bashrc    -> source <(./{} gen-completions --shell bash)",
-        exe
+        "# Bash   : ~/.bashrc    -> source <(./{exe} gen-completions --shell bash)"
     );
     eprintln!(
-        "# Zsh    : ~/.zshrc     -> source <(./{} gen-completions --shell zsh)",
-        exe
+        "# Zsh    : ~/.zshrc     -> source <(./{exe} gen-completions --shell zsh)"
     );
     eprintln!(
-        "# Fish   : ~/.config/fish/completions/{}.fish  (mkdir -p 其目录后拷贝生成文件)",
-        exe
+        "# Fish   : ~/.config/fish/completions/{exe}.fish  (mkdir -p 其目录后拷贝生成文件)"
     );
     eprintln!("# PowerSh: $PROFILE     -> 取生成的 ps1 并 dot-source");
     eprintln!(
-        "# Elvish : ~/.elvish/lib/completions/{}.elv (拷贝后 use completions/{})",
-        exe, exe
+        "# Elvish : ~/.elvish/lib/completions/{exe}.elv (拷贝后 use completions/{exe})"
     );
 }

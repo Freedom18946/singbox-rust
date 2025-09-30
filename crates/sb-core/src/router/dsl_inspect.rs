@@ -3,6 +3,7 @@
 //!   - 计数统计（exact/suffix/default/portset/transport/other）
 //!   - 重复/冲突（同 key 多决策）
 //!   - 遮蔽（first-wins 下后续规则不可达）
+//!
 //! 说明：仅做文本级静态分析，**不改变**任何路由行为。
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -253,7 +254,7 @@ pub fn analysis_to_json(a: &Analysis) -> String {
     }
     js.push_str("},");
     // arrays
-    fn arr(buf: &mut String, name: &str, xs: &Vec<String>) {
+    fn arr(buf: &mut String, name: &str, xs: &[String]) {
         buf.push('"');
         buf.push_str(name);
         buf.push_str("\":[");

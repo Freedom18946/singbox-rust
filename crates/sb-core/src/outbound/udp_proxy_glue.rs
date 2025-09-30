@@ -66,7 +66,7 @@ pub async fn ensure_client_assoc(listen: Arc<UdpSocket>, client: SocketAddr) -> 
     // 后台：从 relay 收一个包，解 SOCKS5 UDP reply，并按 SOCKS5 语义封装 REPLY 头后回发给 client
     let bg = tokio::spawn(async move {
         loop {
-            match recv_from_via_socks5(&*recv_sock).await {
+            match recv_from_via_socks5(&recv_sock).await {
                 Ok((dst, payload)) => {
                     // 用同一 wire 规则封装 REPLY 数据包（RSV RSV FRAG=0 ATYP DST PORT DATA）
                     let reply = encode_udp_request(&dst, &payload);
@@ -111,7 +111,7 @@ pub async fn send_via_proxy_for_client(
         return Err(anyhow::anyhow!("udp_proxy_glue: assoc not found"));
     };
     let relay = ensure_udp_relay().await?;
-    let n = sendto_via_socks5_on(&*a.sock, payload, &dst, relay).await?;
+    let n = sendto_via_socks5_on(&a.sock, payload, &dst, relay).await?;
 
     // 测试加速：如果开启 SB_TEST_ECHO_GLUE=1，则立即回显一帧 REPLY 给客户端（双保险）
     if std::env::var("SB_TEST_ECHO_GLUE")

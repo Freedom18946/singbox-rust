@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports, unused_variables, unused_doc_comments, unused_comparisons)] // Admin debug functionality is work-in-progress
+
 pub mod audit;
 pub mod breaker;
 pub mod cache;

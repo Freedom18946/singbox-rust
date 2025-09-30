@@ -192,6 +192,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "http" => crate::ir::OutboundType::Http,
                 "socks" => crate::ir::OutboundType::Socks,
                 "block" => crate::ir::OutboundType::Block,
+                "vless" => crate::ir::OutboundType::Vless,
                 _ => crate::ir::OutboundType::Direct,
             };
             ir.outbounds.push(crate::ir::OutboundIR {
@@ -229,6 +230,22 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
                 }),
+                uuid: o
+                    .get("uuid")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                flow: o
+                    .get("flow")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                network: o
+                    .get("network")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                packet_encoding: o
+                    .get("packet_encoding")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
     }

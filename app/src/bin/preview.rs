@@ -46,7 +46,7 @@ fn main() -> Result<()> {
             if use_plus {
                 sb_core::router::preview::build_index_from_rules_plus(
                     &dsl,
-                    opt.dsl_file.parent().map(|p| p.as_ref()),
+                    opt.dsl_file.parent().map(|p| p),
                 )
             } else {
                 sb_core::router::preview::build_index_from_rules(&dsl)
@@ -85,7 +85,7 @@ fn main() -> Result<()> {
             // 尝试美化：minijson -> serde_json 中转
             let s = j.to_string();
             match serde_json::from_str::<serde_json::Value>(&s) {
-                Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap_or_else(|_| s)),
+                Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap_or(s)),
                 Err(_) => println!("{j}"),
             }
         } else {

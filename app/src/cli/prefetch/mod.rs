@@ -34,7 +34,7 @@ pub enum PrefetchCmd {
         /// 目标 URL
         #[arg(long)]
         url: String,
-        /// 可选 ETag
+        /// 可选 `ETag`
         #[arg(long)]
         etag: Option<String>,
     },
@@ -52,7 +52,7 @@ pub enum PrefetchCmd {
         /// 每秒入队速率（0 表示尽力）
         #[arg(long, default_value_t = 0)]
         rps: u64,
-        /// 可选 ETag
+        /// 可选 `ETag`
         #[arg(long)]
         etag: Option<String>,
     },
@@ -91,7 +91,7 @@ pub enum PrefetchCmd {
         /// 目标 URL
         #[arg(long)]
         url: String,
-        /// 可选 ETag
+        /// 可选 `ETag`
         #[arg(long)]
         etag: Option<String>,
         /// 观测窗口（秒）
@@ -151,7 +151,7 @@ pub fn main(_a: PrefetchArgs) -> anyhow::Result<()> {
 
 #[allow(dead_code)]
 fn feature_guard(feature: &str) -> anyhow::Result<()> {
-    anyhow::bail!("该命令需要启用编译特性：{}", feature)
+    anyhow::bail!("该命令需要启用编译特性：{feature}")
 }
 
 fn stats(_json: bool, _format: String) -> anyhow::Result<()> {
@@ -190,19 +190,19 @@ fn stats(_json: bool, _format: String) -> anyhow::Result<()> {
                 }
             } else {
                 // Legacy --json format
-                println!("{}", stats_data);
+                println!("{stats_data}");
             }
         } else {
             // 输出文本格式
-            println!("sb_prefetch_queue_depth             {}", depth);
-            println!("sb_prefetch_queue_high_watermark    {}", high);
-            println!("sb_prefetch_jobs_total{{event=enq}} {}", enq);
-            println!("sb_prefetch_jobs_total{{event=drop}} {}", drop);
-            println!("sb_prefetch_jobs_total{{event=done}} {}", done);
-            println!("sb_prefetch_jobs_total{{event=fail}} {}", fail);
-            println!("sb_prefetch_jobs_total{{event=retry}} {}", retry);
+            println!("sb_prefetch_queue_depth             {depth}");
+            println!("sb_prefetch_queue_high_watermark    {high}");
+            println!("sb_prefetch_jobs_total{{event=enq}} {enq}");
+            println!("sb_prefetch_jobs_total{{event=drop}} {drop}");
+            println!("sb_prefetch_jobs_total{{event=done}} {done}");
+            println!("sb_prefetch_jobs_total{{event=fail}} {fail}");
+            println!("sb_prefetch_jobs_total{{event=retry}} {retry}");
         }
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(feature = "admin_debug"))]
     {
@@ -228,12 +228,11 @@ fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
         // 仅入队，不抓取
         let ok = crate::admin_debug::prefetch::enqueue_prefetch(&_url, _etag);
         if ok {
-            println!("enqueued: {}", _url);
+            println!("enqueued: {_url}");
             Ok(())
         } else {
             anyhow::bail!(
-                "入队失败，可能原因：队列已满（容量{}）。尝试：export SB_PREFETCH_CAP=256",
-                queue_cap
+                "入队失败，可能原因：队列已满（容量{queue_cap}）。尝试：export SB_PREFETCH_CAP=256"
             );
         }
     }
@@ -303,7 +302,7 @@ fn heat(
             total_enq += e;
             total_drop += d;
         }
-        println!("heat finished: enq={} drop={}", total_enq, total_drop);
+        println!("heat finished: enq={total_enq} drop={total_drop}");
         Ok(())
     }
     #[cfg(not(all(feature = "admin_debug", feature = "subs_http")))]
@@ -322,8 +321,8 @@ fn read_stats() -> PrefStats {
         succeeded: done,
         failed: fail,
         skipped: drop,
-        bytes: 0,       // TODO: implement actual byte counting
-        duration_ms: 0, // TODO: implement actual duration tracking
+        bytes: m::get_prefetch_total_bytes(),
+        duration_ms: m::get_prefetch_session_duration_ms(),
         canceled: false,
     }
 }
@@ -361,19 +360,17 @@ fn watch(
                     "done": done, "fail": fail, "retry": retry,
                     "ts_ms": (std::time::Instant::now().elapsed().as_millis() as u64)
                 });
-                println!("{}", line);
+                println!("{line}");
             } else if is_tty {
                 print!("\r\x1b[2K"); // clear line
                 let spark = sparkline(&series);
                 print!(
-                    "depth {:>5}  high {:>5}  enq {:>8}  drop {:>6}  done {:>8}  fail {:>6} | {}",
-                    depth, high, enq, drop, done, fail, spark
+                    "depth {depth:>5}  high {high:>5}  enq {enq:>8}  drop {drop:>6}  done {done:>8}  fail {fail:>6} | {spark}"
                 );
                 std::io::Write::flush(&mut std::io::stdout())?;
             } else {
                 println!(
-                    "depth={} high={} enq={} drop={} done={} fail={} retry={}",
-                    depth, high, enq, drop, done, fail, retry
+                    "depth={depth} high={high} enq={enq} drop={drop} done={done} fail={fail} retry={retry}"
                 );
             }
             if let Some(t) = deadline {
@@ -399,7 +396,7 @@ fn sparkline(data: &[u64]) -> String {
     // unicode blocks ▁▂▃▄▅▆▇█
     const GLYPHS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
     if data.is_empty() {
-        return "".into();
+        return String::new();
     }
     let min = *data.iter().min().unwrap_or(&0);
     let max = *data.iter().max().unwrap_or(&0);
@@ -430,7 +427,7 @@ fn drain(_timeout: u64, _every_ms: u64, _quiet: bool) -> anyhow::Result<()> {
             }
             if std::time::Instant::now() >= until {
                 if !_quiet {
-                    eprintln!("timeout waiting for drain; depth={}", d);
+                    eprintln!("timeout waiting for drain; depth={d}");
                 }
                 std::process::exit(2);
             }
@@ -490,10 +487,9 @@ fn sample(
                     "drop".to_string()
                 },
                 latency_ms: t1.as_millis() as u32,
-                size: 0, // TODO: implement actual size tracking
+                size: crate::admin_debug::prefetch::get_last_prefetch_size() as u32,
                 hint: Some(format!(
-                    "queue: before={} peak={} after={}",
-                    before, peak, after
+                    "queue: before={before} peak={peak} after={after}"
                 )),
             };
 
@@ -514,7 +510,7 @@ fn sample(
             }
         } else {
             println!("trigger: {}", if ok { "enqueued" } else { "drop" });
-            println!("queue: before={} peak={} after={}", before, peak, after);
+            println!("queue: before={before} peak={peak} after={after}");
             println!("enqueue_cost_ms={}", t1.as_millis());
         }
         Ok(())

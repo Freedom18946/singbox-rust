@@ -11,13 +11,9 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use serde_json::Value;
-use serde_yaml;
 #[allow(unused_imports)]
 use std::fmt;
 use std::{fs, path::PathBuf};
-
-#[cfg(feature = "config_schema")]
-use jsonschema;
 
 #[derive(Parser, Debug)]
 #[command(name = "sb-check", version, about = "singbox-rs config checker")]

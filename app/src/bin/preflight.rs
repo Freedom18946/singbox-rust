@@ -1,11 +1,9 @@
 use clap::Parser;
-use sb_config::ir::OutboundType;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
 use serde_json::json;
 use std::fs;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[derive(Parser, Debug)]
 #[command(name = "preflight")]

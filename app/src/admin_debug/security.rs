@@ -10,7 +10,7 @@ pub fn normalize_host(host: &str) -> Result<String> {
     // Convert to ASCII using IDNA rules (handles punycode conversion)
     match idna::domain_to_ascii(trimmed) {
         Ok(ascii_host) => Ok(ascii_host),
-        Err(_) => anyhow::bail!("invalid domain name: {}", trimmed),
+        Err(_) => anyhow::bail!("invalid domain name: {trimmed}"),
     }
 }
 
@@ -26,22 +26,23 @@ fn is_private_ipv4(ip: Ipv4Addr) -> bool {
 }
 
 #[inline]
-fn is_unique_local_v6(ip: Ipv6Addr) -> bool {
+const fn is_unique_local_v6(ip: Ipv6Addr) -> bool {
     // fc00::/7 → 0b11111100 mask
     (ip.octets()[0] & 0xfe) == 0xfc
 }
-fn is_private_ipv6(ip: Ipv6Addr) -> bool {
+const fn is_private_ipv6(ip: Ipv6Addr) -> bool {
     is_unique_local_v6(ip) || ip.is_loopback() || ip.is_unspecified() || is_ipv4_mapped_ipv6(ip)
 }
 
 // Helper function to check if IPv6 address is IPv4-mapped (::ffff:x.y.z.w)
-fn is_ipv4_mapped_ipv6(ip: Ipv6Addr) -> bool {
+const fn is_ipv4_mapped_ipv6(ip: Ipv6Addr) -> bool {
     matches!(
         ip.octets(),
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, _, _, _, _]
     )
 }
 
+#[must_use] 
 pub fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_private_ipv4(v4),
@@ -59,7 +60,7 @@ pub fn forbid_private_host(url: &Url) -> Result<()> {
         } else {
             // Apply IDNA normalization for domain names
             let _normalized = normalize_host(host)
-                .with_context(|| format!("IDNA normalization failed for host: {}", host))?;
+                .with_context(|| format!("IDNA normalization failed for host: {host}"))?;
         }
         Ok(())
     } else {
@@ -77,7 +78,7 @@ pub fn forbid_private_host_or_resolved(url: &Url) -> Result<()> {
                 host.to_string() // IP address, use as-is
             } else {
                 normalize_host(host)
-                    .with_context(|| format!("IDNA normalization failed for host: {}", host))?
+                    .with_context(|| format!("IDNA normalization failed for host: {host}"))?
             };
 
             let addrs = (resolved_host.as_str(), port)
@@ -107,7 +108,7 @@ fn parse_private_allowlist() -> Allow {
     let mut domains = Vec::new();
     let mut cidrs = Vec::new();
     let mut ips = Vec::new();
-    for item in raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    for item in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         if let Ok(net) = item.parse::<IpNet>() {
             cidrs.push(net);
             continue;
@@ -141,7 +142,7 @@ fn host_matches_allowlist(host: &str, ip: Option<IpAddr>, allow: &Allow) -> bool
         return true;
     }
     if let Some(ip) = ip {
-        if allow.ips.iter().any(|x| *x == ip) {
+        if allow.ips.contains(&ip) {
             return true;
         }
         if allow.cidrs.iter().any(|net| net.contains(&ip)) {

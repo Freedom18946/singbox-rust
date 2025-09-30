@@ -11,8 +11,7 @@ use sb_core::net::ratelimit::maybe_drop_udp;
 use sb_core::net::udp_upstream_map::{Key as UpstreamKey, UdpUpstreamMap};
 use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
-use sb_core::outbound::health::MultiHealthView;
-use sb_core::outbound::observe::{with_observation, with_pool_observation};
+use sb_core::outbound::observe::with_pool_observation;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::socks5_udp::UpSocksSession;
@@ -27,15 +26,11 @@ use std::time::Duration;
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge};
 use sb_core::net::datagram::{run_nat_evictor, UdpNatKey, UdpNatMap};
-// TODO: Enable when feature is available
-// use sb_core::net::udp_upstream_map::{Key as UpstreamKey, UdpUpstreamMap};
 use sb_core::outbound::udp::{direct_sendto, direct_udp_socket_for};
 use sb_core::router::engine::RouterHandle;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use std::env;
-use std::net::{IpAddr, Ipv4Addr};
-use tokio::time::Instant;
 
 static NAT_MAP: OnceCell<Arc<UdpNatMap>> = OnceCell::const_new();
 static UPSTREAM_MAP: OnceCell<Arc<UdpUpstreamMap>> = OnceCell::const_new();
@@ -305,8 +300,8 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
 }
 
 async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result<()> {
-    let fallback_direct = proxy_fallback_direct();
-    let upstream_timeout = upstream_timeout_ms();
+    let _fallback_direct = proxy_fallback_direct();
+    let _upstream_timeout = upstream_timeout_ms();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         let (n, peer) = sock.recv_from(&mut buf).await?;
@@ -1024,6 +1019,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
             }
         } else {
             let decision = RouterHandle::from_env().decide_udp_async(&host_str).await;
+            let _ = decision_label; // Mark as used
             decision_label = decision.to_string();
             if decision.eq_ignore_ascii_case("reject") {
                 #[cfg(feature = "metrics")]

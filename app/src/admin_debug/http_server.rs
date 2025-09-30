@@ -33,6 +33,7 @@ pub struct TlsConf {
 }
 
 impl TlsConf {
+    #[must_use] 
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -73,6 +74,7 @@ pub enum AuthConf {
 }
 
 impl AuthConf {
+    #[must_use] 
     pub fn from_env() -> Self {
         if std::env::var("SB_ADMIN_NO_AUTH").ok().as_deref() == Some("1") {
             return Self::Disabled;
@@ -96,7 +98,8 @@ impl AuthConf {
         }
     }
 
-    pub fn mode(&self) -> &'static str {
+    #[must_use] 
+    pub const fn mode(&self) -> &'static str {
         match self {
             Self::Disabled => "disabled",
             Self::Bearer { .. } => "bearer",
@@ -106,8 +109,9 @@ impl AuthConf {
         }
     }
 
-    /// Convert legacy AuthConf to new AuthConfig
+    /// Convert legacy `AuthConf` to new `AuthConfig`
     #[cfg(feature = "auth")]
+    #[must_use] 
     pub fn to_auth_config(&self) -> AuthConfig {
         match self {
             Self::Disabled | Self::Mtls { .. } => AuthConfig::None,
@@ -133,6 +137,7 @@ impl AuthConf {
 
 pub static START: OnceLock<std::time::Instant> = OnceLock::new();
 
+#[must_use] 
 pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
     // Check if auth is disabled
     if std::env::var("SB_ADMIN_NO_AUTH").ok().as_deref() == Some("1") {
@@ -144,7 +149,7 @@ pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
 
         // Try Bearer token authentication first
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if let Some(required_token) = std::env::var("SB_ADMIN_TOKEN").ok() {
+            if let Ok(required_token) = std::env::var("SB_ADMIN_TOKEN") {
                 return token.trim() == required_token;
             }
         }
@@ -164,7 +169,7 @@ pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
 }
 
 /// New contract-compliant authentication check
-/// Returns a Result that can be used to generate proper ResponseEnvelope errors
+/// Returns a Result that can be used to generate proper `ResponseEnvelope` errors
 #[cfg(feature = "auth")]
 pub fn check_auth_contract(
     headers: &HashMap<String, String>,
@@ -261,7 +266,7 @@ fn check_hmac_auth(hmac_auth: &str, path: &str) -> bool {
     };
 
     // Create message to sign: timestamp||path
-    let message = format!("{}{}", timestamp, path);
+    let message = format!("{timestamp}{path}");
 
     // Calculate expected signature using real HMAC-SHA256
     let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
@@ -279,6 +284,7 @@ fn check_hmac_auth(hmac_auth: &str, path: &str) -> bool {
         .into()
 }
 
+#[must_use] 
 pub fn get_auth_mode() -> &'static str {
     if std::env::var("SB_ADMIN_NO_AUTH").ok().as_deref() == Some("1") {
         "disabled"
@@ -297,7 +303,7 @@ pub fn get_auth_mode() -> &'static str {
     }
 }
 
-async fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
+fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
     use std::{fs::File, io::BufReader};
     use tokio_rustls::rustls::{
         pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
@@ -366,7 +372,7 @@ async fn build_tls_acceptor() -> std::io::Result<tokio_rustls::TlsAcceptor> {
     Ok(tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(cfg)))
 }
 
-async fn build_tls_acceptor_from_config(
+fn build_tls_acceptor_from_config(
     tls_conf: &TlsConf,
 ) -> std::io::Result<tokio_rustls::TlsAcceptor> {
     use std::{fs::File, io::BufReader};
@@ -471,7 +477,7 @@ fn build_middleware_chain(auth_conf: &AuthConf) -> std::io::Result<MiddlewareCha
             tracing::error!(target = "admin", error = %e, "failed to create auth middleware");
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("auth middleware creation failed: {}", e),
+                format!("auth middleware creation failed: {e}"),
             ));
         }
     }
@@ -541,8 +547,8 @@ async fn read_request_head<R: AsyncRead + Unpin>(
         if buf.windows(4).any(|w| w == b"\r\n\r\n") {
             break;
         }
-        if buf.len() > 0 && n < tmp.len() {
-            continue;
+        if !buf.is_empty() && n < tmp.len() {
+            // redundant continue removed; loop proceeds naturally
         }
     }
 
@@ -613,7 +619,7 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     tracing::info!(addr = %actual_addr, mtls = use_mtls, "admin debug HTTP server listening");
 
     // Print and optionally write port for test discovery
-    println!("ADMIN_LISTEN={}", actual_addr);
+    println!("ADMIN_LISTEN={actual_addr}");
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
         if let Err(e) =
             sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes())
@@ -623,7 +629,7 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     }
 
     let tls_acceptor = if use_mtls {
-        Some(build_tls_acceptor().await?)
+        Some(build_tls_acceptor()?)
     } else {
         None
     };
@@ -686,10 +692,10 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
                         endpoints::handle_config_put(&mut s, body, &headers).await?;
                     }
                     (_, p) if p.starts_with("/router/geoip") => {
-                        endpoints::handle_geoip(p, &mut s).await?
+                        endpoints::handle_geoip(p, &mut s).await?;
                     }
                     (_, p) if p.starts_with("/router/rules/normalize") => {
-                        endpoints::handle_normalize(p, &mut s).await?
+                        endpoints::handle_normalize(p, &mut s).await?;
                     }
                     (_, p) if p.starts_with("/subs/") => {
                         #[cfg(any(
@@ -784,11 +790,11 @@ async fn serve_with_config(
     let listener = TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
 
-    let use_tls = tls_conf.as_ref().map_or(false, |t| t.enabled);
+    let use_tls = tls_conf.as_ref().is_some_and(|t| t.enabled);
     tracing::info!(addr = %actual_addr, tls = use_tls, auth = auth_conf.mode(), "admin debug HTTP server listening");
 
     // Print and optionally write port for test discovery
-    println!("ADMIN_LISTEN={}", actual_addr);
+    println!("ADMIN_LISTEN={actual_addr}");
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
         if let Err(e) =
             sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes())
@@ -799,7 +805,7 @@ async fn serve_with_config(
 
     let tls_acceptor = if let Some(tls) = tls_conf {
         if tls.enabled {
-            Some(build_tls_acceptor_from_config(&tls).await?)
+            Some(build_tls_acceptor_from_config(&tls)?)
         } else {
             None
         }
@@ -933,7 +939,7 @@ pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
     tracing::info!(addr = %actual_addr, "admin debug HTTP server listening");
 
     // Print and optionally write port for test discovery
-    println!("ADMIN_LISTEN={}", actual_addr);
+    println!("ADMIN_LISTEN={actual_addr}");
     if let Ok(portfile) = std::env::var("SB_ADMIN_PORTFILE") {
         if let Err(e) =
             sb_core::util::fs_atomic::write_atomic(&portfile, actual_addr.to_string().as_bytes())
@@ -958,7 +964,7 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
     let mut request_line = String::new();
 
     reader.read_line(&mut request_line).await?;
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
 
     if parts.len() < 2 || parts[0] != "GET" {
         respond_json_error(&mut stream, 400, "Only GET requests supported", None).await?;
@@ -1028,7 +1034,14 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
         match path_q {
             "/__health" => endpoints::handle_health(&mut stream).await?,
             "/__metrics" => endpoints::metrics::handle(&mut stream).await?,
-            _ => unreachable!(),
+            _ => {
+                // This should not happen given the condition above, but handle gracefully
+                let error_envelope = sb_admin_contract::ResponseEnvelope::<()>::err(
+                    sb_admin_contract::ErrorKind::NotFound,
+                    "Endpoint not found",
+                );
+                send_error_response(&mut stream, error_envelope, 404).await?;
+            }
         }
     } else if path_q.starts_with("/router/geoip") {
         endpoints::handle_geoip(path_q, &mut stream).await?;

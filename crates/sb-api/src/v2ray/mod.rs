@@ -194,6 +194,7 @@ pub mod generated {
 
         #[derive(Clone)]
         pub struct StatsServiceServer<T> {
+            #[allow(dead_code)]
             inner: T,
         }
 
@@ -285,6 +286,7 @@ pub mod generated {
 
         #[derive(Clone)]
         pub struct HandlerServiceServer<T> {
+            #[allow(dead_code)]
             inner: T,
         }
 
@@ -361,6 +363,7 @@ pub mod generated {
 
         #[derive(Clone)]
         pub struct RoutingServiceServer<T> {
+            #[allow(dead_code)]
             inner: T,
         }
 
@@ -435,6 +438,7 @@ pub mod generated {
 
         #[derive(Clone)]
         pub struct LoggerServiceServer<T> {
+            #[allow(dead_code)]
             inner: T,
         }
 

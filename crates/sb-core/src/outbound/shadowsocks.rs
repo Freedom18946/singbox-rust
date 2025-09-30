@@ -147,6 +147,7 @@ pub struct ShadowsocksStream {
     key: Vec<u8>,
     cipher: ShadowsocksCipher,
     write_nonce: u64,
+    #[allow(dead_code)]
     read_nonce: u64,
     handshake_complete: bool,
 }

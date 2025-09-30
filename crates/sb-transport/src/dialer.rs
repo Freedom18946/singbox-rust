@@ -149,7 +149,7 @@ impl Dialer for TcpDialer {
     ///   - SB_HE_DELAY_MS: 设置 IPv4 延迟启动时间（默认 50ms）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // 检查是否禁用 Happy Eyeballs
-        if std::env::var("SB_HE_DISABLE").map_or(false, |v| v == "1") {
+        if std::env::var("SB_HE_DISABLE").is_ok_and(|v| v == "1") {
             debug!("Happy Eyeballs disabled, using traditional dial");
             let s = TcpStream::connect((host, port)).await?;
             return Ok(Box::new(s));

@@ -7,7 +7,7 @@ pub fn try_override(
 ) -> Option<(String, String)> {
     // Check if there are any override rules configured
     // Override rules take precedence over all other routing decisions
-    if let Some(override_decision) = std::env::var("SB_ROUTER_OVERRIDE").ok() {
+    if let Ok(override_decision) = std::env::var("SB_ROUTER_OVERRIDE") {
         if !override_decision.is_empty() {
             return Some((override_decision, "override".to_string()));
         }
@@ -146,8 +146,8 @@ pub fn try_suffix(_r: &RouterHandle, sni: &str) -> Option<(String, String)> {
 
     // Check if there's a wildcard suffix rule
     for (suffix, decision) in &idx.suffix {
-        if suffix.starts_with('*') {
-            let pattern = &suffix[1..]; // Remove the '*'
+        if let Some(pattern) = suffix.strip_prefix('*') {
+            // Remove the '*'
             if normalized.ends_with(pattern) {
                 return Some((decision.to_string(), "suffix_wildcard_match".to_string()));
             }

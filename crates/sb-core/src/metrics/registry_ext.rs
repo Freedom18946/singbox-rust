@@ -200,9 +200,20 @@ pub fn get_or_register_counter_vec(
                                             Box::leak(Box::new(v))
                                         } else {
                                             // 如果系统metrics完全不可用，我们需要优雅地退出而不是panic
-                                            // 但IntCounterVec没有no-op实现，这是一个设计问题
-                                            // 暂时保持原有行为但添加更好的错误信息
-                                            panic!("System metrics are completely unusable - this indicates a serious system configuration problem")
+                                            // 创建一个最小的后备指标，忽略注册错误
+                                            eprintln!("CRITICAL: System metrics completely unusable, creating unregistered fallback");
+                                            match IntCounterVec::new(Opts::new("fallback", "emergency fallback"), &[]) {
+                                                Ok(fallback) => Box::leak(Box::new(fallback)),
+                                                Err(_) => {
+                                                    // 作为最后手段，返回一个简单的计数器
+                                                    // 这可能不完全正确，但避免了程序崩溃
+                                                    eprintln!("FATAL: Cannot create any metrics - system may be in degraded state");
+                                                    Box::leak(Box::new(IntCounterVec::new(Opts::new("noop", "noop"), &[]).unwrap_or_else(|_| {
+                                                        // 如果真的什么都创建不了，程序可能有严重问题，但我们仍然尝试继续运行
+                                                        std::process::exit(1);
+                                                    })))
+                                                }
+                                            }
                                         }
                                     })
                                 }

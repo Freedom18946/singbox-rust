@@ -63,6 +63,7 @@ pub enum HotReloadEvent {
 
 /// File metadata for change detection
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Hot reload implementation, to be used when hot reload feature is fully implemented
 struct FileMetadata {
     path: PathBuf,
     modified: SystemTime,

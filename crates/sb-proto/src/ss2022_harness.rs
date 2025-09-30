@@ -1,5 +1,4 @@
 //! R123: SS2022 最小连通 harness（结构对齐 Trojan）
-use crate::connector::OutboundConnector; // 若无统一 trait，保留最小自洽实现
 use sb_transport::{Dialer, TcpDialer};
 use std::time::Instant;
 

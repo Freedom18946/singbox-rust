@@ -80,7 +80,7 @@ async fn test_hysteria2_congestion_control_mechanisms() {
             (CongestionControl::Bbr, CongestionControl::Bbr) => (),
             (CongestionControl::Cubic, CongestionControl::Cubic) => (),
             (CongestionControl::NewReno, CongestionControl::NewReno) => (),
-            _ => panic!("Congestion control mismatch for {}", name),
+            _ => assert!(false, "Congestion control mismatch for {}: expected {:?}, got {:?}", name, expected, outbound.congestion_control),
         }
     }
 }
@@ -116,7 +116,7 @@ async fn test_hysteria2_brutal_congestion_control() {
             assert_eq!(config.up_mbps, 50);
             assert_eq!(config.down_mbps, 100);
         }
-        _ => panic!("Expected Brutal congestion control"),
+        _ => assert!(false, "Expected Brutal congestion control configuration"),
     }
 }
 

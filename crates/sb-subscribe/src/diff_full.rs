@@ -4,7 +4,6 @@
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fmt;
 
 fn parse_profile(text: &str, format: &str, use_keyword: bool) -> Result<Profile, String> {

@@ -202,6 +202,7 @@ impl Engine {
     }
 }
 
+#[allow(dead_code)] // Utility function for decision labeling, may be used in debugging/logging
 #[inline]
 fn decision_label(d: &Decision) -> &'static str {
     match d {
@@ -311,17 +312,15 @@ pub fn parse_rules(lines: &str) -> Vec<Rule> {
 
 // --------- 辅助：便捷构建 & 示例 ----------
 impl Decision {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_decision(s: &str) -> Option<Self> {
         if s.eq_ignore_ascii_case("direct") {
             Some(Decision::Direct)
         } else if s.eq_ignore_ascii_case("proxy") {
             Some(Decision::Proxy(None))
         } else if s.eq_ignore_ascii_case("reject") {
             Some(Decision::Reject)
-        } else if let Some(pool_name) = s.strip_prefix("proxy:") {
-            Some(Decision::Proxy(Some(pool_name.trim().to_string())))
         } else {
-            None
+            s.strip_prefix("proxy:").map(|pool_name| Decision::Proxy(Some(pool_name.trim().to_string())))
         }
     }
 }

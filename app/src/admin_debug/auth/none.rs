@@ -11,8 +11,9 @@ use std::collections::HashMap;
 pub struct NoneProvider;
 
 impl NoneProvider {
-    /// Create a new NoneProvider instance
-    pub fn new() -> Self {
+    /// Create a new `NoneProvider` instance
+    #[must_use] 
+    pub const fn new() -> Self {
         Self
     }
 }

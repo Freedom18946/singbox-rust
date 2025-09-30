@@ -180,6 +180,7 @@ pub struct DnsResolver {
     /// Fake IP mappings (for Clash compatibility)
     fake_ip_mappings: Arc<RwLock<HashMap<String, String>>>,
     /// DNS server configuration
+    #[allow(dead_code)]
     dns_servers: Vec<SocketAddr>,
 }
 

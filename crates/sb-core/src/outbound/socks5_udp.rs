@@ -11,13 +11,16 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 
+/// Type alias for the complex receiver type used in UDP sessions
+type UdpReceiver = Arc<Mutex<mpsc::Receiver<(SocketAddr, Vec<u8>)>>>;
+
 /// SOCKS5 UDP associate session that keeps the control TCP stream alive and relays datagrams.
 pub struct UpSocksSession {
     _ctrl: TcpStream,
     relay: SocketAddr,
     udp: Arc<UdpSocket>,
     // Optional receive queue populated by background task (disabled by default).
-    rx: Option<Arc<Mutex<mpsc::Receiver<(SocketAddr, Vec<u8>)>>>>,
+    rx: Option<UdpReceiver>,
     recv_task: Option<JoinHandle<()>>,
     // Optional lightweight IO observation (behind env: SB_OBS_UDP_IO)
     obs_enabled: bool,
@@ -130,6 +133,14 @@ impl UpSocksSession {
     pub async fn send_to(&self, dst: SocketAddr, payload: &[u8]) -> Result<usize> {
         let pkt = encode_udp_request(&dst, payload);
         let n = self.udp.send(&pkt).await?;
+
+        // Lightweight IO observation
+        if self.obs_enabled {
+            if let (Some(pool), Some(index)) = (&self.obs_pool, &self.obs_index) {
+                tracing::trace!("UDP obs: pool={} index={} dst={} bytes={}", pool, index, dst, n);
+            }
+        }
+
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("udp_upstream_pkts_out_total").increment(1);
@@ -209,6 +220,6 @@ impl Drop for UpSocksSession {
 }
 
 /// Parse a SOCKS5 UDP reply packet and return the stripped payload.
-pub fn strip_udp_reply<'a>(pkt: &'a [u8]) -> Result<(SocketAddr, &'a [u8])> {
+pub fn strip_udp_reply(pkt: &[u8]) -> Result<(SocketAddr, &[u8])> {
     decode_udp_reply(pkt).context("decode socks5 udp reply")
 }

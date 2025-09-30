@@ -2,7 +2,7 @@
 //! - connect_env(host,port,pass,{tls,timeout_ms})：按参数执行最小连通检查与首包写入
 //! - 仅作为**工具/验证**，非最终数据通道；Admin 受 SB_ADMIN_ALLOW_NET 守门
 use crate::trojan_min::TrojanHello;
-use sb_transport::dialer::{DialError, Dialer, IoStream, TcpDialer};
+use sb_transport::dialer::{Dialer, TcpDialer};
 #[cfg(feature = "transport_tls")]
 use sb_transport::tls::{webpki_roots_config, TlsDialer};
 use tokio::io::AsyncWriteExt;

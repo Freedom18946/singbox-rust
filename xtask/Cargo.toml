@@ -15,6 +15,3 @@ which = "6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
-[profile.dev]
-opt-level = 1

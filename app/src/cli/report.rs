@@ -1,4 +1,5 @@
-#![cfg(feature = "dev-cli")]
+#![allow(dead_code)] // CLI reporting utilities
+
 use crate::cli::{buildinfo, fs_scan, health};
 use clap::Parser;
 use serde::Serialize;
@@ -12,7 +13,7 @@ pub struct Args {
     /// workspace root (default: current directory)
     #[arg(long)]
     pub root: Option<String>,
-    /// include admin /__health snapshot if SB_ADMIN_PORTFILE or /tmp/admin.port exists
+    /// include admin /__health snapshot if `SB_ADMIN_PORTFILE` or /tmp/admin.port exists
     #[arg(long)]
     pub with_health: bool,
 }
@@ -80,13 +81,13 @@ pub fn main(args: Args) -> anyhow::Result<()> {
         Some(health::probe_from_portfile(
             std::env::var_os("SB_ADMIN_PORTFILE")
                 .as_deref()
-                .map(|s| s.as_ref()),
+                .map(std::convert::AsRef::as_ref),
             1500,
         ))
     } else {
         None
     };
-    let hints_boxed: Vec<&str> = dyn_hints.iter().map(|s| s.as_str()).collect();
+    let hints_boxed: Vec<&str> = dyn_hints.iter().map(std::string::String::as_str).collect();
     let receipt = Receipt {
         ok: true,
         build,

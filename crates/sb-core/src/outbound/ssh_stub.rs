@@ -189,6 +189,7 @@ impl client::Handler for SshClient {
 #[cfg(feature = "out_ssh")]
 struct SshConnection {
     session: Arc<Mutex<client::Handle<SshClient>>>,
+    #[allow(dead_code)]
     config: SshConfig,
     shared: Arc<SshShared>,
 }

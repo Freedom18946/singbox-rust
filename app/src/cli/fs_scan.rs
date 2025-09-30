@@ -1,3 +1,5 @@
+#![allow(dead_code)] // File system scanning utilities - work in progress
+
 #[cfg(feature = "dev-cli")]
 use ignore::WalkBuilder;
 #[cfg(feature = "dev-cli")]
@@ -26,7 +28,7 @@ pub struct ErrorJsonCoverage {
     pub text_plain_occurrences: u64,
     /// 明细：哪些文件仍有 text/plain
     pub text_plain_files: Vec<Occur>,
-    /// 明细：哪些文件调用了 respond_json_error(
+    /// 明细：哪些文件调用了 `respond_json_error`(
     pub json_error_call_files: Vec<Occur>,
 }
 
@@ -35,7 +37,7 @@ pub struct AnalyzeDispatch {
     pub build_single_patch_matches: u64,
     /// 粗略估算 match 语句数量（以 "match " 出现次数近似）
     pub match_arms_estimate: u64,
-    /// 明细：哪些文件定义/调用了 build_single_patch(
+    /// 明细：哪些文件定义/调用了 `build_single_patch`(
     pub build_single_patch_files: Vec<Occur>,
 }
 
@@ -132,11 +134,11 @@ impl Scanner {
         // - .content_type("text/plain")
         // - ContentType::from("text/plain")
         // 严格限制，避免把注释/字符串/样例误计入
-        let re_text_plain = Regex::new(r#"(?i)(content[-_ ]?type).{0,40}text/plain"#).unwrap();
+        let re_text_plain = Regex::new(r"(?i)(content[-_ ]?type).{0,40}text/plain").unwrap();
         let re_build_single = Regex::new(r"\bbuild_single_patch\s*\(").unwrap();
         // 注意：Rust 是 `match <expr>`，不是 `match(`
         let re_match_kw = Regex::new(r"\bmatch\s+").unwrap();
-        let re_admin_portfile = Regex::new(r#"SB_ADMIN_PORTFILE"#).unwrap();
+        let re_admin_portfile = Regex::new(r"SB_ADMIN_PORTFILE").unwrap();
 
         let mut text_plain_files: Vec<Occur> = vec![];
         let mut json_error_call_files: Vec<Occur> = vec![];
@@ -288,7 +290,7 @@ fn parse_bin_gates_toml(toml_path: PathBuf) -> BinGates {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();

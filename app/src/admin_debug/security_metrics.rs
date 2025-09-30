@@ -22,7 +22,8 @@ pub enum SecurityErrorKind {
 }
 
 impl SecurityErrorKind {
-    pub fn as_str(&self) -> &'static str {
+    #[must_use] 
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Timeout => "timeout",
             Self::ConnectTimeout => "connect_timeout",
@@ -74,6 +75,8 @@ static PREFETCH_FAIL: AtomicU64 = AtomicU64::new(0);
 static PREFETCH_RETRY: AtomicU64 = AtomicU64::new(0);
 static PREFETCH_QUEUE_DEPTH: AtomicU64 = AtomicU64::new(0);
 static PREFETCH_QUEUE_HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
+static PREFETCH_TOTAL_BYTES: AtomicU64 = AtomicU64::new(0);
+static PREFETCH_SESSION_START: OnceCell<Mutex<Option<std::time::Instant>>> = OnceCell::new();
 
 static PREFETCH_RUN_COUNTS: OnceCell<Mutex<Vec<u64>>> = OnceCell::new();
 static PREFETCH_RUN_BUCKETS: [u32; 7] = [50, 100, 200, 500, 1000, 2000, u32::MAX]; // milliseconds
@@ -185,7 +188,7 @@ pub fn record_prefetch_run_ms(ms: u64) {
     if let Some(counts) = PREFETCH_RUN_COUNTS.get() {
         if let Ok(mut c) = counts.lock() {
             for (i, &bucket_ms) in PREFETCH_RUN_BUCKETS.iter().enumerate() {
-                if ms <= bucket_ms as u64 {
+                if ms <= u64::from(bucket_ms) {
                     c[i] += 1;
                     break;
                 }
@@ -220,6 +223,32 @@ pub fn get_prefetch_counters() -> (u64, u64, u64, u64, u64) {
         PREFETCH_FAIL.load(Ordering::Relaxed),
         PREFETCH_RETRY.load(Ordering::Relaxed),
     )
+}
+
+pub fn add_prefetch_bytes(bytes: u64) {
+    PREFETCH_TOTAL_BYTES.fetch_add(bytes, Ordering::Relaxed);
+}
+
+pub fn get_prefetch_total_bytes() -> u64 {
+    PREFETCH_TOTAL_BYTES.load(Ordering::Relaxed)
+}
+
+pub fn start_prefetch_session() {
+    let session_start = PREFETCH_SESSION_START.get_or_init(|| Mutex::new(None));
+    if let Ok(mut start) = session_start.lock() {
+        *start = Some(std::time::Instant::now());
+    }
+}
+
+pub fn get_prefetch_session_duration_ms() -> u64 {
+    if let Some(session_start) = PREFETCH_SESSION_START.get() {
+        if let Ok(start) = session_start.lock() {
+            if let Some(start_time) = *start {
+                return start_time.elapsed().as_millis() as u64;
+            }
+        }
+    }
+    0
 }
 
 pub fn inc_dns_cache_hit() {
@@ -258,7 +287,7 @@ pub fn record_error_sampled(kind: SecurityErrorKind, host: &str) {
 }
 
 pub fn set_last_error(kind: SecurityErrorKind, msg: impl Into<String>) {
-    set_last_error_with_host(kind, "", msg)
+    set_last_error_with_host(kind, "", msg);
 }
 
 pub fn set_last_error_with_host(kind: SecurityErrorKind, host: &str, msg: impl Into<String>) {
@@ -435,6 +464,8 @@ pub struct SecuritySnapshot {
     pub prefetch_retry: u64,
     pub prefetch_queue_depth: u64,
     pub prefetch_run_buckets: Vec<(f64, u64)>,
+    pub prefetch_total_bytes: u64,
+    pub prefetch_session_duration_ms: u64,
 }
 
 #[cfg(test)]
@@ -730,8 +761,7 @@ pub fn snapshot() -> SecuritySnapshot {
         .map(|m| m.clone())
         .unwrap_or_default();
     let (buckets, count, sum) = LATENCY_SNAPSHOT
-        .get()
-        .map(|s| s.clone())
+        .get().cloned()
         .unwrap_or_else(|| {
             // Initialize with zero counts if no latency has been recorded yet
             let empty_buckets: Vec<(f64, u64)> = LAT_BUCKETS
@@ -825,6 +855,8 @@ pub fn snapshot() -> SecuritySnapshot {
         prefetch_fail: PREFETCH_FAIL.load(Ordering::Relaxed),
         prefetch_retry: PREFETCH_RETRY.load(Ordering::Relaxed),
         prefetch_queue_depth: PREFETCH_QUEUE_DEPTH.load(Ordering::Relaxed),
+        prefetch_total_bytes: PREFETCH_TOTAL_BYTES.load(Ordering::Relaxed),
+        prefetch_session_duration_ms: get_prefetch_session_duration_ms(),
         prefetch_run_buckets: PREFETCH_RUN_COUNTS
             .get()
             .and_then(|m| m.lock().ok())
@@ -832,13 +864,13 @@ pub fn snapshot() -> SecuritySnapshot {
                 PREFETCH_RUN_BUCKETS
                     .iter()
                     .zip(c.iter())
-                    .map(|(b, v)| ((*b as f64) / 1000.0, *v))
+                    .map(|(b, v)| (f64::from(*b) / 1000.0, *v))
                     .collect()
             })
             .unwrap_or_else(|| {
                 PREFETCH_RUN_BUCKETS
                     .iter()
-                    .map(|&b| (b as f64 / 1000.0, 0))
+                    .map(|&b| (f64::from(b) / 1000.0, 0))
                     .collect()
             }),
     }

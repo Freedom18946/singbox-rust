@@ -56,15 +56,14 @@ impl JwtAlgorithm {
                 "Algorithm 'none' is not allowed for security reasons",
             )),
             other => Err(AuthError::invalid(format!(
-                "Unsupported JWT algorithm: {}",
-                other
+                "Unsupported JWT algorithm: {other}"
             ))),
         }
     }
 
     #[cfg(feature = "jwt")]
     /// Convert to jsonwebtoken Algorithm
-    fn to_jsonwebtoken_algorithm(&self) -> Algorithm {
+    const fn to_jsonwebtoken_algorithm(&self) -> Algorithm {
         match self {
             Self::RS256 => Algorithm::RS256,
             Self::ES256 => Algorithm::ES256,
@@ -126,7 +125,7 @@ impl CachedJwks {
         self.jwks
             .keys
             .iter()
-            .find(|key| key.kid.as_ref().map(|k| k == kid).unwrap_or(false))
+            .find(|key| key.kid.as_ref().is_some_and(|k| k == kid))
     }
 }
 
@@ -209,7 +208,7 @@ impl JwtProvider {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
-            .map_err(|e| AuthError::internal(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| AuthError::internal(format!("Failed to create HTTP client: {e}")))?;
 
         Ok(Self {
             config,
@@ -238,18 +237,18 @@ impl JwtProvider {
     #[cfg(feature = "jwt")]
     async fn load_jwks_from_file(&self, path: &str) -> Result<JwksResponse, AuthError> {
         let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-            AuthError::internal(format!("Failed to read JWKS file {}: {}", path, e))
+            AuthError::internal(format!("Failed to read JWKS file {path}: {e}"))
         })?;
 
         serde_json::from_str(&content)
-            .map_err(|e| AuthError::internal(format!("Invalid JWKS format in {}: {}", path, e)))
+            .map_err(|e| AuthError::internal(format!("Invalid JWKS format in {path}: {e}")))
     }
 
     /// Fetch JWKS from URL
     #[cfg(feature = "jwt")]
     async fn fetch_jwks_from_url(&self, url: &str) -> Result<JwksResponse, AuthError> {
         let response = self.http_client.get(url).send().await.map_err(|e| {
-            AuthError::internal(format!("Failed to fetch JWKS from {}: {}", url, e))
+            AuthError::internal(format!("Failed to fetch JWKS from {url}: {e}"))
         })?;
 
         if !response.status().is_success() {
@@ -261,7 +260,7 @@ impl JwtProvider {
         }
 
         let jwks: JwksResponse = response.json().await.map_err(|e| {
-            AuthError::internal(format!("Invalid JWKS response from {}: {}", url, e))
+            AuthError::internal(format!("Invalid JWKS response from {url}: {e}"))
         })?;
 
         Ok(jwks)
@@ -320,7 +319,7 @@ impl JwtProvider {
         }
     }
 
-    /// Convert JWK to DecodingKey
+    /// Convert JWK to `DecodingKey`
     #[cfg(feature = "jwt")]
     fn jwk_to_decoding_key(
         &self,
@@ -340,10 +339,10 @@ impl JwtProvider {
 
                 // Decode base64url
                 let n_bytes = URL_SAFE_NO_PAD.decode(n).map_err(|e| {
-                    AuthError::internal(format!("Invalid base64 in RSA modulus: {}", e))
+                    AuthError::internal(format!("Invalid base64 in RSA modulus: {e}"))
                 })?;
                 let e_bytes = URL_SAFE_NO_PAD.decode(e).map_err(|e| {
-                    AuthError::internal(format!("Invalid base64 in RSA exponent: {}", e))
+                    AuthError::internal(format!("Invalid base64 in RSA exponent: {e}"))
                 })?;
 
                 // Build RSA public key
@@ -351,14 +350,14 @@ impl JwtProvider {
                     rsa::BigUint::from_bytes_be(&n_bytes),
                     rsa::BigUint::from_bytes_be(&e_bytes),
                 )
-                .map_err(|e| AuthError::internal(format!("Invalid RSA key: {}", e)))?;
+                .map_err(|e| AuthError::internal(format!("Invalid RSA key: {e}")))?;
 
                 let pem = public_key
                     .to_pkcs1_pem(pkcs1::LineEnding::LF)
-                    .map_err(|e| AuthError::internal(format!("Failed to encode RSA key: {}", e)))?;
+                    .map_err(|e| AuthError::internal(format!("Failed to encode RSA key: {e}")))?;
 
                 DecodingKey::from_rsa_pem(pem.as_bytes()).map_err(|e| {
-                    AuthError::internal(format!("Failed to create RSA decoding key: {}", e))
+                    AuthError::internal(format!("Failed to create RSA decoding key: {e}"))
                 })
             }
             JwtAlgorithm::ES256 => {
@@ -373,10 +372,10 @@ impl JwtProvider {
 
                 // Decode base64url
                 let x_bytes = URL_SAFE_NO_PAD.decode(x).map_err(|e| {
-                    AuthError::internal(format!("Invalid base64 in EC x coordinate: {}", e))
+                    AuthError::internal(format!("Invalid base64 in EC x coordinate: {e}"))
                 })?;
                 let y_bytes = URL_SAFE_NO_PAD.decode(y).map_err(|e| {
-                    AuthError::internal(format!("Invalid base64 in EC y coordinate: {}", e))
+                    AuthError::internal(format!("Invalid base64 in EC y coordinate: {e}"))
                 })?;
 
                 // Build P-256 public key
@@ -404,10 +403,10 @@ impl JwtProvider {
 
                 let pem = public_key
                     .to_public_key_pem(pkcs8::LineEnding::LF)
-                    .map_err(|e| AuthError::internal(format!("Failed to encode EC key: {}", e)))?;
+                    .map_err(|e| AuthError::internal(format!("Failed to encode EC key: {e}")))?;
 
                 DecodingKey::from_ec_pem(pem.as_bytes()).map_err(|e| {
-                    AuthError::internal(format!("Failed to create EC decoding key: {}", e))
+                    AuthError::internal(format!("Failed to create EC decoding key: {e}"))
                 })
             }
             JwtAlgorithm::HS256 => {
@@ -432,8 +431,7 @@ impl JwtProvider {
 
         if !self.config.algo_allowlist.contains(&algorithm) {
             return Err(AuthError::invalid(format!(
-                "Algorithm {} not allowed",
-                alg_str
+                "Algorithm {alg_str} not allowed"
             )));
         }
 
@@ -469,7 +467,7 @@ impl JwtProvider {
 
                 let jwks = self.get_jwks().await?;
                 let jwk = jwks.find_key(&kid).ok_or_else(|| {
-                    AuthError::invalid(format!("Key '{}' not found in JWKS", kid))
+                    AuthError::invalid(format!("Key '{kid}' not found in JWKS"))
                 })?;
 
                 self.jwk_to_decoding_key(jwk, &algorithm)?
@@ -514,7 +512,7 @@ impl AuthProvider for JwtProvider {
 
         // Since we're in a sync context, we need to use a runtime
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| AuthError::internal(format!("Failed to create async runtime: {}", e)))?;
+            .map_err(|e| AuthError::internal(format!("Failed to create async runtime: {e}")))?;
 
         rt.block_on(self.verify_token(&token))
     }

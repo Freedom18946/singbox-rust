@@ -28,6 +28,7 @@ pub struct VlessConfig {
 }
 
 #[cfg(feature = "out_vless")]
+#[derive(Debug)]
 pub struct VlessOutbound {
     config: VlessConfig,
 }
@@ -90,7 +91,7 @@ impl OutboundTcp for VlessOutbound {
             OutboundErrorClass,
         };
 
-        record_connect_attempt(crate::outbound::OutboundKind::Direct); // TODO: Add VLESS kind
+        record_connect_attempt(crate::outbound::OutboundKind::Vless);
 
         let start = std::time::Instant::now();
 
@@ -229,6 +230,29 @@ impl OutboundTcp for VlessOutbound {
 
     fn protocol_name(&self) -> &'static str {
         "vless"
+    }
+}
+
+#[cfg(feature = "out_vless")]
+impl crate::adapter::OutboundConnector for VlessOutbound {
+    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        // Create a blocking runtime to run async VLESS connection
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        rt.block_on(async {
+            // Create target host:port
+            let target = HostPort {
+                host: host.to_string(),
+                port,
+            };
+
+            // Use async connect implementation
+            let tokio_stream = OutboundTcp::connect(self, &target).await?;
+
+            // Convert tokio TcpStream to std TcpStream
+            tokio_stream.into_std()
+        })
     }
 }
 

@@ -9,7 +9,62 @@ use std::time::Duration;
 use crate::adapter::Bridge;
 use crate::adapter::InboundService;
 use crate::log::Level;
+
+#[cfg(feature = "router")]
 use crate::routing::engine::{Engine, Input};
+
+#[cfg(not(feature = "router"))]
+#[derive(Debug)]
+pub(crate) struct Engine {
+    cfg: sb_config::ir::ConfigIR,
+}
+
+#[cfg(not(feature = "router"))]
+struct Decision {
+    outbound: String,
+}
+
+#[cfg(not(feature = "router"))]
+impl Engine {
+    fn new(cfg: &sb_config::ir::ConfigIR) -> Self {
+        Self { cfg: cfg.clone() }
+    }
+
+    fn decide(&self, _input: Input, _fake_ip: bool) -> Decision {
+        Decision {
+            outbound: "direct".to_string(),
+        }
+    }
+}
+
+#[cfg(not(feature = "router"))]
+impl Clone for Engine {
+    fn clone(&self) -> Self {
+        Self { cfg: self.cfg.clone() }
+    }
+}
+
+#[cfg(not(feature = "router"))]
+#[allow(dead_code)]
+struct Input {
+    host: String,
+    port: u16,
+    network: String,
+    protocol: String,
+}
+
+#[cfg(not(feature = "router"))]
+impl Input {
+    #[allow(dead_code)]
+    fn new() -> Self {
+        Self {
+            host: String::new(),
+            port: 0,
+            network: String::new(),
+            protocol: String::new(),
+        }
+    }
+}
 
 fn read_line(s: &mut TcpStream, buf: &mut Vec<u8>) -> std::io::Result<String> {
     buf.clear();
@@ -155,7 +210,10 @@ fn handle(
 pub struct HttpConnect {
     listen: String,
     port: u16,
+    #[cfg(feature = "router")]
     engine: Option<Engine<'static>>,
+    #[cfg(not(feature = "router"))]
+    engine: Option<Engine>,
     bridge: Option<std::sync::Arc<Bridge>>,
     basic_user: Option<String>,
     basic_pass: Option<String>,
@@ -172,7 +230,14 @@ impl HttpConnect {
             basic_pass: None,
         }
     }
+    #[cfg(feature = "router")]
     pub fn with_engine(mut self, eng: Engine<'static>) -> Self {
+        self.engine = Some(eng);
+        self
+    }
+    #[cfg(not(feature = "router"))]
+    #[allow(dead_code)]
+    pub(crate) fn with_engine(mut self, eng: Engine) -> Self {
         self.engine = Some(eng);
         self
     }

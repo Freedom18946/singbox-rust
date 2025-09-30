@@ -20,7 +20,6 @@ pub mod route_dryrun;
 pub use config::{handle_get as handle_config_get, handle_put as handle_config_put};
 pub use geoip::handle as handle_geoip;
 pub use health::handle as handle_health;
-pub use metrics::handle as handle_metrics;
 pub use normalize::handle as handle_normalize;
 
 #[cfg(any(

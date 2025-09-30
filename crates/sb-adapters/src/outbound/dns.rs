@@ -6,7 +6,6 @@
 use crate::outbound::prelude::*;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
 /// DNS transport protocols

@@ -14,6 +14,7 @@ enum Kind {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // DSL rule representation, may be used in future rule processing enhancements
 struct Rule {
     kind: Kind,
     key: String,
@@ -150,7 +151,7 @@ pub fn derive_targets(dsl_text: &str, limit: Option<usize>) -> Vec<String> {
     out
 }
 
-fn cut<T>(v: &Vec<T>, limit: Option<usize>) -> bool {
+fn cut<T>(v: &[T], limit: Option<usize>) -> bool {
     limit.map(|n| v.len() >= n).unwrap_or(false)
 }
 

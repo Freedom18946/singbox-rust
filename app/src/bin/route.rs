@@ -635,7 +635,7 @@ fn main() -> Result<()> {
                                     sb_core::router::minijson::Val::Str(&ex.reason_kind),
                                 ),
                             ]);
-                            println!("{}", j.to_string());
+                            println!("{}", j);
                         }
                         OutFmt::Pretty => {
                             let j = sb_core::router::minijson::obj([

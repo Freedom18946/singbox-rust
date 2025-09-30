@@ -22,6 +22,8 @@ struct MtlsStatus {
     peer_verified: bool,
 }
 
+/// # Errors
+/// Returns an IO error if the response cannot be written to the socket
 pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
     let pid = std::process::id();
     let uptime_secs = proc_uptime();
@@ -65,6 +67,5 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
 fn proc_uptime() -> u64 {
     crate::admin_debug::http_server::START
         .get()
-        .map(|t| t.elapsed().as_secs())
-        .unwrap_or(0)
+        .map_or(0, |t| t.elapsed().as_secs())
 }

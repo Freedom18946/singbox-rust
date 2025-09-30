@@ -86,14 +86,17 @@ impl StatsService for StatsServiceImpl {
     ) -> Result<Response<GetStatsResponse>, Status> {
         let req = request.into_inner();
 
-        let stats = self
+        let mut stats = self
             .stats
             .lock()
             .map_err(|_| Status::internal("Failed to acquire stats lock"))?;
 
         let stat_value = stats.get(&req.name).copied().unwrap_or(0);
 
-        // TODO: Implement reset functionality if req.reset is true
+        // Reset the counter if requested
+        if req.reset {
+            stats.insert(req.name.clone(), 0);
+        }
 
         let stat = Stat {
             name: req.name,

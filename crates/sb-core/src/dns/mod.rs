@@ -3,14 +3,17 @@
 //! - 当启用 `dns_http` 特性时，编译 HTTP DNS 客户端（使用 reqwest blocking + rustls）
 
 use std::collections::HashMap;
-#[cfg(feature = "dns_cache")]
+#[cfg(any(test, feature = "dns_cache", feature = "dev-cli"))]
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use async_trait::async_trait;
+
+#[cfg(feature = "dns_cache")]
+use cache::{Key as CacheKey, QType as CacheQType};
 
 pub mod cache;
 pub mod cache_v2;
@@ -48,6 +51,41 @@ pub struct DnsAnswer {
     pub source: cache::Source,
     /// DNS 响应码
     pub rcode: cache::Rcode,
+    /// 创建时间
+    pub created_at: Instant,
+}
+
+impl DnsAnswer {
+    /// 创建新的 DNS 答案
+    pub fn new(ips: Vec<IpAddr>, ttl: Duration, source: cache::Source, rcode: cache::Rcode) -> Self {
+        Self {
+            ips,
+            ttl,
+            source,
+            rcode,
+            created_at: Instant::now(),
+        }
+    }
+
+    /// 检查 DNS 答案是否已过期
+    pub fn is_expired(&self) -> bool {
+        self.created_at.elapsed() > self.ttl
+    }
+
+    /// 获取剩余 TTL
+    pub fn remaining_ttl(&self) -> Duration {
+        let elapsed = self.created_at.elapsed();
+        if elapsed >= self.ttl {
+            Duration::ZERO
+        } else {
+            self.ttl - elapsed
+        }
+    }
+
+    /// 检查 DNS 答案是否仍然有效
+    pub fn is_valid(&self) -> bool {
+        !self.is_expired()
+    }
 }
 
 /// 标准 DNS 解析器接口
@@ -334,6 +372,11 @@ impl ResolverHandle {
     }
 
     pub async fn resolve(&self, host: &str) -> Result<DnsAnswer> {
+        #[cfg(feature = "dns_cache")]
+        let cache_key = CacheKey {
+            name: host.to_ascii_lowercase(),
+            qtype: CacheQType::A, // Default to A record query
+        };
         let key = host.to_ascii_lowercase();
         #[cfg(feature = "dns_cache")]
         let mut need_fallback = false;
@@ -348,7 +391,7 @@ impl ResolverHandle {
                 need_fallback = true;
             }
             if let Ok(cache) = cache_opt {
-                if let Some(ent) = cache.get(&key) {
+                if let Some(ent) = cache.get(&cache_key) {
                     #[cfg(feature = "metrics")]
                 ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
                     let ips = if self.ipv6_enabled {
@@ -358,7 +401,7 @@ impl ResolverHandle {
                     };
                     let mut to_spawn: Option<(tokio::sync::OwnedSemaphorePermit, String)> = None;
                     // Optional prefetch on near-expiry
-                    if let Some(rem) = cache.peek_remaining(&key) {
+                    if let Some(rem) = cache.peek_remaining(&cache_key) {
                         if rem <= self.prefetch_before {
                             if self.prefetch_enabled {
                                 let key_clone = key.clone();
@@ -403,12 +446,12 @@ impl ResolverHandle {
                             }
                         });
                     }
-                    return Ok(DnsAnswer {
+                    return Ok(DnsAnswer::new(
                         ips,
-                        ttl: std::time::Duration::from_secs(0),
-                        source: cache::Source::Static,
-                        rcode: cache::Rcode::NoError,
-                    });
+                        std::time::Duration::from_secs(0),
+                        cache::Source::Static,
+                        cache::Rcode::NoError,
+                    ));
                 }
             }
         }
@@ -423,26 +466,26 @@ impl ResolverHandle {
             }
             #[cfg(feature = "dns_cache")]
             {
-                let answer = DnsAnswer {
-                    ips: ips.clone(),
-                    ttl: self.static_ttl,
-                    source: cache::Source::Static,
-                    rcode: cache::Rcode::NoError,
-                };
+                let answer = DnsAnswer::new(
+                    ips.clone(),
+                    self.static_ttl,
+                    cache::Source::Static,
+                    cache::Rcode::NoError,
+                );
                 if let Ok(c) = self.cache.lock() {
-                    c.put(&key, answer);
+                    c.put(cache_key.clone(), answer);
                 } else {
                     tracing::error!(target: "sb_core::dns", "cache lock poisoned on static put");
                 }
             }
             #[cfg(feature = "metrics")]
             ::metrics::counter!("dns_query_total", "hit"=>"miss", "family"=>"ANY", "source"=>"static", "rcode"=>"ok").increment(1);
-            return Ok(DnsAnswer {
+            return Ok(DnsAnswer::new(
                 ips,
-                ttl: self.static_ttl,
-                source: cache::Source::Static,
-                rcode: cache::Rcode::NoError,
-            });
+                self.static_ttl,
+                cache::Source::Static,
+                cache::Rcode::NoError,
+            ));
         }
         // 3) pool/system resolver
         let res = self.resolve_via_pool_or_system(host).await;
@@ -455,7 +498,7 @@ impl ResolverHandle {
                 if ips.is_empty() {
                     #[cfg(feature = "dns_cache")]
                     if let Ok(c) = self.cache.lock() {
-                        c.put_negative(&key);
+                        c.put_negative(cache_key.clone());
                     } else {
                         tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative");
                     }
@@ -463,41 +506,41 @@ impl ResolverHandle {
                     ::metrics::counter!("dns_error_total", "class"=>"empty").increment(1);
                     #[cfg(feature = "metrics")]
                     ::metrics::counter!("dns_query_total", "hit"=>"miss", "family"=>"ANY", "source"=>"system", "rcode"=>"nodata").increment(1);
-                    Ok(DnsAnswer {
+                    Ok(DnsAnswer::new(
                         ips,
-                        ttl: ans.ttl,
-                        source: cache::Source::System,
-                        rcode: cache::Rcode::NoError,
-                    })
+                        ans.ttl,
+                        cache::Source::System,
+                        cache::Rcode::NoError,
+                    ))
                 } else {
                     #[cfg(feature = "dns_cache")]
                     {
-                        let answer = DnsAnswer {
-                            ips: ips.clone(),
-                            ttl: ans.ttl,
-                            source: cache::Source::System,
-                            rcode: cache::Rcode::NoError,
-                        };
+                        let answer = DnsAnswer::new(
+                            ips.clone(),
+                            ans.ttl,
+                            cache::Source::System,
+                            cache::Rcode::NoError,
+                        );
                         if let Ok(c) = self.cache.lock() {
-                            c.put(&key, answer);
+                            c.put(cache_key.clone(), answer);
                         } else {
                             tracing::error!(target: "sb_core::dns", "cache lock poisoned on put");
                         }
                     }
                     #[cfg(feature = "metrics")]
                     ::metrics::counter!("dns_query_total", "hit"=>"miss", "family"=>"ANY", "source"=>"system", "rcode"=>"ok").increment(1);
-                    Ok(DnsAnswer {
+                    Ok(DnsAnswer::new(
                         ips,
-                        ttl: ans.ttl,
-                        source: cache::Source::System,
-                        rcode: cache::Rcode::NoError,
-                    })
+                        ans.ttl,
+                        cache::Source::System,
+                        cache::Rcode::NoError,
+                    ))
                 }
             }
             Err(_e) => {
                 #[cfg(feature = "dns_cache")]
                 if let Ok(c) = self.cache.lock() {
-                    c.put_negative(&key);
+                    c.put_negative(cache_key.clone());
                 } else {
                     tracing::error!(target: "sb_core::dns", "cache lock poisoned on put_negative");
                 }
@@ -828,7 +871,7 @@ async fn query_one(
             }
             #[cfg(not(feature = "dns_doh"))]
             {
-                return Err(anyhow::anyhow!("unimplemented"));
+                return Err(anyhow::anyhow!("dns_doh feature disabled"));
             }
         }
         Upstream::Dot(sa) => {
@@ -870,11 +913,11 @@ async fn query_one(
             }
             #[cfg(not(feature = "dns_dot"))]
             {
-                return Err(anyhow::anyhow!("unimplemented"));
+                return Err(anyhow::anyhow!("dns_dot feature disabled"));
             }
         }
-        Upstream::Unsupported(_s) => {
-            return Err(anyhow::anyhow!("unimplemented"));
+        Upstream::Unsupported(s) => {
+            return Err(anyhow::anyhow!(format!("unsupported upstream: {}", s)));
         }
     }
     // latency metric
@@ -952,12 +995,12 @@ async fn resolve_race(
     if let Some(first) = rx.recv().await {
         match first {
             Ok((ips, ttl)) => {
-                return Ok(DnsAnswer {
+                return Ok(DnsAnswer::new(
                     ips,
                     ttl,
-                    source: cache::Source::Upstream,
-                    rcode: cache::Rcode::NoError,
-                })
+                    cache::Source::Upstream,
+                    cache::Rcode::NoError,
+                ))
             }
             Err(e) => return Err(e),
         }
@@ -986,12 +1029,12 @@ async fn resolve_sequential(
         .await;
         match res {
             Ok((ips, ttl)) => {
-                return Ok(DnsAnswer {
+                return Ok(DnsAnswer::new(
                     ips,
                     ttl,
-                    source: cache::Source::Upstream,
-                    rcode: cache::Rcode::NoError,
-                })
+                    cache::Source::Upstream,
+                    cache::Rcode::NoError,
+                ))
             }
             Err(e) => {
                 last_err = Some(e);
@@ -1037,12 +1080,12 @@ async fn resolve_fanout(
     if !any_ok {
         return Err(anyhow::anyhow!("dns/fanout: all failed"));
     }
-    Ok(DnsAnswer {
+    Ok(DnsAnswer::new(
         ips,
-        ttl: min_ttl.unwrap_or_else(|| Duration::from_secs(60)),
-        source: cache::Source::Upstream,
-        rcode: cache::Rcode::NoError,
-    })
+        min_ttl.unwrap_or_else(|| Duration::from_secs(60)),
+        cache::Source::Upstream,
+        cache::Rcode::NoError,
+    ))
 }
 
 fn mark_upstream_fail(h: &ResolverHandle, key: &str, _reason: &str) {

@@ -59,7 +59,7 @@ fn default_jwt_algorithm() -> String {
     "HS256".to_string()
 }
 
-fn default_jwt_expiry() -> u64 {
+const fn default_jwt_expiry() -> u64 {
     3600 // 1 hour
 }
 
@@ -113,6 +113,7 @@ impl AuthError {
     }
 
     /// Get the error message
+    #[must_use] 
     pub fn message(&self) -> &str {
         match self {
             Self::InvalidCredentials { message } => message,
@@ -123,6 +124,7 @@ impl AuthError {
     }
 
     /// Get a hint for the error
+    #[must_use] 
     pub fn hint(&self) -> Option<String> {
         match self {
             Self::MissingCredentials { .. } => {
@@ -141,7 +143,7 @@ impl AuthError {
     }
 }
 
-/// Convert AuthError to sb_admin_contract::ErrorBody
+/// Convert `AuthError` to `sb_admin_contract::ErrorBody`
 impl From<AuthError> for sb_admin_contract::ErrorBody {
     fn from(err: AuthError) -> Self {
         Self {
@@ -153,7 +155,7 @@ impl From<AuthError> for sb_admin_contract::ErrorBody {
     }
 }
 
-/// Factory function to create AuthProvider from configuration
+/// Factory function to create `AuthProvider` from configuration
 ///
 /// # Arguments
 /// * `config` - Authentication configuration
@@ -230,7 +232,7 @@ mod tests {
             assert_eq!(algorithm, "HS256");
             assert_eq!(expiry_seconds, 3600);
         } else {
-            panic!("Expected JWT config");
+            assert!(false, "Expected JWT config, got: {:?}", config);
         }
     }
 

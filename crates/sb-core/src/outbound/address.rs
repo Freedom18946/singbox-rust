@@ -105,7 +105,7 @@ mod tests {
 
         match addr {
             Addr::V4(ip) => assert_eq!(ip, Ipv4Addr::new(10, 0, 0, 1)),
-            _ => panic!("Expected IPv4 address"),
+            _ => assert!(false, "Expected IPv4 address from target"),
         }
     }
 
@@ -116,7 +116,7 @@ mod tests {
 
         match addr {
             Addr::Domain(domain) => assert_eq!(domain, "github.com"),
-            _ => panic!("Expected domain address"),
+            _ => assert!(false, "Expected domain address from target"),
         }
     }
 
@@ -127,7 +127,7 @@ mod tests {
 
         match addr {
             Addr::V4(ip) => assert_eq!(ip, Ipv4Addr::new(127, 0, 0, 1)),
-            _ => panic!("Expected IPv4 address parsed from domain"),
+            _ => assert!(false, "Expected IPv4 address parsed from domain string"),
         }
     }
 }

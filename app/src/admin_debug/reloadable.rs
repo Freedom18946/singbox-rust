@@ -43,15 +43,15 @@ fn diff_is_empty(diff: &serde_json::Value) -> bool {
         let add_empty = obj
             .get("add")
             .and_then(|v| v.as_object())
-            .map_or(true, |o| o.is_empty());
+            .is_none_or(serde_json::Map::is_empty);
         let remove_empty = obj
             .get("remove")
             .and_then(|v| v.as_object())
-            .map_or(true, |o| o.is_empty());
+            .is_none_or(serde_json::Map::is_empty);
         let replace_empty = obj
             .get("replace")
             .and_then(|v| v.as_object())
-            .map_or(true, |o| o.is_empty());
+            .is_none_or(serde_json::Map::is_empty);
         add_empty && remove_empty && replace_empty
     } else {
         true
@@ -82,6 +82,7 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
+    #[must_use] 
     pub fn from_env() -> Self {
         let mime_allow = std::env::var("SB_SUBS_MIME_ALLOW")
             .ok()
@@ -181,15 +182,15 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("max_redirects too large (max: 20)".to_string());
         }
         config.max_redirects = max_redirects;
-        changes.push(format!("max_redirects: {}", max_redirects));
+        changes.push(format!("max_redirects: {max_redirects}"));
     }
 
     if let Some(timeout_ms) = delta.timeout_ms {
-        if timeout_ms < 100 || timeout_ms > 60000 {
+        if !(100..=60000).contains(&timeout_ms) {
             return Err("timeout_ms out of range (100-60000)".to_string());
         }
         config.timeout_ms = timeout_ms;
-        changes.push(format!("timeout_ms: {}", timeout_ms));
+        changes.push(format!("timeout_ms: {timeout_ms}"));
     }
 
     if let Some(max_bytes) = delta.max_bytes {
@@ -197,7 +198,7 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("max_bytes too large (max: 10MB)".to_string());
         }
         config.max_bytes = max_bytes;
-        changes.push(format!("max_bytes: {}", max_bytes));
+        changes.push(format!("max_bytes: {max_bytes}"));
     }
 
     if let Some(max_concurrency) = delta.max_concurrency {
@@ -205,7 +206,7 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("max_concurrency out of range (1-1000)".to_string());
         }
         config.max_concurrency = max_concurrency;
-        changes.push(format!("max_concurrency: {}", max_concurrency));
+        changes.push(format!("max_concurrency: {max_concurrency}"));
     }
 
     if let Some(rps) = delta.rps {
@@ -213,7 +214,7 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("rps out of range (1-10000)".to_string());
         }
         config.rps = rps;
-        changes.push(format!("rps: {}", rps));
+        changes.push(format!("rps: {rps}"));
     }
 
     if let Some(cache_capacity) = delta.cache_capacity {
@@ -221,7 +222,7 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("cache_capacity too large (max: 10000)".to_string());
         }
         config.cache_capacity = cache_capacity;
-        changes.push(format!("cache_capacity: {}", cache_capacity));
+        changes.push(format!("cache_capacity: {cache_capacity}"));
     }
 
     if let Some(cache_ttl_ms) = delta.cache_ttl_ms {
@@ -229,23 +230,23 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("cache_ttl_ms too large (max: 24h)".to_string());
         }
         config.cache_ttl_ms = cache_ttl_ms;
-        changes.push(format!("cache_ttl_ms: {}", cache_ttl_ms));
+        changes.push(format!("cache_ttl_ms: {cache_ttl_ms}"));
     }
 
     if let Some(breaker_window_ms) = delta.breaker_window_ms {
-        if breaker_window_ms < 1000 || breaker_window_ms > 5 * 60 * 1000 {
+        if !(1000..=5 * 60 * 1000).contains(&breaker_window_ms) {
             return Err("breaker_window_ms out of range (1s-5min)".to_string());
         }
         config.breaker_window_ms = breaker_window_ms;
-        changes.push(format!("breaker_window_ms: {}", breaker_window_ms));
+        changes.push(format!("breaker_window_ms: {breaker_window_ms}"));
     }
 
     if let Some(breaker_open_ms) = delta.breaker_open_ms {
-        if breaker_open_ms < 1000 || breaker_open_ms > 10 * 60 * 1000 {
+        if !(1000..=10 * 60 * 1000).contains(&breaker_open_ms) {
             return Err("breaker_open_ms out of range (1s-10min)".to_string());
         }
         config.breaker_open_ms = breaker_open_ms;
-        changes.push(format!("breaker_open_ms: {}", breaker_open_ms));
+        changes.push(format!("breaker_open_ms: {breaker_open_ms}"));
     }
 
     if let Some(breaker_failures) = delta.breaker_failures {
@@ -253,15 +254,15 @@ pub fn apply(delta: &crate::admin_debug::endpoints::config::ConfigDelta) -> Resu
             return Err("breaker_failures out of range (1-100)".to_string());
         }
         config.breaker_failures = breaker_failures;
-        changes.push(format!("breaker_failures: {}", breaker_failures));
+        changes.push(format!("breaker_failures: {breaker_failures}"));
     }
 
     if let Some(breaker_ratio) = delta.breaker_ratio {
-        if breaker_ratio < 0.1 || breaker_ratio > 1.0 {
+        if !(0.1..=1.0).contains(&breaker_ratio) {
             return Err("breaker_ratio out of range (0.1-1.0)".to_string());
         }
         config.breaker_ratio = breaker_ratio;
-        changes.push(format!("breaker_ratio: {:.2}", breaker_ratio));
+        changes.push(format!("breaker_ratio: {breaker_ratio:.2}"));
     }
 
     if changes.is_empty() {
@@ -313,15 +314,15 @@ fn apply_to_config(
             return Err("max_redirects too large (max: 20)".to_string());
         }
         config.max_redirects = max_redirects;
-        changes.push(format!("max_redirects: {}", max_redirects));
+        changes.push(format!("max_redirects: {max_redirects}"));
     }
 
     if let Some(timeout_ms) = delta.timeout_ms {
-        if timeout_ms < 100 || timeout_ms > 60000 {
+        if !(100..=60000).contains(&timeout_ms) {
             return Err("timeout_ms out of range (100-60000)".to_string());
         }
         config.timeout_ms = timeout_ms;
-        changes.push(format!("timeout_ms: {}", timeout_ms));
+        changes.push(format!("timeout_ms: {timeout_ms}"));
     }
 
     if let Some(max_bytes) = delta.max_bytes {
@@ -329,7 +330,7 @@ fn apply_to_config(
             return Err("max_bytes too large (max: 10MB)".to_string());
         }
         config.max_bytes = max_bytes;
-        changes.push(format!("max_bytes: {}", max_bytes));
+        changes.push(format!("max_bytes: {max_bytes}"));
     }
 
     if let Some(max_concurrency) = delta.max_concurrency {
@@ -337,7 +338,7 @@ fn apply_to_config(
             return Err("max_concurrency out of range (1-1000)".to_string());
         }
         config.max_concurrency = max_concurrency;
-        changes.push(format!("max_concurrency: {}", max_concurrency));
+        changes.push(format!("max_concurrency: {max_concurrency}"));
     }
 
     if let Some(rps) = delta.rps {
@@ -345,7 +346,7 @@ fn apply_to_config(
             return Err("rps out of range (1-10000)".to_string());
         }
         config.rps = rps;
-        changes.push(format!("rps: {}", rps));
+        changes.push(format!("rps: {rps}"));
     }
 
     if let Some(cache_capacity) = delta.cache_capacity {
@@ -353,7 +354,7 @@ fn apply_to_config(
             return Err("cache_capacity too large (max: 10000)".to_string());
         }
         config.cache_capacity = cache_capacity;
-        changes.push(format!("cache_capacity: {}", cache_capacity));
+        changes.push(format!("cache_capacity: {cache_capacity}"));
     }
 
     if let Some(cache_ttl_ms) = delta.cache_ttl_ms {
@@ -361,23 +362,23 @@ fn apply_to_config(
             return Err("cache_ttl_ms too large (max: 24h)".to_string());
         }
         config.cache_ttl_ms = cache_ttl_ms;
-        changes.push(format!("cache_ttl_ms: {}", cache_ttl_ms));
+        changes.push(format!("cache_ttl_ms: {cache_ttl_ms}"));
     }
 
     if let Some(breaker_window_ms) = delta.breaker_window_ms {
-        if breaker_window_ms < 1000 || breaker_window_ms > 5 * 60 * 1000 {
+        if !(1000..=5 * 60 * 1000).contains(&breaker_window_ms) {
             return Err("breaker_window_ms out of range (1s-5min)".to_string());
         }
         config.breaker_window_ms = breaker_window_ms;
-        changes.push(format!("breaker_window_ms: {}", breaker_window_ms));
+        changes.push(format!("breaker_window_ms: {breaker_window_ms}"));
     }
 
     if let Some(breaker_open_ms) = delta.breaker_open_ms {
-        if breaker_open_ms < 1000 || breaker_open_ms > 10 * 60 * 1000 {
+        if !(1000..=10 * 60 * 1000).contains(&breaker_open_ms) {
             return Err("breaker_open_ms out of range (1s-10min)".to_string());
         }
         config.breaker_open_ms = breaker_open_ms;
-        changes.push(format!("breaker_open_ms: {}", breaker_open_ms));
+        changes.push(format!("breaker_open_ms: {breaker_open_ms}"));
     }
 
     if let Some(breaker_failures) = delta.breaker_failures {
@@ -385,15 +386,15 @@ fn apply_to_config(
             return Err("breaker_failures out of range (1-100)".to_string());
         }
         config.breaker_failures = breaker_failures;
-        changes.push(format!("breaker_failures: {}", breaker_failures));
+        changes.push(format!("breaker_failures: {breaker_failures}"));
     }
 
     if let Some(breaker_ratio) = delta.breaker_ratio {
-        if breaker_ratio < 0.1 || breaker_ratio > 1.0 {
+        if !(0.1..=1.0).contains(&breaker_ratio) {
             return Err("breaker_ratio out of range (0.1-1.0)".to_string());
         }
         config.breaker_ratio = breaker_ratio;
-        changes.push(format!("breaker_ratio: {:.2}", breaker_ratio));
+        changes.push(format!("breaker_ratio: {breaker_ratio:.2}"));
     }
 
     Ok(changes)

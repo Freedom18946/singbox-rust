@@ -9,7 +9,6 @@ use std::{fs, sync::Arc, thread, time::Duration};
 use tokio::signal;
 
 #[cfg(feature = "admin_debug")]
-use app;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {

@@ -33,6 +33,7 @@ pub fn get_or_generate_request_id(headers: &HashMap<String, String>) -> String {
         .unwrap_or_else(generate_request_id)
 }
 
+#[must_use] 
 pub fn parse_query(q: &str) -> HashMap<String, String> {
     let mut m = HashMap::new();
     for kv in q.split('&') {
@@ -43,6 +44,7 @@ pub fn parse_query(q: &str) -> HashMap<String, String> {
     m
 }
 
+#[must_use] 
 pub fn url_decode(s: &str) -> String {
     percent_decode_str(s).decode_utf8_lossy().to_string()
 }
@@ -64,7 +66,7 @@ pub async fn respond(
     };
     let hdr = format!(
         "HTTP/1.1 {code} {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.as_bytes().len()
+        body.len()
     );
     sock.write_all(hdr.as_bytes()).await?;
     sock.write_all(body.as_bytes()).await?;
@@ -283,7 +285,7 @@ fn estimate_b64_decoded_size(b64: &str) -> usize {
 }
 
 /// Validate actual decoded content size
-pub fn validate_decoded_size(decoded_bytes: &[u8]) -> Result<(), &'static str> {
+pub const fn validate_decoded_size(decoded_bytes: &[u8]) -> Result<(), &'static str> {
     if decoded_bytes.len() > MAX_INLINE_BYTES {
         Err("inline content too large")
     } else {
@@ -313,7 +315,7 @@ pub fn supported_patch_kinds() -> &'static [String] {
                 if let Some(kinds_array) = value.get("kinds").and_then(|k| k.as_array()) {
                     return kinds_array
                         .iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                         .collect();
                 }
             }
@@ -325,6 +327,7 @@ pub fn supported_patch_kinds() -> &'static [String] {
 }
 
 /// Check if networking is allowed via environment variable
+#[must_use] 
 pub fn is_networking_allowed() -> bool {
     match std::env::var("SB_ADMIN_ALLOW_NET") {
         Ok(val) => val != "0" && !val.is_empty(),
@@ -342,6 +345,7 @@ pub fn validate_url_scheme(url: &str) -> Result<(), &'static str> {
 }
 
 /// Get supported kinds as a comma-separated string for error messages
+#[must_use] 
 pub fn supported_patch_kinds_hint() -> String {
     let kinds = supported_patch_kinds();
     if kinds.is_empty() {
@@ -375,7 +379,7 @@ pub fn validate_kinds(kinds_str: &str) -> Result<Vec<String>, String> {
             invalid,
             supported
                 .iter()
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .collect::<Vec<_>>()
                 .join(", ")
         ))

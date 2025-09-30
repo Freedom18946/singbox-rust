@@ -11,6 +11,7 @@ use std::{
     collections::HashMap,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    os::unix::io::{AsRawFd, FromRawFd},
     sync::Arc,
     thread,
     time::Duration,
@@ -36,6 +37,7 @@ use tracing::{debug, error, info, warn};
 
 /// Runtime handle for the macOS TUN + tun2socks pipeline.
 pub struct TunMacosRuntime {
+    #[allow(dead_code)]
     tun: Arc<Mutex<MacOsTun>>,
     _tun_async: AsyncTunDevice,
     socks_addr: SocketAddr,
@@ -415,22 +417,36 @@ async fn handle_udp_associate(
 
     tokio::spawn(manager.clone().inbound_loop());
 
-    // TODO: Fix try_clone issue for control stream monitoring
-    // if let Ok(mut control) = stream.try_clone().await {
-    //     let manager = manager.clone();
-    //     tokio::spawn(async move {
-    //         let mut buf = [0u8; 1];
-    //         loop {
-    //             match control.read_exact(&mut buf).await {
-    //                 Ok(0) | Err(_) => {
-    //                     manager.teardown().await;
-    //                     break;
-    //                 }
-    //                 Ok(_) => continue,
-    //             }
-    //         }
-    //     });
-    // }
+    // Monitor the control TCP stream and teardown UDP sessions when it closes.
+    // We duplicate the file descriptor to create an independent TcpStream for monitoring.
+    let raw_fd = stream.as_raw_fd();
+    unsafe {
+        // Use libc::dup to duplicate the file descriptor
+        let dup_fd = libc::dup(raw_fd);
+        if dup_fd >= 0 {
+            // Create a std::net::TcpStream from the duplicated fd
+            let std_stream = std::net::TcpStream::from_raw_fd(dup_fd);
+            // Set non-blocking mode for tokio compatibility
+            if std_stream.set_nonblocking(true).is_ok() {
+                // Convert to tokio TcpStream
+                if let Ok(mut control) = TcpStream::from_std(std_stream) {
+                    let manager = manager.clone();
+                    tokio::spawn(async move {
+                        let mut buf = [0u8; 1];
+                        loop {
+                            match control.read(&mut buf).await {
+                                Ok(0) | Err(_) => {
+                                    manager.teardown().await;
+                                    break;
+                                }
+                                Ok(_) => continue,
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }
 
     info!(peer=?peer, bind=?bind_addr, "SOCKS UDP associate ready");
     Ok(())
@@ -445,6 +461,7 @@ struct UdpKey {
 
 struct UdpChannel {
     transport: Arc<dyn UdpTransport>,
+    #[allow(dead_code)]
     endpoint: Endpoint,
 }
 
@@ -455,6 +472,7 @@ struct UdpSessionManager {
     process_matcher: Option<Arc<ProcessMatcher>>,
     stats: Arc<ProcessAwareTunStatistics>,
     channels: RwLock<HashMap<UdpKey, Arc<UdpChannel>>>,
+    #[allow(dead_code)]
     closed: Mutex<bool>,
 }
 
@@ -477,6 +495,7 @@ impl UdpSessionManager {
         }
     }
 
+    #[allow(dead_code)]
     async fn teardown(&self) {
         let mut closed = self.closed.lock().await;
         if !*closed {

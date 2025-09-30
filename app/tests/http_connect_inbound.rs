@@ -51,7 +51,7 @@ fn http_connect(
     loop {
         let n = s.read(&mut buf).unwrap();
         if n == 0 {
-            panic!("eof");
+            assert!(false, "Unexpected EOF while reading HTTP CONNECT response status line");
         }
         line.push(buf[0] as char);
         if last_cr && buf[0] == b'\n' {

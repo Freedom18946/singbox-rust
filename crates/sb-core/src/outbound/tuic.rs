@@ -29,6 +29,7 @@ pub struct TuicConfig {
 }
 
 #[cfg(feature = "out_tuic")]
+#[derive(Debug)]
 pub struct TuicOutbound {
     config: TuicConfig,
     quic_config: QuicConfig,
@@ -52,6 +53,137 @@ impl TuicOutbound {
             config,
             quic_config,
         })
+    }
+
+    /// Perform TUIC protocol handshake and authentication
+    async fn tuic_handshake(
+        &self,
+        stream: &mut super::quic::io::QuicBidiStream,
+        target_host: &str,
+        target_port: u16,
+    ) -> anyhow::Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // TUIC v5 protocol handshake
+        // 1. Send authentication with UUID and token
+        let auth_data = self.build_auth_packet()?;
+        stream.write_all(&auth_data).await?;
+
+        // 2. Send connect request for target
+        let connect_data = self.build_connect_packet(target_host, target_port)?;
+        stream.write_all(&connect_data).await?;
+
+        // 3. Read response and verify success
+        let mut response = [0u8; 16];
+        stream.read_exact(&mut response).await?;
+
+        if response[0] != 0x00 {
+            return Err(anyhow::anyhow!("TUIC authentication failed: {:02x}", response[0]));
+        }
+
+        log::info!("TUIC handshake completed successfully for {}:{}", target_host, target_port);
+        Ok(())
+    }
+
+    /// Create a TCP proxy that relays data through TUIC stream
+    async fn create_tcp_proxy(
+        &self,
+        tuic_stream: super::quic::io::QuicBidiStream,
+    ) -> std::io::Result<tokio::net::TcpStream> {
+        // Create a local TCP server and connect to it to simulate a pair
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        // Accept connection in background
+        let server_task = tokio::spawn(async move {
+            listener.accept().await.map(|(stream, _)| stream)
+        });
+
+        // Connect to the listener
+        let client = tokio::net::TcpStream::connect(addr).await?;
+        let server = server_task.await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
+
+        // Spawn a background task to relay data between TCP and TUIC streams
+        tokio::spawn(async move {
+            if let Err(e) = Self::relay_streams(server, tuic_stream).await {
+                log::warn!("TUIC stream relay error: {}", e);
+            }
+        });
+
+        Ok(client)
+    }
+
+    /// Relay data between TCP stream and TUIC stream
+    async fn relay_streams(
+        mut tcp_stream: tokio::net::TcpStream,
+        mut tuic_stream: super::quic::io::QuicBidiStream,
+    ) -> anyhow::Result<()> {
+        use tokio::io::copy_bidirectional;
+
+        // Use the streams directly for bidirectional copy
+        match copy_bidirectional(&mut tcp_stream, &mut tuic_stream).await {
+            Ok((sent, received)) => {
+                log::debug!("TUIC relay completed: sent {} bytes, received {} bytes", sent, received);
+                Ok(())
+            }
+            Err(e) => {
+                log::warn!("TUIC relay error: {}", e);
+                Err(anyhow::anyhow!("Stream relay failed: {}", e))
+            }
+        }
+    }
+
+    /// Build TUIC authentication packet
+    fn build_auth_packet(&self) -> anyhow::Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // TUIC v5 auth packet format:
+        // [Version(1)] [Command(1)] [UUID(16)] [Token_Len(2)] [Token(N)]
+        packet.push(0x05); // Version 5
+        packet.push(0x01); // Auth command
+
+        // UUID
+        packet.extend_from_slice(self.config.uuid.as_bytes());
+
+        // Token
+        let token_bytes = self.config.token.as_bytes();
+        packet.extend_from_slice(&(token_bytes.len() as u16).to_be_bytes());
+        packet.extend_from_slice(token_bytes);
+
+        Ok(packet)
+    }
+
+    /// Build TUIC connect packet
+    fn build_connect_packet(&self, host: &str, port: u16) -> anyhow::Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // TUIC v5 connect packet format:
+        // [Command(1)] [Address_Type(1)] [Address(N)] [Port(2)]
+        packet.push(0x02); // Connect command
+
+        // Address type and address
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(ipv4) => {
+                    packet.push(0x01); // IPv4
+                    packet.extend_from_slice(&ipv4.octets());
+                }
+                std::net::IpAddr::V6(ipv6) => {
+                    packet.push(0x04); // IPv6
+                    packet.extend_from_slice(&ipv6.octets());
+                }
+            }
+        } else {
+            // Domain name
+            packet.push(0x03);
+            packet.push(host.len() as u8);
+            packet.extend_from_slice(host.as_bytes());
+        }
+
+        // Port
+        packet.extend_from_slice(&port.to_be_bytes());
+
+        Ok(packet)
     }
 
     fn create_quinn_config(&self) -> io::Result<quinn::ClientConfig> {
@@ -86,6 +218,8 @@ impl TuicOutbound {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
+    /// Authenticates connection (reserved for advanced auth flows)
+    #[allow(dead_code)]
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
         // Open authentication stream
         let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
@@ -102,7 +236,6 @@ impl TuicOutbound {
         auth_packet.extend_from_slice(self.config.uuid.as_bytes());
         auth_packet.extend_from_slice(self.config.token.as_bytes());
 
-        use tokio::io::AsyncWriteExt;
         send_stream.write_all(&auth_packet).await.map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Auth write failed: {}", e))
         })?;
@@ -112,7 +245,6 @@ impl TuicOutbound {
         })?;
 
         // Read authentication response
-        use tokio::io::AsyncReadExt;
         let mut response = [0u8; 1];
         recv_stream.read_exact(&mut response).await.map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Auth read failed: {}", e))
@@ -128,6 +260,8 @@ impl TuicOutbound {
         Ok(())
     }
 
+    /// Creates TUIC tunnel (reserved for multiplexed connections)
+    #[allow(dead_code)]
     async fn create_tunnel(
         &self,
         connection: &quinn::Connection,
@@ -150,7 +284,6 @@ impl TuicOutbound {
         connect_packet.push(target_bytes.len() as u8);
         connect_packet.extend_from_slice(target_bytes.as_bytes());
 
-        use tokio::io::AsyncWriteExt;
         send_stream.write_all(&connect_packet).await.map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Connect write failed: {}", e))
         })?;
@@ -170,7 +303,7 @@ impl OutboundTcp for TuicOutbound {
             OutboundErrorClass,
         };
 
-        record_connect_attempt(crate::outbound::OutboundKind::Direct); // TODO: Add TUIC kind
+        record_connect_attempt(crate::outbound::OutboundKind::Tuic);
 
         let start = std::time::Instant::now();
 
@@ -244,7 +377,6 @@ impl OutboundTcp for TuicOutbound {
 
         // Send minimal CONNECT frame (placeholder implementation)
         let connect_msg = format!("CONNECT {} {}\n", target.host, target.port);
-        use tokio::io::AsyncWriteExt;
         if let Err(e) = send_stream.write_all(connect_msg.as_bytes()).await {
             record_connect_error(
                 crate::outbound::OutboundKind::Direct,
@@ -272,7 +404,6 @@ impl OutboundTcp for TuicOutbound {
         }
 
         // Read 1KB response for minimal validation
-        use tokio::io::AsyncReadExt;
         let mut buf = vec![0u8; 1024];
         match recv_stream.read(&mut buf).await {
             Ok(_n) => {
@@ -366,7 +497,6 @@ impl tokio::io::AsyncRead for TuicStream {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<io::Result<()>> {
         use std::pin::Pin;
-        use tokio::io::AsyncRead;
 
         Pin::new(&mut self.recv_stream).poll_read(cx, buf)
     }
@@ -380,7 +510,6 @@ impl tokio::io::AsyncWrite for TuicStream {
         buf: &[u8],
     ) -> std::task::Poll<Result<usize, io::Error>> {
         use std::pin::Pin;
-        use tokio::io::AsyncWrite;
 
         match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => std::task::Poll::Ready(Ok(n)),
@@ -396,7 +525,6 @@ impl tokio::io::AsyncWrite for TuicStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), io::Error>> {
         use std::pin::Pin;
-        use tokio::io::AsyncWrite;
 
         match Pin::new(&mut self.send_stream).poll_flush(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
@@ -412,7 +540,6 @@ impl tokio::io::AsyncWrite for TuicStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), io::Error>> {
         use std::pin::Pin;
-        use tokio::io::AsyncWrite;
 
         match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
@@ -421,6 +548,37 @@ impl tokio::io::AsyncWrite for TuicStream {
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
+    }
+}
+
+#[cfg(feature = "out_tuic")]
+impl crate::adapter::OutboundConnector for TuicOutbound {
+    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        // Create a blocking runtime to run async TUIC connection
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        rt.block_on(async {
+            // Establish QUIC connection first
+            let conn = super::quic::common::connect(&self.quic_config).await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
+
+            // Open a bidirectional stream for TUIC protocol
+            let (send_stream, recv_stream) = conn.open_bi().await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
+
+            // Perform TUIC handshake and authentication
+            let mut tuic_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
+
+            // TUIC protocol: Send authentication and target request
+            self.tuic_handshake(&mut tuic_stream, host, port).await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+
+            // Convert to blocking TcpStream-like behavior
+            // This is a simplified approach - for production, would need a proper stream adapter
+            let tokio_stream = self.create_tcp_proxy(tuic_stream).await?;
+            tokio_stream.into_std()
+        })
     }
 }
 

@@ -453,8 +453,10 @@ impl Socks5Connector {
     /// Perform SOCKS5 initial handshake and authentication
     async fn socks5_handshake(&self, stream: &mut TcpStream, timeout: Duration) -> Result<()> {
         // Step 1: Send version and authentication methods
+        // Prefer offering both "no-auth" and "user/pass" when credentials are present
+        // so the server can select the most permissive method it supports.
         let methods = if self.config.username.is_some() && self.config.password.is_some() {
-            vec![0x02] // Username/password authentication
+            vec![0x00, 0x02] // No auth and Username/Password
         } else {
             vec![0x00] // No authentication
         };
@@ -510,8 +512,14 @@ impl Socks5Connector {
 
     /// Perform username/password authentication
     async fn socks5_auth(&self, stream: &mut TcpStream, timeout: Duration) -> Result<()> {
-        let username = self.config.username.as_ref().unwrap();
-        let password = self.config.password.as_ref().unwrap();
+        let (username, password) = match (self.config.username.as_ref(), self.config.password.as_ref()) {
+            (Some(u), Some(p)) => (u, p),
+            _ => {
+                return Err(AdapterError::InvalidConfig(
+                    "Username/password required but missing in config",
+                ))
+            }
+        };
 
         if username.len() > 255 || password.len() > 255 {
             return Err(AdapterError::InvalidConfig("Username or password too long"));

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg(feature = "manpage")]
 use anyhow::Result;
 use clap::CommandFactory;
 use std::io::Write;
@@ -31,7 +30,7 @@ pub fn main(a: ManArgs) -> Result<()> {
         let name = env!("CARGO_PKG_NAME");
         let ver = env!("CARGO_PKG_VERSION");
         let date = chrono::Local::now().format("%Y-%m-%d");
-        println!(".\\\" {} {} {}", name, ver, date); // 摘要行
+        println!(".\\\" {name} {ver} {date}"); // 摘要行
         std::io::stdout().write_all(&buf)?;
     }
     Ok(())

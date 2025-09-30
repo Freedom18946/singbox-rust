@@ -3,7 +3,7 @@ mod imp {
     use anyhow::Result;
 
     pub fn next_trace_id() -> String {
-        use std::sync::atomic::{AtomicU64, Ordering::*};
+        use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
         static CTR: AtomicU64 = AtomicU64::new(1);
         let n = CTR.fetch_add(1, SeqCst);
         format!("{:016x}", n ^ fastrand::u64(..))
@@ -14,14 +14,14 @@ mod imp {
         crate::tracing_init::init_tracing_once();
     }
 
-    pub async fn init_metrics_exporter() -> Result<()> {
+    pub fn init_metrics_exporter() -> Result<()> {
         #[cfg(feature = "dev-cli")]
         crate::tracing_init::init_metrics_exporter_once();
         Ok(())
     }
 
     pub async fn init_and_listen() {
-        // NOTE: metrics exporter entrypoint (stub); admin_debug may expose metrics.
+        // Metrics exporter integration point - admin_debug provides HTTP metrics endpoint
         #[cfg(feature = "admin_debug")]
         crate::admin_debug::init(None).await;
     }

@@ -5,15 +5,14 @@
 
 use std::io;
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 use sb_core::outbound::RouteTarget;
 use sb_core::router::engine::{RouteCtx, Transport};
-use sb_core::router::{Router, RouterHandle};
+use sb_core::router::RouterHandle;
 // （如无使用请保持这两个 import 移除，避免未使用警告）
 // use std::time::Duration;
 // use tokio::time::timeout;
@@ -203,7 +202,7 @@ impl TunInbound {
                                     let dst = Address::Ip(SocketAddr::new(ip, port));
 
                                     // --- 组装 RequestMeta（补齐旧字段以兼容 engine.rs）
-                                    let meta = RequestMeta {
+                                    let _meta = RequestMeta {
                                         inbound: Some(self.cfg.name.clone()),
                                         inbound_tag: Some(self.cfg.name.clone()),
                                         user: self.cfg.user_tag.clone(),
@@ -261,7 +260,7 @@ impl TunInbound {
                                             // 2.3e: 计入一帧
                                             PACKETS_SEEN.fetch_add(1, Ordering::Relaxed);
 
-                                            let meta = RequestMeta {
+                                            let _meta = RequestMeta {
                                                 inbound: Some(self.cfg.name.clone()),
                                                 user: self.cfg.user_tag.clone(),
                                                 transport: transport_opt,
@@ -269,7 +268,7 @@ impl TunInbound {
                                                 ..Default::default()
                                             };
                                             // 重用之前的路由选择结果
-                                            let probe_selected = selected.clone();
+                                            let _probe_selected = selected.clone();
                                             // 避免把 tokio::time::timeout() 遮蔽：本地变量不要叫 `timeout`
                                             let dial_timeout =
                                                 Duration::from_millis(self.cfg.timeout_ms);
@@ -385,7 +384,7 @@ impl TunInbound {
         port: u16,
         timeout: std::time::Duration,
     ) -> Result<(), std::io::Error> {
-        use std::time::Duration;
+        
         use tokio::net::TcpStream;
 
         let target_addr = format!("{}:{}", ip, port);

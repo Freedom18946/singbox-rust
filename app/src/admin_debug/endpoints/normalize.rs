@@ -4,18 +4,23 @@ use crate::admin_debug::http_util::{
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use tokio::io::AsyncWriteExt;
+use std::fmt::Write as _;
+#[cfg(feature = "rules_capture")]
+use sb_core::router::engine::RouterHandle;
 
+/// # Errors
+/// Returns an IO error if the response cannot be written to the socket
 pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
     if !path_q.starts_with("/router/rules/normalize") {
         return Ok(());
     }
 
-    let q = path_q.splitn(2, '?').nth(1).unwrap_or("");
+    let q = path_q.split_once('?').map_or("", |x| x.1);
     let params = parse_query(q);
 
     let text = if let Some(b64) = params.get("inline") {
         // Validate size estimate before decoding
-        if let Err(_) = validate_inline_size_estimate(b64) {
+        if validate_inline_size_estimate(b64).is_err() {
             return respond_json_error(
                 sock,
                 413,
@@ -39,7 +44,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         };
 
         // Validate actual decoded size
-        if let Err(_) = validate_decoded_size(&bytes) {
+        if validate_decoded_size(&bytes).is_err() {
             return respond_json_error(
                 sock,
                 413,
@@ -53,8 +58,20 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
     } else {
         #[cfg(feature = "rules_capture")]
         {
-            // TODO: Implement rules capture functionality
-            String::new()
+            // Capture current router rules configuration
+            match capture_current_rules() {
+                Ok(rules_text) => rules_text,
+                Err(e) => {
+                    tracing::warn!("Failed to capture current rules: {}", e);
+                    return respond_json_error(
+                        sock,
+                        500,
+                        "failed to capture current rules",
+                        Some("rules capture feature is not fully implemented"),
+                    )
+                    .await;
+                }
+            }
         }
         #[cfg(not(feature = "rules_capture"))]
         {
@@ -94,7 +111,7 @@ fn normalize_rules(input: &str) -> String {
 
     let lines: Vec<&str> = input
         .lines()
-        .map(|line| line.trim())
+        .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .collect();
 
@@ -118,10 +135,8 @@ fn normalize_rules(input: &str) -> String {
             if !routing_rules.contains(&normalized_line) {
                 routing_rules.push(normalized_line);
             }
-        } else {
-            if !other_rules.contains(&normalized_line) {
-                other_rules.push(normalized_line);
-            }
+        } else if !other_rules.contains(&normalized_line) {
+            other_rules.push(normalized_line);
         }
     }
 
@@ -191,14 +206,88 @@ fn normalize_single_rule(line: &str) -> String {
     // Handle JSON formatting
     if trimmed.starts_with('{') && trimmed.ends_with('}') {
         // Try to parse and reformat JSON for consistency
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            // Pretty print with consistent formatting
-            serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| trimmed.to_string())
-        } else {
-            trimmed.to_string()
-        }
+        serde_json::from_str::<serde_json::Value>(trimmed).map_or_else(
+            |_| trimmed.to_string(),
+            |parsed| serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| trimmed.to_string()),
+        )
     } else {
         // Handle other formats (YAML, TOML, etc.)
         trimmed.to_string()
     }
+}
+
+/// Capture current router rules from the running system
+/// This function attempts to extract the current routing configuration
+/// for normalization and analysis
+#[cfg(feature = "rules_capture")]
+fn capture_current_rules() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Create a RouterHandle to access the current routing configuration
+    let router = RouterHandle::from_env();
+
+    // Extract the current routing rules using the router's export functionality
+    let rules_json = router.export_rules_json()
+        .map_err(|e| format!("Failed to export router rules: {e}"))?;
+
+    // Convert JSON to a normalized text format for analysis
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let mut output = format!("# Current Router Configuration (Captured)\n# Generated at: {timestamp}\n\n");
+
+    // Format CIDR rules
+    if let Some(cidrs) = rules_json.get("cidr").and_then(|v| v.as_array()) {
+        if !cidrs.is_empty() {
+            output.push_str("# CIDR Rules\n");
+            for cidr in cidrs {
+                if let (Some(net), Some(to)) = (
+                    cidr.get("net").and_then(|v| v.as_str()),
+                    cidr.get("to").and_then(|v| v.as_str())
+                ) {
+                    let _ = writeln!(output, "cidr: {net} -> {to}");
+                }
+            }
+            output.push('\n');
+        }
+    }
+
+    // Format suffix rules
+    if let Some(suffixes) = rules_json.get("suffix").and_then(|v| v.as_array()) {
+        if !suffixes.is_empty() {
+            output.push_str("# Domain Suffix Rules\n");
+            for suffix in suffixes {
+                if let (Some(domain), Some(to)) = (
+                    suffix.get("suffix").and_then(|v| v.as_str()),
+                    suffix.get("to").and_then(|v| v.as_str())
+                ) {
+                    let _ = writeln!(output, "suffix: {domain} -> {to}");
+                }
+            }
+            output.push('\n');
+        }
+    }
+
+    // Format exact rules
+    if let Some(exacts) = rules_json.get("exact").and_then(|v| v.as_array()) {
+        if !exacts.is_empty() {
+            output.push_str("# Exact Match Rules\n");
+            for exact in exacts {
+                if let (Some(host), Some(to)) = (
+                    exact.get("host").and_then(|v| v.as_str()),
+                    exact.get("to").and_then(|v| v.as_str())
+                ) {
+                    let _ = writeln!(output, "exact: {host} -> {to}");
+                }
+            }
+            output.push('\n');
+        }
+    }
+
+    // Add default rule if present
+    if let Some(default) = rules_json.get("default").and_then(|v| v.as_str()) {
+        let _ = write!(output, "# Default Route\ndefault: -> {default}\n");
+    }
+
+    Ok(output)
 }

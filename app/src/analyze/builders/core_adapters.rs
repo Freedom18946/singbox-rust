@@ -3,7 +3,7 @@ use crate::analyze::registry::register;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-/// 将 sb_core 的功能适配为注册表 builder
+/// 将 `sb_core` 的功能适配为注册表 builder
 /// 输入 JSON 约定:
 /// {
 ///   "kind": "...",
@@ -11,7 +11,6 @@ use serde_json::Value;
 ///   "file": "<optional filename>",
 ///   "report": {...}   // 可选，若未提供则由调用方自行分析
 /// }
-
 fn get_text_file(v: &Value) -> Result<(String, Option<String>)> {
     let text = v
         .get("text")
@@ -21,7 +20,7 @@ fn get_text_file(v: &Value) -> Result<(String, Option<String>)> {
     let file = v
         .get("file")
         .and_then(|x| x.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
     Ok((text, file))
 }
 

@@ -244,6 +244,10 @@ impl Drop for ChildGuard {
             #[cfg(unix)]
             {
                 // Try graceful termination first
+                // SAFETY:
+                // - c.id() yields a valid OS process ID for the spawned child
+                // - Sending SIGTERM is a side-effect free request; we ignore errors if the process already exited
+                // - We immediately follow with a non-blocking wait/kill fallback, so no assumptions on delivery
                 let _ = unsafe { libc::kill(c.id() as i32, libc::SIGTERM) };
 
                 // Wait briefly for graceful shutdown

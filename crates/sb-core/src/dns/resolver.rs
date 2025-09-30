@@ -77,12 +77,12 @@ impl DnsResolver {
             ))));
         }
 
-        Ok(DnsAnswer {
-            ips: all_ips,
-            ttl: min_ttl.unwrap_or(self.default_ttl),
-            source: crate::dns::cache::Source::System,
-            rcode: crate::dns::cache::Rcode::NoError,
-        })
+        Ok(DnsAnswer::new(
+            all_ips,
+            min_ttl.unwrap_or(self.default_ttl),
+            crate::dns::cache::Source::System,
+            crate::dns::cache::Rcode::NoError,
+        ))
     }
 
     /// 查询特定记录类型
@@ -261,6 +261,7 @@ mod tests {
                         ttl: Duration::from_secs(300),
                         source: crate::dns::cache::Source::Upstream,
                         rcode: crate::dns::cache::Rcode::NoError,
+                        created_at: std::time::Instant::now(),
                     }),
                 )
                 .with_response(
@@ -271,6 +272,7 @@ mod tests {
                         ttl: Duration::from_secs(600),
                         source: crate::dns::cache::Source::Upstream,
                         rcode: crate::dns::cache::Rcode::NoError,
+                        created_at: std::time::Instant::now(),
                     }),
                 ),
         );
@@ -293,6 +295,7 @@ mod tests {
                 ttl: Duration::from_secs(300),
                 source: crate::dns::cache::Source::Upstream,
                 rcode: crate::dns::cache::Rcode::NoError,
+                created_at: std::time::Instant::now(),
             }),
         ));
 

@@ -9,7 +9,8 @@ pub struct SafeRedirect {
 }
 
 impl SafeRedirect {
-    pub fn new(allow_host_suffix: Vec<String>) -> Self {
+    #[must_use] 
+    pub const fn new(allow_host_suffix: Vec<String>) -> Self {
         Self { allow_host_suffix }
     }
 

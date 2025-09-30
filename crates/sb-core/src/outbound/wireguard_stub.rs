@@ -28,6 +28,7 @@ pub struct WireGuardConfig {
 
 #[cfg(feature = "out_wireguard")]
 pub struct WireGuardOutbound {
+    #[allow(dead_code)]
     config: WireGuardConfig,
 }
 

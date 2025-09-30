@@ -43,7 +43,9 @@ pub struct ScoreSelector {
     weights: (f64, f64, f64), // (w_rtt, w_err, w_open)
     min_dwell: Duration,      // 最小驻留时间
     min_samples: u64,         // 最小样本数
-    ema_halflife: Duration,   // EMA 半衰时间
+    /// EMA halflife for future smoothing algorithms
+    #[allow(dead_code)]
+    ema_halflife: Duration,
     stats: HashMap<String, Stats>,
     current: Option<String>,
     #[cfg(feature = "metrics")]

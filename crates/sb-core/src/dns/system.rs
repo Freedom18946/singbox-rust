@@ -28,11 +28,11 @@ impl DnsResolver for SystemResolver {
         for sa in iter {
             out.push(sa.ip());
         }
-        Ok(DnsAnswer {
-            ips: out,
-            ttl: self.default_ttl,
-            source: super::cache::Source::System,
-            rcode: super::cache::Rcode::NoError,
-        })
+        Ok(DnsAnswer::new(
+            out,
+            self.default_ttl,
+            super::cache::Source::System,
+            super::cache::Rcode::NoError,
+        ))
     }
 }

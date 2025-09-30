@@ -9,6 +9,7 @@ pub fn register_all() {
 }
 
 /// 小工具：把 `sb_core` 的补丁对象（或文本）包成 JSON，便于前端/CLI统一消费
+#[must_use] 
 pub fn wrap_patch_text(patch_text: String) -> Value {
     serde_json::json!({ "patch": { "text": patch_text } })
 }

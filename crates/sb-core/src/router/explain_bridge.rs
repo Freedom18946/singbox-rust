@@ -11,7 +11,7 @@ pub fn run(router: &RouterHandle, q: ExplainQuery) -> ExplainResult {
 
     // 1) override
     if let Some((kind, when, to, why)) = try_override(&idx, &q) {
-        let rid = crate::router::rule_id::rule_sha8(kind, &when, to);
+        let rid = crate::router::rule_id::rule_sha8(kind, when, to);
         trace.push("override", rid.clone(), true, why.clone());
         return ExplainResult::new("override", rid, why, trace);
     } else {
@@ -20,13 +20,13 @@ pub fn run(router: &RouterHandle, q: ExplainQuery) -> ExplainResult {
 
     // 2) cidr
     if let Some((kind, when, to, why)) = try_cidr(&idx, q.ip) {
-        let rid = crate::router::rule_id::rule_sha8(kind, &when, to);
+        let rid = crate::router::rule_id::rule_sha8(kind, when, to);
         trace.push("cidr", rid.clone(), true, why.clone());
         // 3) geo（可选）
         if let Some((gk, gw, gt, gwhy)) = try_geo(router, &idx, q.ip) {
             trace.push(
                 "geo",
-                crate::router::rule_id::rule_sha8(gk, &gw, gt),
+                crate::router::rule_id::rule_sha8(gk, gw, gt),
                 true,
                 gwhy,
             );
@@ -41,14 +41,14 @@ pub fn run(router: &RouterHandle, q: ExplainQuery) -> ExplainResult {
     // 4) suffix / exact（域名规则）
     if let Some(sni) = &q.sni {
         if let Some((sk, sw, st, swhy)) = try_suffix(&idx, sni) {
-            let rid = crate::router::rule_id::rule_sha8(sk, &sw, st);
+            let rid = crate::router::rule_id::rule_sha8(sk, sw, st);
             trace.push("suffix", rid.clone(), true, swhy.clone());
             return ExplainResult::new("suffix", rid, swhy, trace);
         } else {
             trace.push("suffix", "-", false, "no_suffix");
         }
         if let Some((ek, ew, et, ewhy)) = try_exact(&idx, sni) {
-            let rid = crate::router::rule_id::rule_sha8(ek, &ew, et);
+            let rid = crate::router::rule_id::rule_sha8(ek, ew, et);
             trace.push("exact", rid.clone(), true, ewhy.clone());
             return ExplainResult::new("exact", rid, ewhy, trace);
         } else {
@@ -110,10 +110,10 @@ fn try_override<'a>(
     None
 }
 
-fn try_cidr<'a>(
-    idx: &'a ExplainIndex,
+fn try_cidr(
+    idx: &ExplainIndex,
     ip: Option<std::net::IpAddr>,
-) -> Option<(&'static str, &'a serde_json::Value, &'a str, String)> {
+) -> Option<(&'static str, &serde_json::Value, &str, String)> {
     idx.match_cidr(ip)
         .map(move |(r, why)| wrap("cidr", r.to.as_str(), &r.when, why))
 }

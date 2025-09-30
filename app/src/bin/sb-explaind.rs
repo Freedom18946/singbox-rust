@@ -211,7 +211,10 @@ async fn handle(
                 .body(Body::from(body))
                 .unwrap())
         }
-        _ => unreachable!(),
+        _ => {
+            // This should not happen given validation above, but handle gracefully
+            Ok(http_util::bad_request("unsupported format"))
+        }
     }
 }
 

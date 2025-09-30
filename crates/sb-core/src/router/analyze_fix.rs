@@ -1,6 +1,9 @@
-//! R13: 将 analyze 的建议转成“CLI 补丁”文本（非 git）。
+//! R13: 将 analyze 的建议转成"CLI 补丁"文本（非 git）。
 use super::analyze::Report;
 use std::fmt::Write;
+
+/// Type alias for edit operations: ((old_start, old_end, old_text), (new_start, new_end, new_text))
+type EditOperation = ((u16, u16, String), (u16, u16, String));
 
 /// CLI Patch 片段。仅文本层替换，不做 AST。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +22,7 @@ pub fn build_portrange_merge_patch(
     file: Option<&str>,
 ) -> Option<CliPatch> {
     let mut out = String::new();
-    let mut edits: Vec<((u16, u16, String), (u16, u16, String))> = Vec::new();
+    let mut edits: Vec<EditOperation> = Vec::new();
     for s in &report.suggestions {
         if let Some(idx) = s.find("merge portrange:") {
             let seg = &s[idx + "merge portrange:".len()..];

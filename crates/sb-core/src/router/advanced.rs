@@ -356,7 +356,7 @@ mod tests {
         let act = eng.evaluate(&t).unwrap();
         match act {
             Action::UseOutbound(x) => assert_eq!(x, "tls"),
-            _ => panic!("bad action"),
+            _ => assert!(false, "Expected UseOutbound action, got unexpected action type"),
         }
         let snap = snapshot_stats(&eng);
         assert_eq!(*snap.rules.get("r2").unwrap_or(&0), 1);

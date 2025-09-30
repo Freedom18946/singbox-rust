@@ -21,6 +21,7 @@ pub enum FlowControl {
 }
 
 impl FlowControl {
+    #[allow(dead_code)]
     fn as_str(&self) -> &str {
         match self {
             FlowControl::None => "",
@@ -42,6 +43,7 @@ pub enum Encryption {
 }
 
 impl Encryption {
+    #[allow(dead_code)]
     fn as_str(&self) -> &str {
         match self {
             Encryption::None => "none",
@@ -86,7 +88,7 @@ pub struct MultiplexConfig {
 impl Default for VlessConfig {
     fn default() -> Self {
         Self {
-            server_addr: "127.0.0.1:443".parse().unwrap(),
+            server_addr: SocketAddr::from(([127, 0, 0, 1], 443)),
             uuid: Uuid::new_v4(),
             flow: FlowControl::None,
             encryption: Encryption::None,

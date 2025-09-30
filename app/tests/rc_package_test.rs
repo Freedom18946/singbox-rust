@@ -339,21 +339,25 @@ fn test_rc_package_integration() {
         .collect();
 
     let has_version_file = rc_entries.iter().any(|entry| {
-        entry
-            .as_ref()
-            .ok()
-            .and_then(|e| e.file_name().to_str())
-            .map(|name| name.starts_with("version-"))
-            .unwrap_or(false)
+        match entry {
+            Ok(e) => {
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("version-")
+            }
+            Err(_) => false,
+        }
     });
 
     let has_ci_metadata_file = rc_entries.iter().any(|entry| {
-        entry
-            .as_ref()
-            .ok()
-            .and_then(|e| e.file_name().to_str())
-            .map(|name| name.starts_with("ci-metadata-"))
-            .unwrap_or(false)
+        match entry {
+            Ok(e) => {
+                let name = e.file_name();
+                let name_str = name.to_string_lossy();
+                name_str.starts_with("ci-metadata-")
+            }
+            Err(_) => false,
+        }
     });
 
     assert!(has_version_file, "RC package should contain version file");

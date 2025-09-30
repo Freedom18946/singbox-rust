@@ -50,6 +50,7 @@ pub fn write_404(s: &mut std::net::TcpStream) {
 }
 
 // Hyper response helpers for sb-explaind
+#[must_use] 
 pub fn bad_request(msg: &str) -> Response<Body> {
     // Convert to JSON error response
     let json_body = serde_json::json!({
@@ -68,6 +69,7 @@ pub fn bad_request(msg: &str) -> Response<Body> {
         .unwrap()
 }
 
+#[must_use] 
 pub fn text(status: StatusCode, msg: String) -> Response<Body> {
     // Convert to JSON error response
     let json_body = serde_json::json!({
@@ -86,6 +88,7 @@ pub fn text(status: StatusCode, msg: String) -> Response<Body> {
         .unwrap()
 }
 
+#[must_use] 
 pub fn ok_json(body: serde_json::Value) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
@@ -94,6 +97,7 @@ pub fn ok_json(body: serde_json::Value) -> Response<Body> {
         .unwrap()
 }
 
+#[must_use] 
 pub fn ok_octet(mime: &str, buf: Vec<u8>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
@@ -102,6 +106,7 @@ pub fn ok_octet(mime: &str, buf: Vec<u8>) -> Response<Body> {
         .unwrap()
 }
 
+#[must_use] 
 pub fn not_found() -> Response<Body> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
@@ -109,6 +114,7 @@ pub fn not_found() -> Response<Body> {
         .unwrap()
 }
 
+#[must_use] 
 pub fn service_unavailable_json(body: serde_json::Value) -> Response<Body> {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)

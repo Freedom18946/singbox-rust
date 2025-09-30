@@ -40,8 +40,13 @@ mod tests {
     async fn test_dns_cache_integration() {
         let cache = Arc::new(DnsCache::new(100));
 
+        let key = crate::dns::cache::Key {
+            name: "example.com".to_string(),
+            qtype: crate::dns::cache::QType::A,
+        };
+
         // 测试缓存未命中
-        assert!(cache.get("example.com").is_none());
+        assert!(cache.get(&key).is_none());
 
         // 存入缓存
         let answer = DnsAnswer {
@@ -49,11 +54,16 @@ mod tests {
             ttl: Duration::from_secs(300),
             source: crate::dns::cache::Source::System,
             rcode: crate::dns::cache::Rcode::NoError,
+            created_at: std::time::Instant::now(),
         };
-        cache.put("example.com", answer.clone());
+        let key = crate::dns::cache::Key {
+            name: "example.com".to_string(),
+            qtype: crate::dns::cache::QType::A,
+        };
+        cache.put(key.clone(), answer.clone());
 
         // 测试缓存命中
-        let cached = cache.get("example.com").unwrap();
+        let cached = cache.get(&key).unwrap();
         assert_eq!(cached.ips, answer.ips);
         assert!(cached.ttl <= answer.ttl); // TTL 应该减少或相等
     }
@@ -113,6 +123,7 @@ mod tests {
             ttl: Duration::from_secs(300),
             source: crate::dns::cache::Source::System,
             rcode: crate::dns::cache::Rcode::NoError,
+            created_at: std::time::Instant::now(),
         };
 
         assert_eq!(answer.ips.len(), 2);

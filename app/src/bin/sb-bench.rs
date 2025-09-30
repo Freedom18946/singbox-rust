@@ -68,7 +68,7 @@ async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
 
-    let rounds = (runs + par - 1) / par;
+    let rounds = runs.div_ceil(par);
     for r in 0..rounds {
         let mut futs = Vec::new();
         for i in 0..par {
@@ -124,7 +124,7 @@ async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
 
-    let rounds = (runs + par - 1) / par;
+    let rounds = runs.div_ceil(par);
     for r in 0..rounds {
         let mut futs = Vec::new();
         for i in 0..par {
@@ -180,7 +180,7 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
 
-    let rounds = (runs + par - 1) / par;
+    let rounds = runs.div_ceil(par);
     for r in 0..rounds {
         let mut futs = Vec::new();
         for i in 0..par {

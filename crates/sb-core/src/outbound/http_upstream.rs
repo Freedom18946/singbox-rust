@@ -55,7 +55,7 @@ impl OutboundConnector for HttpUp {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
         let addr = format!("{}:{}", self.server, self.port);
         let mut s = self.dial.dial(&addr).stream.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "dial http upstream fail")
+            std::io::Error::other("dial http upstream fail")
         })?;
         // CONNECT
         let mut req = format!(
@@ -80,8 +80,7 @@ impl OutboundConnector for HttpUp {
             }
         }
         if !ok {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!("http upstream not 200: {}", line),
             ));
         }

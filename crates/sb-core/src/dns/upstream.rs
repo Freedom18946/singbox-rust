@@ -159,12 +159,12 @@ impl UdpUpstream {
             return Err(anyhow::anyhow!("No valid IP addresses in DNS response"));
         }
 
-        Ok(DnsAnswer {
+        Ok(DnsAnswer::new(
             ips,
-            ttl: Duration::from_secs(min_ttl.unwrap_or(300) as u64),
-            source: super::cache::Source::Upstream,
-            rcode: super::cache::Rcode::NoError,
-        })
+            Duration::from_secs(min_ttl.unwrap_or(300) as u64),
+            super::cache::Source::Upstream,
+            super::cache::Rcode::NoError,
+        ))
     }
 
     /// 跳过 question section
@@ -392,16 +392,192 @@ impl DnsUpstream for DotUpstream {
 impl DotUpstream {
     async fn query_dot(
         &self,
-        #[allow(unused_variables)] // TODO: 等待DoT功能实现
         domain: &str,
-        #[allow(unused_variables)] // TODO: 等待DoT功能实现
         record_type: RecordType,
     ) -> Result<DnsAnswer> {
-        // TODO: 这里需要实现 DoT 查询逻辑
-        // 当前由于需要 TLS 支持，暂时返回错误
-        Err(anyhow::anyhow!(
-            "DoT implementation requires TLS library integration"
+        use tokio::net::TcpStream;
+        use tokio_rustls::TlsConnector;
+        use rustls::pki_types::ServerName;
+        use std::sync::Arc;
+
+        // Create TLS configuration
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(rustls::RootCertStore::from_iter(
+                webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+            ))
+            .with_no_client_auth();
+        let connector = TlsConnector::from(Arc::new(config));
+
+        // Connect to DoT server
+        let tcp_stream = TcpStream::connect(self.server).await?;
+        let server_name = ServerName::try_from(self.server_name.clone())
+            .map_err(|e| anyhow::anyhow!("Invalid server name: {}", e))?;
+
+        let mut tls_stream = connector.connect(server_name, tcp_stream).await?;
+
+        // Build DNS query packet
+        let query_id = fastrand::u16(..);
+        let query_packet = self.build_dns_query(query_id, domain, record_type)?;
+
+        // Send query with length prefix (DoT uses TCP-style length-prefixed messages)
+        let length = query_packet.len() as u16;
+        let mut full_packet = Vec::with_capacity(2 + query_packet.len());
+        full_packet.extend_from_slice(&length.to_be_bytes());
+        full_packet.extend_from_slice(&query_packet);
+
+        use tokio::io::{AsyncWriteExt, AsyncReadExt};
+        tls_stream.write_all(&full_packet).await?;
+
+        // Read response length
+        let mut length_buf = [0u8; 2];
+        tls_stream.read_exact(&mut length_buf).await?;
+        let response_length = u16::from_be_bytes(length_buf) as usize;
+
+        // Read response data
+        let mut response_buf = vec![0u8; response_length];
+        tls_stream.read_exact(&mut response_buf).await?;
+
+        // Parse DNS response
+        self.parse_dns_response(&response_buf, query_id)
+    }
+
+    fn build_dns_query(&self, id: u16, domain: &str, record_type: RecordType) -> Result<Vec<u8>> {
+        let qtype = match record_type {
+            RecordType::A => 1u16,
+            RecordType::AAAA => 28u16,
+            RecordType::CNAME => 5u16,
+            RecordType::MX => 15u16,
+            RecordType::TXT => 16u16,
+        };
+
+        let id_bytes = id.to_be_bytes();
+        let mut packet = vec![
+            id_bytes[0], id_bytes[1], // ID
+            0x01, 0x00, // RD=1, standard query
+            0x00, 0x01, // QDCOUNT=1
+            0x00, 0x00, // ANCOUNT=0
+            0x00, 0x00, // NSCOUNT=0
+            0x00, 0x00, // ARCOUNT=0
+        ];
+
+        // Build QNAME
+        for label in domain.trim_end_matches('.').split('.') {
+            let label_bytes = label.as_bytes();
+            if label_bytes.is_empty() || label_bytes.len() > 63 {
+                return Err(anyhow::anyhow!("Invalid domain label: {}", label));
+            }
+            packet.push(label_bytes.len() as u8);
+            packet.extend_from_slice(label_bytes);
+        }
+        packet.push(0); // Root label terminator
+
+        // QTYPE and QCLASS
+        packet.extend_from_slice(&qtype.to_be_bytes());
+        packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
+
+        Ok(packet)
+    }
+
+    fn parse_dns_response(&self, response: &[u8], expected_id: u16) -> Result<DnsAnswer> {
+        if response.len() < 12 {
+            return Err(anyhow::anyhow!("DNS response too short"));
+        }
+
+        // Check response ID
+        let response_id = u16::from_be_bytes([response[0], response[1]]);
+        if response_id != expected_id {
+            return Err(anyhow::anyhow!("DNS response ID mismatch"));
+        }
+
+        // Check response flags
+        let flags = u16::from_be_bytes([response[2], response[3]]);
+        if (flags & 0x8000) == 0 {
+            return Err(anyhow::anyhow!("Not a DNS response"));
+        }
+
+        let rcode = flags & 0x000F;
+        if rcode != 0 {
+            return Err(anyhow::anyhow!("DNS server returned error code: {}", rcode));
+        }
+
+        let qdcount = u16::from_be_bytes([response[4], response[5]]);
+        let ancount = u16::from_be_bytes([response[6], response[7]]);
+
+        let mut offset = 12;
+
+        // Skip questions
+        for _ in 0..qdcount {
+            offset = self.skip_name(response, offset)?;
+            offset += 4; // QTYPE + QCLASS
+        }
+
+        // Parse answers
+        let mut ips = Vec::new();
+        for _ in 0..ancount {
+            offset = self.skip_name(response, offset)?;
+
+            if offset + 10 > response.len() {
+                break;
+            }
+
+            let rtype = u16::from_be_bytes([response[offset], response[offset + 1]]);
+            let rdlength = u16::from_be_bytes([response[offset + 8], response[offset + 9]]);
+            offset += 10;
+
+            if offset + rdlength as usize > response.len() {
+                break;
+            }
+
+            match rtype {
+                1 if rdlength == 4 => {
+                    // A record
+                    let ip = std::net::Ipv4Addr::new(
+                        response[offset],
+                        response[offset + 1],
+                        response[offset + 2],
+                        response[offset + 3],
+                    );
+                    ips.push(std::net::IpAddr::V4(ip));
+                }
+                28 if rdlength == 16 => {
+                    // AAAA record
+                    let mut ipv6_bytes = [0u8; 16];
+                    ipv6_bytes.copy_from_slice(&response[offset..offset + 16]);
+                    let ip = std::net::Ipv6Addr::from(ipv6_bytes);
+                    ips.push(std::net::IpAddr::V6(ip));
+                }
+                _ => {}
+            }
+
+            offset += rdlength as usize;
+        }
+
+        Ok(DnsAnswer::new(
+            ips,
+            Duration::from_secs(300), // Default 5 minutes TTL
+            crate::dns::cache::Source::Upstream,
+            crate::dns::cache::Rcode::NoError,
         ))
+    }
+
+    fn skip_name(&self, data: &[u8], mut offset: usize) -> Result<usize> {
+        loop {
+            if offset >= data.len() {
+                return Err(anyhow::anyhow!("Invalid name compression"));
+            }
+
+            let len = data[offset];
+            if len == 0 {
+                return Ok(offset + 1);
+            }
+
+            if (len & 0xC0) == 0xC0 {
+                // Compression pointer
+                return Ok(offset + 2);
+            }
+
+            offset += 1 + len as usize;
+        }
     }
 }
 
@@ -568,12 +744,12 @@ impl DnsUpstream for SystemUpstream {
             ));
         }
 
-        Ok(DnsAnswer {
-            ips: addrs,
-            ttl: self.default_ttl,
-            source: super::cache::Source::Upstream,
-            rcode: super::cache::Rcode::NoError,
-        })
+        Ok(DnsAnswer::new(
+            addrs,
+            self.default_ttl,
+            super::cache::Source::Upstream,
+            super::cache::Rcode::NoError,
+        ))
     }
 
     fn name(&self) -> &str {

@@ -24,6 +24,7 @@ pub struct Prefetcher {
 static GLOBAL: OnceCell<Prefetcher> = OnceCell::new();
 static QUEUE_DEPTH: AtomicUsize = AtomicUsize::new(0);
 static HIGH_WATERMARK: AtomicU64 = AtomicU64::new(0);
+static LAST_PREFETCH_SIZE: AtomicU64 = AtomicU64::new(0);
 
 fn observe_depth(depth: u64) {
     let mut cur = HIGH_WATERMARK.load(Ordering::Relaxed);
@@ -41,7 +42,7 @@ fn observe_depth(depth: u64) {
 }
 
 impl Prefetcher {
-    pub fn global() -> &'static Prefetcher {
+    pub fn global() -> &'static Self {
         GLOBAL.get_or_init(|| {
             let cap = std::env::var("SB_PREFETCH_CAP")
                 .ok()
@@ -62,14 +63,14 @@ impl Prefetcher {
             }
             // metrics init（建议放 metrics 模块集中管理）
             crate::admin_debug::security_metrics::init_prefetch_metrics();
-            Prefetcher { tx }
+            Self { tx }
         })
     }
 
     pub fn enqueue(&self, job: PrefetchJob) -> bool {
         // 队列满即丢弃 + 计数
         match self.tx.try_send(job) {
-            Ok(_) => {
+            Ok(()) => {
                 crate::admin_debug::security_metrics::prefetch_inc("enq");
                 // Update queue depth after successful enqueue with high watermark tracking
                 let new_depth = QUEUE_DEPTH.fetch_add(1, Ordering::Relaxed) + 1;
@@ -83,7 +84,7 @@ impl Prefetcher {
         }
     }
 
-    pub async fn shutdown(self) {
+    pub fn shutdown(self) {
         // Placeholder for graceful shutdown - simplified version for compatibility
         drop(self.tx);
     }
@@ -107,7 +108,7 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
             .unwrap_or(2);
         loop {
             match do_prefetch(&job).await {
-                Ok(_) => {
+                Ok(()) => {
                     ok = true;
                     crate::admin_debug::security_metrics::prefetch_inc("done");
                     break;
@@ -121,7 +122,7 @@ async fn worker_loop(id: usize, rx: std::sync::Arc<tokio::sync::Mutex<Receiver<P
                     crate::admin_debug::security_metrics::prefetch_inc("retry");
                     // 简单指数退避（避免与 breaker backoff 相互放大）
                     let backoff_ms =
-                        50u64.saturating_mul(1 << (job.tries.saturating_sub(left as u8) as u32));
+                        50u64.saturating_mul(1 << u32::from(job.tries.saturating_sub(left as u8)));
                     tokio::time::sleep(Duration::from_millis(backoff_ms.min(1000))).await;
                 }
             }
@@ -141,12 +142,18 @@ async fn do_prefetch(job: &PrefetchJob) -> Result<()> {
     // 1) 走已有安全路径：限流/熔断/DNS 私网拦截/ETag 条件请求
     // 可直接复用 subs 的 fetch 函数（建议抽出 fetch_with_limits(&url, etag) -> Result<CacheEntry>）
     let url = &job.url;
-    let _ = prefetch_once(url, job.etag.clone()).await?;
+    let cache_entry = prefetch_once(url, job.etag.clone()).await?;
+
+    // Update size tracking
+    let size = cache_entry.body.len() as u64;
+    LAST_PREFETCH_SIZE.store(size, Ordering::Relaxed);
+
     Ok(())
 }
 
 /// For shutdown support - can be called once to take ownership for graceful shutdown
-pub fn global_take() -> Option<Prefetcher> {
+#[must_use] 
+pub const fn global_take() -> Option<Prefetcher> {
     // Note: This is a simplified version - in production you'd want proper synchronization
     None // Current structure doesn't easily support taking ownership, placeholder for interface
 }
@@ -156,6 +163,12 @@ pub fn get_high_watermark() -> u64 {
     HIGH_WATERMARK.load(Ordering::Relaxed)
 }
 
+/// Get the size of the last completed prefetch operation
+pub fn get_last_prefetch_size() -> u64 {
+    LAST_PREFETCH_SIZE.load(Ordering::Relaxed)
+}
+
+#[must_use] 
 pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
     if std::env::var("SB_PREFETCH_ENABLE").ok().as_deref() != Some("1") {
         return false;

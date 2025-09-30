@@ -1,15 +1,15 @@
 use crate::admin_debug::security_metrics as sm;
 use tokio::io::AsyncWriteExt;
+use std::fmt::Write as _;
 
-use lazy_static::lazy_static;
 use prometheus::{register_int_gauge, IntGauge};
 
-lazy_static! {
-    static ref PREFETCH_QUEUE_DEPTH: IntGauge =
-        register_int_gauge!("sb_prefetch_queue_depth", "Prefetch queue depth").unwrap();
-}
+static PREFETCH_QUEUE_DEPTH: std::sync::LazyLock<IntGauge> = std::sync::LazyLock::new(|| {
+    register_int_gauge!("sb_prefetch_queue_depth", "Prefetch queue depth")
+        .expect("Failed to register PREFETCH_QUEUE_DEPTH metric")
+});
 
-/// 供 security_metrics 调用，更新 Prom Gauge
+/// 供 `security_metrics` 调用，更新 Prom Gauge
 pub fn update_prefetch_depth(v: i64) {
     PREFETCH_QUEUE_DEPTH.set(v);
 }
@@ -18,6 +18,8 @@ fn line(k: &str, v: u64) -> String {
     format!("{k} {v}\n")
 }
 
+/// # Errors
+/// Returns an IO error if metrics cannot be written to the socket
 pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
     let h = sm::snapshot();
     let mut buf = String::new();
@@ -56,25 +58,13 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
     );
     buf.push_str(&line("sb_subs_cache_miss_total", h.subs_cache_miss));
     buf.push_str("# HELP sb_subs_cache_evict_total cache evictions by tier\n# TYPE sb_subs_cache_evict_total counter\n");
-    buf.push_str(&format!(
-        "sb_subs_cache_evict_total{{tier=\"mem\"}} {}\n",
-        h.subs_cache_evict_mem
-    ));
-    buf.push_str(&format!(
-        "sb_subs_cache_evict_total{{tier=\"disk\"}} {}\n",
-        h.subs_cache_evict_disk
-    ));
+    let _ = writeln!(buf, "sb_subs_cache_evict_total{{tier=\"mem\"}} {}", h.subs_cache_evict_mem);
+    let _ = writeln!(buf, "sb_subs_cache_evict_total{{tier=\"disk\"}} {}", h.subs_cache_evict_disk);
     buf.push_str(
         "# HELP sb_subs_cache_bytes cache byte usage by tier\n# TYPE sb_subs_cache_bytes gauge\n",
     );
-    buf.push_str(&format!(
-        "sb_subs_cache_bytes{{tier=\"mem\"}} {}\n",
-        h.cache_bytes_mem
-    ));
-    buf.push_str(&format!(
-        "sb_subs_cache_bytes{{tier=\"disk\"}} {}\n",
-        h.cache_bytes_disk
-    ));
+    let _ = writeln!(buf, "sb_subs_cache_bytes{{tier=\"mem\"}} {}", h.cache_bytes_mem);
+    let _ = writeln!(buf, "sb_subs_cache_bytes{{tier=\"disk\"}} {}", h.cache_bytes_disk);
     buf.push_str(
         "# HELP sb_subs_head_total HEAD request total\n# TYPE sb_subs_head_total counter\n",
     );
@@ -86,23 +76,17 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
 
     // Breaker state by host hash for low cardinality monitoring
     buf.push_str("# HELP sb_subs_breaker_state circuit breaker state by host hash\n# TYPE sb_subs_breaker_state gauge\n");
-    for (host_hash, state, _reopen_count) in h.breaker_states.iter() {
+    for (host_hash, state, _reopen_count) in &h.breaker_states {
         // Export each state as 0/1 gauge for this host
         for possible_state in &["closed", "open", "half_open"] {
-            let value = if state == possible_state { 1 } else { 0 };
-            buf.push_str(&format!(
-                "sb_subs_breaker_state{{host_hash=\"{}\",state=\"{}\"}} {}\n",
-                host_hash, possible_state, value
-            ));
+            let value = i32::from(state == possible_state);
+            let _ = writeln!(buf, "sb_subs_breaker_state{{host_hash=\"{host_hash}\",state=\"{possible_state}\"}} {value}");
         }
     }
 
     // Current concurrency usage
     buf.push_str("# HELP sb_subs_limiter_concurrency current concurrent connections\n# TYPE sb_subs_limiter_concurrency gauge\n");
-    buf.push_str(&format!(
-        "sb_subs_limiter_concurrency {}\n",
-        h.limiter_current_concurrency
-    ));
+    let _ = writeln!(buf, "sb_subs_limiter_concurrency {}", h.limiter_current_concurrency);
 
     // DNS resolution metrics
     buf.push_str("# HELP sb_subs_dns_cache_hit_total DNS cache hits\n# TYPE sb_subs_dns_cache_hit_total counter\n");
@@ -112,118 +96,69 @@ pub async fn handle(sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<
 
     // DNS latency histogram
     buf.push_str("# HELP sb_subs_dns_resolve_seconds DNS resolve latency\n# TYPE sb_subs_dns_resolve_seconds histogram\n");
-    for (le, c) in h.dns_latency_buckets.iter() {
-        let bucket = if *le >= 999999.0 {
+    for (le, c) in &h.dns_latency_buckets {
+        let bucket = if *le >= 999_999.0 {
             "+Inf".to_string()
         } else {
             le.to_string()
         };
-        buf.push_str(&format!(
-            "sb_subs_dns_resolve_seconds_bucket{{le=\"{}\"}} {}\n",
-            bucket, c
-        ));
+        let _ = writeln!(buf, "sb_subs_dns_resolve_seconds_bucket{{le=\"{bucket}\"}} {c}");
     }
-    buf.push_str(&format!(
-        "sb_subs_dns_resolve_seconds_count {}\n",
-        h.dns_latency_count
-    ));
-    buf.push_str(&format!(
-        "sb_subs_dns_resolve_seconds_sum {}\n",
-        h.dns_latency_sum_ms as f64 / 1000.0
-    ));
+    let _ = writeln!(buf, "sb_subs_dns_resolve_seconds_count {}", h.dns_latency_count);
+    #[allow(clippy::cast_precision_loss)]
+    let _ = writeln!(buf, "sb_subs_dns_resolve_seconds_sum {}", h.dns_latency_sum_ms as f64 / 1000.0);
 
     // Error kind enumeration counts
     buf.push_str("# HELP sb_subs_error_kind_total error counts by kind\n# TYPE sb_subs_error_kind_total counter\n");
-    for (k, v) in h.error_kinds.iter() {
-        buf.push_str(&format!(
-            "sb_subs_error_kind_total{{kind=\"{}\"}} {}\n",
-            k.as_str(),
-            v
-        ));
+    for (k, v) in &h.error_kinds {
+        let _ = writeln!(buf, "sb_subs_error_kind_total{{kind=\"{}\"}} {}", k.as_str(), v);
     }
 
     // Low-cardinality error counts by host hash (sampled)
     buf.push_str("# HELP sb_subs_error_kind_by_hash_total sampled error counts by kind and host hash\n# TYPE sb_subs_error_kind_by_hash_total counter\n");
-    for ((kind, host_hash), count) in h.error_kinds_by_hash.iter() {
-        buf.push_str(&format!(
-            "sb_subs_error_kind_by_hash_total{{kind=\"{}\",host_hash=\"{}\"}} {}\n",
-            kind.as_str(),
-            host_hash,
-            count
-        ));
+    for ((kind, host_hash), count) in &h.error_kinds_by_hash {
+        let _ = writeln!(buf, "sb_subs_error_kind_by_hash_total{{kind=\"{}\",host_hash=\"{}\"}} {}", kind.as_str(), host_hash, count);
     }
 
     // Request latency histogram with finer buckets
     buf.push_str(
         "# HELP sb_subs_fetch_seconds request latency\n# TYPE sb_subs_fetch_seconds histogram\n",
     );
-    for (le, c) in h.latency_buckets.iter() {
-        let bucket = if *le >= 999999.0 {
+    for (le, c) in &h.latency_buckets {
+        let bucket = if *le >= 999_999.0 {
             "+Inf".to_string()
         } else {
-            format!("{:.3}", le)
+            format!("{le:.3}")
         };
-        buf.push_str(&format!(
-            "sb_subs_fetch_seconds_bucket{{le=\"{}\"}} {}\n",
-            bucket, c
-        ));
+        let _ = writeln!(buf, "sb_subs_fetch_seconds_bucket{{le=\"{bucket}\"}} {c}");
     }
-    buf.push_str(&format!(
-        "sb_subs_fetch_seconds_count {}\n",
-        h.latency_count
-    ));
-    buf.push_str(&format!(
-        "sb_subs_fetch_seconds_sum {}\n",
-        h.latency_sum_ms as f64 / 1000.0
-    ));
+    let _ = writeln!(buf, "sb_subs_fetch_seconds_count {}", h.latency_count);
+    #[allow(clippy::cast_precision_loss)]
+    let _ = writeln!(buf, "sb_subs_fetch_seconds_sum {}", h.latency_sum_ms as f64 / 1000.0);
 
     // Prefetch metrics
     buf.push_str("# HELP sb_prefetch_queue_depth Prefetch queue depth\n# TYPE sb_prefetch_queue_depth gauge\n");
-    buf.push_str(&format!(
-        "sb_prefetch_queue_depth {}\n",
-        h.prefetch_queue_depth
-    ));
+    let _ = writeln!(buf, "sb_prefetch_queue_depth {}", h.prefetch_queue_depth);
 
     buf.push_str("# HELP sb_prefetch_queue_high_watermark Prefetch queue high watermark\n# TYPE sb_prefetch_queue_high_watermark gauge\n");
-    buf.push_str(&format!(
-        "sb_prefetch_queue_high_watermark {}\n",
-        crate::admin_debug::security_metrics::get_prefetch_queue_high_watermark()
-    ));
+    let _ = writeln!(buf, "sb_prefetch_queue_high_watermark {}", crate::admin_debug::security_metrics::get_prefetch_queue_high_watermark());
 
     buf.push_str("# HELP sb_prefetch_jobs_total Prefetch job events\n# TYPE sb_prefetch_jobs_total counter\n");
-    buf.push_str(&format!(
-        "sb_prefetch_jobs_total{{event=\"enq\"}} {}\n",
-        h.prefetch_enqueue
-    ));
-    buf.push_str(&format!(
-        "sb_prefetch_jobs_total{{event=\"drop\"}} {}\n",
-        h.prefetch_drop
-    ));
-    buf.push_str(&format!(
-        "sb_prefetch_jobs_total{{event=\"done\"}} {}\n",
-        h.prefetch_done
-    ));
-    buf.push_str(&format!(
-        "sb_prefetch_jobs_total{{event=\"fail\"}} {}\n",
-        h.prefetch_fail
-    ));
-    buf.push_str(&format!(
-        "sb_prefetch_jobs_total{{event=\"retry\"}} {}\n",
-        h.prefetch_retry
-    ));
+    let _ = writeln!(buf, "sb_prefetch_jobs_total{{event=\"enq\"}} {}", h.prefetch_enqueue);
+    let _ = writeln!(buf, "sb_prefetch_jobs_total{{event=\"drop\"}} {}", h.prefetch_drop);
+    let _ = writeln!(buf, "sb_prefetch_jobs_total{{event=\"done\"}} {}", h.prefetch_done);
+    let _ = writeln!(buf, "sb_prefetch_jobs_total{{event=\"fail\"}} {}", h.prefetch_fail);
+    let _ = writeln!(buf, "sb_prefetch_jobs_total{{event=\"retry\"}} {}", h.prefetch_retry);
 
     // Prefetch run time histogram
     buf.push_str("# HELP sb_prefetch_run_seconds Prefetch worker execution time\n# TYPE sb_prefetch_run_seconds histogram\n");
-    for (le, c) in h.prefetch_run_buckets.iter() {
-        let bucket = if *le >= 999999.0 {
+    for (le, c) in &h.prefetch_run_buckets {
+        let bucket = if *le >= 999_999.0 {
             "+Inf".to_string()
         } else {
-            format!("{:.3}", le)
+            format!("{le:.3}")
         };
-        buf.push_str(&format!(
-            "sb_prefetch_run_seconds_bucket{{le=\"{}\"}} {}\n",
-            bucket, c
-        ));
+        let _ = writeln!(buf, "sb_prefetch_run_seconds_bucket{{le=\"{bucket}\"}} {c}");
     }
 
     crate::admin_debug::http_util::respond(sock, 200, "text/plain; version=0.0.4", &buf).await

@@ -1,12 +1,14 @@
 use crate::admin_debug::http_util::{parse_query, respond, respond_json_error};
 use tokio::io::AsyncWriteExt;
 
+/// # Errors
+/// Returns an IO error if the response cannot be written to the socket
 pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> std::io::Result<()> {
     if !path_q.starts_with("/router/geoip") {
         return Ok(());
     }
 
-    let q = path_q.splitn(2, '?').nth(1).unwrap_or("");
+    let q = path_q.split_once('?').map_or("", |x| x.1);
     let params = parse_query(q);
     let ip_s = params.get("ip").cloned().unwrap_or_default();
 
@@ -17,8 +19,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
             // For now, provide a minimal implementation
             // In the future, this should integrate with sb-core geoip
             format!(
-                r#"{{"ip":"{}","cc":"Unknown","note":"GeoIP not implemented"}}"#,
-                ip
+                r#"{{"ip":"{ip}","cc":"Unknown","note":"GeoIP not implemented"}}"#
             )
         };
 

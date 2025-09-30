@@ -35,6 +35,7 @@ pub enum OutboundType {
     Socks,
     Block,
     Selector,
+    Vless,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,6 +69,15 @@ pub struct OutboundIR {
     /// 上游出站的认证信息（SOCKS/HTTP 均可用）
     #[serde(default)]
     pub credentials: Option<Credentials>,
+    /// VLESS-specific fields
+    #[serde(default)]
+    pub uuid: Option<String>,
+    #[serde(default)]
+    pub flow: Option<String>,
+    #[serde(default)]
+    pub network: Option<String>,
+    #[serde(default)]
+    pub packet_encoding: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -143,6 +153,7 @@ impl OutboundIR {
             OutboundType::Socks => "socks",
             OutboundType::Block => "block",
             OutboundType::Selector => "selector",
+            OutboundType::Vless => "vless",
         }
     }
 }

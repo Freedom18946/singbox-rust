@@ -8,7 +8,7 @@
 use rustls::{ClientConfig, RootCertStore};
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TlsOpts {
     /// Allow insecure TLS (skip certificate verification)
     pub allow_insecure: bool,
@@ -20,16 +20,6 @@ pub struct TlsOpts {
     pub sni: String,
 }
 
-impl Default for TlsOpts {
-    fn default() -> Self {
-        Self {
-            allow_insecure: false,
-            pin_sha256: Vec::new(),
-            alpn: Vec::new(),
-            sni: String::new(),
-        }
-    }
-}
 
 impl TlsOpts {
     pub fn new(sni: String) -> Self {

@@ -2,9 +2,9 @@
 //!
 //! This middleware implements a token bucket rate limiter with configurable
 //! limits per endpoint or path. Rate limit violations return 429 status
-//! with contract-compliant ResponseEnvelope errors.
+//! with contract-compliant `ResponseEnvelope` errors.
 //!
-//! This module is only available when the "rate_limit" feature is enabled.
+//! This module is only available when the "`rate_limit`" feature is enabled.
 
 use super::{Middleware, MiddlewareResult, RequestContext};
 use std::collections::HashMap;
@@ -49,7 +49,7 @@ impl TokenBucket {
     fn refill(&mut self) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_refill);
-        let tokens_to_add = (elapsed.as_secs_f64() * self.refill_rate as f64) as u32;
+        let tokens_to_add = (elapsed.as_secs_f64() * f64::from(self.refill_rate)) as u32;
 
         if tokens_to_add > 0 {
             self.tokens = (self.tokens + tokens_to_add).min(self.capacity);
@@ -78,7 +78,7 @@ pub struct RateLimitConfig {
     pub window_duration: Duration,
     /// Rate limiting strategy
     pub strategy: RateLimitStrategy,
-    /// Burst capacity (defaults to max_requests)
+    /// Burst capacity (defaults to `max_requests`)
     pub burst_capacity: Option<u32>,
 }
 
@@ -94,7 +94,8 @@ impl Default for RateLimitConfig {
 }
 
 impl RateLimitConfig {
-    pub fn new(max_requests: u32, window_secs: u64) -> Self {
+    #[must_use] 
+    pub const fn new(max_requests: u32, window_secs: u64) -> Self {
         Self {
             max_requests,
             window_duration: Duration::from_secs(window_secs),
@@ -103,12 +104,14 @@ impl RateLimitConfig {
         }
     }
 
-    pub fn with_strategy(mut self, strategy: RateLimitStrategy) -> Self {
+    #[must_use] 
+    pub const fn with_strategy(mut self, strategy: RateLimitStrategy) -> Self {
         self.strategy = strategy;
         self
     }
 
-    pub fn with_burst(mut self, burst_capacity: u32) -> Self {
+    #[must_use] 
+    pub const fn with_burst(mut self, burst_capacity: u32) -> Self {
         self.burst_capacity = Some(burst_capacity);
         self
     }
@@ -119,7 +122,7 @@ impl RateLimitConfig {
 
     fn get_refill_rate(&self) -> u32 {
         // Refill rate in tokens per second
-        (self.max_requests as f64 / self.window_duration.as_secs_f64()) as u32
+        (f64::from(self.max_requests) / self.window_duration.as_secs_f64()) as u32
     }
 }
 
@@ -130,6 +133,7 @@ pub struct RateLimitMiddleware {
 }
 
 impl RateLimitMiddleware {
+    #[must_use] 
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             config,
@@ -211,6 +215,7 @@ fn normalize_endpoint(path: &str) -> String {
 }
 
 /// Create rate limiter from environment configuration
+#[must_use] 
 pub fn from_env() -> Option<RateLimitMiddleware> {
     // Check if rate limiting is enabled
     let enabled = std::env::var("SB_ADMIN_RATE_LIMIT_ENABLED").ok().as_deref() == Some("1");

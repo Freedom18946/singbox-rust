@@ -38,16 +38,16 @@ pub enum Algo {
 pub enum AuthCmd {
     /// 生成签名
     Sign {
-        /// Key ID（可被 --env 文件的 KEY_ID 覆盖）
+        /// Key ID（可被 --env 文件的 `KEY_ID` 覆盖）
         #[arg(long)]
         key_id: String,
-        /// Secret（可被 --env 文件的 KEY_SECRET 覆盖）
+        /// Secret（可被 --env 文件的 `KEY_SECRET` 覆盖）
         #[arg(long)]
         secret: String,
         /// 参与 canonical 的附加请求头（可多次）K:V
         #[arg(long = "header")]
         header: Vec<String>,
-        /// 从 .env 文件读取键值（KEY_ID / KEY_SECRET）
+        /// 从 .env `文件读取键值（KEY_ID` / `KEY_SECRET`）
         #[arg(long = "env")]
         env_file: Option<std::path::PathBuf>,
         /// 签名算法
@@ -182,7 +182,7 @@ pub(crate) fn read_body_inline(
     match (body, body_file) {
         (Some(b), None) => Ok(Some(b.as_bytes().to_vec())),
         (None, Some(p)) => Ok(Some(
-            fs::read(p).with_context(|| format!("read body-file {:?}", p))?,
+            fs::read(p).with_context(|| format!("read body-file {p:?}"))?,
         )),
         (None, None) => Ok(None),
         (Some(_), Some(_)) => anyhow::bail!("--body 与 --body-file 只能二选一"),
@@ -205,7 +205,7 @@ fn build_canonical(ts: i64, nonce: &str, headers: &[String]) -> (String, Vec<(St
         }
     }
     // 规范串：固定顺序：ts, nonce, headers…
-    let mut canon = format!("ts:{}\nnonce:{}\n", ts, nonce);
+    let mut canon = format!("ts:{ts}\nnonce:{nonce}\n");
     for (k, v) in &kvs {
         canon.push_str(&format!("{}:{}\n", k.to_ascii_lowercase(), v));
     }
@@ -223,7 +223,7 @@ pub(crate) fn inject_body_hash(headers: &mut Vec<String>, body: &Option<Vec<u8>>
             .iter()
             .any(|h| h.to_ascii_lowercase().starts_with("x-body-sha256:"))
         {
-            headers.push(format!("x-body-sha256:{}", h));
+            headers.push(format!("x-body-sha256:{h}"));
         }
     }
 }
@@ -274,12 +274,11 @@ fn sign_ex(config: SignConfig) -> Result<()> {
     };
 
     println!(
-        "Authorization: SB-HMAC key_id=\"{}\", ts={}, nonce=\"{}\"",
-        key_id, ts, nonce
+        "Authorization: SB-HMAC key_id=\"{key_id}\", ts={ts}, nonce=\"{nonce}\""
     );
-    println!("X-SB-Signature: {}", sig_b64);
+    println!("X-SB-Signature: {sig_b64}");
     if config.canon {
-        println!("--- canonical ---\n{}", canon_str);
+        println!("--- canonical ---\n{canon_str}");
     }
     Ok(())
 }
@@ -339,7 +338,7 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                 let mut ticker = tokio::time::interval(Duration::from_secs_f64(1.0 / (rps as f64)));
                 loop {
                     ticker.tick().await;
-                    let _ = sem_filler.add_permits(1);
+                    let () = sem_filler.add_permits(1);
                 }
             });
         }
@@ -354,7 +353,7 @@ async fn replay(config: ReplayConfig) -> Result<()> {
             )?;
             Some(indicatif::ProgressBar::new(config.times).with_style(style))
         };
-        let ts = (chrono::Utc::now().timestamp()) as i64;
+        let ts = chrono::Utc::now().timestamp();
         let nonce = format!("{:016x}", rand::random::<u64>());
         let mut join = Vec::new();
         for _ in 0..config.concurrency {
@@ -378,16 +377,12 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                         break;
                     }
                     // 限速：取令牌
-                    let _p = match sem.acquire().await {
-                        Ok(p) => p,
-                        Err(_) => {
-                            eprintln!("semaphore acquire failed, skipping request");
-                            continue;
-                        }
+                    let _p = if let Ok(p) = sem.acquire().await { p } else {
+                        eprintln!("semaphore acquire failed, skipping request");
+                        continue;
                     };
                     let auth = format!(
-                        "SB-HMAC key_id=\"{}\", ts={}, nonce=\"{}\"",
-                        key_id, ts, nonce_cloned
+                        "SB-HMAC key_id=\"{key_id}\", ts={ts}, nonce=\"{nonce_cloned}\""
                     );
                     let mut req = client.put(&url).header("Authorization", auth);
                     for h in &hdrs_vec {
@@ -396,14 +391,11 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                         }
                     }
                     // 签名头（使用 canonical 字符串包括可选的 body hash 头）
-                    let header_strs: Vec<String> = hdrs_vec.iter().cloned().collect();
+                    let header_strs: Vec<String> = hdrs_vec.clone();
                     let (canon_str, _) = build_canonical(ts, &nonce_cloned, &header_strs);
-                    let mut mac = match Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
-                        Ok(m) => m,
-                        Err(_) => {
-                            eprintln!("invalid HMAC key length, skipping request");
-                            continue;
-                        }
+                    let mut mac = if let Ok(m) = Hmac::<Sha256>::new_from_slice(secret.as_bytes()) { m } else {
+                        eprintln!("invalid HMAC key length, skipping request");
+                        continue;
                     };
                     mac.update(canon_str.as_bytes());
                     let sig_b64 = base64::engine::general_purpose::STANDARD
@@ -414,44 +406,41 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                         req = req.body(body.clone());
                     }
                     let t = Instant::now();
-                    let res = req.send().await;
+                    let response = req.send().await;
                     let ms = t.elapsed().as_millis() as u64;
                     if let Some(pb) = pb2.as_ref() {
                         pb.inc(1);
-                        pb.set_message(format!("{} ms", ms));
+                        pb.set_message(format!("{ms} ms"));
                     }
-                    let sec = per_sec_key();
-                    match res {
-                        Ok(r) => {
-                            let sc = r.status().as_u16();
-                            let bytes_len = if !config.status_only {
-                                match r.bytes().await {
-                                    Ok(b) => b.len() as u64,
-                                    Err(_) => 0,
-                                }
-                            } else {
-                                0
-                            };
-                            let mut g = stats.lock();
-                            *g.per_sec.entry(sec).or_default() += 1;
-                            if (200..300).contains(&sc) {
-                                g.ok2xx += 1;
-                            } else if (400..500).contains(&sc) {
-                                g.e4xx += 1;
-                            } else if (500..600).contains(&sc) {
-                                g.e5xx += 1;
-                            } else {
-                                g.other += 1;
+                    let timestamp_sec = per_sec_key();
+                    if let Ok(r) = response {
+                        let sc = r.status().as_u16();
+                        let bytes_len = if config.status_only {
+                            0
+                        } else {
+                            match r.bytes().await {
+                                Ok(b) => b.len() as u64,
+                                Err(_) => 0,
                             }
-                            g.bytes += bytes_len;
-                            g.total += 1;
-                        }
-                        Err(_) => {
-                            let mut g = stats.lock();
-                            *g.per_sec.entry(sec).or_default() += 1;
+                        };
+                        let mut g = stats.lock();
+                        *g.per_sec.entry(timestamp_sec).or_default() += 1;
+                        if (200..300).contains(&sc) {
+                            g.ok2xx += 1;
+                        } else if (400..500).contains(&sc) {
+                            g.e4xx += 1;
+                        } else if (500..600).contains(&sc) {
+                            g.e5xx += 1;
+                        } else {
                             g.other += 1;
-                            g.total += 1;
                         }
+                        g.bytes += bytes_len;
+                        g.total += 1;
+                    } else {
+                        let mut g = stats.lock();
+                        *g.per_sec.entry(timestamp_sec).or_default() += 1;
+                        g.other += 1;
+                        g.total += 1;
                     }
                 }
             }));
@@ -478,7 +467,6 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                       "total": g.total, "bytes": g.bytes,
                       "qps_avg": qps_avg, "qps_peak": g.qps_peak
                     })
-                    .to_string()
                 );
             } else {
                 println!(

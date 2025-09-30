@@ -85,11 +85,7 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                 warn!("Circuit breaker rejecting connection to {}:{}", host, port);
 
                 // Return specific error indicating circuit breaker rejection (via io::Error -> DialError)
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "circuit breaker open - request rejected",
-                )
-                .into())
+                Err(std::io::Error::other("circuit breaker open - request rejected").into())
             }
         }
     }

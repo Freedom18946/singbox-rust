@@ -55,6 +55,7 @@ impl UdpUpstreamMap {
                 return false;
             }
         }
+        #[cfg(feature = "metrics")]
         let is_new = !guard.contains_key(&key);
         guard.insert(
             key,

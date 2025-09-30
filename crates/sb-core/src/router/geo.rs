@@ -447,7 +447,7 @@ impl GeoSiteDb {
 
             categories
                 .entry(category)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(domain_rule);
         }
 

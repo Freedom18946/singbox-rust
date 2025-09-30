@@ -76,7 +76,7 @@ impl OutboundTcp for ShadowTlsOutbound {
             OutboundErrorClass,
         };
 
-        record_connect_attempt(crate::outbound::OutboundKind::Direct); // TODO: Add ShadowTLS kind
+        record_connect_attempt(crate::outbound::OutboundKind::ShadowTls);
 
         let start = std::time::Instant::now();
 

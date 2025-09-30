@@ -41,6 +41,7 @@ pub struct VmessConfig {
 }
 
 #[cfg(feature = "out_vmess")]
+#[derive(Debug)]
 pub struct VmessOutbound {
     config: VmessConfig,
 }
@@ -216,7 +217,7 @@ impl OutboundTcp for VmessOutbound {
             OutboundErrorClass,
         };
 
-        record_connect_attempt(crate::outbound::OutboundKind::Direct); // TODO: Add VMess kind
+        record_connect_attempt(crate::outbound::OutboundKind::Vmess);
 
         let start = std::time::Instant::now();
 
@@ -407,6 +408,29 @@ impl OutboundTcp for VmessOutbound {
 
     fn protocol_name(&self) -> &'static str {
         "vmess"
+    }
+}
+
+#[cfg(feature = "out_vmess")]
+impl crate::adapter::OutboundConnector for VmessOutbound {
+    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        // Create a blocking runtime to run async VMess connection
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        rt.block_on(async {
+            // Create target host:port
+            let target = HostPort {
+                host: host.to_string(),
+                port,
+            };
+
+            // Use async connect implementation
+            let tokio_stream = OutboundTcp::connect(self, &target).await?;
+
+            // Convert tokio TcpStream to std TcpStream
+            tokio_stream.into_std()
+        })
     }
 }
 

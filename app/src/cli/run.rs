@@ -247,7 +247,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("signal: Ctrl+C received, shutting down…");
         }
-        _ = term_signal() => {
+        () = term_signal() => {
             tracing::info!("signal: SIGTERM received, shutting down…");
         }
     }

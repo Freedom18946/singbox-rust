@@ -1,28 +1,9 @@
 //! Router facade module
 //!
-//! When the `router` feature is enabled, re-exports sb_core::router functionality.
+//! When the `router` feature is enabled, re-exports `sb_core::router` functionality.
 //! When disabled, provides safe placeholder functions that return appropriate errors.
 
-// Re-export everything from sb_core::router when router feature is enabled
-#[cfg(feature = "router")]
-pub use sb_core::router::*;
-
-// Re-export specific routing modules at top level for easier access
-#[cfg(feature = "router")]
-pub mod explain {
-    pub use sb_core::routing::explain::*;
-}
-
-#[cfg(feature = "router")]
-pub mod trace {
-    pub use sb_core::routing::trace::*;
-}
-
-// Provide routing as an alias to maintain compatibility
-#[cfg(feature = "router")]
-pub mod routing {
-    pub use sb_core::router::*;
-}
+// Router functionality is provided through direct sb_core imports in other modules
 
 // Safe placeholders when router feature is not enabled
 #[cfg(not(feature = "router"))]

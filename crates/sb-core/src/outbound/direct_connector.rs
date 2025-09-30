@@ -5,7 +5,7 @@
 
 use crate::{
     error::{ErrorClass, SbError, SbResult},
-    outbound::traits::{OutboundConnector, UdpTransport},
+    outbound::traits::{OutboundConnector as AsyncOutboundConnector, UdpTransport},
     types::{ConnCtx, Endpoint, Host},
 };
 use async_trait::async_trait;
@@ -62,8 +62,9 @@ impl Default for DirectConnector {
     }
 }
 
+// Implementation for the async OutboundConnector trait
 #[async_trait]
-impl OutboundConnector for DirectConnector {
+impl AsyncOutboundConnector for DirectConnector {
     async fn connect_tcp(&self, ctx: &ConnCtx) -> SbResult<TcpStream> {
         // Global backpressure via semaphore
         let (sem, q_ms) = global_limiters();
@@ -222,5 +223,50 @@ mod tests {
             let _transport = DirectUdpTransport::new(socket);
             // If we get here, the transport was created successfully
         });
+    }
+
+    #[test]
+    fn test_sync_connector_interface() {
+        use crate::adapter::OutboundConnector;
+        let connector = DirectConnector::new();
+        let result = connector.connect("127.0.0.1", 80);
+        // This will fail because nothing is listening, but it tests the interface
+        assert!(result.is_err());
+    }
+}
+
+// Implementation for the sync OutboundConnector trait used by adapter
+impl crate::adapter::OutboundConnector for DirectConnector {
+    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        // Block on the async implementation
+        let rt = tokio::runtime::Handle::try_current()
+            .or_else(|_| {
+                // If no runtime is available, create a minimal one
+                tokio::runtime::Runtime::new().map(|rt| rt.handle().clone())
+            })
+            .map_err(std::io::Error::other)?;
+
+        let endpoint = crate::types::Endpoint::new(
+            crate::types::Host::domain(host.to_string()),
+            port
+        );
+        let src = std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
+            0
+        );
+        let ctx = crate::types::ConnCtx::new(
+            0, // id
+            crate::types::Network::Tcp,
+            src,
+            endpoint
+        );
+
+        rt.block_on(async {
+            let async_stream = self.connect_tcp(&ctx).await
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+            // Convert tokio TcpStream to std TcpStream
+            async_stream.into_std()
+        })
     }
 }

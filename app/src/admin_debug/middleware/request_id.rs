@@ -31,7 +31,8 @@ fn generate_request_id() -> String {
 pub struct RequestIdMiddleware;
 
 impl RequestIdMiddleware {
-    pub fn new() -> Self {
+    #[must_use] 
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -58,8 +59,9 @@ impl Middleware for RequestIdMiddleware {
 }
 
 /// Helper function to add request ID to response headers
+#[must_use] 
 pub fn add_to_response_headers(request_id: &str) -> String {
-    format!("X-Request-ID: {}\r\n", request_id)
+    format!("X-Request-ID: {request_id}\r\n")
 }
 
 #[cfg(test)]

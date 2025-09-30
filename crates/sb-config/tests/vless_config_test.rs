@@ -40,7 +40,7 @@ fn test_vless_config_parsing() {
             assert_eq!(packet_encoding, Some("xudp".to_string()));
             assert_eq!(connect_timeout_sec, Some(30));
         }
-        _ => panic!("Expected VLESS outbound"),
+        _ => assert!(false, "Expected VLESS outbound"),
     }
 }
 
@@ -78,7 +78,7 @@ fn test_vless_config_minimal() {
             assert_eq!(packet_encoding, None);
             assert_eq!(connect_timeout_sec, None);
         }
-        _ => panic!("Expected VLESS outbound"),
+        _ => assert!(false, "Expected VLESS outbound"),
     }
 }
 
@@ -118,7 +118,7 @@ fn test_vless_config_with_udp() {
             assert_eq!(packet_encoding, Some("packetaddr".to_string()));
             assert_eq!(connect_timeout_sec, None);
         }
-        _ => panic!("Expected VLESS outbound"),
+        _ => assert!(false, "Expected VLESS outbound"),
     }
 }
 
@@ -189,6 +189,6 @@ fn test_vless_config_serialization_roundtrip() {
             assert_eq!(pe1, pe2);
             assert_eq!(ct1, ct2);
         }
-        _ => panic!("Expected VLESS outbound after deserialization"),
+        _ => assert!(false, "Expected VLESS outbound after deserialization"),
     }
 }

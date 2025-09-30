@@ -45,8 +45,8 @@ pub async fn ensure_udp_relay() -> anyhow::Result<SocketAddr> {
     let mut s = tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(proxy))
         .await??;
     greet_noauth(&mut s).await?;
-    // Bind hint: zero
-    let hint: SocketAddr = "0.0.0.0:0".parse().unwrap();
+    // Bind hint: zero (infallible constructor)
+    let hint: SocketAddr = SocketAddr::from(([0, 0, 0, 0], 0));
     let relay = udp_associate(&mut s, Some(hint)).await?;
     let _ = cached_udp_relay().set(relay);
     #[cfg(feature = "metrics")]
@@ -63,7 +63,7 @@ pub async fn ensure_udp_relay_at(proxy: SocketAddr) -> anyhow::Result<SocketAddr
     let mut s = tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(proxy))
         .await??;
     greet_noauth(&mut s).await?;
-    let hint: SocketAddr = "0.0.0.0:0".parse().unwrap();
+    let hint: SocketAddr = SocketAddr::from(([0, 0, 0, 0], 0));
     let relay = udp_associate(&mut s, Some(hint)).await?;
     #[cfg(feature = "metrics")]
     metrics::counter!("socks5_udp_assoc_total", "result"=>"ok").increment(1);
@@ -112,19 +112,23 @@ pub async fn sendto_via_socks5_addr(
     payload: &[u8],
     dst: &SocketAddr,
 ) -> anyhow::Result<usize> {
-    let relay = ensure_udp_relay_at(proxy).await.map_err(|e| {
-        #[cfg(feature = "metrics")]
-        metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"connect").increment(1);
-        e
-    })?;
+    let relay = match ensure_udp_relay_at(proxy).await {
+        Ok(relay) => relay,
+        Err(e) => {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"connect").increment(1);
+            return Err(e);
+        }
+    };
     let sock = create_upstream_socket().await?;
-    sendto_via_socks5_on(&sock, payload, dst, relay)
-        .await
-        .map_err(|e| {
+    match sendto_via_socks5_on(&sock, payload, dst, relay).await {
+        Ok(result) => Ok(result),
+        Err(e) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"send").increment(1);
-            e
-        })
+            Err(e)
+        }
+    }
 }
 
 /// Helper: 自动选择 direct / socks5（基于 decision 与 env），便于上层后续接线。
@@ -167,11 +171,14 @@ pub async fn sendto_via_socks5_on(
 /// Receive one datagram from relay and decode.
 pub async fn recv_from_via_socks5(sock: &UdpSocket) -> anyhow::Result<(SocketAddr, Vec<u8>)> {
     let mut buf = vec![0u8; 2048];
-    let (n, _from) = sock.recv_from(&mut buf).await.map_err(|e| {
-        #[cfg(feature = "metrics")]
-        metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"recv").increment(1);
-        e
-    })?;
+    let (n, _from) = match sock.recv_from(&mut buf).await {
+        Ok(result) => result,
+        Err(e) => {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"recv").increment(1);
+            return Err(e.into());
+        }
+    };
     let (dst, payload) = decode_udp_reply(&buf[..n])?;
     Ok((dst, payload.to_vec()))
 }

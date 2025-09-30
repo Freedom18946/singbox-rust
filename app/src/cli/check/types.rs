@@ -8,7 +8,7 @@ pub enum IssueKind {
     Warning,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum IssueCode {
     SchemaViolation,
@@ -48,7 +48,7 @@ pub struct CheckIssue {
     pub code: IssueCode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
-    /// Optional stable rule id (sha8) when SB_CHECK_RULEID=1 and ptr points to /route/rules/N
+    /// Optional stable rule id (sha8) when `SB_CHECK_RULEID=1` and ptr points to /route/rules/N
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rule_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,7 +86,7 @@ pub fn push_warn(
         ptr: ptr.to_string(),
         msg: msg.to_string(),
         code,
-        hint: hint.map(|s| s.to_string()),
+        hint: hint.map(std::string::ToString::to_string),
         rule_id: None,
         key: None,
         members: None,
@@ -108,7 +108,7 @@ pub fn push_err(
         ptr: ptr.to_string(),
         msg: msg.to_string(),
         code,
-        hint: hint.map(|s| s.to_string()),
+        hint: hint.map(std::string::ToString::to_string),
         rule_id: None,
         key: None,
         members: None,

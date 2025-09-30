@@ -22,11 +22,7 @@ fn map_rule(line: &str, use_keyword: bool) -> Option<String> {
         .get(2)
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_else(|| "proxy".into());
-    let decision = match act.as_str() {
-        "direct" => "direct",
-        "reject" => "reject",
-        other => other,
-    };
+    let decision = act.as_str();
     match kind.as_str() {
         "DOMAIN" => Some(format!("exact:{}={}", pat, decision)),
         "DOMAIN-SUFFIX" => Some(format!("suffix:{}={}", pat, decision)),

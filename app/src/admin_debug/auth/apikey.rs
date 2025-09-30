@@ -1,7 +1,7 @@
 //! API Key authentication provider
 //!
 //! This provider supports Bearer token authentication and HMAC-SHA256 signature verification.
-//! Compatible with the existing authentication system in http_server.rs.
+//! Compatible with the existing authentication system in `http_server.rs`.
 
 use super::{AuthError, AuthProvider};
 use hmac::{Hmac, Mac};
@@ -27,7 +27,8 @@ impl ApiKeyProvider {
     /// # Arguments
     /// * `key` - The API key (used as Bearer token or HMAC secret)
     /// * `key_id` - Optional key ID for HMAC authentication
-    pub fn new(key: String, key_id: Option<String>) -> Self {
+    #[must_use] 
+    pub const fn new(key: String, key_id: Option<String>) -> Self {
         Self { key, key_id }
     }
 
@@ -91,7 +92,7 @@ impl ApiKeyProvider {
         }
 
         // Create message to sign: timestamp||path
-        let message = format!("{}{}", timestamp, path);
+        let message = format!("{timestamp}{path}");
 
         // Calculate expected signature using HMAC-SHA256
         let mut mac = HmacSha256::new_from_slice(self.key.as_bytes())

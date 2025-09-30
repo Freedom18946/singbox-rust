@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 
 use super::args::CheckArgs;
-use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode};
+use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode, IssueKind};
 use app::util;
 use sb_config::compat as cfg_compat;
 use sb_config::validator::v2;
@@ -29,7 +29,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     // Handle --print-fingerprint early return
     if args.print_fingerprint {
         let fingerprint = fingerprint_of(&raw);
-        println!("{}", fingerprint);
+        println!("{fingerprint}");
         return Ok(0);
     }
 
@@ -54,7 +54,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
                     let ptr = converted_issue.ptr.clone();
                     let allowed = allow_prefixes.iter().any(|p| ptr.starts_with(p));
                     if allowed {
-                        converted_issue.kind = super::types::IssueKind::Warning;
+                        converted_issue.kind = IssueKind::Warning;
                     }
                 }
                 issues.push(converted_issue);
@@ -93,9 +93,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
             eprintln!("--diff-config OLD NEW");
             return Ok(2);
         }
-        // TODO: Implement config diff functionality
-        eprintln!("Config diff functionality not yet implemented");
-        return Ok(2);
+        return diff_configs(&args.diff_config[0], &args.diff_config[1], &args);
     }
 
     // Basic config validation
@@ -105,7 +103,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     let ok = (issues.is_empty() || !args.strict)
         && !issues
             .iter()
-            .any(|i| matches!(i.kind, super::types::IssueKind::Error));
+            .any(|i| matches!(i.kind, IssueKind::Error));
 
     let fingerprint = if args.fingerprint {
         Some(fingerprint_of(&raw))
@@ -127,8 +125,8 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         issues: issues.clone(),
         summary: serde_json::json!({
             "total_issues": issues.len(),
-            "errors": issues.iter().filter(|i| matches!(i.kind, super::types::IssueKind::Error)).count(),
-            "warnings": issues.iter().filter(|i| matches!(i.kind, super::types::IssueKind::Warning)).count(),
+            "errors": issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count(),
+            "warnings": issues.iter().filter(|i| matches!(i.kind, IssueKind::Warning)).count(),
         }),
         fingerprint,
         canonical,
@@ -150,7 +148,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         } else {
             format!("{}.normalized.json", &args.config)
         };
-        util::write_atomic(&out, text.as_bytes()).with_context(|| format!("write {}", out))?;
+        util::write_atomic(&out, text.as_bytes()).with_context(|| format!("write {out}"))?;
     }
 
     // Output results
@@ -163,11 +161,13 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         }
         _ => {
             // Human-readable format
-            if !issues.is_empty() {
+            if issues.is_empty() {
+                println!("Config validation passed");
+            } else {
                 for issue in &issues {
                     let kind_str = match issue.kind {
-                        super::types::IssueKind::Error => "ERROR",
-                        super::types::IssueKind::Warning => "WARN",
+                        IssueKind::Error => "ERROR",
+                        IssueKind::Warning => "WARN",
                     };
                     if let Some(hint) = &issue.hint {
                         eprintln!(
@@ -181,13 +181,11 @@ pub fn run(args: CheckArgs) -> Result<i32> {
                         );
                     }
                 }
-            } else {
-                println!("Config validation passed");
             }
         }
     }
 
-    Ok(if ok { 0 } else { 1 })
+    Ok(i32::from(!ok))
 }
 
 /// Basic config validation
@@ -238,7 +236,7 @@ fn validate_basic_config(
 
 /// Basic rule validation
 fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Result<()> {
-    let ptr = format!("/route/rules/{}", index);
+    let ptr = format!("/route/rules/{index}");
 
     // Check if rule has at least one match condition
     let has_match = rule.get("domain").is_some()
@@ -265,7 +263,7 @@ fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Re
         push_err(
             issues,
             IssueCode::MissingField,
-            &format!("{}/outbound", ptr),
+            &format!("{ptr}/outbound"),
             "rule missing outbound",
             Some("specify an outbound"),
         );
@@ -309,8 +307,8 @@ fn to_sarif(rep: &CheckReport) -> String {
         .iter()
         .map(|i| {
             let level = match i.kind {
-                super::types::IssueKind::Error => "error",
-                super::types::IssueKind::Warning => "warning",
+                IssueKind::Error => "error",
+                IssueKind::Warning => "warning",
             };
             let rule_id = format!("{:?}", i.code);
 
@@ -382,14 +380,14 @@ fn normalize_json_with_path(v: &mut Value, path: &str) {
     match v {
         Value::Object(map) => {
             // Remove comment keys
-            map.retain(|k, _| !k.starts_with("//") && !k.starts_with("#"));
+            map.retain(|k, _| !k.starts_with("//") && !k.starts_with('#'));
 
             // Recursively normalize values with updated path
             for (key, val) in map.iter_mut() {
                 let new_path = if path.is_empty() {
                     key.clone()
                 } else {
-                    format!("{}.{}", path, key)
+                    format!("{path}.{key}")
                 };
                 normalize_json_with_path(val, &new_path);
             }
@@ -405,7 +403,7 @@ fn normalize_json_with_path(v: &mut Value, path: &str) {
         Value::Array(arr) => {
             // First recursively normalize array items
             for (index, item) in arr.iter_mut().enumerate() {
-                let new_path = format!("{}[{}]", path, index);
+                let new_path = format!("{path}[{index}]");
                 normalize_json_with_path(item, &new_path);
             }
 
@@ -433,7 +431,7 @@ fn should_sort_array(path: &str) -> bool {
 
     sortable_paths
         .iter()
-        .any(|&pattern| path.ends_with(pattern) || path.contains(&format!(".{}", pattern)))
+        .any(|&pattern| path.ends_with(pattern) || path.contains(&format!(".{pattern}")))
 }
 
 /// Sort array items for consistent fingerprinting
@@ -490,13 +488,13 @@ fn fingerprint_of(v: &Value) -> String {
     )
 }
 
-/// Convert v2 validator output to CheckIssue format
+/// Convert v2 validator output to `CheckIssue` format
 fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
     let kind_str = v2_issue.get("kind")?.as_str()?;
     let kind = match kind_str {
-        "error" => super::types::IssueKind::Error,
-        "warning" => super::types::IssueKind::Warning,
-        _ => super::types::IssueKind::Warning,
+        "error" => IssueKind::Error,
+        "warning" => IssueKind::Warning,
+        _ => IssueKind::Warning,
     };
 
     let code_str = v2_issue.get("code")?.as_str()?;
@@ -513,7 +511,7 @@ fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
     let hint = v2_issue
         .get("hint")
         .and_then(|h| h.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     Some(CheckIssue {
         kind,
@@ -539,7 +537,7 @@ mod tests_schema_lock {
             ok: false,
             file: "demo.json".into(),
             issues: vec![CheckIssue {
-                kind: super::types::IssueKind::Error,
+                kind: IssueKind::Error,
                 ptr: "/inbounds/0/port".into(),
                 msg: "port must be integer".into(),
                 code: IssueCode::TypeMismatch,
@@ -570,7 +568,7 @@ mod tests_schema_lock {
             ok: false,
             file: "demo.json".into(),
             issues: vec![CheckIssue {
-                kind: super::types::IssueKind::Warning,
+                kind: IssueKind::Warning,
                 ptr: "/route/rules/0".into(),
                 msg: "rule has no match conditions".into(),
                 code: IssueCode::EmptyRuleMatch,
@@ -595,5 +593,117 @@ mod tests_schema_lock {
         assert!(s.contains("\"ruleId\""));
         assert!(s.contains("\"message\""));
         assert!(s.contains("\"locations\""));
+    }
+}
+
+/// Compare two configuration files and show differences
+fn diff_configs(old_path: &str, new_path: &str, args: &CheckArgs) -> Result<i32> {
+    // Load and parse both configs
+    let old_config = load_config_file(old_path, args)?;
+    let new_config = load_config_file(new_path, args)?;
+
+    // Normalize both configs for comparison
+    let mut old_normalized = old_config;
+    let mut new_normalized = new_config;
+    normalize_json_with_path(&mut old_normalized, "");
+    normalize_json_with_path(&mut new_normalized, "");
+
+    // Generate fingerprints
+    let old_fingerprint = fingerprint_of(&old_normalized);
+    let new_fingerprint = fingerprint_of(&new_normalized);
+
+    if old_fingerprint == new_fingerprint {
+        println!("Configs are identical (no differences found)");
+        return Ok(0);
+    }
+
+    println!("Config differences detected:");
+    println!("Old: {} (fingerprint: {})", old_path, &old_fingerprint[..16]);
+    println!("New: {} (fingerprint: {})", new_path, &new_fingerprint[..16]);
+    println!();
+
+    // Compare key sections
+    diff_section(&old_normalized, &new_normalized, "inbounds", "Inbound configurations");
+    diff_section(&old_normalized, &new_normalized, "outbounds", "Outbound configurations");
+    diff_section(&old_normalized, &new_normalized, "route", "Route configuration");
+    diff_section(&old_normalized, &new_normalized, "dns", "DNS configuration");
+    diff_section(&old_normalized, &new_normalized, "log", "Log configuration");
+    diff_section(&old_normalized, &new_normalized, "experimental", "Experimental features");
+
+    Ok(1) // Return 1 to indicate differences found
+}
+
+/// Load and parse a config file
+fn load_config_file(path: &str, args: &CheckArgs) -> Result<Value> {
+    let data = fs::read(path).with_context(|| format!("read config {path}"))?;
+    let mut raw: Value = if path.ends_with(".yaml") || path.ends_with(".yml") {
+        serde_yaml::from_slice(&data).with_context(|| "parse as yaml")?
+    } else {
+        serde_json::from_slice(&data).with_context(|| "parse as json")?
+    };
+
+    // Apply migration if requested
+    if args.migrate {
+        raw = cfg_compat::migrate_to_v2(&raw);
+    }
+
+    Ok(raw)
+}
+
+/// Compare a specific section of two configs
+fn diff_section(old: &Value, new: &Value, section: &str, description: &str) {
+    let old_section = old.get(section);
+    let new_section = new.get(section);
+
+    match (old_section, new_section) {
+        (Some(old_val), Some(new_val)) => {
+            if old_val != new_val {
+                println!("{description}: MODIFIED");
+                print_section_diff(old_val, new_val, section);
+            }
+        }
+        (Some(_), None) => {
+            println!("{description}: REMOVED");
+        }
+        (None, Some(_)) => {
+            println!("{description}: ADDED");
+        }
+        (None, None) => {
+            // Both missing, no difference
+        }
+    }
+}
+
+/// Print differences within a section
+fn print_section_diff(old: &Value, new: &Value, section: &str) {
+    match (old, new) {
+        (Value::Object(old_map), Value::Object(new_map)) => {
+            // Check for added/removed/modified keys
+            let old_keys: std::collections::HashSet<_> = old_map.keys().collect();
+            let new_keys: std::collections::HashSet<_> = new_map.keys().collect();
+
+            for key in new_keys.difference(&old_keys) {
+                println!("  + {section}.{key}");
+            }
+
+            for key in old_keys.difference(&new_keys) {
+                println!("  - {section}.{key}");
+            }
+
+            for key in old_keys.intersection(&new_keys) {
+                if old_map[*key] != new_map[*key] {
+                    println!("  ~ {section}.{key}");
+                }
+            }
+        }
+        (Value::Array(old_arr), Value::Array(new_arr)) => {
+            if old_arr.len() != new_arr.len() {
+                println!("  {} length: {} -> {}", section, old_arr.len(), new_arr.len());
+            }
+            // Could add more detailed array comparison here
+        }
+        _ => {
+            println!("  {section} value changed");
+        }
     }
 }

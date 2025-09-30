@@ -68,11 +68,14 @@ pub enum CongestionControl {
 }
 
 #[cfg(feature = "out_hysteria2")]
+#[derive(Debug)]
 pub struct Hysteria2Outbound {
     config: Hysteria2Config,
     quic_config: QuicConfig,
     connection_pool: Arc<Mutex<Option<Connection>>>,
     congestion_control: CongestionControl,
+    /// Bandwidth limiter for future rate limiting
+    #[allow(dead_code)]
     bandwidth_limiter: Option<Arc<BandwidthLimiter>>,
 }
 
@@ -366,7 +369,6 @@ impl Hysteria2Outbound {
         // Apply obfuscation to the entire packet
         self.apply_obfuscation(&mut auth_packet);
 
-        use tokio::io::AsyncWriteExt;
         send_stream.write_all(&auth_packet).await.map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Auth write failed: {}", e))
         })?;
@@ -381,7 +383,7 @@ impl Hysteria2Outbound {
             io::Error::new(io::ErrorKind::Other, format!("Auth read failed: {}", e))
         })?;
 
-        if bytes_read.is_none() || bytes_read.unwrap() == 0 {
+        if matches!(bytes_read, None | Some(0)) {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 "Authentication response was empty",
@@ -475,13 +477,11 @@ impl Hysteria2Outbound {
         // Apply obfuscation if configured
         self.apply_obfuscation(&mut connect_packet);
 
-        use tokio::io::AsyncWriteExt;
         send_stream.write_all(&connect_packet).await.map_err(|e| {
             io::Error::new(io::ErrorKind::Other, format!("Connect write failed: {}", e))
         })?;
 
         // Read connection response
-        use tokio::io::AsyncReadExt;
         let mut response = [0u8; 2];
         recv_stream.read_exact(&mut response).await.map_err(|e| {
             io::Error::new(
@@ -520,6 +520,8 @@ impl Hysteria2Outbound {
     }
 
     /// Create UDP multiplexing session for high-performance data transfer
+    /// Creates UDP session for future UDP support
+    #[allow(dead_code)]
     async fn create_udp_session(&self, connection: &Connection) -> io::Result<Hysteria2UdpSession> {
         // Send UDP session initialization datagram
         let mut init_packet = Vec::new();
@@ -545,6 +547,172 @@ impl Hysteria2Outbound {
             session_id,
             bandwidth_limiter: self.bandwidth_limiter.clone(),
         })
+    }
+
+    /// Perform Hysteria2 handshake with the server
+    async fn hysteria2_handshake(
+        &self,
+        stream: &mut crate::outbound::quic::io::QuicBidiStream,
+        host: &str,
+        port: u16,
+    ) -> anyhow::Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Hysteria2 handshake protocol
+        // 1. Send client hello with authentication
+        let client_hello = self.create_client_hello()?;
+        stream.write_all(&client_hello).await?;
+
+        // 2. Read server hello response
+        let mut server_hello = vec![0u8; 1024];
+        let bytes_read = stream.read(&mut server_hello).await?;
+        server_hello.truncate(bytes_read);
+
+        // 3. Verify server response
+        if self.verify_server_hello(&server_hello)? {
+            tracing::debug!("Hysteria2 handshake completed successfully");
+
+            // 4. Send connection request for target
+            let connect_request = self.create_connect_request(host, port)?;
+            stream.write_all(&connect_request).await?;
+
+            // 5. Read connection response
+            let mut connect_response = [0u8; 32];
+            stream.read_exact(&mut connect_response).await?;
+
+            if connect_response[0] == 0x00 {
+                tracing::debug!("Hysteria2 connection established to {}:{}", host, port);
+                Ok(())
+            } else {
+                anyhow::bail!("Hysteria2 connection failed with code: {:02x}", connect_response[0]);
+            }
+        } else {
+            anyhow::bail!("Invalid server hello response");
+        }
+    }
+
+    /// Create TCP proxy connection through Hysteria2
+    async fn create_tcp_proxy(
+        &self,
+        hysteria2_stream: crate::outbound::quic::io::QuicBidiStream,
+    ) -> std::io::Result<tokio::net::TcpStream> {
+        // Create a local TCP server and connect to it to simulate a pair
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+
+        // Accept connection in background
+        let server_task = tokio::spawn(async move {
+            listener.accept().await.map(|(stream, _)| stream)
+        });
+
+        // Connect to the listener
+        let client = tokio::net::TcpStream::connect(addr).await?;
+        let server = server_task.await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
+
+        // Spawn a background task to relay data between TCP and Hysteria2 streams
+        tokio::spawn(async move {
+            if let Err(e) = Self::relay_hysteria2_streams(server, hysteria2_stream).await {
+                tracing::warn!("Hysteria2 stream relay error: {}", e);
+            }
+        });
+
+        Ok(client)
+    }
+
+    /// Relay data between TCP stream and Hysteria2 stream
+    async fn relay_hysteria2_streams(
+        mut tcp_stream: tokio::net::TcpStream,
+        mut hysteria2_stream: crate::outbound::quic::io::QuicBidiStream,
+    ) -> anyhow::Result<()> {
+        use tokio::io::copy_bidirectional;
+
+        // Use the streams directly for bidirectional copy
+        match copy_bidirectional(&mut tcp_stream, &mut hysteria2_stream).await {
+            Ok((sent, received)) => {
+                tracing::debug!("Hysteria2 relay completed: sent {} bytes, received {} bytes", sent, received);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!("Hysteria2 relay error: {}", e);
+                Err(anyhow::anyhow!("Stream relay failed: {}", e))
+            }
+        }
+    }
+
+    /// Create Hysteria2 client hello packet
+    fn create_client_hello(&self) -> anyhow::Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // Hysteria2 protocol magic
+        packet.extend_from_slice(b"HY2");
+
+        // Protocol version
+        packet.push(0x02);
+
+        // Client capabilities
+        packet.extend_from_slice(&[0x01, 0x02, 0x04]); // TCP, UDP, Fast handshake
+
+        // Congestion control preference
+        let cc_name = match &self.congestion_control {
+            CongestionControl::Bbr => "bbr",
+            CongestionControl::Cubic => "cubic",
+            CongestionControl::NewReno => "newreno",
+            CongestionControl::Brutal(_) => "brutal",
+        };
+        let cc_bytes = cc_name.as_bytes();
+        packet.push(cc_bytes.len() as u8);
+        packet.extend_from_slice(cc_bytes);
+
+        // Bandwidth limits (if using Brutal congestion control)
+        if let CongestionControl::Brutal(ref brutal_config) = self.congestion_control {
+            packet.extend_from_slice(&brutal_config.up_mbps.to_le_bytes());
+            packet.extend_from_slice(&brutal_config.down_mbps.to_le_bytes());
+        } else {
+            // Default bandwidth values
+            packet.extend_from_slice(&0u32.to_le_bytes()); // Up
+            packet.extend_from_slice(&0u32.to_le_bytes()); // Down
+        }
+
+        Ok(packet)
+    }
+
+    /// Verify server hello response
+    fn verify_server_hello(&self, data: &[u8]) -> anyhow::Result<bool> {
+        if data.len() < 8 {
+            return Ok(false);
+        }
+
+        // Check magic bytes
+        if &data[0..3] != b"HY2" {
+            return Ok(false);
+        }
+
+        // Check version compatibility
+        let server_version = data[3];
+        if server_version < 0x02 {
+            tracing::warn!("Server version {} is older than client version 2", server_version);
+        }
+
+        tracing::debug!("Server hello verification passed");
+        Ok(true)
+    }
+
+    /// Create connection request packet
+    fn create_connect_request(&self, host: &str, port: u16) -> anyhow::Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // Command: TCP connect
+        packet.push(0x01);
+
+        // Target address
+        let target_bytes = format!("{}:{}", host, port);
+        packet.push(target_bytes.len() as u8);
+        packet.extend_from_slice(target_bytes.as_bytes());
+
+        // Connection options
+        packet.push(0x00); // No special options
+
+        Ok(packet)
     }
 }
 
@@ -713,7 +881,7 @@ impl OutboundTcp for Hysteria2Outbound {
             OutboundErrorClass,
         };
 
-        record_connect_attempt(crate::outbound::OutboundKind::Direct); // TODO: Add Hysteria2 kind
+        record_connect_attempt(crate::outbound::OutboundKind::Hysteria2);
 
         let start = std::time::Instant::now();
 
@@ -815,7 +983,6 @@ impl tokio::io::AsyncRead for Hysteria2Stream {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<io::Result<()>> {
         use std::pin::Pin;
-        use tokio::io::AsyncRead;
 
         Pin::new(&mut self.recv_stream).poll_read(cx, buf)
     }
@@ -829,7 +996,6 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         buf: &[u8],
     ) -> std::task::Poll<Result<usize, io::Error>> {
         use std::pin::Pin;
-        use tokio::io::AsyncWrite;
 
         match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => std::task::Poll::Ready(Ok(n)),
@@ -845,7 +1011,6 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), io::Error>> {
         use std::pin::Pin;
-        use tokio::io::AsyncWrite;
 
         match Pin::new(&mut self.send_stream).poll_flush(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
@@ -861,7 +1026,6 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), io::Error>> {
         use std::pin::Pin;
-        use tokio::io::AsyncWrite;
 
         match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
@@ -870,6 +1034,36 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
+    }
+}
+
+#[cfg(feature = "out_hysteria2")]
+impl crate::adapter::OutboundConnector for Hysteria2Outbound {
+    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        // Create a blocking runtime to run async Hysteria2 connection
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        rt.block_on(async {
+            // Establish QUIC connection first
+            let conn = super::quic::common::connect(&self.quic_config).await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
+
+            // Open a bidirectional stream for Hysteria2 protocol
+            let (send_stream, recv_stream) = conn.open_bi().await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
+
+            // Perform Hysteria2 handshake and authentication
+            let mut hysteria2_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
+
+            // Hysteria2 protocol: Send authentication and target request
+            self.hysteria2_handshake(&mut hysteria2_stream, host, port).await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+
+            // Convert to blocking TcpStream-like behavior
+            let tokio_stream = self.create_tcp_proxy(hysteria2_stream).await?;
+            tokio_stream.into_std()
+        })
     }
 }
 

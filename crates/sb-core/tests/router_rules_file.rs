@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::{
     router_build_index_from_str, router_index_decide_exact_suffix,
     router_index_from_env_with_reload,

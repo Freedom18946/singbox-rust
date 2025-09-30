@@ -7,7 +7,7 @@
 //! - Environment-based security policy configuration
 
 use super::dialer::{DialError, Dialer, IoStream};
-use super::tls::{webpki_roots_config, TlsDialer};
+use super::tls::TlsDialer;
 use async_trait::async_trait;
 use rustls::{ClientConfig, RootCertStore};
 use sha2::{Digest, Sha256};

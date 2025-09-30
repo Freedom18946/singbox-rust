@@ -7,7 +7,62 @@ use std::time::Duration;
 
 use crate::adapter::{Bridge, InboundService};
 use crate::log::{self, Level};
+
+#[cfg(feature = "router")]
 use crate::routing::engine::{Engine, Input};
+
+#[cfg(not(feature = "router"))]
+#[derive(Debug)]
+pub(crate) struct Engine {
+    cfg: sb_config::ir::ConfigIR,
+}
+
+#[cfg(not(feature = "router"))]
+struct Decision {
+    outbound: String,
+}
+
+#[cfg(not(feature = "router"))]
+impl Engine {
+    fn new(cfg: &sb_config::ir::ConfigIR) -> Self {
+        Self { cfg: cfg.clone() }
+    }
+
+    fn decide(&self, _input: Input, _fake_ip: bool) -> Decision {
+        Decision {
+            outbound: "direct".to_string(),
+        }
+    }
+}
+
+#[cfg(not(feature = "router"))]
+impl Clone for Engine {
+    fn clone(&self) -> Self {
+        Self { cfg: self.cfg.clone() }
+    }
+}
+
+#[cfg(not(feature = "router"))]
+#[allow(dead_code)]
+struct Input {
+    host: String,
+    port: u16,
+    network: String,
+    protocol: String,
+}
+
+#[cfg(not(feature = "router"))]
+impl Input {
+    #[allow(dead_code)]
+    fn new() -> Self {
+        Self {
+            host: String::new(),
+            port: 0,
+            network: String::new(),
+            protocol: String::new(),
+        }
+    }
+}
 
 fn read_exact(s: &mut TcpStream, buf: &mut [u8]) -> std::io::Result<()> {
     let mut off = 0;
@@ -57,10 +112,7 @@ fn handle_conn(mut cli: TcpStream, eng: &Engine, bridge: &Bridge) -> std::io::Re
     if reqh[1] != 0x01 {
         // CONNECT only
         cli.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])?;
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "only CONNECT supported",
-        ));
+        return Err(std::io::Error::other("only CONNECT supported"));
     }
     let host = match reqh[3] {
         0x01 => {
@@ -129,7 +181,10 @@ fn handle_conn(mut cli: TcpStream, eng: &Engine, bridge: &Bridge) -> std::io::Re
 pub struct Socks5 {
     listen: String,
     port: u16,
+    #[cfg(feature = "router")]
     engine: Option<Engine<'static>>,
+    #[cfg(not(feature = "router"))]
+    engine: Option<Engine>,
     bridge: Option<std::sync::Arc<Bridge>>,
 }
 
@@ -142,7 +197,14 @@ impl Socks5 {
             bridge: None,
         }
     }
+    #[cfg(feature = "router")]
     pub fn with_engine(mut self, eng: Engine<'static>) -> Self {
+        self.engine = Some(eng);
+        self
+    }
+    #[cfg(not(feature = "router"))]
+    #[allow(dead_code)]
+    pub(crate) fn with_engine(mut self, eng: Engine) -> Self {
         self.engine = Some(eng);
         self
     }
@@ -213,7 +275,10 @@ pub async fn udp_associate(
     stream.read_exact(&mut req).await?;
 
     // For simplicity, return a dummy relay address
-    let relay_addr = bind_hint.unwrap_or_else(|| "127.0.0.1:8080".parse().unwrap());
+    let relay_addr = bind_hint.unwrap_or_else(|| {
+        "127.0.0.1:8080".parse()
+            .expect("Default relay address should always be valid")
+    });
 
     // Send successful response
     let mut response = vec![0x05, 0x00, 0x00, 0x01]; // Success, IPv4

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![cfg(feature = "bench-cli")]
 #![cfg_attr(
     not(test),
     deny(
@@ -169,7 +168,7 @@ pub(crate) fn parse_buckets(s: &str) -> Result<Vec<f64>> {
         let x = f64::from_str(part)?;
         v.push(x);
     }
-    v.sort_by(|a, b| a.total_cmp(b));
+    v.sort_by(f64::total_cmp);
     v.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
     Ok(v)
 }
@@ -214,7 +213,7 @@ pub(crate) fn compute_hist(lat_ms: &[u64], buckets: &[f64]) -> Hist {
 fn load_body(arg: &str) -> Result<String> {
     if let Some(path) = arg.strip_prefix('@') {
         Ok(std::fs::read_to_string(path)
-            .with_context(|| format!("read body from file {:?}", path))?)
+            .with_context(|| format!("read body from file {path:?}"))?)
     } else {
         Ok(arg.to_string())
     }
@@ -307,37 +306,34 @@ async fn bench_io(
                 if let Some(ref b) = body_text {
                     req = req.body(b.clone());
                 }
-                for h in hdrs.iter() {
+                for h in &hdrs {
                     if let Some((k, v)) = h.split_once(':') {
                         req = req.header(k.trim(), v.trim());
                     }
                 }
-                let res = req.send().await;
-                match res {
-                    Ok(r) => {
-                        let sc = r.status().as_u16();
-                        let bytes = match r.bytes().await {
-                            Ok(b) => b.len() as u64,
-                            Err(_) => 0,
-                        };
-                        let mut g = stats.lock();
-                        if (200..300).contains(&sc) {
-                            g.ok_2xx += 1;
-                        } else {
-                            g.other += 1;
-                        }
-                        g.bytes += bytes;
-                        lat.lock()
-                            .push(Instant::now().duration_since(t).as_millis() as u64);
-                        done += 1;
-                    }
-                    Err(_) => {
-                        let mut g = stats.lock();
+                let response = req.send().await;
+                if let Ok(r) = response {
+                    let sc = r.status().as_u16();
+                    let bytes = match r.bytes().await {
+                        Ok(b) => b.len() as u64,
+                        Err(_) => 0,
+                    };
+                    let mut g = stats.lock();
+                    if (200..300).contains(&sc) {
+                        g.ok_2xx += 1;
+                    } else {
                         g.other += 1;
-                        lat.lock()
-                            .push(Instant::now().duration_since(t).as_millis() as u64);
-                        done += 1;
                     }
+                    g.bytes += bytes;
+                    lat.lock()
+                        .push(Instant::now().duration_since(t).as_millis() as u64);
+                    done += 1;
+                } else {
+                    let mut g = stats.lock();
+                    g.other += 1;
+                    lat.lock()
+                        .push(Instant::now().duration_since(t).as_millis() as u64);
+                    done += 1;
                 }
             }
             let mut g = stats.lock();
@@ -366,7 +362,7 @@ async fn bench_io(
     out.p99_ms = q(0.99);
     // 计算 RPS 和吞吐量
     let secs = (out.elapsed_ms as f64) / 1000.0;
-    out.rps = (out.total as f64) / secs.max(1e-6);
+    out.rps = f64::from(out.total) / secs.max(1e-6);
     out.thrpt_mib_s = (out.bytes as f64) / 1_048_576.0 / secs.max(1e-6);
     // 可选直方图
     out.hist = if let Some(spec) = hist_buckets {
@@ -417,7 +413,7 @@ async fn bench_io(
     if let Some(path) = final_path {
         let data = serde_json::to_string_pretty(&to_fixed_schema(&out))?;
         app::util::write_atomic(&path, data.as_bytes())
-            .with_context(|| format!("write histogram json atomically to {:?}", path))?;
+            .with_context(|| format!("write histogram json atomically to {path:?}"))?;
     }
     Ok(())
 }

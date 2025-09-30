@@ -47,8 +47,7 @@ impl SocksUp {
         let mut rep = [0u8; 2];
         Self::read_exact(&mut s, &mut rep)?;
         if rep != [0x05, if self.user.is_some() { 0x02 } else { 0x00 }] {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 "socks method negot fail",
             ));
         }
@@ -84,7 +83,7 @@ impl SocksUp {
             req.extend_from_slice(&ip6.octets());
         } else {
             req.push(0x03);
-            req.push(host.as_bytes().len() as u8);
+            req.push(host.len() as u8);
             req.extend_from_slice(host.as_bytes());
         }
         req.extend_from_slice(&port.to_be_bytes());
@@ -92,8 +91,7 @@ impl SocksUp {
         let mut h = [0u8; 4];
         Self::read_exact(&mut s, &mut h)?;
         if h[1] != 0x00 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(std::io::Error::other(
                 format!("socks connect fail code={}", h[1]),
             ));
         }
@@ -128,7 +126,7 @@ impl OutboundConnector for SocksUp {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
         let addr = format!("{}:{}", self.server, self.port);
         let s = self.dial.dial(&addr).stream.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::Other, "dial socks upstream fail")
+            std::io::Error::other("dial socks upstream fail")
         })?;
         self.handshake(s, host, port)
     }

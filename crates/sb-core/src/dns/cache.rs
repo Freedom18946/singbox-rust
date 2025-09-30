@@ -154,8 +154,8 @@ impl CacheEntry {
 
 /// DNS 缓存实现
 pub struct DnsCache {
-    /// 缓存存储
-    cache: Arc<Mutex<HashMap<String, CacheEntry>>>,
+    /// 缓存存储 - 使用完整的Key（包含域名和查询类型）
+    cache: Arc<Mutex<HashMap<Key, CacheEntry>>>,
     /// 最大缓存条目数
     max_entries: usize,
     /// 负缓存 TTL
@@ -200,7 +200,7 @@ impl DnsCache {
     }
 
     /// 从缓存获取 DNS 答案
-    pub fn get(&self, domain: &str) -> Option<DnsAnswer> {
+    pub fn get(&self, key: &Key) -> Option<DnsAnswer> {
         let mut cache = match self.cache.lock() {
             Ok(g) => g,
             Err(_e) => {
@@ -209,10 +209,10 @@ impl DnsCache {
             }
         };
 
-        if let Some(entry) = cache.get_mut(domain) {
+        if let Some(entry) = cache.get_mut(key) {
             if entry.is_expired() {
                 // 条目已过期，移除
-                cache.remove(domain);
+                cache.remove(key);
 
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dns_cache_total", "result" => "expired").increment(1);
@@ -240,7 +240,7 @@ impl DnsCache {
     }
 
     /// 将 DNS 答案存入缓存
-    pub fn put(&self, domain: &str, mut answer: DnsAnswer) {
+    pub fn put(&self, key: Key, mut answer: DnsAnswer) {
         // 调整 TTL 到合理范围
         answer.ttl = answer.ttl.clamp(self.min_ttl, self.max_ttl);
 
@@ -253,13 +253,13 @@ impl DnsCache {
         };
 
         // 如果缓存已满，执行 LRU 淘汰
-        if cache.len() >= self.max_entries && !cache.contains_key(domain) {
+        if cache.len() >= self.max_entries && !cache.contains_key(&key) {
             self.evict_lru(&mut cache);
         }
 
         // 插入新条目
         let entry = CacheEntry::new(answer, false);
-        cache.insert(domain.to_string(), entry);
+        cache.insert(key, entry);
 
         #[cfg(feature = "metrics")]
         {
@@ -269,13 +269,13 @@ impl DnsCache {
     }
 
     /// 将查询失败结果存入负缓存
-    pub fn put_negative(&self, domain: &str) {
-        let answer = DnsAnswer {
-            ips: Vec::new(),
-            ttl: self.negative_ttl,
-            source: Source::System,
-            rcode: Rcode::NxDomain,
-        };
+    pub fn put_negative(&self, key: Key) {
+        let answer = DnsAnswer::new(
+            Vec::new(),
+            self.negative_ttl,
+            Source::System,
+            Rcode::NxDomain,
+        );
 
         let mut cache = match self.cache.lock() {
             Ok(g) => g,
@@ -286,13 +286,13 @@ impl DnsCache {
         };
 
         // 如果缓存已满，执行 LRU 淘汰
-        if cache.len() >= self.max_entries && !cache.contains_key(domain) {
+        if cache.len() >= self.max_entries && !cache.contains_key(&key) {
             self.evict_lru(&mut cache);
         }
 
         // 插入负缓存条目
         let entry = CacheEntry::new(answer, true);
-        cache.insert(domain.to_string(), entry);
+        cache.insert(key, entry);
 
         #[cfg(feature = "metrics")]
         {
@@ -382,7 +382,7 @@ impl DnsCache {
     }
 
     /// 查看指定域名的剩余TTL，不更新访问统计
-    pub fn peek_remaining(&self, domain: &str) -> Option<Duration> {
+    pub fn peek_remaining(&self, key: &Key) -> Option<Duration> {
         let cache = match self.cache.lock() {
             Ok(g) => g,
             Err(_e) => {
@@ -391,7 +391,7 @@ impl DnsCache {
             }
         };
 
-        if let Some(entry) = cache.get(domain) {
+        if let Some(entry) = cache.get(key) {
             if entry.is_expired() {
                 None
             } else {
@@ -403,7 +403,7 @@ impl DnsCache {
     }
 
     /// LRU 淘汰策略
-    fn evict_lru(&self, cache: &mut HashMap<String, CacheEntry>) {
+    fn evict_lru(&self, cache: &mut HashMap<Key, CacheEntry>) {
         if cache.is_empty() {
             return;
         }
@@ -420,7 +420,7 @@ impl DnsCache {
             #[cfg(feature = "metrics")]
             metrics::counter!("dns_cache_evict_total", "reason" => "lru").increment(1);
 
-            tracing::debug!("Evicted DNS cache entry: {}", key);
+            tracing::debug!("Evicted DNS cache entry: {}:{:?}", key.name, key.qtype);
         }
     }
 }
@@ -486,8 +486,13 @@ mod tests {
         let cache = DnsCache::new(10);
         let domain = "example.com";
 
+        let key = Key {
+            name: domain.to_string(),
+            qtype: QType::A,
+        };
+
         // 缓存未命中
-        assert!(cache.get(domain).is_none());
+        assert!(cache.get(&key).is_none());
 
         // 存入缓存
         let answer = DnsAnswer {
@@ -495,11 +500,12 @@ mod tests {
             ttl: Duration::from_secs(300),
             source: Source::System,
             rcode: Rcode::NoError,
+            created_at: Instant::now(),
         };
-        cache.put(domain, answer.clone());
+        cache.put(key.clone(), answer.clone());
 
         // 缓存命中
-        let cached = cache.get(domain).unwrap();
+        let cached = cache.get(&key).unwrap();
         assert_eq!(cached.ips, answer.ips);
         assert!(cached.ttl <= answer.ttl); // TTL 应该减少
     }
@@ -508,12 +514,16 @@ mod tests {
     fn test_negative_cache() {
         let cache = DnsCache::new(10);
         let domain = "nonexistent.com";
+        let key = Key {
+            name: domain.to_string(),
+            qtype: QType::A,
+        };
 
         // 存入负缓存
-        cache.put_negative(domain);
+        cache.put_negative(key.clone());
 
         // 负缓存命中
-        let cached = cache.get(domain).unwrap();
+        let cached = cache.get(&key).unwrap();
         assert!(cached.ips.is_empty());
     }
 
@@ -525,20 +535,26 @@ mod tests {
         let cache = DnsCache::new(10);
         let domain = "example.com";
 
+        let key = Key {
+            name: domain.to_string(),
+            qtype: QType::A,
+        };
+
         // 存入短 TTL 的条目
         let answer = DnsAnswer {
             ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
             ttl: Duration::from_millis(10),
             source: Source::System,
             rcode: Rcode::NoError,
+            created_at: Instant::now(),
         };
-        cache.put(domain, answer);
+        cache.put(key.clone(), answer);
 
         // 等待过期
         std::thread::sleep(Duration::from_millis(50));
 
         // 应该返回 None（已过期）
-        assert!(cache.get(domain).is_none());
+        assert!(cache.get(&key).is_none());
 
         // 清理环境变量
         std::env::remove_var("SB_DNS_MIN_TTL_S");
@@ -551,17 +567,26 @@ mod tests {
         // 添加一些条目
         for i in 0..5 {
             let domain = format!("example{}.com", i);
+            let key = Key {
+                name: domain,
+                qtype: QType::A,
+            };
             let answer = DnsAnswer {
                 ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, i as u8))],
                 ttl: Duration::from_secs(300),
                 source: Source::System,
                 rcode: Rcode::NoError,
+                created_at: Instant::now(),
             };
-            cache.put(&domain, answer);
+            cache.put(key, answer);
         }
 
         // 添加负缓存
-        cache.put_negative("nonexistent.com");
+        let neg_key = Key {
+            name: "nonexistent.com".to_string(),
+            qtype: QType::A,
+        };
+        cache.put_negative(neg_key);
 
         let stats = cache.stats();
         assert_eq!(stats.total_entries, 6);
@@ -583,8 +608,13 @@ mod tests {
             ttl: Duration::from_millis(50),
             source: Source::System,
             rcode: Rcode::NoError,
+            created_at: Instant::now(),
         };
-        cache.put("example.com", answer);
+        let key = Key {
+            name: "example.com".to_string(),
+            qtype: QType::A,
+        };
+        cache.put(key.clone(), answer);
 
         // 启动清理任务（短间隔用于测试）
         let cache_clone = cache.clone();
@@ -600,7 +630,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         // 条目应该被清理
-        assert!(cache.get("example.com").is_none());
+        assert!(cache.get(&key).is_none());
 
         // 清理环境变量
         std::env::remove_var("SB_DNS_MIN_TTL_S");

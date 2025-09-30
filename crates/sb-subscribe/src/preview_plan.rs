@@ -3,7 +3,6 @@
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fmt;
 
 fn parse_profile(text: &str, format: &str, use_keyword: bool) -> Result<Profile, String> {

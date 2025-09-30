@@ -67,16 +67,24 @@ fn dns_cache_basic_operations() {
     };
 
     // Put and get from cache
-    cache.put("test.example", answer.clone());
-    let cached_answer = cache.get("test.example");
+    let key = sb_core::dns::cache::Key {
+        name: "test.example".to_string(),
+        qtype: sb_core::dns::cache::QType::A,
+    };
+    cache.put(key.clone(), answer.clone());
+    let cached_answer = cache.get(&key);
 
     assert!(cached_answer.is_some());
     let cached = cached_answer.unwrap();
     assert_eq!(cached.ips, vec![ipv4]);
 
     // Test negative caching
-    cache.put_negative("nonexistent.example");
-    let negative_result = cache.get("nonexistent.example");
+    let negative_key = sb_core::dns::cache::Key {
+        name: "nonexistent.example".to_string(),
+        qtype: sb_core::dns::cache::QType::A,
+    };
+    cache.put_negative(negative_key.clone());
+    let negative_result = cache.get(&negative_key);
     assert!(negative_result.is_some());
     let negative = negative_result.unwrap();
     assert!(negative.ips.is_empty());

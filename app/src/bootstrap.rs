@@ -36,8 +36,10 @@ async fn probe(addr: SocketAddr) -> bool {
 }
 
 pub struct Runtime {
-    // Temporarily simplified for minimal CLI
-    //pub router: Arc<RouterHandle>,
+    #[cfg(feature = "router")]
+    #[allow(dead_code)]
+    pub router: Arc<sb_core::router::engine::RouterHandle>,
+    #[allow(dead_code)]
     pub outbounds: Arc<OutboundRegistryHandle>,
 }
 
@@ -72,9 +74,17 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     ob_health::spawn_if_enabled().await;
 
     // 1) 构建 Registry/Router 并包装成 Handle（严格失败）
-    cfg.build_registry_and_router()?; // Stub validation
-                                      // TODO: Use real registry/router when circular deps resolved
-                                      //let rh = Arc::new(RouterHandle::from_env());
+    cfg.build_registry_and_router()?; // Configuration validation
+
+    // Create real router and registry handles
+    #[cfg(feature = "router")]
+    let rh = {
+        use sb_core::router::engine::RouterHandle;
+        Arc::new(RouterHandle::from_env())
+    };
+    #[cfg(not(feature = "router"))]
+    let _rh = (); // Placeholder when router feature is disabled
+
     let oh = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::default()));
 
     let inbounds = cfg.inbounds.len();
@@ -113,23 +123,21 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         }
     }
     Ok(Runtime {
-        // Temporarily simplified for minimal CLI
-        //router: rh,
+        #[cfg(feature = "router")]
+        router: rh,
         outbounds: oh,
     })
 }
 
 #[allow(dead_code)]
-fn parse_addr(s: &str) -> SocketAddr {
-    match s.parse::<SocketAddr>() {
-        Ok(sa) => sa,
-        Err(_) => {
+fn parse_addr(s: &str) -> Result<SocketAddr> {
+    s.parse::<SocketAddr>()
+        .or_else(|_| {
             // 容忍用户写入 "127.0.0.1:port" 之外的空格等问题
             let t = s.trim();
             t.parse::<SocketAddr>()
-                .expect("invalid listen addr in config")
-        }
-    }
+        })
+        .map_err(|e| anyhow::anyhow!("invalid listen addr in config '{s}': {e}"))
 }
 
 #[cfg(feature = "socks")]

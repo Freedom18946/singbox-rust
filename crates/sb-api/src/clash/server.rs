@@ -11,7 +11,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use sb_core::{outbound::manager::OutboundManager, routing::router::Router as CoreRouter};
+use sb_core::routing::router::Router as CoreRouter;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};

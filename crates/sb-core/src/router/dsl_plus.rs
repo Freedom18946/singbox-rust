@@ -145,12 +145,10 @@ fn parse_include_path(line: &str) -> Result<String, String> {
             return Err("include 引号未闭合".into());
         }
         Ok(s)
+    } else if rest.is_empty() {
+        Err("include 缺少路径".into())
     } else {
-        if rest.is_empty() {
-            Err("include 缺少路径".into())
-        } else {
-            Ok(rest.to_string())
-        }
+        Ok(rest.to_string())
     }
 }
 

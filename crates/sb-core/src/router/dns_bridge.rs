@@ -63,6 +63,7 @@ impl EnhancedDnsResolver {
 #[async_trait::async_trait]
 impl Resolver for EnhancedDnsResolver {
     async fn resolve(&self, domain: &str) -> anyhow::Result<DnsAnswer> {
+        #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
         // Record query attempt
@@ -75,12 +76,13 @@ impl Resolver for EnhancedDnsResolver {
 
         let result = self.inner.resolve(domain).await;
 
+        #[cfg(feature = "metrics")]
         let elapsed = start.elapsed().as_millis() as f64;
 
         match &result {
+            #[cfg(feature = "metrics")]
             Ok(answer) => {
                 // Record successful resolution
-                #[cfg(feature = "metrics")]
                 {
                     metrics::histogram!("dns_resolve_duration_ms",
                         "resolver" => self.name.clone(),
@@ -100,6 +102,10 @@ impl Resolver for EnhancedDnsResolver {
                     )
                     .record(answer.ips.len() as f64);
                 }
+            }
+            #[cfg(not(feature = "metrics"))]
+            Ok(_) => {
+                // No metrics recording
             }
             Err(_) => {
                 // Record failed resolution
@@ -171,7 +177,7 @@ mod tests {
                 assert_eq!(ips.len(), 1);
                 assert_eq!(ips[0], "1.2.3.4".parse::<IpAddr>().unwrap());
             }
-            _ => panic!("Expected successful resolution"),
+            _ => assert!(false, "Expected successful DNS resolution"),
         }
     }
 
@@ -191,7 +197,7 @@ mod tests {
 
         match result {
             DnsResult::Miss => {}
-            _ => panic!("Expected Miss result for empty response"),
+            _ => assert!(false, "Expected Miss result for empty DNS response"),
         }
     }
 
@@ -206,7 +212,7 @@ mod tests {
 
         match result {
             DnsResult::Error => {}
-            _ => panic!("Expected Error result"),
+            _ => assert!(false, "Expected Error result from DNS resolver"),
         }
     }
 }

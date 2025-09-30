@@ -14,7 +14,6 @@ use tokio::net::TcpStream;
 use aes_gcm::aead::{generic_array::GenericArray, Aead};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce as ChaNonce};
-use hmac::Hmac;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
@@ -277,7 +276,9 @@ struct ShadowsocksStream {
     inner: TcpStream,
     cipher_method: CipherMethod,
     key: Vec<u8>,
+    #[allow(dead_code)]
     write_buffer: Vec<u8>,
+    #[allow(dead_code)]
     read_buffer: Vec<u8>,
     initialized: bool,
 }
@@ -425,6 +426,7 @@ impl ShadowsocksStream {
         Ok(result)
     }
 
+    #[allow(dead_code)]
     fn decrypt_data(&self, encrypted_data: &[u8]) -> Result<Vec<u8>> {
         let nonce_len = self.cipher_method.nonce_size();
         if encrypted_data.len() < nonce_len {

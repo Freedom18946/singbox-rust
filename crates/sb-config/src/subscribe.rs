@@ -13,12 +13,12 @@ use crate::{Auth, Config, Outbound, Rule};
 
 /// 入口：根据格式自动探测并解析
 pub fn from_subscription(text: &str) -> Result<Config> {
-    // 先尝试 Clash YAML
-    if let Ok(cfg) = parse_clash_yaml(text) {
+    // 先尝试 Sing-Box JSON (JSON should be tried before YAML as it's more specific)
+    if let Ok(cfg) = parse_singbox_json(text) {
         return Ok(cfg);
     }
-    // 再尝试 Sing-Box JSON
-    if let Ok(cfg) = parse_singbox_json(text) {
+    // 再尝试 Clash YAML
+    if let Ok(cfg) = parse_clash_yaml(text) {
         return Ok(cfg);
     }
     // 最后尝试 Sing-Box YAML（将 YAML 转 JSON 再复用解析）
@@ -189,6 +189,7 @@ fn parse_singbox_json_value(val: JsonValue) -> Result<Config> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+
         if name.is_empty() {
             continue;
         }
@@ -215,6 +216,7 @@ fn parse_singbox_json_value(val: JsonValue) -> Result<Config> {
                     }),
                     _ => None,
                 };
+
                 if !server.is_empty() && port > 0 {
                     outs.push(Outbound::Http {
                         name,
@@ -319,6 +321,7 @@ rules:
  "route":{"rules":[{"outbound":"h","domain_suffix":["example.com"]}]}}
 "#;
         let cfg = from_subscription(j).unwrap();
+
         assert!(cfg
             .outbounds
             .iter()

@@ -15,18 +15,6 @@ struct Route {
     rules: Vec<serde_json::Value>,
 }
 
-fn push_domains(out: &mut Vec<RuleEntry>, arr: &serde_json::Value, prefix: &str, decision: &str) {
-    if let Some(list) = arr.as_array() {
-        for d in list {
-            if let Some(s) = d.as_str() {
-                out.push(RuleEntry {
-                    line: format!("{}:{}={}", prefix, s, decision),
-                });
-            }
-        }
-    }
-}
-
 fn map_rule(v: &serde_json::Value, use_keyword: bool, out: &mut Vec<String>) {
     let decision = v
         .get("outbound")

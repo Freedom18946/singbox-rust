@@ -14,4 +14,4 @@ pub fn apply() {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn apply() {}
+pub const fn apply() {}

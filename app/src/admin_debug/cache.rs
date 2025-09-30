@@ -21,7 +21,7 @@ fn disk_path_inner(base: &Path, key: &str) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     key.hash(&mut hasher);
     let hash = hasher.finish();
-    base.join(format!("{:x}", hash))
+    base.join(format!("{hash:x}"))
 }
 
 #[derive(Clone)]
@@ -37,38 +37,44 @@ pub enum TierEntry {
 }
 
 impl TierEntry {
-    pub fn body_len(&self) -> usize {
+    #[must_use] 
+    pub const fn body_len(&self) -> usize {
         match self {
-            TierEntry::Mem(entry) => entry.body.len(),
-            TierEntry::Disk { len, .. } => *len,
+            Self::Mem(entry) => entry.body.len(),
+            Self::Disk { len, .. } => *len,
         }
     }
 
-    pub fn etag(&self) -> Option<&String> {
+    #[must_use] 
+    pub const fn etag(&self) -> Option<&String> {
         match self {
-            TierEntry::Mem(entry) => entry.etag.as_ref(),
-            TierEntry::Disk { etag, .. } => etag.as_ref(),
+            Self::Mem(entry) => entry.etag.as_ref(),
+            Self::Disk { etag, .. } => etag.as_ref(),
         }
     }
 
-    pub fn content_type(&self) -> Option<&String> {
+    #[must_use] 
+    pub const fn content_type(&self) -> Option<&String> {
         match self {
-            TierEntry::Mem(entry) => entry.content_type.as_ref(),
-            TierEntry::Disk { content_type, .. } => content_type.as_ref(),
+            Self::Mem(entry) => entry.content_type.as_ref(),
+            Self::Disk { content_type, .. } => content_type.as_ref(),
         }
     }
 
-    pub fn timestamp(&self) -> Instant {
+    #[must_use] 
+    pub const fn timestamp(&self) -> Instant {
         match self {
-            TierEntry::Mem(entry) => entry.timestamp,
-            TierEntry::Disk { timestamp, .. } => *timestamp,
+            Self::Mem(entry) => entry.timestamp,
+            Self::Disk { timestamp, .. } => *timestamp,
         }
     }
 
+    /// # Errors
+    /// Returns an error if disk-backed cache entry cannot be read
     pub async fn get_body(&self) -> Result<Vec<u8>, std::io::Error> {
         match self {
-            TierEntry::Mem(entry) => Ok(entry.body.clone()),
-            TierEntry::Disk { path, .. } => tokio::fs::read(path).await,
+            Self::Mem(entry) => Ok(entry.body.clone()),
+            Self::Disk { path, .. } => tokio::fs::read(path).await,
         }
     }
 }
@@ -86,6 +92,7 @@ pub struct Lru {
 }
 
 impl Lru {
+    #[must_use] 
     pub fn new(cap_items: usize, ttl_ms: u64) -> Self {
         Self::with_byte_limit(cap_items, ttl_ms, 10 * 1024 * 1024) // 10MB default
     }
@@ -171,7 +178,7 @@ impl Lru {
                         if let Some(base_path) = &self.disk_backing {
                             if size > 4096 {
                                 if let TierEntry::Mem(cache_entry) = entry {
-                                    if let Ok(()) = self.write_to_disk(&key, &cache_entry) {
+                                    if matches!(self.write_to_disk(&key, &cache_entry), Ok(())) {
                                         let disk_entry = TierEntry::Disk {
                                             path: disk_path_inner(base_path, &key),
                                             etag: cache_entry.etag,
@@ -227,10 +234,12 @@ impl Lru {
             .join(format!("{:x}", hash))
     }
 
+    #[must_use] 
     pub fn size(&self) -> usize {
         self.map.len()
     }
 
+    #[must_use] 
     pub fn byte_usage(&self) -> (usize, usize) {
         let mem_bytes = self
             .map
@@ -249,11 +258,12 @@ impl Lru {
         (mem_bytes, disk_bytes)
     }
 
-    pub fn metrics(&self) -> (u64, u64, u64) {
+    #[must_use] 
+    pub const fn metrics(&self) -> (u64, u64, u64) {
         (self.evict_count_mem, self.evict_count_disk, self.head_count)
     }
 
-    pub fn inc_head_count(&mut self) {
+    pub const fn inc_head_count(&mut self) {
         self.head_count += 1;
     }
 

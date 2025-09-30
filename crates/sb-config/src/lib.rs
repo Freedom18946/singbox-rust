@@ -215,9 +215,9 @@ impl Config {
                     map.insert(name.clone(), OutboundImpl::HttpProxy(cfg));
                 }
                 Outbound::Vless { name, .. } => {
-                    // TODO: Implement VLESS support in OutboundImpl
-                    // For now, use Direct as placeholder
-                    map.insert(name.clone(), OutboundImpl::Direct);
+                    // VLESS configuration should be handled in sb-core to avoid circular dependency
+                    // For now, return error indicating VLESS needs to be processed by sb-core
+                    return Err(anyhow::anyhow!("VLESS outbound '{}' requires runtime processing in sb-core", name));
                 }
             }
         }
@@ -281,6 +281,10 @@ impl Config {
                     name: Some(name.clone()),
                     members: None,
                     credentials: None,
+                    uuid: None,
+                    flow: None,
+                    network: None,
+                    packet_encoding: None,
                 }),
                 Outbound::Block { name } => outs.push(OIR {
                     ty: OT::Block,
@@ -290,6 +294,10 @@ impl Config {
                     name: Some(name.clone()),
                     members: None,
                     credentials: None,
+                    uuid: None,
+                    flow: None,
+                    network: None,
+                    packet_encoding: None,
                 }),
                 Outbound::Socks5 {
                     name,
@@ -309,6 +317,10 @@ impl Config {
                         username_env: None,
                         password_env: None,
                     }),
+                    uuid: None,
+                    flow: None,
+                    network: None,
+                    packet_encoding: None,
                 }),
                 Outbound::Http {
                     name,
@@ -328,17 +340,25 @@ impl Config {
                         username_env: None,
                         password_env: None,
                     }),
+                    uuid: None,
+                    flow: None,
+                    network: None,
+                    packet_encoding: None,
                 }),
                 Outbound::Vless {
-                    name, server, port, ..
+                    name, server, port, uuid, flow, network, packet_encoding, ..
                 } => outs.push(OIR {
-                    ty: OT::Direct, // 先按直连导出，避免未落地导致构建失败（再由路由决策控制）
+                    ty: OT::Vless,
                     server: Some(server.clone()),
                     port: Some(*port),
-                    udp: None,
+                    udp: Some("passthrough".into()), // VLESS supports UDP passthrough
                     name: Some(name.clone()),
                     members: None,
                     credentials: None,
+                    uuid: Some(uuid.clone()),
+                    flow: flow.clone(),
+                    network: Some(network.clone()),
+                    packet_encoding: packet_encoding.clone(),
                 }),
             }
         }

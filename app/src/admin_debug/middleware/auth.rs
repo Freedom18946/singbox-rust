@@ -1,8 +1,8 @@
 //! Authentication middleware for admin debug HTTP server
 //!
-//! This middleware wraps the existing AuthProvider system and converts
-//! authentication failures to contract-compliant ResponseEnvelope errors
-//! with ErrorKind::Auth.
+//! This middleware wraps the existing `AuthProvider` system and converts
+//! authentication failures to contract-compliant `ResponseEnvelope` errors
+//! with `ErrorKind::Auth`.
 
 use super::{Middleware, MiddlewareResult, RequestContext};
 use crate::admin_debug::auth::{from_config, AuthConfig, AuthError, AuthProvider};
@@ -102,6 +102,7 @@ impl Middleware for AuthMiddleware {
 }
 
 /// Helper function to check if authentication is required for a path
+#[must_use] 
 pub fn requires_auth(path: &str) -> bool {
     match path {
         // Protected endpoints that require authentication
@@ -124,6 +125,7 @@ pub struct SelectiveAuthMiddleware {
 }
 
 impl SelectiveAuthMiddleware {
+    #[must_use] 
     pub fn new(auth_middleware: AuthMiddleware) -> Self {
         Self {
             auth_middleware,
@@ -134,6 +136,7 @@ impl SelectiveAuthMiddleware {
         }
     }
 
+    #[must_use] 
     pub fn with_exempt_paths(mut self, paths: Vec<String>) -> Self {
         self.exempt_paths = paths;
         self

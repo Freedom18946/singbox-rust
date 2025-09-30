@@ -1,4 +1,6 @@
 //! Simple JSON helpers for CLI tools (unified ok/error shape)
+#![allow(dead_code)] // CLI JSON utilities - work in progress
+
 use serde::Serialize;
 #[cfg(feature = "dev-cli")]
 use serde_json::json;

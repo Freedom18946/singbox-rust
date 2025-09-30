@@ -49,14 +49,14 @@ impl<D: Dialer + Send + Sync> Dialer for FailpointDialer<D> {
         #[cfg(feature = "failpoints")]
         {
             // Failpoint: fail before starting connection
-            let connect_start_fp = format!("{}.connect_start", self.failpoint_prefix);
+            let _connect_start_fp = format!("{}.connect_start", self.failpoint_prefix);
             fail::fail_point!(&connect_start_fp, |_| {
                 return Err(DialError::Generic("failpoint: connect_start".to_string()));
             });
 
             // Failpoint: simulate DNS failure
             if host.chars().any(|c| c.is_alphabetic()) {
-                let dns_failure_fp = format!("{}.dns_failure", self.failpoint_prefix);
+                let _dns_failure_fp = format!("{}.dns_failure", self.failpoint_prefix);
                 fail::fail_point!(&dns_failure_fp, |_| {
                     return Err(DialError::Generic(format!(
                         "failpoint: DNS failure for {}",
@@ -69,7 +69,7 @@ impl<D: Dialer + Send + Sync> Dialer for FailpointDialer<D> {
             let result = self.inner.connect(host, port).await;
 
             // Failpoint: simulate timeout after connection attempt
-            let timeout_fp = format!("{}.connect_timeout", self.failpoint_prefix);
+            let _timeout_fp = format!("{}.connect_timeout", self.failpoint_prefix);
             fail::fail_point!(&timeout_fp, |_| {
                 return Err(DialError::Timeout);
             });

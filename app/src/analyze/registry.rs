@@ -31,10 +31,11 @@ pub fn register(kind: &'static str, f: BuilderFn) {
     g.insert(kind, f);
 }
 
+#[must_use] 
 pub fn supported_kinds() -> Vec<&'static str> {
     let g = ensure_registry().lock().expect("registry lock");
     let mut v: Vec<_> = g.keys().copied().collect();
-    v.sort();
+    v.sort_unstable();
     v
 }
 
@@ -46,6 +47,7 @@ pub fn build_by_kind(kind: &str, input: &Value) -> Result<Value> {
     bail!("unsupported kind: {kind}");
 }
 
+#[allow(dead_code)]
 pub fn register_async(kind: &'static str, f: AsyncBuilderFn) {
     let m = ASYNC_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
     let mut g = m.lock().expect("async registry lock");
@@ -56,7 +58,7 @@ pub fn supported_async_kinds() -> Vec<&'static str> {
     if let Some(cell) = ASYNC_REGISTRY.get() {
         let g = cell.lock().expect("async registry lock");
         let mut v: Vec<_> = g.keys().copied().collect();
-        v.sort();
+        v.sort_unstable();
         v
     } else {
         vec![]
