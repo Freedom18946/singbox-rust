@@ -7,6 +7,7 @@ pub mod inbound; // <— 新增导出，供 bridge/scaffold 使用
 pub mod log;
 pub mod metrics;
 pub mod net;
+pub mod udp_nat_instrument;
 pub mod outbound; // <— 新增导出，供 bridge/scaffold 使用
 pub mod pipeline; // <— 新增导出，供适配器使用
 #[cfg(feature = "router")]

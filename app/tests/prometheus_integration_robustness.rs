@@ -1,5 +1,5 @@
 // app/tests/prometheus_integration_robustness.rs
-use std::{env, fs, process::Command, time::Duration};
+use std::{fs, process::Command};
 use tempfile::TempDir;
 
 /// Integration test for Prometheus query robustness in run-scenarios context

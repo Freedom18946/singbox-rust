@@ -57,15 +57,19 @@ async fn test_jwt_provider_creation_and_config_validation() {
     assert!(JwtProvider::new(config).is_err());
 
     // Test 2: HS256 without HMAC secret should fail
-    let mut config = JwtConfig::default();
-    config.algo_allowlist = vec![JwtAlgorithm::HS256];
-    config.hmac_secret = None;
+    let config = JwtConfig {
+        algo_allowlist: vec![JwtAlgorithm::HS256],
+        hmac_secret: None,
+        ..Default::default()
+    };
     assert!(JwtProvider::new(config).is_err());
 
     // Test 3: No JWKS source should fail
-    let mut config = JwtConfig::default();
-    config.jwks_file = None;
-    config.jwks_url = None;
+    let config = JwtConfig {
+        jwks_file: None,
+        jwks_url: None,
+        ..Default::default()
+    };
     assert!(JwtProvider::new(config).is_err());
 
     // Test 4: Valid config with JWKS URL should succeed
@@ -175,7 +179,7 @@ async fn test_jwks_file_loading() {
         jwks_url: None,
         ..Default::default()
     };
-    let provider = JwtProvider::new(config).unwrap();
+    let _provider = JwtProvider::new(config).unwrap();
 
     // File should load successfully (tested implicitly by provider creation)
     assert!(true);
@@ -435,7 +439,7 @@ async fn test_clock_skew_tolerance_configuration() {
         skew: Duration::from_secs(300), // 5 minutes clock skew tolerance
         ..Default::default()
     };
-    let provider = JwtProvider::new(config).unwrap();
+    let _provider = JwtProvider::new(config).unwrap();
 
     // This test verifies that the clock skew tolerance is configured
     // The actual behavior would require real JWT tokens, but we test configuration

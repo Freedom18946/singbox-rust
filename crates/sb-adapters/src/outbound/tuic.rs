@@ -8,15 +8,11 @@ use crate::outbound::prelude::*;
 
 /// TUIC outbound connector
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TuicConnector {
     _config: Option<()>, // Placeholder
 }
 
-impl Default for TuicConnector {
-    fn default() -> Self {
-        Self { _config: None }
-    }
-}
 
 #[async_trait]
 impl OutboundConnector for TuicConnector {

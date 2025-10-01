@@ -407,7 +407,10 @@ async fn handle_client(
                 }
             }
         }
-        RDecision::Reject => unreachable!(),
+        RDecision::Reject => {
+            // Safety: RDecision::Reject is handled earlier at line 263-268 with early return
+            unreachable!("RDecision::Reject filtered out earlier")
+        }
     };
     // 应答 200，然后做隧道转发
     let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
@@ -439,7 +442,7 @@ async fn handle_client(
         None,
     )
     .await?;
-    return Ok(());
+    Ok(())
 }
 
 async fn read_request_line(cli: &mut TcpStream) -> Result<(String, String)> {

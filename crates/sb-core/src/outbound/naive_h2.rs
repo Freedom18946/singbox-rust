@@ -86,9 +86,8 @@ impl OutboundTcp for NaiveH2Outbound {
         // 1. TCP connection
         let tcp_stream = tokio::net::TcpStream::connect((host.as_str(), port))
             .await
-            .map_err(|e| {
+            .inspect_err(|_e| {
                 record_connect_total(Proto::NaiveH2, ResultTag::ConnectFail);
-                e
             })?;
 
         // 2. TLS handshake with HTTP/2 ALPN
@@ -116,7 +115,7 @@ impl OutboundTcp for NaiveH2Outbound {
             .await
             .map_err(|e| {
                 record_connect_total(Proto::NaiveH2, ResultTag::TlsFail);
-                io::Error::new(io::ErrorKind::Other, format!("TLS handshake failed: {}", e))
+                io::Error::other(format!("TLS handshake failed: {}", e))
             })?;
 
         // 3. Create HTTP/2 client using hyper 0.14 API
@@ -124,8 +123,7 @@ impl OutboundTcp for NaiveH2Outbound {
             .await
             .map_err(|e| {
                 record_connect_total(Proto::NaiveH2, ResultTag::HandshakeFail);
-                io::Error::new(
-                    io::ErrorKind::Other,
+                io::Error::other(
                     format!("HTTP/2 handshake failed: {}", e),
                 )
             })?;
@@ -158,8 +156,7 @@ impl OutboundTcp for NaiveH2Outbound {
 
         let response = send_request.send_request(req).await.map_err(|e| {
             record_connect_total(Proto::NaiveH2, ResultTag::ProtocolError);
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("HTTP/2 request failed: {}", e),
             )
         })?;
@@ -176,7 +173,7 @@ impl OutboundTcp for NaiveH2Outbound {
         // Upgrade to get the tunnel
         let upgraded = hyper::upgrade::on(response).await.map_err(|e| {
             record_connect_total(Proto::NaiveH2, ResultTag::ProtocolError);
-            io::Error::new(io::ErrorKind::Other, format!("HTTP upgrade failed: {}", e))
+            io::Error::other(format!("HTTP upgrade failed: {}", e))
         })?;
 
         record_connect_success(crate::outbound::OutboundKind::Http);

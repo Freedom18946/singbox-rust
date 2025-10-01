@@ -155,8 +155,9 @@ fn upstream_http_basic_auth_sent() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
-    let rt = Runtime::new(eng, br).start();
+    let br = build_bridge(&ir, eng.clone());
+    let sb = sb_core::runtime::switchboard::OutboundSwitchboard::from_config_ir(&ir).unwrap();
+    let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(120));
     // CONNECT via inbound → upstream with Proxy-Authorization
     let mut s = std::net::TcpStream::connect(http_in).unwrap();

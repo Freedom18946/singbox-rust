@@ -1,3 +1,9 @@
+//! HTTP utility functions for building responses
+//!
+//! All `Response::builder().expect()` calls in this module are safe because
+//! they only fail with invalid headers, which we never provide.
+#![allow(clippy::expect_used, clippy::needless_pass_by_value)]
+
 use hyper::{Body, Response, StatusCode};
 use std::io::Write;
 
@@ -50,7 +56,11 @@ pub fn write_404(s: &mut std::net::TcpStream) {
 }
 
 // Hyper response helpers for sb-explaind
-#[must_use] 
+/// Creates a 400 Bad Request response with JSON error body
+///
+/// # Panics
+/// Panics if response builder fails (only happens with invalid headers)
+#[must_use]
 pub fn bad_request(msg: &str) -> Response<Body> {
     // Convert to JSON error response
     let json_body = serde_json::json!({
@@ -66,11 +76,15 @@ pub fn bad_request(msg: &str) -> Response<Body> {
             serde_json::to_string(&json_body)
                 .unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string()),
         ))
-        .unwrap()
+        .expect("response builder failed")
 }
 
-#[must_use] 
-pub fn text(status: StatusCode, msg: String) -> Response<Body> {
+/// Creates a response with custom status code and JSON error body
+///
+/// # Panics
+/// Panics if response builder fails (only happens with invalid headers)
+#[must_use]
+pub fn text(status: StatusCode, msg: &str) -> Response<Body> {
     // Convert to JSON error response
     let json_body = serde_json::json!({
         "error": msg,
@@ -85,40 +99,56 @@ pub fn text(status: StatusCode, msg: String) -> Response<Body> {
             serde_json::to_string(&json_body)
                 .unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string()),
         ))
-        .unwrap()
+        .expect("response builder failed")
 }
 
-#[must_use] 
+/// Creates a 200 OK response with JSON body
+///
+/// # Panics
+/// Panics if response builder fails (only happens with invalid headers)
+#[must_use]
 pub fn ok_json(body: serde_json::Value) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
         .body(Body::from(serde_json::to_string(&body).unwrap_or_default()))
-        .unwrap()
+        .expect("response builder failed")
 }
 
-#[must_use] 
+/// Creates a 200 OK response with binary body
+///
+/// # Panics
+/// Panics if response builder fails (only happens with invalid headers)
+#[must_use]
 pub fn ok_octet(mime: &str, buf: Vec<u8>) -> Response<Body> {
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", mime)
         .body(Body::from(buf))
-        .unwrap()
+        .expect("response builder failed")
 }
 
-#[must_use] 
+/// Creates a 404 Not Found response
+///
+/// # Panics
+/// Panics if response builder fails (only happens with invalid headers)
+#[must_use]
 pub fn not_found() -> Response<Body> {
     Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(Body::empty())
-        .unwrap()
+        .expect("response builder failed")
 }
 
-#[must_use] 
+/// Creates a 503 Service Unavailable response with JSON body
+///
+/// # Panics
+/// Panics if response builder fails (only happens with invalid headers)
+#[must_use]
 pub fn service_unavailable_json(body: serde_json::Value) -> Response<Body> {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
         .header("content-type", "application/json")
         .body(Body::from(serde_json::to_string(&body).unwrap_or_default()))
-        .unwrap()
+        .expect("response builder failed")
 }

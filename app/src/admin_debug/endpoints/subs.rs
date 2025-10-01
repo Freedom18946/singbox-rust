@@ -136,6 +136,7 @@ pub fn get_current_concurrency() -> u64 {
 #[cfg(feature = "subs_http")]
 async fn acquire_permits() -> anyhow::Result<()> {
     limiter_init();
+    #[allow(clippy::expect_used)] // Safe: limiter_init() just called above
     let sem = {
         let sem_lock = MAX_CONC.get().expect("limiter initialized");
         let sem_guard = sem_lock.read().await;
@@ -430,7 +431,7 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
                 mark_last_ok();
                 // Trigger prefetch for successful 304 response
                 let et_local: Option<String> = cached_tier_entry.etag().cloned();
-                maybe_enqueue_prefetch(&resp, &et_local);
+                maybe_enqueue_prefetch(&resp, et_local.as_ref());
                 return Ok(cached_string);
             }
         }
@@ -729,7 +730,7 @@ pub async fn fetch_with_limits_to_cache(
             mark_last_ok();
             // Trigger prefetch for successful 304 response
             let et_local: Option<String> = cached_tier_entry.etag().cloned();
-            maybe_enqueue_prefetch(&resp, &et_local);
+            maybe_enqueue_prefetch(&resp, et_local.as_ref());
 
             return Ok(crate::admin_debug::cache::CacheEntry {
                 etag: cached_tier_entry.etag().cloned(),
@@ -1823,12 +1824,12 @@ pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
 
 /// 在主路径成功后触发预取（200/304 且 max-age>=60）
 #[cfg(feature = "subs_http")]
-pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: &Option<String>) {
+pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: Option<&String>) {
     if let Some(ma) = cache_control_max_age(resp.headers()) {
         if ma >= 60 {
             let _ = crate::admin_debug::prefetch::enqueue_prefetch(
                 resp.url().as_str(),
-                response_etag.clone(),
+                response_etag.cloned(),
             );
         }
     }

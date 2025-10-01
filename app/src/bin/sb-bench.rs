@@ -75,7 +75,6 @@ async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
             if r * par + i >= runs {
                 break;
             }
-            let target = target;
             futs.push(tokio::spawn(async move {
                 let started = Instant::now();
                 let attempt = tokio::net::TcpStream::connect(target);
@@ -132,7 +131,6 @@ async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
                 break;
             }
             // Create a new socket for each parallel task
-            let target = target;
             futs.push(tokio::spawn(async move {
                 let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
                     .await
@@ -187,7 +185,6 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
             if r * par + i >= runs {
                 break;
             }
-            let target = target;
             let name = name.clone();
             futs.push(tokio::spawn(async move {
                 let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")

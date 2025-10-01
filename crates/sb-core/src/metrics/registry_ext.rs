@@ -106,7 +106,7 @@ pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'s
     };
 
     match map.entry(name.to_string()) {
-        dashmap::mapref::entry::Entry::Occupied(o) => *o.get(),
+        dashmap::mapref::entry::Entry::Occupied(o) => o.get(),
         dashmap::mapref::entry::Entry::Vacant(v) => {
             v.insert(metric_ref);
             metric_ref
@@ -135,7 +135,7 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
     };
 
     match map.entry(name.to_string()) {
-        dashmap::mapref::entry::Entry::Occupied(o) => *o.get(),
+        dashmap::mapref::entry::Entry::Occupied(o) => o.get(),
         dashmap::mapref::entry::Entry::Vacant(v) => {
             v.insert(metric_ref);
             metric_ref
@@ -226,7 +226,7 @@ pub fn get_or_register_counter_vec(
     };
 
     match map.entry(name.to_string()) {
-        dashmap::mapref::entry::Entry::Occupied(o) => *o.get(),
+        dashmap::mapref::entry::Entry::Occupied(o) => o.get(),
         dashmap::mapref::entry::Entry::Vacant(v) => {
             v.insert(metric_ref);
             metric_ref
@@ -267,7 +267,7 @@ pub fn get_or_register_histogram_vec(
     };
 
     match map.entry(name.to_string()) {
-        dashmap::mapref::entry::Entry::Occupied(o) => *o.get(),
+        dashmap::mapref::entry::Entry::Occupied(o) => o.get(),
         dashmap::mapref::entry::Entry::Vacant(v) => {
             v.insert(metric_ref);
             metric_ref

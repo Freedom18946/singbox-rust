@@ -527,75 +527,6 @@ fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
     })
 }
 
-#[cfg(test)]
-mod tests_schema_lock {
-    use super::*;
-
-    #[test]
-    fn check_json_schema_locked() {
-        let rep = CheckReport {
-            ok: false,
-            file: "demo.json".into(),
-            issues: vec![CheckIssue {
-                kind: IssueKind::Error,
-                ptr: "/inbounds/0/port".into(),
-                msg: "port must be integer".into(),
-                code: IssueCode::TypeMismatch,
-                hint: Some("1..65535".into()),
-                rule_id: None,
-                key: None,
-                members: None,
-                tos: None,
-                risk: None,
-            }],
-            summary: serde_json::json!({"total_issues":1, "errors":1, "warnings":0}),
-            fingerprint: Some("deadbeef".into()),
-            canonical: None,
-        };
-        let s = serde_json::to_string_pretty(&rep).unwrap();
-        // 锁定字段顺序/必需项（回归友好）：前三行严格匹配
-        let lines: Vec<&str> = s.lines().collect();
-        assert!(lines[0].contains("{"));
-        assert!(lines[1].contains("\"ok\""));
-        assert!(lines[2].contains("\"file\""));
-        assert!(s.contains("\"issues\""));
-        assert!(s.contains("\"summary\""));
-    }
-
-    #[test]
-    fn check_sarif_schema_locked() {
-        let rep = CheckReport {
-            ok: false,
-            file: "demo.json".into(),
-            issues: vec![CheckIssue {
-                kind: IssueKind::Warning,
-                ptr: "/route/rules/0".into(),
-                msg: "rule has no match conditions".into(),
-                code: IssueCode::EmptyRuleMatch,
-                hint: Some("add at least one match condition".into()),
-                rule_id: None,
-                key: None,
-                members: None,
-                tos: None,
-                risk: None,
-            }],
-            summary: serde_json::json!({"total_issues":1, "errors":0, "warnings":1}),
-            fingerprint: None,
-            canonical: None,
-        };
-        let s = to_sarif(&rep);
-        // 顶层键顺序和必需项
-        assert!(s.contains("\"version\": \"2.1.0\""));
-        assert!(s.contains("\"runs\""));
-        assert!(s.contains("\"tool\""));
-        assert!(s.contains("\"results\""));
-        // result 基本字段
-        assert!(s.contains("\"ruleId\""));
-        assert!(s.contains("\"message\""));
-        assert!(s.contains("\"locations\""));
-    }
-}
-
 /// Compare two configuration files and show differences
 fn diff_configs(old_path: &str, new_path: &str, args: &CheckArgs) -> Result<i32> {
     // Load and parse both configs
@@ -705,5 +636,73 @@ fn print_section_diff(old: &Value, new: &Value, section: &str) {
         _ => {
             println!("  {section} value changed");
         }
+    }
+}
+#[cfg(test)]
+mod tests_schema_lock {
+    use super::*;
+
+    #[test]
+    fn check_json_schema_locked() {
+        let rep = CheckReport {
+            ok: false,
+            file: "demo.json".into(),
+            issues: vec![CheckIssue {
+                kind: IssueKind::Error,
+                ptr: "/inbounds/0/port".into(),
+                msg: "port must be integer".into(),
+                code: IssueCode::TypeMismatch,
+                hint: Some("1..65535".into()),
+                rule_id: None,
+                key: None,
+                members: None,
+                tos: None,
+                risk: None,
+            }],
+            summary: serde_json::json!({"total_issues":1, "errors":1, "warnings":0}),
+            fingerprint: Some("deadbeef".into()),
+            canonical: None,
+        };
+        let s = serde_json::to_string_pretty(&rep).unwrap();
+        // 锁定字段顺序/必需项（回归友好）：前三行严格匹配
+        let lines: Vec<&str> = s.lines().collect();
+        assert!(lines[0].contains("{"));
+        assert!(lines[1].contains("\"ok\""));
+        assert!(lines[2].contains("\"file\""));
+        assert!(s.contains("\"issues\""));
+        assert!(s.contains("\"summary\""));
+    }
+
+    #[test]
+    fn check_sarif_schema_locked() {
+        let rep = CheckReport {
+            ok: false,
+            file: "demo.json".into(),
+            issues: vec![CheckIssue {
+                kind: IssueKind::Warning,
+                ptr: "/route/rules/0".into(),
+                msg: "rule has no match conditions".into(),
+                code: IssueCode::EmptyRuleMatch,
+                hint: Some("add at least one match condition".into()),
+                rule_id: None,
+                key: None,
+                members: None,
+                tos: None,
+                risk: None,
+            }],
+            summary: serde_json::json!({"total_issues":1, "errors":0, "warnings":1}),
+            fingerprint: None,
+            canonical: None,
+        };
+        let s = to_sarif(&rep);
+        // 顶层键顺序和必需项
+        assert!(s.contains("\"version\": \"2.1.0\""));
+        assert!(s.contains("\"runs\""));
+        assert!(s.contains("\"tool\""));
+        assert!(s.contains("\"results\""));
+        // result 基本字段
+        assert!(s.contains("\"ruleId\""));
+        assert!(s.contains("\"message\""));
+        assert!(s.contains("\"locations\""));
     }
 }

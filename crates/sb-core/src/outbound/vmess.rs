@@ -95,14 +95,14 @@ impl VmessOutbound {
         match self.config.security.as_str() {
             "aes-128-gcm" => {
                 let cipher = Aes128Gcm::new_from_slice(key).map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("AES key error: {}", e))
+                    io::Error::other(format!("AES key error: {}", e))
                 })?;
 
                 // Generate random nonce
                 let nonce = Nonce::from_slice(&[0u8; 12]); // In real implementation, use random nonce
 
                 let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    io::Error::new(io::ErrorKind::Other, format!("AES encryption error: {}", e))
+                    io::Error::other(format!("AES encryption error: {}", e))
                 })?;
 
                 // Prepend nonce to ciphertext
@@ -118,8 +118,7 @@ impl VmessOutbound {
                 let nonce = chacha20poly1305::Nonce::from_slice(&[0u8; 12]); // In real implementation, use random nonce
 
                 let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
+                    io::Error::other(
                         format!("ChaCha20 encryption error: {}", e),
                     )
                 })?;
@@ -157,8 +156,7 @@ impl VmessOutbound {
         request.push(0x00);
 
         // Padding and Security (4 bits each)
-        let padding_security = (0x0 << 4)
-            | match self.config.security.as_str() {
+        let padding_security = match self.config.security.as_str() {
                 "aes-128-gcm" => 0x03,
                 "chacha20-poly1305" => 0x04,
                 _ => {
@@ -371,8 +369,7 @@ impl OutboundTcp for VmessOutbound {
                             counter!("vmess_connect_total", "result" => "tag_error").increment(1);
                         }
 
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
+                        return Err(io::Error::other(
                             "VMess tag calculation error",
                         ));
                     }
@@ -416,7 +413,7 @@ impl crate::adapter::OutboundConnector for VmessOutbound {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
         // Create a blocking runtime to run async VMess connection
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         rt.block_on(async {
             // Create target host:port

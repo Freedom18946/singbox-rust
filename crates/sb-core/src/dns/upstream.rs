@@ -641,15 +641,14 @@ impl DnsUpstream for DohUpstream {
     async fn health_check(&self) -> bool {
         #[cfg(feature = "dns_doh")]
         {
-            match tokio::time::timeout(
-                Duration::from_secs(5),
-                self.query("dns.google", RecordType::A),
+            matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    self.query("dns.google", RecordType::A),
+                )
+                .await,
+                Ok(Ok(_))
             )
-            .await
-            {
-                Ok(Ok(_)) => true,
-                _ => false,
-            }
         }
         #[cfg(not(feature = "dns_doh"))]
         {

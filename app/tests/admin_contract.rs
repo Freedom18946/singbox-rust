@@ -54,7 +54,7 @@ fn admin_reloadable_applyresult_field_order_locked() {
     }
 }
 
-use sb_admin_contract::{ErrorBody, ErrorKind, ResponseEnvelope};
+use sb_admin_contract::{ErrorKind, ResponseEnvelope};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

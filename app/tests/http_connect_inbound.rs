@@ -1,6 +1,7 @@
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
+use sb_core::runtime::switchboard::SwitchboardBuilder;
 use sb_core::runtime::Runtime;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -98,7 +99,7 @@ fn http_connect_end2end_direct() {
             port: http_addr.port(),
             sniff: false,
             udp: false,
-            auth: None,
+            basic_auth: None,
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,
@@ -107,8 +108,11 @@ fn http_connect_end2end_direct() {
             port: None,
             udp: None,
             members: None,
-            username: None,
-            password: None,
+            credentials: None,
+            uuid: None,
+            flow: None,
+            network: None,
+            packet_encoding: None,
         }],
         route: RouteIR {
             rules: vec![RuleIR {
@@ -121,7 +125,8 @@ fn http_connect_end2end_direct() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng);
-    let rt = Runtime::new(eng, br).start();
+    let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();
+    let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(80));
     let out = http_connect(http_addr, echo_addr, b"hello http-connect");
     assert_eq!(&out, b"hello http-connect");

@@ -56,7 +56,7 @@ pub async fn connect_env(
     pass: &str,
     opts: ConnectOpts,
 ) -> Result<ConnectReport, String> {
-    let to = Duration::from_millis(opts.timeout_ms.max(10).min(10_000));
+    let to = Duration::from_millis(opts.timeout_ms.clamp(10, 10_000));
     if opts.tls {
         #[cfg(feature = "transport_tls")]
         {

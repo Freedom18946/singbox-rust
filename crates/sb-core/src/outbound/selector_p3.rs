@@ -35,6 +35,36 @@ pub enum ExploreMode {
     Softmax(f64),
 } // tau for softmax
 
+/// Configuration parameters for ScoreSelector
+#[derive(Clone, Debug)]
+pub struct SelectorConfig {
+    pub alpha: f64,               // EMA 衰减系数
+    pub eps: f64,                 // 抖动阈
+    pub cooldown: Duration,       // 切换冷却窗
+    pub bias_cold: f64,           // 冷启动偏置
+    pub weights: (f64, f64, f64), // (w_rtt, w_err, w_open)
+    pub explore: ExploreMode,
+    pub min_dwell: Duration,      // 最小驻留时间
+    pub min_samples: u64,         // 最小样本数
+    pub ema_halflife: Duration,   // EMA halflife for future smoothing
+}
+
+impl Default for SelectorConfig {
+    fn default() -> Self {
+        Self {
+            alpha: 0.3,
+            eps: 0.05,
+            cooldown: Duration::from_secs(5),
+            bias_cold: 10.0,
+            weights: (1.0, 2.0, 3.0),
+            explore: ExploreMode::Off,
+            min_dwell: Duration::from_secs(2),
+            min_samples: 5,
+            ema_halflife: Duration::from_secs(30),
+        }
+    }
+}
+
 pub struct ScoreSelector {
     alpha: f64,               // EMA 衰减系数
     eps: f64,                 // 抖动阈
@@ -54,31 +84,21 @@ pub struct ScoreSelector {
 }
 
 impl ScoreSelector {
-    pub fn new(
-        alpha: f64,
-        eps: f64,
-        cooldown: Duration,
-        bias_cold: f64,
-        w: (f64, f64, f64),
-        explore: ExploreMode,
-        min_dwell: Duration,
-        min_samples: u64,
-        ema_halflife: Duration,
-    ) -> Self {
+    pub fn new(config: SelectorConfig) -> Self {
         Self {
-            alpha,
-            eps,
-            cooldown,
-            bias_cold,
-            weights: w,
-            min_dwell,
-            min_samples,
-            ema_halflife,
+            alpha: config.alpha,
+            eps: config.eps,
+            cooldown: config.cooldown,
+            bias_cold: config.bias_cold,
+            weights: config.weights,
+            min_dwell: config.min_dwell,
+            min_samples: config.min_samples,
+            ema_halflife: config.ema_halflife,
             stats: HashMap::new(),
             current: None,
             #[cfg(feature = "metrics")]
             metrics: crate::metrics::outbound::register_selector_metrics(),
-            explore,
+            explore: config.explore,
         }
     }
 
@@ -244,8 +264,8 @@ impl ScoreSelector {
         } else {
             a * r + (1.0 - a) * s.rtt_ema
         };
-        s.err_ema = (1.0 - a) * s.err_ema;
-        s.open_fail_ema = (1.0 - a) * s.open_fail_ema;
+        s.err_ema *= 1.0 - a;
+        s.open_fail_ema *= 1.0 - a;
         s.samples += 1;
     }
 

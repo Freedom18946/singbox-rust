@@ -1,4 +1,4 @@
-use sb_core::dns::cache::DnsCache;
+use sb_core::dns::cache::{DnsCache, Key, QType};
 use sb_core::dns::ResolverHandle;
 use std::net::IpAddr;
 use std::time::Duration;
@@ -28,18 +28,21 @@ async fn udp_pool_timeout_is_handled() {
 #[test]
 fn cache_hit_and_expire() {
     let cache = DnsCache::new(8);
-    let key = "test.example";
-    let ans = sb_core::dns::DnsAnswer {
-        ips: vec!["127.0.0.1".parse::<IpAddr>().unwrap()],
-        ttl: Duration::from_millis(50),
-        source: sb_core::dns::cache::Source::System,
-        rcode: sb_core::dns::cache::Rcode::NoError,
+    let key = Key {
+        name: "test.example".to_string(),
+        qtype: QType::A,
     };
-    cache.put(key, ans.clone());
+    let ans = sb_core::dns::DnsAnswer::new(
+        vec!["127.0.0.1".parse::<IpAddr>().unwrap()],
+        Duration::from_millis(50),
+        sb_core::dns::cache::Source::System,
+        sb_core::dns::cache::Rcode::NoError,
+    );
+    cache.put(key.clone(), ans.clone());
     // immediate hit
-    let got = cache.get(key).expect("hit");
+    let got = cache.get(&key).expect("hit");
     assert_eq!(got.ips, ans.ips);
     // wait to expire
     std::thread::sleep(Duration::from_millis(70));
-    assert!(cache.get(key).is_none());
+    assert!(cache.get(&key).is_none());
 }

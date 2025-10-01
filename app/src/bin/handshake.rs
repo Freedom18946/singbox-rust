@@ -930,7 +930,6 @@ mod real {
 
 #[cfg(feature = "handshake_alpha")]
 // Provide a real entrypoint when feature is enabled
-#[cfg(feature = "handshake_alpha")]
 fn main() {
     if let Err(e) = real::main() {
         eprintln!("handshake failed: {e}");

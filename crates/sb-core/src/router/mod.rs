@@ -257,7 +257,7 @@ impl RouterIndex {
         if ver.load(Ordering::Relaxed) != cur {
             let mut t = suffix_trie::RevTrie::new();
             for (dom, dec) in &self.suffix {
-                t.insert_suffix(dom, *dec);
+                t.insert_suffix(dom, dec);
             }
             *trie.lock().unwrap_or_else(|e| e.into_inner()) = t;
             ver.store(cur, Ordering::Relaxed);
@@ -1642,7 +1642,9 @@ pub async fn spawn_rules_hot_reload(
                                         BuildError::Invalid(InvalidReason::InvalidChar) => metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char").increment(1),
                                         BuildError::Invalid(InvalidReason::DupSuffix) => metrics::counter!("router_rules_invalid_total", "reason"=>"dup_suffix").increment(1),
                                         BuildError::Invalid(InvalidReason::DupDefault) => metrics::counter!("router_rules_invalid_total", "reason"=>"dup_default").increment(1),
-                                        BuildError::Io(_) | _ => metrics::counter!("router_rules_invalid_total", "reason"=>"io").increment(1),
+                                        BuildError::Io(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"io").increment(1),
+                                        BuildError::Glob(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"glob").increment(1),
+                                        BuildError::Invalid(_) => metrics::counter!("router_rules_invalid_total", "reason"=>"other").increment(1),
                                     };
                                     metrics::counter!("router_rules_reload_total", "result"=>"error").increment(1);
                                 }
@@ -1935,7 +1937,7 @@ pub fn router_snapshot_summary() -> String {
     };
     #[cfg(feature = "json")]
     {
-        return serde_json::to_string(&summary).unwrap_or_else(|_| "<json-error>".into());
+        serde_json::to_string(&summary).unwrap_or_else(|_| "<json-error>".into())
     }
     #[cfg(not(feature = "json"))]
     {
@@ -2095,8 +2097,8 @@ pub fn router_index_decide_keyword(idx: &RouterIndex, host: &str) -> Option<&'st
 
 /// 旧 API 场景若需要 &'static，统一从驻留池取，避免泄漏
 #[cfg(feature = "router_keyword")]
-pub fn router_index_decide_keyword_static<'a>(
-    idx: &'a RouterIndex,
+pub fn router_index_decide_keyword_static(
+    idx: &RouterIndex,
     host_norm: &str,
 ) -> Option<&'static str> {
     if let Some(k) = &idx.keyword_idx {

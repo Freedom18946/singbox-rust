@@ -315,6 +315,7 @@ struct ReplayConfig {
     body_hash: bool,
 }
 
+#[allow(clippy::unused_async)] // Conditional compilation: async needed for reqwest feature
 async fn replay(config: ReplayConfig) -> Result<()> {
     let mut hdrs = config.hdrs;
     let body_bytes = read_body_inline(&config.body, &config.body_file)?;
@@ -526,7 +527,7 @@ mod tests {
     fn test_canonical_and_signature_matrix() {
         // 固定 ts/nonce/secret，构造 4×2 矩阵：
         // headers: 无 / 有自定义； body-hash: 关/开
-        let ts = 1700000000_i64;
+        let ts = 1_700_000_000_i64;
         let nonce = "0000000000000001";
         let secret = "s3cr3t";
 

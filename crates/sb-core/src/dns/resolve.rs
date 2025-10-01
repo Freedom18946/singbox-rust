@@ -86,7 +86,10 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
                 DnsBackend::Udp => udp_resolve(&host, port, timeout).await,
                 DnsBackend::Dot => dot_resolve(&host, port, timeout).await,
                 DnsBackend::Doh => doh_resolve(&host, port, timeout).await,
-                DnsBackend::Auto => unreachable!(),
+                DnsBackend::Auto => {
+                    // Safety: Auto backend is handled separately at line 101-102, never passed to this closure
+                    unreachable!("DnsBackend::Auto is handled at the outer level")
+                }
             }
         }
     };

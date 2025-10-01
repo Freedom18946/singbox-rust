@@ -108,7 +108,7 @@ pub async fn trojan_dryrun_tls_env(
                 tokio::io::AsyncWriteExt::flush(&mut s)
                     .await
                     .map_err(|e| format!("{:?}", e))?;
-                return Ok(());
+                Ok(())
             }
             #[cfg(not(feature = "transport_tls"))]
             {
@@ -153,13 +153,13 @@ pub fn ss2022_hello_bytes(
             let pass = spec.password.clone().unwrap_or_default();
             #[cfg(feature = "proto_ss2022_min")]
             {
-                return Ok(Ss2022Hello {
+                Ok(Ss2022Hello {
                     method,
                     password: pass,
                     host: host.into(),
                     port,
                 }
-                .to_bytes());
+                .to_bytes())
             }
             #[cfg(not(feature = "proto_ss2022_min"))]
             {

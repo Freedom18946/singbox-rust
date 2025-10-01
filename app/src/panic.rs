@@ -1,4 +1,5 @@
 use std::backtrace::Backtrace;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -22,14 +23,14 @@ pub fn install() {
             None
         };
         let mut body = String::new();
-        body.push_str(&format!("ts={ts}\n"));
-        body.push_str(&format!("git={git}\n"));
-        body.push_str(&format!("thread={thread}\n"));
+        let _ = writeln!(body, "ts={ts}");
+        let _ = writeln!(body, "git={git}");
+        let _ = writeln!(body, "thread={thread}");
         if let Some(tid) = trace_id.as_ref() {
-            body.push_str(&format!("trace_id={tid}\n"));
+            let _ = writeln!(body, "trace_id={tid}");
         }
-        body.push_str(&format!("panic={info}\n"));
-        body.push_str(&format!("backtrace={:?}\n", Backtrace::capture()));
+        let _ = writeln!(body, "panic={info}");
+        let _ = writeln!(body, "backtrace={:?}", Backtrace::capture());
         if std::fs::write(&file, body).is_ok() {
             let max_keep = std::env::var("SB_PANIC_LOG_MAX")
                 .ok()

@@ -9,7 +9,6 @@ mod observe_tests {
 
     #[tokio::test]
     async fn test_admin_endpoints_with_features() {
-        use std::io::{BufRead, BufReader};
         use std::process::Stdio;
 
         // Start the admin server on a random port
@@ -143,7 +142,6 @@ mod observe_tests {
 
     #[tokio::test]
     async fn test_feature_gating() {
-        use std::io::{BufRead, BufReader};
         use std::process::Stdio;
 
         // Start the admin server without certain features

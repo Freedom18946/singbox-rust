@@ -39,7 +39,7 @@ impl AsyncWrite for QuicBidiStream {
         match Pin::new(&mut self.send).poll_write(cx, buf) {
             Poll::Ready(Ok(n)) => Poll::Ready(Ok(n)),
             Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             Poll::Pending => Poll::Pending,
         }
@@ -49,7 +49,7 @@ impl AsyncWrite for QuicBidiStream {
         match Pin::new(&mut self.send).poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             Poll::Pending => Poll::Pending,
         }
@@ -59,7 +59,7 @@ impl AsyncWrite for QuicBidiStream {
         match Pin::new(&mut self.send).poll_shutdown(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
             Poll::Ready(Err(e)) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             Poll::Pending => Poll::Pending,
         }

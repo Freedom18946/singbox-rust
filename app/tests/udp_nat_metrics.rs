@@ -1,7 +1,6 @@
 use sb_core::udp_nat_instrument::{UdpNatTable, UpstreamFail};
 use sb_metrics::registry::global as M;
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Barrier;

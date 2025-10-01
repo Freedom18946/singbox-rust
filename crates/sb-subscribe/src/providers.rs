@@ -1,5 +1,6 @@
 //! R140: RULE-SET/GEOSITE Provider 缓存（内存只读）
 #[cfg(feature = "subs_ruleset_cache")]
+#[allow(clippy::module_inception)]
 pub mod providers {
     use std::collections::HashMap;
 

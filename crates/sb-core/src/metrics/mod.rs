@@ -20,7 +20,7 @@ pub mod udp_v2;
 pub fn registry() -> &'static prometheus::Registry {
     use once_cell::sync::OnceCell;
     static REGISTRY: OnceCell<prometheus::Registry> = OnceCell::new();
-    REGISTRY.get_or_init(|| prometheus::Registry::new())
+    REGISTRY.get_or_init(prometheus::Registry::new)
 }
 
 #[cfg(feature = "metrics")]

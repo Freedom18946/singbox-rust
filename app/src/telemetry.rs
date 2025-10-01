@@ -2,6 +2,7 @@
 mod imp {
     use anyhow::Result;
 
+    #[must_use]
     pub fn next_trace_id() -> String {
         use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
         static CTR: AtomicU64 = AtomicU64::new(1);
@@ -14,6 +15,10 @@ mod imp {
         crate::tracing_init::init_tracing_once();
     }
 
+    /// Initialize metrics exporter.
+    ///
+    /// # Errors
+    /// Currently never fails, but returns `Result` for future extensibility.
     pub fn init_metrics_exporter() -> Result<()> {
         #[cfg(feature = "dev-cli")]
         crate::tracing_init::init_metrics_exporter_once();
@@ -31,19 +36,25 @@ mod imp {
 mod imp {
     use anyhow::Result;
 
-    pub fn next_trace_id() -> String {
-        "00000000000000000".to_string()
+    #[must_use]
+    pub const fn next_trace_id() -> String {
+        String::new()
     }
 
-    pub fn init_tracing() {
+    pub const fn init_tracing() {
         // NOP for minimal
     }
 
-    pub async fn init_metrics_exporter() -> Result<()> {
+    /// Initialize metrics exporter.
+    ///
+    /// # Errors
+    /// Currently never fails, but returns `Result` for future extensibility.
+    pub const fn init_metrics_exporter() -> Result<()> {
         // NOP for minimal
         Ok(())
     }
 
+    #[allow(clippy::unused_async)] // Conditional: async needed for observe feature
     pub async fn init_and_listen() {
         // NOP for minimal
     }

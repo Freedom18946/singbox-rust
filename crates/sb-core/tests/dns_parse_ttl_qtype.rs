@@ -59,12 +59,12 @@ fn dns_cache_basic_operations() {
 
     // Test basic cache operations
     let ipv4: IpAddr = "1.2.3.4".parse().unwrap();
-    let answer = DnsAnswer {
-        ips: vec![ipv4],
-        ttl: Duration::from_secs(30),
-        source: sb_core::dns::cache::Source::System,
-        rcode: sb_core::dns::cache::Rcode::NoError,
-    };
+    let answer = DnsAnswer::new(
+        vec![ipv4],
+        Duration::from_secs(30),
+        sb_core::dns::cache::Source::System,
+        sb_core::dns::cache::Rcode::NoError,
+    );
 
     // Put and get from cache
     let key = sb_core::dns::cache::Key {

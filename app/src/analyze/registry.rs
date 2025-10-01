@@ -1,3 +1,14 @@
+//! Builder registry for analyze tool
+//!
+//! Note: All `.expect()` calls in this module are on mutex locks.
+//! Mutex poisoning only occurs when a thread panics while holding the lock,
+//! which is an unrecoverable error that should propagate.
+#![allow(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::significant_drop_tightening
+)]
+
 use anyhow::{bail, Result};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -12,11 +23,13 @@ pub type AsyncBuilderFn = fn(&Value) -> Pin<Box<dyn Future<Output = Result<Value
 static REGISTRY: OnceLock<Mutex<HashMap<&'static str, BuilderFn>>> = OnceLock::new();
 static ASYNC_REGISTRY: OnceLock<Mutex<HashMap<&'static str, AsyncBuilderFn>>> = OnceLock::new();
 
+/// # Panics
+/// Panics if the registry mutex is poisoned (only happens if another thread panicked while holding the lock)
 fn ensure_registry() -> &'static Mutex<HashMap<&'static str, BuilderFn>> {
     let m = REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
     {
         // 首次初始化：集中进行注册
-        let guard = m.lock().expect("registry lock");
+        let guard = m.lock().expect("registry lock poisoned");
         if guard.is_empty() {
             crate::analyze::builders::register_all();
         }
@@ -25,50 +38,71 @@ fn ensure_registry() -> &'static Mutex<HashMap<&'static str, BuilderFn>> {
 }
 
 /// 外部扩展注册（用于 feature 扩展或测试）
+///
+/// # Panics
+/// Panics if the registry mutex is poisoned
 pub fn register(kind: &'static str, f: BuilderFn) {
     let m = ensure_registry();
-    let mut g = m.lock().expect("registry lock");
+    let mut g = m.lock().expect("registry lock poisoned");
     g.insert(kind, f);
 }
 
-#[must_use] 
+/// # Panics
+/// Panics if the registry mutex is poisoned
+#[must_use]
 pub fn supported_kinds() -> Vec<&'static str> {
-    let g = ensure_registry().lock().expect("registry lock");
+    let registry = ensure_registry();
+    let g = registry.lock().expect("registry lock poisoned");
     let mut v: Vec<_> = g.keys().copied().collect();
     v.sort_unstable();
     v
 }
 
+/// # Errors
+/// Returns error if the kind is not registered
+///
+/// # Panics
+/// Panics if the registry mutex is poisoned
 pub fn build_by_kind(kind: &str, input: &Value) -> Result<Value> {
-    let g = ensure_registry().lock().expect("registry lock");
-    if let Some(f) = g.get(kind) {
-        return f(input);
-    }
-    bail!("unsupported kind: {kind}");
+    let registry = ensure_registry();
+    let g = registry.lock().expect("registry lock poisoned");
+    let Some(f) = g.get(kind) else {
+        bail!("unsupported kind: {kind}");
+    };
+    f(input)
 }
 
+/// # Panics
+/// Panics if the async registry mutex is poisoned
 #[allow(dead_code)]
 pub fn register_async(kind: &'static str, f: AsyncBuilderFn) {
     let m = ASYNC_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut g = m.lock().expect("async registry lock");
+    let mut g = m.lock().expect("async registry lock poisoned");
     g.insert(kind, f);
 }
 
+/// # Panics
+/// Panics if the async registry mutex is poisoned
+#[must_use]
 pub fn supported_async_kinds() -> Vec<&'static str> {
-    if let Some(cell) = ASYNC_REGISTRY.get() {
-        let g = cell.lock().expect("async registry lock");
-        let mut v: Vec<_> = g.keys().copied().collect();
-        v.sort_unstable();
-        v
-    } else {
-        vec![]
-    }
+    let Some(cell) = ASYNC_REGISTRY.get() else {
+        return vec![];
+    };
+    let g = cell.lock().expect("async registry lock poisoned");
+    let mut v: Vec<_> = g.keys().copied().collect();
+    v.sort_unstable();
+    v
 }
 
+/// # Errors
+/// Returns error if the kind is not registered
+///
+/// # Panics
+/// Panics if the async registry mutex is poisoned
 pub async fn build_by_kind_async(kind: &str, input: &Value) -> Result<Value> {
     if let Some(cell) = ASYNC_REGISTRY.get() {
         let f = {
-            let guard = cell.lock().expect("async registry");
+            let guard = cell.lock().expect("async registry lock poisoned");
             guard.get(kind).copied()
         };
         if let Some(f) = f {

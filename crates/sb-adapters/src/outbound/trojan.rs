@@ -28,6 +28,7 @@ pub struct TrojanConfig {
 
 /// Trojan outbound connector
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TrojanConnector {
     _config: Option<TrojanConfig>,
 }
@@ -40,11 +41,6 @@ impl TrojanConnector {
     }
 }
 
-impl Default for TrojanConnector {
-    fn default() -> Self {
-        Self { _config: None }
-    }
-}
 
 #[async_trait]
 impl OutboundConnector for TrojanConnector {

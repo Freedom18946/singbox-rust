@@ -169,10 +169,7 @@ pub fn preview_plan_minijson(
 
     // dry-run 应用（可选）
     let applied = if apply && !patch.trim().is_empty() {
-        match sb_core::router::patch_apply::apply_cli_patch(&dsl, &patch) {
-            Ok(s) => Some(s),
-            Err(_) => None,
-        }
+        sb_core::router::patch_apply::apply_cli_patch(&dsl, &patch).ok()
     } else {
         None
     };

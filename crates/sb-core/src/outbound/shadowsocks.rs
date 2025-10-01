@@ -92,14 +92,13 @@ impl OutboundTcp for ShadowsocksOutbound {
         // Step 1: TCP connect to Shadowsocks server
         let tcp = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
             .await
-            .map_err(|e| {
+            .inspect_err(|e| {
                 #[cfg(feature = "metrics")]
                 crate::telemetry::outbound_connect(
                     "shadowsocks",
                     "error",
-                    Some(crate::telemetry::err_kind(&e)),
+                    Some(crate::telemetry::err_kind(e)),
                 );
-                e
             })?;
 
         #[cfg(feature = "metrics")]
@@ -243,7 +242,7 @@ impl ShadowsocksStream {
                         },
                     )
                     .map_err(|_| {
-                        std::io::Error::new(std::io::ErrorKind::Other, "encryption failed")
+                        std::io::Error::other("encryption failed")
                     })?
             }
             ShadowsocksCipher::Chacha20Poly1305 => {
@@ -261,7 +260,7 @@ impl ShadowsocksStream {
                         },
                     )
                     .map_err(|_| {
-                        std::io::Error::new(std::io::ErrorKind::Other, "encryption failed")
+                        std::io::Error::other("encryption failed")
                     })?
             }
         };
@@ -285,8 +284,7 @@ impl AsyncRead for ShadowsocksStream {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         if !self.handshake_complete {
-            return Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Poll::Ready(Err(std::io::Error::other(
                 "handshake not complete",
             )));
         }
@@ -305,8 +303,7 @@ impl AsyncWrite for ShadowsocksStream {
         buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
         if !self.handshake_complete {
-            return Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Poll::Ready(Err(std::io::Error::other(
                 "handshake not complete",
             )));
         }

@@ -4,6 +4,7 @@ use std::fmt::Write as _;
 
 use prometheus::{register_int_gauge, IntGauge};
 
+#[allow(clippy::expect_used)]
 static PREFETCH_QUEUE_DEPTH: std::sync::LazyLock<IntGauge> = std::sync::LazyLock::new(|| {
     register_int_gauge!("sb_prefetch_queue_depth", "Prefetch queue depth")
         .expect("Failed to register PREFETCH_QUEUE_DEPTH metric")

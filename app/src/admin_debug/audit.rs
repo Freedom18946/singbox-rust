@@ -101,7 +101,7 @@ mod tests {
             "Updated timeout",
         );
 
-        log(entry.clone());
+        log(&entry);
 
         let entries = recent(10);
         assert!(!entries.is_empty());
@@ -120,7 +120,7 @@ mod tests {
                 true,
                 format!("Test entry {}", i),
             );
-            log(entry);
+            log(&entry);
         }
 
         let entries = recent(200);
@@ -137,7 +137,7 @@ mod tests {
                 true,
                 format!("Entry {}", i),
             );
-            log(entry);
+            log(&entry);
         }
 
         let entries = recent(5);

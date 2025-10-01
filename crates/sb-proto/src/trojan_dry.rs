@@ -1,4 +1,5 @@
 #[cfg(feature = "proto_trojan_dry")]
+#[allow(clippy::module_inception)]
 pub mod trojan_dry {
     use serde::{Deserialize, Serialize};
 

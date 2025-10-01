@@ -5,6 +5,7 @@
 //! - reversed_portrange：a-b 中 a>b
 //! - shadow_suffix_over_exact：suffix 覆盖 exact
 //! - unknown_outbound：规则引用的决策在 outbounds 不存在（best-effort）
+//!
 //! 报告字段：{ok, format, mode, normalized, totals, issues:[{kind,line|detail}], can_autofix}
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
@@ -161,7 +162,7 @@ pub fn lint_minijson(
             }
         }
     }
-    for (host, _) in &exact {
+    for host in exact.keys() {
         // host 以某个 suffix 结尾 → 认为被覆盖
         if suffix.iter().any(|sfx| host.ends_with(sfx)) {
             counters.shadow += 1;

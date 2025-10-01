@@ -133,15 +133,15 @@ impl DnsConnector {
             }
             DnsTransport::DoH => {
                 // DNS over HTTPS - requires HTTP client
-                return Err(AdapterError::Other(
+                Err(AdapterError::Other(
                     "DNS over HTTPS requires HTTP client implementation".to_string(),
-                ));
+                ))
             }
             DnsTransport::DoQ => {
                 // DNS over QUIC - requires QUIC implementation
-                return Err(AdapterError::Other(
+                Err(AdapterError::Other(
                     "DNS over QUIC not yet implemented".to_string(),
-                ));
+                ))
             }
         }
     }

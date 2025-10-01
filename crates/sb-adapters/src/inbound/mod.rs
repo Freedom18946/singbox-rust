@@ -4,6 +4,9 @@ pub mod http;
 #[cfg(feature = "socks")]
 pub mod socks;
 
+#[cfg(all(feature = "http", feature = "socks"))]
+pub mod mixed;
+
 #[cfg(feature = "tun")]
 pub mod tun;
 

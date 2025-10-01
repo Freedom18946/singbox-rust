@@ -6,3 +6,7 @@ pub mod socks5;
 pub mod http;
 #[cfg(feature = "scaffold")]
 pub mod tun;
+
+pub mod manager;
+
+pub use manager::InboundManager;

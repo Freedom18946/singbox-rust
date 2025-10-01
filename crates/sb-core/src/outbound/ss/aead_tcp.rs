@@ -81,10 +81,9 @@ impl Outbound for SsAeadTcp {
         let mut tcp =
             tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
                 .await
-                .map_err(|e| {
-                    outbound_connect("shadowsocks", "error", Some(err_kind(&e)));
+                .inspect_err(|e| {
+                    outbound_connect("shadowsocks", "error", Some(err_kind(e)));
                     metrics::record_shadowsocks_connect_error();
-                    e
                 })?;
 
         outbound_connect("shadowsocks", "ok", None);
@@ -96,9 +95,8 @@ impl Outbound for SsAeadTcp {
         let subkey = derive_subkey(&self.config.master_key, &salt, HashAlgorithm::Sha1);
 
         // Step 4: Send salt
-        tcp.write_all(&salt).await.map_err(|e| {
-            outbound_handshake("shadowsocks", "error", Some(err_kind(&e)));
-            e
+        tcp.write_all(&salt).await.inspect_err(|e| {
+            outbound_handshake("shadowsocks", "error", Some(err_kind(e)));
         })?;
 
         // Step 5: Prepare target address
@@ -109,9 +107,8 @@ impl Outbound for SsAeadTcp {
 
         // Step 6: Encrypt address using AEAD with proper framing
         let encrypted_addr = encrypt_aead_chunk(&addr_buf, &subkey, 0, &self.config.cipher)?;
-        tcp.write_all(&encrypted_addr).await.map_err(|e| {
-            outbound_handshake("shadowsocks", "error", Some(err_kind(&e)));
-            e
+        tcp.write_all(&encrypted_addr).await.inspect_err(|e| {
+            outbound_handshake("shadowsocks", "error", Some(err_kind(e)));
         })?;
 
         let elapsed = start.elapsed();
@@ -201,7 +198,7 @@ pub fn encrypt_aead(
                         aad: &[],
                     },
                 )
-                .map_err(|_| Error::new(ErrorKind::Other, "AES encryption failed"))
+                .map_err(|_| Error::other("AES encryption failed"))
         }
         SsAeadCipher::ChaCha20Poly1305 => {
             let cipher_impl = ChaCha20Poly1305::new_from_slice(key)
@@ -215,7 +212,7 @@ pub fn encrypt_aead(
                         aad: &[],
                     },
                 )
-                .map_err(|_| Error::new(ErrorKind::Other, "ChaCha20 encryption failed"))
+                .map_err(|_| Error::other("ChaCha20 encryption failed"))
         }
     }
 }
@@ -247,7 +244,7 @@ pub fn decrypt_aead(
                         aad: &[],
                     },
                 )
-                .map_err(|_| Error::new(ErrorKind::Other, "AES decryption failed"))
+                .map_err(|_| Error::other("AES decryption failed"))
         }
         SsAeadCipher::ChaCha20Poly1305 => {
             let cipher_impl = ChaCha20Poly1305::new_from_slice(key)
@@ -261,7 +258,7 @@ pub fn decrypt_aead(
                         aad: &[],
                     },
                 )
-                .map_err(|_| Error::new(ErrorKind::Other, "ChaCha20 decryption failed"))
+                .map_err(|_| Error::other("ChaCha20 decryption failed"))
         }
     }
 }

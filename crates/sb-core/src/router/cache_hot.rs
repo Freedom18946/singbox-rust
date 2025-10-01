@@ -64,7 +64,7 @@ pub fn hot_json(limit: usize) -> String {
     for it in items {
         parts.push(minijson::obj([
             ("hash_prefix", minijson::Val::Str(&it.hash_prefix)),
-            ("hits", minijson::Val::NumU(it.hits as u64)),
+            ("hits", minijson::Val::NumU(it.hits)),
         ]));
     }
     let arr = format!("[{}]", parts.join(","));

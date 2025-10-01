@@ -11,7 +11,7 @@ pub struct AcMatcher(pub(crate) aho_corasick::AhoCorasick);
 #[cfg(feature = "router_keyword_ac")]
 impl AcMatcher {
     #[inline]
-    pub fn find<'h>(&self, haystack: &'h str) -> Option<aho_corasick::Match> {
+    pub fn find(&self, haystack: &str) -> Option<aho_corasick::Match> {
         self.0.find(haystack)
     }
 }
@@ -78,7 +78,7 @@ where
         } else {
             None
         };
-        return Some(Index { pats, decs, ac });
+        Some(Index { pats, decs, ac })
     }
     #[cfg(not(feature = "router_keyword_ac"))]
     {

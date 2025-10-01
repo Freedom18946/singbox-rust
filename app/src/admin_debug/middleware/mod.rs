@@ -39,6 +39,7 @@ impl RequestContext {
         }
     }
 
+    #[must_use]
     pub fn with_body(mut self, body: bytes::Bytes) -> Self {
         self.body = Some(body);
         self
@@ -64,6 +65,7 @@ impl MiddlewareChain {
         }
     }
 
+    #[must_use]
     pub fn add<M: Middleware + 'static>(mut self, middleware: M) -> Self {
         self.middlewares.push(Box::new(middleware));
         self

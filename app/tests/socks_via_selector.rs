@@ -110,8 +110,9 @@ fn end2end_via_selector() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
-    let rt = Runtime::new(eng, br).start();
+    let br = build_bridge(&ir, eng.clone());
+    let sb = sb_core::runtime::switchboard::OutboundSwitchboard::from_config_ir(&ir).unwrap();
+    let rt = Runtime::new(eng, br, sb).start();
     std::thread::sleep(Duration::from_millis(100));
     let out = socks_client_echo(socks_addr, echo_addr, b"hello selector");
     assert_eq!(&out, b"hello selector");

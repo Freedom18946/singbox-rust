@@ -7,15 +7,11 @@ use crate::outbound::prelude::*;
 
 /// Hysteria2 outbound connector
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct Hysteria2Connector {
     _config: Option<()>, // Placeholder
 }
 
-impl Default for Hysteria2Connector {
-    fn default() -> Self {
-        Self { _config: None }
-    }
-}
 
 #[async_trait]
 impl OutboundConnector for Hysteria2Connector {

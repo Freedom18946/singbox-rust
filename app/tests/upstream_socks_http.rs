@@ -76,7 +76,7 @@ fn start_fake_socks_up(
                         s.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                             .unwrap();
                         // 作为中继：连接 echo 并转发
-                        let mut up = TcpStream::connect(echo).unwrap();
+                        let up = TcpStream::connect(echo).unwrap();
                         let (mut ra, mut wa) = (s.try_clone().unwrap(), s);
                         let (mut rb, mut wb) = (up.try_clone().unwrap(), up);
                         let t1 = thread::spawn(move || {
@@ -149,7 +149,7 @@ fn start_fake_http_up(
                         s.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                             .unwrap();
                         // 作为中继：连接 echo 并转发
-                        let mut up = TcpStream::connect(echo).unwrap();
+                        let up = TcpStream::connect(echo).unwrap();
                         let (mut ra, mut wa) = (s.try_clone().unwrap(), s);
                         let (mut rb, mut wb) = (up.try_clone().unwrap(), up);
                         let t1 = thread::spawn(move || {
@@ -187,7 +187,7 @@ fn outbound_scaffold_socks_and_http_connect() {
             port: http_in.port(),
             sniff: false,
             udp: false,
-            auth: None,
+            basic_auth: None,
         }],
         outbounds: vec![
             OutboundIR {
@@ -198,6 +198,10 @@ fn outbound_scaffold_socks_and_http_connect() {
                 udp: None,
                 members: None,
                 credentials: None,
+                uuid: None,
+                flow: None,
+                network: None,
+                packet_encoding: None,
             },
             OutboundIR {
                 ty: OutboundType::Http,
@@ -207,6 +211,10 @@ fn outbound_scaffold_socks_and_http_connect() {
                 udp: None,
                 members: None,
                 credentials: None,
+                uuid: None,
+                flow: None,
+                network: None,
+                packet_encoding: None,
             },
             OutboundIR {
                 ty: OutboundType::Selector,
@@ -216,6 +224,10 @@ fn outbound_scaffold_socks_and_http_connect() {
                 udp: None,
                 members: Some(vec!["A".into(), "B".into()]),
                 credentials: None,
+                uuid: None,
+                flow: None,
+                network: None,
+                packet_encoding: None,
             },
         ],
         route: RouteIR {
@@ -228,8 +240,9 @@ fn outbound_scaffold_socks_and_http_connect() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
-    let rt = Runtime::new(eng, br).start();
+    let br = build_bridge(&ir, eng.clone());
+    let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
+    let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(120));
     // 客户端通过 HTTP CONNECT 入站访问 echo（将经由 Selector 选择 A 或 B）
     let mut s = TcpStream::connect(http_in).unwrap();

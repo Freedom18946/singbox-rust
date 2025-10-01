@@ -170,7 +170,7 @@ impl OutboundConnector for HttpProxyConnector {
                             .with_context(|| format!("Invalid HTTPS proxy URL: {}", proxy_url))
                             .map_err(|e| AdapterError::Other(e.to_string()))?;
 
-                        let host = url.host_str().ok_or_else(|| {
+                        let host = url.host_str().ok_or({
                             AdapterError::InvalidConfig("HTTPS proxy URL missing host")
                         })?;
                         let port = url.port().unwrap_or(443);
@@ -390,7 +390,7 @@ impl HttpProxyConnector {
             })??;
 
         // Parse HTTP status line
-        let parts: Vec<&str> = status_line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = status_line.split_whitespace().collect();
         if parts.len() < 3 {
             return Err(AdapterError::Protocol(
                 "Invalid HTTP response format".to_string(),
@@ -508,7 +508,7 @@ impl HttpProxyConnector {
             })??;
 
         // Parse HTTP status line
-        let parts: Vec<&str> = status_line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = status_line.split_whitespace().collect();
         if parts.len() < 3 {
             return Err(AdapterError::Protocol(
                 "Invalid HTTPS response format".to_string(),

@@ -273,7 +273,7 @@ async fn handle_conn(
                     }
                 },
                 RDecision::Proxy(pool_name) => {
-                    if let Some(name) = pool_name.map(String::from) {
+                    if let Some(name) = pool_name{
                         // Named proxy pool selection
                         let sel = SELECTOR.get_or_init(|| {
                             let ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")
@@ -513,7 +513,10 @@ async fn handle_conn(
                         }
                     }
                 }
-                RDecision::Reject => unreachable!(),
+                RDecision::Reject => {
+                    // Safety: RDecision::Reject is handled earlier at line 222-225 with early return
+                    unreachable!("RDecision::Reject filtered out earlier")
+                }
             };
 
             // 成功：回复 0x00，BND=0.0.0.0:0

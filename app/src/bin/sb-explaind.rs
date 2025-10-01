@@ -79,7 +79,7 @@ async fn handle(
         if req_sec > max_sec {
             return Ok(http_util::text(
                 StatusCode::PAYLOAD_TOO_LARGE,
-                format!(
+                &format!(
                     "requested duration {}s exceeds SB_PPROF_MAX_SEC={}",
                     req_sec, max_sec
                 ),
@@ -94,14 +94,14 @@ async fn handle(
         {
             return match collect_pprof(sec, freq).await {
                 Ok(buf) => Ok(http_util::ok_octet("image/svg+xml", buf)),
-                Err(e) => Ok(http_util::text(StatusCode::GATEWAY_TIMEOUT, e)),
+                Err(e) => Ok(http_util::text(StatusCode::GATEWAY_TIMEOUT, &e)),
             };
         }
         #[cfg(not(feature = "pprof"))]
         {
             return Ok(http_util::text(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "pprof feature disabled".to_string(),
+                "pprof feature disabled",
             ));
         }
     }

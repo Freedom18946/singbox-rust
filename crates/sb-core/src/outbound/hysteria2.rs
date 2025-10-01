@@ -291,8 +291,7 @@ impl Hysteria2Outbound {
     /// Create a new QUIC connection with proper configuration
     async fn create_new_connection(&self) -> io::Result<Connection> {
         let connection = quic_connect(&self.quic_config).await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("QUIC connection failed: {}", e),
             )
         })?;
@@ -337,8 +336,7 @@ impl Hysteria2Outbound {
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
         // Open authentication stream
         let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to open auth stream: {}", e),
             )
         })?;
@@ -370,17 +368,17 @@ impl Hysteria2Outbound {
         self.apply_obfuscation(&mut auth_packet);
 
         send_stream.write_all(&auth_packet).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Auth write failed: {}", e))
+            io::Error::other(format!("Auth write failed: {}", e))
         })?;
 
         send_stream.finish().map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Auth finish failed: {}", e))
+            io::Error::other(format!("Auth finish failed: {}", e))
         })?;
 
         // Read authentication response
         let mut response = [0u8; 4]; // Extended response for more info
         let bytes_read = recv_stream.read(&mut response).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Auth read failed: {}", e))
+            io::Error::other(format!("Auth read failed: {}", e))
         })?;
 
         if matches!(bytes_read, None | Some(0)) {
@@ -437,8 +435,7 @@ impl Hysteria2Outbound {
     ) -> io::Result<(quinn::SendStream, quinn::RecvStream)> {
         // Open bidirectional stream for TCP relay
         let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to open tunnel stream: {}", e),
             )
         })?;
@@ -478,14 +475,13 @@ impl Hysteria2Outbound {
         self.apply_obfuscation(&mut connect_packet);
 
         send_stream.write_all(&connect_packet).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Connect write failed: {}", e))
+            io::Error::other(format!("Connect write failed: {}", e))
         })?;
 
         // Read connection response
         let mut response = [0u8; 2];
         recv_stream.read_exact(&mut response).await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Connect response read failed: {}", e),
             )
         })?;
@@ -512,8 +508,7 @@ impl Hysteria2Outbound {
                 io::ErrorKind::NotFound,
                 "Hysteria2 TCP connect failed: host unreachable",
             )),
-            code => Err(io::Error::new(
-                io::ErrorKind::Other,
+            code => Err(io::Error::other(
                 format!("Hysteria2 TCP connect failed with code: {}", code),
             )),
         }
@@ -536,8 +531,7 @@ impl Hysteria2Outbound {
         self.apply_obfuscation(&mut init_packet);
 
         connection.send_datagram(init_packet.into()).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("UDP session init failed: {}", e),
             )
         })?;
@@ -607,7 +601,7 @@ impl Hysteria2Outbound {
 
         // Connect to the listener
         let client = tokio::net::TcpStream::connect(addr).await?;
-        let server = server_task.await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
+        let server = server_task.await.map_err(std::io::Error::other)??;
 
         // Spawn a background task to relay data between TCP and Hysteria2 streams
         tokio::spawn(async move {
@@ -765,7 +759,7 @@ impl Hysteria2UdpSession {
 
         self.connection
             .send_datagram(packet.into())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("UDP send failed: {}", e)))?;
+            .map_err(|e| io::Error::other(format!("UDP send failed: {}", e)))?;
 
         Ok(())
     }
@@ -773,7 +767,7 @@ impl Hysteria2UdpSession {
     pub async fn recv_udp(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
         let datagram =
             self.connection.read_datagram().await.map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("UDP recv failed: {}", e))
+                io::Error::other(format!("UDP recv failed: {}", e))
             })?;
 
         let data = datagram.as_ref();
@@ -785,7 +779,7 @@ impl Hysteria2UdpSession {
         }
 
         // Verify session ID
-        if &data[0..8] != &self.session_id {
+        if data[0..8] != self.session_id {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "UDP datagram session ID mismatch",
@@ -1000,7 +994,7 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => std::task::Poll::Ready(Ok(n)),
             std::task::Poll::Ready(Err(e)) => {
-                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                std::task::Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -1015,7 +1009,7 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         match Pin::new(&mut self.send_stream).poll_flush(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
             std::task::Poll::Ready(Err(e)) => {
-                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                std::task::Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -1030,7 +1024,7 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
         match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
             std::task::Poll::Ready(Err(e)) => {
-                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                std::task::Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -1042,7 +1036,7 @@ impl crate::adapter::OutboundConnector for Hysteria2Outbound {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
         // Create a blocking runtime to run async Hysteria2 connection
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         rt.block_on(async {
             // Establish QUIC connection first

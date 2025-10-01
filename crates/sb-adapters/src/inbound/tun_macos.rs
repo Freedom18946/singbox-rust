@@ -224,8 +224,7 @@ async fn handle_socks_connection(
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             )
             .await?;
-            Err(io::Error::new(
-                io::ErrorKind::Other,
+            Err(io::Error::other(
                 "command not supported",
             ))
         }
@@ -293,8 +292,7 @@ async fn handle_connect(
     }
 
     let outbound = bridge.outbound.connect_tcp(&ctx).await.map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("outbound connect failed: {e}"),
         )
     })?;
@@ -313,7 +311,7 @@ async fn handle_connect(
     bridge.stats.on_tcp_close();
 
     res.map(|_| ())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("forward failed: {e}")))
+        .map_err(|e| io::Error::other(format!("forward failed: {e}")))
 }
 
 async fn read_u8(stream: &mut TcpStream) -> io::Result<u8> {
@@ -605,7 +603,7 @@ impl UdpSessionManager {
             .transport
             .send_to(payload, &endpoint)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("udp send failed: {e}")))?;
+            .map_err(|e| io::Error::other(format!("udp send failed: {e}")))?;
         self.stats.on_udp_packet();
         Ok(())
     }
@@ -647,7 +645,7 @@ impl UdpSessionManager {
         };
 
         let transport = self.outbound.connect_udp(&ctx).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("udp connect failed: {e}"))
+            io::Error::other(format!("udp connect failed: {e}"))
         })?;
         let transport: Arc<dyn UdpTransport> = transport.into();
 

@@ -101,7 +101,7 @@ impl TuicOutbound {
 
         // Connect to the listener
         let client = tokio::net::TcpStream::connect(addr).await?;
-        let server = server_task.await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
+        let server = server_task.await.map_err(std::io::Error::other)??;
 
         // Spawn a background task to relay data between TCP and TUIC streams
         tokio::spawn(async move {
@@ -215,7 +215,7 @@ impl TuicOutbound {
 
         // Use platform verifier for TLS roots; ALPN/SNI can be provided on connect.
         quinn::ClientConfig::try_with_platform_verifier()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 
     /// Authenticates connection (reserved for advanced auth flows)
@@ -223,8 +223,7 @@ impl TuicOutbound {
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
         // Open authentication stream
         let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to open auth stream: {}", e),
             )
         })?;
@@ -237,17 +236,17 @@ impl TuicOutbound {
         auth_packet.extend_from_slice(self.config.token.as_bytes());
 
         send_stream.write_all(&auth_packet).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Auth write failed: {}", e))
+            io::Error::other(format!("Auth write failed: {}", e))
         })?;
 
         send_stream.finish().map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Auth finish failed: {}", e))
+            io::Error::other(format!("Auth finish failed: {}", e))
         })?;
 
         // Read authentication response
         let mut response = [0u8; 1];
         recv_stream.read_exact(&mut response).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Auth read failed: {}", e))
+            io::Error::other(format!("Auth read failed: {}", e))
         })?;
 
         if response[0] != 0x00 {
@@ -269,8 +268,7 @@ impl TuicOutbound {
     ) -> io::Result<(quinn::SendStream, quinn::RecvStream)> {
         // Open bidirectional stream for the tunnel
         let (mut send_stream, recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("Failed to open tunnel stream: {}", e),
             )
         })?;
@@ -285,7 +283,7 @@ impl TuicOutbound {
         connect_packet.extend_from_slice(target_bytes.as_bytes());
 
         send_stream.write_all(&connect_packet).await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Connect write failed: {}", e))
+            io::Error::other(format!("Connect write failed: {}", e))
         })?;
 
         Ok((send_stream, recv_stream))
@@ -346,8 +344,7 @@ impl OutboundTcp for TuicOutbound {
                     counter!("tuic_connect_total", "result" => "quic_fail").increment(1);
                 }
 
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     format!("QUIC connection failed: {}", e),
                 ));
             }
@@ -368,8 +365,7 @@ impl OutboundTcp for TuicOutbound {
                     counter!("tuic_connect_total", "result" => "bi_stream_fail").increment(1);
                 }
 
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     format!("Failed to open bi stream: {}", e),
                 ));
             }
@@ -397,8 +393,7 @@ impl OutboundTcp for TuicOutbound {
                 crate::outbound::OutboundKind::Direct,
                 OutboundErrorClass::Protocol,
             );
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 format!("Stream finish failed: {}", e),
             ));
         }
@@ -437,8 +432,7 @@ impl OutboundTcp for TuicOutbound {
                     crate::outbound::OutboundKind::Direct,
                     OutboundErrorClass::Protocol,
                 );
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     format!("Failed to reopen streams: {}", e),
                 ));
             }
@@ -514,7 +508,7 @@ impl tokio::io::AsyncWrite for TuicStream {
         match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
             std::task::Poll::Ready(Ok(n)) => std::task::Poll::Ready(Ok(n)),
             std::task::Poll::Ready(Err(e)) => {
-                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                std::task::Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -529,7 +523,7 @@ impl tokio::io::AsyncWrite for TuicStream {
         match Pin::new(&mut self.send_stream).poll_flush(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
             std::task::Poll::Ready(Err(e)) => {
-                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                std::task::Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -544,7 +538,7 @@ impl tokio::io::AsyncWrite for TuicStream {
         match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
             std::task::Poll::Ready(Ok(())) => std::task::Poll::Ready(Ok(())),
             std::task::Poll::Ready(Err(e)) => {
-                std::task::Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e.to_string())))
+                std::task::Poll::Ready(Err(io::Error::other(e.to_string())))
             }
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -556,7 +550,7 @@ impl crate::adapter::OutboundConnector for TuicOutbound {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
         // Create a blocking runtime to run async TUIC connection
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         rt.block_on(async {
             // Establish QUIC connection first

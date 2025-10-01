@@ -45,7 +45,7 @@ fn admin_health_and_explain() {
             port: 0,
             sniff: false,
             udp: false,
-            auth: None,
+            basic_auth: None,
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,
@@ -54,8 +54,11 @@ fn admin_health_and_explain() {
             port: None,
             udp: None,
             members: None,
-            username: None,
-            password: None,
+            credentials: None,
+            uuid: None,
+            flow: None,
+            network: None,
+            packet_encoding: None,
         }],
         route: RouteIR {
             rules: vec![RuleIR {
@@ -68,7 +71,7 @@ fn admin_health_and_explain() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng);
-    let h = spawn_admin(&admin, eng.clone_as_static(), std::sync::Arc::new(br)).unwrap();
+    let h = spawn_admin(&admin, eng.clone_as_static(), std::sync::Arc::new(br), None, None, None).unwrap();
     // wait a bit
     thread::sleep(Duration::from_millis(80));
 

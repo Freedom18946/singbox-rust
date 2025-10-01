@@ -22,12 +22,12 @@ impl MockDnsResolver {
     fn add_response(&mut self, domain: &str, ips: Vec<IpAddr>, ttl_secs: u64) {
         self.responses.insert(
             domain.to_string(),
-            Ok(DnsAnswer {
+            Ok(DnsAnswer::new(
                 ips,
-                ttl: Duration::from_secs(ttl_secs),
-                source: sb_core::dns::cache::Source::System,
-                rcode: sb_core::dns::cache::Rcode::NoError,
-            }),
+                Duration::from_secs(ttl_secs),
+                sb_core::dns::cache::Source::System,
+                sb_core::dns::cache::Rcode::NoError,
+            )),
         );
     }
 

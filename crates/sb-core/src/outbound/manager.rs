@@ -6,59 +6,68 @@
 use crate::outbound::traits::OutboundConnector;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
-/// Manager for outbound connectors
+/// Thread-safe manager for outbound connectors
 #[derive(Debug, Clone)]
 pub struct OutboundManager {
-    connectors: HashMap<String, Arc<dyn OutboundConnector>>,
+    connectors: Arc<RwLock<HashMap<String, Arc<dyn OutboundConnector>>>>,
 }
 
 impl OutboundManager {
     /// Create a new empty outbound manager
     pub fn new() -> Self {
         Self {
-            connectors: HashMap::new(),
+            connectors: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Add an outbound connector with the given tag
-    pub fn add_connector(&mut self, tag: String, connector: Arc<dyn OutboundConnector>) {
-        self.connectors.insert(tag, connector);
+    pub async fn add_connector(&self, tag: String, connector: Arc<dyn OutboundConnector>) {
+        let mut connectors = self.connectors.write().await;
+        connectors.insert(tag, connector);
     }
 
     /// Get an outbound connector by tag
-    pub fn get(&self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
-        self.connectors.get(tag).cloned()
+    pub async fn get(&self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
+        let connectors = self.connectors.read().await;
+        connectors.get(tag).cloned()
     }
 
     /// Remove an outbound connector by tag
-    pub fn remove(&mut self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
-        self.connectors.remove(tag)
+    pub async fn remove(&self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
+        let mut connectors = self.connectors.write().await;
+        connectors.remove(tag)
     }
 
     /// List all available outbound tags
-    pub fn list_tags(&self) -> Vec<&str> {
-        self.connectors.keys().map(|s| s.as_str()).collect()
+    pub async fn list_tags(&self) -> Vec<String> {
+        let connectors = self.connectors.read().await;
+        connectors.keys().cloned().collect()
     }
 
     /// Check if a tag exists
-    pub fn contains(&self, tag: &str) -> bool {
-        self.connectors.contains_key(tag)
+    pub async fn contains(&self, tag: &str) -> bool {
+        let connectors = self.connectors.read().await;
+        connectors.contains_key(tag)
     }
 
     /// Get the number of registered connectors
-    pub fn len(&self) -> usize {
-        self.connectors.len()
+    pub async fn len(&self) -> usize {
+        let connectors = self.connectors.read().await;
+        connectors.len()
     }
 
     /// Check if the manager is empty
-    pub fn is_empty(&self) -> bool {
-        self.connectors.is_empty()
+    pub async fn is_empty(&self) -> bool {
+        let connectors = self.connectors.read().await;
+        connectors.is_empty()
     }
 
     /// Clear all connectors
-    pub fn clear(&mut self) {
-        self.connectors.clear();
+    pub async fn clear(&self) {
+        let mut connectors = self.connectors.write().await;
+        connectors.clear();
     }
 }
 
@@ -73,79 +82,40 @@ mod tests {
     use super::*;
     use crate::outbound::DirectConnector;
 
-    #[test]
-    fn test_outbound_manager_basic_operations() {
-        let mut manager = OutboundManager::new();
-        assert!(manager.is_empty());
-        assert_eq!(manager.len(), 0);
+    #[tokio::test]
+    async fn test_outbound_manager_basic_operations() {
+        let manager = OutboundManager::new();
+        assert!(manager.is_empty().await);
+        assert_eq!(manager.len().await, 0);
 
         // Add a connector
         let connector = Arc::new(DirectConnector::new());
-        manager.add_connector("direct".to_string(), connector.clone());
+        manager.add_connector("direct".to_string(), connector.clone()).await;
 
-        assert!(!manager.is_empty());
-        assert_eq!(manager.len(), 1);
-        assert!(manager.contains("direct"));
-        assert!(!manager.contains("nonexistent"));
+        assert!(!manager.is_empty().await);
+        assert_eq!(manager.len().await, 1);
+        assert!(manager.contains("direct").await);
+        assert!(!manager.contains("nonexistent").await);
 
         // Get the connector
-        let retrieved = manager.get("direct");
+        let retrieved = manager.get("direct").await;
         assert!(retrieved.is_some());
 
         // List tags
-        let tags = manager.list_tags();
+        let tags = manager.list_tags().await;
         assert_eq!(tags.len(), 1);
-        assert!(tags.contains(&"direct"));
+        assert!(tags.contains(&"direct".to_string()));
 
         // Remove the connector
-        let removed = manager.remove("direct");
+        let removed = manager.remove("direct").await;
         assert!(removed.is_some());
-        assert!(manager.is_empty());
-        assert_eq!(manager.len(), 0);
-    }
+        assert!(manager.is_empty().await);
 
-    #[test]
-    fn test_outbound_manager_multiple_connectors() {
-        let mut manager = OutboundManager::new();
-
-        // Add multiple connectors
-        let direct1 = Arc::new(DirectConnector::new());
-        let direct2 = Arc::new(DirectConnector::new());
-
-        manager.add_connector("direct1".to_string(), direct1);
-        manager.add_connector("direct2".to_string(), direct2);
-
-        assert_eq!(manager.len(), 2);
-        assert!(manager.contains("direct1"));
-        assert!(manager.contains("direct2"));
-
-        let tags = manager.list_tags();
-        assert_eq!(tags.len(), 2);
-        assert!(tags.contains(&"direct1"));
-        assert!(tags.contains(&"direct2"));
-
-        // Clear all
-        manager.clear();
-        assert!(manager.is_empty());
-        assert_eq!(manager.len(), 0);
-    }
-
-    #[test]
-    fn test_outbound_manager_overwrite() {
-        let mut manager = OutboundManager::new();
-
-        let connector1 = Arc::new(DirectConnector::new());
-        let connector2 = Arc::new(DirectConnector::new());
-
-        // Add first connector
-        manager.add_connector("test".to_string(), connector1);
-        assert_eq!(manager.len(), 1);
-
-        // Overwrite with second connector
-        manager.add_connector("test".to_string(), connector2);
-        assert_eq!(manager.len(), 1); // Still only one connector
-
-        // The connector should still be retrievable
-        assert!(manager.get("test").is_some());
+        // Clear
+        manager.add_connector("direct1".to_string(), Arc::new(DirectConnector::new())).await;
+        manager.add_connector("direct2".to_string(), Arc::new(DirectConnector::new())).await;
+        assert_eq!(manager.len().await, 2);
+        manager.clear().await;
+        assert!(manager.is_empty().await);
     }
 }

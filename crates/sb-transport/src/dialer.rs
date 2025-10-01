@@ -450,7 +450,17 @@ impl<D: Dialer + Send + Sync> Dialer for ResourceAwareDialer<D> {
 ///     }) as Pin<Box<dyn Future<Output = Result<IoStream, DialError>> + Send>>
 /// });
 /// ```
-pub struct FnDialer<F>(pub F);
+pub struct FnDialer<F> {
+    inner: std::sync::Arc<F>,
+}
+
+impl<F> Clone for FnDialer<F> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
 
 #[async_trait]
 impl<F> Dialer for FnDialer<F>
@@ -470,7 +480,7 @@ where
     /// 允许完全自定义的连接行为。
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // 调用闭包并等待其返回的 Future 完成
-        (self.0)(host, port).await
+        (self.inner)(host, port).await
     }
 }
 
@@ -490,7 +500,9 @@ impl<F> FnDialer<F> {
     // - 特殊网络环境的连接定制
     // - 连接监控和调试
     pub fn new(f: F) -> Self {
-        Self(f)
+        Self {
+            inner: std::sync::Arc::new(f),
+        }
     }
 }
 

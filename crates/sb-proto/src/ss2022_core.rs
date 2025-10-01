@@ -1,4 +1,5 @@
 #[cfg(feature = "proto_ss2022_core")]
+#[allow(clippy::module_inception)]
 pub mod ss2022_core {
     use thiserror::Error;
 

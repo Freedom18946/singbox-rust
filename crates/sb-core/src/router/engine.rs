@@ -8,6 +8,7 @@ use std::pin::Pin;
 use std::sync::Mutex;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
+use tracing::warn;
 // no PhantomData needed in the compatibility layer
 
 use super::{
@@ -1098,7 +1099,7 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
         shared_index()
             .read()
             .unwrap_or_else(|e| {
-                eprintln!("RwLock poisoned; proceeding with inner guard");
+                warn!("RwLock poisoned in shared_index(); proceeding with inner guard");
                 e.into_inner()
             })
             .clone()
@@ -1182,7 +1183,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
             .idx
             .read()
             .unwrap_or_else(|e| {
-                eprintln!("RwLock poisoned; proceeding with inner guard");
+                warn!("RwLock poisoned in RouterHandle.idx; proceeding with inner guard");
                 e.into_inner()
             })
             .clone()
@@ -1306,7 +1307,7 @@ impl RouterHandle {
     /// Get a read lock on the router index for explain functionality
     pub fn get_index(&self) -> std::sync::RwLockReadGuard<'_, Arc<RouterIndex>> {
         self.idx.read().unwrap_or_else(|e| {
-            eprintln!("RwLock poisoned; proceeding with inner guard");
+            warn!("RwLock poisoned in get_index(); proceeding with inner guard");
             e.into_inner()
         })
     }

@@ -390,7 +390,7 @@ impl ShadowsocksStream {
         self.inner
             .write_all(&encrypted_data)
             .await
-            .map_err(|e| AdapterError::Io(e))?;
+            .map_err(AdapterError::Io)?;
         Ok(())
     }
 

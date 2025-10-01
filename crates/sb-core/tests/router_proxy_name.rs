@@ -55,28 +55,28 @@ fn test_router_proxy_name_decision_from_str() {
     use sb_core::router::rules::Decision;
 
     // Test parsing different decision strings
-    assert_eq!(Decision::from_str("direct"), Some(Decision::Direct));
-    assert_eq!(Decision::from_str("proxy"), Some(Decision::Proxy(None)));
+    assert_eq!(Decision::parse_decision("direct"), Some(Decision::Direct));
+    assert_eq!(Decision::parse_decision("proxy"), Some(Decision::Proxy(None)));
     assert_eq!(
-        Decision::from_str("proxy:poolA"),
+        Decision::parse_decision("proxy:poolA"),
         Some(Decision::Proxy(Some("poolA".to_string())))
     );
     assert_eq!(
-        Decision::from_str("proxy:my-pool"),
+        Decision::parse_decision("proxy:my-pool"),
         Some(Decision::Proxy(Some("my-pool".to_string())))
     );
-    assert_eq!(Decision::from_str("reject"), Some(Decision::Reject));
+    assert_eq!(Decision::parse_decision("reject"), Some(Decision::Reject));
 
     // Test case insensitive parsing
-    assert_eq!(Decision::from_str("DIRECT"), Some(Decision::Direct));
-    assert_eq!(Decision::from_str("PROXY"), Some(Decision::Proxy(None)));
-    assert_eq!(Decision::from_str("REJECT"), Some(Decision::Reject));
+    assert_eq!(Decision::parse_decision("DIRECT"), Some(Decision::Direct));
+    assert_eq!(Decision::parse_decision("PROXY"), Some(Decision::Proxy(None)));
+    assert_eq!(Decision::parse_decision("REJECT"), Some(Decision::Reject));
 
     // Test invalid strings
-    assert_eq!(Decision::from_str("invalid"), None);
-    assert_eq!(Decision::from_str(""), None);
+    assert_eq!(Decision::parse_decision("invalid"), None);
+    assert_eq!(Decision::parse_decision(""), None);
     assert_eq!(
-        Decision::from_str("proxy:"),
+        Decision::parse_decision("proxy:"),
         Some(Decision::Proxy(Some("".to_string())))
     ); // Edge case
 }

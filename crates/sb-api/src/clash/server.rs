@@ -1,6 +1,6 @@
 //! Clash API server implementation
 
-use crate::managers::{ConnectionManager, DnsResolver};
+use crate::managers::{ConnectionManager, DnsResolver, ProviderManager};
 use crate::{
     clash::{handlers, websocket},
     error::{ApiError, ApiResult},
@@ -35,6 +35,8 @@ pub struct ApiState {
     pub connection_manager: Option<Arc<ConnectionManager>>,
     /// DNS resolver for cache operations
     pub dns_resolver: Option<Arc<DnsResolver>>,
+    /// Provider manager for proxy and rule providers
+    pub provider_manager: Option<Arc<ProviderManager>>,
 }
 
 impl ApiState {
@@ -58,6 +60,7 @@ impl ApiState {
             outbound_manager: None,
             connection_manager: None,
             dns_resolver: None,
+            provider_manager: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -84,6 +87,7 @@ impl ApiState {
             outbound_manager: None,
             connection_manager: None,
             dns_resolver: None,
+            provider_manager: None,
         };
 
         (state, traffic_rx, log_rx)

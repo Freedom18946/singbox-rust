@@ -761,9 +761,9 @@ mod tests {
         br.mark_success(host);
 
         let stats = br.state_stats();
-        let state = stats.iter().find(|(h, _, _)| h == host).unwrap();
+        let host_state = stats.iter().find(|(h, _, _)| h == host).unwrap();
         assert_eq!(
-            state.1, "closed",
+            host_state.1, "closed",
             "Circuit should be closed after successful probes"
         );
     }

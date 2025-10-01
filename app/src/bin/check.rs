@@ -4,9 +4,13 @@
 //!   1) { "listen":"127.0.0.1:1080" }
 //!   2) { "listen":"127.0.0.1", "port":1080 }
 //!   3) { "listen":"127.0.0.1", "listen_port":1080 }
+//!
 //! 如需在每次启动 sb-subs 时自动体检本地文件：见 `--autoprobe` / `--autoprobe-default` 与 `SB_SUBS_AUTOPROBE`。
+//!
 //! 如需对 DSL 分析做结构嗅探：见 `sb-route analyze --emit keys_only`。
+//!
 //! 对比样本量大时：`sb-route compare --diff-sample 64 --diff-sample-mode random --seed 42` 可复现抽样。
+//!
 //! 样本均衡：`--cluster-by reason_kind --max-per-cluster 8`，仅影响 samples，不影响矩阵。
 use anyhow::{anyhow, Result};
 use clap::Parser;
@@ -109,9 +113,8 @@ fn main() -> Result<()> {
             let validator = jsonschema::Validator::new(&schema_json)
                 .map_err(|e| anyhow!("编译 JSON Schema 失败：{e}"))?;
 
-            let validation_result = validator.validate(&v);
-            if validation_result.is_err() {
-                let errors: Vec<String> = validation_result
+            if !validator.is_valid(&v) {
+                let errors: Vec<String> = validator.validate(&v)
                     .unwrap_err()
                     .take(5)
                     .map(|e| format!("{}", e))

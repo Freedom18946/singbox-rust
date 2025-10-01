@@ -43,63 +43,41 @@ pub struct Runtime {
     pub outbounds: Arc<OutboundRegistryHandle>,
 }
 
-pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
-    // TEMPORARILY DISABLED router initialization
-    // #[cfg(feature = "router")]
-    // {
-    //     rules_json_bridge::init_from_json_env();
-    //     rules_global::init_from_env();
-    //     router_runtime::init_default_proxy_from_env();
-    // }
-
-    // Install proxy health registry (from default proxy env + proxy pools)
+/// Initialize proxy registry from environment variables.
+fn init_proxy_registry_from_env() {
     if let Ok(s) = std::env::var("SB_ROUTER_DEFAULT_PROXY") {
         if let Some(ep) = ProxyEndpoint::parse(&s) {
-            let mut r = ob_registry::Registry::default();
-            r.default = Some(ProxyEndpoint {
-                weight: 1,
-                max_fail: 3,
-                open_ms: 5000,
-                half_open_ms: 1000,
-                ..ep
-            });
-            // Load proxy pools from environment
-            if let Ok(pools) = load_pools_from_env() {
-                r.pools = pools;
-            }
+            let pools = load_pools_from_env().unwrap_or_default();
+            let r = ob_registry::Registry {
+                default: Some(ProxyEndpoint {
+                    weight: 1,
+                    max_fail: 3,
+                    open_ms: 5000,
+                    half_open_ms: 1000,
+                    ..ep
+                }),
+                pools,
+            };
             ob_registry::install_global(r);
         }
     }
-    // Start health checking (behind env)
-    ob_health::spawn_if_enabled().await;
+}
 
-    // 1) 构建 Registry/Router 并包装成 Handle（严格失败）
-    cfg.build_registry_and_router()?; // Configuration validation
+/// Create router handle based on feature flags.
+#[cfg(feature = "router")]
+fn create_router_handle() -> Arc<sb_core::router::engine::RouterHandle> {
+    use sb_core::router::engine::RouterHandle;
+    Arc::new(RouterHandle::from_env())
+}
 
-    // Create real router and registry handles
-    #[cfg(feature = "router")]
-    let rh = {
-        use sb_core::router::engine::RouterHandle;
-        Arc::new(RouterHandle::from_env())
-    };
-    #[cfg(not(feature = "router"))]
-    let _rh = (); // Placeholder when router feature is disabled
-
-    let oh = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::default()));
-
-    let inbounds = cfg.inbounds.len();
-    let outbounds = cfg.outbounds.len();
-    let rules = cfg.rules.len();
-    info!("sb bootstrap: inbounds={inbounds}, outbounds={outbounds}, rules={rules}");
-
-    // 2) 起入站（HTTP / SOCKS），每个入站一个 stop 通道；当前不做热更新/回收
-    for ib in cfg.inbounds {
+/// Process inbound configurations (currently disabled for subs tests).
+fn process_inbounds(inbounds: Vec<sb_config::Inbound>) {
+    for ib in inbounds {
         match ib {
             sb_config::Inbound::Http { listen: _listen } => {
                 #[cfg(feature = "http")]
                 {
                     warn!(?_listen, "HTTP inbound temporarily disabled for subs tests");
-                    // TEMPORARILY SKIP HTTP INBOUND for subs security tests
                 }
                 #[cfg(not(feature = "http"))]
                 {
@@ -109,11 +87,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
             sb_config::Inbound::Socks { listen: _listen } => {
                 #[cfg(feature = "socks")]
                 {
-                    warn!(
-                        ?_listen,
-                        "SOCKS inbound temporarily disabled for subs tests"
-                    );
-                    // TEMPORARILY SKIP SOCKS INBOUND for subs security tests
+                    warn!(?_listen, "SOCKS inbound temporarily disabled for subs tests");
                 }
                 #[cfg(not(feature = "socks"))]
                 {
@@ -122,6 +96,40 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
             }
         }
     }
+}
+
+/// Start the proxy runtime from configuration.
+///
+/// # Errors
+/// Returns an error if:
+/// - Configuration validation fails
+/// - Proxy registry initialization fails
+/// - Inbound/outbound setup fails
+/// - Network binding fails
+pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
+    // Install proxy health registry (from default proxy env + proxy pools)
+    init_proxy_registry_from_env();
+
+    // Start health checking (behind env)
+    ob_health::spawn_if_enabled().await;
+
+    // 1) 构建 Registry/Router 并包装成 Handle（严格失败）
+    cfg.build_registry_and_router()?; // Configuration validation
+
+    // Create real router and registry handles
+    #[cfg(feature = "router")]
+    let rh = create_router_handle();
+
+    let oh = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::default()));
+
+    let inbounds = cfg.inbounds.len();
+    let outbounds = cfg.outbounds.len();
+    let rules = cfg.rules.len();
+    info!("sb bootstrap: inbounds={inbounds}, outbounds={outbounds}, rules={rules}");
+
+    // 2) 起入站（HTTP / SOCKS），每个入站一个 stop 通道；当前不做热更新/回收
+    process_inbounds(cfg.inbounds);
+
     Ok(Runtime {
         #[cfg(feature = "router")]
         router: rh,

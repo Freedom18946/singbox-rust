@@ -161,12 +161,12 @@ mod tests {
     #[tokio::test]
     async fn test_dns_bridge_success() {
         let mock_resolver = Arc::new(MockResolver {
-            response: Ok(DnsAnswer {
-                ips: vec!["1.2.3.4".parse().unwrap()],
-                ttl: Duration::from_secs(300),
-                source: crate::dns::cache::Source::System,
-                rcode: crate::dns::cache::Rcode::NoError,
-            }),
+            response: Ok(DnsAnswer::new(
+                vec!["1.2.3.4".parse().unwrap()],
+                Duration::from_secs(300),
+                crate::dns::cache::Source::System,
+                crate::dns::cache::Rcode::NoError,
+            )),
         });
 
         let bridge = DnsResolverBridge::new(mock_resolver);
@@ -184,12 +184,12 @@ mod tests {
     #[tokio::test]
     async fn test_dns_bridge_empty_response() {
         let mock_resolver = Arc::new(MockResolver {
-            response: Ok(DnsAnswer {
-                ips: vec![],
-                ttl: Duration::from_secs(300),
-                source: crate::dns::cache::Source::System,
-                rcode: crate::dns::cache::Rcode::NoError,
-            }),
+            response: Ok(DnsAnswer::new(
+                vec![],
+                Duration::from_secs(300),
+                crate::dns::cache::Source::System,
+                crate::dns::cache::Rcode::NoError,
+            )),
         });
 
         let bridge = DnsResolverBridge::new(mock_resolver);

@@ -108,14 +108,13 @@ impl OutboundTcp for TrojanOutbound {
         // Step 1: TCP connect to Trojan server
         let tcp = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
             .await
-            .map_err(|e| {
+            .inspect_err(|e| {
                 #[cfg(feature = "metrics")]
                 crate::telemetry::outbound_connect(
                     "trojan",
                     "error",
-                    Some(crate::telemetry::err_kind(&e)),
+                    Some(crate::telemetry::err_kind(e)),
                 );
-                e
             })?;
 
         #[cfg(feature = "metrics")]
@@ -129,8 +128,7 @@ impl OutboundTcp for TrojanOutbound {
         let mut tls_stream = connector.connect(server_name, tcp).await.map_err(|e| {
             #[cfg(feature = "metrics")]
             crate::telemetry::outbound_handshake("trojan", "error", Some("tls_handshake"));
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
+            std::io::Error::other(
                 format!("TLS handshake failed: {}", e),
             )
         })?;

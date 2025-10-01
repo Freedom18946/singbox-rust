@@ -734,7 +734,7 @@ async fn trojan_connect(cfg: &trojan::TrojanConfig, ep: Endpoint) -> io::Result<
     };
 
     let outbound = trojan::TrojanOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Trojan setup failed: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("Trojan setup failed: {}", e)))?;
 
     // Connect and convert to TcpStream
     match outbound.connect(&target).await {
@@ -742,8 +742,7 @@ async fn trojan_connect(cfg: &trojan::TrojanConfig, ep: Endpoint) -> io::Result<
             // For compatibility with existing code that expects TcpStream,
             // we need to wrap or extract the underlying stream
             // This is a simplification - in practice you might need a proper wrapper
-            Err(io::Error::new(
-                io::ErrorKind::Other,
+            Err(io::Error::other(
                 "Trojan connection established but stream conversion not implemented",
             ))
         }
@@ -771,8 +770,7 @@ async fn shadowsocks_connect(
             // For compatibility with existing code that expects TcpStream,
             // we need to wrap or extract the underlying stream
             // This is a simplification - in practice you might need a proper wrapper
-            Err(io::Error::new(
-                io::ErrorKind::Other,
+            Err(io::Error::other(
                 "Shadowsocks connection established but stream conversion not implemented",
             ))
         }
@@ -794,16 +792,14 @@ async fn shadowtls_connect(
     };
 
     let _outbound = shadowtls::ShadowTlsOutbound::new(cfg.clone()).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("ShadowTLS setup failed: {}", e),
         )
     })?;
 
     // Note: ShadowTLS returns a TLS stream, not a TcpStream
     // For now, return an error indicating this needs proper handling
-    Err(io::Error::new(
-        io::ErrorKind::Other,
+    Err(io::Error::other(
         "ShadowTLS connection requires TLS stream handling",
     ))
 }
@@ -818,11 +814,10 @@ async fn naive_connect(cfg: &naive_h2::NaiveH2Config, ep: Endpoint) -> io::Resul
     };
 
     let _outbound = naive_h2::NaiveH2Outbound::new(cfg.clone())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Naive setup failed: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
 
     // Note: Naive returns a compat stream, not a TcpStream
-    Err(io::Error::new(
-        io::ErrorKind::Other,
+    Err(io::Error::other(
         "Naive HTTP/2 connection requires compat stream handling",
     ))
 }
@@ -837,7 +832,7 @@ async fn vless_connect(cfg: &vless::VlessConfig, ep: Endpoint) -> io::Result<Tcp
     };
 
     let outbound = vless::VlessOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("VLESS setup failed: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("VLESS setup failed: {}", e)))?;
 
     outbound.connect(&target).await
 }
@@ -852,7 +847,7 @@ async fn vmess_connect(cfg: &vmess::VmessConfig, ep: Endpoint) -> io::Result<Tcp
     };
 
     let outbound = vmess::VmessOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("VMess setup failed: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("VMess setup failed: {}", e)))?;
 
     outbound.connect(&target).await
 }
@@ -867,11 +862,10 @@ async fn tuic_connect(cfg: &tuic::TuicConfig, ep: Endpoint) -> io::Result<TcpStr
     };
 
     let _outbound = tuic::TuicOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("TUIC setup failed: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("TUIC setup failed: {}", e)))?;
 
     // Note: TUIC returns a compat stream, not a TcpStream
-    Err(io::Error::new(
-        io::ErrorKind::Other,
+    Err(io::Error::other(
         "TUIC connection requires compat stream handling",
     ))
 }
@@ -889,15 +883,13 @@ async fn hysteria2_connect(
     };
 
     let _outbound = hysteria2::Hysteria2Outbound::new(cfg.clone()).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("Hysteria2 setup failed: {}", e),
         )
     })?;
 
     // Note: Hysteria2 returns a compat stream, not a TcpStream
-    Err(io::Error::new(
-        io::ErrorKind::Other,
+    Err(io::Error::other(
         "Hysteria2 connection requires compat stream handling",
     ))
 }
@@ -915,8 +907,7 @@ async fn wireguard_connect(
     };
 
     let outbound = wireguard_stub::WireGuardOutbound::new(cfg.clone()).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
+        io::Error::other(
             format!("WireGuard setup failed: {}", e),
         )
     })?;
@@ -934,7 +925,7 @@ async fn ssh_connect(cfg: &ssh_stub::SshConfig, ep: Endpoint) -> io::Result<TcpS
     };
 
     let outbound = ssh_stub::SshOutbound::new(cfg.clone())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("SSH setup failed: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("SSH setup failed: {}", e)))?;
 
     outbound.connect(&target).await.map_err(|e| {
         io::Error::new(

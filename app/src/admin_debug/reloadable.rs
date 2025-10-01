@@ -582,7 +582,7 @@ mod tests_apply_dryrun {
         assert!(res.ok);
         assert!(res.msg.contains("max_redirects"));
         let end_ver = version();
-        assert!(end_ver >= start_ver + 1, "version bumped");
+        assert!(end_ver > start_ver, "version bumped");
         let cfg = get();
         assert_eq!(cfg.max_redirects, 3);
     }

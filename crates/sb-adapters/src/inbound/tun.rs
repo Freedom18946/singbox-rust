@@ -1,4 +1,5 @@
-//! TUN inbound - Phase 1 skeleton (mac / win first; linux TODO)
+//! TUN inbound - Phase 1 skeleton
+//! Currently supports macOS and Windows; Linux support is planned
 //! - feature-gated behind `tun`
 //! - no real device operations yet; only config + platform stubs
 //! - zero deps, zero side effects; merge-safe
@@ -310,11 +311,9 @@ impl TunInbound {
                                             })
                                             .await
                                             {
-                                                Ok(Ok(_s)) => {
-                                                    // 2.3e: 计数
+                                                Ok(Ok(_)) => {
+                                                    // 2.3e: 计数；连接会在 block 结束时自动关闭
                                                     TCP_PROBE_OK.fetch_add(1, Ordering::Relaxed);
-                                                    // 立刻丢弃以关闭连接
-                                                    let _ = _s; // dropping_copy_types: avoid no-op drop on Copy
                                                     debug!(
                                                         "tun probe dial OK -> {}:{} | closed | user={:?} timeout={}ms",
                                                         ip, port, self.cfg.user_tag, self.cfg.timeout_ms
@@ -358,15 +357,183 @@ impl TunInbound {
                 }
             }
         }
+        #[cfg(target_os = "linux")]
+        {
+            tracing::info!(
+                "tun(linux): start name={}, mtu={}",
+                self.cfg.name,
+                self.cfg.mtu
+            );
+            #[cfg(feature = "tun")]
+            {
+                use sb_core::net::Address;
+                use sb_core::session::ConnectParams;
+                use std::os::unix::io::AsRawFd;
+                use tokio::io::unix::AsyncFd;
+                use tokio::io::Interest;
+
+                match sys_linux::open_tun_device(&self.cfg.name, self.cfg.mtu) {
+                    Ok(device) => {
+                        let mut buf = vec![0u8; 65536];
+                        let router = Arc::clone(&self.router);
+
+                        // Wrap the file descriptor in AsyncFd for async operations
+                        let fd = device.as_raw_fd();
+                        let async_fd = AsyncFd::with_interest(device, Interest::READABLE)
+                            .map_err(io::Error::other)?;
+
+                        loop {
+                            let mut guard = async_fd.readable().await?;
+
+                            let n = match guard.try_io(|inner| {
+                                use std::io::Read;
+                                inner.get_ref().read(&mut buf)
+                            }) {
+                                Ok(Ok(n)) => n,
+                                Ok(Err(e)) => return Err(e),
+                                Err(_would_block) => continue,
+                            };
+
+                            if n > 0 {
+                                if let Some((l4, dst_ip, dst_port)) =
+                                    sys_linux::parse_tun_packet(&buf[..n])
+                                {
+                                    match (l4, dst_ip, dst_port) {
+                                        (L4::Tcp, Some(ip), Some(port)) => {
+                                            let addr = Address::SocketAddress(
+                                                format!("{}:{}", ip, port)
+                                                    .parse()
+                                                    .expect("valid socket"),
+                                            );
+                                            let params = ConnectParams {
+                                                address: addr,
+                                                inbound_tag: Some(self.cfg.name.clone()),
+                                            };
+                                            let meta = RequestMeta {
+                                                destination: format!("{}:{}", ip, port),
+                                                network: "tcp".to_string(),
+                                                source_addr: None,
+                                            };
+                                            let _out = router.select(&meta);
+                                            tracing::trace!(
+                                                "tun: TCP -> {}:{} via {:?}",
+                                                ip,
+                                                port,
+                                                params.inbound_tag
+                                            );
+                                        }
+                                        (L4::Udp, Some(ip), Some(port)) => {
+                                            tracing::trace!("tun: UDP -> {}:{} (drop)", ip, port);
+                                        }
+                                        _ => {
+                                            tracing::trace!("tun: other/short packet");
+                                        }
+                                    }
+                                } else {
+                                    tracing::trace!("tun: failed to parse packet");
+                                }
+                            } else {
+                                // EOF
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("open tun({}) failed: {}", self.cfg.name, e);
+                    }
+                }
+            }
+        }
         #[cfg(target_os = "windows")]
         {
-            sys_windows::probe()?;
-            tracing::info!("tun inbound: Windows stub ready (wintun phase-2 pending)");
+            tracing::info!(
+                "tun(windows): start name={}, mtu={}",
+                self.cfg.name,
+                self.cfg.mtu
+            );
+            #[cfg(feature = "tun")]
+            {
+                use sb_core::net::Address;
+                use sb_core::session::ConnectParams;
+
+                sys_windows::probe()?;
+
+                match sys_windows::open_wintun_adapter(&self.cfg.name, self.cfg.mtu) {
+                    Ok(adapter) => {
+                        let session = match adapter.start_session(wintun::MAX_RING_CAPACITY) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                tracing::error!("Failed to start wintun session: {}", e);
+                                return Err(io::Error::new(io::ErrorKind::Other, e));
+                            }
+                        };
+
+                        let router = Arc::clone(&self.router);
+
+                        loop {
+                            match session.receive_blocking() {
+                                Ok(packet) => {
+                                    let bytes = packet.bytes();
+                                    if let Some((l4, dst_ip, dst_port)) =
+                                        sys_windows::parse_wintun_packet(bytes)
+                                    {
+                                        match (l4, dst_ip, dst_port) {
+                                            (L4::Tcp, Some(ip), Some(port)) => {
+                                                let addr = Address::SocketAddress(
+                                                    format!("{}:{}", ip, port)
+                                                        .parse()
+                                                        .expect("valid socket"),
+                                                );
+                                                let params = ConnectParams {
+                                                    address: addr,
+                                                    inbound_tag: Some(self.cfg.name.clone()),
+                                                };
+                                                let meta = RequestMeta {
+                                                    destination: format!("{}:{}", ip, port),
+                                                    network: "tcp".to_string(),
+                                                    source_addr: None,
+                                                };
+                                                let _out = router.select(&meta);
+                                                tracing::trace!(
+                                                    "tun: TCP -> {}:{} via {:?}",
+                                                    ip,
+                                                    port,
+                                                    params.inbound_tag
+                                                );
+                                            }
+                                            (L4::Udp, Some(ip), Some(port)) => {
+                                                tracing::trace!("tun: UDP -> {}:{} (drop)", ip, port);
+                                            }
+                                            _ => {
+                                                tracing::trace!("tun: other/short packet");
+                                            }
+                                        }
+                                    } else {
+                                        tracing::trace!("tun: failed to parse packet");
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("wintun receive error: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("open wintun({}) failed: {}", self.cfg.name, e);
+                    }
+                }
+            }
+            #[cfg(not(feature = "tun"))]
+            {
+                sys_windows::probe()?;
+                tracing::info!("tun inbound: Windows TUN feature not enabled");
+            }
         }
-        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows"), not(target_os = "linux")))]
         {
-            // Not implemented in Phase 1
-            tracing::info!("tun inbound: this OS is not targeted in Phase 1");
+            // Not implemented for this OS
+            tracing::info!("tun inbound: this OS is not currently supported");
         }
         Ok(())
     }
@@ -669,13 +836,252 @@ mod sys_macos {
     }
 }
 
+#[cfg(target_os = "linux")]
+mod sys_linux {
+    use std::io;
+    #[cfg(feature = "tun")]
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[allow(dead_code)]
+    pub fn probe() -> io::Result<()> {
+        // Check if /dev/net/tun exists and is accessible
+        std::fs::metadata("/dev/net/tun")
+            .map(|_| ())
+            .map_err(|e| io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("TUN device not available: {}", e)
+            ))
+    }
+
+    /// Open Linux TUN device and return async device
+    #[cfg(feature = "tun")]
+    pub fn open_tun_device(
+        name_hint: &str,
+        mtu: u32,
+    ) -> io::Result<tun::platform::Device> {
+        let mut config = tun::Configuration::default();
+
+        config
+            .name(name_hint)
+            .mtu(mtu as i32)
+            .up();
+
+        // Configure as TUN (layer 3) not TAP (layer 2)
+        #[cfg(target_os = "linux")]
+        config.platform(|config| {
+            config.packet_information(false);
+        });
+
+        let dev = tun::create(&config)?;
+
+        tracing::info!("Linux TUN opened: {} (mtu={})", name_hint, mtu);
+        Ok(dev)
+    }
+
+    /// Parse IP packet from TUN device (similar to macOS implementation)
+    /// Returns (L4 protocol, destination IP, destination port)
+    #[cfg(feature = "tun")]
+    pub fn parse_tun_packet(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+        if pkt.is_empty() {
+            return None;
+        }
+
+        let version = (pkt[0] >> 4) & 0xF;
+        match version {
+            4 => parse_ipv4(pkt),
+            6 => parse_ipv6(pkt),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "tun")]
+    fn parse_ipv4(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+        if pkt.len() < 20 {
+            return None;
+        }
+
+        let proto = pkt[9];
+        let dst = IpAddr::V4(Ipv4Addr::new(pkt[16], pkt[17], pkt[18], pkt[19]));
+
+        // Get header length in bytes
+        let ihl = ((pkt[0] & 0x0F) as usize) * 4;
+        if pkt.len() < ihl + 4 {
+            return Some((super::L4::Other(proto), Some(dst), None));
+        }
+
+        match proto {
+            6 => {
+                // TCP: destination port at offset ihl+2
+                let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
+                Some((super::L4::Tcp, Some(dst), Some(port)))
+            }
+            17 => {
+                // UDP: destination port at offset ihl+2
+                let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
+                Some((super::L4::Udp, Some(dst), Some(port)))
+            }
+            _ => Some((super::L4::Other(proto), Some(dst), None)),
+        }
+    }
+
+    #[cfg(feature = "tun")]
+    fn parse_ipv6(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+        if pkt.len() < 40 {
+            return None;
+        }
+
+        let next = pkt[6];
+        let dst = {
+            let mut a = [0u8; 16];
+            a.copy_from_slice(&pkt[24..40]);
+            IpAddr::V6(Ipv6Addr::from(a))
+        };
+
+        match next {
+            6 | 17 => {
+                // TCP or UDP: check if we have L4 header
+                if pkt.len() < 40 + 4 {
+                    return Some((super::L4::Other(next), Some(dst), None));
+                }
+                let port = u16::from_be_bytes([pkt[42], pkt[43]]);
+                let l4 = if next == 6 { super::L4::Tcp } else { super::L4::Udp };
+                Some((l4, Some(dst), Some(port)))
+            }
+            _ => Some((super::L4::Other(next), Some(dst), None)),
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod sys_windows {
     use std::io;
+    #[cfg(feature = "tun")]
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    #[cfg(feature = "tun")]
+    use std::sync::Arc;
+
     #[allow(dead_code)]
     pub fn probe() -> io::Result<()> {
-        // Future: check if wintun driver present, or provide helpful diagnostics.
+        // Check if wintun.dll is available in the system
+        #[cfg(feature = "tun")]
+        {
+            // Try to load wintun library - will fail if not installed
+            match wintun::load() {
+                Ok(_) => {
+                    tracing::info!("Wintun driver detected and loaded successfully");
+                    Ok(())
+                }
+                Err(e) => Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Wintun driver not available: {}", e),
+                )),
+            }
+        }
+        #[cfg(not(feature = "tun"))]
         Ok(())
+    }
+
+    /// Open Windows wintun adapter
+    #[cfg(feature = "tun")]
+    pub fn open_wintun_adapter(
+        name_hint: &str,
+        mtu: u32,
+    ) -> io::Result<Arc<wintun::Adapter>> {
+        let wintun = wintun::load().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Failed to load wintun: {}", e),
+            )
+        })?;
+
+        // Create adapter with a GUID (you may want to make this configurable)
+        let adapter = wintun::Adapter::create(
+            &wintun,
+            name_hint,
+            "SingBox",
+            None, // Let wintun generate a GUID
+        )
+        .map_err(|e| {
+            io::Error::new(io::ErrorKind::Other, format!("Failed to create adapter: {}", e))
+        })?;
+
+        // Set MTU (wintun doesn't have direct MTU setting in the API,
+        // but we can note it for packet handling)
+        tracing::info!(
+            "Windows wintun adapter opened: {} (requested mtu={})",
+            name_hint,
+            mtu
+        );
+
+        Ok(adapter)
+    }
+
+    /// Parse IP packet from wintun (similar to Linux/macOS)
+    #[cfg(feature = "tun")]
+    pub fn parse_wintun_packet(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+        if pkt.is_empty() {
+            return None;
+        }
+
+        let version = (pkt[0] >> 4) & 0xF;
+        match version {
+            4 => parse_ipv4(pkt),
+            6 => parse_ipv6(pkt),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "tun")]
+    fn parse_ipv4(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+        if pkt.len() < 20 {
+            return None;
+        }
+
+        let proto = pkt[9];
+        let dst = IpAddr::V4(Ipv4Addr::new(pkt[16], pkt[17], pkt[18], pkt[19]));
+
+        let ihl = ((pkt[0] & 0x0F) as usize) * 4;
+        if pkt.len() < ihl + 4 {
+            return Some((super::L4::Other(proto), Some(dst), None));
+        }
+
+        match proto {
+            6 => {
+                let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
+                Some((super::L4::Tcp, Some(dst), Some(port)))
+            }
+            17 => {
+                let port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
+                Some((super::L4::Udp, Some(dst), Some(port)))
+            }
+            _ => Some((super::L4::Other(proto), Some(dst), None)),
+        }
+    }
+
+    #[cfg(feature = "tun")]
+    fn parse_ipv6(pkt: &[u8]) -> Option<(super::L4, Option<IpAddr>, Option<u16>)> {
+        if pkt.len() < 40 {
+            return None;
+        }
+
+        let next = pkt[6];
+        let dst = {
+            let mut a = [0u8; 16];
+            a.copy_from_slice(&pkt[24..40]);
+            IpAddr::V6(Ipv6Addr::from(a))
+        };
+
+        match next {
+            6 | 17 => {
+                if pkt.len() < 40 + 4 {
+                    return Some((super::L4::Other(next), Some(dst), None));
+                }
+                let port = u16::from_be_bytes([pkt[42], pkt[43]]);
+                let l4 = if next == 6 { super::L4::Tcp } else { super::L4::Udp };
+                Some((l4, Some(dst), Some(port)))
+            }
+            _ => Some((super::L4::Other(next), Some(dst), None)),
+        }
     }
 }
 

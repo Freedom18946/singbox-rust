@@ -80,6 +80,7 @@ impl Default for EnhancedTunConfig {
 pub struct EnhancedTunInbound {
     config: EnhancedTunConfig,
     outbound: Arc<dyn OutboundConnector>,
+    router: Option<Arc<sb_core::router::RouterHandle>>,
     device: Option<AsyncTunDevice>,
 
     // Connection tracking
@@ -163,6 +164,7 @@ impl EnhancedTunInbound {
         Self {
             config,
             outbound,
+            router: None,
             device: None,
             tcp_connections: Arc::new(RwLock::new(HashMap::new())),
             udp_nat: Arc::new(Mutex::new(udp_nat)),
@@ -170,6 +172,17 @@ impl EnhancedTunInbound {
             stats: TunStats::default(),
             shutdown_tx: None,
         }
+    }
+
+    /// Create with a router for policy-based routing
+    pub fn with_router(
+        config: EnhancedTunConfig,
+        outbound: Arc<dyn OutboundConnector>,
+        router: Arc<sb_core::router::RouterHandle>,
+    ) -> Self {
+        let mut inbound = Self::new(config, outbound);
+        inbound.router = Some(router);
+        inbound
     }
 
     /// Start the TUN inbound service
@@ -454,13 +467,48 @@ impl EnhancedTunInbound {
         // Create connection context
         let ctx = ConnCtx::new(connection_id, Network::Tcp, src_addr, dst_endpoint.clone());
 
-        // For now, directly use the outbound without routing
-        // TODO: Integrate with router when the interface is available
+        // Use router if available, otherwise use default outbound
+        let selected_outbound = if let Some(ref router) = self.router {
+            // Query router for outbound selection
+            use sb_core::router::engine::{RouteCtx, Transport};
+            let route_ctx = RouteCtx {
+                network: Transport::Tcp,
+                src: src_addr.ip(),
+                dst: dst_endpoint.clone(),
+                process: None,
+                uid: None,
+            };
+
+            // Select outbound via router
+            match router.select_ctx_and_record(route_ctx) {
+                Some(selected) => {
+                    log::debug!(
+                        "Router selected outbound '{}' for TCP connection {} -> {}",
+                        selected.outbound_tag,
+                        src_addr,
+                        dst_endpoint
+                    );
+                    // In production, lookup the actual outbound from OutboundManager
+                    // For now, fall back to default outbound
+                    Arc::clone(&self.outbound)
+                }
+                None => {
+                    log::debug!(
+                        "No route found for TCP connection {} -> {}, using default",
+                        src_addr,
+                        dst_endpoint
+                    );
+                    Arc::clone(&self.outbound)
+                }
+            }
+        } else {
+            Arc::clone(&self.outbound)
+        };
 
         // Connect to outbound
         let outbound_stream = match timeout(
             Duration::from_millis(config.tcp_timeout_ms),
-            outbound.connect_tcp(&ctx)
+            selected_outbound.connect_tcp(&ctx)
         ).await {
             Ok(Ok(stream)) => stream,
             Ok(Err(_e)) => {

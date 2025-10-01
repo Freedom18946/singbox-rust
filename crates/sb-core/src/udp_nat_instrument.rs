@@ -45,7 +45,6 @@ impl UpstreamFail {
 struct Entry {
     last: Instant,
     ttl: Duration,
-    upstream: SocketAddr,
 }
 
 /// 简化 NAT 表（仅用于指标演示；真实 NAT 逻辑应在现有模块）
@@ -72,7 +71,7 @@ impl UdpNatTable {
             if let Some((k, _)) = g
                 .iter()
                 .min_by_key(|(_, v)| v.last)
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .map(|(k, v)| (*k, v.clone()))
             {
                 g.remove(&k);
                 M().udp_evict_total
@@ -84,7 +83,6 @@ impl UdpNatTable {
             Entry {
                 last: Instant::now(),
                 ttl,
-                upstream,
             },
         );
         M().udp_map_size.set(g.len() as u64);

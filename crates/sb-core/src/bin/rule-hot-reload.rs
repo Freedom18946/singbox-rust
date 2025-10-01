@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
         .parse::<u64>()
         .context("Invalid interval")?;
 
-    let mut router = Router::new(RouterConfig::default()).context("Failed to init router")?;
+    let mut router = Router::new(RouterConfig).context("Failed to init router")?;
 
     reload_rules(&mut router, &config_path, &rules_dirs).await?;
 

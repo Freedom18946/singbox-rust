@@ -46,7 +46,7 @@ fn main() -> Result<()> {
             if use_plus {
                 sb_core::router::preview::build_index_from_rules_plus(
                     &dsl,
-                    opt.dsl_file.parent().map(|p| p),
+                    opt.dsl_file.parent(),
                 )
             } else {
                 sb_core::router::preview::build_index_from_rules(&dsl)

@@ -238,7 +238,7 @@ impl crate::adapter::OutboundConnector for VlessOutbound {
     fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
         // Create a blocking runtime to run async VLESS connection
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         rt.block_on(async {
             // Create target host:port

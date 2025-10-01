@@ -209,13 +209,13 @@ impl Socks5Connector {
         // Create UDP socket
         let udp_socket = UdpSocket::bind("0.0.0.0:0")
             .await
-            .map_err(|e| AdapterError::Io(e))?;
+            .map_err(AdapterError::Io)?;
 
         // Connect to relay address
         udp_socket
             .connect(relay_addr)
             .await
-            .map_err(|e| AdapterError::Io(e))?;
+            .map_err(AdapterError::Io)?;
 
         // Create SOCKS UDP wrapper
         let socks_udp = SocksUdp::new(
@@ -1054,8 +1054,7 @@ impl Socks5Connector {
             let mut head2 = [0u8; 4];
             stream.read_exact(&mut head2).await?;
             if head2[0] != 0x05 || head2[1] != 0x00 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(std::io::Error::other(
                     "BIND not accepted",
                 ));
             }

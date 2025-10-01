@@ -1,3 +1,6 @@
+//! Config loading and hot-reload functionality
+#![allow(clippy::missing_errors_doc, clippy::cognitive_complexity)]
+
 #[cfg(feature = "dev-cli")]
 use anyhow::Result;
 #[cfg(feature = "dev-cli")]

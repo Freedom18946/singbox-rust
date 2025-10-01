@@ -1,6 +1,4 @@
-use sb_core::router::router_build_index_from_str;
 use sb_core::router::{decide_http, RouterHandle};
-use std::sync::Arc;
 
 #[test]
 fn http_port_rule_applies_when_host_not_matched() {

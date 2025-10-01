@@ -109,12 +109,12 @@ mod tests {
     #[async_trait::async_trait]
     impl Resolver for TestResolver {
         async fn resolve(&self, _domain: &str) -> anyhow::Result<DnsAnswer> {
-            Ok(DnsAnswer {
-                ips: vec!["1.2.3.4".parse().unwrap()],
-                ttl: Duration::from_secs(300),
-                source: crate::dns::cache::Source::System,
-                rcode: crate::dns::cache::Rcode::NoError,
-            })
+            Ok(DnsAnswer::new(
+                vec!["1.2.3.4".parse().unwrap()],
+                Duration::from_secs(300),
+                crate::dns::cache::Source::System,
+                crate::dns::cache::Rcode::NoError,
+            ))
         }
 
         fn name(&self) -> &str {

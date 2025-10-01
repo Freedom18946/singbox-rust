@@ -120,8 +120,7 @@ impl OutboundTcp for ShadowTlsOutbound {
                     counter!("shadowtls_connect_total", "result" => "tls_fail").increment(1);
                 }
 
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     format!("TLS handshake failed: {}", e),
                 ));
             }
@@ -147,14 +146,12 @@ impl OutboundTcp for ShadowTlsOutbound {
         if let Err(e) = tls_stream.write_all(connect_line.as_bytes()).await {
             #[cfg(feature = "metrics")]
             metrics::counter!("shadowtls_connect_total", "result" => "write_fail").increment(1);
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 format!("tunnel header write failed: {}", e),
             ));
         }
         if let Err(e) = tls_stream.flush().await {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 format!("tunnel header flush failed: {}", e),
             ));
         }

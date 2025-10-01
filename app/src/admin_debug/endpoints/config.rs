@@ -39,6 +39,17 @@ pub struct ConfigDelta {
     pub breaker_ratio: Option<f32>,
 }
 
+// Response structures for handle_put
+#[derive(Serialize)]
+struct ConfigPutResponse<'a> {
+    status: &'a str,
+    applied: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<&'a str>,
+    start_ms: u128,
+    dur_ms: u128,
+}
+
 /// # Errors
 /// Returns an IO error if the response cannot be written to the socket
 pub async fn handle_get(sock: &mut (impl AsyncWrite + Unpin)) -> std::io::Result<()> {
@@ -66,16 +77,7 @@ where
     // Check RBAC - X-Role header should be admin
     let role = headers.get("x-role").map_or("", std::string::String::as_str);
     if role != "admin" {
-        // Stable error schema
-        #[derive(serde::Serialize)]
-        struct Resp<'a> {
-            status: &'a str,
-            applied: bool,
-            errors: Vec<&'a str>,
-            start_ms: u128,
-            dur_ms: u128,
-        }
-        let resp = Resp {
+        let resp = ConfigPutResponse {
             status: "error",
             applied: false,
             errors: vec!["X-Role: admin required"],
@@ -125,20 +127,12 @@ where
             audit::log(&entry);
 
             // Respond with fixed schema and stable field order
-            #[derive(serde::Serialize)]
-            struct Resp<'a> {
-                status: &'a str,
-                applied: bool,
-                errors: &'a [&'a str],
-                start_ms: u128,
-                dur_ms: u128,
-            }
             let status = if app.ok { "ok" } else { "error" };
             let applied = app.ok && !dry && app.changed;
-            let resp = Resp {
+            let resp = ConfigPutResponse {
                 status,
                 applied,
-                errors: &[],
+                errors: vec![],
                 start_ms: t_start,
                 dur_ms: t0.elapsed().as_millis(),
             };
@@ -154,19 +148,10 @@ where
             )
             .with_changed(false);
             audit::log(&entry);
-            // Fixed schema error
-            #[derive(serde::Serialize)]
-            struct Resp<'a> {
-                status: &'a str,
-                applied: bool,
-                errors: [&'a str; 1],
-                start_ms: u128,
-                dur_ms: u128,
-            }
-            let resp = Resp {
+            let resp = ConfigPutResponse {
                 status: "error",
                 applied: false,
-                errors: [&*e],
+                errors: vec![&*e],
                 start_ms: t_start,
                 dur_ms: t0.elapsed().as_millis(),
             };
@@ -196,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_config_delta_empty() {
-        let json = r#"{}"#;
+        let json = r"{}";
         let delta: ConfigDelta = serde_json::from_str(json).unwrap();
         assert_eq!(delta.max_redirects, None);
         assert_eq!(delta.timeout_ms, None);
