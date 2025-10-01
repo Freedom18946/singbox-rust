@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed - P0+P1 Code Quality and Architecture Improvements (2025-10-02)
+## [0.2.0] - 2025-10-02
+
+### Fixed - P0+P1 Code Quality and Architecture Improvements
 
 **P0 Critical Fixes:**
 - **sb-config**: Fixed V2 schema validation - Corrected `v2_schema.json` to match actual V2 format (`name` instead of `tag`, unified `listen:"IP:PORT"` instead of separate fields)
