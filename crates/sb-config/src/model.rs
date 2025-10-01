@@ -106,6 +106,14 @@ pub enum Rule {
 }
 
 /// Top-level configuration
+///
+/// **DEPRECATED**: This Config type is legacy and rarely used.
+/// Use `ir::ConfigIR` for all internal processing.
+/// Kept for backward compatibility only.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use ir::ConfigIR instead. This type will be removed in a future version."
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -120,6 +128,7 @@ impl Config {
     /// Normalize config to a fully-usable shape:
     // - Ensure default outbounds exist ("direct", "block") if not provided
     // - Leave inbounds as-is (defaults handled by serde)
+    #[allow(deprecated)]
     pub fn normalize(mut self) -> Self {
         let has_direct = self.outbounds.iter().any(|o| o.tag == "direct");
         let has_block = self.outbounds.iter().any(|o| o.tag == "block");

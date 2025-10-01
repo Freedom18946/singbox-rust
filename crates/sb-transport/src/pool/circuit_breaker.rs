@@ -51,7 +51,7 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // Check if circuit breaker allows the request
-        match self.circuit_breaker.allow_request() {
+        match self.circuit_breaker.allow_request().await {
             CircuitBreakerDecision::Allow => {
                 trace!("Circuit breaker allowing connection to {}:{}", host, port);
 
@@ -64,7 +64,7 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                             "Connection to {}:{} succeeded in {:?}",
                             host, port, duration
                         );
-                        self.circuit_breaker.record_result(true, false);
+                        self.circuit_breaker.record_result(true, false).await;
                         Ok(stream)
                     }
                     Err(error) => {
@@ -76,7 +76,7 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                             host, port, duration, error, is_timeout
                         );
 
-                        self.circuit_breaker.record_result(false, is_timeout);
+                        self.circuit_breaker.record_result(false, is_timeout).await;
                         Err(error)
                     }
                 }
@@ -96,8 +96,6 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
     fn is_timeout_error(&self, error: &DialError) -> bool {
         match error {
             DialError::Other(msg) if msg.contains("timeout") => true,
-            #[allow(deprecated)]
-            DialError::Timeout => true,
             DialError::Io(io_error) => {
                 matches!(io_error.kind(), std::io::ErrorKind::TimedOut)
             }

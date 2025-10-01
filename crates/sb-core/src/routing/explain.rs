@@ -1,7 +1,6 @@
 //! Canonical explain output with sha256-8 rule id and CIDR→Geo chain.
 use crate::routing::engine::{Engine, Input};
 use crate::routing::trace::Trace;
-use sb_metrics::registry::global as M;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -97,7 +96,7 @@ impl ExplainEngine {
         let outbound = d.outbound.clone();
         let trace = d.trace.clone();
 
-        M().route_explain_total.inc();
+        sb_metrics::inc_route_explain();
         ExplainResult {
             dest: dest.to_string(),
             matched_rule: rid,

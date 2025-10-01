@@ -67,15 +67,18 @@ impl<'a> Engine<'a> {
 
     fn match_list<T: AsRef<str>>(needle: &str, list: &[T]) -> bool {
         // domain: 末尾匹配；ip: 等值；其他直接等值
+        // All domain matching is case-insensitive
+        let needle_lower = needle.to_ascii_lowercase();
         for it in list {
             let v = it.as_ref();
             if v == "*" {
                 return true;
             }
-            if needle.eq_ignore_ascii_case(v) {
+            let v_lower = v.to_ascii_lowercase();
+            if needle_lower == v_lower {
                 return true;
             }
-            if needle.ends_with(&format!(".{}", v)) {
+            if needle_lower.ends_with(&format!(".{}", v_lower)) {
                 return true;
             }
         }

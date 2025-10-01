@@ -1,4 +1,25 @@
-// crates/sb-config/src/present.rs
+//! Configuration presentation layer: conversion and formatting.
+//!
+//! This module provides two primary functions:
+//!
+//! 1. **Conversion (`to_ir`)**: The canonical transformation from user-facing `Config`
+//!    to the intermediate representation (`ConfigIR`) consumed by the routing engine
+//!    and runtime adapters. This is the **single source of truth** for Config→IR
+//!    conversion, invoked by `Config::build_registry_and_router` for validation and
+//!    by runtime components for actual IR consumption.
+//!
+//! 2. **Formatting (`to_view`)**: Transforms `ConfigIR` into external JSON formats
+//!    for compatibility with other tools (e.g., `FormatProfile::Go1124` for sing-box
+//!    Go version compatibility). Used for config inspection, debugging, and
+//!    interoperability.
+//!
+//! ## Design rationale
+//!
+//! - **Why not merge with `ir.rs`?** The `ir` module defines data structures;
+//!   this module handles transformations. Separation keeps concerns distinct.
+//! - **Why "present"?** The name reflects "presentation layer" - bridging
+//!   user-facing config and internal IR, plus external view formatting.
+
 use crate::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleIR};
 
 use crate::{Config, Inbound, Outbound};

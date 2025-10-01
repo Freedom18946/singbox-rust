@@ -3,9 +3,7 @@
 //! - 目标：HEALTH_TARGET（默认 "1.1.1.1:80"）
 //! - 间隔：HEALTH_INTERVAL_MS（默认 2000ms）
 use crate::adapter::Bridge;
-use sb_metrics::registry::global as M;
 use std::sync::Arc;
-use std::thread;
 use std::time::{Duration, Instant};
 
 fn target() -> (String, u16) {
@@ -27,23 +25,22 @@ fn interval() -> Duration {
     Duration::from_millis(ms)
 }
 
-pub fn spawn_health_task(bridge: Arc<Bridge>) -> thread::JoinHandle<()> {
+pub fn spawn_health_task(bridge: Arc<Bridge>) -> tokio::task::JoinHandle<()> {
     let (host, port) = target();
     let iv = interval();
-    thread::spawn(move || {
+    tokio::spawn(async move {
         loop {
             for (name, _kind, conn) in bridge.outbounds.iter() {
                 let t0 = Instant::now();
-                let ok = conn.connect(&host, port).is_ok();
+                let ok = conn.connect(&host, port).await.is_ok();
                 let up = if ok { 1.0 } else { 0.0 };
                 // 指标：outbound_up{outbound}
-                M().proxy_select_score
-                    .set(&[("outbound", name.as_str())], up);
+                sb_metrics::set_proxy_select_score(name.as_str(), up);
                 // 兼容导出：同步到 OUTBOUND_UP（gauge）
-                M().outbound_up.set(&[("outbound", name.as_str())], up);
+                sb_metrics::set_outbound_up(name.as_str(), up);
                 let _ = t0; // 预留耗时：若需要可上报 histogram
             }
-            thread::sleep(iv);
+            tokio::time::sleep(iv).await;
         }
     })
 }

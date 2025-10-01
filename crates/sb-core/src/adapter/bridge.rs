@@ -179,6 +179,12 @@ pub fn build_bridge<'a>(cfg: &'a ConfigIR, engine: crate::routing::engine::Engin
                     });
                 } else {
                     // 成员缺失：跳过。preflight 会提示；运行时以 direct 回退或报错
+                    tracing::warn!(
+                        target: "sb_core::adapter",
+                        selector = %name,
+                        missing_member = %m,
+                        "selector member not found, skipping"
+                    );
                 }
             }
             if !resolved.is_empty() {
@@ -235,6 +241,13 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: ()) -> Bridge {
                         name: m.clone(),
                         conn,
                     });
+                } else {
+                    tracing::warn!(
+                        target: "sb_core::adapter",
+                        selector = %name,
+                        missing_member = %m,
+                        "selector member not found, skipping"
+                    );
                 }
             }
             if !resolved.is_empty() {

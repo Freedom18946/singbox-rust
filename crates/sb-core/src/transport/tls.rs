@@ -3,7 +3,6 @@ use crate::errors::classify::{classify_tls, NetClass};
 use crate::transport::tcp::{DialResult, TcpDialer};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
-use sb_metrics::registry::global as M;
 use std::io::Write;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -116,7 +115,7 @@ impl TlsClient {
             Ok(c) => c,
             Err(e) => {
                 let cl = classify_tls(&e);
-                M().udp_fail_total.inc(&[("class", cl.class)]); // 占位：沿用 udp_fail_total 做演示计数
+                sb_metrics::inc_udp_fail(cl.class); // 占位：沿用 udp_fail_total 做演示计数
                 return TlsResult {
                     error: Some(cl),
                     negotiated_alpn: None,

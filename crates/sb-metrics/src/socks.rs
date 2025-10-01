@@ -1,31 +1,12 @@
 //! SOCKS 指标模块。
 //! 提供 TCP/UDP 常用指标（连接、错误、NAT、数据包计数）。
 //! 设计为"可选接线"：适配器可以逐步引入，不会影响功能。
+//!
+//! Note: TCP connection metrics have been consolidated into `lib.rs::socks_in` module.
+//! Use `sb_metrics::inc_socks_tcp_conn()` from the parent module instead.
+
 use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use std::sync::LazyLock;
-
-// =============================
-// TCP 侧
-// =============================
-/// 新建的 TCP 连接总数
-pub static TCP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    #[allow(clippy::expect_used)]
-    register_int_counter!(opts!(
-        "socks_tcp_conn_total",
-        "Total TCP connections accepted by SOCKS inbound"
-    ))
-    .expect("register socks_tcp_conn_total")
-});
-
-/// TCP 层错误总数
-pub static TCP_ERROR_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    #[allow(clippy::expect_used)]
-    register_int_counter!(opts!(
-        "socks_tcp_error_total",
-        "Total TCP errors observed by SOCKS inbound"
-    ))
-    .expect("register socks_tcp_error_total")
-});
 
 // =============================
 // UDP 侧
@@ -70,12 +51,10 @@ pub static UDP_PKTS_IN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
 // =============================
 // 便捷函数（可选）
 // =============================
-pub fn inc_tcp_conn() {
-    TCP_CONN_TOTAL.inc();
-}
-pub fn inc_tcp_error() {
-    TCP_ERROR_TOTAL.inc();
-}
+// Note: TCP convenience functions removed - use parent module functions instead:
+// - sb_metrics::inc_socks_tcp_conn()
+// - No direct TCP error function in parent, consider using appropriate classifier
+
 pub fn set_udp_nat_size(sz: usize) {
     UDP_NAT_SIZE.set(i64::try_from(sz).unwrap_or(i64::MAX));
 }

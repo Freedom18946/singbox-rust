@@ -456,6 +456,12 @@ impl SupervisorHandle {
         // Touch cancel to avoid unused-field warnings
         let _ = &self.cancel;
 
+        // Extract old IR from current state before applying new config
+        let old_ir = {
+            let state_guard = self.state.read().await;
+            state_guard.current_ir.clone()
+        };
+
         // Always forward the reload request
         self.tx
             .send(ReloadMsg::Apply(new_ir.clone()))
@@ -466,7 +472,6 @@ impl SupervisorHandle {
             let _ = &new_ir;
             Ok(Diff::default())
         } else {
-            let old_ir = new_ir.clone();
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             Ok(diff)
         }

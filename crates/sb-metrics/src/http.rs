@@ -140,32 +140,6 @@ pub static HTTP_REQ_DURATION_MS: LazyLock<Histogram> = LazyLock::new(|| {
     })
 });
 
-/// 按出站类型（direct/http/socks）的连接尝试
-pub static HTTP_OUTBOUND_CONNECT_ATTEMPT: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    register_int_counter_vec!(
-        "http_outbound_connect_attempt_total",
-        "Outbound connect attempts from HTTP pipeline",
-        &["kind"] // "direct" | "http" | "socks"
-    )
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
-        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    })
-});
-
-/// 按出站类型的连接失败分类（`dns`/`tcp_timeout`/`tls`/`other`）
-pub static HTTP_OUTBOUND_CONNECT_ERROR: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    register_int_counter_vec!(
-        "http_outbound_connect_error_total",
-        "Outbound connect errors from HTTP pipeline",
-        &["kind", "class"]
-    )
-    .unwrap_or_else(|_| {
-        #[allow(clippy::unwrap_used)] // Fallback dummy counter vec initialization
-        IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    })
-});
-
 /// 便捷：方法自增（未知方法会被聚合到 "OTHER"）
 pub fn inc_method(method: &str) {
     let m = match method {
@@ -204,28 +178,6 @@ impl Drop for HttpReqTimer {
         let ms = dt.as_secs_f64() * 1000.0;
         HTTP_REQ_DURATION_MS.observe(ms);
     }
-}
-
-/// 便捷：记录一次出站连接尝试
-pub fn inc_outbound_attempt(kind: &str) {
-    let k = match kind {
-        "direct" | "http" | "socks" => kind,
-        _ => "other",
-    };
-    HTTP_OUTBOUND_CONNECT_ATTEMPT.with_label_values(&[k]).inc();
-}
-
-/// 便捷：记录一次出站连接错误
-pub fn inc_outbound_error(kind: &str, class: &str) {
-    let k = match kind {
-        "direct" | "http" | "socks" => kind,
-        _ => "other",
-    };
-    let c = match class {
-        "dns" | "tcp_timeout" | "tls" | "io" | "other" => class,
-        _ => "other",
-    };
-    HTTP_OUTBOUND_CONNECT_ERROR.with_label_values(&[k, c]).inc();
 }
 
 /// 便捷：记录一次 CONNECT 请求 / 成功 / 失败

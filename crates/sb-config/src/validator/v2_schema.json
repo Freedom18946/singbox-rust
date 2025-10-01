@@ -4,35 +4,60 @@
   "type":"object",
   "additionalProperties": false,
   "properties":{
+    "schema_version":{"type":"integer","enum":[2]},
     "inbounds":{"type":"array","items":{"$ref":"#/defs/inbound"}},
     "outbounds":{"type":"array","items":{"$ref":"#/defs/outbound"}},
-    "route":{"$ref":"#/defs/route"}
+    "route":{"$ref":"#/defs/route"},
+    "dns":{"$ref":"#/defs/dns"}
   },
   "defs":{
     "inbound":{"type":"object","additionalProperties": false,"properties":{
-      "type":{"enum":["socks","http","tun"]},
+      "name":{"type":"string"},
+      "type":{"enum":["socks","http","tun","mixed"]},
       "listen":{"type":"string","minLength":1},
-      "port":{"type":"integer","minimum":1,"maximum":65535},
       "udp":{"type":"boolean"},
       "sniff":{"type":"boolean"},
+      "interface_name":{"type":"string"},
+      "inet4_address":{"type":"string"},
+      "inet6_address":{"type":"string"},
+      "auto_route":{"type":"boolean"},
       "auth":{"type":"object","additionalProperties": false,"properties":{
         "username":{"type":"string"},
         "password":{"type":"string"}
       }}
-    },"required":["type","listen","port"]},
+    },"required":["type","listen"]},
     "outbound":{"type":"object","additionalProperties": false,"properties":{
-      "type":{"enum":["direct","http","socks","block"]},
+      "name":{"type":"string"},
+      "type":{"enum":["direct","http","socks","block","shadowsocks","vmess","vless","hysteria2","tuic"]},
       "server":{"type":"string"},
       "port":{"type":"integer","minimum":1,"maximum":65535},
-      "udp":{"type":"string"},
-      "name":{"type":"string"}
+      "udp":{"type":["boolean","string"]},
+      "method":{"type":"string"},
+      "password":{"type":"string"},
+      "username":{"type":"string"}
     },"required":["type"]},
     "route":{"type":"object","additionalProperties": false,"properties":{
       "rules":{"type":"array","items":{"$ref":"#/defs/rule"}},
+      "final":{"type":"string"},
       "default":{"type":"string"}
     }},
     "rule":{"type":"object","additionalProperties": false,"properties":{
+      "when":{"type":"object","additionalProperties":false,"properties":{
+        "domain":{"type":"string"},
+        "suffix":{"type":"string"},
+        "keyword":{"type":"string"},
+        "regex":{"type":"string"},
+        "geosite":{"type":"string"},
+        "ip_cidr":{"type":"string"},
+        "geoip":{"type":"string"},
+        "port":{"type":"integer"},
+        "network":{"type":"string"},
+        "protocol":{"type":"string"},
+        "process":{"type":"string"}
+      }},
+      "to":{"type":"string"},
       "domain":{"type":"array","items":{"type":"string"}},
+      "domain_suffix":{"type":"array","items":{"type":"string"}},
       "geosite":{"type":"array","items":{"type":"string"}},
       "geoip":{"type":"array","items":{"type":"string"}},
       "ipcidr":{"type":"array","items":{"type":"string"}},
@@ -40,18 +65,16 @@
       "process":{"type":"array","items":{"type":"string"}},
       "network":{"type":"array","items":{"type":"string"}},
       "protocol":{"type":"array","items":{"type":"string"}},
-      "source":{"type":"array","items":{"type":"string"}},
-      "dest":{"type":"array","items":{"type":"string"}},
-      "user-agent":{"type":"array","items":{"type":"string"}},
-      "not_domain":{"type":"array","items":{"type":"string"}},
-      "not_geosite":{"type":"array","items":{"type":"string"}},
-      "not_geoip":{"type":"array","items":{"type":"string"}},
-      "not_ipcidr":{"type":"array","items":{"type":"string"}},
-      "not_port":{"type":"array","items":{"type":"string"}},
-      "not_process":{"type":"array","items":{"type":"string"}},
-      "not_network":{"type":"array","items":{"type":"string"}},
-      "not_protocol":{"type":"array","items":{"type":"string"}},
       "outbound":{"type":"string"}
+    }},
+    "dns":{"type":"object","additionalProperties":false,"properties":{
+      "servers":{"type":"array","items":{"$ref":"#/defs/dns_server"}},
+      "final":{"type":"string"}
+    }},
+    "dns_server":{"type":"object","additionalProperties":false,"properties":{
+      "name":{"type":"string"},
+      "address":{"type":"string"},
+      "address_resolver":{"type":"string"}
     }}
   }
 }

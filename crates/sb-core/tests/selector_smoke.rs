@@ -46,7 +46,7 @@ fn metrics_export_contains_outbound_label() {
         }],
     );
     let _ = sel.connect("127.0.0.1", 9);
-    let text = sb_metrics::registry::export_prometheus();
+    let text = sb_metrics::export_prometheus();
     // label set must include outbound
     assert!(text.contains("proxy_select_score{outbound=\"sel2\"}"));
 }

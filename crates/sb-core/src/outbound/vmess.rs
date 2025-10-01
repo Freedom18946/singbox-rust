@@ -409,25 +409,17 @@ impl OutboundTcp for VmessOutbound {
 }
 
 #[cfg(feature = "out_vmess")]
+#[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for VmessOutbound {
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
-        // Create a blocking runtime to run async VMess connection
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(io::Error::other)?;
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        // Create target host:port
+        let target = HostPort {
+            host: host.to_string(),
+            port,
+        };
 
-        rt.block_on(async {
-            // Create target host:port
-            let target = HostPort {
-                host: host.to_string(),
-                port,
-            };
-
-            // Use async connect implementation
-            let tokio_stream = OutboundTcp::connect(self, &target).await?;
-
-            // Convert tokio TcpStream to std TcpStream
-            tokio_stream.into_std()
-        })
+        // Use async connect implementation
+        OutboundTcp::connect(self, &target).await
     }
 }
 

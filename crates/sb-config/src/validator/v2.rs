@@ -36,7 +36,11 @@ pub fn emit_issue(kind: &str, code: IssueCode, ptr: &str, msg: &str, hint: &str)
 
 /// 轻量 schema 校验（占位实现）：解析内置 schema，对照字段集做 UnknownField/TypeMismatch/MissingRequired
 /// 说明：为了不引入庞大依赖，这里实现最小必要逻辑；后续可切换 jsonschema crate，保持输出结构不变。
-pub fn validate_v2(doc: &serde_json::Value) -> Vec<Value> {
+///
+/// # Arguments
+/// * `doc` - 待验证的 JSON 文档
+/// * `allow_unknown` - 是否将未知字段视为警告（true）而非错误（false）
+pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     let schema_text = include_str!("v2_schema.json");
     let schema: Value = match serde_json::from_str(schema_text) {
         Ok(v) => v,
@@ -82,8 +86,9 @@ pub fn validate_v2(doc: &serde_json::Value) -> Vec<Value> {
     ) {
         for k in obj.keys() {
             if !props.contains_key(k) {
+                let kind = if allow_unknown { "warning" } else { "error" };
                 issues.push(emit_issue(
-                    "error",
+                    kind,
                     IssueCode::UnknownField,
                     &format!("/{}", k),
                     "unknown field",
@@ -95,41 +100,45 @@ pub fn validate_v2(doc: &serde_json::Value) -> Vec<Value> {
     // 2) inbounds required/type checks（节选）
     if let Some(arr) = doc.get("inbounds").and_then(|v| v.as_array()) {
         for (i, ib) in arr.iter().enumerate() {
-            // required: type, listen, port
-            for rq in ["type", "listen", "port"] {
-                if ib.get(rq).is_none() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::MissingRequired,
-                        &format!("/inbounds/{}/{}", i, rq),
-                        "missing required field",
-                        "add it",
-                    ));
-                }
+            // required: type (always required)
+            if ib.get("type").is_none() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::MissingRequired,
+                    &format!("/inbounds/{}/type", i),
+                    "missing required field",
+                    "add it",
+                ));
             }
-            if let Some(port) = ib.get("port") {
-                if !port.is_number() {
-                    issues.push(emit_issue(
-                        "error",
-                        IssueCode::TypeMismatch,
-                        &format!("/inbounds/{}/port", i),
-                        "port must be integer",
-                        "1..65535",
-                    ));
-                }
+
+            // listen is only required for non-tun inbounds
+            let is_tun = ib.get("type").and_then(|v| v.as_str()) == Some("tun");
+            if !is_tun && ib.get("listen").is_none() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::MissingRequired,
+                    &format!("/inbounds/{}/listen", i),
+                    "missing required field (except for tun type)",
+                    "add it",
+                ));
             }
-            // additionalProperties=false
+
+            // additionalProperties=false (V2 允许的字段)
             if let Some(map) = ib.as_object() {
                 for k in map.keys() {
                     match k.as_str() {
-                        "type" | "listen" | "port" | "udp" | "sniff" | "auth" => {}
-                        _ => issues.push(emit_issue(
-                            "error",
-                            IssueCode::UnknownField,
-                            &format!("/inbounds/{}/{}", i, k),
-                            "unknown field",
-                            "remove it",
-                        )),
+                        "name" | "type" | "listen" | "udp" | "sniff" | "auth"
+                        | "interface_name" | "inet4_address" | "inet6_address" | "auto_route" => {}
+                        _ => {
+                            let kind = if allow_unknown { "warning" } else { "error" };
+                            issues.push(emit_issue(
+                                kind,
+                                IssueCode::UnknownField,
+                                &format!("/inbounds/{}/{}", i, k),
+                                "unknown field",
+                                "remove it",
+                            ));
+                        }
                     }
                 }
             }

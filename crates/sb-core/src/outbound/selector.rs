@@ -5,9 +5,7 @@
 //!   proxy_select_score{outbound,member} gauge (current score snapshot).
 use super::endpoint::ProxyEndpoint;
 use crate::adapter::OutboundConnector;
-use sb_metrics::registry::global as M;
 use std::collections::HashMap;
-use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -127,10 +125,8 @@ impl Selector {
             s.cb_open_until_ms = s.last_update_ms + self.cb_open_ms as u128;
         }
         // 指标：固定标签集，仅 outbound（成员维度避免标签爆炸）
-        M().proxy_select_score
-            .set(&[("outbound", self.name.as_str())], Self::score_of(s));
-        M().proxy_select_total
-            .inc(&[("outbound", self.name.as_str())]);
+        sb_metrics::set_proxy_select_score(self.name.as_str(), Self::score_of(s));
+        sb_metrics::inc_proxy_select(self.name.as_str());
     }
 
     /// Record observation for a specific endpoint (used by health monitoring)
@@ -168,8 +164,9 @@ impl Selector {
     }
 }
 
+#[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for Selector {
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
         // 空池：返回可诊断错误（不崩溃）
         if self.members.is_empty() {
             tracing::warn!(target: "sb_core::selector", outbound=%self.name, "connect called with empty pool");
@@ -184,7 +181,7 @@ impl crate::adapter::OutboundConnector for Selector {
         for _ in 0..sample_rounds {
             for m in &self.members {
                 let t0 = Instant::now();
-                match m.conn.connect(host, port) {
+                match m.conn.connect(host, port).await {
                     Ok(stream) => {
                         let ms = t0.elapsed().as_millis();
                         self.on_result(&m.name, ms, true);
@@ -202,7 +199,7 @@ impl crate::adapter::OutboundConnector for Selector {
         let idx = self.choose();
         let mem = &self.members[idx];
         let t0 = Instant::now();
-        match mem.conn.connect(host, port) {
+        match mem.conn.connect(host, port).await {
             Ok(s) => {
                 self.on_result(&mem.name, t0.elapsed().as_millis(), true);
                 Ok(s)
@@ -236,9 +233,10 @@ mod tests {
             }
         }
     }
+    #[async_trait::async_trait]
     impl OutboundConnector for FakeConn {
-        fn connect(&self, _h: &str, _p: u16) -> io::Result<TcpStream> {
-            std::thread::sleep(Duration::from_millis(self.delay_ms));
+        async fn connect(&self, _h: &str, _p: u16) -> io::Result<tokio::net::TcpStream> {
+            tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
             let c = self.count.fetch_add(1, Ordering::SeqCst);
             if c < self.fail_n {
                 Err(io::Error::new(io::ErrorKind::Other, "fail"))
@@ -249,8 +247,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn prefer_lower_latency_after_coldstart() {
+    #[tokio::test]
+    async fn prefer_lower_latency_after_coldstart() {
         let fast = Arc::new(FakeConn::new(5, 1));
         let slow = Arc::new(FakeConn::new(40, 0));
         let s = Selector::new(
@@ -268,7 +266,7 @@ mod tests {
         );
         // 冷启动采样后，choose 应倾向 fast
         for _ in 0..3 {
-            let _ = s.connect("127.0.0.1", 9);
+            let _ = s.connect("127.0.0.1", 9).await;
         }
         // 若运行到此，说明行为路径都覆盖了（断言逻辑依赖真实 socket 不可靠，留空）
     }

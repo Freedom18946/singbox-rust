@@ -225,27 +225,20 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_sync_connector_interface() {
+    #[tokio::test]
+    async fn test_async_connector_interface() {
         use crate::adapter::OutboundConnector;
         let connector = DirectConnector::new();
-        let result = connector.connect("127.0.0.1", 80);
+        let result = connector.connect("127.0.0.1", 80).await;
         // This will fail because nothing is listening, but it tests the interface
         assert!(result.is_err());
     }
 }
 
-// Implementation for the sync OutboundConnector trait used by adapter
+// Implementation for the async OutboundConnector trait used by adapter
+#[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for DirectConnector {
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
-        // Block on the async implementation
-        let rt = tokio::runtime::Handle::try_current()
-            .or_else(|_| {
-                // If no runtime is available, create a minimal one
-                tokio::runtime::Runtime::new().map(|rt| rt.handle().clone())
-            })
-            .map_err(std::io::Error::other)?;
-
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
         let endpoint = crate::types::Endpoint::new(
             crate::types::Host::domain(host.to_string()),
             port
@@ -261,12 +254,7 @@ impl crate::adapter::OutboundConnector for DirectConnector {
             endpoint
         );
 
-        rt.block_on(async {
-            let async_stream = self.connect_tcp(&ctx).await
-                .map_err(|e| std::io::Error::other(e.to_string()))?;
-
-            // Convert tokio TcpStream to std TcpStream
-            async_stream.into_std()
-        })
+        self.connect_tcp(&ctx).await
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }

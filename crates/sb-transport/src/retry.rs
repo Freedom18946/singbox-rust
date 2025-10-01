@@ -205,8 +205,6 @@ pub mod retry_conditions {
                 )
             }
             DialError::Other(msg) if msg.contains("timeout") => true,
-            #[allow(deprecated)]
-            DialError::Timeout => true,
             _ => false,
         }
     }
@@ -468,6 +466,7 @@ mod tests {
     #[test]
     fn test_retry_conditions() {
         use super::retry_conditions::*;
+        use crate::dialer::DialError;
         use std::io::{Error, ErrorKind};
 
         // Test transient network errors

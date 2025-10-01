@@ -46,17 +46,17 @@ async fn test_circuit_breaker_continuous_failures_trigger_open() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Initially closed
-    assert_eq!(cb.state(), CircuitState::Closed);
+    assert_eq!(cb.state().await, CircuitState::Closed);
 
     // Record failures one by one
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Closed);
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Closed);
 
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Closed);
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Closed);
 
-    cb.record_result(false, false); // This should trigger open
-    assert_eq!(cb.state(), CircuitState::Open);
+    cb.record_result(false, false).await; // This should trigger open
+    assert_eq!(cb.state().await, CircuitState::Open);
 }
 
 #[tokio::test]
@@ -71,23 +71,23 @@ async fn test_circuit_breaker_half_open_success_returns_to_closed() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Force to open state
-    cb.record_result(false, false);
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Open);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Open);
 
     // Wait for open timeout
     sleep(Duration::from_millis(60)).await;
 
     // Trigger half-open state
-    cb.allow_request();
-    assert_eq!(cb.state(), CircuitState::HalfOpen);
+    cb.allow_request().await;
+    assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
     // Success should close the circuit
-    cb.record_result(true, false);
-    assert_eq!(cb.state(), CircuitState::Closed);
+    cb.record_result(true, false).await;
+    assert_eq!(cb.state().await, CircuitState::Closed);
 
     // Reset failure count
-    assert_eq!(cb.failure_count(), 0);
+    assert_eq!(cb.failure_count().await, 0);
 }
 
 #[tokio::test]
@@ -102,17 +102,17 @@ async fn test_circuit_breaker_half_open_failure_reopens() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Force to open state
-    cb.record_result(false, false);
-    cb.record_result(false, false);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
 
     // Wait and transition to half-open
     sleep(Duration::from_millis(60)).await;
-    cb.allow_request();
-    assert_eq!(cb.state(), CircuitState::HalfOpen);
+    cb.allow_request().await;
+    assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
     // Failure should reopen circuit
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Open);
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Open);
 }
 
 #[tokio::test]
@@ -129,19 +129,19 @@ async fn test_circuit_breaker_timeout_not_fatal_configurable() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Record timeout errors - should not count
-    cb.record_result(false, true); // timeout
-    cb.record_result(false, true); // timeout
-    cb.record_result(false, true); // timeout
+    cb.record_result(false, true).await; // timeout
+    cb.record_result(false, true).await; // timeout
+    cb.record_result(false, true).await; // timeout
 
     // Should remain closed since timeouts don't count
-    assert_eq!(cb.state(), CircuitState::Closed);
+    assert_eq!(cb.state().await, CircuitState::Closed);
 
     // Regular failures should still count
-    cb.record_result(false, false);
-    cb.record_result(false, false);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
 
     // Should open now
-    assert_eq!(cb.state(), CircuitState::Open);
+    assert_eq!(cb.state().await, CircuitState::Open);
 
     // Clean up
     env::remove_var("SB_CB_COUNT_TIMEOUTS");
@@ -162,11 +162,11 @@ async fn test_circuit_breaker_timeout_fatal_by_default() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Record timeout errors - should count by default
-    cb.record_result(false, true); // timeout
-    cb.record_result(false, true); // timeout
+    cb.record_result(false, true).await; // timeout
+    cb.record_result(false, true).await; // timeout
 
     // Should open since timeouts count by default
-    assert_eq!(cb.state(), CircuitState::Open);
+    assert_eq!(cb.state().await, CircuitState::Open);
 }
 
 #[tokio::test]
@@ -205,7 +205,7 @@ async fn test_dialer_wrapper_integration() {
     }
 
     // Circuit should be open now
-    assert_eq!(cb_dialer.circuit_breaker().state(), CircuitState::Open);
+    assert_eq!(cb_dialer.circuit_breaker().state().await, CircuitState::Open);
 
     // Next call should be rejected by circuit breaker (not counted)
     let result = cb_dialer.connect("example.com", 80).await;
@@ -217,7 +217,7 @@ async fn test_dialer_wrapper_integration() {
     // Next call should succeed and close the circuit
     let result = cb_dialer.connect("example.com", 80).await;
     assert!(result.is_ok());
-    assert_eq!(cb_dialer.circuit_breaker().state(), CircuitState::Closed);
+    assert_eq!(cb_dialer.circuit_breaker().state().await, CircuitState::Closed);
 
     // Should only have made 4 actual calls (3 failures + 1 success)
     // The rejected call during open state didn't go through
@@ -236,22 +236,22 @@ async fn test_sliding_window_behavior() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Add 2 failures
-    cb.record_result(false, false);
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Closed);
-    assert_eq!(cb.failure_count(), 2);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Closed);
+    assert_eq!(cb.failure_count().await, 2);
 
     // Wait for window to expire
     sleep(Duration::from_millis(120)).await;
 
     // Failure count should be reset
-    assert_eq!(cb.failure_count(), 0);
+    assert_eq!(cb.failure_count().await, 0);
 
     // New failures should start fresh count
-    cb.record_result(false, false);
-    cb.record_result(false, false);
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Open);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Open);
 }
 
 #[tokio::test]
@@ -266,28 +266,28 @@ async fn test_multiple_half_open_calls_limit() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Force to open
-    cb.record_result(false, false);
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Open);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Open);
 
     // Wait for half-open
     sleep(Duration::from_millis(60)).await;
 
     // Should allow up to max_calls in half-open
     assert!(matches!(
-        cb.allow_request(),
+        cb.allow_request().await,
         sb_transport::circuit_breaker::CircuitBreakerDecision::Allow
     ));
-    assert_eq!(cb.state(), CircuitState::HalfOpen);
+    assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
     assert!(matches!(
-        cb.allow_request(),
+        cb.allow_request().await,
         sb_transport::circuit_breaker::CircuitBreakerDecision::Allow
     ));
 
     // Third call should be rejected
     assert!(matches!(
-        cb.allow_request(),
+        cb.allow_request().await,
         sb_transport::circuit_breaker::CircuitBreakerDecision::Reject
     ));
 }
@@ -304,13 +304,13 @@ async fn test_reset_functionality() {
     let cb = CircuitBreaker::new("test-outbound".to_string(), config);
 
     // Force to open
-    cb.record_result(false, false);
-    cb.record_result(false, false);
-    assert_eq!(cb.state(), CircuitState::Open);
-    assert!(cb.failure_count() > 0);
+    cb.record_result(false, false).await;
+    cb.record_result(false, false).await;
+    assert_eq!(cb.state().await, CircuitState::Open);
+    assert!(cb.failure_count().await > 0);
 
     // Reset should close circuit and clear failures
-    cb.reset();
-    assert_eq!(cb.state(), CircuitState::Closed);
-    assert_eq!(cb.failure_count(), 0);
+    cb.reset().await;
+    assert_eq!(cb.state().await, CircuitState::Closed);
+    assert_eq!(cb.failure_count().await, 0);
 }

@@ -1,7 +1,6 @@
 //! Adapter traits and factory interfaces.
 //! sb-adapter 提供真实实现；sb-core 仅定义接口与桥接。
 use sb_config::ir::Credentials;
-use std::net::TcpStream;
 use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
@@ -14,9 +13,10 @@ pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
 }
 
 /// 出站连接器（如 direct/socks-upstream/http）
+#[async_trait::async_trait]
 pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
-    /// 建立到目标的 TCP 连接
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream>;
+    /// 建立到目标的 TCP 连接（异步）
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
 }
 
 /// 入站构造参数（来自 IR）

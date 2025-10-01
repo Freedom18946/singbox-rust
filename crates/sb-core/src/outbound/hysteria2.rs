@@ -1032,32 +1032,26 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
 }
 
 #[cfg(feature = "out_hysteria2")]
+#[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for Hysteria2Outbound {
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
-        // Create a blocking runtime to run async Hysteria2 connection
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(std::io::Error::other)?;
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        // Establish QUIC connection first
+        let conn = super::quic::common::connect(&self.quic_config).await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
 
-        rt.block_on(async {
-            // Establish QUIC connection first
-            let conn = super::quic::common::connect(&self.quic_config).await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
+        // Open a bidirectional stream for Hysteria2 protocol
+        let (send_stream, recv_stream) = conn.open_bi().await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
 
-            // Open a bidirectional stream for Hysteria2 protocol
-            let (send_stream, recv_stream) = conn.open_bi().await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
+        // Perform Hysteria2 handshake and authentication
+        let mut hysteria2_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
 
-            // Perform Hysteria2 handshake and authentication
-            let mut hysteria2_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
+        // Hysteria2 protocol: Send authentication and target request
+        self.hysteria2_handshake(&mut hysteria2_stream, host, port).await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
 
-            // Hysteria2 protocol: Send authentication and target request
-            self.hysteria2_handshake(&mut hysteria2_stream, host, port).await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
-
-            // Convert to blocking TcpStream-like behavior
-            let tokio_stream = self.create_tcp_proxy(hysteria2_stream).await?;
-            tokio_stream.into_std()
-        })
+        // Convert to async TcpStream-like behavior
+        self.create_tcp_proxy(hysteria2_stream).await
     }
 }
 

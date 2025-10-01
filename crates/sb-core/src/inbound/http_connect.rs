@@ -1,10 +1,9 @@
-//! Minimal HTTP/1.1 CONNECT inbound (scaffold).
+//! Async HTTP/1.1 CONNECT inbound (scaffold).
 //! - Optional Basic auth via (username,password)
 //! - Route decision via Engine; outbound resolved by Bridge (adapter优先)
-use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
-use std::thread;
-use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 
 use crate::adapter::Bridge;
 use crate::adapter::InboundService;
@@ -26,8 +25,8 @@ struct Decision {
 
 #[cfg(not(feature = "router"))]
 impl Engine {
-    fn new(cfg: &sb_config::ir::ConfigIR) -> Self {
-        Self { cfg: cfg.clone() }
+    fn new(cfg: sb_config::ir::ConfigIR) -> Self {
+        Self { cfg }
     }
 
     fn decide(&self, _input: Input, _fake_ip: bool) -> Decision {
@@ -66,44 +65,20 @@ impl Input {
     }
 }
 
-fn read_line(s: &mut TcpStream, buf: &mut Vec<u8>) -> std::io::Result<String> {
-    buf.clear();
-    let mut b = [0u8; 1];
-    let mut last_cr = false;
+async fn read_headers(reader: &mut BufReader<&mut TcpStream>) -> std::io::Result<Vec<(String, String)>> {
+    let mut headers = Vec::new();
     loop {
-        let n = s.read(&mut b)?;
-        if n == 0 {
-            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
-        }
-        buf.push(b[0]);
-        if last_cr && b[0] == b'\n' {
-            break;
-        }
-        last_cr = b[0] == b'\r';
-        if buf.len() > 8192 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "line too long",
-            ));
-        }
-    }
-    let sline = String::from_utf8_lossy(buf).trim().to_string();
-    Ok(sline)
-}
-
-fn read_headers(s: &mut TcpStream) -> std::io::Result<Vec<(String, String)>> {
-    let mut h = Vec::new();
-    let mut buf = Vec::with_capacity(256);
-    loop {
-        let line = read_line(s, &mut buf)?;
+        let mut line = String::new();
+        reader.read_line(&mut line).await?;
+        let line = line.trim();
         if line.is_empty() {
             break;
         }
         if let Some((k, v)) = line.split_once(':') {
-            h.push((k.trim().to_string(), v.trim().to_string()));
+            headers.push((k.trim().to_string(), v.trim().to_string()));
         }
     }
-    Ok(h)
+    Ok(headers)
 }
 
 fn basic_ok(headers: &[(String, String)], user: &str, pass: &str) -> bool {
@@ -119,66 +94,54 @@ fn basic_ok(headers: &[(String, String)], user: &str, pass: &str) -> bool {
     false
 }
 
-fn write_resp_line(s: &mut TcpStream, code: u16, text: &str) -> std::io::Result<()> {
-    let body = format!("HTTP/1.1 {} {}\r\nContent-Length: 0\r\n\r\n", code, text);
-    s.write_all(body.as_bytes())
-}
-
-fn copy_bidi(a: TcpStream, b: TcpStream) {
-    let (mut ra, mut wa) = (a.try_clone().unwrap(), a);
-    let (mut rb, mut wb) = (b.try_clone().unwrap(), b);
-    let t1 = thread::spawn(move || {
-        let _ = std::io::copy(&mut ra, &mut wb);
-        let _ = wb.shutdown(Shutdown::Write);
-    });
-    let t2 = thread::spawn(move || {
-        let _ = std::io::copy(&mut rb, &mut wa);
-        let _ = wa.shutdown(Shutdown::Write);
-    });
-    let _ = t1.join();
-    let _ = t2.join();
-}
-
-fn handle(
+async fn handle(
     mut cli: TcpStream,
-    eng: &Engine,
+    eng: &Engine<'_>,
     br: &Bridge,
-    auth: Option<(&str, &str)>,
+    auth: Option<(String, String)>,
 ) -> std::io::Result<()> {
+    let mut reader = BufReader::new(&mut cli);
+
     // 1) 解析 Request-Line
-    let mut buf = Vec::with_capacity(256);
-    let line = read_line(&mut cli, &mut buf)?;
-    // 仅支持：CONNECT host:port HTTP/1.1
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+    let line = line.trim();
+
     let mut parts = line.split_whitespace();
     let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("");
     let _ver = parts.next().unwrap_or("");
+
     if method != "CONNECT" || !target.contains(':') {
-        write_resp_line(&mut cli, 405, "Method Not Allowed")?;
+        cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n").await?;
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "only CONNECT supported",
         ));
     }
+
     // 2) 解析头
-    let headers = read_headers(&mut cli)?;
+    let headers = read_headers(&mut reader).await?;
+
     // 3) 认证（可选）
-    if let Some((u, p)) = auth {
+    if let Some((u, p)) = auth.as_ref() {
         if !basic_ok(&headers, u, p) {
-            let body = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"singbox\"\r\nContent-Length:0\r\n\r\n";
-            let _ = cli.write_all(body.as_bytes());
+            let body = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"singbox\"\r\nContent-Length:0\r\n\r\n";
+            cli.write_all(body).await?;
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "proxy auth required",
             ));
         }
     }
+
     // 4) 路由决策
     let (host, port) = if let Some((h, p)) = target.rsplit_once(':') {
         (h.to_string(), p.parse::<u16>().unwrap_or(0))
     } else {
         (target.to_string(), 0)
     };
+
     let d = eng.decide(
         &Input {
             host: &host,
@@ -192,18 +155,29 @@ fn handle(
     let ob = br
         .find_outbound(&out_name)
         .or_else(|| br.find_direct_fallback());
-    // 5) 建立上游连接
-    match ob.as_ref().map(|x| x.connect(&host, port)).transpose() {
-        Ok(up) => {
-            write_resp_line(&mut cli, 200, "Connection Established")?;
-            copy_bidi(cli, up.unwrap());
-            Ok(())
+
+    // 5) 建立上游连接（异步）
+    let mut upstream = match ob {
+        Some(connector) => match connector.connect(&host, port).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                let _ = cli.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n").await;
+                return Err(e);
+            }
+        },
+        None => {
+            let _ = cli.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n").await;
+            return Err(std::io::Error::other("no outbound connector available"));
         }
-        Err(e) => {
-            let _ = write_resp_line(&mut cli, 502, "Bad Gateway");
-            Err(e)
-        }
-    }
+    };
+
+    // 成功回包
+    cli.write_all(b"HTTP/1.1 200 Connection Established\r\nContent-Length: 0\r\n\r\n").await?;
+
+    // 使用 tokio 的高性能双向复制
+    let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -214,7 +188,7 @@ pub struct HttpConnect {
     engine: Option<Engine<'static>>,
     #[cfg(not(feature = "router"))]
     engine: Option<Engine>,
-    bridge: Option<std::sync::Arc<Bridge>>,
+    bridge: Option<Arc<Bridge>>,
     basic_user: Option<String>,
     basic_pass: Option<String>,
 }
@@ -230,60 +204,89 @@ impl HttpConnect {
             basic_pass: None,
         }
     }
+
     #[cfg(feature = "router")]
     pub fn with_engine(mut self, eng: Engine<'static>) -> Self {
         self.engine = Some(eng);
         self
     }
+
     #[cfg(not(feature = "router"))]
     #[allow(dead_code)]
     pub(crate) fn with_engine(mut self, eng: Engine) -> Self {
         self.engine = Some(eng);
         self
     }
-    pub fn with_bridge(mut self, br: std::sync::Arc<Bridge>) -> Self {
+
+    pub fn with_bridge(mut self, br: Arc<Bridge>) -> Self {
         self.bridge = Some(br);
         self
     }
+
     pub fn with_basic_auth(mut self, user: Option<String>, pass: Option<String>) -> Self {
         self.basic_user = user;
         self.basic_pass = pass;
         self
     }
-    fn do_serve(&self, eng: Engine, br: std::sync::Arc<Bridge>) -> std::io::Result<()> {
+
+    async fn do_serve_async(&self, eng: Engine<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
         let addr = format!("{}:{}", self.listen, self.port);
-        let l = TcpListener::bind(&addr)?;
-        crate::log::log(Level::Info, "http-connect listening", &[("addr", &addr)]);
-        for c in l.incoming() {
-            match c {
-                Ok(s) => {
-                    let eng_owned = Engine::new(Box::leak(Box::new(eng.cfg.clone())));
-                    let brc = br.clone();
-                    let user = self.basic_user.clone();
-                    let pass = self.basic_pass.clone();
-                    thread::spawn(move || {
-                        let auth = user.as_deref().zip(pass.as_deref());
-                        let _ = handle(s, &eng_owned, &brc, auth);
+        let listener = TcpListener::bind(&addr).await?;
+        crate::log::log(Level::Info, "http-connect listening (async)", &[("addr", &addr)]);
+
+        loop {
+            match listener.accept().await {
+                Ok((socket, _)) => {
+                    let eng_clone = eng.clone();
+                    let br_clone = br.clone();
+                    let auth = self.basic_user.clone().zip(self.basic_pass.clone());
+                    tokio::spawn(async move {
+                        if let Err(e) = handle(socket, &eng_clone, &br_clone, auth).await {
+                            tracing::debug!(target: "sb_core::inbound::http_connect", error = %e, "connection handler failed");
+                        }
                     });
                 }
                 Err(e) => {
                     crate::log::log(Level::Warn, "accept failed", &[("err", &format!("{}", e))]);
-                    thread::sleep(Duration::from_millis(50));
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                 }
             }
         }
-        Ok(())
     }
 }
 
 impl InboundService for HttpConnect {
     fn serve(&self) -> std::io::Result<()> {
-        let cfg = sb_config::ir::ConfigIR::default();
-        let eng = self.engine.clone().unwrap_or_else(|| Engine::new(&cfg));
+        // 阻塞式入口，内部启动 tokio runtime
+        #[cfg(not(feature = "router"))]
+        let eng = {
+            let cfg = sb_config::ir::ConfigIR::default();
+            self.engine.clone().unwrap_or_else(|| Engine::new(cfg))
+        };
+
+        #[cfg(feature = "router")]
+        let eng = {
+            // For router feature, use Box::leak for static lifetime
+            let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
+            self.engine.clone().unwrap_or_else(|| Engine::new(cfg))
+        };
         let br = self
             .bridge
             .clone()
-            .unwrap_or_else(|| std::sync::Arc::new(Bridge::new()));
-        self.do_serve(eng, br)
+            .unwrap_or_else(|| Arc::new(Bridge::new()));
+
+        // 使用当前 tokio runtime 或创建新的
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // Already in a tokio runtime
+                handle.block_on(self.do_serve_async(eng, br))
+            }
+            Err(_) => {
+                // No tokio runtime, create one
+                let runtime = tokio::runtime::Runtime::new()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                runtime.block_on(self.do_serve_async(eng, br))
+            }
+        }
     }
 }

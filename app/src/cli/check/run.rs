@@ -35,7 +35,9 @@ pub fn run(args: CheckArgs) -> Result<i32> {
 
     // Schema v2 validation if enabled
     if args.schema_v2 || args.deny_unknown {
-        let v2_issues = v2::validate_v2(&raw);
+        // Determine if unknown fields should be warnings instead of errors
+        let allow_unknown_validation = args.allow_unknown.is_some();
+        let v2_issues = v2::validate_v2(&raw, allow_unknown_validation);
         // Convert v2 issues to CheckIssue format
         let allow_prefixes: Vec<String> = args
             .allow_unknown
@@ -71,10 +73,8 @@ pub fn run(args: CheckArgs) -> Result<i32> {
             "v2" => {
                 #[cfg(feature = "schema-v2")]
                 {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&sb_config::schema_v2::schema_v2())?
-                    );
+                    let schema = sb_config::schema_v2::schema_v2()?;
+                    println!("{}", serde_json::to_string_pretty(&schema)?);
                 }
                 #[cfg(not(feature = "schema-v2"))]
                 {

@@ -1,24 +1,24 @@
 //! A tiny HTTP exporter for Prometheus, with failure classification & noise reduction.
-//! 通过环境变量 PROM_LISTEN=127.0.0.1:19090 或 CLI flag 启动。
+//! 通过环境变量 PROM_LISTEN=127.0.0.1:19090 或 CLI flag 启动.
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::Duration;
 
-use sb_metrics::constants::*;
-use sb_metrics::registry::{export_prometheus, global as M};
-
 fn handle_conn(mut s: TcpStream) -> std::io::Result<()> {
     s.set_read_timeout(Some(Duration::from_millis(200)))?;
     let mut buf = [0u8; 1024];
     let _ = s.read(&mut buf); // 读请求（忽略）
-    let body = export_prometheus();
+
+    // Use sb_metrics::export_prometheus() to avoid code duplication
+    let body = sb_metrics::export_prometheus().into_bytes();
+
     let hdr = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\n\r\n",
         body.len()
     );
     s.write_all(hdr.as_bytes())?;
-    s.write_all(body.as_bytes())?;
+    s.write_all(&body)?;
     Ok(())
 }
 
@@ -50,7 +50,7 @@ pub fn run_exporter(addr: &str) -> std::io::Result<()> {
                     Err(e) => {
                         let class = classify_err(&e);
                         // 降噪：只做指标计数，不刷控制台
-                        M().prom_http_fail.inc(&[(LABEL_CLASS, class)]);
+                        sb_metrics::inc_prom_http_fail(class);
                         thread::sleep(Duration::from_millis(200));
                     }
                 }
@@ -59,7 +59,7 @@ pub fn run_exporter(addr: &str) -> std::io::Result<()> {
         Err(e) => {
             // 绑定失败：记指标 + 返回错误；由调用方决定是否重试
             let class = classify_err(&e);
-            M().prom_http_fail.inc(&[(LABEL_CLASS, class)]);
+            sb_metrics::inc_prom_http_fail(class);
             Err(e)
         }
     }

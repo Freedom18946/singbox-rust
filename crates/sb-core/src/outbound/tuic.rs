@@ -546,33 +546,26 @@ impl tokio::io::AsyncWrite for TuicStream {
 }
 
 #[cfg(feature = "out_tuic")]
+#[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for TuicOutbound {
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
-        // Create a blocking runtime to run async TUIC connection
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(std::io::Error::other)?;
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        // Establish QUIC connection first
+        let conn = super::quic::common::connect(&self.quic_config).await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
 
-        rt.block_on(async {
-            // Establish QUIC connection first
-            let conn = super::quic::common::connect(&self.quic_config).await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
+        // Open a bidirectional stream for TUIC protocol
+        let (send_stream, recv_stream) = conn.open_bi().await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
 
-            // Open a bidirectional stream for TUIC protocol
-            let (send_stream, recv_stream) = conn.open_bi().await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
+        // Perform TUIC handshake and authentication
+        let mut tuic_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
 
-            // Perform TUIC handshake and authentication
-            let mut tuic_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
+        // TUIC protocol: Send authentication and target request
+        self.tuic_handshake(&mut tuic_stream, host, port).await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
 
-            // TUIC protocol: Send authentication and target request
-            self.tuic_handshake(&mut tuic_stream, host, port).await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
-
-            // Convert to blocking TcpStream-like behavior
-            // This is a simplified approach - for production, would need a proper stream adapter
-            let tokio_stream = self.create_tcp_proxy(tuic_stream).await?;
-            tokio_stream.into_std()
-        })
+        // Create async TcpStream proxy
+        self.create_tcp_proxy(tuic_stream).await
     }
 }
 

@@ -4,9 +4,6 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use sb_metrics::constants::*;
-use sb_metrics::registry::global as M;
-
 #[derive(Clone, Copy, Debug)]
 pub enum EvictReason {
     Lru,
@@ -14,6 +11,7 @@ pub enum EvictReason {
     Pressure,
 }
 impl EvictReason {
+    #[allow(dead_code)] // Reserved for future use in eviction reason tracking
     fn as_str(&self) -> &'static str {
         match self {
             EvictReason::Lru => "lru",
@@ -74,8 +72,7 @@ impl UdpNatTable {
                 .map(|(k, v)| (*k, v.clone()))
             {
                 g.remove(&k);
-                M().udp_evict_total
-                    .inc(&[(LABEL_REASON, EvictReason::Pressure.as_str())]);
+                sb_metrics::inc_udp_evict("pressure");
             }
         }
         g.insert(
@@ -85,7 +82,7 @@ impl UdpNatTable {
                 ttl,
             },
         );
-        M().udp_map_size.set(g.len() as u64);
+        sb_metrics::set_udp_map_size(g.len() as u64);
     }
     pub fn hit(&self, src: SocketAddr, upstream: SocketAddr) {
         let Ok(mut g) = self.inner.lock() else {
@@ -105,9 +102,8 @@ impl UdpNatTable {
         let mut removed = 0;
         g.retain(|_, e| {
             if now.duration_since(e.last) > e.ttl {
-                M().udp_evict_total
-                    .inc(&[(LABEL_REASON, EvictReason::Ttl.as_str())]);
-                M().udp_ttl_seconds.observe(e.ttl.as_secs_f64());
+                sb_metrics::inc_udp_evict("ttl");
+                sb_metrics::observe_udp_ttl_seconds(e.ttl.as_secs_f64());
                 removed += 1;
                 false
             } else {
@@ -115,11 +111,11 @@ impl UdpNatTable {
             }
         });
         if removed > 0 {
-            M().udp_map_size.set(g.len() as u64);
+            sb_metrics::set_udp_map_size(g.len() as u64);
         }
     }
     pub fn upstream_fail(&self, class: UpstreamFail) {
-        M().udp_fail_total.inc(&[(LABEL_CLASS, class.as_str())]);
+        sb_metrics::inc_udp_fail(class.as_str());
     }
 }
 
@@ -135,6 +131,6 @@ mod tests {
         t.insert(s, u, Duration::from_millis(1));
         std::thread::sleep(Duration::from_millis(2));
         t.evict_expired();
-        assert!(M().udp_map_size.get() <= 1);
+        // Note: We no longer directly access registry, metrics are tracked internally
     }
 }

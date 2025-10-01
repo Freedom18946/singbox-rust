@@ -1,6 +1,5 @@
 //! TCP dial with timeout + metrics + classification.
 use crate::errors::classify::{classify_io, NetClass};
-use sb_metrics::registry::global as M;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::{Duration, Instant};
 
@@ -46,7 +45,7 @@ impl TcpDialer {
             Ok(s) => {
                 // Note: set_keepalive is not available in std::net::TcpStream
                 // This would require socket2 crate for advanced socket options
-                M().tcp_connect_duration.observe((elapsed as f64) / 1000.0);
+                sb_metrics::observe_tcp_connect_seconds((elapsed as f64) / 1000.0);
                 DialResult {
                     stream: Some(s),
                     elapsed_ms: elapsed,
@@ -54,7 +53,7 @@ impl TcpDialer {
                 }
             }
             Err(e) => {
-                M().tcp_connect_duration.observe((elapsed as f64) / 1000.0);
+                sb_metrics::observe_tcp_connect_seconds((elapsed as f64) / 1000.0);
                 let c = classify_io(&e);
                 DialResult {
                     stream: None,

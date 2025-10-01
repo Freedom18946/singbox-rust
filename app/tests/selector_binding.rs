@@ -12,32 +12,24 @@ fn selector_is_bound_to_members() {
             port: 0,
             sniff: false,
             udp: false,
-            auth: None,
+            basic_auth: None,
         }],
         outbounds: vec![
             OutboundIR {
                 ty: OutboundType::Direct,
                 name: Some("directA".into()),
-                server: None,
-                port: None,
-                udp: None,
-                members: None,
+                ..Default::default()
             },
             OutboundIR {
                 ty: OutboundType::Direct,
                 name: Some("directB".into()),
-                server: None,
-                port: None,
-                udp: None,
-                members: None,
+                ..Default::default()
             },
             OutboundIR {
                 ty: OutboundType::Selector,
                 name: Some("S".into()),
-                server: None,
-                port: None,
-                udp: None,
                 members: Some(vec!["directA".into(), "directB".into()]),
+                ..Default::default()
             },
         ],
         route: RouteIR {

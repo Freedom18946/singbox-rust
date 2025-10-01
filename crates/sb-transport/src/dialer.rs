@@ -41,18 +41,10 @@ pub enum DialError {
 
     /// 其他错误：通用错误类型，包含具体错误描述
     /// 用于处理不属于上述分类的错误情况
+    ///
+    /// 注意：超时错误应使用 `Other("timeout")` 表示
     #[error("other: {0}")]
     Other(String),
-
-    /// 超时错误（已弃用）
-    ///
-    /// 注意：请使用 `Other("timeout")` 代替
-    /// util 模块会自动将超时映射为 `Other("timeout")`
-    #[deprecated(
-        note = "use Other(\"timeout\") instead; util maps timeouts to Other(\"timeout\")"
-    )]
-    #[error("timeout")]
-    Timeout,
 }
 
 /// 异步读写 trait 标记
@@ -538,12 +530,17 @@ impl From<DialError> for sb_core::error::SbError {
             DialError::Io(ioe) => sb_core::error::SbError::io(ioe),
             DialError::Tls(msg) => sb_core::error::SbError::other(format!("tls: {}", msg)),
             DialError::NotSupported => sb_core::error::SbError::other("not supported"),
-            #[allow(deprecated)]
-            DialError::Timeout => sb_core::error::SbError::Timeout {
-                operation: "dial".into(),
-                timeout_ms: 0,
-            },
-            DialError::Other(msg) => sb_core::error::SbError::other(msg),
+            DialError::Other(msg) => {
+                // 超时错误统一映射到 SbError::Timeout
+                if msg == "timeout" {
+                    sb_core::error::SbError::Timeout {
+                        operation: "dial".into(),
+                        timeout_ms: 0,
+                    }
+                } else {
+                    sb_core::error::SbError::other(msg)
+                }
+            }
         }
     }
 }

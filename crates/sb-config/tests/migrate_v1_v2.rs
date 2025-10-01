@@ -34,7 +34,7 @@ fn unknown_field_rejected_by_v2_validator_without_allow() {
     });
     // inject unknown
     v["extra_unknown"] = json!(true);
-    let issues = sb_config::validator::v2::validate_v2(&v);
+    let issues = sb_config::validator::v2::validate_v2(&v, false);
     let has_unknown = issues
         .iter()
         .any(|i| i["code"].as_str() == Some("UnknownField"));

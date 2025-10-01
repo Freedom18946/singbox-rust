@@ -6,7 +6,7 @@ use crate::routing::engine::Engine;
 #[cfg(feature = "router")]
 use sb_config::ir::ConfigIR;
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+use std::thread::{self, JoinHandle as ThreadJoinHandle};
 
 pub mod supervisor;
 pub mod switchboard;
@@ -16,8 +16,8 @@ pub struct Runtime<'a> {
     pub engine: Engine<'a>,
     pub bridge: Arc<Bridge>,
     pub switchboard: Arc<switchboard::OutboundSwitchboard>,
-    workers: Vec<JoinHandle<()>>,
-    health: Option<JoinHandle<()>>,
+    workers: Vec<ThreadJoinHandle<()>>,
+    health: Option<tokio::task::JoinHandle<()>>,
     supervisor: Option<Arc<supervisor::Supervisor>>,
 }
 
@@ -26,8 +26,8 @@ pub struct Runtime<'a> {
     _phantom: std::marker::PhantomData<&'a ()>,
     pub bridge: Arc<Bridge>,
     pub switchboard: Arc<switchboard::OutboundSwitchboard>,
-    workers: Vec<JoinHandle<()>>,
-    health: Option<JoinHandle<()>>,
+    workers: Vec<ThreadJoinHandle<()>>,
+    health: Option<tokio::task::JoinHandle<()>>,
     supervisor: Option<Arc<supervisor::Supervisor>>,
 }
 

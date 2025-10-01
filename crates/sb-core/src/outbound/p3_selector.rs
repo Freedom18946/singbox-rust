@@ -3,8 +3,6 @@
 //! - rtt_ema：指数滑动平均
 //! - err_rate：近窗口失败率
 //! - fuse：熔断开关（触发后短时降权）
-use sb_metrics::constants::*;
-use sb_metrics::registry::global as M;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -140,7 +138,7 @@ impl P3Selector {
         for ob in &self.outbounds {
             let sc = self.score_of(ob);
             // 记录分数到 metrics
-            M().proxy_select_score.set(&[(LABEL_OUTBOUND, ob)], sc);
+            sb_metrics::set_proxy_select_score(ob, sc);
             match &mut best {
                 None => best = Some((ob.clone(), sc)),
                 Some((_p, b)) if sc < *b => best = Some((ob.clone(), sc)),
@@ -155,8 +153,7 @@ impl P3Selector {
                     .clone()
                     .or_else(|| self.outbounds.first().cloned())
                     .unwrap_or_default();
-                M().proxy_select_total
-                    .inc(&[(LABEL_OUTBOUND, fallback.as_str())]);
+                sb_metrics::inc_proxy_select(fallback.as_str());
                 return fallback;
             }
         };
@@ -164,14 +161,12 @@ impl P3Selector {
         if let Some(prev) = self.last_pick.clone() {
             let prev_sc = self.score_of(&prev);
             if (prev_sc - pick_sc).abs() / prev_sc.max(1.0) < self.cfg.jitter_threshold {
-                M().proxy_select_total
-                    .inc(&[(LABEL_OUTBOUND, prev.as_str())]);
+                sb_metrics::inc_proxy_select(prev.as_str());
                 return prev;
             }
         }
         self.last_pick = Some(pick.clone());
-        M().proxy_select_total
-            .inc(&[(LABEL_OUTBOUND, pick.as_str())]);
+        sb_metrics::inc_proxy_select(pick.as_str());
         pick
     }
 }

@@ -12,15 +12,14 @@
 //! - **双向通信**: 基于 tokio::io::DuplexStream 提供全双工通信
 //! - **一次性使用**: 每个拨号器实例只能连接一次，防止测试状态混乱
 //!
-//! ## 安全性注意
-//! 该模块中使用了 `unsafe` 代码来实现内部可变性，
-//! 这是为了在保持 `Dialer` trait 的 `&self` 约束下实现一次性消费。
-//! 在实际使用中，请确保不要并发调用同一个实例的 `connect` 方法。
+//! ## 线程安全性
+//! 该模块使用 `std::sync::Mutex` 来实现线程安全的内部可变性，
+//! 满足 `Dialer` trait 的 `Send + Sync` 要求。实现完全安全，不包含 unsafe 代码。
 
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use std::sync::Mutex;
 use tokio::io::duplex;
+use tokio::sync::Mutex;
 
 /// 内存双工拨号器
 ///
@@ -39,10 +38,8 @@ use tokio::io::duplex;
 // - 一个 `DuplexStream`（作为服务端）
 ///
 /// ## 线程安全性
-/// ⚠️ **重要**: 该实现使用了 `unsafe` 代码，不是线程安全的。
-/// 在测试中应避免：
-// - 并发调用同一个实例的 `connect` 方法
-// - 在多个线程中同时使用同一个实例
+/// 该实现使用 `std::sync::Mutex` 提供线程安全保证，满足 `Dialer` trait
+/// 的 `Send + Sync` 要求。可以安全地在多线程环境中使用。
 ///
 /// ## 限制和警告
 // - **一次性使用**: 每个实例只能调用一次 `connect`
@@ -127,13 +124,9 @@ impl Dialer for DuplexDialer {
     // - **一次性消费**: 每个实例只能调用一次，第二次调用将返回错误
     // - **立即返回**: 不涉及实际的网络 IO，立即返回结果
     ///
-    /// ## 安全性警告
-    /// ⚠️ 该实现使用了 `unsafe` 代码来绕过 Rust 的借用检查器，
-    /// 实现在 `&self` 上的内部可变性。这在理论上是不安全的，但在
-    /// 测试场景中是可接受的，因为：
-    /// 1. 测试通常是单线程的
-    /// 2. 每个测试实例都是独立的
-    /// 3. 不会出现并发访问的情况
+    /// ## 线程安全实现
+    /// 使用 `std::sync::Mutex` 保护内部状态，提供线程安全的内部可变性。
+    /// 这是在 `&self` 方法中修改内部状态的标准 Rust 模式。
     ///
     /// ## 实现细节
     /// 使用 `Option::take()` 来实现一次性消费语义：
@@ -150,57 +143,20 @@ impl Dialer for DuplexDialer {
     ///
     /// # 使用注意
     // - 仅在测试中使用
-    // - 避免并发调用
-    // - 每个实例只调用一次 connect
+    // - 每个实例只调用一次 connect（通过 Option::take 强制）
     async fn connect(&self, _host: &str, _port: u16) -> Result<IoStream, DialError> {
-        // 使用 Mutex 来实现内部可变性和线程安全
-        // 这是处理在 &self 方法中需要修改内部状态的安全方式
-        //
-        // 使用说明：
+        // 使用 tokio::sync::Mutex 实现线程安全的内部可变性
+        // 这是在 &self 方法中修改内部状态的标准 Rust 模式：
         // 1. Mutex 提供线程安全的互斥访问
         // 2. 满足 Dialer trait 的 Send + Sync 要求
-        // 3. 每个 DuplexDialer 实例只使用一次
+        // 3. 通过 Option::take 实现一次性消费语义
 
-        // 从 Mutex 中取出 DuplexStream。若发生 Poison（前一次持锁线程 panic），
-        // 则按“显式错误策略”返回确定性错误，避免使用已不可信的内部状态。
-        let mut guard = self
-            .cli
-            .lock()
-            .map_err(|_| DialError::Other("mutex poisoned".into()))?;
+        // 从 Mutex 中取出 DuplexStream
+        // tokio::sync::Mutex 不会 poison，因此无需处理 poison 情况
+        let mut guard = self.cli.lock().await;
         let s = guard.take().ok_or(DialError::NotSupported)?;
 
         // 将 DuplexStream 包装为 IoStream 返回
         Ok(Box::new(s))
-    }
-}
-
-#[cfg(test)]
-mod tests_poison {
-    use super::*;
-    use std::thread;
-
-    #[tokio::test]
-    async fn connect_after_poison_returns_deterministic_error() {
-        let (dialer, _server) = DuplexDialer::new_pair();
-
-        // Deliberately poison the mutex by panicking while holding the lock in another thread
-        let cli_ptr: *const Mutex<Option<tokio::io::DuplexStream>> = &dialer.cli;
-        let _ = thread::spawn(move || {
-            // SAFETY:
-            // - 不变量：cli_ptr 指向 Arc 拥有的有效内存
-            // - 并发/别名：仅在测试中使用，不存在数据竞争
-            // - FFI/平台契约：解引用有效指针是安全的
-            let m = unsafe { &*cli_ptr };
-            let _g = m.lock().unwrap();
-            panic!("intentional panic to poison mutex");
-        })
-        .join();
-
-        // connect should now return a deterministic error rather than panic
-        let err = dialer.connect("unused", 0).await.err().expect("must err");
-        match err {
-            DialError::Other(msg) => assert!(msg.contains("poisoned")),
-            _ => panic!("unexpected error: {err:?}"),
-        }
     }
 }

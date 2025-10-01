@@ -14,8 +14,9 @@
 //! - `SB_CB_HALFOPEN_MAX`: Maximum concurrent half-open probes (default: 1)
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tracing::{debug, trace, warn};
 
 /// Circuit breaker state
@@ -205,14 +206,8 @@ impl CircuitBreaker {
     }
 
     /// Check if a request should be allowed through
-    pub fn allow_request(&self) -> CircuitBreakerDecision {
-        let mut state = match self.state.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                warn!("circuit breaker state lock poisoned; rejecting request");
-                return CircuitBreakerDecision::Reject;
-            }
-        };
+    pub async fn allow_request(&self) -> CircuitBreakerDecision {
+        let mut state = self.state.lock().await;
         let now = Instant::now();
 
         match state.state {
@@ -264,14 +259,8 @@ impl CircuitBreaker {
     }
 
     /// Record the result of a request
-    pub fn record_result(&self, success: bool, is_timeout: bool) {
-        let mut state = match self.state.lock() {
-            Ok(g) => g,
-            Err(_e) => {
-                warn!("circuit breaker state lock poisoned; skip record_result");
-                return;
-            }
-        };
+    pub async fn record_result(&self, success: bool, is_timeout: bool) {
+        let mut state = self.state.lock().await;
         let now = Instant::now();
 
         if success {
@@ -385,22 +374,13 @@ impl CircuitBreaker {
     }
 
     /// Get current circuit state
-    pub fn state(&self) -> CircuitState {
-        match self.state.lock() {
-            Ok(g) => g.state,
-            Err(_e) => {
-                warn!("circuit breaker state lock poisoned; return Open");
-                CircuitState::Open
-            }
-        }
+    pub async fn state(&self) -> CircuitState {
+        self.state.lock().await.state
     }
 
     /// Get current failure count in window
-    pub fn failure_count(&self) -> u32 {
-        match self.state.lock() {
-            Ok(mut g) => g.failure_window.failure_count(),
-            Err(_e) => 0,
-        }
+    pub async fn failure_count(&self) -> u32 {
+        self.state.lock().await.failure_window.failure_count()
     }
 
     /// Update metrics
@@ -430,11 +410,8 @@ impl CircuitBreaker {
     }
 
     /// Force reset circuit to closed state (for testing/admin)
-    pub fn reset(&self) {
-        let mut state = match self.state.lock() {
-            Ok(g) => g,
-            Err(_e) => return,
-        };
+    pub async fn reset(&self) {
+        let mut state = self.state.lock().await;
         debug!(
             "Circuit breaker {} reset to closed state",
             self.outbound_name
@@ -461,8 +438,8 @@ mod tests {
     use super::*;
     use std::thread;
 
-    #[test]
-    fn test_circuit_breaker_closed_state() {
+    #[tokio::test]
+    async fn test_circuit_breaker_closed_state() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -473,12 +450,12 @@ mod tests {
             },
         );
 
-        assert_eq!(cb.state(), CircuitState::Closed);
-        assert!(matches!(cb.allow_request(), CircuitBreakerDecision::Allow));
+        assert_eq!(cb.state().await, CircuitState::Closed);
+        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Allow));
     }
 
-    #[test]
-    fn test_circuit_breaker_opens_on_failures() {
+    #[tokio::test]
+    async fn test_circuit_breaker_opens_on_failures() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -490,22 +467,22 @@ mod tests {
         );
 
         // Initially closed
-        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(cb.state().await, CircuitState::Closed);
 
         // First failure - should remain closed
-        cb.record_result(false, false);
-        assert_eq!(cb.state(), CircuitState::Closed);
+        cb.record_result(false, false).await;
+        assert_eq!(cb.state().await, CircuitState::Closed);
 
         // Second failure - should open
-        cb.record_result(false, false);
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_result(false, false).await;
+        assert_eq!(cb.state().await, CircuitState::Open);
 
         // Requests should be rejected
-        assert!(matches!(cb.allow_request(), CircuitBreakerDecision::Reject));
+        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Reject));
     }
 
-    #[test]
-    fn test_circuit_breaker_half_open_transition() {
+    #[tokio::test]
+    async fn test_circuit_breaker_half_open_transition() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -517,23 +494,23 @@ mod tests {
         );
 
         // Force open state
-        cb.record_result(false, false);
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_result(false, false).await;
+        assert_eq!(cb.state().await, CircuitState::Open);
 
         // Wait for timeout
         thread::sleep(Duration::from_millis(60));
 
         // Next request should transition to half-open
-        assert!(matches!(cb.allow_request(), CircuitBreakerDecision::Allow));
-        assert_eq!(cb.state(), CircuitState::HalfOpen);
+        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Allow));
+        assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
         // Should allow up to max calls in half-open
-        assert!(matches!(cb.allow_request(), CircuitBreakerDecision::Allow));
-        assert!(matches!(cb.allow_request(), CircuitBreakerDecision::Reject));
+        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Allow));
+        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Reject));
     }
 
-    #[test]
-    fn test_circuit_breaker_half_open_success_closes() {
+    #[tokio::test]
+    async fn test_circuit_breaker_half_open_success_closes() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -545,19 +522,19 @@ mod tests {
         );
 
         // Force to half-open via failure then timeout
-        cb.record_result(false, false);
+        cb.record_result(false, false).await;
         thread::sleep(Duration::from_millis(60));
-        cb.allow_request(); // Transition to half-open
+        cb.allow_request().await; // Transition to half-open
 
-        assert_eq!(cb.state(), CircuitState::HalfOpen);
+        assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
         // Success in half-open should close circuit
-        cb.record_result(true, false);
-        assert_eq!(cb.state(), CircuitState::Closed);
+        cb.record_result(true, false).await;
+        assert_eq!(cb.state().await, CircuitState::Closed);
     }
 
-    #[test]
-    fn test_circuit_breaker_half_open_failure_reopens() {
+    #[tokio::test]
+    async fn test_circuit_breaker_half_open_failure_reopens() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -569,15 +546,15 @@ mod tests {
         );
 
         // Force to half-open
-        cb.record_result(false, false);
+        cb.record_result(false, false).await;
         thread::sleep(Duration::from_millis(60));
-        cb.allow_request();
+        cb.allow_request().await;
 
-        assert_eq!(cb.state(), CircuitState::HalfOpen);
+        assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
         // Failure in half-open should reopen circuit
-        cb.record_result(false, false);
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_result(false, false).await;
+        assert_eq!(cb.state().await, CircuitState::Open);
     }
 
     #[test]
@@ -596,8 +573,8 @@ mod tests {
         assert_eq!(window.failure_count(), 0);
     }
 
-    #[test]
-    fn test_timeout_failure_handling() {
+    #[tokio::test]
+    async fn test_timeout_failure_handling() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -612,14 +589,14 @@ mod tests {
         std::env::set_var("SB_CB_COUNT_TIMEOUTS", "false");
 
         // Timeout failures shouldn't count
-        cb.record_result(false, true); // timeout
-        cb.record_result(false, true); // timeout
-        assert_eq!(cb.state(), CircuitState::Closed);
+        cb.record_result(false, true).await; // timeout
+        cb.record_result(false, true).await; // timeout
+        assert_eq!(cb.state().await, CircuitState::Closed);
 
         // Regular failures should count
-        cb.record_result(false, false);
-        cb.record_result(false, false);
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_result(false, false).await;
+        cb.record_result(false, false).await;
+        assert_eq!(cb.state().await, CircuitState::Open);
 
         // Clean up
         std::env::remove_var("SB_CB_COUNT_TIMEOUTS");
@@ -642,8 +619,8 @@ mod tests {
         std::env::remove_var("SB_CB_HALFOPEN_MAX");
     }
 
-    #[test]
-    fn test_reset_functionality() {
+    #[tokio::test]
+    async fn test_reset_functionality() {
         let cb = CircuitBreaker::new(
             "test".to_string(),
             CircuitBreakerConfig {
@@ -655,12 +632,12 @@ mod tests {
         );
 
         // Force open
-        cb.record_result(false, false);
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_result(false, false).await;
+        assert_eq!(cb.state().await, CircuitState::Open);
 
         // Reset should close
-        cb.reset();
-        assert_eq!(cb.state(), CircuitState::Closed);
-        assert_eq!(cb.failure_count(), 0);
+        cb.reset().await;
+        assert_eq!(cb.state().await, CircuitState::Closed);
+        assert_eq!(cb.failure_count().await, 0);
     }
 }

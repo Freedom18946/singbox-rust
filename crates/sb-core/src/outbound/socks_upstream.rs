@@ -1,11 +1,9 @@
-//! SOCKS5 upstream connector (scaffold). Supports optional username/password.
-//! Warning: this is a blocking, minimal implementation intended for CI paths.
+//! Async SOCKS5 upstream connector (scaffold). Supports optional username/password.
+//! Warning: this is a minimal implementation intended for CI paths.
 //! Production should come from sb-adapter.
-#![allow(clippy::manual_split_once)]
 use crate::adapter::OutboundConnector;
-use crate::transport::tcp::TcpDialer;
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 #[derive(Debug)]
 pub struct SocksUp {
@@ -13,7 +11,6 @@ pub struct SocksUp {
     port: u16,
     user: Option<String>,
     pass: Option<String>,
-    dial: TcpDialer,
 }
 
 impl SocksUp {
@@ -23,57 +20,48 @@ impl SocksUp {
             port,
             user,
             pass,
-            dial: TcpDialer::default(),
         }
     }
-    fn read_exact(s: &mut TcpStream, buf: &mut [u8]) -> std::io::Result<()> {
-        let mut o = 0usize;
-        while o < buf.len() {
-            let n = s.read(&mut buf[o..])?;
-            if n == 0 {
-                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
-            }
-            o += n;
-        }
-        Ok(())
-    }
-    fn handshake(&self, mut s: TcpStream, host: &str, port: u16) -> std::io::Result<TcpStream> {
-        // greeting
+
+    async fn handshake(&self, mut stream: TcpStream, host: &str, port: u16) -> std::io::Result<TcpStream> {
+        // Greeting
         if self.user.is_some() {
-            s.write_all(&[0x05, 0x01, 0x02])?;
+            stream.write_all(&[0x05, 0x01, 0x02]).await?;
         } else {
-            s.write_all(&[0x05, 0x01, 0x00])?;
+            stream.write_all(&[0x05, 0x01, 0x00]).await?;
         }
+
         let mut rep = [0u8; 2];
-        Self::read_exact(&mut s, &mut rep)?;
+        stream.read_exact(&mut rep).await?;
         if rep != [0x05, if self.user.is_some() { 0x02 } else { 0x00 }] {
-            return Err(std::io::Error::other(
-                "socks method negot fail",
-            ));
+            return Err(std::io::Error::other("socks method negotiation failed"));
         }
-        // auth (username/password)
+
+        // Authentication (username/password)
         if let (Some(u), Some(p)) = (self.user.as_ref(), self.pass.as_ref()) {
             if u.len() > 255 || p.len() > 255 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
-                    "cred too long",
+                    "credentials too long",
                 ));
             }
             let mut pkt = vec![0x01, u.len() as u8];
             pkt.extend_from_slice(u.as_bytes());
             pkt.push(p.len() as u8);
             pkt.extend_from_slice(p.as_bytes());
-            s.write_all(&pkt)?;
+            stream.write_all(&pkt).await?;
+
             let mut ar = [0u8; 2];
-            Self::read_exact(&mut s, &mut ar)?;
+            stream.read_exact(&mut ar).await?;
             if ar != [0x01, 0x00] {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
-                    "socks auth fail",
+                    "socks auth failed",
                 ));
             }
         }
-        // connect
+
+        // CONNECT request
         let mut req = vec![0x05, 0x01, 0x00];
         if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
             req.push(0x01);
@@ -87,29 +75,35 @@ impl SocksUp {
             req.extend_from_slice(host.as_bytes());
         }
         req.extend_from_slice(&port.to_be_bytes());
-        s.write_all(&req)?;
+        stream.write_all(&req).await?;
+
+        // Read response header
         let mut h = [0u8; 4];
-        Self::read_exact(&mut s, &mut h)?;
+        stream.read_exact(&mut h).await?;
         if h[1] != 0x00 {
             return Err(std::io::Error::other(
-                format!("socks connect fail code={}", h[1]),
+                format!("socks connect failed: code={}", h[1]),
             ));
         }
-        // skip bind addr
+
+        // Skip bind address
         match h[3] {
             0x01 => {
+                // IPv4
                 let mut b = [0u8; 6];
-                Self::read_exact(&mut s, &mut b)?;
+                stream.read_exact(&mut b).await?;
             }
             0x03 => {
+                // Domain
                 let mut ln = [0u8; 1];
-                Self::read_exact(&mut s, &mut ln)?;
+                stream.read_exact(&mut ln).await?;
                 let mut dom = vec![0u8; ln[0] as usize + 2];
-                Self::read_exact(&mut s, &mut dom)?;
+                stream.read_exact(&mut dom).await?;
             }
             0x04 => {
+                // IPv6
                 let mut b = [0u8; 18];
-                Self::read_exact(&mut s, &mut b)?;
+                stream.read_exact(&mut b).await?;
             }
             _ => {
                 return Err(std::io::Error::new(
@@ -118,16 +112,16 @@ impl SocksUp {
                 ))
             }
         }
-        Ok(s)
+
+        Ok(stream)
     }
 }
 
+#[async_trait::async_trait]
 impl OutboundConnector for SocksUp {
-    fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
         let addr = format!("{}:{}", self.server, self.port);
-        let s = self.dial.dial(&addr).stream.ok_or_else(|| {
-            std::io::Error::other("dial socks upstream fail")
-        })?;
-        self.handshake(s, host, port)
+        let stream = TcpStream::connect(&addr).await?;
+        self.handshake(stream, host, port).await
     }
 }

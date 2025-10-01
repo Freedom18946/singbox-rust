@@ -5,9 +5,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
-pub mod constants;
 pub mod http;
-pub mod registry;
 pub mod server;
 pub mod socks;
 pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线
@@ -394,6 +392,208 @@ pub fn set_socks_udp_assoc_estimate(n: i64) {
     socks_in::UDP_ASSOC_ESTIMATE.set(n);
 }
 
+// ===================== Legacy Metrics (from registry.rs) =====================
+mod legacy {
+    use super::{HistogramOpts, IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, REGISTRY};
+    use prometheus::{GaugeVec, Histogram};
+
+    /// UDP NAT map size
+    pub static UDP_MAP_SIZE: LazyLock<IntGauge> = LazyLock::new(|| {
+        let g = IntGauge::new("udp_map_size", "UDP NAT table size")
+            .unwrap_or_else(|_| {
+                #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
+                IntGauge::new("dummy_gauge", "dummy").unwrap()
+            });
+        REGISTRY.register(Box::new(g.clone())).ok();
+        g
+    });
+
+    /// UDP NAT eviction counter
+    pub static UDP_EVICT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let v = IntCounterVec::new(
+            Opts::new("udp_evict_total", "UDP NAT eviction total"),
+            &["reason"], // ttl | pressure
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+
+    /// UDP failure counter
+    pub static UDP_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let v = IntCounterVec::new(
+            Opts::new("udp_fail_total", "UDP failure total"),
+            &["class"], // timeout | io | other
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+
+    /// Route explain counter
+    pub static ROUTE_EXPLAIN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
+        let c = IntCounter::new("route_explain_total", "Route explain invocations")
+            .unwrap_or_else(|_| {
+                #[allow(clippy::unwrap_used)] // Fallback to dummy counter
+                IntCounter::new("dummy_counter", "dummy").unwrap()
+            });
+        REGISTRY.register(Box::new(c.clone())).ok();
+        c
+    });
+
+    /// TCP connect duration histogram
+    pub static TCP_CONNECT_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+        let opts = HistogramOpts::new("tcp_connect_duration_seconds", "TCP connect duration")
+            .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]);
+        let h = Histogram::with_opts(opts)
+            .unwrap_or_else(|_| {
+                #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
+                Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
+            });
+        REGISTRY.register(Box::new(h.clone())).ok();
+        h
+    });
+
+    /// Proxy selection score gauge
+    pub static PROXY_SELECT_SCORE: LazyLock<GaugeVec> = LazyLock::new(|| {
+        let v = GaugeVec::new(
+            Opts::new("proxy_select_score", "Proxy selection score"),
+            &["proxy"],
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+
+    /// Outbound health status
+    pub static OUTBOUND_UP: LazyLock<GaugeVec> = LazyLock::new(|| {
+        let v = GaugeVec::new(
+            Opts::new("outbound_up", "Outbound health status (1=up, 0=down)"),
+            &["outbound"],
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+
+    /// Build info gauge
+    #[allow(dead_code)] // Initialized for Prometheus export, never directly accessed
+    pub static BUILD_INFO: LazyLock<IntGauge> = LazyLock::new(|| {
+        let g = IntGauge::new("sb_build_info", "Build information")
+            .unwrap_or_else(|_| {
+                #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
+                IntGauge::new("dummy_gauge", "dummy").unwrap()
+            });
+        REGISTRY.register(Box::new(g.clone())).ok();
+        g.set(1);
+        g
+    });
+
+    /// Prometheus HTTP export failure counter
+    pub static PROM_HTTP_FAIL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let v = IntCounterVec::new(
+            Opts::new("prom_http_fail_total", "Prometheus HTTP export failures"),
+            &["class"], // bind | conn | io | other
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+
+    /// UDP NAT entry TTL histogram
+    pub static UDP_TTL_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+        let opts = HistogramOpts::new("udp_nat_ttl_seconds", "UDP NAT entry TTL distribution")
+            .buckets(vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]);
+        let h = Histogram::with_opts(opts)
+            .unwrap_or_else(|_| {
+                #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
+                Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
+            });
+        REGISTRY.register(Box::new(h.clone())).ok();
+        h
+    });
+
+    /// Proxy selection counter
+    pub static PROXY_SELECT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let v = IntCounterVec::new(
+            Opts::new("proxy_select_total", "Proxy selection invocations"),
+            &["proxy"],
+        )
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+        });
+        REGISTRY.register(Box::new(v.clone())).ok();
+        v
+    });
+}
+
+/// 便捷：设置 UDP NAT map 大小
+pub fn set_udp_map_size(size: u64) {
+    #[allow(clippy::cast_possible_wrap)]
+    legacy::UDP_MAP_SIZE.set(size as i64);
+}
+
+/// 便捷：递增 UDP eviction（reason: "ttl" | "pressure"）
+pub fn inc_udp_evict(reason: &str) {
+    legacy::UDP_EVICT_TOTAL.with_label_values(&[reason]).inc();
+}
+
+/// 便捷：递增 UDP failure（class: "timeout" | "io" | "other"）
+pub fn inc_udp_fail(class: &str) {
+    legacy::UDP_FAIL_TOTAL.with_label_values(&[class]).inc();
+}
+
+/// 便捷：递增 route explain 计数
+pub fn inc_route_explain() {
+    legacy::ROUTE_EXPLAIN_TOTAL.inc();
+}
+
+/// 便捷：观察 TCP 连接耗时（秒）
+pub fn observe_tcp_connect_seconds(secs: f64) {
+    legacy::TCP_CONNECT_DURATION.observe(secs.max(0.0));
+}
+
+/// 便捷：设置代理选择分数
+pub fn set_proxy_select_score(proxy: &str, score: f64) {
+    legacy::PROXY_SELECT_SCORE.with_label_values(&[proxy]).set(score);
+}
+
+/// 便捷：设置出站健康状态（1=up, 0=down）
+pub fn set_outbound_up(outbound: &str, ok: f64) {
+    legacy::OUTBOUND_UP.with_label_values(&[outbound]).set(ok);
+}
+
+/// 便捷：递增 Prometheus HTTP 导出失败
+pub fn inc_prom_http_fail(class: &str) {
+    legacy::PROM_HTTP_FAIL.with_label_values(&[class]).inc();
+}
+
+/// 便捷：观察 UDP TTL（秒）
+pub fn observe_udp_ttl_seconds(secs: f64) {
+    legacy::UDP_TTL_SECONDS.observe(secs.max(0.0));
+}
+
+/// 便捷：递增代理选择计数
+pub fn inc_proxy_select(proxy: &str) {
+    legacy::PROXY_SELECT_TOTAL.with_label_values(&[proxy]).inc();
+}
+
 async fn metrics_http(req: Request<Body>) -> Result<Response<Body>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::GET, "/metrics") => {
@@ -460,3 +660,22 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
 
 // NOTE:
 // 这里不要重复 re-export prometheus 的项；顶部已有一次公开导出，重复会触发 E0252。
+
+/// Export all registered metrics in Prometheus text format.
+///
+/// This function is primarily used for testing purposes. For production metric
+/// collection, use the HTTP exporter via `spawn_metrics_server()` or set
+/// `SB_METRICS_ADDR` environment variable.
+///
+/// # Panics
+///
+/// Panics if encoding fails (should never happen in practice).
+pub fn export_prometheus() -> String {
+    let metric_families = REGISTRY.gather();
+    let mut buf = Vec::new();
+    let encoder = TextEncoder::new();
+    encoder
+        .encode(&metric_families, &mut buf)
+        .expect("Prometheus encoding should never fail");
+    String::from_utf8(buf).expect("Prometheus output should be valid UTF-8")
+}

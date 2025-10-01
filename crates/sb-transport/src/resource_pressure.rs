@@ -379,6 +379,7 @@ mod tests {
     async fn test_throttling() {
         let config = ResourcePressureConfig {
             fd_pressure_threshold: 1,
+            mem_pressure_threshold: 1,
             moderate_throttle_ms: 50,
             high_throttle_ms: 100,
             pressure_window: Duration::from_secs(60),
