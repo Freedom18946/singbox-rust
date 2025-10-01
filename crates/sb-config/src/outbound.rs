@@ -16,6 +16,11 @@ pub enum Outbound {
     Vless(VlessConfig),
     /// TUIC 协议
     Tuic(TuicConfig),
+    /// 手动选择器
+    Selector(SelectorConfig),
+    /// 自动选择器（基于延迟）
+    #[serde(rename = "urltest")]
+    UrlTest(UrlTestConfig),
 }
 
 // Keep for backward compatibility - alias the enum
@@ -159,4 +164,57 @@ fn default_tuic_congestion_control() -> String {
 
 fn default_tuic_heartbeat() -> u64 {
     10000 // 10 seconds in milliseconds
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectorConfig {
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// 候选出站列表（按 tag 引用）
+    pub outbounds: Vec<String>,
+    /// 默认选中的出站（可选）
+    #[serde(default)]
+    pub default: Option<String>,
+    /// 是否在启动时检查可用性
+    #[serde(default)]
+    pub interrupt_exist_connections: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UrlTestConfig {
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// 候选出站列表（按 tag 引用）
+    pub outbounds: Vec<String>,
+    /// 测试 URL（默认 http://www.gstatic.com/generate_204）
+    #[serde(default = "default_url_test_url")]
+    pub url: String,
+    /// 测试间隔（秒，默认 60）
+    #[serde(default = "default_url_test_interval")]
+    pub interval: u64,
+    /// 超时时间（秒，默认 5）
+    #[serde(default = "default_url_test_timeout")]
+    pub timeout: u64,
+    /// 容忍度（毫秒，默认 50ms，延迟差距小于此值不切换）
+    #[serde(default = "default_url_test_tolerance")]
+    pub tolerance: u64,
+    /// 是否在启动时检查可用性
+    #[serde(default)]
+    pub interrupt_exist_connections: bool,
+}
+
+fn default_url_test_url() -> String {
+    "http://www.gstatic.com/generate_204".to_string()
+}
+
+fn default_url_test_interval() -> u64 {
+    60
+}
+
+fn default_url_test_timeout() -> u64 {
+    5
+}
+
+fn default_url_test_tolerance() -> u64 {
+    50
 }

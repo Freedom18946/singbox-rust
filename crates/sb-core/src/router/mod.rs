@@ -54,6 +54,8 @@ pub mod patch_plan;
 pub mod decision_intern;
 #[cfg(feature = "router_keyword")]
 pub mod keyword;
+// R35: Modern Rule-Set implementation (SRS binary format)
+pub mod ruleset;
 pub mod normalize;
 // 路由解释链（旁路分析）
 #[cfg(feature = "rule_coverage")]

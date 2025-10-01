@@ -22,6 +22,7 @@ pub mod manager;
 pub mod observe;
 pub mod registry;
 pub mod selector;
+pub mod selector_group;
 pub mod socks5_udp;
 #[cfg(feature = "scaffold")]
 pub mod socks_upstream;
