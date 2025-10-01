@@ -9,6 +9,7 @@ pub mod http;
 pub mod server;
 pub mod socks;
 pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线
+pub mod cardinality; // Cardinality monitoring for label explosion prevention
 use std::{
     convert::Infallible,
     net::SocketAddr,
