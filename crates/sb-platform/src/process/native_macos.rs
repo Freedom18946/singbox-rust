@@ -15,8 +15,8 @@
 //! TODO: Replace lsof with native socket iteration API for full 20-50x improvement
 //!
 //! References:
-//! - libproc: https://crates.io/crates/libproc
-//! - Apple docs: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/proc_listpids.3.html
+//! - libproc: <https://crates.io/crates/libproc>
+//! - Apple docs: <https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/proc_listpids.3.html>
 
 use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
 use libproc::libproc::proc_pid::pidpath;

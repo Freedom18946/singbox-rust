@@ -1,3 +1,45 @@
+//! Configuration parsing and validation for SingBox
+//!
+//! This crate provides comprehensive configuration management:
+//!
+//! ## Core Features
+//!
+//! - **Multi-format support**: JSON, YAML parsing
+//! - **Schema versioning**: V1 and V2 format support with automatic migration
+//! - **Validation**: JSON schema-based validation with detailed error reporting
+//! - **Normalization**: Convert configs to canonical forms
+//! - **Intermediate Representation (IR)**: [`ir::ConfigIR`] - strongly-typed internal format
+//!
+//! ## Key Modules
+//!
+//! - [`model`]: External configuration model (deprecated, use [`ir::ConfigIR`])
+//! - [`ir`]: Strongly-typed intermediate representation
+//! - [`validator`]: Schema validation (V1 and V2)
+//! - [`compat`]: V1→V2 migration logic
+//! - [`present`]: Config→IR conversion (canonical transformer)
+//! - [`subscribe`]: Subscription URL support
+//!
+//! ## Example
+//!
+//! ```rust
+//! use sb_config::Config;
+//!
+//! // Load and validate config
+//! let config = Config::from_file("config.json").unwrap();
+//!
+//! // Convert to IR for internal use
+//! let ir = sb_config::present::to_ir(&config).unwrap();
+//! ```
+//!
+//! ## Migration Path
+//!
+//! V1 configs are automatically migrated to V2:
+//! - `tag` → `name`
+//! - `listen` + `listen_port` → `listen:"IP:PORT"`
+//! - Rule format updates
+//!
+//! See [`compat::migrate_to_v2`] for details.
+
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
