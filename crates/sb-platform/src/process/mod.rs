@@ -67,7 +67,11 @@ pub struct ProcessMatcher {
     #[cfg(target_os = "linux")]
     linux_impl: linux::LinuxProcessMatcher,
     #[cfg(target_os = "macos")]
+    #[cfg(not(feature = "native-process-match"))]
     macos_impl: macos::MacOsProcessMatcher,
+    #[cfg(target_os = "macos")]
+    #[cfg(feature = "native-process-match")]
+    macos_native_impl: native_macos::NativeMacOsProcessMatcher,
     #[cfg(target_os = "windows")]
     windows_impl: windows::WindowsProcessMatcher,
 }
@@ -83,7 +87,11 @@ impl ProcessMatcher {
             #[cfg(target_os = "linux")]
             linux_impl: linux::LinuxProcessMatcher::new()?,
             #[cfg(target_os = "macos")]
+            #[cfg(not(feature = "native-process-match"))]
             macos_impl: macos::MacOsProcessMatcher::new()?,
+            #[cfg(target_os = "macos")]
+            #[cfg(feature = "native-process-match")]
+            macos_native_impl: native_macos::NativeMacOsProcessMatcher::new()?,
             #[cfg(target_os = "windows")]
             windows_impl: windows::WindowsProcessMatcher::new()?,
         })
@@ -131,7 +139,12 @@ impl ProcessMatcher {
         return self.linux_impl.find_process_id(conn).await;
 
         #[cfg(target_os = "macos")]
+        #[cfg(not(feature = "native-process-match"))]
         return self.macos_impl.find_process_id(conn).await;
+
+        #[cfg(target_os = "macos")]
+        #[cfg(feature = "native-process-match")]
+        return self.macos_native_impl.find_process_id(conn).await;
 
         #[cfg(target_os = "windows")]
         return self.windows_impl.find_process_id(conn).await;
@@ -146,7 +159,12 @@ impl ProcessMatcher {
         return self.linux_impl.get_process_info(pid).await;
 
         #[cfg(target_os = "macos")]
+        #[cfg(not(feature = "native-process-match"))]
         return self.macos_impl.get_process_info(pid).await;
+
+        #[cfg(target_os = "macos")]
+        #[cfg(feature = "native-process-match")]
+        return self.macos_native_impl.get_process_info(pid).await;
 
         #[cfg(target_os = "windows")]
         return self.windows_impl.get_process_info(pid).await;
@@ -172,7 +190,11 @@ impl Default for ProcessMatcher {
             #[cfg(target_os = "linux")]
             linux_impl: linux::LinuxProcessMatcher::default(),
             #[cfg(target_os = "macos")]
+            #[cfg(not(feature = "native-process-match"))]
             macos_impl: macos::MacOsProcessMatcher::new().unwrap_or(macos::MacOsProcessMatcher),
+            #[cfg(target_os = "macos")]
+            #[cfg(feature = "native-process-match")]
+            macos_native_impl: native_macos::NativeMacOsProcessMatcher::new().unwrap_or(native_macos::NativeMacOsProcessMatcher),
             #[cfg(target_os = "windows")]
             windows_impl: windows::WindowsProcessMatcher::new()
                 .unwrap_or(windows::WindowsProcessMatcher),
@@ -187,6 +209,10 @@ mod linux;
 
 #[cfg(target_os = "macos")]
 mod macos;
+
+#[cfg(target_os = "macos")]
+#[cfg(feature = "native-process-match")]
+mod native_macos;
 
 #[cfg(target_os = "windows")]
 mod windows;

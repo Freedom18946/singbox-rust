@@ -11,6 +11,10 @@ thiserror = { workspace = true }
 libc = "0.2"
 log = "0.4"
 
+# macOS native process matching
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = { version = "0.14", optional = true }
+
 [dev-dependencies]
 futures = "0.3"
 
@@ -19,6 +23,7 @@ linux = []
 macos = []
 windows = []
 tun = []
+native-process-match = ["libproc"]  # Enable native process matching API (macOS)
 integration_tests = []
 full = ["linux","macos","windows","tun"]
-default = []
+default = ["native-process-match"]
