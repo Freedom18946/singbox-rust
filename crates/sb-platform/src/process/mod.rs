@@ -73,7 +73,11 @@ pub struct ProcessMatcher {
     #[cfg(feature = "native-process-match")]
     macos_native_impl: native_macos::NativeMacOsProcessMatcher,
     #[cfg(target_os = "windows")]
+    #[cfg(not(feature = "native-process-match"))]
     windows_impl: windows::WindowsProcessMatcher,
+    #[cfg(target_os = "windows")]
+    #[cfg(feature = "native-process-match")]
+    windows_native_impl: native_windows::NativeWindowsProcessMatcher,
 }
 
 impl ProcessMatcher {
@@ -93,7 +97,11 @@ impl ProcessMatcher {
             #[cfg(feature = "native-process-match")]
             macos_native_impl: native_macos::NativeMacOsProcessMatcher::new()?,
             #[cfg(target_os = "windows")]
+            #[cfg(not(feature = "native-process-match"))]
             windows_impl: windows::WindowsProcessMatcher::new()?,
+            #[cfg(target_os = "windows")]
+            #[cfg(feature = "native-process-match")]
+            windows_native_impl: native_windows::NativeWindowsProcessMatcher::new()?,
         })
     }
 
@@ -147,7 +155,12 @@ impl ProcessMatcher {
         return self.macos_native_impl.find_process_id(conn).await;
 
         #[cfg(target_os = "windows")]
+        #[cfg(not(feature = "native-process-match"))]
         return self.windows_impl.find_process_id(conn).await;
+
+        #[cfg(target_os = "windows")]
+        #[cfg(feature = "native-process-match")]
+        return self.windows_native_impl.find_process_id(conn).await;
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         Err(ProcessMatchError::UnsupportedPlatform)
@@ -167,7 +180,12 @@ impl ProcessMatcher {
         return self.macos_native_impl.get_process_info(pid).await;
 
         #[cfg(target_os = "windows")]
+        #[cfg(not(feature = "native-process-match"))]
         return self.windows_impl.get_process_info(pid).await;
+
+        #[cfg(target_os = "windows")]
+        #[cfg(feature = "native-process-match")]
+        return self.windows_native_impl.get_process_info(pid).await;
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         Err(ProcessMatchError::UnsupportedPlatform)
@@ -196,8 +214,13 @@ impl Default for ProcessMatcher {
             #[cfg(feature = "native-process-match")]
             macos_native_impl: native_macos::NativeMacOsProcessMatcher::new().unwrap_or(native_macos::NativeMacOsProcessMatcher),
             #[cfg(target_os = "windows")]
+            #[cfg(not(feature = "native-process-match"))]
             windows_impl: windows::WindowsProcessMatcher::new()
                 .unwrap_or(windows::WindowsProcessMatcher),
+            #[cfg(target_os = "windows")]
+            #[cfg(feature = "native-process-match")]
+            windows_native_impl: native_windows::NativeWindowsProcessMatcher::new()
+                .unwrap_or(native_windows::NativeWindowsProcessMatcher),
         })
     }
 }
@@ -216,6 +239,10 @@ mod native_macos;
 
 #[cfg(target_os = "windows")]
 mod windows;
+
+#[cfg(target_os = "windows")]
+#[cfg(feature = "native-process-match")]
+mod native_windows;
 
 #[cfg(test)]
 mod tests {

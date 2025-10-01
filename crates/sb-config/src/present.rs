@@ -101,13 +101,25 @@ pub fn to_ir(cfg: &Config) -> Result<ConfigIR> {
                 }),
                 ..Default::default()
             },
-            Outbound::Vless { name, .. } => {
-                // For now, treat VLESS as direct until proper implementation
-                OutboundIR {
-                    ty: OutboundType::Direct,
-                    name: Some(name.clone()),
-                    ..Default::default()
-                }
+            Outbound::Vless {
+                name,
+                server,
+                port,
+                uuid,
+                flow,
+                network,
+                packet_encoding,
+                connect_timeout_sec: _,
+            } => OutboundIR {
+                ty: OutboundType::Vless,
+                name: Some(name.clone()),
+                server: Some(server.clone()),
+                port: Some(*port),
+                uuid: Some(uuid.clone()),
+                flow: flow.clone(),
+                network: Some(network.clone()),
+                packet_encoding: packet_encoding.clone(),
+                ..Default::default()
             }
         };
         ir.outbounds.push(outbound_ir);

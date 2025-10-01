@@ -4,6 +4,76 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Sprint 3 (2025-10-02)
+
+**Windows Native Process Matching:**
+- **sb-platform**: Implemented native Windows process matching API
+  - **Performance**: Expected 20-50x faster than command-line tools (netstat)
+  - Uses `GetExtendedTcpTable` / `GetExtendedUdpTable` Windows APIs
+  - Feature flag: `native-process-match` (enabled by default, includes Windows + macOS)
+  - Async implementation with tokio::spawn_blocking
+  - crates/sb-platform/src/process/native_windows.rs (229 lines)
+  - Cross-platform process matching now supports: Linux (procfs), macOS (libproc), Windows (iphlpapi)
+
+**Config System Improvements:**
+- **sb-config**: Completed Config→ConfigIR conversion
+  - Implemented full VLESS support in present::to_ir()
+  - All protocol types now properly converted to IR
+  - Removed temporary Direct fallback for VLESS
+  - model::Config remains deprecated (backward compatibility only)
+
+**Test Results:**
+- ✅ sb-config: 15/15 tests passing
+- ✅ sb-platform: 19/20 tests passing (1 benchmark ignored)
+- ✅ Zero compilation errors across modified crates
+
+**Sprint Progress:**
+- ✅ Sprint 3 completed: Windows native process matching + VLESS support
+- Total additions: ~250 lines of production code + integration
+
+### Added - Sprint 4 (2025-10-02)
+
+**Security Enhancements:**
+- **sb-security**: Implemented constant-time credential verification using `subtle` crate
+  - `verify_credentials()`: Optional username/password verification
+  - `verify_credentials_required()`: Both username and password required
+  - `verify_secret()`: Single-value secret verification (tokens, API keys)
+  - Prevents timing attacks by always comparing all bytes regardless of match/mismatch
+  - 30 unit tests + 7 doc tests (100% passing)
+  - crates/sb-security/src/credentials.rs (344 lines)
+
+**Documentation Improvements:**
+- **sb-platform**: Added comprehensive module documentation (process matching, TUN, OS detection)
+- **sb-config**: Added module documentation (parsing, validation, V1→V2 migration)
+- **sb-core**: Added module documentation (protocols, routing, runtime)
+- Fixed URL hyperlink warnings in rustdoc
+
+### Added - Sprint 2 (2025-10-02)
+
+**Performance Optimization:**
+- **sb-platform**: Implemented native macOS process matching API using libproc
+  - **Performance**: 149.4x faster than command-line tools (14μs vs 2,091μs)
+  - Uses `libproc::pidpath()` for process information retrieval
+  - Feature flag: `native-process-match` (enabled by default)
+  - Backward compatible: command-line tools (lsof/ps) available as fallback
+  - Hybrid approach: native API for process info, lsof for socket→PID mapping (to be replaced)
+  - crates/sb-platform/src/process/native_macos.rs (163 lines)
+  - Performance benchmark test included
+
+**Observability:**
+- **sb-metrics**: Implemented cardinality monitoring system to prevent label explosion
+  - Tracks unique label combinations per metric
+  - Automatic warnings when thresholds exceeded (10,000 total series, 1,000 per metric)
+  - Thread-safe with Mutex + AtomicUsize
+  - APIs: `record_label_usage()`, `get_cardinality()`, `get_cardinality_summary()`
+  - 7 unit tests (100% passing)
+  - crates/sb-metrics/src/cardinality.rs (319 lines)
+
+**Sprint Progress:**
+- ✅ Sprint 2 completed: macOS native process matching + cardinality monitoring
+- ✅ Sprint 4 completed: Constant-time credential verification + documentation
+- Total additions: ~827 lines of high-quality code + documentation
+
 ## [0.2.0] - 2025-10-02
 
 ### Fixed - P0+P1 Code Quality and Architecture Improvements

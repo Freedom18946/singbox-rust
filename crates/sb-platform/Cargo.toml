@@ -15,15 +15,24 @@ log = "0.4"
 [target.'cfg(target_os = "macos")'.dependencies]
 libproc = { version = "0.14", optional = true }
 
+# Windows native process matching
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Foundation",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+], optional = true }
+
 [dev-dependencies]
 futures = "0.3"
 
 [features]
 linux = []
 macos = []
-windows = []
+windows-sys = []
 tun = []
-native-process-match = ["libproc"]  # Enable native process matching API (macOS)
+native-process-match = ["dep:libproc", "dep:windows"]  # Enable native process matching API (macOS + Windows)
 integration_tests = []
-full = ["linux","macos","windows","tun"]
+full = ["linux","macos","windows-sys","tun"]
 default = ["native-process-match"]

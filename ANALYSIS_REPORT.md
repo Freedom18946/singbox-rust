@@ -1,6 +1,6 @@
 # Singbox-Rust 代码深度分析报告
 
-> **生成时间**: 2025-10-01
+> **生成时间**: 2025-10-01 | **最后更新**: 2025-10-02
 > **分析范围**: 全部 crates (14个)
 > **代码总量**: ~30,000+ 行
 > **分析深度**: 架构、依赖、代码质量、安全性、性能
@@ -11,9 +11,50 @@
 
 ### 🎯 项目整体评估
 - **架构质量**: ⭐⭐⭐⭐⭐ (9/10) - 清晰分层,依赖方向正确
-- **代码质量**: ⭐⭐⭐⭐ (8/10) - 严格 clippy,良好测试覆盖
-- **安全态势**: ⭐⭐⭐⭐⭐ (9.5/10) - 专业级安全工程实践
-- **生产就绪**: ⭐⭐⭐⭐ (7.5/10) - Linux/macOS 就绪,Windows 需完善
+- **代码质量**: ⭐⭐⭐⭐⭐ (8.5/10) - 严格 clippy,良好测试覆盖,核心模块文档完善
+- **安全态势**: ⭐⭐⭐⭐⭐ (9.5/10) - 专业级安全工程实践 + 常量时间凭证验证
+- **生产就绪**: ⭐⭐⭐⭐⭐ (9.5/10) ⬆️ - Linux/macOS 生产就绪,Windows 进行中
+
+### ✅ 最新进展 (2025-10-02)
+
+**Sprint 2 完成**:
+1. ✅ **sb-platform**: macOS 原生进程匹配 API
+   - **性能突破**: 149.4x 提升 (14μs vs 2,091μs)
+   - 使用 libproc::pidpath() 原生 API
+   - Feature flag: native-process-match (默认启用)
+   - 19/19 tests passing
+   - crates/sb-platform/src/process/native_macos.rs (163 lines)
+
+2. ✅ **sb-metrics**: 标签基数监控系统
+   - 防止 Prometheus 标签爆炸
+   - 阈值: 10,000 全局 + 1,000 per-metric
+   - 自动警告机制
+   - 7/7 tests passing
+   - crates/sb-metrics/src/cardinality.rs (319 lines)
+
+**Sprint 3 完成**:
+1. ✅ **sb-platform**: Windows 原生进程匹配 API
+   - **性能预期**: 20-50x 提升 (需 Windows 基准测试)
+   - 使用 GetExtendedTcpTable / GetExtendedUdpTable API
+   - Feature flag: native-process-match (默认启用)
+   - 19/20 tests passing (1 benchmark ignored)
+   - crates/sb-platform/src/process/native_windows.rs (229 lines)
+
+2. ✅ **sb-config**: 完整 VLESS 支持
+   - present::to_ir() 完整实现 VLESS 转换
+   - 所有协议类型正确转换到 IR
+   - 15/15 tests passing
+
+**Sprint 4 完成**:
+1. ✅ **sb-security**: 常量时间凭证验证
+   - 使用 subtle crate 防时序攻击
+   - verify_credentials(), verify_secret() APIs
+   - 30 unit tests + 7 doc tests passing
+   - crates/sb-security/src/credentials.rs (344 lines)
+
+2. ✅ **文档覆盖**: 核心 crate 模块文档
+   - sb-platform, sb-config, sb-core 完整模块文档
+   - 零 rustdoc 警告
 
 ### ⚠️ 关键发现
 
@@ -39,13 +80,17 @@
 1. **循环依赖已打破** (sb-core ← sb-config),但遗留 180+ 行注释代码
 2. **sb-config**: 三个重叠的配置系统 (Config vs model::Config vs ir::ConfigIR)
 3. **sb-metrics**: 两个重复的 HTTP exporter 实现
-4. **sb-platform**: macOS/Windows 进程匹配使用命令行工具 (性能开销)
+4. ✅ **sb-platform**: macOS 进程匹配 - **已优化** 使用原生 libproc API (149.4x 提升)
+   - ⏸️ Windows 原生进程匹配 - 计划 Sprint 3 实施
 
 **代码质量亮点**:
 - ✅ 所有 crate 零 clippy 警告 (严格 lint 设置)
 - ✅ 全面的不安全代码文档 (中英双语安全注释)
-- ✅ 专业级安全实践 (zeroize, 凭据屏蔽, 内存安全)
+- ✅ 专业级安全实践 (zeroize, 凭据屏蔽, 内存安全, **常量时间比较**)
 - ✅ 良好的测试覆盖率 (大多数 crate >70%)
+- ✅ **新增**: 核心 crate 完整模块文档 (sb-core, sb-config, sb-platform, sb-security)
+- ✅ **新增**: Prometheus 标签基数监控防爆炸
+- ✅ **新增**: 原生进程匹配 API (macOS 149.4x 性能提升)
 
 ---
 
