@@ -669,7 +669,9 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
 ///
 /// # Panics
 ///
-/// Panics if encoding fails (should never happen in practice).
+/// Panics if encoding fails (should never happen in practice) or if the output
+/// contains invalid UTF-8.
+#[allow(clippy::expect_used)] // Test utility function, panic is acceptable
 pub fn export_prometheus() -> String {
     let metric_families = REGISTRY.gather();
     let mut buf = Vec::new();

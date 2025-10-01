@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed - P0+P1 Code Quality and Architecture Improvements (2025-10-02)
+
+**P0 Critical Fixes:**
+- **sb-config**: Fixed V2 schema validation - Corrected `v2_schema.json` to match actual V2 format (`name` instead of `tag`, unified `listen:"IP:PORT"` instead of separate fields)
+- **sb-config**: Implemented complete V1→V2 migration - Added `tag→name` conversion, `listen+port→listen` merging, rule format migration in `compat.rs`
+- **sb-config**: Fixed TUN inbound validation - Made `listen` field optional for TUN type inbounds in `validator/v2.rs`
+- **sb-config**: Fixed schema_version migration logic - Changed `or_insert(2)` to `insert("schema_version", 2)` to ensure field always appears in migrated configs
+- **sb-metrics**: Fixed test compilation errors - Removed references to deleted `registry` and `constants` modules
+
+**P1 Architecture Improvements:**
+- **Repository Cleanup**: Removed 48 backup files (`.bak`, `.backup`) totaling 7,391 lines of dead code
+- **sb-config**: Deprecated `model::Config` type in favor of `ir::ConfigIR` as the canonical internal representation
+- **sb-config**: Removed obsolete `compat_1_12_4()` placeholder function
+- **sb-metrics**: Eliminated duplicate Prometheus encoding logic - `http_exporter.rs` now uses `sb_metrics::export_prometheus()` as single source of truth
+- **Clippy Compliance**: Fixed `clippy::expect_used` violation in `export_prometheus()` test utility with proper justification
+
+**Test Results:**
+- ✅ sb-config: 29/29 tests passing (was 27/29)
+- ✅ sb-metrics: All tests passing (was compilation errors)
+- ✅ Zero critical clippy warnings
+
+**Documentation:**
+- Added `CONFIG_SYSTEMS_ANALYSIS.md` - Analysis of Config type overlap and migration strategy
+- Added `PROCESS_MATCHING_PERFORMANCE.md` - Performance evaluation (20-50x overhead) and native API implementation plan
+- Added `COMPLETION_SUMMARY.md` - Complete P0+P1 work summary
+- Added `NEXT_STEPS.md` - Roadmap for future work
+
+**Net Code Change**: 104 files, +2,451/-8,875 lines (-6,424 net)
+
 ### Fixed
 - **sb-config**: Eliminated code duplication in Config→IR conversion by making `Config::build_registry_and_router` delegate to `present::to_ir`, ensuring inbound conversion is complete and consistent (crates/sb-config/src/lib.rs:266)
 
