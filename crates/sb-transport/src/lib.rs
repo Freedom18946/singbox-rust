@@ -37,6 +37,36 @@ pub mod tls;
 #[cfg(feature = "transport_tls")]
 pub mod tls_secure;
 
+/// WebSocket 传输层模块
+/// 提供基于 tokio-tungstenite 的 WebSocket 连接包装器
+/// 仅在启用 `transport_ws` feature 时可用
+#[cfg(feature = "transport_ws")]
+pub mod websocket;
+
+/// HTTP/2 传输层模块
+/// 提供基于 h2 的 HTTP/2 连接包装器
+/// 仅在启用 `transport_h2` feature 时可用
+#[cfg(feature = "transport_h2")]
+pub mod http2;
+
+/// gRPC 传输层模块
+/// 提供基于 tonic 的 gRPC tunnel 服务
+/// 仅在启用 `transport_grpc` feature 时可用
+#[cfg(feature = "transport_grpc")]
+pub mod grpc;
+
+/// Multiplex 传输层模块
+/// 提供基于 yamux 的连接复用
+/// 仅在启用 `transport_mux` feature 时可用
+#[cfg(feature = "transport_mux")]
+pub mod multiplex;
+
+/// QUIC 传输层模块
+/// 提供基于 quinn 的通用 QUIC 传输
+/// 仅在启用 `transport_quic` feature 时可用
+#[cfg(feature = "transport_quic")]
+pub mod quic;
+
 /// 传输工具模块
 /// 提供超时处理等通用传输工具函数
 pub mod util;

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package tunnel;
+
+// TunnelService provides bidirectional streaming for proxy tunneling
+service TunnelService {
+  // Tunnel establishes a bidirectional stream for data tunneling
+  rpc Tunnel(stream TunnelRequest) returns (stream TunnelResponse);
+}
+
+// TunnelRequest carries data from client to server
+message TunnelRequest {
+  // Data payload
+  bytes data = 1;
+}
+
+// TunnelResponse carries data from server to client
+message TunnelResponse {
+  // Data payload
+  bytes data = 1;
+}
