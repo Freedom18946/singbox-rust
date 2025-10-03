@@ -26,7 +26,8 @@ Overall Assessment
 - CLI: Diverges from sing-box; key generator/convert commands missing
 
 Key Gaps To Close
-- Server inbounds: ✅ vmess/vless/shadowtls (NEW!); ⏳ tuic/hysteria/hysteria2/anytls/naive
+- Server inbounds: ✅ vmess/vless/shadowtls/naive (NEW!); ⏳ tuic (1 remaining - QUIC-based)
+- Note: Hysteria/Hysteria2 are outbound-only protocols in Go sing-box, not server inbounds
 - Transports: wire generic QUIC/gRPC/WS/H2 across protocols (server listeners where applicable)
 - TLS extras: REALITY full client/server integration; uTLS fingerprints; ECH
 - DNS: finalize DoT and DoH behavior; strengthen DNS outbound parity and tests
@@ -65,7 +66,10 @@ Inbound Protocols (Go → Rust)
 - vmess: Present — crates/sb-adapters/src/inbound/vmess.rs (AEAD server with HMAC auth)
 - vless: Present — crates/sb-adapters/src/inbound/vless.rs (UUID auth server)
 - shadowtls: Present — crates/sb-adapters/src/inbound/shadowtls.rs (TLS masquerading server)
-- tuic/hysteria/hysteria2/anytls/naive: Missing (server inbounds)
+- naive: Present — crates/sb-adapters/src/inbound/naive.rs (HTTP/2 CONNECT proxy server)
+- tuic: Missing (QUIC-based server inbound)
+- hysteria/hysteria2: Missing (both are outbound-only in Go sing-box, not server inbounds)
+- anytls: Missing (need protocol specification)
 - direct (inbound page exists in docs): Missing (not applicable/available here)
 
 V2Ray Transport (Go → Rust)
