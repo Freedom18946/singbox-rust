@@ -2,17 +2,18 @@
 //!
 //! This module provides HTTP/2 transport implementation for singbox-rust, including:
 //! - `Http2Dialer`: Client-side HTTP/2 connection dialer
+//! - `Http2Listener`: Server-side HTTP/2 connection acceptor
 //! - `Http2Stream`: Wrapper for HTTP/2 streams to implement AsyncReadWrite
 //! - Connection pooling and multiplexing support
 //!
 //! ## Features
 //! - Native HTTP/2 transport using h2 crate
 //! - Stream multiplexing over single TCP connection
-//! - Connection pooling for performance
+//! - Connection pooling for performance (client-side)
 //! - Flow control and window management
 //! - TLS support when combined with TLS transport
 //!
-//! ## Usage
+//! ## Client Usage
 //! ```rust,no_run
 //! use sb_transport::http2::{Http2Dialer, Http2Config};
 //! use sb_transport::Dialer;
@@ -23,10 +24,33 @@
 //!         host: "example.com".to_string(),
 //!         ..Default::default()
 //!     };
-//!     let dialer = Http2Dialer::new(config);
+//!     let dialer = Http2Dialer::new(config, Box::new(sb_transport::TcpDialer));
 //!     let stream = dialer.connect("example.com", 443).await?;
 //!     // Use stream for communication...
 //!     Ok(())
+//! }
+//! ```
+//!
+//! ## Server Usage
+//! ```rust,no_run
+//! use sb_transport::http2::{Http2Listener, Http2ServerConfig};
+//! use tokio::net::TcpListener;
+//!
+//! async fn server_example() -> Result<(), Box<dyn std::error::Error>> {
+//!     let tcp_listener = TcpListener::bind("127.0.0.1:8080").await?;
+//!     let config = Http2ServerConfig::default();
+//!     let h2_listener = Http2Listener::new(tcp_listener, config);
+//!
+//!     loop {
+//!         match h2_listener.accept().await {
+//!             Ok(stream) => {
+//!                 tokio::spawn(async move {
+//!                     // Handle HTTP/2 stream
+//!                 });
+//!             }
+//!             Err(e) => eprintln!("Accept error: {}", e),
+//!         }
+//!     }
 //! }
 //! ```
 
@@ -353,6 +377,172 @@ impl AsyncWrite for Http2StreamAdapter {
     }
 }
 
+/// HTTP/2 server configuration
+#[derive(Debug, Clone)]
+pub struct Http2ServerConfig {
+    /// Maximum concurrent streams (default: 256)
+    pub max_concurrent_streams: u32,
+    /// Initial window size (default: 1MB)
+    pub initial_window_size: u32,
+    /// Initial connection window size (default: 1MB)
+    pub initial_connection_window_size: u32,
+}
+
+impl Default for Http2ServerConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_streams: 256,
+            initial_window_size: 1024 * 1024,             // 1MB
+            initial_connection_window_size: 1024 * 1024,  // 1MB
+        }
+    }
+}
+
+/// HTTP/2 server listener
+///
+/// This listener accepts incoming HTTP/2 connections by:
+/// 1. Accepting TCP connections from the underlying listener
+/// 2. Performing HTTP/2 server handshake
+/// 3. Accepting incoming streams and returning them as AsyncRead/AsyncWrite
+///
+/// ## Usage
+/// ```rust,no_run
+/// use sb_transport::http2::{Http2Listener, Http2ServerConfig};
+/// use tokio::net::TcpListener;
+///
+/// async fn example() -> Result<(), Box<dyn std::error::Error>> {
+///     let tcp_listener = TcpListener::bind("127.0.0.1:8080").await?;
+///     let config = Http2ServerConfig::default();
+///     let h2_listener = Http2Listener::new(tcp_listener, config);
+///
+///     loop {
+///         let stream = h2_listener.accept().await?;
+///         tokio::spawn(async move {
+///             // Handle HTTP/2 stream
+///         });
+///     }
+/// }
+/// ```
+pub struct Http2Listener {
+    tcp_listener: tokio::net::TcpListener,
+    config: Http2ServerConfig,
+}
+
+impl Http2Listener {
+    /// Create a new HTTP/2 listener from a TCP listener
+    pub fn new(tcp_listener: tokio::net::TcpListener, config: Http2ServerConfig) -> Self {
+        Self {
+            tcp_listener,
+            config,
+        }
+    }
+
+    /// Create an HTTP/2 listener with default configuration
+    pub fn with_default_config(tcp_listener: tokio::net::TcpListener) -> Self {
+        Self::new(tcp_listener, Http2ServerConfig::default())
+    }
+
+    /// Accept a new HTTP/2 stream
+    ///
+    /// This method:
+    /// 1. Accepts a TCP connection
+    /// 2. Performs HTTP/2 server handshake
+    /// 3. Waits for the first incoming stream
+    /// 4. Returns the stream wrapped as AsyncRead + AsyncWrite
+    pub async fn accept(&self) -> Result<IoStream, DialError> {
+        // Accept TCP connection
+        let (stream, peer_addr) = self
+            .tcp_listener
+            .accept()
+            .await
+            .map_err(|e| DialError::Other(format!("TCP accept failed: {}", e)))?;
+
+        debug!("Accepted TCP connection from {} for HTTP/2", peer_addr);
+
+        // Configure HTTP/2 server
+        let mut builder = h2::server::Builder::new();
+        builder
+            .max_concurrent_streams(self.config.max_concurrent_streams)
+            .initial_window_size(self.config.initial_window_size)
+            .initial_connection_window_size(self.config.initial_connection_window_size);
+
+        // Perform HTTP/2 handshake
+        let mut connection = builder
+            .handshake(stream)
+            .await
+            .map_err(|e| DialError::Other(format!("HTTP/2 server handshake failed: {}", e)))?;
+
+        debug!("HTTP/2 server handshake successful for {}", peer_addr);
+
+        // Accept first incoming stream
+        let (request, mut respond) = match connection.accept().await {
+            Some(Ok(stream_pair)) => stream_pair,
+            Some(Err(e)) => {
+                return Err(DialError::Other(format!(
+                    "Failed to accept HTTP/2 stream: {}",
+                    e
+                )))
+            }
+            None => {
+                return Err(DialError::Other(
+                    "HTTP/2 connection closed before stream".to_string(),
+                ))
+            }
+        };
+
+        debug!(
+            "HTTP/2 stream accepted: {} {}",
+            request.method(),
+            request.uri()
+        );
+
+        // Get request body (RecvStream)
+        let recv_stream = request.into_body();
+
+        // Send response headers (200 OK)
+        let response = http::Response::builder()
+            .status(http::StatusCode::OK)
+            .body(())
+            .map_err(|e| DialError::Other(format!("Failed to build response: {}", e)))?;
+
+        let send_stream = respond
+            .send_response(response, false)
+            .map_err(|e| DialError::Other(format!("Failed to send response: {}", e)))?;
+
+        // Spawn connection task to handle additional streams
+        // (this example only returns the first stream, but the connection
+        // continues to run in the background)
+        tokio::spawn(async move {
+            while let Some(result) = connection.accept().await {
+                match result {
+                    Ok((_req, mut respond)) => {
+                        // For additional streams, just send 200 OK and close
+                        let resp = http::Response::builder()
+                            .status(http::StatusCode::OK)
+                            .body(())
+                            .unwrap();
+                        let _ = respond.send_response(resp, true);
+                    }
+                    Err(e) => {
+                        warn!("HTTP/2 accept error: {}", e);
+                        break;
+                    }
+                }
+            }
+            debug!("HTTP/2 connection task finished for {}", peer_addr);
+        });
+
+        // Wrap streams in adapter
+        let adapter = Http2StreamAdapter::new(send_stream, recv_stream);
+        Ok(Box::new(adapter))
+    }
+
+    /// Get the local address this listener is bound to
+    pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        self.tcp_listener.local_addr()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -373,5 +563,13 @@ mod tests {
         let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
         let h2_dialer = Http2Dialer::new(config, tcp_dialer);
         assert_eq!(h2_dialer.config.path, "/");
+    }
+
+    #[tokio::test]
+    async fn test_http2_server_config_default() {
+        let config = Http2ServerConfig::default();
+        assert_eq!(config.max_concurrent_streams, 256);
+        assert_eq!(config.initial_window_size, 1024 * 1024);
+        assert_eq!(config.initial_connection_window_size, 1024 * 1024);
     }
 }

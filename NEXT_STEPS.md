@@ -7,6 +7,34 @@
 
 ---
 
+## Parity Gap Summary (Validated 2025-10-04)
+
+Sources verified:
+- Inbounds: https://sing-box.sagernet.org/configuration/inbound/
+- Outbounds: https://sing-box.sagernet.org/configuration/outbound/
+- Transports: https://sing-box.sagernet.org/configuration/shared/v2ray-transport/
+- TLS (uTLS/ECH/REALITY): https://sing-box.sagernet.org/configuration/shared/tls/
+- DNS: https://sing-box.sagernet.org/configuration/dns/
+- Route: https://sing-box.sagernet.org/configuration/route/
+
+Key gaps vs Go sing-box:
+- Inbounds (server): vmess, vless, trojan, shadowsocks, tuic, hysteria, hysteria2, shadowtls, anytls, naive
+- Outbounds: tor (missing), anytls (missing), wireguard (partial/stub), hysteria v1 (missing)
+- Transports: generic QUIC module present but not widely wired; server listeners missing for WS/H2/gRPC where applicable
+- TLS extras: uTLS and ECH missing; REALITY client/server handshake WIP
+- DNS: DoT currently falls back to TCP; DoH/DoQ feature-gated — add tests and complete parity behavior
+- Routing: user (UID) and network (interface/SSID) rules missing
+- CLI: missing `generate reality-keypair`, `generate ech-keypair`, rule-set tooling parity
+
+Immediate next steps (P0–P1):
+- Implement server inbounds: vmess/vless/trojan/shadowsocks/tuic/hysteria/hysteria2/shadowtls/anytls/naive
+- Add CLI parity subcommands: `generate reality-keypair`, `generate ech-keypair`, rule-set tools
+- Finish REALITY (client+server handshake) and add interop tests with Go
+- Implement uTLS fingerprints and ECH wiring across TLS clients
+- Harden DNS outbound (DoT/DoH/DoQ) with feature flags enabled in CI + interop tests
+- Add Tor outbound and complete WireGuard outbound implementation
+- Wire WS/H2/gRPC/QUIC transports across V2Ray-family protocols and add server listeners where needed
+
 ## Current Status Overview
 
 ### Completed Sprints (Sprint 1-4)

@@ -2,8 +2,8 @@
 
 This matrix reflects the validated parity between SagerNet/sing-box (Go) and this Rust implementation.
 
-Last Updated: 2025-10-02
-Reference Docs: sing-box website (docs snapshot 2025-10-01)
+Last Updated: 2025-10-04
+Reference Docs: sing-box website (docs snapshot 2025-10-04)
 Scope: Features and CLI visible to users (inbound/outbound, transports, DNS, route, APIs, CLI)
 
 Sources used for verification (non-exhaustive):
@@ -18,25 +18,25 @@ Sources used for verification (non-exhaustive):
 Overall Assessment
 - Outbounds: broad coverage, a few gaps (Tor, WireGuard, Hysteria v1, AnyTLS type)
 - Inbounds: client-facing (SOCKS/HTTP/Mixed/TUN) present; most server inbounds missing
-- Transports: TLS and WebSocket/H2 client layers present; VMess integrated; VLESS/Trojan now support WebSocket/HTTP/2/HTTPUpgrade via sb-transport; Multiplex and gRPC chain options added
-- TLS Anti-censorship: REALITY present as WIP (server stub); uTLS not implemented
-- DNS: Engine supports UDP/TCP/DoH/DoT; DoQ and FakeIP missing; DNS outbound only partial
+- Transports: TLS and WebSocket/H2/gRPC/HTTPUpgrade/multiplex modules present; VMess integrated; VLESS/Trojan wired for WS/H2 via sb-transport; QUIC module present (integration pending)
+- TLS Anti-censorship: REALITY present as WIP (server stub); uTLS not implemented; ECH not implemented
+- DNS: Engine supports UDP/TCP/DoT/DoH/DoQ and FakeIP; DNS outbound present but relies on feature flags for DoH/DoQ and DoT fallback
 - Routing: Rule-Set implemented; process rules present; user/network rules missing
 - APIs: Clash API present; V2Ray API present (feature-gated); persistence/cache-file not implemented
 - CLI: Diverges from sing-box; key generator/convert commands missing
 
 Key Gaps To Close
-- Server inbounds: vmess/vless/trojan/ss/tuic/hysteria/shadowtls/anytls/redirect/tproxy
-- Transports: generic QUIC, gRPC, Multiplex wiring across protocols
-- TLS extras: REALITY full client/server integration; uTLS fingerprints
-- DNS: FakeIP, DoQ, DNS outbound (DoH/DoQ) completion
+- Server inbounds: vmess/vless/trojan/ss/tuic/hysteria/hysteria2/shadowtls/anytls/naive
+- Transports: wire generic QUIC/gRPC/WS/H2 across protocols (server listeners where applicable)
+- TLS extras: REALITY full client/server integration; uTLS fingerprints; ECH
+- DNS: finalize DoT and DoH behavior; strengthen DNS outbound parity and tests
 - Outbounds: Tor, WireGuard (full), AnyTLS type, Hysteria (v1)
-- CLI parity: generate reality-keypair, rule-set tooling, other sing-box subcommands
+- CLI parity: generate reality-keypair, ech-keypair, rule-set tooling, other sing-box subcommands
 
 Outbound Protocols (Go → Rust)
 - direct: Present — crates/sb-core/src/outbound/direct.rs
 - block: Present — crates/sb-core/src/outbound/block.rs
-- dns: Partial — crates/sb-adapters/src/outbound/dns.rs (UDP/TCP; DoH/DoQ not implemented)
+- dns: Present — crates/sb-adapters/src/outbound/dns.rs (UDP/TCP/DoT/DoH/DoQ via features `dns_doh`/`dns_doq`; DoT currently falls back to TCP)
 - http: Present — crates/sb-core/src/outbound/http_proxy.rs; crates/sb-adapters/src/outbound/http.rs
 - socks: Present — crates/sb-core/src/outbound/socks5.rs; crates/sb-adapters/src/outbound/socks5.rs
 - vmess: Present — crates/sb-core/src/outbound/vmess.rs (v2ray transport on feature)
@@ -60,7 +60,7 @@ Inbound Protocols (Go → Rust)
 - tun: Present — crates/sb-adapters/src/inbound/tun.rs (plus platform variants)
 - redirect: Present (Linux TCP) — crates/sb-adapters/src/inbound/redirect.rs
 - tproxy: Present (Linux TCP) — crates/sb-adapters/src/inbound/tproxy.rs (router-integrated)
-- vmess/vless/tuic/hysteria/hysteria2/shadowtls/anytls: Missing (server inbounds)
+- vmess/vless/tuic/hysteria/hysteria2/shadowtls/anytls/naive: Missing (server inbounds)
 - shadowsocks: Present — crates/sb-adapters/src/inbound/shadowsocks.rs (AEAD TCP)
 - trojan: Present (TLS password server) — crates/sb-adapters/src/inbound/trojan.rs
 - direct (inbound page exists in docs): Missing (not applicable/available here)
@@ -70,7 +70,7 @@ V2Ray Transport (Go → Rust)
 - TLS: Present — crates/sb-transport/src/tls.rs (client); sb-core uses rustls
 - WebSocket: Present (client) — crates/sb-transport/src/websocket.rs; integrated for VMess (feature v2ray_transport)
 - HTTP/2: Present (client) — crates/sb-transport/src/http2.rs; integrated for VMess (feature v2ray_transport)
-- QUIC (generic): Missing; protocol-specific QUIC exists in TUIC/Hysteria2
+- QUIC (generic): Present — crates/sb-transport/src/quic.rs (module); protocol-specific QUIC also in TUIC/Hysteria2; integration across protocols pending
 - gRPC transport: Present — crates/sb-transport/src/grpc.rs; wired via transport chain (grpc)
 - HTTPUpgrade: Present — crates/sb-transport/src/httpupgrade.rs; wired for VLESS/Trojan via env (SB_*_TRANSPORT)
 - Multiplex: Present — crates/sb-transport/src/multiplex.rs; wired via transport chain (mux/multiplex)
@@ -80,6 +80,7 @@ TLS and Anti-Censorship
 - Standard TLS (ALPN/SNI): Present — sb-core uses rustls; configs under crates/sb-core/src/tls
 - uTLS (fingerprint mimicry): Missing
 - REALITY: Work-in-progress (server stub) — crates/sb-tls/src/reality/server.rs; not integrated into inbounds/outbounds
+- ECH (Encrypted Client Hello): Missing
 
 DNS (Go → Rust)
 - Upstreams: UDP/TCP/DoT/DoH Present — crates/sb-core/src/dns/*
@@ -96,7 +97,7 @@ Routing (Go → Rust)
 - Process rules (name/path): Present — crates/sb-core/src/router/process_router.rs (tests under crates/sb-core/tests/router_process_rules_integration.rs)
 - User rules (UID): Missing
 - Network rules (interface/SSID): Missing
-- GeoIP/Geosite: GeoIP Present (mmdb); Geosite Partial/example only
+- GeoIP/Geosite: Present — crates/sb-core/src/router/geo.rs (GeoIP mmdb + GeoSite DB with tests)
 
 APIs and Management
 - Clash API: Present (feature default) — crates/sb-api (HTTP+WebSocket); coverage vs sing-box not fully audited
@@ -115,9 +116,9 @@ Notes and Rationale
 - Some Go features are platform-specific (e.g., tproxy); they are considered Missing unless explicitly present here.
 
 Next Steps (Suggested)
-- Implement server inbounds (vmess/vless/trojan/ss/tuic/hysteria/redirect/tproxy/shadowtls/anytls)
-- Wire transports (WebSocket/H2/gRPC/Multiplex) across V2Ray-family protocols beyond VMess
-- Add uTLS and complete REALITY client/server integration
-- Add DNS FakeIP and DoQ; complete DNS outbound encrypted variants
+- Implement server inbounds (vmess/vless/trojan/ss/tuic/hysteria/hysteria2/shadowtls/anytls/naive)
+- Wire transports (WebSocket/H2/gRPC/Multiplex/QUIC) across V2Ray-family protocols beyond VMess; add server listeners where applicable
+- Add uTLS and ECH; complete REALITY client/server integration
+- Harden DNS outbound (DoT/DoH/DoQ) and add interop tests vs Go
 - Add Tor and full WireGuard outbounds
-- Align CLI with sing-box (generate reality-keypair, rule-set tooling)
+- Align CLI with sing-box (generate reality-keypair, ech-keypair, rule-set tooling)
