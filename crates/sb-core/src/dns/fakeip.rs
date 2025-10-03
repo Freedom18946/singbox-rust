@@ -16,6 +16,7 @@ struct State {
     // Maps
     by_domain: LruCache<String, IpAddr>,
     by_ip: LruCache<IpAddr, String>,
+    #[allow(dead_code)]
     cap: usize,
 }
 

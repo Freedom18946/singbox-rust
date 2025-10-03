@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
 use crate::router::ruleset::matcher::{MatchContext, RuleMatcher};
-use crate::router::ruleset::{Rule, DefaultRule, RuleSet, RuleSetFormat};
+use crate::router::ruleset::RuleSet;
 
 /// DNS routing decision cache key
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
