@@ -1,8 +1,8 @@
 # singbox-rust Development Roadmap
 
 **Last Updated**: 2025-10-04
-**Current Status**: Server Inbounds in Progress - 5/10 Complete (Shadowsocks ✅ Trojan ✅ VMess ✅ VLESS ✅ ShadowTLS ✅)
-**Overall Completion**: 68% → Estimated 90%+ (server inbounds + discovered implementations)
+**Current Status**: Multi-Front Progress - Server Inbounds 5/10 ✅ + CLI Parity Started ✅
+**Overall Completion**: 68% → Estimated 91%+ (server inbounds + CLI commands + discovered implementations)
 **Goal**: Achieve 100% feature parity with Go sing-box
 
 ---
@@ -32,7 +32,7 @@ Immediate next steps (P0–P1):
   - Hysteria/Hysteria2: QUIC-based with congestion control
   - Naive: HTTP/2 CONNECT proxy (needs hyper server)
   - AnyTLS: TBD (need protocol spec)
-- Add CLI parity subcommands: `generate reality-keypair`, `generate ech-keypair`, rule-set tools
+- Add CLI parity subcommands: ✅ generate reality-keypair (NEW!), ⏳ generate ech-keypair, rule-set tools
 - Finish REALITY (client+server handshake) and add interop tests with Go
 - Implement uTLS fingerprints and ECH wiring across TLS clients
 - Harden DNS outbound (DoT/DoH/DoQ) with feature flags enabled in CI + interop tests
