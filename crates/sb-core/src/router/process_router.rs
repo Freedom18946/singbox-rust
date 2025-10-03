@@ -182,4 +182,236 @@ mod tests {
             assert!(matches!(decision, Decision::Proxy(None)));
         }
     }
+
+    #[tokio::test]
+    async fn test_process_path_rule_matching() {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            let rules = vec![
+                Rule {
+                    kind: RuleKind::ProcessPath("/usr/bin/curl".to_string()),
+                    decision: Decision::Direct,
+                },
+                Rule {
+                    kind: RuleKind::ProcessPath("/Applications/Telegram.app".to_string()),
+                    decision: Decision::Proxy(Some("telegram_proxy".to_string())),
+                },
+                Rule {
+                    kind: RuleKind::Default,
+                    decision: Decision::Reject,
+                },
+            ];
+
+            let engine = Engine::build(rules);
+            let router = ProcessRouter::new(engine).unwrap();
+
+            // Test curl path
+            let ctx_curl = RouteCtx {
+                domain: Some("example.com"),
+                ip: None,
+                transport_udp: false,
+                port: Some(443),
+                process_name: Some("curl"),
+                process_path: Some("/usr/bin/curl"),
+            };
+
+            let eng = router.engine.read().await;
+            let decision = eng.decide(&ctx_curl);
+            assert!(matches!(decision, Decision::Direct));
+            drop(eng);
+
+            // Test telegram path
+            let ctx_telegram = RouteCtx {
+                domain: Some("example.com"),
+                ip: None,
+                transport_udp: false,
+                port: Some(443),
+                process_name: Some("Telegram"),
+                process_path: Some("/Applications/Telegram.app"),
+            };
+
+            let eng = router.engine.read().await;
+            let decision = eng.decide(&ctx_telegram);
+            assert!(matches!(decision, Decision::Proxy(Some(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rule_priority_domain_beats_process() {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            let rules = vec![
+                Rule {
+                    kind: RuleKind::Exact("blocked.example.com".to_string()),
+                    decision: Decision::Reject,
+                },
+                Rule {
+                    kind: RuleKind::ProcessName("firefox".to_string()),
+                    decision: Decision::Proxy(None),
+                },
+                Rule {
+                    kind: RuleKind::Default,
+                    decision: Decision::Direct,
+                },
+            ];
+
+            let engine = Engine::build(rules);
+            let router = ProcessRouter::new(engine).unwrap();
+
+            // Domain rule should beat process rule
+            let ctx = RouteCtx {
+                domain: Some("blocked.example.com"),
+                ip: None,
+                transport_udp: false,
+                port: Some(443),
+                process_name: Some("firefox"),
+                process_path: None,
+            };
+
+            let eng = router.engine.read().await;
+            let decision = eng.decide(&ctx);
+            assert!(matches!(decision, Decision::Reject));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_engine() {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            let initial_rules = vec![Rule {
+                kind: RuleKind::Default,
+                decision: Decision::Direct,
+            }];
+
+            let engine = Engine::build(initial_rules);
+            let router = ProcessRouter::new(engine).unwrap();
+
+            // Initial decision
+            let decision = router
+                .decide_without_process(Some("example.com"), None, false, Some(443))
+                .await;
+            assert!(matches!(decision, Decision::Direct));
+
+            // Update engine with new rules
+            let new_rules = vec![
+                Rule {
+                    kind: RuleKind::Exact("example.com".to_string()),
+                    decision: Decision::Reject,
+                },
+                Rule {
+                    kind: RuleKind::Default,
+                    decision: Decision::Direct,
+                },
+            ];
+
+            let new_engine = Engine::build(new_rules);
+            router.update_engine(new_engine).await;
+
+            // Decision should reflect new rules
+            let decision = router
+                .decide_without_process(Some("example.com"), None, false, Some(443))
+                .await;
+            assert!(matches!(decision, Decision::Reject));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_udp_tcp_transport_distinction() {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            let rules = vec![
+                Rule {
+                    kind: RuleKind::Default,
+                    decision: Decision::Direct,
+                },
+            ];
+
+            let engine = Engine::build(rules);
+            let router = ProcessRouter::new(engine).unwrap();
+
+            // Test TCP
+            let tcp_decision = router
+                .decide_without_process(Some("example.com"), None, false, Some(443))
+                .await;
+            assert!(matches!(tcp_decision, Decision::Direct));
+
+            // Test UDP
+            let udp_decision = router
+                .decide_without_process(Some("example.com"), None, true, Some(53))
+                .await;
+            assert!(matches!(udp_decision, Decision::Direct));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multiple_process_rules() {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            let rules = vec![
+                Rule {
+                    kind: RuleKind::ProcessName("firefox".to_string()),
+                    decision: Decision::Proxy(Some("browser_proxy".to_string())),
+                },
+                Rule {
+                    kind: RuleKind::ProcessName("chrome".to_string()),
+                    decision: Decision::Proxy(Some("browser_proxy".to_string())),
+                },
+                Rule {
+                    kind: RuleKind::ProcessName("curl".to_string()),
+                    decision: Decision::Direct,
+                },
+                Rule {
+                    kind: RuleKind::Default,
+                    decision: Decision::Reject,
+                },
+            ];
+
+            let engine = Engine::build(rules);
+            let router = ProcessRouter::new(engine).unwrap();
+
+            // Test firefox
+            let ctx_firefox = RouteCtx {
+                domain: Some("example.com"),
+                ip: None,
+                transport_udp: false,
+                port: Some(443),
+                process_name: Some("firefox"),
+                process_path: None,
+            };
+
+            let eng = router.engine.read().await;
+            let decision = eng.decide(&ctx_firefox);
+            assert!(matches!(decision, Decision::Proxy(Some(name)) if name == "browser_proxy"));
+            drop(eng);
+
+            // Test chrome
+            let ctx_chrome = RouteCtx {
+                domain: Some("example.com"),
+                ip: None,
+                transport_udp: false,
+                port: Some(443),
+                process_name: Some("chrome"),
+                process_path: None,
+            };
+
+            let eng = router.engine.read().await;
+            let decision = eng.decide(&ctx_chrome);
+            assert!(matches!(decision, Decision::Proxy(Some(name)) if name == "browser_proxy"));
+            drop(eng);
+
+            // Test curl
+            let ctx_curl = RouteCtx {
+                domain: Some("example.com"),
+                ip: None,
+                transport_udp: false,
+                port: Some(443),
+                process_name: Some("curl"),
+                process_path: None,
+            };
+
+            let eng = router.engine.read().await;
+            let decision = eng.decide(&ctx_curl);
+            assert!(matches!(decision, Decision::Direct));
+        }
+    }
 }
