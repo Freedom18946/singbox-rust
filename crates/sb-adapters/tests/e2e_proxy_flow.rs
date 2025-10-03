@@ -11,6 +11,7 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener as StdListener};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -52,7 +53,7 @@ fn start_echo_server() -> SocketAddr {
 }
 
 /// Build outbound registry and router with direct connection
-fn build_direct_proxy() -> (OutboundRegistryHandle, RouterHandle) {
+fn build_direct_proxy() -> (Arc<OutboundRegistryHandle>, Arc<RouterHandle>) {
     let mut map = std::collections::HashMap::new();
     map.insert("direct".to_string(), OutboundImpl::Direct);
     let registry = OutboundRegistry::new(map);
@@ -61,16 +62,16 @@ fn build_direct_proxy() -> (OutboundRegistryHandle, RouterHandle) {
     // No rules: default to direct connection
 
     (
-        OutboundRegistryHandle::new(registry),
-        RouterHandle::new(router),
+        Arc::new(OutboundRegistryHandle::new(registry)),
+        Arc::new(RouterHandle::new(router)),
     )
 }
 
 /// Start SOCKS5 inbound server
 async fn start_socks5_inbound(
     listen: SocketAddr,
-    router: RouterHandle,
-    outbounds: OutboundRegistryHandle,
+    router: Arc<RouterHandle>,
+    outbounds: Arc<OutboundRegistryHandle>,
 ) {
     let (_tx, rx) = mpsc::channel(1);
     let cfg = SocksInboundConfig {
@@ -82,7 +83,7 @@ async fn start_socks5_inbound(
     };
 
     tokio::spawn(async move {
-        let _ = serve_socks(cfg, rx).await;
+        let _ = serve_socks(cfg, rx, None).await;
     });
 
     // Wait for server to be ready
@@ -92,8 +93,8 @@ async fn start_socks5_inbound(
 /// Start HTTP CONNECT inbound server
 async fn start_http_inbound(
     listen: SocketAddr,
-    router: RouterHandle,
-    outbounds: OutboundRegistryHandle,
+    router: Arc<RouterHandle>,
+    outbounds: Arc<OutboundRegistryHandle>,
 ) {
     let (_tx, rx) = mpsc::channel(1);
     let cfg = HttpProxyConfig {
@@ -103,7 +104,7 @@ async fn start_http_inbound(
     };
 
     tokio::spawn(async move {
-        let _ = serve_http(cfg, rx).await;
+        let _ = serve_http(cfg, rx, None).await;
     });
 
     // Wait for server to be ready
