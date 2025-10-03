@@ -178,6 +178,7 @@ rustls      = "0.23"
 rustls-pemfile = "2.1"
 webpki-roots = "0.26"
 rand = "0.8"
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
 sb-config   = { path = "../crates/sb-config", package = "sb-config" }

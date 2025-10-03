@@ -57,6 +57,10 @@ async fn main() -> anyhow::Result<()> {
             cli::completion::main(a)?;
             Ok(())
         }
+        cli::Commands::Generate(a) => {
+            cli::generate::run(a)?;
+            Ok(())
+        }
         #[cfg(feature = "manpage")]
         cli::Commands::Man(a) => {
             cli::man::main(a)?;

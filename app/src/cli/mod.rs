@@ -56,6 +56,7 @@ pub mod bench;
 pub mod buildinfo;
 pub mod check;
 pub mod completion;
+pub mod generate;
 #[cfg(feature = "dev-cli")]
 pub mod fs_scan;
 #[cfg(feature = "dev-cli")]
@@ -112,6 +113,8 @@ pub enum Commands {
     Bench(bench::BenchArgs),
     /// 生成 shell 补全脚本
     GenCompletions(completion::CompletionArgs),
+    /// Generate cryptographic keys (REALITY, ECH)
+    Generate(generate::GenerateArgs),
     /// 生成 man page
     #[cfg(feature = "manpage")]
     Man(man::ManArgs),
