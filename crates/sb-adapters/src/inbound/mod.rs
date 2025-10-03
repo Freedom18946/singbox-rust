@@ -33,3 +33,6 @@ pub mod vmess;
 
 #[cfg(feature = "vless")]
 pub mod vless;
+
+#[cfg(feature = "shadowtls")]
+pub mod shadowtls;

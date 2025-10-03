@@ -89,6 +89,8 @@ shadowsocks = []
 vmess = []
 # VLESS inbound (UUID auth server)
 vless = []
+# ShadowTLS inbound (TLS masquerading server)
+shadowtls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
 metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持
