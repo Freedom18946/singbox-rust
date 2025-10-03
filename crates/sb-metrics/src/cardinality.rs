@@ -51,7 +51,7 @@ impl CardinalityMonitor {
     /// Create a new cardinality monitor
     ///
     /// # Arguments
-    /// * `warning_threshold` - Number of unique time series before warning (e.g., 10_000)
+    /// * `warning_threshold` - Number of unique time series before warning (e.g., `10_000`)
     ///
     /// # Example
     /// ```
@@ -74,8 +74,8 @@ impl CardinalityMonitor {
     /// This should be called whenever a metric is incremented with specific labels.
     ///
     /// # Arguments
-    /// * `metric_name` - Name of the metric (e.g., "http_requests_total")
-    /// * `labels` - Vector of label values in order (e.g., ["GET", "/api", "200"])
+    /// * `metric_name` - Name of the metric (e.g., `"http_requests_total"`)
+    /// * `labels` - Vector of label values in order (e.g., `["GET", "/api", "200"]`)
     ///
     /// # Example
     /// ```
@@ -83,7 +83,7 @@ impl CardinalityMonitor {
     /// let monitor = CardinalityMonitor::new(1000);
     /// monitor.record_label_usage("http_requests_total", vec!["GET".to_string(), "/api".to_string()]);
     /// ```
-    pub fn record_label_usage(&self, metric_name: &str, labels: Vec<String>) {
+    pub fn record_label_usage(&self, metric_name: &str, labels: &[String]) {
         // Acquire lock on metrics map
         let Ok(mut metrics) = self.metrics.lock() else {
             // If mutex is poisoned, skip monitoring (non-critical path)
@@ -96,7 +96,7 @@ impl CardinalityMonitor {
             .or_insert_with(HashSet::new);
 
         // Try to insert the label combination
-        if label_set.insert(labels.clone()) {
+        if label_set.insert(labels.to_vec()) {
             // New unique combination - increment total series count
             let total = self.total_series.fetch_add(1, Ordering::Relaxed) + 1;
 
@@ -177,7 +177,7 @@ impl CardinalityMonitor {
     /// Get a summary of cardinality per metric
     ///
     /// # Returns
-    /// HashMap of metric name → cardinality
+    /// `HashMap` of metric name → cardinality
     ///
     /// # Example
     /// ```

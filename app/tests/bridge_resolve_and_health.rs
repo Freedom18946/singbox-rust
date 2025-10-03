@@ -40,12 +40,8 @@ fn rule_selects_named_outbound() {
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,
-            server: None,
-            port: None,
-            udp: None,
             name: Some("direct".into()),
-            members: None,
-            credentials: None,
+            ..Default::default()
         }],
         route: RouteIR {
             rules: vec![RuleIR {
