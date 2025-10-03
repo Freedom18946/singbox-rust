@@ -35,6 +35,8 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
         OutboundType::Block => "block",
         OutboundType::Selector => "selector",
         OutboundType::Vless => "vless",
+        OutboundType::Vmess => "vmess",
+        OutboundType::Trojan => "trojan",
     }
     .to_string();
     (

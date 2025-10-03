@@ -110,6 +110,13 @@ pub fn to_ir(cfg: &Config) -> Result<ConfigIR> {
                 network,
                 packet_encoding,
                 connect_timeout_sec: _,
+                transport,
+                ws_path,
+                ws_host,
+                h2_path,
+                h2_host,
+                tls_sni,
+                tls_alpn,
             } => OutboundIR {
                 ty: OutboundType::Vless,
                 name: Some(name.clone()),
@@ -119,8 +126,72 @@ pub fn to_ir(cfg: &Config) -> Result<ConfigIR> {
                 flow: flow.clone(),
                 network: Some(network.clone()),
                 packet_encoding: packet_encoding.clone(),
+                transport: transport.clone(),
+                ws_path: ws_path.clone(),
+                ws_host: ws_host.clone(),
+                h2_path: h2_path.clone(),
+                h2_host: h2_host.clone(),
+                tls_sni: tls_sni.clone(),
+                tls_alpn: tls_alpn.clone(),
                 ..Default::default()
-            }
+            },
+            Outbound::Vmess {
+                name,
+                server,
+                port,
+                uuid,
+                security: _,
+                alter_id: _,
+                connect_timeout_sec: _,
+                transport,
+                ws_path,
+                ws_host,
+                h2_path,
+                h2_host,
+                tls_sni,
+                tls_alpn,
+            } => OutboundIR {
+                ty: OutboundType::Vmess,
+                name: Some(name.clone()),
+                server: Some(server.clone()),
+                port: Some(*port),
+                uuid: Some(uuid.clone()),
+                transport: transport.clone(),
+                ws_path: ws_path.clone(),
+                ws_host: ws_host.clone(),
+                h2_path: h2_path.clone(),
+                h2_host: h2_host.clone(),
+                tls_sni: tls_sni.clone(),
+                tls_alpn: tls_alpn.clone(),
+                ..Default::default()
+            },
+            Outbound::Trojan {
+                name,
+                server,
+                port,
+                password,
+                transport,
+                ws_path,
+                ws_host,
+                h2_path,
+                h2_host,
+                tls_sni,
+                tls_alpn,
+            } => OutboundIR {
+                ty: OutboundType::Trojan,
+                name: Some(name.clone()),
+                server: Some(server.clone()),
+                port: Some(*port),
+                password: Some(password.clone()),
+                transport: transport.clone(),
+                ws_path: ws_path.clone(),
+                ws_host: ws_host.clone(),
+                h2_path: h2_path.clone(),
+                h2_host: h2_host.clone(),
+                tls_sni: tls_sni.clone(),
+                tls_alpn: tls_alpn.clone(),
+                ..Default::default()
+            },
         };
         ir.outbounds.push(outbound_ir);
     }
@@ -160,6 +231,116 @@ pub fn to_view(cfg: &ConfigIR, prof: FormatProfile) -> Value {
     match prof {
         FormatProfile::Go1124 => go_1124_view(cfg),
         // FormatProfile::Rich => rich_view(cfg),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_present_vmess_transport_mapping() {
+        let cfg = crate::Config {
+            schema_version: 2,
+            inbounds: vec![],
+            outbounds: vec![crate::Outbound::Vmess {
+                name: "v".into(),
+                server: "vmess.example.com".into(),
+                port: 443,
+                uuid: "00000000-0000-0000-0000-000000000000".into(),
+                security: "auto".into(),
+                alter_id: 0,
+                connect_timeout_sec: None,
+                transport: Some(vec!["tls".into(), "ws".into()]),
+                ws_path: Some("/ws".into()),
+                ws_host: Some("cdn.example.com".into()),
+                h2_path: None,
+                h2_host: None,
+                tls_sni: Some("cdn.example.com".into()),
+                tls_alpn: None,
+            }],
+            rules: vec![],
+            default_outbound: None,
+        };
+
+        let ir = to_ir(&cfg).expect("to_ir ok");
+        assert_eq!(ir.outbounds.len(), 1);
+        let ob = &ir.outbounds[0];
+        assert_eq!(ob.ty, OutboundType::Vmess);
+        assert_eq!(ob.server.as_deref(), Some("vmess.example.com"));
+        assert_eq!(ob.port, Some(443));
+        assert_eq!(ob.transport.as_ref().unwrap(), &vec![String::from("tls"), String::from("ws")]);
+        assert_eq!(ob.ws_path.as_deref(), Some("/ws"));
+        assert_eq!(ob.ws_host.as_deref(), Some("cdn.example.com"));
+        assert_eq!(ob.tls_sni.as_deref(), Some("cdn.example.com"));
+    }
+
+    #[test]
+    fn test_present_vless_transport_mapping() {
+        let cfg = crate::Config {
+            schema_version: 2,
+            inbounds: vec![],
+            outbounds: vec![crate::Outbound::Vless {
+                name: "vl".into(),
+                server: "vless.example.com".into(),
+                port: 8443,
+                uuid: "00000000-0000-0000-0000-000000000000".into(),
+                flow: None,
+                network: "tcp".into(),
+                packet_encoding: None,
+                connect_timeout_sec: None,
+                transport: Some(vec!["tls".into(), "h2".into()]),
+                ws_path: None,
+                ws_host: None,
+                h2_path: Some("/t".into()),
+                h2_host: Some("h2.example.com".into()),
+                tls_sni: Some("h2.example.com".into()),
+                tls_alpn: Some("h2".into()),
+            }],
+            rules: vec![],
+            default_outbound: None,
+        };
+
+        let ir = to_ir(&cfg).expect("to_ir ok");
+        assert_eq!(ir.outbounds.len(), 1);
+        let ob = &ir.outbounds[0];
+        assert_eq!(ob.ty, OutboundType::Vless);
+        assert_eq!(ob.transport.as_ref().unwrap(), &vec![String::from("tls"), String::from("h2")]);
+        assert_eq!(ob.h2_path.as_deref(), Some("/t"));
+        assert_eq!(ob.h2_host.as_deref(), Some("h2.example.com"));
+        assert_eq!(ob.tls_sni.as_deref(), Some("h2.example.com"));
+        assert_eq!(ob.tls_alpn.as_deref(), Some("h2"));
+    }
+
+    #[test]
+    fn test_present_trojan_transport_mapping() {
+        let cfg = crate::Config {
+            schema_version: 2,
+            inbounds: vec![],
+            outbounds: vec![crate::Outbound::Trojan {
+                name: "tr".into(),
+                server: "trojan.example.com".into(),
+                port: 443,
+                password: "secret".into(),
+                transport: Some(vec!["tls".into()]),
+                ws_path: None,
+                ws_host: None,
+                h2_path: None,
+                h2_host: None,
+                tls_sni: Some("trojan.example.com".into()),
+                tls_alpn: Some("http/1.1".into()),
+            }],
+            rules: vec![],
+            default_outbound: None,
+        };
+
+        let ir = to_ir(&cfg).expect("to_ir ok");
+        assert_eq!(ir.outbounds.len(), 1);
+        let ob = &ir.outbounds[0];
+        assert_eq!(ob.ty, OutboundType::Trojan);
+        assert_eq!(ob.password.as_deref(), Some("secret"));
+        assert_eq!(ob.tls_sni.as_deref(), Some("trojan.example.com"));
+        assert_eq!(ob.tls_alpn.as_deref(), Some("http/1.1"));
     }
 }
 

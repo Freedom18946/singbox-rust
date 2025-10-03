@@ -1,0 +1,47 @@
+[package]
+name = "sb-tls"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# TLS
+rustls = { version = "0.23", features = ["ring"] }
+tokio-rustls = "0.26"
+rustls-pki-types = "1"
+
+# Cryptography
+ring = "0.17"
+sha2 = "0.10"
+x25519-dalek = "2"
+rand = "0.8"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+hex = "0.4"
+
+# Error handling
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+
+# Core types
+sb-core = { path = "../sb-core" }
+
+[features]
+default = ["reality"]
+reality = []
+utls = []
+ech = []
+
+[lints]
+workspace = true

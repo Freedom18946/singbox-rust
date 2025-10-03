@@ -21,7 +21,7 @@ use sha2::Sha256;
 #[cfg(feature = "out_vmess")]
 use std::io;
 #[cfg(feature = "out_vmess")]
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "out_vmess")]
 use tokio::net::TcpStream;
 
@@ -69,6 +69,91 @@ impl VmessOutbound {
         }
 
         Ok(Self { config })
+    }
+
+    #[cfg(feature = "out_vmess")]
+    pub(crate) async fn do_handshake_on<S: AsyncRead + AsyncWrite + Unpin + Send + ?Sized>(
+        &self,
+        target: &HostPort,
+        stream: &mut S,
+    ) -> io::Result<()> {
+        // Generate timestamp for authentication
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Prepare authentication header
+        let mut auth_header = Vec::new();
+        auth_header.extend_from_slice(&timestamp.to_be_bytes());
+
+        // Create HMAC for authentication
+        let mut mac =
+            <Hmac<Sha256> as Mac>::new_from_slice(self.config.id.as_bytes()).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidInput, format!("HMAC error: {}", e))
+            })?;
+        mac.update(&auth_header);
+        let auth_hash = mac.finalize().into_bytes();
+
+        auth_header.extend_from_slice(&auth_hash[..16]); // Use first 16 bytes
+
+        // Send authentication header
+        stream.write_all(&auth_header).await?;
+
+        // Generate and send request
+        let request = self.encode_vmess_request(target)?;
+
+        // Encrypt request with request key
+        let request_key = self.generate_request_key();
+
+        // Use request_key for AEAD encryption (simplified implementation)
+        let encrypted_request = self.encrypt_request(&request, &request_key)?;
+        tracing::debug!(
+            "VMess request encrypted with {} byte key",
+            request_key.len()
+        );
+
+        stream.write_all(&encrypted_request).await?;
+
+        // Read and validate response tag
+        let mut response_tag = [0u8; 16];
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            stream.read_exact(&mut response_tag),
+        )
+        .await
+        {
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "VMess response timeout",
+                ));
+            }
+            Ok(Err(e)) => {
+                return Err(e);
+            }
+            Ok(Ok(_)) => {
+                // Validate response tag using AEAD module
+                let response_key = self.generate_response_key();
+                let request_tag = self.generate_request_key(); // Simplified - should use actual request tag
+
+                match aead::resp_tag(&request_tag, &response_key) {
+                    Ok(expected_tag) => {
+                        if response_tag != expected_tag {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "VMess response tag validation failed",
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        return Err(io::Error::other("VMess tag calculation error"));
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn generate_request_key(&self) -> [u8; 16] {
@@ -220,75 +305,26 @@ impl OutboundTcp for VmessOutbound {
         let start = std::time::Instant::now();
 
         // Connect to VMess server
-        let mut stream =
-            match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    record_connect_error(
-                        crate::outbound::OutboundKind::Direct,
-                        OutboundErrorClass::Io,
-                    );
+        let mut stream = match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                record_connect_error(
+                    crate::outbound::OutboundKind::Direct,
+                    OutboundErrorClass::Io,
+                );
 
-                    #[cfg(feature = "metrics")]
-                    {
-                        use metrics::counter;
-                        counter!("vmess_connect_total", "result" => "connect_fail").increment(1);
-                    }
-
-                    return Err(e);
+                #[cfg(feature = "metrics")]
+                {
+                    use metrics::counter;
+                    counter!("vmess_connect_total", "result" => "connect_fail").increment(1);
                 }
-            };
 
-        // Generate timestamp for authentication
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // Prepare authentication header
-        let mut auth_header = Vec::new();
-        auth_header.extend_from_slice(&timestamp.to_be_bytes());
-
-        // Create HMAC for authentication
-        let mut mac =
-            <Hmac<Sha256> as Mac>::new_from_slice(self.config.id.as_bytes()).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidInput, format!("HMAC error: {}", e))
-            })?;
-        mac.update(&auth_header);
-        let auth_hash = mac.finalize().into_bytes();
-
-        auth_header.extend_from_slice(&auth_hash[..16]); // Use first 16 bytes
-
-        // Send authentication header
-        if let Err(e) = stream.write_all(&auth_header).await {
-            record_connect_error(
-                crate::outbound::OutboundKind::Direct,
-                OutboundErrorClass::Protocol,
-            );
-
-            #[cfg(feature = "metrics")]
-            {
-                use metrics::counter;
-                counter!("vmess_connect_total", "result" => "auth_fail").increment(1);
+                return Err(e);
             }
+        };
 
-            return Err(e);
-        }
-
-        // Generate and send request
-        let request = self.encode_vmess_request(target)?;
-
-        // Encrypt request with request key
-        let request_key = self.generate_request_key();
-
-        // Use request_key for AEAD encryption (simplified implementation)
-        let encrypted_request = self.encrypt_request(&request, &request_key)?;
-        tracing::debug!(
-            "VMess request encrypted with {} byte key",
-            request_key.len()
-        );
-
-        if let Err(e) = stream.write_all(&encrypted_request).await {
+        // Perform handshake on the connected stream
+        if let Err(e) = self.do_handshake_on(target, &mut stream).await {
             record_connect_error(
                 crate::outbound::OutboundKind::Direct,
                 OutboundErrorClass::Protocol,
@@ -301,80 +337,6 @@ impl OutboundTcp for VmessOutbound {
             }
 
             return Err(e);
-        }
-
-        // Read and validate response tag
-        let mut response_tag = [0u8; 16];
-        match tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            stream.read_exact(&mut response_tag),
-        )
-        .await
-        {
-            Err(_) => {
-                record_connect_error(
-                    crate::outbound::OutboundKind::Direct,
-                    OutboundErrorClass::Protocol,
-                );
-
-                #[cfg(feature = "metrics")]
-                {
-                    use metrics::counter;
-                    counter!("vmess_connect_total", "result" => "resp_timeout").increment(1);
-                }
-
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "VMess response timeout",
-                ));
-            }
-            Ok(Err(e)) => {
-                record_connect_error(
-                    crate::outbound::OutboundKind::Direct,
-                    OutboundErrorClass::Protocol,
-                );
-
-                #[cfg(feature = "metrics")]
-                {
-                    use metrics::counter;
-                    counter!("vmess_connect_total", "result" => "response_fail").increment(1);
-                }
-
-                return Err(e);
-            }
-            Ok(Ok(_)) => {
-                // Validate response tag using AEAD module
-                let response_key = self.generate_response_key();
-                let request_tag = self.generate_request_key(); // Simplified - should use actual request tag
-
-                match aead::resp_tag(&request_tag, &response_key) {
-                    Ok(expected_tag) => {
-                        if response_tag != expected_tag {
-                            #[cfg(feature = "metrics")]
-                            {
-                                use metrics::counter;
-                                counter!("vmess_connect_total", "result" => "bad_tag").increment(1);
-                            }
-
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                "VMess response tag validation failed",
-                            ));
-                        }
-                    }
-                    Err(_) => {
-                        #[cfg(feature = "metrics")]
-                        {
-                            use metrics::counter;
-                            counter!("vmess_connect_total", "result" => "tag_error").increment(1);
-                        }
-
-                        return Err(io::Error::other(
-                            "VMess tag calculation error",
-                        ));
-                    }
-                }
-            }
         }
 
         record_connect_success(crate::outbound::OutboundKind::Direct);
@@ -420,6 +382,89 @@ impl crate::adapter::OutboundConnector for VmessOutbound {
 
         // Use async connect implementation
         OutboundTcp::connect(self, &target).await
+    }
+}
+
+// V2Ray transport integration (feature-gated)
+#[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
+#[async_trait::async_trait]
+impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
+    async fn connect_tcp_io(
+        &self,
+        ctx: &crate::types::ConnCtx,
+    ) -> crate::error::SbResult<sb_transport::IoStream> {
+        use sb_transport::Dialer as _;
+        use sb_transport::TransportBuilder;
+
+        // Build target for VMess handshake
+        let target = HostPort {
+            host: match &ctx.dst.host {
+                crate::types::Host::Name(d) => d.to_string(),
+                crate::types::Host::Ip(ip) => ip.to_string(),
+            },
+            port: ctx.dst.port,
+        };
+
+        // Determine transport chain from environment variable
+        let t = std::env::var("SB_VMESS_TRANSPORT").unwrap_or_default();
+        let want_tls = t.contains("tls");
+        let want_ws = t.contains("ws");
+        let want_h2 = t.contains("h2");
+
+        let mut builder = TransportBuilder::tcp();
+
+        if want_tls {
+            // Prefer production config (webpki roots). For real deployments this
+            // should be replaced with system roots configuration.
+            let tls_cfg = sb_transport::tls::webpki_roots_config();
+            // Optional SNI override via SB_TLS_SNI is handled in TlsDialer::from_env,
+            // but TransportBuilder::tls requires explicit params; pass None to use host.
+            // For HTTP/2 we also set ALPN h2
+            let alpn = if want_h2 {
+                Some(vec![b"h2".to_vec()])
+            } else {
+                None
+            };
+            builder = builder.tls(tls_cfg, None, alpn);
+        }
+
+        if want_ws {
+            let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+            if let Ok(path) = std::env::var("SB_WS_PATH") {
+                ws_cfg.path = path;
+            }
+            // Optional Host header masquerading
+            if let Ok(host_header) = std::env::var("SB_WS_HOST") {
+                ws_cfg.headers.push(("Host".to_string(), host_header));
+            }
+            builder = builder.websocket(ws_cfg);
+        }
+
+        if want_h2 {
+            let mut h2_cfg = sb_transport::http2::Http2Config::default();
+            if let Ok(path) = std::env::var("SB_H2_PATH") {
+                h2_cfg.path = path;
+            }
+            if let Ok(host_header) = std::env::var("SB_H2_HOST") {
+                h2_cfg.host = host_header;
+            }
+            builder = builder.http2(h2_cfg);
+        }
+
+        let dialer = builder.build();
+
+        let mut stream = dialer
+            .connect(self.config.server.as_str(), self.config.port)
+            .await
+            .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;
+
+        // Perform VMess handshake over the established stream
+        self
+            .do_handshake_on(&target, &mut *stream)
+            .await
+            .map_err(crate::error::SbError::from)?;
+
+        Ok(stream)
     }
 }
 

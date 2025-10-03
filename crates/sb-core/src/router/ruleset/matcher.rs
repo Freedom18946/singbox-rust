@@ -121,7 +121,7 @@ impl RuleMatcher {
     fn matches_default_rule(&self, rule: &DefaultRule, ctx: &MatchContext) -> bool {
         // All conditions must match (AND semantics within a rule)
 
-        // Domain matching
+        // Domain matching (using DomainRule enum)
         if !rule.domain.is_empty() {
             if let Some(ref domain) = ctx.domain {
                 if !self.matches_domain_rules(&rule.domain, domain) {
@@ -129,6 +129,49 @@ impl RuleMatcher {
                 }
             } else {
                 return false; // Rule has domain criteria but no domain in context
+            }
+        }
+
+        // Domain suffix matching (convenience field)
+        if !rule.domain_suffix.is_empty() {
+            if let Some(ref domain) = ctx.domain {
+                let matched = rule.domain_suffix.iter().any(|suffix| {
+                    domain == suffix || domain.ends_with(&format!(".{}", suffix))
+                });
+                if !matched {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // Domain keyword matching (convenience field)
+        if !rule.domain_keyword.is_empty() {
+            if let Some(ref domain) = ctx.domain {
+                let matched = rule.domain_keyword.iter().any(|keyword| domain.contains(keyword));
+                if !matched {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // Domain regex matching (convenience field)
+        if !rule.domain_regex.is_empty() {
+            if let Some(ref domain) = ctx.domain {
+                let matched = rule.domain_regex.iter().any(|pattern| {
+                    match Regex::new(pattern) {
+                        Ok(re) => re.is_match(domain),
+                        Err(_) => false,
+                    }
+                });
+                if !matched {
+                    return false;
+                }
+            } else {
+                return false;
             }
         }
 

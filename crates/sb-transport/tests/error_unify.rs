@@ -1,10 +1,17 @@
-#[test]
-fn dialerror_maps_to_sberror_kinds() {
-    let e = sb_transport::dialer::DialError::Io(std::io::Error::from(std::io::ErrorKind::NotFound));
-    let se: sb_core::error::SbError = e.into();
-    assert_eq!(se.kind(), "Io");
+#[tokio::test]
+async fn elapsed_maps_to_dialerror_timeout() {
+    // Produce a timeout error via tokio::time::timeout
+    let fut = async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Ok::<(), ()>(())
+    };
+    let res = tokio::time::timeout(std::time::Duration::from_millis(1), fut).await;
+    assert!(res.is_err());
+    let elapsed = res.err().unwrap();
 
-    let e2 = sb_transport::dialer::DialError::Other("oops".into());
-    let se2: sb_core::error::SbError = e2.into();
-    assert_eq!(se2.kind(), "Other");
+    let de: sb_transport::dialer::DialError = elapsed.into();
+    match de {
+        sb_transport::dialer::DialError::Other(msg) => assert_eq!(msg, "timeout"),
+        _ => panic!("expected timeout mapping"),
+    }
 }

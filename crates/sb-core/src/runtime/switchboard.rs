@@ -304,6 +304,21 @@ impl SwitchboardBuilder {
                     .map_err(|e| AdapterError::Other(e.into()))?;
             }
 
+            OutboundType::Vmess => {
+                #[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
+                {
+                    if let Some(conn) = VmessConnector::from_ir(ir) {
+                        self.switchboard
+                            .register(ir.name.clone().unwrap_or_else(|| "vmess".into()), conn)
+                            .map_err(|e| AdapterError::Other(e.into()))?;
+                        return Ok(());
+                    }
+                }
+                return Err(AdapterError::UnsupportedProtocol(
+                    "Vmess outbound not enabled or invalid config".to_string(),
+                ));
+            }
+
             OutboundType::Socks => {
                 // For now, register as degraded - actual implementation will be added later
                 let degraded =
@@ -311,6 +326,36 @@ impl SwitchboardBuilder {
                 self.switchboard
                     .register(name.to_string(), degraded)
                     .map_err(|e| AdapterError::Other(e.into()))?;
+            }
+
+            OutboundType::Vless => {
+                #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
+                {
+                    if let Some(conn) = VlessConnector::from_ir(ir) {
+                        self.switchboard
+                            .register(ir.name.clone().unwrap_or_else(|| "vless".into()), conn)
+                            .map_err(|e| AdapterError::Other(e.into()))?;
+                        return Ok(());
+                    }
+                }
+                return Err(AdapterError::UnsupportedProtocol(
+                    "Vless outbound not enabled or invalid config".to_string(),
+                ));
+            }
+
+            OutboundType::Trojan => {
+                #[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
+                {
+                    if let Some(conn) = TrojanConnector::from_ir(ir) {
+                        self.switchboard
+                            .register(ir.name.clone().unwrap_or_else(|| "trojan".into()), conn)
+                            .map_err(|e| AdapterError::Other(e.into()))?;
+                        return Ok(());
+                    }
+                }
+                return Err(AdapterError::UnsupportedProtocol(
+                    "Trojan outbound not enabled or invalid config".to_string(),
+                ));
             }
 
             _ => {
@@ -396,4 +441,370 @@ impl OutboundConnector for DirectConnector {
     fn name(&self) -> &'static str {
         "direct"
     }
+}
+
+// ----- VMess connector (feature-gated) -----
+
+#[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
+#[derive(Debug, Clone)]
+struct VmessConnector {
+    server: String,
+    port: u16,
+    uuid: String,
+    transport: Option<Vec<String>>,
+    ws_path: Option<String>,
+    ws_host: Option<String>,
+    h2_path: Option<String>,
+    h2_host: Option<String>,
+    tls_sni: Option<String>,
+    tls_alpn: Option<String>,
+}
+
+#[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
+impl VmessConnector {
+    fn from_ir(ob: &sb_config::ir::OutboundIR) -> Option<Self> {
+        Some(Self {
+            server: ob.server.clone()?,
+            port: ob.port?,
+            uuid: ob.uuid.clone().unwrap_or_default(),
+            transport: ob.transport.clone(),
+            ws_path: ob.ws_path.clone(),
+            ws_host: ob.ws_host.clone(),
+            h2_path: ob.h2_path.clone(),
+            h2_host: ob.h2_host.clone(),
+            tls_sni: ob.tls_sni.clone(),
+            tls_alpn: ob.tls_alpn.clone(),
+        })
+    }
+}
+
+#[cfg(feature = "v2ray_transport")]
+struct IoWrapper(sb_transport::IoStream);
+
+#[cfg(feature = "v2ray_transport")]
+impl tokio::io::AsyncRead for IoWrapper {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut *self.0).poll_read(cx, buf)
+    }
+}
+
+#[cfg(feature = "v2ray_transport")]
+impl tokio::io::AsyncWrite for IoWrapper {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut *self.0).poll_write(cx, buf)
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut *self.0).poll_flush(cx)
+    }
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut *self.0).poll_shutdown(cx)
+    }
+}
+
+// ----- Trojan connector (feature-gated) -----
+#[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
+#[derive(Debug, Clone)]
+struct TrojanConnector {
+    server: String,
+    port: u16,
+    password: String,
+    transport: Option<Vec<String>>,
+    ws_path: Option<String>,
+    ws_host: Option<String>,
+    h2_path: Option<String>,
+    h2_host: Option<String>,
+    tls_sni: Option<String>,
+    tls_alpn: Option<String>,
+}
+
+#[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
+impl TrojanConnector {
+    fn from_ir(ob: &sb_config::ir::OutboundIR) -> Option<Self> {
+        Some(Self {
+            server: ob.server.clone()?,
+            port: ob.port?,
+            password: ob.password.clone()?,
+            transport: ob.transport.clone(),
+            ws_path: ob.ws_path.clone(),
+            ws_host: ob.ws_host.clone(),
+            h2_path: ob.h2_path.clone(),
+            h2_host: ob.h2_host.clone(),
+            tls_sni: ob.tls_sni.clone(),
+            tls_alpn: ob.tls_alpn.clone(),
+        })
+    }
+}
+
+#[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
+#[async_trait::async_trait]
+impl OutboundConnector for TrojanConnector {
+    async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+        use crate::outbound::crypto_types::HostPort as Hp;
+        use sb_transport::Dialer as _;
+        use sb_transport::TransportBuilder;
+
+        // Compose transport chain from IR fields
+        let mut builder = TransportBuilder::tcp();
+        if let Some(chain) = &self.transport {
+            let want_h2 = chain.iter().any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
+            let alpn_from_ir = self
+                .tls_alpn
+                .as_ref()
+                .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect::<Vec<_>>());
+            for layer in chain {
+                match layer.to_ascii_lowercase().as_str() {
+                    "tls" => {
+                        let cfg = sb_transport::tls::webpki_roots_config();
+                        let alpn = alpn_from_ir.clone().or_else(|| if want_h2 { Some(vec![b"h2".to_vec()]) } else { None });
+                        builder = builder.tls(cfg, self.tls_sni.clone(), alpn);
+                    }
+                    "ws" => {
+                        let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+                        if let Some(p) = &self.ws_path { ws_cfg.path = p.clone(); }
+                        if let Some(h) = &self.ws_host { ws_cfg.headers.push(("Host".into(), h.clone())); }
+                        builder = builder.websocket(ws_cfg);
+                    }
+                    "h2" | "http2" => {
+                        let mut h2_cfg = sb_transport::http2::Http2Config::default();
+                        if let Some(p) = &self.h2_path { h2_cfg.path = p.clone(); }
+                        if let Some(h) = &self.h2_host { h2_cfg.host = h.clone(); }
+                        builder = builder.http2(h2_cfg);
+                    }
+                    "grpc" => {
+                        let cfg = sb_transport::grpc::GrpcConfig::default();
+                        builder = builder.grpc(cfg);
+                    }
+                    "mux" | "multiplex" => {
+                        let cfg = sb_transport::multiplex::MultiplexConfig::default();
+                        builder = builder.multiplex(cfg);
+                    }
+                    "httpupgrade" | "http_upgrade" => {
+                        let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+                        if let Some(p) = &self.ws_path { cfg.path = p.clone(); }
+                        builder = builder.http_upgrade(cfg);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Dial layered transport
+        let mut stream = builder
+            .build()
+            .connect(self.server.as_str(), self.port)
+            .await
+            .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+
+        // Perform Trojan handshake on the layered stream
+        let hp = Hp::new(target.host.clone(), target.port);
+        crate::outbound::trojan::TrojanOutbound::handshake_on(&self.password, &hp, &mut *stream)
+            .await
+            .map_err(|e| AdapterError::Other(anyhow::anyhow!(e.to_string())))?;
+
+        Ok(Box::new(IoWrapper(stream)))
+    }
+    fn name(&self) -> &'static str { "trojan" }
+}
+// ----- VLESS connector (feature-gated) -----
+#[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
+#[derive(Debug, Clone)]
+struct VlessConnector {
+    server: String,
+    port: u16,
+    uuid: String,
+    transport: Option<Vec<String>>,
+    ws_path: Option<String>,
+    ws_host: Option<String>,
+    h2_path: Option<String>,
+    h2_host: Option<String>,
+    tls_sni: Option<String>,
+    tls_alpn: Option<String>,
+}
+
+#[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
+impl VlessConnector {
+    fn from_ir(ob: &sb_config::ir::OutboundIR) -> Option<Self> {
+        Some(Self {
+            server: ob.server.clone()?,
+            port: ob.port?,
+            uuid: ob.uuid.clone()?,
+            transport: ob.transport.clone(),
+            ws_path: ob.ws_path.clone(),
+            ws_host: ob.ws_host.clone(),
+            h2_path: ob.h2_path.clone(),
+            h2_host: ob.h2_host.clone(),
+            tls_sni: ob.tls_sni.clone(),
+            tls_alpn: ob.tls_alpn.clone(),
+        })
+    }
+}
+
+#[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
+#[async_trait::async_trait]
+impl OutboundConnector for VlessConnector {
+    async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+        use crate::outbound::types::HostPort as Hp;
+        use crate::outbound::vless::{VlessConfig, VlessOutbound};
+        use sb_transport::Dialer as _;
+        use sb_transport::TransportBuilder;
+
+        // Compose transport chain from IR fields
+        let mut builder = TransportBuilder::tcp();
+        if let Some(chain) = &self.transport {
+            let want_h2 = chain.iter().any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
+            let alpn_from_ir = self
+                .tls_alpn
+                .as_ref()
+                .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect::<Vec<_>>());
+            for layer in chain {
+                match layer.to_ascii_lowercase().as_str() {
+                    "tls" => {
+                        let cfg = sb_transport::tls::webpki_roots_config();
+                        let alpn = alpn_from_ir.clone().or_else(|| if want_h2 { Some(vec![b"h2".to_vec()]) } else { None });
+                        builder = builder.tls(cfg, self.tls_sni.clone(), alpn);
+                    }
+                    "ws" => {
+                        let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+                        if let Some(p) = &self.ws_path { ws_cfg.path = p.clone(); }
+                        if let Some(h) = &self.ws_host { ws_cfg.headers.push(("Host".into(), h.clone())); }
+                        builder = builder.websocket(ws_cfg);
+                    }
+                    "h2" | "http2" => {
+                        let mut h2_cfg = sb_transport::http2::Http2Config::default();
+                        if let Some(p) = &self.h2_path { h2_cfg.path = p.clone(); }
+                        if let Some(h) = &self.h2_host { h2_cfg.host = h.clone(); }
+                        builder = builder.http2(h2_cfg);
+                    }
+                    "httpupgrade" | "http_upgrade" => {
+                        let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+                        if let Some(p) = &self.ws_path { cfg.path = p.clone(); }
+                        builder = builder.http_upgrade(cfg);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Dial layered transport
+        let mut stream = builder
+            .build()
+            .connect(self.server.as_str(), self.port)
+            .await
+            .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+
+        // Perform VLESS handshake on the layered stream
+        let id = uuid::Uuid::parse_str(&self.uuid)
+            .map_err(|_| AdapterError::InvalidConfig("vless uuid parse"))?;
+        let cfg = VlessConfig {
+            server: self.server.clone(),
+            port: self.port,
+            uuid: id,
+            flow: None,
+            encryption: Some("none".into()),
+        };
+        let outbound = VlessOutbound::new(cfg)
+            .map_err(|_| AdapterError::InvalidConfig("vless config"))?;
+        let hp = Hp::new(target.host.clone(), target.port);
+        outbound
+            .do_handshake_on(&hp, &mut *stream)
+            .await
+            .map_err(|e| AdapterError::Other(anyhow::anyhow!(e.to_string())))?;
+
+        Ok(Box::new(IoWrapper(stream)))
+    }
+    fn name(&self) -> &'static str { "vless" }
+}
+#[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
+#[async_trait::async_trait]
+impl OutboundConnector for VmessConnector {
+    async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+        use crate::outbound::crypto_types::HostPort as Hp;
+        use crate::outbound::vmess::{VmessConfig, VmessOutbound};
+        use sb_transport::Dialer as _;
+        use sb_transport::TransportBuilder;
+
+        // Compose transport chain directly from IR fields
+        let mut builder = TransportBuilder::tcp();
+
+        // Determine desired order from transport vector
+        if let Some(chain) = &self.transport {
+            // Precompute ALPN if not explicitly set
+            let want_h2 = chain.iter().any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
+            let alpn_from_ir = self
+                .tls_alpn
+                .as_ref()
+                .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect::<Vec<_>>());
+            for layer in chain {
+                match layer.to_ascii_lowercase().as_str() {
+                    "tls" => {
+                        let cfg = sb_transport::tls::webpki_roots_config();
+                        let alpn = alpn_from_ir.clone().or_else(|| if want_h2 { Some(vec![b"h2".to_vec()]) } else { None });
+                        builder = builder.tls(cfg, self.tls_sni.clone(), alpn);
+                    }
+                    "ws" => {
+                        let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+                        if let Some(p) = &self.ws_path { ws_cfg.path = p.clone(); }
+                        if let Some(h) = &self.ws_host { ws_cfg.headers.push(("Host".into(), h.clone())); }
+                        builder = builder.websocket(ws_cfg);
+                    }
+                    "h2" | "http2" => {
+                        let mut h2_cfg = sb_transport::http2::Http2Config::default();
+                        if let Some(p) = &self.h2_path { h2_cfg.path = p.clone(); }
+                        if let Some(h) = &self.h2_host { h2_cfg.host = h.clone(); }
+                        builder = builder.http2(h2_cfg);
+                    }
+                    "httpupgrade" | "http_upgrade" => {
+                        let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+                        if let Some(p) = &self.ws_path { cfg.path = p.clone(); }
+                        builder = builder.http_upgrade(cfg);
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            // Default: raw TCP
+        }
+
+        // Dial the VMess server with the composed chain
+        let mut stream = builder
+            .build()
+            .connect(self.server.as_str(), self.port)
+            .await
+            .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+
+        // Prepare VMess outbound and perform handshake over the layered stream
+        let id = uuid::Uuid::parse_str(&self.uuid)
+            .map_err(|_| AdapterError::InvalidConfig("vmess uuid parse"))?;
+        let vm_cfg = VmessConfig {
+            server: self.server.clone(),
+            port: self.port,
+            id,
+            security: "aes-128-gcm".to_string(),
+            alter_id: 0,
+        };
+        let outbound = VmessOutbound::new(vm_cfg)
+            .map_err(|_| AdapterError::InvalidConfig("vmess config"))?;
+        let hp = Hp::new(target.host.clone(), target.port);
+        outbound
+            .do_handshake_on(&hp, &mut *stream)
+            .await
+            .map_err(|e| AdapterError::Other(anyhow::anyhow!(e.to_string())))?;
+
+        Ok(Box::new(IoWrapper(stream)))
+    }
+    fn name(&self) -> &'static str { "vmess" }
 }

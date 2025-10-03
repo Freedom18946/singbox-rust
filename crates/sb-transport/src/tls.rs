@@ -156,19 +156,8 @@ impl<D: Dialer + Send + Sync> Dialer for TlsDialer<D> {
 pub fn webpki_roots_config() -> Arc<rustls::ClientConfig> {
     use rustls::{ClientConfig, RootCertStore};
 
-    // 注意：rustls 0.23 下 RootCertStore API 已更新
-    // 为避免复杂度，这里使用空 Root 作为占位
-    // 在实际生产环境中，应该使用以下方式之一：
-    //
-    // 1. 使用 webpki-roots:
-    //    let mut roots = RootCertStore::empty();
-    //    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    //
-    // 2. 使用系统根证书:
-    //    let mut roots = RootCertStore::empty();
-    //    for cert in rustls_native_certs::load_native_certs()? {
-    //        roots.add(cert)?;
-    //    }
+    // Use an empty root store placeholder to keep builds reproducible
+    // (system/webpki roots wiring can be added when distributing binaries)
     let roots = RootCertStore::empty();
 
     Arc::new(

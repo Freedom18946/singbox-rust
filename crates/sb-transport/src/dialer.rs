@@ -115,6 +115,17 @@ pub trait Dialer: Send + Sync {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError>;
 }
 
+/// Allow using `Box<D>` where `D: Dialer` as a Dialer itself.
+#[async_trait]
+impl<D> Dialer for Box<D>
+where
+    D: Dialer + ?Sized,
+{
+    async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
+        (**self).connect(host, port).await
+    }
+}
+
 /// 基础 TCP 拨号器
 ///
 /// 这是最基本的拨号器实现，直接使用 tokio 的 `TcpStream` 建立 TCP 连接。
@@ -523,27 +534,9 @@ impl From<tokio::time::error::Elapsed> for DialError {
     }
 }
 
-// Bridge mapping to unified SbError in sb-core without changing public API.
-impl From<DialError> for sb_core::error::SbError {
-    fn from(e: DialError) -> Self {
-        match e {
-            DialError::Io(ioe) => sb_core::error::SbError::io(ioe),
-            DialError::Tls(msg) => sb_core::error::SbError::other(format!("tls: {}", msg)),
-            DialError::NotSupported => sb_core::error::SbError::other("not supported"),
-            DialError::Other(msg) => {
-                // 超时错误统一映射到 SbError::Timeout
-                if msg == "timeout" {
-                    sb_core::error::SbError::Timeout {
-                        operation: "dial".into(),
-                        timeout_ms: 0,
-                    }
-                } else {
-                    sb_core::error::SbError::other(msg)
-                }
-            }
-        }
-    }
-}
+// Note: Mapping to sb-core's SbError is intentionally removed to avoid
+// circular dependencies. sb-core can provide its own `From<DialError>`
+// implementation in its crate if needed.
 
 /// 私有 IO 工具模块
 ///

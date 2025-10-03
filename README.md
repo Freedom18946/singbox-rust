@@ -173,3 +173,27 @@ Health probe: `curl -fsS http://127.0.0.1:18088/metrics` (or admin ping endpoint
   - `outbound_error_total{kind="udp",class="no_upstream"}`: proxy mode selected but no upstream configured; falls back to direct.
   - `balancer_failures_total{reason}`: upstream connect/send/recv failures with exponential backoff applied.
   - `udp_nat_reject_total{reason="capacity"}`: NAT table reached capacity; increase `SB_UDP_NAT_MAX` or reduce churn.
+### Probe a layered outbound (VMess/VLESS/Trojan)
+
+Build with router and enable desired sb-core features:
+
+```
+cargo run -p app --features "router,sb-core/out_vmess,sb-core/out_vless,sb-core/out_trojan,sb-core/v2ray_transport" --bin probe-outbound -- \
+  --config config.yaml --outbound my-vmess --target example.com:80
+```
+
+Config example (VMess with TLS+WebSocket):
+
+```yaml
+schema_version: 2
+outbounds:
+  - type: vmess
+    name: my-vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    transport: [tls, ws]
+    ws_path: /ws
+    ws_host: cdn.example.com
+    tls_sni: cdn.example.com
+```

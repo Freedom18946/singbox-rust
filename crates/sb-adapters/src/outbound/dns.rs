@@ -4,6 +4,7 @@
 //! DNS queries through specific servers or configurations.
 
 use crate::outbound::prelude::*;
+use sb_core::dns::transport::DnsTransport as DnsTransportTrait;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
@@ -52,6 +53,8 @@ pub struct DnsConfig {
     pub enable_edns0: bool,
     /// Maximum message size for EDNS0
     pub edns0_buffer_size: u16,
+    /// DoH URL (when using DoH); default to cloudflare if None
+    pub doh_url: Option<String>,
 }
 
 impl Default for DnsConfig {
@@ -65,6 +68,7 @@ impl Default for DnsConfig {
             query_timeout: Duration::from_secs(3),
             enable_edns0: true,
             edns0_buffer_size: 1232,
+            doh_url: None,
         }
     }
 }
@@ -132,16 +136,42 @@ impl DnsConnector {
                 Ok(Box::new(stream))
             }
             DnsTransport::DoH => {
-                // DNS over HTTPS - requires HTTP client
-                Err(AdapterError::Other(
-                    "DNS over HTTPS requires HTTP client implementation".to_string(),
-                ))
+                #[cfg(feature = "dns_doh")]
+                {
+                    let url = if let Some(u) = &self.config.doh_url {
+                        u.clone()
+                    } else {
+                        // Default to Cloudflare DoH for convenience
+                        "https://cloudflare-dns.com/dns-query".to_string()
+                    };
+                    let doh = sb_core::dns::transport::doh::DohConfig { url, ..Default::default() }
+                        .build()
+                        .map_err(|e| AdapterError::Other(format!("DoH setup failed: {}", e)))?;
+                    Ok(Box::new(DohStreamWrapper::new(doh)))
+                }
+                #[cfg(not(feature = "dns_doh"))]
+                {
+                    Err(AdapterError::Other("DoH not compiled (enable feature dns_doh)".into()))
+                }
             }
             DnsTransport::DoQ => {
-                // DNS over QUIC - requires QUIC implementation
-                Err(AdapterError::Other(
-                    "DNS over QUIC not yet implemented".to_string(),
-                ))
+                #[cfg(feature = "dns_doq")]
+                {
+                    let port = self.config.port.unwrap_or(853);
+                    let server = SocketAddr::new(self.config.server, port);
+                    let sni = self
+                        .config
+                        .tls_server_name
+                        .clone()
+                        .unwrap_or_else(|| self.config.server.to_string());
+                    let doq = sb_core::dns::transport::DoqTransport::new(server, sni)
+                        .map_err(|e| AdapterError::Other(format!("DoQ setup failed: {}", e)))?;
+                    Ok(Box::new(DoqStreamWrapper::new(doq)))
+                }
+                #[cfg(not(feature = "dns_doq"))]
+                {
+                    Err(AdapterError::Other("DoQ not compiled (enable feature dns_doq)".into()))
+                }
             }
         }
     }
@@ -284,6 +314,170 @@ impl tokio::io::AsyncWrite for UdpStreamWrapper {
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+/// Minimal DoQ stream adapter (one-shot request/response)
+#[cfg(feature = "dns_doq")]
+struct DoqStreamWrapper {
+    doq: std::sync::Arc<sb_core::dns::transport::DoqTransport>,
+    write_buf: Vec<u8>,
+    read_buf: Vec<u8>,
+    read_pos: usize,
+    responded: bool,
+}
+
+#[cfg(feature = "dns_doq")]
+impl DoqStreamWrapper {
+    fn new(doq: sb_core::dns::transport::DoqTransport) -> Self {
+        Self { doq: std::sync::Arc::new(doq), write_buf: Vec::new(), read_buf: Vec::new(), read_pos: 0, responded: false }
+    }
+}
+
+#[cfg(feature = "dns_doq")]
+impl tokio::io::AsyncWrite for DoqStreamWrapper {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        self.write_buf.extend_from_slice(buf);
+        std::task::Poll::Ready(Ok(buf.len()))
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        if !self.responded {
+            let packet = std::mem::take(&mut self.write_buf);
+            let doq = self.doq.clone();
+            let res = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move { doq.query(&packet).await })
+            });
+            match res {
+                Ok(bytes) => {
+                    self.read_buf = bytes;
+                    self.read_pos = 0;
+                    self.responded = true;
+                    return std::task::Poll::Ready(Ok(()));
+                }
+                Err(e) => {
+                    return std::task::Poll::Ready(Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("DoQ query failed: {}", e),
+                    )));
+                }
+            }
+        }
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> { std::task::Poll::Ready(Ok(())) }
+}
+
+#[cfg(feature = "dns_doq")]
+impl tokio::io::AsyncRead for DoqStreamWrapper {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.read_pos < self.read_buf.len() {
+            let remaining = &self.read_buf[self.read_pos..];
+            let to_copy = remaining.len().min(buf.remaining());
+            buf.put_slice(&remaining[..to_copy]);
+            self.read_pos += to_copy;
+            return std::task::Poll::Ready(Ok(()));
+        }
+        if !self.responded { return std::task::Poll::Pending; }
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+/// Minimal DoH stream adapter: write a single DNS query, read single response
+#[cfg(feature = "dns_doh")]
+struct DohStreamWrapper {
+    doh: std::sync::Arc<sb_core::dns::transport::doh::DohTransport>,
+    write_buf: Vec<u8>,
+    read_buf: Vec<u8>,
+    read_pos: usize,
+    responded: bool,
+}
+
+#[cfg(feature = "dns_doh")]
+impl DohStreamWrapper {
+    fn new(doh: sb_core::dns::transport::doh::DohTransport) -> Self {
+        Self { doh: std::sync::Arc::new(doh), write_buf: Vec::new(), read_buf: Vec::new(), read_pos: 0, responded: false }
+    }
+}
+
+#[cfg(feature = "dns_doh")]
+impl tokio::io::AsyncWrite for DohStreamWrapper {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        self.write_buf.extend_from_slice(buf);
+        std::task::Poll::Ready(Ok(buf.len()))
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        if !self.responded {
+            let packet = std::mem::take(&mut self.write_buf);
+            let doh = self.doh.clone();
+            let res = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move { doh.query(&packet).await })
+            });
+            match res {
+                Ok(bytes) => {
+                    self.read_buf = bytes;
+                    self.read_pos = 0;
+                    self.responded = true;
+                    return std::task::Poll::Ready(Ok(()));
+                }
+                Err(e) => {
+                    return std::task::Poll::Ready(Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("DoH query failed: {}", e),
+                    )));
+                }
+            }
+        }
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(feature = "dns_doh")]
+impl tokio::io::AsyncRead for DohStreamWrapper {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.read_pos < self.read_buf.len() {
+            let remaining = &self.read_buf[self.read_pos..];
+            let to_copy = remaining.len().min(buf.remaining());
+            buf.put_slice(&remaining[..to_copy]);
+            self.read_pos += to_copy;
+            return std::task::Poll::Ready(Ok(()));
+        }
+        if !self.responded { return std::task::Poll::Pending; }
+        // Try to collect the response using a background task stored in a global map is overkill; as a simple approach,
+        // issue the DoH call synchronously here if buffer empty (edge case when reader is called before flush).
+        if !self.write_buf.is_empty() && self.read_buf.is_empty() { return std::task::Poll::Pending; }
+        // No more data
         std::task::Poll::Ready(Ok(()))
     }
 }

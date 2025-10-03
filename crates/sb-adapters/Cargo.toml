@@ -28,10 +28,12 @@ aes-gcm = "0.10"
 chacha20poly1305 = "0.10"
 sha2 = "0.10"
 hmac = "0.12"
+hkdf = "0.12"
 
 # TUIC protocol dependencies (QUIC-based)
 quinn = { version = "0.11", optional = true }
 rustls = { version = "0.21", optional = true, default-features = false, features = ["logging", "tls12"] }
+rustls-pemfile = { version = "1.0", optional = true }
 webpki-roots = { version = "0.25", optional = true }
 
 # 可选：通用 metrics 宏（仅当启用 feature=metrics 时编译）
@@ -76,14 +78,20 @@ tun_macos = ["tun", "dep:tun2socks"]
 tun_linux = ["tun", "dep:tun"]
 # Windows TUN device support via wintun
 tun_windows = ["tun", "dep:wintun"]
+# Linux redirect/TProxy inbounds
+redirect = []
+tproxy = []
+# Trojan inbound (TLS server)
+trojan = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
 metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持
 clap = ["dep:clap"]
 dns = []
 dns_udp = []
-dns_doh = []
+dns_doh = ["sb-core/dns_doh"]
 dns_dot = []
+dns_doq = ["sb-core/dns_doq"]
 e2e = []
 # TUIC protocol support
 tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots"]

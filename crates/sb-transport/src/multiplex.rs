@@ -80,6 +80,7 @@ impl Default for MultiplexConfig {
 // yamux requires futures::io traits, so we use compat
 type YamuxStream = tokio_util::compat::Compat<IoStream>;
 
+#[allow(dead_code)]
 pub struct MultiplexDialer {
     config: MultiplexConfig,
     inner: Box<dyn Dialer>,

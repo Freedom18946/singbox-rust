@@ -36,6 +36,8 @@ pub enum OutboundType {
     Block,
     Selector,
     Vless,
+    Vmess,
+    Trojan,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -78,6 +80,27 @@ pub struct OutboundIR {
     pub network: Option<String>,
     #[serde(default)]
     pub packet_encoding: Option<String>,
+    /// Transport nesting (e.g., ["tls","ws"]) for V2Ray-style transports
+    #[serde(default)]
+    pub transport: Option<Vec<String>>,
+    /// Optional WebSocket path and Host header override
+    #[serde(default)]
+    pub ws_path: Option<String>,
+    #[serde(default)]
+    pub ws_host: Option<String>,
+    /// Optional HTTP/2 path and Host/authority override
+    #[serde(default)]
+    pub h2_path: Option<String>,
+    #[serde(default)]
+    pub h2_host: Option<String>,
+    /// Optional TLS SNI and ALPN list
+    #[serde(default)]
+    pub tls_sni: Option<String>,
+    #[serde(default)]
+    pub tls_alpn: Option<String>,
+    /// Trojan-specific fields
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -154,6 +177,8 @@ impl OutboundIR {
             OutboundType::Block => "block",
             OutboundType::Selector => "selector",
             OutboundType::Vless => "vless",
+            OutboundType::Vmess => "vmess",
+            OutboundType::Trojan => "trojan",
         }
     }
 }

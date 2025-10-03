@@ -40,7 +40,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
@@ -119,12 +118,12 @@ impl Http2Dialer {
             }
         }
 
-        // Create new connection
+        // Create new connection via inner dialer (supports chaining: TCP->TLS->H2)
         debug!("Creating new HTTP/2 connection for {}", key);
-        let tcp_stream = TcpStream::connect((host, port)).await?;
+        let stream = self.inner.connect(host, port).await?;
 
         // Perform HTTP/2 handshake
-        let (send_request, connection) = client::handshake(tcp_stream)
+        let (send_request, connection) = client::handshake(stream)
             .await
             .map_err(|e| DialError::Other(format!("HTTP/2 handshake failed: {}", e)))?;
 

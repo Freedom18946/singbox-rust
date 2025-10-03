@@ -30,6 +30,7 @@ fn test_vless_config_parsing() {
             network,
             packet_encoding,
             connect_timeout_sec,
+            ..
         } => {
             assert_eq!(name, "vless-out");
             assert_eq!(server, "example.com");
@@ -68,6 +69,7 @@ fn test_vless_config_minimal() {
             network,
             packet_encoding,
             connect_timeout_sec,
+            ..
         } => {
             assert_eq!(name, "vless-minimal");
             assert_eq!(server, "example.com");
@@ -108,6 +110,7 @@ fn test_vless_config_with_udp() {
             network,
             packet_encoding,
             connect_timeout_sec,
+            ..
         } => {
             assert_eq!(name, "vless-udp");
             assert_eq!(server, "example.com");
@@ -148,6 +151,13 @@ fn test_vless_config_serialization_roundtrip() {
         network: "tcp".to_string(),
         packet_encoding: Some("xudp".to_string()),
         connect_timeout_sec: Some(15),
+        transport: None,
+        ws_path: None,
+        ws_host: None,
+        h2_path: None,
+        h2_host: None,
+        tls_sni: None,
+        tls_alpn: None,
     };
 
     // Serialize to JSON
@@ -168,6 +178,7 @@ fn test_vless_config_serialization_roundtrip() {
                 network: net1,
                 packet_encoding: pe1,
                 connect_timeout_sec: ct1,
+                ..
             },
             Outbound::Vless {
                 name: n2,
@@ -178,6 +189,7 @@ fn test_vless_config_serialization_roundtrip() {
                 network: net2,
                 packet_encoding: pe2,
                 connect_timeout_sec: ct2,
+                ..
             },
         ) => {
             assert_eq!(n1, n2);

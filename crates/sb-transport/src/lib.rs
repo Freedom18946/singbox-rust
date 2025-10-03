@@ -61,6 +61,11 @@ pub mod grpc;
 #[cfg(feature = "transport_mux")]
 pub mod multiplex;
 
+/// HTTPUpgrade 传输层模块
+/// 通过 HTTP/1.1 Upgrade 建立字节流隧道
+#[cfg(feature = "transport_httpupgrade")]
+pub mod httpupgrade;
+
 /// QUIC 传输层模块
 /// 提供基于 quinn 的通用 QUIC 传输
 /// 仅在启用 `transport_quic` feature 时可用
@@ -87,6 +92,10 @@ pub mod circuit_breaker;
 /// 提供文件描述符和内存压力检测与回退策略
 pub mod resource_pressure;
 
+/// 传输链构建器
+/// 提供用于组合 TCP -> TLS -> WebSocket/HTTP2 等层的便捷构建器
+pub mod builder;
+
 // Re-exports for a stable public surface
 // 重新导出核心类型，提供稳定的公开 API 接口
 pub use dialer::*;
@@ -102,6 +111,9 @@ pub use mem::*;
 pub use resource_pressure::*;
 pub use retry::*;
 pub use util::*;
+
+// Re-export builder for convenience
+pub use builder::TransportBuilder;
 
 #[cfg(feature = "failpoints")]
 pub use failpoint_dialer::*;

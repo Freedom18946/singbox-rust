@@ -1,16 +1,16 @@
-#[derive(Default)]
-pub struct RevTrie {
+#[derive(Default, Debug)]
+pub struct SuffixTrie {
     nodes: Vec<Node>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 struct Node {
     next: std::collections::HashMap<u8, usize>,
     /// 命中时的决策
     decision: Option<&'static str>,
 }
 
-impl RevTrie {
+impl SuffixTrie {
     pub fn new() -> Self {
         Self {
             nodes: vec![Node::default()],
@@ -36,6 +36,17 @@ impl RevTrie {
         v.reverse();
         self.add_bytes(&v, dec);
     }
+
+    /// Insert a domain suffix with a default decision marker
+    pub fn insert(&mut self, suffix: &str) {
+        self.insert_suffix(suffix, "match");
+    }
+
+    /// Check if a domain matches any inserted suffix
+    pub fn contains(&self, domain: &str) -> bool {
+        self.query(domain).is_some()
+    }
+
     pub fn query(&self, host: &str) -> Option<&'static str> {
         let mut best: Option<&'static str> = None;
         let mut cur = 0usize;

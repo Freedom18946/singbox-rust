@@ -150,6 +150,11 @@ name = "report"
 path = "src/bin/report.rs"
 required-features = ["dev-cli"]
 
+[[bin]]
+name = "probe-outbound"
+path = "src/bin/probe-outbound.rs"
+required-features = ["router"]
+
 [dependencies]
 anyhow      = { workspace = true }
 clap        = { workspace = true }

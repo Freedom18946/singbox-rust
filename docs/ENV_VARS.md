@@ -503,6 +503,25 @@ Common pitfalls (lint logged at parse time):
 - `sb-core/router_keyword_ac`：启用关键词 Aho-Corasick 加速（与 `router_keyword` 同时启用）
 - `sb-transport/transport_tls`：启用 TLS；提供 `webpki_roots_config()`（生产）与 `smoke_empty_roots_config()`（测试）；`TlsDialer` 支持 `sni_override` 与 `alpn`
 
+### VMess 传输链（环境变量临时配置）
+在开启 `sb-core/v2ray_transport` 与 `sb-core/out_vmess` 时，可通过环境变量控制 VMess 的传输链组合（不修改现有配置结构，便于逐步接线）：
+
+- `SB_VMESS_TRANSPORT`
+  - 设置期望传输链，包含关键字：`tls`、`ws`、`h2`
+  - 示例：`tcp+tls+ws`、`tcp+tls+h2`
+- `SB_TLS_SNI`
+  - 可选，覆写 TLS SNI（由 TLS 层读取）
+- `SB_TLS_ALPN`
+  - 可选，覆写 ALPN（`h2,http/1.1` 等；HTTP/2 情况下自动设置为 `h2`）
+- `SB_WS_PATH` / `SB_WS_HOST`
+  - 可选，设置 WebSocket path（默认 `/`）与 Host 伪装头
+- `SB_H2_PATH` / `SB_H2_HOST`
+  - 可选，设置 HTTP/2 伪装的 path（默认 `/`）与 Host 头（authority）
+
+注意：
+- 该路径仅在 `v2ray_transport` 特性开启时生效；未开启时退回原有 TCP 直连握手。
+- TLS roots 当前使用 `webpki_roots_config()` 占位，生产应接入系统根证书。
+
 ### SS2022 最小 dryrun（只读）
 - feature: `app/proto_ss2022_min` + `sb-proto/proto_ss2022_min`
 - 端点：`GET /ss2022/dryrun?host=...&port=...&method=2022-blake3-aes-256-gcm&pass=...`

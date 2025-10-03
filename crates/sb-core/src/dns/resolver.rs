@@ -163,6 +163,27 @@ impl Resolver for DnsResolver {
     async fn resolve(&self, domain: &str) -> Result<DnsAnswer> {
         let _start_time = std::time::Instant::now();
 
+        // FakeIP short-circuit (IPv4): allocate and return a fake address
+        if crate::dns::fakeip::enabled() {
+            let use_v6 = std::env::var("SB_DNS_FAKEIP_V6")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            let ip = if use_v6 { crate::dns::fakeip::allocate_v6(domain) } else { crate::dns::fakeip::allocate_v4(domain) };
+            let ttl = std::time::Duration::from_secs(
+                std::env::var("SB_DNS_FAKEIP_TTL_S")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(300),
+            );
+            return Ok(DnsAnswer::new(
+                vec![ip],
+                ttl,
+                crate::dns::cache::Source::System,
+                crate::dns::cache::Rcode::NoError,
+            ));
+        }
+
         // Global timeout for resolve to avoid hangs; cancel concurrent tasks via select
         let timeout_ms = std::env::var("SB_DNS_TIMEOUT_MS")
             .ok()

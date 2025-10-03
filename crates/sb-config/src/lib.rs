@@ -21,14 +21,15 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use sb_config::Config;
 //!
 //! // Load and validate config
-//! let config = Config::from_file("config.json").unwrap();
+//! let config = Config::load("config.yaml").expect("load config");
 //!
 //! // Convert to IR for internal use
 //! let ir = sb_config::present::to_ir(&config).unwrap();
+//! # let _ = ir; // doctest: suppress unused var warning
 //! ```
 //!
 //! ## Migration Path
@@ -127,6 +128,70 @@ pub enum Outbound {
         packet_encoding: Option<String>,
         #[serde(default)]
         connect_timeout_sec: Option<u64>,
+        // Transport nesting and options (optional)
+        #[serde(default)]
+        transport: Option<Vec<String>>,
+        #[serde(default)]
+        ws_path: Option<String>,
+        #[serde(default)]
+        ws_host: Option<String>,
+        #[serde(default)]
+        h2_path: Option<String>,
+        #[serde(default)]
+        h2_host: Option<String>,
+        #[serde(default)]
+        tls_sni: Option<String>,
+        #[serde(default)]
+        tls_alpn: Option<String>,
+    },
+    #[serde(rename = "trojan")]
+    Trojan {
+        name: String,
+        server: String,
+        port: u16,
+        password: String,
+        #[serde(default)]
+        transport: Option<Vec<String>>,
+        #[serde(default)]
+        ws_path: Option<String>,
+        #[serde(default)]
+        ws_host: Option<String>,
+        #[serde(default)]
+        h2_path: Option<String>,
+        #[serde(default)]
+        h2_host: Option<String>,
+        #[serde(default)]
+        tls_sni: Option<String>,
+        #[serde(default)]
+        tls_alpn: Option<String>,
+    },
+    #[serde(rename = "vmess")]
+    Vmess {
+        name: String,
+        server: String,
+        port: u16,
+        uuid: String,
+        #[serde(default = "default_vmess_security")] 
+        security: String,
+        #[serde(default)]
+        alter_id: u16,
+        #[serde(default)]
+        connect_timeout_sec: Option<u64>,
+        // Transport nesting and options (optional)
+        #[serde(default)]
+        transport: Option<Vec<String>>,
+        #[serde(default)]
+        ws_path: Option<String>,
+        #[serde(default)]
+        ws_host: Option<String>,
+        #[serde(default)]
+        h2_path: Option<String>,
+        #[serde(default)]
+        h2_host: Option<String>,
+        #[serde(default)]
+        tls_sni: Option<String>,
+        #[serde(default)]
+        tls_alpn: Option<String>,
     },
 }
 
@@ -176,7 +241,9 @@ impl Config {
                 | Outbound::Block { name }
                 | Outbound::Socks5 { name, .. }
                 | Outbound::Http { name, .. }
-                | Outbound::Vless { name, .. } => name,
+                | Outbound::Vless { name, .. }
+                | Outbound::Vmess { name, .. }
+                | Outbound::Trojan { name, .. } => name,
             };
             if !names.insert(name) {
                 return Err(anyhow!("duplicate outbound name: {}", name));
@@ -342,6 +409,10 @@ fn auth_user_pass(a: Option<&Auth>) -> (Option<String>, Option<String>) {
 
 fn default_vless_network() -> String {
     "tcp".to_string()
+}
+
+fn default_vmess_security() -> String {
+    "auto".to_string()
 }
 
 fn default_schema_version() -> u32 {

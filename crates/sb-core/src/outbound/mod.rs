@@ -321,6 +321,208 @@ impl OutboundRegistryHandle {
             }
         }
     }
+
+    /// Establish a generic AsyncRead/AsyncWrite stream to the endpoint.
+    ///
+    /// When available (feature `v2ray_transport`), protocols like VMess may
+    /// return a layered transport (e.g., TCP->TLS->WebSocket) as a boxed stream.
+    /// For other outbounds, falls back to plain TcpStream boxed.
+    #[cfg(feature = "v2ray_transport")]
+    pub async fn connect_io(
+        &self,
+        target: &RouteTarget,
+        ep: Endpoint,
+    ) -> io::Result<sb_transport::IoStream> {
+        match target {
+            RouteTarget::Kind(k) => {
+                // Fallback: build TcpStream and box it
+                let s = connect_tcp_builtin(k, ep).await?;
+                let boxed: sb_transport::IoStream = Box::new(s);
+                Ok(boxed)
+            }
+            RouteTarget::Named(name) => {
+                let imp = {
+                    match self.inner.read() {
+                        Ok(r) => r.get(name).cloned(),
+                        Err(_) => None,
+                    }
+                };
+                match imp {
+                    Some(OutboundImpl::Direct) => {
+                        let s = direct_connect(ep).await?;
+                        let boxed: sb_transport::IoStream = Box::new(s);
+                        Ok(boxed)
+                    }
+                    Some(OutboundImpl::Block) => Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "blocked by rule",
+                    )),
+                    Some(OutboundImpl::Socks5(cfg)) => {
+                        let s = socks5_connect(&cfg, ep).await?;
+                        let boxed: sb_transport::IoStream = Box::new(s);
+                        Ok(boxed)
+                    }
+                    Some(OutboundImpl::HttpProxy(cfg)) => {
+                        let s = http_connect(&cfg, ep).await?;
+                        let boxed: sb_transport::IoStream = Box::new(s);
+                        Ok(boxed)
+                    }
+                    #[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
+                    Some(OutboundImpl::Trojan(cfg)) => {
+                        use crate::outbound::crypto_types::HostPort as Hp;
+                        use crate::outbound::traits::OutboundConnectorIo;
+                        use crate::outbound::trojan::TrojanOutbound;
+                        use crate::types::{ConnCtx, Endpoint as CEndpoint, Host as CHost, Network};
+                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+                        let _target_hp = match ep.clone() {
+                            Endpoint::Ip(sa) => Hp::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => Hp::new(host, port),
+                        };
+
+                        let dst = match ep {
+                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
+                            Endpoint::Domain(host, port) => CEndpoint::new(CHost::domain(host), port),
+                        };
+                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
+
+                        let outbound = TrojanOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("Trojan setup failed: {}", e)))?;
+
+                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
+                            .await
+                            .map_err(|e| io::Error::other(format!("Trojan connect_io failed: {}", e)))?;
+                        Ok(stream)
+                    }
+                    #[cfg(feature = "out_ss")]
+                    Some(OutboundImpl::Shadowsocks(_cfg)) => Err(io::Error::other(
+                        "Shadowsocks boxed IO not implemented",
+                    )),
+                    #[cfg(feature = "out_shadowtls")]
+                    Some(OutboundImpl::ShadowTls(_cfg)) => Err(io::Error::other(
+                        "ShadowTls boxed IO not implemented",
+                    )),
+                    #[cfg(feature = "out_naive")]
+                    Some(OutboundImpl::Naive(_cfg)) => Err(io::Error::other(
+                        "Naive HTTP/2 boxed IO not implemented",
+                    )),
+                    #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
+                    Some(OutboundImpl::Vless(cfg)) => {
+                        use crate::outbound::crypto_types::HostPort as Hp;
+                        use crate::outbound::traits::OutboundConnectorIo;
+                        use crate::outbound::vless::VlessOutbound;
+                        use crate::types::{ConnCtx, Endpoint as CEndpoint, Host as CHost, Network};
+                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+                        let _target_hp = match ep.clone() {
+                            Endpoint::Ip(sa) => Hp::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => Hp::new(host, port),
+                        };
+
+                        let dst = match ep {
+                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
+                            Endpoint::Domain(host, port) => CEndpoint::new(CHost::domain(host), port),
+                        };
+                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
+
+                        let outbound = VlessOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("VLESS setup failed: {}", e)))?;
+
+                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
+                            .await
+                            .map_err(|e| io::Error::other(format!("VLESS connect_io failed: {}", e)))?;
+                        Ok(stream)
+                    }
+                    #[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
+                    Some(OutboundImpl::Vmess(cfg)) => {
+                        // Use vmess connector to establish layered transport
+                        use crate::outbound::vmess::VmessOutbound;
+                        use crate::outbound::crypto_types::HostPort as Hp;
+                        use crate::outbound::traits::OutboundConnectorIo;
+                        use crate::types::{ConnCtx, Endpoint as CEndpoint, Host as CHost, Network};
+                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+                        let _target_hp = match ep.clone() {
+                            Endpoint::Ip(sa) => Hp::new(sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(host, port) => Hp::new(host, port),
+                        };
+
+                        // Build minimal ConnCtx
+                        let dst = match ep {
+                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
+                            Endpoint::Domain(host, port) => CEndpoint::new(CHost::domain(host), port),
+                        };
+                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
+
+                        let outbound = VmessOutbound::new(cfg.clone())
+                            .map_err(|e| io::Error::other(format!("VMess setup failed: {}", e)))?;
+
+                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
+                            .await
+                            .map_err(|e| io::Error::other(format!("VMess connect_io failed: {}", e)))?;
+                        Ok(stream)
+                    }
+                    #[cfg(feature = "out_tuic")]
+                    Some(OutboundImpl::Tuic(_cfg)) => Err(io::Error::other(
+                        "TUIC boxed IO not implemented",
+                    )),
+                    #[cfg(feature = "out_hysteria2")]
+                    Some(OutboundImpl::Hysteria2(_cfg)) => Err(io::Error::other(
+                        "Hysteria2 boxed IO not implemented",
+                    )),
+                    #[cfg(feature = "out_wireguard")]
+                    Some(OutboundImpl::WireGuard(_cfg)) => Err(io::Error::other(
+                        "WireGuard boxed IO not implemented",
+                    )),
+                    #[cfg(feature = "out_ssh")]
+                    Some(OutboundImpl::Ssh(_cfg)) => Err(io::Error::other(
+                        "SSH boxed IO not implemented",
+                    )),
+                    None => Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "outbound not found",
+                    )),
+                }
+            }
+        }
+    }
+
+    /// Preferred connection helper (v2ray_transport).
+    /// Returns a boxed async IO stream via layered transports when enabled.
+    #[cfg(feature = "v2ray_transport")]
+    pub async fn connect_preferred(
+        &self,
+        target: &RouteTarget,
+        ep: Endpoint,
+    ) -> io::Result<sb_transport::IoStream> {
+        #[cfg(feature = "v2ray_transport")]
+        {
+            let use_v2ray = ["SB_VMESS_TRANSPORT", "SB_VLESS_TRANSPORT", "SB_TROJAN_TRANSPORT"]
+                .iter()
+                .any(|k| std::env::var(k).map(|v| !v.is_empty()).unwrap_or(false));
+            if use_v2ray {
+                if let Ok(s) = self.connect_io(target, ep.clone()).await {
+                    return Ok(s);
+                }
+            }
+        }
+        let tcp = self.connect_tcp(target, ep).await?;
+        Ok(Box::new(tcp))
+    }
+
+    /// Preferred connection helper (fallback when v2ray_transport is disabled):
+    /// returns a plain TcpStream.
+    #[cfg(not(feature = "v2ray_transport"))]
+    pub async fn connect_preferred(
+        &self,
+        target: &RouteTarget,
+        ep: Endpoint,
+    ) -> io::Result<TcpStream> {
+        self.connect_tcp(target, ep).await
+    }
 }
 
 async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<TcpStream> {

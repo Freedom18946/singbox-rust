@@ -9,7 +9,7 @@ use rustls::ClientConfig;
 #[cfg(feature = "out_trojan")]
 use std::sync::Arc;
 #[cfg(feature = "out_trojan")]
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "out_trojan")]
 use tokio_rustls::TlsConnector;
 
@@ -49,6 +49,7 @@ impl TrojanConfig {
 }
 
 #[cfg(feature = "out_trojan")]
+#[derive(Debug)]
 pub struct TrojanOutbound {
     config: TrojanConfig,
     tls_config: Arc<ClientConfig>,
@@ -94,6 +95,95 @@ impl TrojanOutbound {
         let tls_config = std::sync::Arc::new(tls_config);
 
         Ok(Self { config, tls_config })
+    }
+}
+
+// V2Ray transport integration (feature-gated)
+#[cfg(all(feature = "out_trojan", feature = "v2ray_transport"))]
+#[async_trait]
+impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
+    async fn connect_tcp_io(
+        &self,
+        ctx: &crate::types::ConnCtx,
+    ) -> crate::error::SbResult<sb_transport::IoStream> {
+        use sb_transport::Dialer as _;
+        use sb_transport::TransportBuilder;
+
+        let target = HostPort {
+            host: match &ctx.dst.host {
+                crate::types::Host::Name(d) => d.to_string(),
+                crate::types::Host::Ip(ip) => ip.to_string(),
+            },
+            port: ctx.dst.port,
+        };
+
+        // Trojan requires TLS; default to TLS if not explicitly disabled
+        let t = std::env::var("SB_TROJAN_TRANSPORT").unwrap_or_else(|_| "tls".to_string());
+        let want_tls = t.contains("tls");
+        let want_ws = t.contains("ws");
+        let want_h2 = t.contains("h2");
+        let want_hup = t.contains("httpupgrade") || t.contains("http_upgrade");
+        let want_mux = t.contains("mux") || t.contains("multiplex");
+        let want_grpc = t.contains("grpc");
+
+        let mut builder = TransportBuilder::tcp();
+
+        // Always apply TLS for Trojan unless explicitly turned off (not recommended)
+        if want_tls {
+            let tls_cfg = sb_transport::tls::webpki_roots_config();
+            // Respect configured ALPN if any
+            let alpn = if want_h2 { Some(vec![b"h2".to_vec()]) } else { None };
+
+            // Optionally set SNI from TrojanConfig.sni via env override
+            let sni_override = Some(self.config.sni.clone());
+            builder = builder.tls(tls_cfg, sni_override, alpn);
+        }
+
+        if want_ws {
+            let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+            if let Ok(path) = std::env::var("SB_WS_PATH") { ws_cfg.path = path; }
+            if let Ok(host_header) = std::env::var("SB_WS_HOST") {
+                ws_cfg.headers.push(("Host".to_string(), host_header));
+            }
+            builder = builder.websocket(ws_cfg);
+        }
+
+        if want_h2 {
+            let mut h2_cfg = sb_transport::http2::Http2Config::default();
+            if let Ok(path) = std::env::var("SB_H2_PATH") { h2_cfg.path = path; }
+            if let Ok(host_header) = std::env::var("SB_H2_HOST") { h2_cfg.host = host_header; }
+            builder = builder.http2(h2_cfg);
+        }
+
+        if want_hup {
+            let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+            if let Ok(path) = std::env::var("SB_HUP_PATH") { hup_cfg.path = path; }
+            builder = builder.http_upgrade(hup_cfg);
+        }
+
+        if want_mux {
+            let cfg = sb_transport::multiplex::MultiplexConfig::default();
+            builder = builder.multiplex(cfg);
+        }
+
+        if want_grpc {
+            let cfg = sb_transport::grpc::GrpcConfig::default();
+            builder = builder.grpc(cfg);
+        }
+
+        let dialer = builder.build();
+
+        let mut stream = dialer
+            .connect(self.config.server.as_str(), self.config.port)
+            .await
+            .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;
+
+        // Perform Trojan handshake over the established stream
+        Self::handshake_on(&self.config.password, &target, &mut *stream)
+            .await
+            .map_err(crate::error::SbError::from)?;
+
+        Ok(stream)
     }
 }
 
@@ -183,7 +273,7 @@ impl TrojanOutbound {
         tls_stream.write_all(request.as_bytes()).await?;
 
         // Read server response with timeout and tolerance
-        let response_result = self.read_server_response(tls_stream).await;
+        let response_result = Self::read_server_response_on(tls_stream).await;
 
         match response_result {
             Ok(true) => {
@@ -214,11 +304,9 @@ impl TrojanOutbound {
 
     /// Read server response with timeout and error tolerance
     /// Returns Ok(true) for 200 response, Ok(false) for other response, Err for timeout/no response
-    async fn read_server_response(
-        &self,
-        tls_stream: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    async fn read_server_response_on<S: AsyncRead + Unpin + ?Sized>(
+        s: &mut S,
     ) -> std::io::Result<bool> {
-        use tokio::io::AsyncReadExt;
         use tokio::time::{timeout, Duration};
 
         // Configure response timeout (shorter than handshake timeout)
@@ -231,7 +319,7 @@ impl TrojanOutbound {
 
         let mut response_buf = [0u8; 512];
 
-        match timeout(response_timeout, tls_stream.read(&mut response_buf)).await {
+        match timeout(response_timeout, s.read(&mut response_buf)).await {
             Ok(Ok(n)) => {
                 if n == 0 {
                     // Connection closed immediately
@@ -266,6 +354,25 @@ impl TrojanOutbound {
             }
         }
     }
+
+}
+
+impl TrojanOutbound {
+    pub(crate) async fn handshake_on<S: AsyncRead + AsyncWrite + Unpin + Send + ?Sized>(
+        password: &str,
+        target: &HostPort,
+        stream: &mut S,
+    ) -> std::io::Result<()> {
+        // Compose Trojan request over the existing stream
+        let request = format!(
+            "{}\r\nCONNECT {} {}\r\n\r\n",
+            password, target.host, target.port
+        );
+        stream.write_all(request.as_bytes()).await?;
+        let _ = Self::read_server_response_on(stream).await; // tolerant
+        Ok(())
+    }
+
 }
 
 #[cfg(not(feature = "out_trojan"))]

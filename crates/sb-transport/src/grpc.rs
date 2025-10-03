@@ -108,7 +108,7 @@ impl Dialer for GrpcDialer {
         let url = format!("{}://{}:{}", scheme, host, port);
 
         // Create gRPC channel
-        let mut endpoint = Endpoint::from_shared(url)
+        let endpoint = Endpoint::from_shared(url)
             .map_err(|e| DialError::Other(format!("Invalid gRPC endpoint: {}", e)))?;
 
         // Configure TLS if enabled

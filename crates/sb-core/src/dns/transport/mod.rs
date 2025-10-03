@@ -17,6 +17,8 @@ mod udp;
 pub mod doh;
 #[cfg(feature = "dns_dot")]
 pub mod dot;
+#[cfg(feature = "dns_doq")]
+pub mod doq;
 
 pub use enhanced_udp::EnhancedUdpTransport;
 pub use udp::{UdpTransport, UdpUpstream};
@@ -25,6 +27,8 @@ pub use udp::{UdpTransport, UdpUpstream};
 pub use doh::{DohConfig, DohServers, DohTransport};
 #[cfg(feature = "dns_dot")]
 pub use dot::DotTransport;
+#[cfg(feature = "dns_doq")]
+pub use doq::DoqTransport;
 
 // Client type aliases for compatibility
 #[cfg(feature = "dns_doh")]

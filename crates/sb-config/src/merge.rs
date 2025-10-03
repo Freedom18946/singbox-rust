@@ -17,7 +17,9 @@ pub fn merge(base: Config, sub: Config) -> Config {
             | Outbound::Block { name }
             | Outbound::Socks5 { name, .. }
             | Outbound::Http { name, .. }
-            | Outbound::Vless { name, .. } => {
+            | Outbound::Vless { name, .. }
+            | Outbound::Vmess { name, .. }
+            | Outbound::Trojan { name, .. } => {
                 out_map.insert(name.clone(), o);
             }
         }
@@ -29,7 +31,9 @@ pub fn merge(base: Config, sub: Config) -> Config {
             | Outbound::Block { name }
             | Outbound::Socks5 { name, .. }
             | Outbound::Http { name, .. }
-            | Outbound::Vless { name, .. } => {
+            | Outbound::Vless { name, .. }
+            | Outbound::Vmess { name, .. }
+            | Outbound::Trojan { name, .. } => {
                 out_map.insert(name.clone(), o);
             }
         }

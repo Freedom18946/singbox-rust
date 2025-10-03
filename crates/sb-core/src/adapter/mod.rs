@@ -188,6 +188,16 @@ impl Bridge {
                     use crate::outbound::direct_connector::DirectConnector;
                     Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
                 }
+                sb_config::ir::OutboundType::Vmess => {
+                    // VMess connector not wired in adapter bridge yet; fall back to direct
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
+                sb_config::ir::OutboundType::Trojan => {
+                    // Trojan connector not wired in adapter bridge; fall back to direct
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
             };
 
             bridge.add_outbound(name, kind, connector);

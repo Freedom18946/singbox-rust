@@ -9,6 +9,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use std::net::SocketAddr;
+// Keep minimal imports; AsyncIo trait removed, OutboundConnectorIo returns sb_transport::IoStream
 
 /// Standard outbound connector trait for TCP and UDP connections
 #[async_trait]
@@ -28,6 +29,22 @@ pub trait UdpTransport: Send + Sync {
 
     /// Receive data from any source, returning the data size and source address
     async fn recv_from(&self, buf: &mut [u8]) -> SbResult<(usize, SocketAddr)>;
+}
+
+/// Generic AsyncRead/Write connector (feature-gated)
+///
+/// Provides a way to obtain a fully-established TCP-like stream that may be
+/// layered over transports such as TLS, WebSocket, or HTTP/2. This is used to
+/// integrate V2Ray-style transports without breaking existing TcpStream-based
+/// connectors.
+#[cfg(feature = "v2ray_transport")]
+#[async_trait]
+pub trait OutboundConnectorIo: Send + Sync + std::fmt::Debug {
+    /// Establish a full-duplex byte stream to the destination in `ConnCtx`.
+    async fn connect_tcp_io(
+        &self,
+        ctx: &crate::types::ConnCtx,
+    ) -> crate::error::SbResult<sb_transport::IoStream>;
 }
 
 #[cfg(test)]

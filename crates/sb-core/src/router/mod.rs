@@ -252,12 +252,12 @@ impl RouterIndex {
             atomic::{AtomicU64, Ordering},
             Mutex, OnceLock,
         };
-        static ONCE: OnceLock<(AtomicU64, Mutex<suffix_trie::RevTrie>)> = OnceLock::new();
+        static ONCE: OnceLock<(AtomicU64, Mutex<suffix_trie::SuffixTrie>)> = OnceLock::new();
         let (ver, trie) =
-            ONCE.get_or_init(|| (AtomicU64::new(0), Mutex::new(suffix_trie::RevTrie::new())));
+            ONCE.get_or_init(|| (AtomicU64::new(0), Mutex::new(suffix_trie::SuffixTrie::new())));
         let cur = self.checksum_version64();
         if ver.load(Ordering::Relaxed) != cur {
-            let mut t = suffix_trie::RevTrie::new();
+            let mut t = suffix_trie::SuffixTrie::new();
             for (dom, dec) in &self.suffix {
                 t.insert_suffix(dom, dec);
             }

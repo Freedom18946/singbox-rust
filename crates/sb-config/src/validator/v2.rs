@@ -202,9 +202,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "socks" => crate::ir::OutboundType::Socks,
                 "block" => crate::ir::OutboundType::Block,
                 "vless" => crate::ir::OutboundType::Vless,
+                "vmess" => crate::ir::OutboundType::Vmess,
+                "trojan" => crate::ir::OutboundType::Trojan,
                 _ => crate::ir::OutboundType::Direct,
             };
-            ir.outbounds.push(crate::ir::OutboundIR {
+            let mut ob = crate::ir::OutboundIR {
                 ty,
                 server: o
                     .get("server")
@@ -255,7 +257,46 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("packet_encoding")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-            });
+                transport: o
+                    .get("transport")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()),
+                ws_path: o.get("ws_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                ws_host: o.get("ws_host").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                h2_path: o.get("h2_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                h2_host: o.get("h2_host").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                tls_sni: o.get("tls_sni").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                tls_alpn: o.get("tls_alpn").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                password: o.get("password").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            };
+
+            // Backward-compat: allow nested sections `ws`, `h2`, `tls` as objects
+            if let Some(ws) = o.get("ws").and_then(|v| v.as_object()) {
+                if ob.ws_path.is_none() {
+                    ob.ws_path = ws.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                if ob.ws_host.is_none() {
+                    ob.ws_host = ws.get("host").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+            }
+            if let Some(h2) = o.get("h2").and_then(|v| v.as_object()) {
+                if ob.h2_path.is_none() {
+                    ob.h2_path = h2.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                if ob.h2_host.is_none() {
+                    ob.h2_host = h2.get("host").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+            }
+            if let Some(tls) = o.get("tls").and_then(|v| v.as_object()) {
+                if ob.tls_sni.is_none() {
+                    ob.tls_sni = tls.get("sni").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                if ob.tls_alpn.is_none() {
+                    ob.tls_alpn = tls.get("alpn").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+            }
+
+            ir.outbounds.push(ob);
         }
     }
     if let Some(route) = doc.get("route") {

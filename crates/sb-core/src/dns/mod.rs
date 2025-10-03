@@ -34,6 +34,9 @@ pub mod stub;
 pub mod system;
 pub mod transport;
 pub mod upstream;
+pub mod fakeip;
+#[cfg(feature = "router")]
+pub mod rule_engine;
 
 #[cfg(test)]
 mod integration_tests;

@@ -14,6 +14,7 @@ transport_ws = ["dep:tokio-tungstenite", "dep:http"]
 transport_h2 = ["dep:h2", "dep:http"]
 transport_grpc = ["dep:tonic", "dep:prost", "transport_h2", "tonic-build"]
 transport_mux = ["dep:yamux"]
+transport_httpupgrade = []
 failpoints = ["dep:fail"]
 
 [dependencies]
@@ -21,7 +22,6 @@ tokio = { workspace = true, features = ["net", "time", "io-util"] }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 pin-project-lite = "0.2"
-sb-core = { path = "../sb-core" }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "logging", "tls12"] }
 tokio-rustls = { version = "0.26", optional = true, default-features = false }
 webpki-roots = { version = "0.26", optional = true }

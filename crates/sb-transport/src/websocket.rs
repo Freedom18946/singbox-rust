@@ -39,9 +39,9 @@ use futures::{SinkExt, StreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::handshake::client::Request;
 use tokio_tungstenite::tungstenite::http::Uri;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig as TungsteniteConfig;
 use tokio_tungstenite::WebSocketStream as TungsteniteStream;
 use tracing::{debug, warn};
 
@@ -101,15 +101,9 @@ impl WebSocketDialer {
 impl Dialer for WebSocketDialer {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         debug!("Dialing WebSocket: {}:{}{}", host, port, self.config.path);
-
-        // Note: In a production implementation, we would use the inner dialer's stream
-        // for WebSocket upgrade. However, tokio-tungstenite's client_async requires
-        // a concrete type (TcpStream), not a trait object. This is a known limitation.
-        // A proper solution would require implementing the WebSocket protocol manually
-        // or using a more flexible WebSocket library.
-        //
-        // For now, we create a new TCP connection directly for demonstration purposes.
-        // TODO: Implement WebSocket upgrade over arbitrary AsyncRead/AsyncWrite streams
+        // Use the inner dialer to obtain the underlying stream (supports chaining)
+        // This enables TCP -> TLS -> WebSocket and other combinations.
+        let stream = self.inner.connect(host, port).await?;
 
         // Build WebSocket handshake request
         let uri = format!("ws://{}:{}{}", host, port, self.config.path);
@@ -146,13 +140,18 @@ impl Dialer for WebSocketDialer {
             );
         }
 
-        // This is a simplified implementation that works with TcpStream
-        // In a real implementation, we would need to handle the upgrade on the IoStream directly
-        // For now, we'll create a new TcpStream connection
-        let tcp_stream = TcpStream::connect((host, port)).await?;
+        // Prepare tungstenite config based on our limits
+        let mut ws_cfg = TungsteniteConfig::default();
+        if let Some(m) = self.config.max_message_size {
+            ws_cfg.max_message_size = Some(m);
+        }
+        if let Some(f) = self.config.max_frame_size {
+            ws_cfg.max_frame_size = Some(f);
+        }
 
         // Perform WebSocket handshake
-        let (ws_stream, response) = tokio_tungstenite::client_async(request, tcp_stream)
+        // Use client_async_with_config so we can apply size limits
+        let (ws_stream, response) = tokio_tungstenite::client_async_with_config(request, stream, Some(ws_cfg))
             .await
             .map_err(|e| DialError::Other(format!("WebSocket handshake failed: {}", e)))?;
 

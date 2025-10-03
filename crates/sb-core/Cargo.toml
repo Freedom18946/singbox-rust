@@ -36,6 +36,7 @@ sb-config = { path = "../sb-config" }
 sb-metrics = { path = "../sb-metrics" }
 sb-platform = { path = "../sb-platform" }
 sb-types = { path = "../sb-types" }
+sb-transport = { path = "../sb-transport", optional = true, default-features = false, features = ["transport_ws", "transport_h2", "transport_tls", "transport_httpupgrade", "transport_mux", "transport_grpc"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -101,6 +102,7 @@ dev-cli            = []
 dns_cache          = []
 dns_doh            = []
 dns_dot            = []
+dns_doq            = []
 dns_http           = []
 dns_udp            = []
 dsl_analyze        = []
@@ -159,6 +161,7 @@ tls                = []
 loom               = ["dep:loom"]
 failpoints         = ["dep:fail"]
 resolv_conf        = ["dep:notify"]
+v2ray_transport    = ["dep:sb-transport"]
 
 # 你也可以在后续提交中，将这些特性与依赖绑定，例如：
 # subs_http = ["sb-subscribe?/http"]  # 示例：当 sb-subscribe 提供 http 子特性时

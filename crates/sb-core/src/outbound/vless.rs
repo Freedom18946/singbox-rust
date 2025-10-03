@@ -49,6 +49,40 @@ impl VlessOutbound {
         Ok(Self { config })
     }
 
+    #[cfg(feature = "out_vless")]
+    pub(crate) async fn do_handshake_on<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + ?Sized>(
+        &self,
+        target: &HostPort,
+        stream: &mut S,
+    ) -> io::Result<()> {
+        // Send VLESS request header
+        let request = self.encode_vless_request(target);
+        stream.write_all(&request).await?;
+
+        // Read response header - minimal validation
+        let mut response_header = [0u8; 2];
+        stream.read_exact(&mut response_header).await?;
+
+        // Validate response version and additional length
+        if response_header[0] != 0x01 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid VLESS response version: {}", response_header[0]),
+            ));
+        }
+
+        // Skip additional data if present
+        let additional_len = response_header[1];
+        if additional_len > 0 {
+            let mut additional_data = vec![0u8; additional_len as usize];
+            stream.read_exact(&mut additional_data).await?;
+        }
+
+        Ok(())
+    }
+
+    
+
     fn encode_vless_request(&self, target: &HostPort) -> Vec<u8> {
         let mut request = Vec::new();
 
@@ -77,6 +111,91 @@ impl VlessOutbound {
         encode_ss_addr(&addr, target.port, &mut request);
 
         request
+    }
+}
+
+// V2Ray transport integration (feature-gated)
+#[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
+#[async_trait::async_trait]
+impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
+    async fn connect_tcp_io(
+        &self,
+        ctx: &crate::types::ConnCtx,
+    ) -> crate::error::SbResult<sb_transport::IoStream> {
+        use sb_transport::Dialer as _;
+        use sb_transport::TransportBuilder;
+
+        let target = HostPort {
+            host: match &ctx.dst.host {
+                crate::types::Host::Name(d) => d.to_string(),
+                crate::types::Host::Ip(ip) => ip.to_string(),
+            },
+            port: ctx.dst.port,
+        };
+
+        // Determine transport chain from environment variable
+        let t = std::env::var("SB_VLESS_TRANSPORT").unwrap_or_default();
+        let want_tls = t.contains("tls");
+        let want_ws = t.contains("ws");
+        let want_h2 = t.contains("h2");
+        let want_mux = t.contains("mux") || t.contains("multiplex");
+        let want_grpc = t.contains("grpc");
+        let want_hup = t.contains("httpupgrade") || t.contains("http_upgrade");
+
+        let mut builder = TransportBuilder::tcp();
+
+        if want_tls {
+            let tls_cfg = sb_transport::tls::webpki_roots_config();
+            let alpn = if want_h2 { Some(vec![b"h2".to_vec()]) } else { None };
+            builder = builder.tls(tls_cfg, None, alpn);
+        }
+
+        if want_ws {
+            let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+            if let Ok(path) = std::env::var("SB_WS_PATH") { ws_cfg.path = path; }
+            if let Ok(host_header) = std::env::var("SB_WS_HOST") {
+                ws_cfg.headers.push(("Host".to_string(), host_header));
+            }
+            builder = builder.websocket(ws_cfg);
+        }
+
+        if want_h2 {
+            let mut h2_cfg = sb_transport::http2::Http2Config::default();
+            if let Ok(path) = std::env::var("SB_H2_PATH") { h2_cfg.path = path; }
+            if let Ok(host_header) = std::env::var("SB_H2_HOST") { h2_cfg.host = host_header; }
+            builder = builder.http2(h2_cfg);
+        }
+
+        if want_hup {
+            let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+            if let Ok(path) = std::env::var("SB_HUP_PATH") { hup_cfg.path = path; }
+            builder = builder.http_upgrade(hup_cfg);
+        }
+
+        if want_mux {
+            let cfg = sb_transport::multiplex::MultiplexConfig::default();
+            builder = builder.multiplex(cfg);
+        }
+
+        if want_grpc {
+            let cfg = sb_transport::grpc::GrpcConfig::default();
+            builder = builder.grpc(cfg);
+        }
+
+        let dialer = builder.build();
+
+        let mut stream = dialer
+            .connect(self.config.server.as_str(), self.config.port)
+            .await
+            .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;
+
+        // Perform VLESS handshake over the established stream
+        self
+            .do_handshake_on(&target, &mut *stream)
+            .await
+            .map_err(crate::error::SbError::from)?;
+
+        Ok(stream)
     }
 }
 

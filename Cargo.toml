@@ -16,7 +16,7 @@ members = [
   "crates/sb-subscribe",
   "crates/sb-api",
   "xtask"
-]
+, "crates/sb-tls"]
 exclude = [
   "crates/sb-adapters/fuzz"
 ]
