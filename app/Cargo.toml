@@ -155,6 +155,11 @@ name = "probe-outbound"
 path = "src/bin/probe-outbound.rs"
 required-features = ["router"]
 
+[[bin]]
+name = "ruleset"
+path = "src/bin/ruleset.rs"
+required-features = ["router"]
+
 [dependencies]
 anyhow      = { workspace = true }
 clap        = { workspace = true }
