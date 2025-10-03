@@ -100,6 +100,8 @@ vless = []
 shadowtls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 # Naive inbound (HTTP/2 CONNECT proxy server)
 naive = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile", "dep:h2", "dep:http"]
+# TUIC inbound (QUIC-based server)
+tuic_server = ["dep:quinn", "dep:rustls", "dep:rustls-pemfile"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
 metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持

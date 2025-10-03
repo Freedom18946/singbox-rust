@@ -39,3 +39,6 @@ pub mod shadowtls;
 
 #[cfg(feature = "naive")]
 pub mod naive;
+
+#[cfg(feature = "tuic")]
+pub mod tuic;
