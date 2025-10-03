@@ -24,3 +24,9 @@ pub mod tproxy;
 
 #[cfg(feature = "trojan")]
 pub mod trojan;
+
+#[cfg(feature = "shadowsocks")]
+pub mod shadowsocks;
+
+#[cfg(feature = "vmess")]
+pub mod vmess;

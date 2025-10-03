@@ -83,6 +83,10 @@ redirect = []
 tproxy = []
 # Trojan inbound (TLS server)
 trojan = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
+# Shadowsocks inbound (AEAD server)
+shadowsocks = []
+# VMess inbound (AEAD server)
+vmess = []
 # 占位：便于在代码中 #[cfg(feature="metrics")]
 metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持
