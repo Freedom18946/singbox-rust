@@ -119,10 +119,13 @@ impl RealityAcceptor {
         }
 
         // Step 4: Verify authentication hash
-        let session_data = b"reality_session"; // Should match client's session data
+        // Note: In a production implementation, session_data should be derived from
+        // the TLS handshake random values or other session-specific data
+        // For now, we use a placeholder that matches the client
+        let session_data = [0u8; 32]; // Should match client's session data
         if !self
             .auth
-            .verify_auth_hash(&client_public_key, &short_id, session_data, &auth_hash)
+            .verify_auth_hash(&client_public_key, &short_id, &session_data, &auth_hash)
         {
             warn!("Authentication failed");
             return self.fallback_to_target(stream).await;
@@ -142,22 +145,55 @@ impl RealityAcceptor {
 
     /// Parse ClientHello and extract REALITY data
     ///
-    /// TODO: Implement ClientHello parsing
-    /// - Extract SNI extension
-    /// - Extract REALITY-specific extensions
-    /// - Validate TLS version and cipher suites
+    /// Reads the TLS ClientHello message and extracts:
+    /// - SNI extension
+    /// - REALITY authentication extension (client_public_key, short_id, auth_hash)
     async fn parse_client_hello<S>(
         &self,
-        _stream: &mut S,
+        stream: &mut S,
     ) -> RealityResult<([u8; 32], Vec<u8>, [u8; 32], String)>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        // Placeholder: In production, parse actual ClientHello
-        let client_public_key = [0u8; 32];
-        let short_id = vec![0x01, 0xab];
-        let auth_hash = [0u8; 32];
-        let sni = self.config.server_names[0].clone();
+        use super::tls_record::{TlsRecordHeader, ClientHello, ExtensionType};
+        use tokio::io::AsyncReadExt;
+
+        // Read TLS record header
+        let record_header = TlsRecordHeader::read_from(stream).await
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read TLS record: {}", e)))?;
+
+        debug!("TLS record: type={:?}, version=0x{:04x}, length={}",
+            record_header.content_type, record_header.version, record_header.length);
+
+        // Read handshake data
+        let mut handshake_data = vec![0u8; record_header.length as usize];
+        stream.read_exact(&mut handshake_data).await
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read handshake: {}", e)))?;
+
+        // Parse ClientHello
+        let client_hello = ClientHello::parse(&handshake_data)
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {}", e)))?;
+
+        debug!("Parsed ClientHello: version=0x{:04x}, {} extensions",
+            client_hello.version, client_hello.extensions.len());
+
+        // Extract SNI
+        let sni = client_hello.get_sni()
+            .ok_or_else(|| RealityError::HandshakeFailed("No SNI in ClientHello".to_string()))?;
+
+        debug!("SNI: {}", sni);
+
+        // Extract REALITY authentication extension
+        let reality_ext = client_hello.find_extension(ExtensionType::RealityAuth as u16)
+            .ok_or_else(|| RealityError::AuthFailed("No REALITY auth extension".to_string()))?;
+
+        let (client_public_key, short_id, auth_hash) = reality_ext.parse_reality_auth()
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {}", e)))?;
+
+        debug!("REALITY auth: public_key={}, short_id={}, auth_hash={}",
+            hex::encode(&client_public_key[..8]),
+            hex::encode(&short_id),
+            hex::encode(&auth_hash[..8]));
 
         Ok((client_public_key, short_id, auth_hash, sni))
     }

@@ -32,6 +32,7 @@ pub mod config;
 pub mod client;
 pub mod server;
 pub mod auth;
+pub mod tls_record;
 
 pub use config::{RealityClientConfig, RealityServerConfig};
 pub use client::RealityConnector;
