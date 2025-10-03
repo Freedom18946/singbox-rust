@@ -36,3 +36,6 @@ pub mod vless;
 
 #[cfg(feature = "shadowtls")]
 pub mod shadowtls;
+
+#[cfg(feature = "naive")]
+pub mod naive;
