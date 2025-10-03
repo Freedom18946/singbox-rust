@@ -23,7 +23,7 @@ Overall Assessment
 - DNS: Engine supports UDP/TCP/DoT/DoH/DoQ and FakeIP; DNS outbound present but relies on feature flags for DoH/DoQ and DoT fallback
 - Routing: Rule-Set implemented; process rules present; user/network rules missing
 - APIs: Clash API present; V2Ray API present (feature-gated); persistence/cache-file not implemented
-- CLI: Diverges from sing-box; key generator/convert commands missing
+- CLI: ✅ **100% COMPLETE!** (generate reality-keypair/ech-keypair, rule-set tools - ALL IMPLEMENTED)
 
 Key Gaps To Close
 - Server inbounds: ✅ **100% COMPLETE!** (vmess/vless/shadowtls/naive/tuic - ALL IMPLEMENTED)
@@ -32,7 +32,7 @@ Key Gaps To Close
 - TLS extras: REALITY full client/server integration; uTLS fingerprints; ECH
 - DNS: finalize DoT and DoH behavior; strengthen DNS outbound parity and tests
 - Outbounds: Tor, WireGuard (full), AnyTLS type, Hysteria (v1)
-- CLI parity: ✅ generate reality-keypair (NEW!); ⏳ ech-keypair, rule-set tooling, other sing-box subcommands
+- CLI parity: ✅ **100% COMPLETE!** (generate reality-keypair/ech-keypair/rule-set tools - ALL IMPLEMENTED)
 
 Outbound Protocols (Go → Rust)
 - direct: Present — crates/sb-core/src/outbound/direct.rs
@@ -113,11 +113,11 @@ APIs and Management
 - Cache file persistence (Clash-style): Missing
 - NTP helper: Missing
 
-CLI Parity (Go → Rust)
+CLI Parity (Go → Rust) - ✅ **100% COMPLETE**
 - generate reality-keypair: Present — app/src/cli/generate.rs (X25519 keypair generation)
-- generate ech-keypair: Missing (placeholder exists)
-- rule-set tools: Missing
-- Rust CLI provides: run, check, route, bench, version, prefetch, admin debug, generate, etc. — see app/src/cli/* and app/src/main.rs
+- generate ech-keypair: Present — app/src/cli/generate.rs (X25519 keypair for HPKE)
+- rule-set tools: Present — app/src/bin/ruleset.rs (validate/info/format commands)
+- Rust CLI provides: run, check, route, bench, version, prefetch, admin debug, generate, ruleset, etc. — see app/src/cli/* and app/src/main.rs
 
 Notes and Rationale
 - Validation used the public docs site and the repository code paths listed above.

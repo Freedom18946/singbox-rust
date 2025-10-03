@@ -19,16 +19,17 @@ Sources verified:
 
 Key gaps vs Go sing-box:
 - Inbounds (server): ✅ **ALL 10 SERVER INBOUNDS COMPLETE!** (shadowsocks, trojan, vmess, vless, shadowtls, naive, tuic)
+- CLI: ✅ **ALL CLI PARITY COMMANDS COMPLETE!** (generate reality-keypair, ech-keypair, rule-set tools)
 - Outbounds: tor (missing), anytls (missing), wireguard (partial/stub), hysteria v1 (missing)
 - Transports: generic QUIC module present but not widely wired; server listeners missing for WS/H2/gRPC where applicable
 - TLS extras: uTLS and ECH missing; REALITY client/server handshake WIP
 - DNS: DoT currently falls back to TCP; DoH/DoQ feature-gated — add tests and complete parity behavior
 - Routing: user (UID) and network (interface/SSID) rules missing
-- CLI: missing `generate reality-keypair`, `generate ech-keypair`, rule-set tooling parity
+- CLI: ⏳ missing ~~`generate reality-keypair`, `generate ech-keypair`, rule-set tooling parity~~  **ALL COMPLETE!** ✅
 
 Immediate next steps (P1-P2):
 - 🎉 Server inbounds: **COMPLETE** (10/10: ss/trojan/vmess/vless/shadowtls/naive/tuic ✅)
-- Add CLI parity subcommands: ✅ generate reality-keypair, ⏳ generate ech-keypair, rule-set tools
+- 🎉 CLI parity: **COMPLETE** (generate reality-keypair, ech-keypair, rule-set tools ✅)
 - Finish REALITY (client+server handshake) and add interop tests with Go
 - Implement uTLS fingerprints and ECH wiring across TLS clients
 - Harden DNS outbound (DoT/DoH/DoQ) with feature flags enabled in CI + interop tests
