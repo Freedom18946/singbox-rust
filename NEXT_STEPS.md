@@ -254,59 +254,81 @@
 
 ---
 
-### WP5.4: REALITY Anti-Censorship Protocol
+### WP5.4: REALITY Anti-Censorship Protocol ⏳ IN PROGRESS
 
 **Priority**: P0 (Critical)
-**Estimated Time**: 1 week
-**Dependencies**: rustls, x509-parser
+**Estimated Time**: 1 week → **Actual: 0.5 days (foundation complete, custom handshake pending)**
+**Dependencies**: rustls, x509-parser, x25519-dalek
 **Crates**: `sb-tls` (new), `sb-core`
 
 #### Technical Task Breakdown
 
-1. **REALITY Protocol Research** (1 day)
-   - [ ] Read REALITY whitepaper
-   - [ ] Analyze Go implementation `github.com/XTLS/REALITY`
-   - [ ] Understand TLS fingerprint forgery mechanism
-   - [ ] Certificate stealing principle
+1. **REALITY Protocol Research** (1 day) ✅
+   - [x] Read REALITY whitepaper
+   - [x] Analyze Go implementation `github.com/XTLS/REALITY`
+   - [x] Understand X25519 ECDH authentication mechanism
+   - [x] Certificate stealing principle
 
-2. **TLS Abstraction Layer** (2 days)
-   - [ ] Create `crates/sb-tls/`
-   - [ ] Define `TlsConnector` trait
-   - [ ] Standard TLS 1.3 connector (rustls)
-   - [ ] Extensible handshake hooks
+2. **TLS Abstraction Layer** (2 days) ✅
+   - [x] Create `crates/sb-tls/`
+   - [x] Define `TlsConnector` trait
+   - [x] Standard TLS 1.3 connector (rustls)
+   - [x] Extensible handshake hooks
 
-3. **REALITY Client** (2-3 days)
-   - [ ] Create `crates/sb-tls/src/reality/client.rs`
-   - [ ] Implement SNI forgery (target domain)
-   - [ ] Implement REALITY-specific ClientHello
-   - [ ] Certificate verification bypass (steal target cert)
-   - [ ] Auth key verification
+3. **REALITY Authentication** (1 day) ✅
+   - [x] Implement X25519 key exchange in `auth.rs`
+   - [x] Authentication hash computation and verification
+   - [x] Constant-time comparison (timing attack protection)
+   - [x] Key generation and serialization
+   - [x] Fixed x25519-dalek 2.0 API (enabled `static_secrets` feature)
+   - [x] 6 unit tests passing
 
-4. **REALITY Server** (2-3 days)
-   - [ ] Create `crates/sb-tls/src/reality/server.rs`
-   - [ ] Implement SNI routing (REALITY vs fallback)
-   - [ ] Target domain TLS proxy (steal real certificate)
-   - [ ] Auth key validation
-   - [ ] Fallback to target server (on disguise failure)
+4. **REALITY Configuration** (0.5 days) ✅
+   - [x] Client/Server config structs in `config.rs`
+   - [x] Validation logic (public/private key, short_id)
+   - [x] Serialization/deserialization support
+   - [x] 3 unit tests passing
 
-5. **Configuration & Integration** (1 day)
-   - [ ] Add `reality` TLS type to Config
-   - [ ] Config fields: `target`, `server_name`, `public_key`, `short_id`
-   - [ ] Integrate into VLESS/Trojan protocols
+5. **REALITY Client** (2-3 days) ⏳
+   - [x] Create `crates/sb-tls/src/reality/client.rs`
+   - [x] Basic connector structure
+   - [ ] **TODO: Implement custom ClientHello generation**
+     - [ ] Embed client public key in TLS extension
+     - [ ] Embed short_id and auth_hash
+     - [ ] SNI forgery (target domain)
+     - [ ] Requires TLS record manipulation (boringssl or manual)
+   - [ ] Certificate verification (temporary vs real)
+   - [ ] Crawler mode fallback
 
-6. **Testing** (1 day)
-   - [ ] Unit tests: SNI forgery, certificate stealing
-   - [ ] Integration tests: interop with Go REALITY
+6. **REALITY Server** (2-3 days) ⏳
+   - [x] Create `crates/sb-tls/src/reality/server.rs`
+   - [x] Basic acceptor structure
+   - [x] Fallback mechanism structure
+   - [ ] **TODO: Implement ClientHello parsing**
+     - [ ] Parse TLS record layer
+     - [ ] Extract REALITY extensions (public key, short_id, auth_hash)
+     - [ ] Requires TLS record manipulation
+   - [x] Auth verification logic
+   - [x] Fallback to target server
+
+7. **Testing** (1 day) ⏳
+   - [x] Unit tests: auth, config, creation (15 tests passing)
+   - [ ] Integration tests: full handshake flow
+   - [ ] Interop tests with Go REALITY
    - [ ] Anti-detection tests (DPI bypass)
-   - [ ] Performance tests: handshake latency
 
-**Acceptance Criteria**:
-- REALITY client/server works
-- Interoperates with Go sing-box REALITY
-- SNI forgery works (anti-DPI)
-- Auth key validation correct
-- Fallback mechanism works
-- Performance: handshake latency < 200ms
+**Current Status**: ✅ Foundation complete (auth + config + structure) with 15 tests passing
+**Blocker**: Custom TLS ClientHello/ServerHello requires TLS record manipulation (boringssl or manual implementation)
+
+**Acceptance Criteria** (Partial):
+- ✅ Auth key generation and verification works
+- ✅ Configuration validation works
+- ✅ Constant-time comparison (timing attack protection)
+- ⏳ REALITY client/server handshake (custom ClientHello pending)
+- ⏳ Interoperates with Go sing-box REALITY (pending handshake)
+- ⏳ SNI forgery works (pending custom ClientHello)
+- ✅ Fallback mechanism structure works
+- ⏳ Performance: handshake latency < 200ms (pending implementation)
 
 **References**:
 - REALITY whitepaper: https://github.com/XTLS/REALITY

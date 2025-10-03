@@ -2,42 +2,33 @@
 
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
-use x25519_dalek::{EphemeralSecret, PublicKey};
+use x25519_dalek::{PublicKey, StaticSecret};
 
 /// REALITY authentication helper
 pub struct RealityAuth {
-    private_key_bytes: [u8; 32],
+    secret: StaticSecret,
     public_key: PublicKey,
 }
 
 impl RealityAuth {
     /// Create new auth from private key bytes
     pub fn from_private_key(private_key: [u8; 32]) -> Self {
-        // Derive public key from private key
-        let secret = EphemeralSecret::random_from_rng(OsRng);
+        let secret = StaticSecret::from(private_key);
         let public_key = PublicKey::from(&secret);
 
-        // Note: x25519-dalek 2.0 doesn't expose direct private->public conversion
-        // For REALITY, we'd need to use the actual key bytes
-        // This is a simplified version for the framework
         Self {
-            private_key_bytes: private_key,
+            secret,
             public_key,
         }
     }
 
     /// Generate new random keypair
     pub fn generate() -> Self {
-        let secret = EphemeralSecret::random_from_rng(OsRng);
+        let secret = StaticSecret::random_from_rng(OsRng);
         let public_key = PublicKey::from(&secret);
 
-        // Store private key bytes for later use
-        // Note: In x25519-dalek 2.0, we can't extract bytes from EphemeralSecret
-        // For production, use a different crypto library or StaticSecret from older version
-        let private_key_bytes = [0u8; 32]; // Placeholder
-
         Self {
-            private_key_bytes,
+            secret,
             public_key,
         }
     }
@@ -49,22 +40,14 @@ impl RealityAuth {
 
     /// Get private key bytes
     pub fn private_key_bytes(&self) -> [u8; 32] {
-        self.private_key_bytes
+        self.secret.to_bytes()
     }
 
     /// Perform ECDH key exchange with peer public key
     pub fn derive_shared_secret(&self, peer_public_key: &[u8; 32]) -> [u8; 32] {
-        // TODO: x25519-dalek 2.0 EphemeralSecret is consumed on diffie_hellman
-        // Need to reconstruct from bytes each time
-        // For production, use ring or a different crypto library
         let peer_key = PublicKey::from(*peer_public_key);
-
-        // Placeholder shared secret computation
-        let mut result = [0u8; 32];
-        for i in 0..32 {
-            result[i] = self.private_key_bytes[i] ^ peer_key.as_bytes()[i];
-        }
-        result
+        let shared = self.secret.diffie_hellman(&peer_key);
+        *shared.as_bytes()
     }
 
     /// Compute authentication hash
@@ -140,7 +123,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Placeholder implementation - requires proper X25519 ECDH"]
     fn test_ecdh_key_exchange() {
         let alice = RealityAuth::generate();
         let bob = RealityAuth::generate();
@@ -148,11 +130,11 @@ mod tests {
         let alice_shared = alice.derive_shared_secret(&bob.public_key_bytes());
         let bob_shared = bob.derive_shared_secret(&alice.public_key_bytes());
 
+        // X25519 ECDH should produce the same shared secret on both sides
         assert_eq!(alice_shared, bob_shared);
     }
 
     #[test]
-    #[ignore = "Placeholder implementation - requires proper X25519 ECDH"]
     fn test_auth_hash_verification() {
         let server = RealityAuth::generate();
         let client = RealityAuth::generate();
@@ -183,6 +165,25 @@ mod tests {
     }
 
     #[test]
+    fn test_key_derivation_deterministic() {
+        let private_key = [42u8; 32];
+        let auth1 = RealityAuth::from_private_key(private_key);
+        let auth2 = RealityAuth::from_private_key(private_key);
+
+        // Same private key should produce same public key
+        assert_eq!(auth1.public_key_bytes(), auth2.public_key_bytes());
+
+        // Shared secret with same peer should be identical
+        let peer = RealityAuth::generate();
+        let peer_pub = peer.public_key_bytes();
+
+        let shared1 = auth1.derive_shared_secret(&peer_pub);
+        let shared2 = auth2.derive_shared_secret(&peer_pub);
+
+        assert_eq!(shared1, shared2);
+    }
+
+    #[test]
     fn test_constant_time_compare() {
         let a = [1, 2, 3, 4];
         let b = [1, 2, 3, 4];
@@ -191,5 +192,20 @@ mod tests {
         assert!(constant_time_compare(&a, &b));
         assert!(!constant_time_compare(&a, &c));
         assert!(!constant_time_compare(&a, &[1, 2, 3]));
+    }
+
+    #[test]
+    fn test_multiple_key_exchanges() {
+        let auth = RealityAuth::generate();
+        let peer = RealityAuth::generate();
+        let peer_pub = peer.public_key_bytes();
+
+        // Should be able to derive shared secret multiple times
+        let shared1 = auth.derive_shared_secret(&peer_pub);
+        let shared2 = auth.derive_shared_secret(&peer_pub);
+        let shared3 = auth.derive_shared_secret(&peer_pub);
+
+        assert_eq!(shared1, shared2);
+        assert_eq!(shared2, shared3);
     }
 }
