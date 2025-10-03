@@ -1,8 +1,8 @@
 # singbox-rust Development Roadmap
 
 **Last Updated**: 2025-10-04
-**Current Status**: Server Inbounds in Progress - 4/11 Complete (Shadowsocks ✅ Trojan ✅ VMess ✅ VLESS ✅)
-**Overall Completion**: 68% → Estimated 88%+ (server inbounds + discovered implementations)
+**Current Status**: Server Inbounds in Progress - 5/10 Complete (Shadowsocks ✅ Trojan ✅ VMess ✅ VLESS ✅ ShadowTLS ✅)
+**Overall Completion**: 68% → Estimated 90%+ (server inbounds + discovered implementations)
 **Goal**: Achieve 100% feature parity with Go sing-box
 
 ---
@@ -18,7 +18,7 @@ Sources verified:
 - Route: https://sing-box.sagernet.org/configuration/route/
 
 Key gaps vs Go sing-box:
-- Inbounds (server): ✅ shadowsocks, trojan, vmess (NEW!), vless (NEW!) | ⏳ tuic, hysteria, hysteria2, shadowtls, anytls, naive
+- Inbounds (server): ✅ shadowsocks, trojan, vmess, vless, shadowtls (NEW!) | ⏳ tuic, hysteria, hysteria2, anytls, naive
 - Outbounds: tor (missing), anytls (missing), wireguard (partial/stub), hysteria v1 (missing)
 - Transports: generic QUIC module present but not widely wired; server listeners missing for WS/H2/gRPC where applicable
 - TLS extras: uTLS and ECH missing; REALITY client/server handshake WIP
@@ -27,7 +27,11 @@ Key gaps vs Go sing-box:
 - CLI: missing `generate reality-keypair`, `generate ech-keypair`, rule-set tooling parity
 
 Immediate next steps (P0–P1):
-- Implement remaining server inbounds: tuic/hysteria/hysteria2/shadowtls/anytls/naive (4/10 done: ss/trojan/vmess/vless ✅)
+- Implement remaining server inbounds: tuic/hysteria/hysteria2/anytls/naive (5/10 done: ss/trojan/vmess/vless/shadowtls ✅)
+  - TUIC: QUIC-based, requires quinn server + protocol packets
+  - Hysteria/Hysteria2: QUIC-based with congestion control
+  - Naive: HTTP/2 CONNECT proxy (needs hyper server)
+  - AnyTLS: TBD (need protocol spec)
 - Add CLI parity subcommands: `generate reality-keypair`, `generate ech-keypair`, rule-set tools
 - Finish REALITY (client+server handshake) and add interop tests with Go
 - Implement uTLS fingerprints and ECH wiring across TLS clients
