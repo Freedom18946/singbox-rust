@@ -26,12 +26,12 @@ Overall Assessment
 - CLI: Diverges from sing-box; key generator/convert commands missing
 
 Key Gaps To Close
-- Server inbounds: vmess/vless/trojan/ss/tuic/hysteria/hysteria2/shadowtls/anytls/naive
+- Server inbounds: ✅ vmess/vless/shadowtls (NEW!); ⏳ tuic/hysteria/hysteria2/anytls/naive
 - Transports: wire generic QUIC/gRPC/WS/H2 across protocols (server listeners where applicable)
 - TLS extras: REALITY full client/server integration; uTLS fingerprints; ECH
 - DNS: finalize DoT and DoH behavior; strengthen DNS outbound parity and tests
 - Outbounds: Tor, WireGuard (full), AnyTLS type, Hysteria (v1)
-- CLI parity: generate reality-keypair, ech-keypair, rule-set tooling, other sing-box subcommands
+- CLI parity: ✅ generate reality-keypair (NEW!); ⏳ ech-keypair, rule-set tooling, other sing-box subcommands
 
 Outbound Protocols (Go → Rust)
 - direct: Present — crates/sb-core/src/outbound/direct.rs
@@ -60,9 +60,12 @@ Inbound Protocols (Go → Rust)
 - tun: Present — crates/sb-adapters/src/inbound/tun.rs (plus platform variants)
 - redirect: Present (Linux TCP) — crates/sb-adapters/src/inbound/redirect.rs
 - tproxy: Present (Linux TCP) — crates/sb-adapters/src/inbound/tproxy.rs (router-integrated)
-- vmess/vless/tuic/hysteria/hysteria2/shadowtls/anytls/naive: Missing (server inbounds)
 - shadowsocks: Present — crates/sb-adapters/src/inbound/shadowsocks.rs (AEAD TCP)
 - trojan: Present (TLS password server) — crates/sb-adapters/src/inbound/trojan.rs
+- vmess: Present — crates/sb-adapters/src/inbound/vmess.rs (AEAD server with HMAC auth)
+- vless: Present — crates/sb-adapters/src/inbound/vless.rs (UUID auth server)
+- shadowtls: Present — crates/sb-adapters/src/inbound/shadowtls.rs (TLS masquerading server)
+- tuic/hysteria/hysteria2/anytls/naive: Missing (server inbounds)
 - direct (inbound page exists in docs): Missing (not applicable/available here)
 
 V2Ray Transport (Go → Rust)
@@ -107,8 +110,10 @@ APIs and Management
 - NTP helper: Missing
 
 CLI Parity (Go → Rust)
-- sing-box subcommands like generate reality-keypair, rule-set tools: Missing in Rust CLI
-- Rust CLI provides: run, check, route, bench, version, prefetch, admin debug, etc. — see app/src/cli/* and app/src/main.rs
+- generate reality-keypair: Present — app/src/cli/generate.rs (X25519 keypair generation)
+- generate ech-keypair: Missing (placeholder exists)
+- rule-set tools: Missing
+- Rust CLI provides: run, check, route, bench, version, prefetch, admin debug, generate, etc. — see app/src/cli/* and app/src/main.rs
 
 Notes and Rationale
 - Validation used the public docs site and the repository code paths listed above.
