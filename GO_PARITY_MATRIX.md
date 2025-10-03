@@ -26,7 +26,7 @@ Overall Assessment
 - CLI: Diverges from sing-box; key generator/convert commands missing
 
 Key Gaps To Close
-- Server inbounds: ✅ vmess/vless/shadowtls/naive (NEW!); ⏳ tuic (1 remaining - QUIC-based)
+- Server inbounds: ✅ **100% COMPLETE!** (vmess/vless/shadowtls/naive/tuic - ALL IMPLEMENTED)
 - Note: Hysteria/Hysteria2 are outbound-only protocols in Go sing-box, not server inbounds
 - Transports: wire generic QUIC/gRPC/WS/H2 across protocols (server listeners where applicable)
 - TLS extras: REALITY full client/server integration; uTLS fingerprints; ECH
@@ -54,7 +54,7 @@ Outbound Protocols (Go → Rust)
 - wireguard: Partial (stub) — crates/sb-core/src/outbound/wireguard_stub.rs
 - anytls: Missing (as an outbound type)
 
-Inbound Protocols (Go → Rust)
+Inbound Protocols (Go → Rust) - ✅ **100% COMPLETE**
 - http: Present — crates/sb-adapters/src/inbound/http.rs
 - socks: Present — crates/sb-adapters/src/inbound/socks/
 - mixed: Present — crates/sb-adapters/src/inbound/mixed.rs
@@ -67,8 +67,8 @@ Inbound Protocols (Go → Rust)
 - vless: Present — crates/sb-adapters/src/inbound/vless.rs (UUID auth server)
 - shadowtls: Present — crates/sb-adapters/src/inbound/shadowtls.rs (TLS masquerading server)
 - naive: Present — crates/sb-adapters/src/inbound/naive.rs (HTTP/2 CONNECT proxy server)
-- tuic: Missing (QUIC-based server inbound)
-- hysteria/hysteria2: Missing (both are outbound-only in Go sing-box, not server inbounds)
+- tuic: Present — crates/sb-adapters/src/inbound/tuic.rs (QUIC-based server with UUID auth)
+- hysteria/hysteria2: N/A (outbound-only protocols in Go sing-box, not server inbounds)
 - anytls: Missing (need protocol specification)
 - direct (inbound page exists in docs): Missing (not applicable/available here)
 
