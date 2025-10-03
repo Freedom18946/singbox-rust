@@ -65,7 +65,6 @@ async fn test_httpupgrade_server_config() {
 }
 
 #[tokio::test]
-#[ignore] // Temporarily ignored due to connection timing issues with large messages
 async fn test_httpupgrade_large_message() {
     // Start HTTPUpgrade server
     let tcp_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -75,10 +74,18 @@ async fn test_httpupgrade_large_message() {
     // Spawn server task
     let server_handle = tokio::spawn(async move {
         let mut stream = listener.accept().await.unwrap();
-        let mut buf = vec![0u8; 1024 * 1024]; // 1MB buffer
-        let n = stream.read(&mut buf).await.unwrap();
-        stream.write_all(&buf[..n]).await.unwrap();
-        stream.flush().await.unwrap();
+        let mut buf = vec![0u8; 100 * 1024]; // Match exact test data size
+
+        // Read exactly the amount we expect
+        match tokio::io::AsyncReadExt::read_exact(&mut stream, &mut buf).await {
+            Ok(_) => {
+                stream.write_all(&buf).await.unwrap();
+                stream.flush().await.unwrap();
+            }
+            Err(e) => {
+                eprintln!("Server read error: {}", e);
+            }
+        }
     });
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
