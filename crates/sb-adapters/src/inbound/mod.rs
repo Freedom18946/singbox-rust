@@ -30,3 +30,6 @@ pub mod shadowsocks;
 
 #[cfg(feature = "vmess")]
 pub mod vmess;
+
+#[cfg(feature = "vless")]
+pub mod vless;

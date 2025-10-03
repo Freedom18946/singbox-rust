@@ -87,6 +87,8 @@ trojan = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
 shadowsocks = []
 # VMess inbound (AEAD server)
 vmess = []
+# VLESS inbound (UUID auth server)
+vless = []
 # 占位：便于在代码中 #[cfg(feature="metrics")]
 metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持
