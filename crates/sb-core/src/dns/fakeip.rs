@@ -124,3 +124,131 @@ pub fn is_fake_ip(ip: &IpAddr) -> bool {
 pub fn to_domain(ip: &IpAddr) -> Option<String> {
     if is_fake_ip(ip) { lookup_domain(ip) } else { None }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fakeip_v4_allocation() {
+        std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
+        std::env::set_var("SB_FAKEIP_V4_MASK", "16");
+
+        let ip1 = allocate_v4("example.com");
+        let ip2 = allocate_v4("google.com");
+        let ip3 = allocate_v4("example.com"); // Should return same IP
+
+        // Same domain should get same IP
+        assert_eq!(ip1, ip3);
+
+        // Different domains should get different IPs
+        assert_ne!(ip1, ip2);
+
+        // Should be in FakeIP range
+        assert!(is_fake_ip(&ip1));
+        assert!(is_fake_ip(&ip2));
+
+        // Reverse lookup should work
+        assert_eq!(to_domain(&ip1), Some("example.com".to_string()));
+        assert_eq!(to_domain(&ip2), Some("google.com".to_string()));
+    }
+
+    #[test]
+    fn test_fakeip_v6_allocation() {
+        std::env::set_var("SB_FAKEIP_V6_BASE", "fd00::");
+        std::env::set_var("SB_FAKEIP_V6_MASK", "8");
+
+        let ip1 = allocate_v6("example.com");
+        let ip2 = allocate_v6("google.com");
+        let ip3 = allocate_v6("example.com"); // Should return same IP
+
+        // Same domain should get same IP
+        assert_eq!(ip1, ip3);
+
+        // Different domains should get different IPs
+        assert_ne!(ip1, ip2);
+
+        // Should be in FakeIP range
+        assert!(is_fake_ip(&ip1));
+        assert!(is_fake_ip(&ip2));
+
+        // Reverse lookup should work
+        assert_eq!(to_domain(&ip1), Some("example.com".to_string()));
+        assert_eq!(to_domain(&ip2), Some("google.com".to_string()));
+    }
+
+    #[test]
+    fn test_fakeip_detection() {
+        std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
+        std::env::set_var("SB_FAKEIP_V4_MASK", "16");
+
+        let fake_ip = allocate_v4("test.com");
+        assert!(is_fake_ip(&fake_ip));
+
+        // Real IP should not be detected as fake
+        let real_ip: IpAddr = "1.1.1.1".parse().unwrap();
+        assert!(!is_fake_ip(&real_ip));
+
+        let real_ipv6: IpAddr = "2001:4860:4860::8888".parse().unwrap();
+        assert!(!is_fake_ip(&real_ipv6));
+    }
+
+    #[test]
+    fn test_fakeip_reverse_lookup() {
+        std::env::set_var("SB_FAKEIP_V4_BASE", "240.0.0.0");
+        std::env::set_var("SB_FAKEIP_V4_MASK", "8");
+
+        let domain = "example.org";
+        let ip = allocate_v4(domain);
+
+        // Reverse lookup should return original domain
+        assert_eq!(lookup_domain(&ip), Some(domain.to_string()));
+        assert_eq!(to_domain(&ip), Some(domain.to_string()));
+
+        // Non-fake IP should return None
+        let real_ip: IpAddr = "8.8.8.8".parse().unwrap();
+        assert_eq!(to_domain(&real_ip), None);
+    }
+
+    #[test]
+    fn test_fakeip_enabled() {
+        // Test default (disabled)
+        std::env::remove_var("SB_DNS_FAKEIP_ENABLE");
+        assert!(!enabled());
+
+        // Test enabled with "1"
+        std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
+        assert!(enabled());
+
+        // Test enabled with "true"
+        std::env::set_var("SB_DNS_FAKEIP_ENABLE", "true");
+        assert!(enabled());
+
+        // Test enabled with "TRUE"
+        std::env::set_var("SB_DNS_FAKEIP_ENABLE", "TRUE");
+        assert!(enabled());
+
+        // Test disabled with "0"
+        std::env::set_var("SB_DNS_FAKEIP_ENABLE", "0");
+        assert!(!enabled());
+
+        // Clean up
+        std::env::remove_var("SB_DNS_FAKEIP_ENABLE");
+    }
+
+    #[test]
+    fn test_fakeip_cidr_masking() {
+        // Test IPv4 masking
+        let ip = Ipv4Addr::new(192, 168, 1, 100);
+        let masked_24 = mask_v4(ip, 24);
+        assert_eq!(masked_24, Ipv4Addr::new(192, 168, 1, 0));
+
+        let masked_16 = mask_v4(ip, 16);
+        assert_eq!(masked_16, Ipv4Addr::new(192, 168, 0, 0));
+
+        // Test IPv6 masking
+        let ip6 = Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1);
+        let masked_32 = mask_v6(ip6, 32);
+        assert_eq!(masked_32, Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0));
+    }
+}
