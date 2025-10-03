@@ -1,7 +1,8 @@
 # singbox-rust Development Roadmap
 
 **Last Updated**: 2025-10-03
-**Current Status**: Sprint 5 WP5.1-5.2-5.5 Complete (68% overall completion)
+**Current Status**: Sprint 5 In Progress - 3/5 WPs Complete (WP5.1 ✅ WP5.2 ✅ WP5.5 ✅, WP5.3 ⏳ WP5.4 ⏳)
+**Overall Completion**: 68% → Target 75% by Sprint 5 end
 **Goal**: Achieve 100% feature parity with Go sing-box
 
 ---
@@ -28,10 +29,11 @@
 
 ---
 
-## Sprint 5: P0 Critical Features (4-6 weeks) - WP5.1-5.2-5.5 Complete ✅
+## Sprint 5: P0 Critical Features (4-6 weeks) - 3/5 Complete ⏳
 
 **Goal**: Implement blocking missing features, achieve basic production parity
-**Completion Target**: 55% → 75% (Currently 68%, WP5.1-5.2-5.5 done)
+**Completion Target**: 55% → 75%
+**Current Progress**: 68% (WP5.1 ✅ WP5.2 ✅ WP5.5 ✅, WP5.3 ~70% ⏳, WP5.4 ~40% ⏳)
 
 ---
 
