@@ -10,6 +10,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut sni = None;
     let mut ip = None;
+    let mut host_opt: Option<String> = None;
     let mut port = 0u16;
     let mut proto = "tcp";
     let mut fmt = "json";
@@ -27,6 +28,12 @@ fn main() {
                 i += 1;
                 if i < args.len() {
                     ip = args[i].parse::<IpAddr>().ok();
+                }
+            }
+            "--host" => {
+                i += 1;
+                if i < args.len() {
+                    host_opt = Some(args[i].clone());
                 }
             }
             "--port" => {
@@ -63,7 +70,8 @@ fn main() {
     let r = explain_decision(
         &router,
         ExplainQuery {
-            sni,
+            sni: sni.clone(),
+            host: host_opt.or(sni),
             ip,
             port,
             proto,

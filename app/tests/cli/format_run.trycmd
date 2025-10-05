@@ -1,0 +1,14 @@
+```console
+$ cargo run --bin format -- -c app/tests/cli/fixtures/minimal_good.json
+{
+  "inbounds": [
+[..]
+  ],
+  "outbounds": [
+[..]
+  ],
+  "route": {
+[..]
+  }
+}
+```

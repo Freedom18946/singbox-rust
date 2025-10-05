@@ -4,7 +4,10 @@ use std::net::IpAddr;
 
 #[derive(Clone, Debug)]
 pub struct ExplainQuery {
+    /// Preferred host for matching (SNI or HTTP Host)
     pub sni: Option<String>,
+    /// Optional: host if different from SNI (e.g., HTTP Host)
+    pub host: Option<String>,
     pub ip: Option<IpAddr>,
     pub port: u16,
     pub proto: &'static str,

@@ -118,7 +118,7 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
 }
 
 async fn handle_conn(
-    cfg: &ShadowTlsInboundConfig,
+    _cfg: &ShadowTlsInboundConfig,
     tls: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
     peer: SocketAddr,
 ) -> Result<()> {

@@ -23,6 +23,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static PACKETS_SEEN: AtomicU64 = AtomicU64::new(0);
 static TCP_PROBE_OK: AtomicU64 = AtomicU64::new(0);
 static TCP_PROBE_FAIL: AtomicU64 = AtomicU64::new(0);
+static SNI_OK: AtomicU64 = AtomicU64::new(0);
+static SNI_FAIL: AtomicU64 = AtomicU64::new(0);
 
 #[deprecated(
     since = "0.1.0",
@@ -226,7 +228,24 @@ impl TunInbound {
                                     };
 
                                     // --- 路由选择
-                                    let host_str = format!("{}:{}", ip, port);
+                                    // Prefer SNI when available for TLS on port 443; otherwise try HTTP Host on port 80
+                                    let sniff_host = if let Some(head) = &pkt.payload_head {
+                                        if port == 443 {
+                                            if let Some(sni) = sb_core::router::sniff::extract_sni_from_tls_client_hello(head) {
+                                                SNI_OK.fetch_add(1, Ordering::Relaxed);
+                                                Some(sni)
+                                            } else {
+                                                SNI_FAIL.fetch_add(1, Ordering::Relaxed);
+                                                None
+                                            }
+                                        } else if port == 80 {
+                                            sb_core::router::sniff::extract_http_host_from_request(head)
+                                        } else { None }
+                                    } else { None };
+                                    let host_str = match sniff_host.as_ref() {
+                                        Some(s) if !s.is_empty() => s.clone(),
+                                        _ => format!("{}:{}", ip, port),
+                                    };
                                     let route_ctx = RouteCtx {
                                         host: Some(&host_str),
                                         ip: Some(ip),
@@ -264,10 +283,10 @@ impl TunInbound {
                                             let _meta = RequestMeta {
                                                 inbound: Some(self.cfg.name.clone()),
                                                 user: self.cfg.user_tag.clone(),
-                                                transport: transport_opt,
-                                                sniff_host: None,
-                                                ..Default::default()
-                                            };
+                                        transport: transport_opt,
+                                        sniff_host: sniff_host.clone(),
+                                        ..Default::default()
+                                    };
                                             // 重用之前的路由选择结果
                                             let _probe_selected = selected.clone();
                                             // 避免把 tokio::time::timeout() 遮蔽：本地变量不要叫 `timeout`
@@ -748,6 +767,8 @@ mod sys_macos {
         pub proto: L4,
         pub dst_ip: Option<IpAddr>,
         pub dst_port: Option<u16>,
+        /// First bytes of L4 payload (if available), capped for cheap sniffing
+        pub payload_head: Option<Vec<u8>>,
     }
 
     #[cfg(feature = "tun")]
@@ -769,29 +790,32 @@ mod sys_macos {
         let af = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
         let pkt = &buf[4..];
         match af as i32 {
-            libc::AF_INET => parse_ipv4(pkt).map(|(proto, ip, port)| Parsed {
+            libc::AF_INET => parse_ipv4(pkt).map(|(proto, ip, port, head)| Parsed {
                 af,
                 proto,
                 dst_ip: ip,
                 dst_port: port,
+                payload_head: head,
             }),
-            libc::AF_INET6 => parse_ipv6(pkt).map(|(proto, ip, port)| Parsed {
+            libc::AF_INET6 => parse_ipv6(pkt).map(|(proto, ip, port, head)| Parsed {
                 af,
                 proto,
                 dst_ip: ip,
                 dst_port: port,
+                payload_head: head,
             }),
             _ => Some(Parsed {
                 af,
                 proto: L4::Other(0xff),
                 dst_ip: None,
                 dst_port: None,
+                payload_head: None,
             }),
         }
     }
 
     #[cfg(feature = "tun")]
-    fn parse_ipv4(pkt: &[u8]) -> Option<(L4, Option<IpAddr>, Option<u16>)> {
+    fn parse_ipv4(pkt: &[u8]) -> Option<(L4, Option<IpAddr>, Option<u16>, Option<Vec<u8>>)> {
         if pkt.len() < 20 {
             return None;
         }
@@ -803,17 +827,39 @@ mod sys_macos {
         let dst = IpAddr::V4(Ipv4Addr::new(pkt[16], pkt[17], pkt[18], pkt[19]));
         match proto {
             6 /* TCP */ | 17 /* UDP */ => {
-                if pkt.len() < ihl + 4 { return Some((L4::Other(proto), Some(dst), None)); }
+                if pkt.len() < ihl + 4 { return Some((L4::Other(proto), Some(dst), None, None)); }
                 let port = u16::from_be_bytes([pkt[ihl+2], pkt[ihl+3]]);
                 let l4 = if proto == 6 { L4::Tcp } else { L4::Udp };
-                Some((l4, Some(dst), Some(port)))
+                // compute payload head for TCP/UDP
+                let head = if proto == 6 {
+                    // TCP data offset in 32-bit words at offset 12 high nibble
+                    if pkt.len() >= ihl + 13 {
+                        let doff_words = (pkt[ihl + 12] >> 4) as usize;
+                        let tcp_header_len = doff_words * 4;
+                        let start = ihl + tcp_header_len;
+                        if start < pkt.len() {
+                            let rem = pkt.len() - start;
+                            let cap = rem.min(1024);
+                            Some(pkt[start..start+cap].to_vec())
+                        } else { None }
+                    } else { None }
+                } else {
+                    // UDP header is fixed 8 bytes
+                    let start = ihl + 8;
+                    if start < pkt.len() {
+                        let rem = pkt.len() - start;
+                        let cap = rem.min(1024);
+                        Some(pkt[start..start+cap].to_vec())
+                    } else { None }
+                };
+                Some((l4, Some(dst), Some(port), head))
             }
-            x => Some((L4::Other(x), Some(dst), None)),
+            x => Some((L4::Other(x), Some(dst), None, None)),
         }
     }
 
     #[cfg(feature = "tun")]
-    fn parse_ipv6(pkt: &[u8]) -> Option<(L4, Option<IpAddr>, Option<u16>)> {
+    fn parse_ipv6(pkt: &[u8]) -> Option<(L4, Option<IpAddr>, Option<u16>, Option<Vec<u8>>)> {
         if pkt.len() < 40 {
             return None;
         }
@@ -826,12 +872,32 @@ mod sys_macos {
         match next {
             6 /* TCP */ | 17 /* UDP */ => {
                 // 简化：不处理扩展头，仅当 L4 紧随 IPv6 基本头时取端口
-                if pkt.len() < 40 + 4 { return Some((L4::Other(next), Some(dst), None)); }
+                if pkt.len() < 40 + 4 { return Some((L4::Other(next), Some(dst), None, None)); }
                 let port = u16::from_be_bytes([pkt[40+2], pkt[40+3]]);
                 let l4 = if next == 6 { L4::Tcp } else { L4::Udp };
-                Some((l4, Some(dst), Some(port)))
+                // payload head
+                let head = if next == 6 {
+                    if pkt.len() >= 40 + 13 {
+                        let doff_words = (pkt[40 + 12] >> 4) as usize;
+                        let tcp_header_len = doff_words * 4;
+                        let start = 40 + tcp_header_len;
+                        if start < pkt.len() {
+                            let rem = pkt.len() - start;
+                            let cap = rem.min(1024);
+                            Some(pkt[start..start+cap].to_vec())
+                        } else { None }
+                    } else { None }
+                } else {
+                    let start = 40 + 8;
+                    if start < pkt.len() {
+                        let rem = pkt.len() - start;
+                        let cap = rem.min(1024);
+                        Some(pkt[start..start+cap].to_vec())
+                    } else { None }
+                };
+                Some((l4, Some(dst), Some(port), head))
             }
-            x => Some((L4::Other(x), Some(dst), None)),
+            x => Some((L4::Other(x), Some(dst), None, None)),
         }
     }
 }

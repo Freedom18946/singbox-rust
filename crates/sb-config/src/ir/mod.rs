@@ -38,6 +38,7 @@ pub enum OutboundType {
     Vless,
     Vmess,
     Trojan,
+    Ssh,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -101,6 +102,18 @@ pub struct OutboundIR {
     /// Trojan-specific fields
     #[serde(default)]
     pub password: Option<String>,
+
+    // SSH-specific fields (optional)
+    #[serde(default)]
+    pub ssh_private_key: Option<String>, // PEM content or file path (when _path not used)
+    #[serde(default)]
+    pub ssh_private_key_path: Option<String>,
+    #[serde(default)]
+    pub ssh_private_key_passphrase: Option<String>,
+    #[serde(default)]
+    pub ssh_host_key_verification: Option<bool>,
+    #[serde(default)]
+    pub ssh_known_hosts_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -179,6 +192,7 @@ impl OutboundIR {
             OutboundType::Vless => "vless",
             OutboundType::Vmess => "vmess",
             OutboundType::Trojan => "trojan",
+            OutboundType::Ssh => "ssh",
         }
     }
 }

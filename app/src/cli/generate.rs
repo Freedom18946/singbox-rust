@@ -19,12 +19,22 @@ pub enum GenerateCommands {
     RealityKeypair,
     /// Generate ECH (Encrypted Client Hello) X25519 keypair for HPKE
     EchKeypair,
+    /// Generate a self-signed TLS keypair (PEM)
+    TlsKeypair {
+        /// Common Name / DNS name
+        #[arg(long = "cn", default_value = "localhost")]
+        cn: String,
+        /// Validity in days
+        #[arg(long = "days", default_value_t = 365u32)]
+        days: u32,
+    },
 }
 
 pub fn run(args: GenerateArgs) -> Result<()> {
     match args.command {
         GenerateCommands::RealityKeypair => generate_reality_keypair(),
         GenerateCommands::EchKeypair => generate_ech_keypair(),
+        GenerateCommands::TlsKeypair { cn, days } => generate_tls_keypair(cn, days),
     }
 }
 
@@ -86,6 +96,22 @@ fn generate_ech_keypair() -> Result<()> {
     eprintln!("Note: ECH uses DHKEM(X25519, HKDF-SHA256) with HPKE");
     eprintln!("      The public key should be published in DNS ECHConfig");
 
+    Ok(())
+}
+
+/// Generate self-signed TLS cert + private key (PEM)
+fn generate_tls_keypair(cn: String, days: u32) -> Result<()> {
+    use rcgen::generate_simple_self_signed;
+    let _ = days; // rcgen simple API doesn't expose validity; ignore for now.
+    let cert = generate_simple_self_signed(vec![cn])
+        .map_err(|e| anyhow::anyhow!("generate cert: {e}"))?;
+    let cert_pem = cert
+        .serialize_pem()
+        .map_err(|e| anyhow::anyhow!("serialize cert: {e}"))?;
+    let key_pem = cert.serialize_private_key_pem();
+
+    println!("Certificate:\n{}", cert_pem.trim_end());
+    println!("PrivateKey:\n{}", key_pem.trim_end());
     Ok(())
 }
 

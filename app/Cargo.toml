@@ -22,6 +22,10 @@ jwt = ["jsonwebtoken", "rsa", "p256", "pkcs8", "pkcs1"]  # JWT 提供者启用�
 router  = ["sb-core", "sb-core/router"]
 observe = ["router", "sb-metrics"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
+ssh = ["sb-core/out_ssh"]
+tools = ["sb-core", "reqwest"]
+tools_http3 = ["reqwest/http3"]
+reqwest_unstable = []
 
 ## 子能力（从 observe 派生，按需组合）
 subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscribe"]   # /subs/fetch
@@ -160,6 +164,25 @@ name = "ruleset"
 path = "src/bin/ruleset.rs"
 required-features = ["router"]
 
+[[bin]]
+name = "format"
+path = "src/bin/format.rs"
+
+[[bin]]
+name = "tools"
+path = "src/bin/tools.rs"
+required-features = ["tools"]
+
+[[bin]]
+name = "geosite"
+path = "src/bin/geosite.rs"
+required-features = ["router"]
+
+[[bin]]
+name = "geoip"
+path = "src/bin/geoip.rs"
+required-features = ["router"]
+
 [dependencies]
 anyhow      = { workspace = true }
 clap        = { workspace = true }
@@ -184,6 +207,7 @@ rustls-pemfile = "2.1"
 webpki-roots = "0.26"
 rand = "0.8"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+rcgen = "0.12"
 trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
 sb-config   = { path = "../crates/sb-config", package = "sb-config" }
@@ -220,6 +244,9 @@ metrics = { version = "0.24", optional = true }
 jsonschema = { version = "0.25", optional = true }
 # DNS protocol support
 trust-dns-proto = { version = "0.23", optional = true }
+# MMDB support for geoip CLI
+maxminddb = "0.23"
+ipnetwork = "0.18"
 # JWT dependencies (optional, for JWT auth provider)
 jsonwebtoken = { version = "9.3", optional = true }
 rsa = { version = "0.9", optional = true }

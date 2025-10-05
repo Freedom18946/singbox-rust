@@ -124,7 +124,7 @@ impl MultiplexDialer {
     }
 
     /// Get or create a yamux connection
-    async fn get_connection(&self, host: &str, port: u16) -> Result<Arc<Mutex<Connection<YamuxStream>>>, DialError> {
+    async fn _get_connection(&self, host: &str, port: u16) -> Result<Arc<Mutex<Connection<YamuxStream>>>, DialError> {
         let key = format!("{}:{}", host, port);
 
         // Try to get existing connection from pool
@@ -358,4 +358,3 @@ mod tests {
         assert!(config.enable_keepalive);
     }
 }
-

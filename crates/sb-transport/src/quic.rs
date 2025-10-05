@@ -39,7 +39,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// QUIC configuration
 #[derive(Debug, Clone)]
@@ -98,8 +98,9 @@ impl QuicDialer {
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse::<SocketAddr>().unwrap())
             .map_err(|e| DialError::Other(format!("Failed to create QUIC endpoint: {}", e)))?;
 
-        // Build client configuration
-        let mut client_config = ClientConfig::with_platform_verifier();
+        // Build client configuration (handle platform verifier fallible API)
+        let mut client_config = ClientConfig::try_with_platform_verifier()
+            .map_err(|e| DialError::Other(format!("Failed to init QUIC client verifier: {}", e)))?;
 
         // Note: quinn 0.11 changed ALPN configuration
         // ALPN protocols are now set through the crypto config

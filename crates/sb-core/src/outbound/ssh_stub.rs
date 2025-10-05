@@ -42,6 +42,7 @@ pub struct SshConfig {
     pub keepalive_interval: Option<u64>,
     pub connect_timeout: Option<u64>,
     pub connection_pool_size: Option<usize>,
+    pub known_hosts_path: Option<String>,
 }
 
 #[cfg(feature = "out_ssh")]
@@ -59,6 +60,7 @@ impl Default for SshConfig {
             keepalive_interval: Some(30),
             connect_timeout: Some(10),
             connection_pool_size: Some(4),
+            known_hosts_path: None,
         }
     }
 }
@@ -199,14 +201,18 @@ impl SshConnection {
     async fn new(config: SshConfig) -> anyhow::Result<Self> {
         let client_config = Arc::new(client::Config::default());
         let host_id = format!("{}:{}", config.server, config.port);
-        let known_hosts = std::env::var("SB_SSH_KNOWN_HOSTS")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".ssh").join("sb_known_hosts"))
-            });
+        let known_hosts = if let Some(p) = config.known_hosts_path.as_ref() {
+            Some(PathBuf::from(p))
+        } else {
+            std::env::var("SB_SSH_KNOWN_HOSTS")
+                .ok()
+                .map(PathBuf::from)
+                .or_else(|| {
+                    std::env::var("HOME")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".ssh").join("sb_known_hosts"))
+                })
+        };
         let verify = config.host_key_verification;
         let shared = Arc::new(SshShared::new(host_id, known_hosts, verify));
         let client_handler = SshClient {
@@ -424,6 +430,7 @@ pub struct SshConfig {
     pub server: String,
     pub port: u16,
     pub username: String,
+    pub known_hosts_path: Option<String>,
 }
 
 #[cfg(not(feature = "out_ssh"))]
@@ -433,6 +440,7 @@ impl SshConfig {
             server: String::new(),
             port: 22,
             username: String::new(),
+            known_hosts_path: None,
         }
     }
 }

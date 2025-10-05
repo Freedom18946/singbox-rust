@@ -26,6 +26,7 @@ pub struct InboundParam {
     pub listen: String,
     pub port: u16,
     pub basic_auth: Option<Credentials>,
+    pub sniff: bool,
 }
 
 /// 出站构造参数（来自 IR）
@@ -36,6 +37,11 @@ pub struct OutboundParam {
     pub server: Option<String>,
     pub port: Option<u16>,
     pub credentials: Option<Credentials>,
+    // SSH extras (optional)
+    pub ssh_private_key: Option<String>,
+    pub ssh_private_key_passphrase: Option<String>,
+    pub ssh_host_key_verification: Option<bool>,
+    pub ssh_known_hosts_path: Option<String>,
 }
 
 /// 工厂接口（由 sb-adapter 实现；桥接层会优先尝试调用）
@@ -100,6 +106,15 @@ impl Bridge {
                         Arc::new(TunInboundService::new()) as Arc<dyn InboundService>
                     }
                 };
+
+                // Stage 1: acknowledge sniff flag without changing behavior
+                if inbound.sniff {
+                    tracing::info!(
+                        kind = ?inbound.ty,
+                        listen = %format!("{}:{}", inbound.listen, inbound.port),
+                        "inbound sniff requested (stage1 noop)"
+                    );
+                }
 
                 bridge.add_inbound(inbound_service);
             }
@@ -195,6 +210,11 @@ impl Bridge {
                 }
                 sb_config::ir::OutboundType::Trojan => {
                     // Trojan connector not wired in adapter bridge; fall back to direct
+                    use crate::outbound::direct_connector::DirectConnector;
+                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                }
+                sb_config::ir::OutboundType::Ssh => {
+                    // Fallback to direct in this adapter path
                     use crate::outbound::direct_connector::DirectConnector;
                     Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
                 }

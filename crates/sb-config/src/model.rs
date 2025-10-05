@@ -124,6 +124,7 @@ pub struct Config {
     pub rules: Vec<Rule>,
 }
 
+#[allow(deprecated)]
 impl Config {
     /// Normalize config to a fully-usable shape:
     // - Ensure default outbounds exist ("direct", "block") if not provided

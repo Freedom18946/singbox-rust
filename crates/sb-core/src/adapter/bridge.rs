@@ -24,6 +24,7 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         listen: ib.listen.clone(),
         port: ib.port,
         basic_auth: ib.basic_auth.clone(),
+        sniff: ib.sniff,
     }
 }
 fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
@@ -37,6 +38,7 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
         OutboundType::Vless => "vless",
         OutboundType::Vmess => "vmess",
         OutboundType::Trojan => "trojan",
+        OutboundType::Ssh => "ssh",
     }
     .to_string();
     (
@@ -47,15 +49,17 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             server: ob.server.clone(),
             port: ob.port,
             credentials: ob.credentials.clone(),
+            ssh_private_key: ob.ssh_private_key.clone().or(ob.ssh_private_key_path.clone()),
+            ssh_private_key_passphrase: ob.ssh_private_key_passphrase.clone(),
+            ssh_host_key_verification: ob.ssh_host_key_verification,
+            ssh_known_hosts_path: ob.ssh_known_hosts_path.clone(),
         },
     )
 }
 
 #[cfg(feature = "adapter")]
 fn try_adapter_inbound(_p: &InboundParam) -> Option<Arc<dyn InboundService>> {
-    // 假定 sb-adapter 提供如下接口（若命名不同，可在此桥接）
-    // sb_adapter::registry::inbound_create(p.kind.as_str(), &p.listen, p.port)
-    None // placeholder until sb-adapter is available
+    None
 }
 #[cfg(not(feature = "adapter"))]
 fn try_adapter_inbound(_p: &InboundParam) -> Option<Arc<dyn InboundService>> {
@@ -77,19 +81,29 @@ fn try_adapter_outbound(_p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>
 #[cfg(all(feature = "scaffold", feature = "router"))]
 fn try_scaffold_inbound(
     p: &InboundParam,
-    _engine: crate::routing::engine::Engine<'_>,
+    engine: crate::routing::engine::Engine<'_>,
     br: &Bridge,
 ) -> Option<Arc<dyn InboundService>> {
     if p.kind == "socks" {
         use crate::inbound::socks5::Socks5;
-        let srv = Socks5::new(p.listen.clone(), p.port).with_bridge(Arc::new(br.clone()));
+        let srv = Socks5::new(p.listen.clone(), p.port)
+            .with_engine(engine.clone_as_static())
+            .with_bridge(Arc::new(br.clone()));
         return Some(Arc::new(srv));
     } else if p.kind == "http" {
         use crate::inbound::http_connect::HttpConnect;
-        let mut srv = HttpConnect::new(p.listen.clone(), p.port).with_bridge(Arc::new(br.clone()));
+        let mut srv = HttpConnect::new(p.listen.clone(), p.port)
+            .with_engine(engine.clone_as_static())
+            .with_bridge(Arc::new(br.clone()))
+            .with_sniff(p.sniff);
         if let Some(c) = &p.basic_auth {
             srv = srv.with_basic_auth(c.username.clone(), c.password.clone());
         }
+        return Some(Arc::new(srv));
+    } else if p.kind == "tun" {
+        // Basic TUN inbound (scaffold); enhanced implementation lives in sb-adapters
+        use crate::inbound::tun::TunInboundService;
+        let srv = TunInboundService::new().with_sniff(p.sniff);
         return Some(Arc::new(srv));
     }
     None
@@ -141,6 +155,74 @@ fn try_scaffold_outbound(p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>
             u,
             pw,
         )));
+    } else if p.kind == "ssh" {
+        #[cfg(feature = "out_ssh")]
+        {
+            use crate::adapter::OutboundConnector as Oc;
+            use crate::outbound::crypto_types::{HostPort, OutboundTcp};
+            use crate::outbound::ssh_stub::{SshConfig, SshOutbound};
+            use async_trait::async_trait;
+
+            #[derive(Clone)]
+            struct SshOc {
+                inner: std::sync::Arc<SshOutbound>,
+            }
+
+            impl std::fmt::Debug for SshOc {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.debug_struct("SshOc").field("inner", &"<ssh-outbound>").finish()
+                }
+            }
+            #[async_trait]
+            impl Oc for SshOc {
+                async fn connect(
+                    &self,
+                    host: &str,
+                    port: u16,
+                ) -> std::io::Result<tokio::net::TcpStream> {
+                    let hp = HostPort::new(host.to_string(), port);
+                    self.inner.connect(&hp).await
+                }
+            }
+
+            let (u, pw) = p
+                .credentials
+                .as_ref()
+                .map(|c| (c.username.clone(), c.password.clone()))
+                .unwrap_or((None, None));
+            let server = p.server.clone().unwrap_or_default();
+            let port = p.port.unwrap_or(22);
+            let using_key = p.ssh_private_key.is_some();
+            let has_auth = u.is_some() && (pw.is_some() || using_key);
+            if server.is_empty() || !has_auth {
+                return None;
+            }
+            let cfg = SshConfig {
+                server,
+                port,
+                username: u.unwrap_or_default(),
+                password: if using_key { None } else { pw },
+                private_key: p.ssh_private_key.clone(),
+                private_key_passphrase: p.ssh_private_key_passphrase.clone(),
+                host_key_verification: p.ssh_host_key_verification.unwrap_or(true),
+                compression: false,
+                keepalive_interval: Some(30),
+                connect_timeout: Some(10),
+                connection_pool_size: Some(2),
+                known_hosts_path: p.ssh_known_hosts_path.clone(),
+            };
+            match SshOutbound::new(cfg) {
+                Ok(inner) => return Some(Arc::new(SshOc { inner: std::sync::Arc::new(inner) })),
+                Err(e) => {
+                    tracing::warn!(target: "sb_core::adapter", error = %e, "ssh outbound init failed; fallback");
+                    return None;
+                }
+            }
+        }
+        #[cfg(not(feature = "out_ssh"))]
+        {
+            return None;
+        }
     }
     None
 }

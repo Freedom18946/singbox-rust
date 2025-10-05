@@ -5,6 +5,8 @@
 use super::*;
 use crate::error::{SbError, SbResult};
 use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use std::io::{Read, Cursor};
 use std::path::Path;
 
@@ -553,6 +555,164 @@ fn read_string(cursor: &mut Cursor<Vec<u8>>) -> SbResult<String> {
     })
 }
 
+// ----------------------------
+// Binary writer (SRS compiler)
+// ----------------------------
+
+/// Write a rule-set to binary .srs file
+pub async fn write_to_file(path: &Path, rules: &[Rule], version: u8) -> SbResult<()> {
+    let mut payload = Vec::new();
+    write_rules(&mut payload, rules)?;
+
+    // Compress with zlib
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    use std::io::Write as _;
+    encoder.write_all(&payload).map_err(|e| SbError::Config {
+        code: crate::error::IssueCode::InvalidType,
+        ptr: "/rule_set/binary/compression".to_string(),
+        msg: format!("failed to compress rule-set: {}", e),
+        hint: None,
+    })?;
+    let compressed = encoder.finish().map_err(|e| SbError::Config {
+        code: crate::error::IssueCode::InvalidType,
+        ptr: "/rule_set/binary/compression".to_string(),
+        msg: format!("failed to finish compression: {}", e),
+        hint: None,
+    })?;
+
+    // Build header + compressed body
+    let mut out = Vec::with_capacity(4 + compressed.len());
+    out.extend_from_slice(&SRS_MAGIC);
+    out.push(version);
+    out.extend_from_slice(&compressed);
+
+    tokio::fs::write(path, out).await.map_err(|e| SbError::Config {
+        code: crate::error::IssueCode::MissingRequired,
+        ptr: "/rule_set/output".to_string(),
+        msg: format!("failed to write rule-set file: {}", e),
+        hint: None,
+    })
+}
+
+fn write_rules(buf: &mut Vec<u8>, rules: &[Rule]) -> SbResult<()> {
+    write_varint(buf, rules.len() as u64);
+    for r in rules {
+        write_rule(buf, r)?;
+    }
+    Ok(())
+}
+
+fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
+    match rule {
+        Rule::Default(r) => {
+            buf.push(0); // rule_type default
+            buf.push(if r.invert { 1 } else { 0 });
+
+            // Compute item count
+            let mut count = 0u64;
+            // domain (derived from r.domain exact only)
+            count += r.domain.iter().filter(|d| matches!(d, super::DomainRule::Exact(_))).count() as u64;
+            count += r.domain_suffix.len() as u64;
+            count += r.domain_keyword.len() as u64;
+            count += r.domain_regex.len() as u64;
+            count += r.ip_cidr.len() as u64;
+            count += r.port.len() as u64;
+            count += r.port_range.len() as u64;
+            count += r.source_ip_cidr.len() as u64;
+            count += r.network.len() as u64;
+            count += r.process_name.len() as u64;
+            count += r.process_path.len() as u64;
+            write_varint(buf, count);
+
+            // Emit items in deterministic order
+            for d in &r.domain {
+                if let super::DomainRule::Exact(s) = d {
+                    buf.push(0);
+                    write_string(buf, s);
+                }
+            }
+            for s in &r.domain_suffix {
+                buf.push(1);
+                write_string(buf, s);
+            }
+            for s in &r.domain_keyword {
+                buf.push(2);
+                write_string(buf, s);
+            }
+            for s in &r.domain_regex {
+                buf.push(3);
+                write_string(buf, s);
+            }
+            for c in &r.ip_cidr {
+                buf.push(4);
+                let s = match c.addr {
+                    std::net::IpAddr::V4(v4) => format!("{}/{}", v4, c.prefix_len),
+                    std::net::IpAddr::V6(v6) => format!("{}/{}", v6, c.prefix_len),
+                };
+                write_string(buf, &s);
+            }
+            for p in &r.port {
+                buf.push(5);
+                write_u16(buf, *p);
+            }
+            for (a, b) in &r.port_range {
+                buf.push(6);
+                write_u16(buf, *a);
+                write_u16(buf, *b);
+            }
+            for c in &r.source_ip_cidr {
+                buf.push(7);
+                let s = match c.addr {
+                    std::net::IpAddr::V4(v4) => format!("{}/{}", v4, c.prefix_len),
+                    std::net::IpAddr::V6(v6) => format!("{}/{}", v6, c.prefix_len),
+                };
+                write_string(buf, &s);
+            }
+            for n in &r.network {
+                buf.push(8);
+                write_string(buf, n);
+            }
+            for s in &r.process_name {
+                buf.push(9);
+                write_string(buf, s);
+            }
+            for s in &r.process_path {
+                buf.push(10);
+                write_string(buf, s);
+            }
+        }
+        Rule::Logical(r) => {
+            buf.push(1); // logical
+            buf.push(match r.mode { super::LogicalMode::And => 0, super::LogicalMode::Or => 1 });
+            buf.push(if r.invert { 1 } else { 0 });
+            write_varint(buf, r.rules.len() as u64);
+            for sub in &r.rules {
+                write_rule(buf, sub)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn write_varint(buf: &mut Vec<u8>, mut v: u64) {
+    loop {
+        let mut b = (v & 0x7F) as u8;
+        v >>= 7;
+        if v != 0 { b |= 0x80; }
+        buf.push(b);
+        if v == 0 { break; }
+    }
+}
+
+fn write_string(buf: &mut Vec<u8>, s: &str) {
+    write_varint(buf, s.len() as u64);
+    buf.extend_from_slice(s.as_bytes());
+}
+
+fn write_u16(buf: &mut Vec<u8>, v: u16) {
+    buf.extend_from_slice(&v.to_be_bytes());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,5 +734,45 @@ mod tests {
         let data = vec![0x53, 0x52]; // Only 2 bytes
         let result = parse_binary(&data, RuleSetSource::Local(PathBuf::from("/test")));
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn roundtrip_json_to_srs_and_back() {
+        // Build a simple JSON ruleset
+        let json = serde_json::json!({
+            "version": 3,
+            "rules": [
+                {
+                    "domain": ["example.com"],
+                    "domain_suffix": ["rust-lang.org"],
+                    "port": [443],
+                    "network": ["tcp"]
+                }
+            ]
+        });
+        let data = serde_json::to_vec(&json).unwrap();
+        let rs = parse_json(&data, RuleSetSource::Local(PathBuf::from("/json"))).unwrap();
+
+        // Write to temp .srs
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rt.srs");
+        write_to_file(&path, &rs.rules, RULESET_VERSION_CURRENT).await.unwrap();
+
+        // Read back
+        let rs2 = tokio::fs::read(&path).await.unwrap();
+        let parsed = parse_binary(&rs2, RuleSetSource::Local(path.clone())).unwrap();
+        assert_eq!(parsed.rules.len(), 1);
+        match &parsed.rules[0] {
+            Rule::Default(r) => {
+                // Check domain exact present
+                assert!(r.domain.iter().any(|d| matches!(d, DomainRule::Exact(s) if s == "example.com")));
+                // Check suffix present
+                assert!(r.domain_suffix.iter().any(|s| s == "rust-lang.org"));
+                // Check port and network
+                assert!(r.port.iter().any(|p| *p == 443));
+                assert!(r.network.iter().any(|n| n == "tcp"));
+            }
+            _ => panic!("expected default rule"),
+        }
     }
 }

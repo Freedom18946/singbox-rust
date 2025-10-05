@@ -189,6 +189,7 @@ async fn handle(
         &router,
         ExplainQuery {
             sni,
+            host: None,
             ip,
             port,
             proto,

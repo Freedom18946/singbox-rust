@@ -19,7 +19,6 @@ pub struct DoqTransport {
     server_name: String,
     timeout: Duration,
     endpoint: quinn::Endpoint,
-    client_cfg: quinn::ClientConfig,
     conn: tokio::sync::Mutex<Option<quinn::Connection>>,
 }
 
@@ -61,7 +60,6 @@ impl DoqTransport {
             server_name,
             timeout,
             endpoint,
-            client_cfg,
             conn: tokio::sync::Mutex::new(None),
         })
     }

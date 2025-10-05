@@ -230,7 +230,7 @@ impl Default for ProcessMatcher {
 #[cfg(target_os = "linux")]
 mod linux;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "native-process-match")))]
 mod macos;
 
 #[cfg(target_os = "macos")]

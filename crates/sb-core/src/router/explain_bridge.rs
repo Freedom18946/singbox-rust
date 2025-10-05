@@ -39,7 +39,8 @@ pub fn run(router: &RouterHandle, q: ExplainQuery) -> ExplainResult {
     }
 
     // 4) suffix / exact（域名规则）
-    if let Some(sni) = &q.sni {
+    let host_pref = q.host.as_ref().or(q.sni.as_ref());
+    if let Some(sni) = host_pref {
         if let Some((sk, sw, st, swhy)) = try_suffix(&idx, sni) {
             let rid = crate::router::rule_id::rule_sha8(sk, sw, st);
             trace.push("suffix", rid.clone(), true, swhy.clone());
@@ -99,7 +100,8 @@ fn try_override<'a>(
     idx: &'a ExplainIndex,
     q: &'a super::explain::ExplainQuery,
 ) -> Option<(&'static str, &'a serde_json::Value, &'a str, String)> {
-    if let Some(sni) = &q.sni {
+    let host_pref = q.host.as_ref().or(q.sni.as_ref());
+    if let Some(sni) = host_pref {
         if let Some((r, why)) = idx.match_override_exact(sni) {
             return Some(wrap("override_exact", r.to.as_str(), &r.when, why));
         }

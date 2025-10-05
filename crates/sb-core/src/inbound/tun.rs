@@ -46,6 +46,7 @@ impl Default for TunConfig {
 pub struct TunInboundService {
     config: TunConfig,
     shutdown: Arc<AtomicBool>,
+    sniff_enabled: bool,
 }
 
 impl Default for TunInboundService {
@@ -65,6 +66,7 @@ impl TunInboundService {
         Self {
             config,
             shutdown: Arc::new(AtomicBool::new(false)),
+            sniff_enabled: false,
         }
     }
 
@@ -76,6 +78,12 @@ impl TunInboundService {
     /// Request graceful shutdown
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::Relaxed);
+    }
+
+    /// Enable/disable inbound sniff features (TLS SNI, QUIC ALPN, etc.)
+    pub fn with_sniff(mut self, enabled: bool) -> Self {
+        self.sniff_enabled = enabled;
+        self
     }
 
     /// Check if shutdown has been requested
@@ -116,7 +124,13 @@ impl TunInboundService {
             // In a real implementation, this would:
             // 1. Read packet from TUN device
             // 2. Parse IP headers and extract destination
-            // 3. Query router for routing decision
+            // 3. Optionally peek first bytes of streams for TLS SNI/HTTP Host when sniff is enabled
+            if self.sniff_enabled {
+                // Placeholder: demonstrate that sniff path can be activated safely
+                // Real implementation should extract SNI/ALPN from TCP ClientHello packets.
+                tracing::trace!("tun: sniff enabled (stage1) - no-op");
+            }
+            // 4. Query router for routing decision
             // 4. Forward packet to appropriate outbound
             // 5. Handle return traffic
 

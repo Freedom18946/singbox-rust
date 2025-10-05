@@ -1,0 +1,50 @@
+```console
+$ cargo run --bin merge -- -c app/tests/cli/fixtures/merge_a.json -c app/tests/cli/fixtures/merge_b.json target/merged.out.json
+"[..]/target/merged.out.json"
+
+$ cat target/merged.out.json
+{
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1:1080",
+      "tag": "socks-a"
+    },
+    {
+      "type": "http",
+      "listen": "127.0.0.1:8080",
+      "tag": "http-b"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "socks",
+      "server": "127.0.0.1",
+      "port": 1081,
+      "tag": "socks-up"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain": {
+          "exact": [
+            "example.com"
+          ]
+        },
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "rust-lang.org"
+        ],
+        "outbound": "socks-up"
+      }
+    ]
+  }
+}
+```

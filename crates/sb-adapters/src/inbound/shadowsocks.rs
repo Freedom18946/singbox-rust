@@ -3,14 +3,11 @@
 
 use anyhow::{anyhow, Result};
 use hkdf::Hkdf;
-use hmac::digest::core_api::CoreWrapper;
-use hmac::digest::typenum::U20;
-use hmac::digest::FixedOutput;
-use sha1::Sha1Core;
-type HkdfSha1 = Hkdf<CoreWrapper<Sha1Core, U20>>;
+use sha1::Sha1;
+type HkdfSha1 = Hkdf<Sha1>;
 
 use aes_gcm::{aead::{Aead, Payload}, Aes256Gcm, KeyInit, Nonce as AesNonce};
-use chacha20poly1305::{ChaCha20Poly1305, KeyInit as ChaKeyInit, Nonce as ChaNonce};
+use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
 
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -211,7 +208,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
 }
 
 async fn handle_conn(
-    cfg: &ShadowsocksInboundConfig,
+    _cfg: &ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
     master_key: &[u8],
     cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
@@ -229,7 +226,7 @@ async fn handle_conn(
     // Step 3: router decision
     let mut decision = RDecision::Direct;
     if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx { domain: Some(&host).cloned(), ip: None, transport_udp: false, port: Some(port), process_name: None, process_path: None };
+        let ctx = RouteCtx { domain: Some(&host), ip: None, transport_udp: false, port: Some(port), process_name: None, process_path: None };
         let d = eng.decide(&ctx);
         if matches!(d, RDecision::Reject) { return Err(anyhow!("ss: rejected by rules")); }
         decision = d;
@@ -242,7 +239,7 @@ async fn handle_conn(
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("ss".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if let Some(pool) = reg.pools.get(&name) {
+                if reg.pools.contains_key(&name) {
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
@@ -287,11 +284,12 @@ async fn handle_conn(
     // Step 4: server salt + data plane
     let ssalt = {
         let mut s = vec![0u8; cipher.salt_len()];
-        fastrand::fill(&mut s);
+        use rand::Rng;
+        rand::thread_rng().fill(&mut s[..]);
         s
     };
     let s_subkey = hkdf_subkey(master_key, &ssalt);
-    let mut s_write_nonce: u64 = 0;
+    let s_write_nonce: u64 = 0;
 
     // Send server salt first
     cli.write_all(&ssalt).await?;
@@ -330,4 +328,3 @@ async fn handle_conn(
     tokio::join!(cu, uc);
     Ok(())
 }
-

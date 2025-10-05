@@ -72,6 +72,12 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [profile.dev]
 opt-level = 1
 
+[profile.release]
+# Maximize runtime performance and cross-crate optimization
+opt-level = 3         # highest codegen optimization
+lto = "fat"           # link-time optimization across crates
+codegen-units = 1     # single codegen unit for better inlining
+
 # 说明：
 # - 统一常用 crates 的版本，减少 features/版本不一致导致的编译报错
 # - 其它依赖请在各子 crate 内单独声明（避免 workspace 可选特性的限制）

@@ -142,13 +142,14 @@ async fn handle_conn(
     let request = decrypt_request(&security, &request_key, &encrypted_request)?;
 
     // Step 3: Parse request
-    let (target_host, target_port, request_security) = parse_vmess_request(&request)?;
+    let (target_host, target_port, _request_security) = parse_vmess_request(&request)?;
 
     debug!(%peer, host=%target_host, port=%target_port, "vmess: parsed target");
 
     // Step 4: Send response tag
     let response_key = generate_response_key(&cfg.uuid);
     let response_tag = generate_response_tag(&request_key, &response_key)?;
+    debug_assert_eq!(response_tag.len(), RESPONSE_TAG_LEN);
     cli.write_all(&response_tag).await?;
 
     // Step 5: Router decision

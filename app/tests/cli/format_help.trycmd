@@ -1,0 +1,12 @@
+```console
+$ cargo run --bin format -- --help
+[..]format[..]
+
+Usage: format[..]
+
+Options:
+  -c, --config <CONFIG>[
+  -C, --config-directory <CONFIG_DIRECTORY>[
+  -w, --write[
+  -h, --help[..]Print help
+```

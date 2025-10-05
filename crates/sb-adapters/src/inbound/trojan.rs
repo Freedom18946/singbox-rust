@@ -10,7 +10,7 @@ use anyhow::{anyhow, Result};
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5, ConnectOpts,
 };
-use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
+use sb_core::outbound::{registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -153,7 +153,7 @@ async fn handle_conn(
         RDecision::Proxy(Some(name)) => {
             let sel = PoolSelector::new("trojan".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if let Some(pool) = reg.pools.get(&name) {
+                if reg.pools.contains_key(&name) {
                     if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
@@ -199,4 +199,3 @@ async fn handle_conn(
     let _ = tokio::io::copy_bidirectional(tls, &mut upstream).await;
     Ok(())
 }
-

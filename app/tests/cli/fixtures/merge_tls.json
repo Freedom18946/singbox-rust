@@ -1,0 +1,15 @@
+{
+  "outbounds": [
+    {
+      "type": "http",
+      "name": "proxy",
+      "tls": {
+        "certificate_path": "app/tests/cli/fixtures/pems/cert.pem",
+        "key_path": "app/tests/cli/fixtures/pems/key.pem",
+        "ech": {
+          "config_path": "app/tests/cli/fixtures/pems/ech.txt"
+        }
+      }
+    }
+  ]
+}

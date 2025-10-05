@@ -16,6 +16,8 @@ pub mod json_bridge;
 pub mod process_router;
 pub mod rules;
 pub mod runtime;
+/// Protocol sniffing (stage 1: no-op stubs)
+pub mod sniff;
 // R13：导出 analyze（离线分析，不影响运行路径）
 pub mod analyze;
 // R15：可选试验模块

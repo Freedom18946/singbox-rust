@@ -1,0 +1,11 @@
+```console
+$ cargo run --bin merge -- -c app/tests/cli/fixtures/merge_tls.json target/merged.inline.json
+"[..]/target/merged.inline.json"
+
+$ cat target/merged.inline.json
+{
+[..]"certificate":[..]"TEST-CERT"[..]
+[..]"key":[..]"TEST-KEY"[..]
+[..]"ech"[..]"config":[..]"TEST-ECH-CONFIG"[..]
+}
+```

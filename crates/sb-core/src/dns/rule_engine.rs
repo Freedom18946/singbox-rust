@@ -8,7 +8,6 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use super::{DnsAnswer, DnsUpstream, RecordType};

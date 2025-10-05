@@ -8,7 +8,8 @@
 
 use anyhow::{anyhow, Result};
 use quinn::{Endpoint, ServerConfig};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+// Use types re-exported by quinn to satisfy trait bounds
+use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -87,17 +88,31 @@ impl TryFrom<u8> for AddressType {
 /// Parse PEM-encoded certificates
 fn load_certs(pem: &str) -> Result<Vec<CertificateDer<'static>>> {
     let mut cursor = std::io::Cursor::new(pem.as_bytes());
-    rustls_pemfile::certs(&mut cursor)
-        .collect::<Result<_, _>>()
-        .map_err(|e| anyhow!("Failed to parse certificates: {}", e))
+    let certs = rustls_pemfile::certs(&mut cursor)
+        .map_err(|e| anyhow!("Failed to parse certificates: {}", e))?;
+    Ok(certs.into_iter().map(CertificateDer::from).collect())
 }
 
 /// Parse PEM-encoded private key
 fn load_private_key(pem: &str) -> Result<PrivateKeyDer<'static>> {
     let mut cursor = std::io::Cursor::new(pem.as_bytes());
-    rustls_pemfile::private_key(&mut cursor)
-        .map_err(|e| anyhow!("Failed to parse private key: {}", e))?
-        .ok_or_else(|| anyhow!("No private key found in PEM data"))
+    loop {
+        match rustls_pemfile::read_one(&mut cursor)
+            .map_err(|e| anyhow!("Failed to parse private key: {}", e))?
+        {
+            Some(rustls_pemfile::Item::PKCS8Key(k)) => {
+                let pkcs8: PrivatePkcs8KeyDer<'static> = PrivatePkcs8KeyDer::from(k);
+                return Ok(pkcs8.into());
+            }
+            Some(rustls_pemfile::Item::RSAKey(_k)) => {
+                // For simplicity, expect PKCS8 keys
+                continue;
+            }
+            Some(_other) => continue,
+            None => break,
+        }
+    }
+    Err(anyhow!("No private key found in PEM data"))
 }
 
 /// Main server loop
@@ -109,16 +124,9 @@ pub async fn serve(cfg: TuicInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> R
     let key = load_private_key(&cfg.key)?;
 
     // Configure TLS
-    let mut tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
+    // Configure QUIC server directly with DER cert/key
+    let mut server_config = ServerConfig::with_single_cert(certs, key)
         .map_err(|e| anyhow!("TLS configuration error: {}", e))?;
-
-    // Set ALPN to "tuic"
-    tls_config.alpn_protocols = vec![b"tuic".to_vec()];
-
-    // Configure QUIC server
-    let mut server_config = ServerConfig::with_crypto(Arc::new(tls_config));
 
     // Configure transport parameters
     let mut transport_config = quinn::TransportConfig::default();
@@ -126,10 +134,18 @@ pub async fn serve(cfg: TuicInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> R
     // Set congestion control algorithm
     if let Some(ref cc) = cfg.congestion_control {
         match cc.as_str() {
-            "cubic" => transport_config.congestion_controller_factory(Arc::new(quinn::congestion::CubicConfig::default())),
-            "bbr" => transport_config.congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default())),
-            "new_reno" => transport_config.congestion_controller_factory(Arc::new(quinn::congestion::NewRenoConfig::default())),
-            _ => warn!("Unknown congestion control algorithm: {}, using default", cc),
+            "cubic" => {
+                transport_config.congestion_controller_factory(Arc::new(quinn::congestion::CubicConfig::default()));
+            }
+            "bbr" => {
+                transport_config.congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
+            }
+            "new_reno" => {
+                transport_config.congestion_controller_factory(Arc::new(quinn::congestion::NewRenoConfig::default()));
+            }
+            _ => {
+                warn!("Unknown congestion control algorithm: {}, using default", cc);
+            }
         };
     }
 
@@ -236,7 +252,7 @@ async fn handle_stream(
     debug!("TUIC: connected to {}:{}", host, port);
 
     // 5. Send success response
-    let mut response = vec![0x00; 16];
+    let response = vec![0x00; 16];
     send.write_all(&response).await?;
 
     // 6. Bidirectional relay

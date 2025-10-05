@@ -204,6 +204,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "vless" => crate::ir::OutboundType::Vless,
                 "vmess" => crate::ir::OutboundType::Vmess,
                 "trojan" => crate::ir::OutboundType::Trojan,
+                "ssh" => crate::ir::OutboundType::Ssh,
                 _ => crate::ir::OutboundType::Direct,
             };
             let mut ob = crate::ir::OutboundIR {
@@ -268,7 +269,49 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 tls_sni: o.get("tls_sni").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 tls_alpn: o.get("tls_alpn").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 password: o.get("password").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                ssh_private_key: None,
+                ssh_private_key_path: None,
+                ssh_private_key_passphrase: None,
+                ssh_host_key_verification: None,
+                ssh_known_hosts_path: None,
             };
+
+            // Fallback: allow top-level username/password for ssh/http/socks
+            if ob.credentials.is_none() {
+                let top_user = o.get("username").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let top_pass = o.get("password").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if top_user.is_some() || top_pass.is_some() {
+                    ob.credentials = Some(Credentials {
+                        username: top_user,
+                        password: top_pass,
+                        username_env: None,
+                        password_env: None,
+                    });
+                }
+            }
+
+            // SSH specific optional fields
+            if matches!(ob.ty, crate::ir::OutboundType::Ssh) {
+                ob.ssh_private_key = o
+                    .get("private_key")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                ob.ssh_private_key_path = o
+                    .get("private_key_path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                ob.ssh_private_key_passphrase = o
+                    .get("private_key_passphrase")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                ob.ssh_host_key_verification = o
+                    .get("host_key_verification")
+                    .and_then(|v| v.as_bool());
+                ob.ssh_known_hosts_path = o
+                    .get("known_hosts_path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+            }
 
             // Backward-compat: allow nested sections `ws`, `h2`, `tls` as objects
             if let Some(ws) = o.get("ws").and_then(|v| v.as_object()) {

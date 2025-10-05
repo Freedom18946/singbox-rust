@@ -1,4 +1,4 @@
-Sing-Box Parity Matrix (Baseline v1.12.4; CLI synced 1.13 alpha)
+Sing-Box Parity Matrix (Baseline v1.12.4)
 
 Status legend
 - Full: Feature implemented and usable end-to-end
@@ -8,9 +8,9 @@ Status legend
 - N/A: Not applicable to Rust implementation or intentionally out-of-scope
 
 Baseline
-- Upstream: SagerNet/sing-box v1.12.4 stable; latest pre-release v1.13.0-alpha.19 (2025-10-05). Source snapshot vendored under `upstream-sing-box/`.
-- Local: this repository (modules under `crates/`), config schema v2 (`crates/sb-config/src/validator/v2_schema.json`).
-- Goal: CLI behavior and config surface compatible with upstream; functional parity prioritized by user impact.
+- Upstream: SagerNet/sing-box v1.12.4 (docs and code fetched under `upstream-sing-box/`)
+- Local: this repository (modules under `crates/`), config schema v2 (`crates/sb-config/src/validator/v2_schema.json`)
+- Goal: CLI behavior and config surface compatible with upstream; functional parity prioritized by user impact
 
 Inbounds
 - anytls: Missing
@@ -57,7 +57,7 @@ Routing
 - Rule-Set (SRS): Full (local + remote fetch/cache; crates/sb-core/src/router/ruleset)
 - Hot reload: Full (crates/sb-core/src/router/hot_reload*.rs)
 - Explain/preview: Full (feature-gated; crates/sb-core/src/router/explain*)
-- Sniff (TLS SNI/HTTP/QUIC): Partial (TLS SNI + HTTP Host extraction utilities implemented; TUN inbound uses SNI on 443 and Host on 80; router conditions wiring next)
+- Sniff (TLS SNI/HTTP/QUIC): Missing (not present in inbounds or router conditions)
 - Process-based routing: Partial (process router exists; platform coverage improving; crates/sb-core/src/router/process_router.rs, crates/sb-platform)
 
 DNS
@@ -96,15 +96,15 @@ CLI Parity
 - version: Full (app/src/bin/version.rs and sb-version)
 - format (config): Full (app/src/bin/format.rs)
 - route (explain/trace helper): Full (app/src/bin/route.rs)
-- rule-set: Full (validate/info/format/decompile/match/compile/convert/merge/upgrade implemented; app/src/bin/ruleset.rs)
+- rule-set: Partial (validate/info/format present; decompile and match added; compile/convert/merge/upgrade still missing; app/src/bin/ruleset.rs)
 - generate reality-keypair: Full (app/src/cli/generate.rs)
 - generate ech-keypair: Full (app/src/cli/generate.rs)
 - generate tls/vapid/wireguard: Partial (tls-keypair implemented; vapid/wireguard missing)
-- geosite commands: Partial (list/lookup/export; supports binary geosite.db; matcher subcommand pending)
-- geoip commands: Full (list/lookup/export supported with MMDB sing-geoip; text DB fallback supported)
-- tools fetch/http3/connect: Full (connect TCP/UDP + fetch HTTP/HTTPS implemented; http3 supported via reqwest `http3` feature when built with `tools_http3`)
-- tools synctime: Partial (offset query implemented)
-- merge (configs): Partial (app/src/bin/merge.rs; deep-merge + TLS/ECH/SSH path inlining; keep aligning edge cases with upstream)
+- geosite commands: Missing
+- geoip commands: Missing
+- tools fetch/http3/connect: Partial (connect TCP/UDP + fetch HTTP/HTTPS implemented; http3 pending)
+ - tools synctime: Partial (offset query implemented)
+- merge (configs): Partial (app/src/bin/merge.rs; deep-merge + TLS/ECH/SSH path inlining; more edge-cases pending)
 
 Platform/Adapters
 - TUN: Full (macOS/Linux paths; enhanced variants present)
@@ -115,18 +115,3 @@ Platform/Adapters
 Notes
 - Upstream features tagged `with_utls`, `with_wireguard`, or Tailscale-specific components are Go-ecosystem centric; Rust equivalents require separate libraries and may be prioritized based on demand.
 - Some modules exist in both `sb-core` and `sb-adapters`; convergence is required to avoid duplication and ensure uniform configuration and behavior.
-- Extra helper added: `geosite matcher` subcommand (reads domains from stdin and reports first match) to aid debugging.
-
-New items observed upstream (1.13 alpha CLI snapshot)
-- New subcommands present upstream and tracked for parity:
-  - `generate vapid`, `generate wireguard`
-  - `rule-set convert`, `rule-set decompile`, `rule-set merge`, `rule-set upgrade` (now implemented here)
-  - `geosite list/export/lookup/matcher`, `geoip list/export/lookup`
-  - `tools fetch-http3`
-
-Verification summary (2025-10-05)
-- Upstream latest: v1.13.0-alpha.19 (GitHub releases); stable baseline v1.12.4.
-- Upstream CLI inventory verified from vendored `upstream-sing-box/cmd/sing-box/*`.
-- Local CLI inventory verified from `app/src/bin` and `app/src/cli`.
-- Rule-Set CLI parity upgraded to Full (compile/convert/merge/upgrade now implemented).
-- SSH outbound wired via IR + adapter bridge (password/private-key auth).

@@ -463,7 +463,7 @@ impl tokio::io::AsyncWrite for DohStreamWrapper {
 impl tokio::io::AsyncRead for DohStreamWrapper {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         if self.read_pos < self.read_buf.len() {

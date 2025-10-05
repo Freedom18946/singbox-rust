@@ -1,0 +1,11 @@
+```console
+$ cargo run --bin merge -- --help
+[..]merge[..]
+
+Usage: merge [OPTIONS] <OUTPUT_PATH>
+
+Options:
+  -c, --config <CONFIG>[
+  -C, --config-directory <CONFIG_DIRECTORY>[
+  -h, --help[..]Print help
+```

@@ -96,7 +96,8 @@ impl Supervisor {
         let engine = Engine::from_ir(&ir).context("failed to build engine from initial config")?;
         let engine_static = engine.clone_as_static();
 
-        let bridge = Bridge::from_ir(&ir).context("failed to build bridge from initial config")?;
+        // Build bridge via adapter bridge to enable routed inbounds/outbounds
+        let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone());
 
         let initial_state = State::new(engine_static, bridge, ir);
         let state = Arc::new(RwLock::new(initial_state));
@@ -287,7 +288,8 @@ impl Supervisor {
         let new_engine = Engine::from_ir(&new_ir).context("failed to build new engine")?;
         let new_engine_static = new_engine.clone_as_static();
 
-        let new_bridge = Bridge::from_ir(&new_ir).context("failed to build new bridge")?;
+        // Build new bridge via adapter bridge
+        let new_bridge = crate::adapter::bridge::build_bridge(&new_ir, new_engine.clone());
 
         // Start new inbound listeners first
         let new_bridge_arc = Arc::new(new_bridge);

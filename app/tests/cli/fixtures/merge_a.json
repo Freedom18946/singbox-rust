@@ -1,0 +1,9 @@
+{
+  "inbounds": [
+    { "type": "socks", "listen": "127.0.0.1:1080", "tag": "socks-a" }
+  ],
+  "outbounds": [
+    { "type": "direct", "tag": "direct" }
+  ],
+  "route": { "rules": [ { "domain": { "exact": ["example.com"] }, "outbound": "direct" } ] }
+}

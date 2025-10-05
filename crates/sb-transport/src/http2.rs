@@ -133,7 +133,7 @@ impl Http2Dialer {
 
         // Try to get existing connection from pool
         if self.config.enable_pooling {
-            let mut pool = self.pool.lock().await;
+            let pool = self.pool.lock().await;
             if let Some(send_request) = pool.get(&key) {
                 // Try to use the existing connection
                 // Note: h2 SendRequest doesn't have is_ready(), we'll try to clone and use it

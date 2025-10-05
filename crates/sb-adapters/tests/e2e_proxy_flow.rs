@@ -16,7 +16,7 @@ use std::thread;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
 use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
@@ -69,13 +69,22 @@ fn build_direct_proxy() -> (Arc<OutboundRegistryHandle>, Arc<RouterHandle>) {
 
 /// Start SOCKS5 inbound server
 async fn start_socks5_inbound(
-    listen: SocketAddr,
     router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
-) {
-    let (_tx, rx) = mpsc::channel(1);
+) -> SocketAddr {
+    let (_stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+
+    // Bind to get a free port
+    let temp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = temp_listener.local_addr().unwrap();
+    drop(temp_listener); // Release it immediately
+
+    // Wait for OS to release the port
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     let cfg = SocksInboundConfig {
-        listen,
+        listen: addr,
         udp_bind: None,
         router,
         outbounds,
@@ -83,32 +92,45 @@ async fn start_socks5_inbound(
     };
 
     tokio::spawn(async move {
-        let _ = serve_socks(cfg, rx, None).await;
+        let _ = serve_socks(cfg, stop_rx, Some(ready_tx)).await;
     });
 
-    // Wait for server to be ready
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Wait for server to signal it's ready
+    ready_rx.await.expect("Server failed to start");
+
+    addr
 }
 
 /// Start HTTP CONNECT inbound server
 async fn start_http_inbound(
-    listen: SocketAddr,
     router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
-) {
-    let (_tx, rx) = mpsc::channel(1);
+) -> SocketAddr {
+    let (_stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+
+    // Bind to get a free port
+    let temp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = temp_listener.local_addr().unwrap();
+    drop(temp_listener); // Release it immediately
+
+    // Wait for OS to release the port
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     let cfg = HttpProxyConfig {
-        listen,
+        listen: addr,
         router,
         outbounds,
     };
 
     tokio::spawn(async move {
-        let _ = serve_http(cfg, rx, None).await;
+        let _ = serve_http(cfg, stop_rx, Some(ready_tx)).await;
     });
 
-    // Wait for server to be ready
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Wait for server to signal it's ready
+    ready_rx.await.expect("Server failed to start");
+
+    addr
 }
 
 /// Test SOCKS5 inbound → direct outbound flow
@@ -121,12 +143,7 @@ async fn test_e2e_socks5_to_direct() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start SOCKS5 inbound
-    let socks_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let listener = tokio::net::TcpListener::bind(socks_addr).await.unwrap();
-    let socks_addr = listener.local_addr().unwrap();
-    drop(listener);
-
-    start_socks5_inbound(socks_addr, router, outbounds).await;
+    let socks_addr = start_socks5_inbound(router, outbounds).await;
 
     // Connect via SOCKS5 client
     let mut stream = TcpStream::connect(socks_addr).await.unwrap();
@@ -188,12 +205,7 @@ async fn test_e2e_http_to_direct() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start HTTP inbound
-    let http_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let listener = tokio::net::TcpListener::bind(http_addr).await.unwrap();
-    let http_addr = listener.local_addr().unwrap();
-    drop(listener);
-
-    start_http_inbound(http_addr, router, outbounds).await;
+    let http_addr = start_http_inbound(router, outbounds).await;
 
     // Connect via HTTP CONNECT client
     let mut stream = TcpStream::connect(http_addr).await.unwrap();
@@ -245,12 +257,7 @@ async fn test_e2e_large_data_transfer() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start SOCKS5 inbound
-    let socks_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let listener = tokio::net::TcpListener::bind(socks_addr).await.unwrap();
-    let socks_addr = listener.local_addr().unwrap();
-    drop(listener);
-
-    start_socks5_inbound(socks_addr, router, outbounds).await;
+    let socks_addr = start_socks5_inbound(router, outbounds).await;
 
     // Connect and do SOCKS5 handshake
     let mut stream = TcpStream::connect(socks_addr).await.unwrap();
@@ -295,12 +302,7 @@ async fn test_e2e_concurrent_connections() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start SOCKS5 inbound
-    let socks_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let listener = tokio::net::TcpListener::bind(socks_addr).await.unwrap();
-    let socks_addr = listener.local_addr().unwrap();
-    drop(listener);
-
-    start_socks5_inbound(socks_addr, router, outbounds).await;
+    let socks_addr = start_socks5_inbound(router, outbounds).await;
 
     // Create 10 concurrent connections
     let mut handles = vec![];

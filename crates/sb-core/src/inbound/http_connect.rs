@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::adapter::Bridge;
 use crate::adapter::InboundService;
 use crate::log::Level;
+// Stage 2: HTTP Host sniff is inline; stream sniff stubs live in router::sniff
 
 #[cfg(feature = "router")]
 use crate::routing::engine::{Engine, Input};
@@ -99,6 +100,7 @@ async fn handle(
     eng: &Engine<'_>,
     br: &Bridge,
     auth: Option<(String, String)>,
+    sniff_enabled: bool,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(&mut cli);
 
@@ -136,11 +138,32 @@ async fn handle(
     }
 
     // 4) 路由决策
-    let (host, port) = if let Some((h, p)) = target.rsplit_once(':') {
+    let (mut host, mut port) = if let Some((h, p)) = target.rsplit_once(':') {
         (h.to_string(), p.parse::<u16>().unwrap_or(0))
     } else {
         (target.to_string(), 0)
     };
+
+    // Stage 2: HTTP Host sniff (prefer Host header if enabled)
+    if sniff_enabled {
+        if let Some((_k, v)) = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Host"))
+            .cloned()
+        {
+            // If Host header includes :port, prefer that port too
+            if let Some((h, p)) = v.rsplit_once(':') {
+                if let Ok(pp) = p.parse::<u16>() {
+                    host = h.to_string();
+                    port = if port == 0 { pp } else { port };
+                } else {
+                    host = v;
+                }
+            } else {
+                host = v;
+            }
+        }
+    }
 
     let d = eng.decide(
         &Input {
@@ -191,6 +214,7 @@ pub struct HttpConnect {
     bridge: Option<Arc<Bridge>>,
     basic_user: Option<String>,
     basic_pass: Option<String>,
+    sniff_enabled: bool,
 }
 
 impl HttpConnect {
@@ -202,6 +226,7 @@ impl HttpConnect {
             bridge: None,
             basic_user: None,
             basic_pass: None,
+            sniff_enabled: false,
         }
     }
 
@@ -223,6 +248,12 @@ impl HttpConnect {
         self
     }
 
+    /// Enable/disable inbound sniff features
+    pub fn with_sniff(mut self, enabled: bool) -> Self {
+        self.sniff_enabled = enabled;
+        self
+    }
+
     pub fn with_basic_auth(mut self, user: Option<String>, pass: Option<String>) -> Self {
         self.basic_user = user;
         self.basic_pass = pass;
@@ -240,8 +271,9 @@ impl HttpConnect {
                     let eng_clone = eng.clone();
                     let br_clone = br.clone();
                     let auth = self.basic_user.clone().zip(self.basic_pass.clone());
+                    let sniff = self.sniff_enabled;
                     tokio::spawn(async move {
-                        if let Err(e) = handle(socket, &eng_clone, &br_clone, auth).await {
+                        if let Err(e) = handle(socket, &eng_clone, &br_clone, auth, sniff).await {
                             tracing::debug!(target: "sb_core::inbound::http_connect", error = %e, "connection handler failed");
                         }
                     });

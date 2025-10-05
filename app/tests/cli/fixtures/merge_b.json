@@ -1,0 +1,9 @@
+{
+  "inbounds": [
+    { "type": "http", "listen": "127.0.0.1:8080", "tag": "http-b" }
+  ],
+  "outbounds": [
+    { "type": "socks", "server": "127.0.0.1", "port": 1081, "tag": "socks-up" }
+  ],
+  "route": { "rules": [ { "domain_suffix": ["rust-lang.org"], "outbound": "socks-up" } ] }
+}
