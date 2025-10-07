@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use serde_json::{from_str, Value};
 use std::io::Write;
 use std::process::Command;

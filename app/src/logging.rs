@@ -315,8 +315,10 @@ pub fn flush_logs_sync() {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_logging_config_from_env() {
         // Test JSON format
         std::env::set_var("SB_LOG_FORMAT", "json");
@@ -336,6 +338,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_logging_config_defaults() {
         // Ensure no environment variables are set
         std::env::remove_var("SB_LOG_FORMAT");

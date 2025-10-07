@@ -664,8 +664,10 @@ async fn circuit_breaker_trips_and_blocks() {
 
 #[tokio::test]
 async fn admin_auth_bearer_token() {
-    std::env::set_var("SB_ADMIN_TOKEN", "test-secret-token");
-    std::env::remove_var("SB_ADMIN_NO_AUTH");
+    #[cfg(feature = "admin_debug")]
+    {
+        std::env::set_var("SB_ADMIN_TOKEN", "test-secret-token");
+        std::env::remove_var("SB_ADMIN_NO_AUTH");
 
     let mut headers = std::collections::HashMap::new();
 
@@ -690,19 +692,23 @@ async fn admin_auth_bearer_token() {
     assert!(!result3);
 
     std::env::remove_var("SB_ADMIN_TOKEN");
+    }
 }
 
 #[tokio::test]
 async fn admin_auth_disabled() {
-    std::env::set_var("SB_ADMIN_NO_AUTH", "1");
+    #[cfg(feature = "admin_debug")]
+    {
+        std::env::set_var("SB_ADMIN_NO_AUTH", "1");
 
-    let headers = std::collections::HashMap::new();
+        let headers = std::collections::HashMap::new();
 
-    // Even without token, should pass when auth is disabled
-    let result = app::admin_debug::http::check_auth(&headers, "/__health");
-    assert!(result);
+        // Even without token, should pass when auth is disabled
+        let result = app::admin_debug::http::check_auth(&headers, "/__health");
+        assert!(result);
 
-    std::env::remove_var("SB_ADMIN_NO_AUTH");
+        std::env::remove_var("SB_ADMIN_NO_AUTH");
+    }
 }
 
 #[tokio::test]

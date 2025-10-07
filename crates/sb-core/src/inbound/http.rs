@@ -28,6 +28,8 @@ pub struct HttpConfig {
     pub username: Option<String>,
     /// Password for basic auth
     pub password: Option<String>,
+    /// Enable Host sniff to override CONNECT target
+    pub sniff_enabled: bool,
 }
 
 impl Default for HttpConfig {
@@ -38,6 +40,7 @@ impl Default for HttpConfig {
             auth_enabled: false,
             username: None,
             password: None,
+            sniff_enabled: false,
         }
     }
 }
@@ -146,22 +149,70 @@ impl HttpInboundService {
                 ));
             }
 
-            // Parse target host and port
-            let (host, port) = Self::parse_host_port(&target)?;
+            // Parse target host and port (initial)
+            let (mut host, mut port) = Self::parse_host_port(&target)?;
             info!("HTTP CONNECT: {} -> {}:{}", peer, host, port);
 
-            // Skip reading headers for simplicity (in production, should parse them)
-            let mut headers = String::new();
+            // Read and parse headers
+            let mut headers_raw = String::new();
+            let mut headers_list: Vec<(String, String)> = Vec::new();
             loop {
                 let mut line = String::new();
                 reader.read_line(&mut line).await?;
-                if line.trim().is_empty() {
-                    break;
+                let trimmed = line.trim().to_string();
+                if trimmed.is_empty() { break; }
+                headers_raw.push_str(&line);
+                if let Some((k, v)) = trimmed.split_once(':') {
+                    headers_list.push((k.trim().to_string(), v.trim().to_string()));
                 }
-                headers.push_str(&line);
             }
 
-            // Connect to target server
+            // Optional Basic authentication
+            if self.config.auth_enabled {
+                let mut ok = false;
+                for (k, v) in &headers_list {
+                    if k.eq_ignore_ascii_case("Proxy-Authorization") && v.starts_with("Basic ") {
+                        use base64::Engine as _;
+                        let b64 = v[6..].trim();
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                            if let Ok(text) = std::str::from_utf8(&bytes) {
+                                if let Some((u, p)) = text.split_once(':') {
+                                    let u_ok = self.config.username.as_deref().map(|s| s == u).unwrap_or(false);
+                                    let p_ok = self.config.password.as_deref().map(|s| s == p).unwrap_or(false);
+                                    if u_ok && p_ok { ok = true; break; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !ok {
+                    let response = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"singbox\"\r\nContent-Length: 0\r\n\r\n";
+                    client.write_all(response).await?;
+                    return Err(io::Error::new(io::ErrorKind::PermissionDenied, "proxy auth required"));
+                }
+            }
+
+            // If sniff enabled, prefer Host header for target override
+            if self.config.sniff_enabled {
+                if let Some((_, v)) = headers_list
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("Host"))
+                {
+                    if let Some((h, pstr)) = v.rsplit_once(':') {
+                        if let Ok(pp) = pstr.parse::<u16>() {
+                            host = h.to_string();
+                            // keep original port unless valid port provided in Host
+                            port = pp;
+                        } else {
+                            host = v.clone();
+                        }
+                    } else {
+                        host = v.clone();
+                    }
+                }
+            }
+
+            // Connect to target server (final host/port)
             let target_addr = format!("{}:{}", host, port);
             let mut target_stream = timeout(
                 Duration::from_millis(self.config.timeout_ms),

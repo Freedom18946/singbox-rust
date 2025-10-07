@@ -67,6 +67,7 @@ full    = [
     "subs_http",
     # 其它你需要的聚合开关...
 ]
+scaffold = ["sb-core/scaffold"]
 
 ## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
 [[bin]]
@@ -259,7 +260,7 @@ notify = { version = "6.1", optional = true }
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls","blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls","blocking","json"] }
 assert_cmd = { version = "2.0" }
 predicates = { version = "3.0" }
 trycmd = "0.15"
@@ -267,6 +268,9 @@ loom = "0.7"
 criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
+sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
+sb-adapters = { path = "../crates/sb-adapters" }
+serial_test = "2"
 
 [build-dependencies]
 chrono = { workspace = true }

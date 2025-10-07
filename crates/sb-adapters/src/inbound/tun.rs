@@ -246,6 +246,13 @@ impl TunInbound {
                                         Some(s) if !s.is_empty() => s.clone(),
                                         _ => format!("{}:{}", ip, port),
                                     };
+                                    // Heuristic ALPN: UDP:443 is likely QUIC → h3
+                                    let _sniff_alpn = if matches!(pkt.proto, sys_macos::L4::Udp) && port == 443 {
+                                        Some("h3".to_string())
+                                    } else { None };
+                                    if let Some(ref a) = _sniff_alpn {
+                                        tracing::debug!("tun sniff alpn={}", a);
+                                    }
                                     let route_ctx = RouteCtx {
                                         host: Some(&host_str),
                                         ip: Some(ip),

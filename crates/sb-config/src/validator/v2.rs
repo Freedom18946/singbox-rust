@@ -161,36 +161,67 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "socks" => crate::ir::InboundType::Socks,
                 "http" => crate::ir::InboundType::Http,
                 "tun" => crate::ir::InboundType::Tun,
+                "direct" => crate::ir::InboundType::Direct,
                 _ => crate::ir::InboundType::Socks,
             };
+            // Common fields
+            let listen = i
+                .get("listen")
+                .and_then(|v| v.as_str())
+                .unwrap_or("127.0.0.1")
+                .to_string();
+            let port = i.get("port").and_then(|v| v.as_u64()).unwrap_or(1080) as u16;
+            let sniff = i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false);
+            // Network selection: if network == "udp", set udp=true; if "tcp" or missing, false
+            let udp = if let Some(net) = i.get("network").and_then(|v| v.as_str()) {
+                net.eq_ignore_ascii_case("udp")
+            } else {
+                i.get("udp").and_then(|v| v.as_bool()).unwrap_or(false)
+            };
+            let basic_auth = i.get("basicAuth").map(|a| Credentials {
+                username: a
+                    .get("username")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                password: a
+                    .get("password")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                username_env: a
+                    .get("username_env")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                password_env: a
+                    .get("password_env")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
+
+            // Direct-only fields
+            let (override_host, override_port) = if matches!(ty, crate::ir::InboundType::Direct) {
+                let host = i
+                    .get("override_address")
+                    .or_else(|| i.get("override_host"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let port = i
+                    .get("override_port")
+                    .and_then(|v| v.as_u64())
+                    .map(|x| x as u16);
+                (host, port)
+            } else {
+                (None, None)
+            };
+
             ir.inbounds.push(crate::ir::InboundIR {
                 ty,
-                listen: i
-                    .get("listen")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("127.0.0.1")
-                    .to_string(),
-                port: i.get("port").and_then(|v| v.as_u64()).unwrap_or(1080) as u16,
-                sniff: i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false),
-                udp: i.get("udp").and_then(|v| v.as_bool()).unwrap_or(false),
-                basic_auth: i.get("basicAuth").map(|a| Credentials {
-                    username: a
-                        .get("username")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    password: a
-                        .get("password")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    username_env: a
-                        .get("username_env")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    password_env: a
-                        .get("password_env")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                }),
+                listen,
+                port,
+                sniff,
+                udp,
+                basic_auth,
+                override_host,
+                override_port,
             });
         }
     }
@@ -201,6 +232,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "http" => crate::ir::OutboundType::Http,
                 "socks" => crate::ir::OutboundType::Socks,
                 "block" => crate::ir::OutboundType::Block,
+                "shadowtls" => crate::ir::OutboundType::Shadowtls,
+                "hysteria2" => crate::ir::OutboundType::Hysteria2,
                 "vless" => crate::ir::OutboundType::Vless,
                 "vmess" => crate::ir::OutboundType::Vmess,
                 "trojan" => crate::ir::OutboundType::Trojan,

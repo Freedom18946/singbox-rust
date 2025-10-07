@@ -8,7 +8,12 @@ use crate::adapter::{Bridge, InboundService};
 use crate::log::{self, Level};
 
 #[cfg(feature = "router")]
-use crate::routing::engine::{Engine, Input};
+use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
+
+#[cfg(feature = "router")]
+type EngineX<'a> = RouterEngine<'a>;
+#[cfg(not(feature = "router"))]
+type EngineX<'a> = Engine;
 
 #[cfg(not(feature = "router"))]
 #[derive(Debug)]
@@ -27,7 +32,7 @@ impl Engine {
         Self { cfg }
     }
 
-    fn decide(&self, _input: Input, _fake_ip: bool) -> Decision {
+    fn decide(&self, _input: &Input, _fake_ip: bool) -> Decision {
         Decision {
             outbound: "direct".to_string(),
         }
@@ -63,7 +68,7 @@ impl Input {
     }
 }
 
-async fn handle_conn(mut cli: TcpStream, eng: &Engine<'_>, bridge: &Bridge) -> std::io::Result<()> {
+async fn handle_conn(mut cli: TcpStream, eng: &EngineX<'_>, bridge: &Bridge) -> std::io::Result<()> {
     // greeting
     let mut head = [0u8; 2];
     cli.read_exact(&mut head).await?;
@@ -122,15 +127,16 @@ async fn handle_conn(mut cli: TcpStream, eng: &Engine<'_>, bridge: &Bridge) -> s
     let port = u16::from_be_bytes(p);
 
     // 路由决策（默认 direct） → 解析命名出站
-    let d = eng.decide(
-        &Input {
-            host: &host,
-            port,
-            network: "tcp",
-            protocol: "socks",
-        },
-        false,
-    );
+    #[cfg(feature = "router")]
+    let d = {
+        let input = RouterInput { host: &host, port, network: "tcp", protocol: "socks", sniff_host: None, sniff_alpn: None };
+        eng.decide(&input, false)
+    };
+    #[cfg(not(feature = "router"))]
+    let d = {
+        let input = Input { host: host.clone(), port, network: "tcp".to_string(), protocol: "socks".to_string() };
+        eng.decide(&input, false)
+    };
     let out_name = d.outbound;
     let ob = bridge
         .find_outbound(&out_name)
@@ -165,7 +171,7 @@ pub struct Socks5 {
     listen: String,
     port: u16,
     #[cfg(feature = "router")]
-    engine: Option<Engine<'static>>,
+    engine: Option<EngineX<'static>>,
     #[cfg(not(feature = "router"))]
     engine: Option<Engine>,
     bridge: Option<Arc<Bridge>>,
@@ -182,7 +188,7 @@ impl Socks5 {
     }
 
     #[cfg(feature = "router")]
-    pub fn with_engine(mut self, eng: Engine<'static>) -> Self {
+    pub fn with_engine(mut self, eng: EngineX<'static>) -> Self {
         self.engine = Some(eng);
         self
     }
@@ -199,7 +205,7 @@ impl Socks5 {
         self
     }
 
-    async fn do_serve_async(&self, eng: Engine<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
+    async fn do_serve_async(&self, eng: EngineX<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
         let addr = format!("{}:{}", self.listen, self.port);
         let listener = TcpListener::bind(&addr).await?;
         log::log(Level::Info, "socks5 listening (async)", &[("addr", &addr)]);
@@ -230,14 +236,14 @@ impl InboundService for Socks5 {
         #[cfg(not(feature = "router"))]
         let eng = {
             let cfg = sb_config::ir::ConfigIR::default();
-            self.engine.clone().unwrap_or_else(|| Engine::new(cfg))
+            self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
 
         #[cfg(feature = "router")]
         let eng = {
             // For router feature, use Box::leak for static lifetime
             let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
-            self.engine.clone().unwrap_or_else(|| Engine::new(cfg))
+            self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
         let br = self
             .bridge

@@ -20,10 +20,14 @@ pub struct Decide {
 
 #[derive(Debug, Clone)]
 pub struct Input<'a> {
-    pub host: &'a str, // domain or ip string
+    pub host: &'a str, // domain or ip string (original target)
     pub port: u16,
     pub network: &'a str,  // "tcp"|"udp"
     pub protocol: &'a str, // "socks"|"http"|...
+    /// Optional sniffed host overriding the original host for routing purposes
+    pub sniff_host: Option<&'a str>,
+    /// Optional sniffed ALPN (e.g., "h2", "http/1.1", "h3")
+    pub sniff_alpn: Option<&'a str>,
 }
 
 pub struct Engine<'a> {
@@ -123,6 +127,7 @@ impl<'a> Engine<'a> {
         pushv!("port", &r.port, "port");
         pushv!("network", &r.network, "net");
         pushv!("protocol", &r.protocol, "proto");
+        pushv!("alpn", &r.alpn, "alpn");
         let canon = canonicalize_rule_text(
             &parts
                 .iter()
@@ -134,7 +139,7 @@ impl<'a> Engine<'a> {
 
     fn rule_matches(&self, inp: &Input, r: &RuleIR) -> (bool, Vec<Step>) {
         let mut steps = Vec::<Step>::new();
-        let host = inp.host;
+        let host = inp.sniff_host.unwrap_or(inp.host);
         let is_ip = Self::host_is_ip(host);
 
         // 正向维度
@@ -224,6 +229,20 @@ impl<'a> Engine<'a> {
                 return (false, steps);
             }
         }
+        if !r.alpn.is_empty() {
+            let m = match inp.sniff_alpn {
+                Some(a) => r.alpn.iter().any(|x| x.eq_ignore_ascii_case(a)),
+                None => false, // requires sniffed alpn present
+            };
+            steps.push(Step {
+                kind: "alpn".into(),
+                value: inp.sniff_alpn.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
 
         // 否定维度
         if !r.not_domain.is_empty() && is_ip.is_none() {
@@ -289,6 +308,20 @@ impl<'a> Engine<'a> {
             steps.push(Step {
                 kind: "not_protocol".into(),
                 value: inp.protocol.into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_alpn.is_empty() {
+            let n = match inp.sniff_alpn {
+                Some(a) => r.not_alpn.iter().any(|x| x.eq_ignore_ascii_case(a)),
+                None => false, // if no alpn, cannot exclude by not_alpn
+            };
+            steps.push(Step {
+                kind: "not_alpn".into(),
+                value: inp.sniff_alpn.unwrap_or("").into(),
                 matched: !n,
             });
             if n {
@@ -407,6 +440,8 @@ mod tests {
                 port: 443,
                 network: "tcp",
                 protocol: "socks",
+                sniff_host: None,
+                sniff_alpn: None,
             },
             false,
         );
@@ -417,6 +452,8 @@ mod tests {
                 port: 25,
                 network: "tcp",
                 protocol: "socks",
+                sniff_host: None,
+                sniff_alpn: None,
             },
             false,
         );

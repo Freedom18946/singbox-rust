@@ -117,15 +117,9 @@ mod tests {
     async fn test_circuit_breaker_allows_successful_requests() {
         let success_dialer = FnDialer::new(|_host, _port| {
             Box::pin(async move {
-                Ok(Box::new(
-                    tokio::net::TcpStream::connect("127.0.0.1:80")
-                        .await
-                        .unwrap_or_else(|_| {
-                            // Create a dummy stream for testing
-                            let (client, _server) = tokio::io::duplex(64);
-                            client
-                        }),
-                ) as IoStream)
+                // Create a dummy stream for testing
+                let (client, _server) = tokio::io::duplex(64);
+                Ok(Box::new(client) as IoStream)
             })
                 as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
         });

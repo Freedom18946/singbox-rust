@@ -37,6 +37,8 @@ fn rule_selects_named_outbound() {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,

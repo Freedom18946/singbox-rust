@@ -1,3 +1,4 @@
+#![cfg(feature = "admin_debug")]
 //! Contract tests for admin_debug schema, field order, and unified response envelope
 
 #[test]

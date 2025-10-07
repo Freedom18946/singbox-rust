@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use sb_core::net::Address;
 use sb_core::router::RequestMeta;
 use serial_test::serial;

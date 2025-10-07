@@ -188,6 +188,8 @@ fn outbound_scaffold_socks_and_http_connect() {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
         outbounds: vec![
             OutboundIR {
@@ -195,39 +197,20 @@ fn outbound_scaffold_socks_and_http_connect() {
                 name: Some("A".into()),
                 server: Some(socks_addr.ip().to_string()),
                 port: Some(socks_addr.port()),
-                udp: None,
-                members: None,
-                credentials: None,
-                uuid: None,
-                flow: None,
-                network: None,
-                packet_encoding: None,
+                ..Default::default()
             },
             OutboundIR {
                 ty: OutboundType::Http,
                 name: Some("B".into()),
                 server: Some(http_addr.ip().to_string()),
                 port: Some(http_addr.port()),
-                udp: None,
-                members: None,
-                credentials: None,
-                uuid: None,
-                flow: None,
-                network: None,
-                packet_encoding: None,
+                ..Default::default()
             },
             OutboundIR {
                 ty: OutboundType::Selector,
                 name: Some("S".into()),
-                server: None,
-                port: None,
-                udp: None,
                 members: Some(vec!["A".into(), "B".into()]),
-                credentials: None,
-                uuid: None,
-                flow: None,
-                network: None,
-                packet_encoding: None,
+                ..Default::default()
             },
         ],
         route: RouteIR {

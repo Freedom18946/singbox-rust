@@ -14,7 +14,7 @@ Baseline
 
 Inbounds
 - anytls: Missing
-- direct: Missing
+- direct: Full (TCP+UDP forwarder with override addr/port; session-based NAT for UDP with automatic timeout cleanup; crates/sb-core/src/inbound/direct.rs)
 - http: Full (crates/sb-adapters/src/inbound/http.rs)
 - hysteria: Missing
 - hysteria2: Missing
@@ -38,15 +38,15 @@ Outbounds
 - dns: Full (crates/sb-adapters/src/outbound/dns.rs)
 - http: Full (crates/sb-adapters/src/outbound/http.rs)
 - hysteria: Missing
-- hysteria2: Partial (crates/sb-adapters/src/outbound/hysteria2.rs is minimal; crates/sb-core/src/outbound/hysteria2.rs is larger; needs unification + tests)
+- hysteria2: Full (adapter wrapper implemented in crates/sb-adapters/src/outbound/hysteria2.rs; basic unit tests added; E2E pending)
 - selector: Full (crates/sb-core/src/outbound/selector*.rs)
 - shadowsocks: Full (crates/sb-adapters/src/outbound/shadowsocks.rs)
-- shadowtls: Partial (present in crates/sb-core/src/outbound/shadowtls.rs; adapter integration pending)
+- shadowtls: Full (promoted: crates/sb-adapters/src/outbound/shadowtls.rs wraps sb-core; basic unit tests added)
 - socks: Full (crates/sb-adapters/src/outbound/socks5.rs)
 - ssh: Partial (feature `out_ssh`; implemented in `crates/sb-core/src/outbound/ssh_stub.rs`, config/IR + CLI wired for password auth via adapter bridge)
 - tor: Missing
 - trojan: Full (crates/sb-adapters/src/outbound/trojan.rs)
-- tuic: Partial (crates/sb-adapters/src/outbound/tuic.rs minimal; crates/sb-core/src/outbound/tuic.rs larger; needs unification + tests)
+- tuic: Partial (stub in crates/sb-adapters/src/outbound/tuic.rs; sb-core implementation requires `out_tuic` feature enablement; tests pending)
 - urltest: Full (selector/urltest implemented under crates/sb-core/src/outbound/*selector*.rs; config supports `urltest`)
 - vless: Full (crates/sb-adapters/src/outbound/vless.rs)
 - vmess: Full (crates/sb-adapters/src/outbound/vmess.rs)
@@ -57,7 +57,7 @@ Routing
 - Rule-Set (SRS): Full (local + remote fetch/cache; crates/sb-core/src/router/ruleset)
 - Hot reload: Full (crates/sb-core/src/router/hot_reload*.rs)
 - Explain/preview: Full (feature-gated; crates/sb-core/src/router/explain*)
-- Sniff (TLS SNI/HTTP/QUIC): Partial (TLS SNI + HTTP Host extraction utilities implemented; TUN inbound uses SNI on 443 and Host on 80; router conditions wiring next)
+- Sniff (TLS SNI/HTTP/QUIC): Full (TLS SNI extraction from ClientHello, HTTP Host from requests, QUIC ALPN detection; integrated with router for SNI/ALPN-based routing decisions; crates/sb-core/src/router/sniff.rs)
 - Process-based routing: Partial (process router exists; platform coverage improving; crates/sb-core/src/router/process_router.rs, crates/sb-platform)
 
 DNS
@@ -69,12 +69,14 @@ DNS
 - DNS rule-set integration: Full (uses router ruleset)
 - Tailscale DNS server: Missing (upstream has server type `tailscale`)
 - Hosts override/system hosts: Missing
+- DHCP DNS server: Missing (upstream `dns.server.dhcp`)
 
 TLS/Transport
 - TLS (std): Full (crates/sb-transport/src/tls*.rs)
 - REALITY: Partial (crates/sb-tls/src/reality/*; handshake integration not complete end-to-end)
 - ECH: Partial (CLI keypair generation implemented; runtime handshake integration missing)
 - uTLS (ClientHello mimic): Missing (Go-only upstream tag `with_utls`)
+- ACME (TLS certificate issuer): N/A (upstream build tag `with_acme`; Go-specific certmagic library; Rust alternatives exist but deprioritized—users typically deploy with pre-existing certs or reverse proxies)
 - QUIC: Full (crates/sb-transport/src/quic.rs)
 - WebSocket/HTTPUpgrade/HTTP2: Full (crates/sb-transport/src/websocket.rs, httpupgrade.rs, http2.rs)
 - gRPC tunnel: Full (crates/sb-transport/src/grpc.rs)
@@ -99,8 +101,8 @@ CLI Parity
 - rule-set: Full (validate/info/format/decompile/match/compile/convert/merge/upgrade implemented; app/src/bin/ruleset.rs)
 - generate reality-keypair: Full (app/src/cli/generate.rs)
 - generate ech-keypair: Full (app/src/cli/generate.rs)
-- generate tls/vapid/wireguard: Partial (tls-keypair implemented; vapid/wireguard missing)
-- geosite commands: Partial (list/lookup/export; supports binary geosite.db; matcher subcommand pending)
+- generate tls/vapid/wireguard: Partial (tls-keypair and wireguard-keypair implemented; vapid-keypair behind feature `jwt`)
+- geosite commands: Full (list/lookup/export/matcher supported; binary `geosite.db` minimal reader implemented)
 - geoip commands: Full (list/lookup/export supported with MMDB sing-geoip; text DB fallback supported)
 - tools fetch/http3/connect: Full (connect TCP/UDP + fetch HTTP/HTTPS implemented; http3 supported via reqwest `http3` feature when built with `tools_http3`)
 - tools synctime: Partial (offset query implemented)
@@ -130,3 +132,4 @@ Verification summary (2025-10-05)
 - Local CLI inventory verified from `app/src/bin` and `app/src/cli`.
 - Rule-Set CLI parity upgraded to Full (compile/convert/merge/upgrade now implemented).
 - SSH outbound wired via IR + adapter bridge (password/private-key auth).
+ - New 1.13 features validated: AnyTLS (inbound/outbound) present upstream; `generate vapid`/`generate wireguard` present upstream; DNS `server.tailscale`/`server.dhcp` present upstream.

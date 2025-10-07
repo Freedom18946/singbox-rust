@@ -210,6 +210,8 @@ mod tests {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }];
 
         let new = vec![InboundIR {
@@ -219,6 +221,8 @@ mod tests {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }];
 
         let diff = diff_inbounds(&old, &new);

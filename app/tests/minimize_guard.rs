@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use assert_cmd::Command;
 use predicates::str::contains;
 use serde_json::Value;

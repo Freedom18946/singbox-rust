@@ -28,6 +28,11 @@ pub enum GenerateCommands {
         #[arg(long = "days", default_value_t = 365u32)]
         days: u32,
     },
+    /// Generate VAPID (WebPush) P-256 keypair
+    #[cfg(feature = "jwt")]
+    VapidKeypair,
+    /// Generate WireGuard X25519 keypair
+    WireguardKeypair,
 }
 
 pub fn run(args: GenerateArgs) -> Result<()> {
@@ -35,6 +40,9 @@ pub fn run(args: GenerateArgs) -> Result<()> {
         GenerateCommands::RealityKeypair => generate_reality_keypair(),
         GenerateCommands::EchKeypair => generate_ech_keypair(),
         GenerateCommands::TlsKeypair { cn, days } => generate_tls_keypair(cn, days),
+        #[cfg(feature = "jwt")]
+        GenerateCommands::VapidKeypair => generate_vapid_keypair(),
+        GenerateCommands::WireguardKeypair => generate_wireguard_keypair(),
     }
 }
 
@@ -112,6 +120,39 @@ fn generate_tls_keypair(cn: String, days: u32) -> Result<()> {
 
     println!("Certificate:\n{}", cert_pem.trim_end());
     println!("PrivateKey:\n{}", key_pem.trim_end());
+    Ok(())
+}
+
+/// Generate VAPID (P-256) keypair
+#[cfg(feature = "jwt")]
+fn generate_vapid_keypair() -> Result<()> {
+    use p256::ecdsa::SigningKey;
+    #[allow(unused_imports)]
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use rand::rngs::OsRng;
+
+    let sk = SigningKey::random(&mut OsRng);
+    let vk = sk.verifying_key();
+    let pk_bytes = vk.to_encoded_point(false).as_bytes().to_vec();
+    let sk_bytes = sk.to_bytes().to_vec();
+
+    // VAPID commonly uses base64url without padding
+    let b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    println!("PrivateKey: {}", base64::Engine::encode(&b64url, &sk_bytes));
+    println!("PublicKey: {}", base64::Engine::encode(&b64url, &pk_bytes));
+    Ok(())
+}
+
+/// Generate WireGuard X25519 keypair (base64 like `wg genkey`/`wg pubkey`)
+fn generate_wireguard_keypair() -> Result<()> {
+    use rand::rngs::OsRng;
+    use x25519_dalek::{PublicKey, StaticSecret};
+
+    let sk = StaticSecret::random_from_rng(OsRng);
+    let pk = PublicKey::from(&sk);
+    let b64 = &base64::engine::general_purpose::STANDARD;
+    println!("PrivateKey: {}", base64::Engine::encode(b64, sk.to_bytes()));
+    println!("PublicKey: {}", base64::Engine::encode(b64, pk.as_bytes()));
     Ok(())
 }
 

@@ -88,6 +88,8 @@ impl ExplainEngine {
                 port,
                 network: "tcp",
                 protocol: "socks",
+                sniff_host: None,
+                sniff_alpn: None,
             },
             with_trace,
         );

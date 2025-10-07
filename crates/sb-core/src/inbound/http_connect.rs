@@ -11,7 +11,13 @@ use crate::log::Level;
 // Stage 2: HTTP Host sniff is inline; stream sniff stubs live in router::sniff
 
 #[cfg(feature = "router")]
-use crate::routing::engine::{Engine, Input};
+use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
+
+// Unified engine alias with lifetime for both router and stub modes
+#[cfg(feature = "router")]
+type EngineX<'a> = RouterEngine<'a>;
+#[cfg(not(feature = "router"))]
+type EngineX<'a> = Engine;
 
 #[cfg(not(feature = "router"))]
 #[derive(Debug)]
@@ -30,7 +36,7 @@ impl Engine {
         Self { cfg }
     }
 
-    fn decide(&self, _input: Input, _fake_ip: bool) -> Decision {
+    fn decide(&self, _input: &Input, _fake_ip: bool) -> Decision {
         Decision {
             outbound: "direct".to_string(),
         }
@@ -97,7 +103,7 @@ fn basic_ok(headers: &[(String, String)], user: &str, pass: &str) -> bool {
 
 async fn handle(
     mut cli: TcpStream,
-    eng: &Engine<'_>,
+    eng: &EngineX<'_>,
     br: &Bridge,
     auth: Option<(String, String)>,
     sniff_enabled: bool,
@@ -165,15 +171,17 @@ async fn handle(
         }
     }
 
-    let d = eng.decide(
-        &Input {
-            host: &host,
-            port,
-            network: "tcp",
-            protocol: "http-connect",
-        },
-        false,
-    );
+    // Build route input and decide
+    #[cfg(feature = "router")]
+    let d = {
+        let input = RouterInput { host: &host, port, network: "tcp", protocol: "http-connect", sniff_host: Some(&host), sniff_alpn: None };
+        eng.decide(&input, false)
+    };
+    #[cfg(not(feature = "router"))]
+    let d = {
+        let input = Input { host: host.clone(), port, network: "tcp".to_string(), protocol: "http-connect".to_string() };
+        eng.decide(&input, false)
+    };
     let out_name = d.outbound;
     let ob = br
         .find_outbound(&out_name)
@@ -208,7 +216,7 @@ pub struct HttpConnect {
     listen: String,
     port: u16,
     #[cfg(feature = "router")]
-    engine: Option<Engine<'static>>,
+    engine: Option<EngineX<'static>>,
     #[cfg(not(feature = "router"))]
     engine: Option<Engine>,
     bridge: Option<Arc<Bridge>>,
@@ -231,7 +239,7 @@ impl HttpConnect {
     }
 
     #[cfg(feature = "router")]
-    pub fn with_engine(mut self, eng: Engine<'static>) -> Self {
+    pub fn with_engine(mut self, eng: EngineX<'static>) -> Self {
         self.engine = Some(eng);
         self
     }
@@ -260,7 +268,7 @@ impl HttpConnect {
         self
     }
 
-    async fn do_serve_async(&self, eng: Engine<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
+    async fn do_serve_async(&self, eng: EngineX<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
         let addr = format!("{}:{}", self.listen, self.port);
         let listener = TcpListener::bind(&addr).await?;
         crate::log::log(Level::Info, "http-connect listening (async)", &[("addr", &addr)]);
@@ -293,14 +301,14 @@ impl InboundService for HttpConnect {
         #[cfg(not(feature = "router"))]
         let eng = {
             let cfg = sb_config::ir::ConfigIR::default();
-            self.engine.clone().unwrap_or_else(|| Engine::new(cfg))
+            self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
 
         #[cfg(feature = "router")]
         let eng = {
             // For router feature, use Box::leak for static lifetime
             let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
-            self.engine.clone().unwrap_or_else(|| Engine::new(cfg))
+            self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
         let br = self
             .bridge

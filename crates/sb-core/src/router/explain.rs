@@ -12,6 +12,8 @@ pub struct ExplainQuery {
     pub port: u16,
     pub proto: &'static str,
     pub transport: Option<&'static str>,
+    /// Optional ALPN hint (e.g., h2, http/1.1, h3)
+    pub alpn: Option<String>,
 }
 
 #[derive(Clone, Debug)]

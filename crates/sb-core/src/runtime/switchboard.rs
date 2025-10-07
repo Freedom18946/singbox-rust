@@ -148,19 +148,25 @@ impl OutboundSwitchboard {
         // Initialize the connector
         let connector_clone = connector.clone();
         let connector_name = connector.name();
-        tokio::spawn(async move {
+        let fut = async move {
             if let Err(e) = connector_clone.start().await {
-                error!(
-                    "Failed to initialize outbound connector '{}': {}",
-                    connector_name, e
-                );
+                error!("Failed to initialize outbound connector '{}': {}", connector_name, e);
             } else {
-                info!(
-                    "Outbound connector '{}' initialized successfully",
-                    connector_name
-                );
+                info!("Outbound connector '{}' initialized successfully", connector_name);
             }
-        });
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(h) => {
+                h.spawn(fut);
+            }
+            Err(_) => {
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Runtime::new() {
+                        rt.block_on(fut);
+                    }
+                });
+            }
+        }
 
         self.registry.insert(name.clone(), connector);
         info!("Registered outbound connector: '{}'", name);
@@ -177,19 +183,25 @@ impl OutboundSwitchboard {
         // Initialize the connector
         let connector_clone = connector.clone();
         let connector_name = connector.name();
-        tokio::spawn(async move {
+        let fut = async move {
             if let Err(e) = connector_clone.start().await {
-                error!(
-                    "Failed to initialize default outbound connector '{}': {}",
-                    connector_name, e
-                );
+                error!("Failed to initialize default outbound connector '{}': {}", connector_name, e);
             } else {
-                info!(
-                    "Default outbound connector '{}' initialized successfully",
-                    connector_name
-                );
+                info!("Default outbound connector '{}' initialized successfully", connector_name);
             }
-        });
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(h) => {
+                h.spawn(fut);
+            }
+            Err(_) => {
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Runtime::new() {
+                        rt.block_on(fut);
+                    }
+                });
+            }
+        }
 
         self.default_connector = Some(connector);
         info!("Set default outbound connector");

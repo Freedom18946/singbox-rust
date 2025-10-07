@@ -66,10 +66,10 @@ mod tests {
             let ctr = ctr.clone();
             move |_h, _p| {
                 ctr.fetch_add(1, Ordering::Relaxed);
-                async {
+                Box::pin(async {
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     Err(DialError::Other("x".into()))
-                }
+                })
             }
         });
         let ld = LimitedDialer::new(d, 1, 10);
@@ -81,9 +81,11 @@ mod tests {
 
     #[tokio::test]
     async fn queued_then_ok() {
-        let d = FnDialer::new(|_h, _p| async {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            Err(DialError::Other("x".into()))
+        let d = FnDialer::new(|_h, _p| {
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Err(DialError::Other("x".into()))
+            })
         });
         let ld = LimitedDialer::new(d, 1, 50);
         let _ = ld.connect("h", 1); // in-flight
@@ -93,9 +95,11 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_releases_queue() {
-        let d = FnDialer::new(|_h, _p| async {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            Err(DialError::Other("x".into()))
+        let d = FnDialer::new(|_h, _p| {
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                Err(DialError::Other("x".into()))
+            })
         });
         let ld = LimitedDialer::new(d, 1, 50);
         let h = tokio::spawn({

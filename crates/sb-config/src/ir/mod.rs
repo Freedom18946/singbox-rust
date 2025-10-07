@@ -22,9 +22,12 @@ pub struct Credentials {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InboundType {
+    /// HTTP CONNECT proxy
     Socks,
     Http,
     Tun,
+    /// Direct TCP/UDP forwarder (override destination)
+    Direct,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -35,6 +38,8 @@ pub enum OutboundType {
     Socks,
     Block,
     Selector,
+    Shadowtls,
+    Hysteria2,
     Vless,
     Vmess,
     Trojan,
@@ -53,6 +58,12 @@ pub struct InboundIR {
     /// HTTP 入站的 Basic 认证（可选）
     #[serde(default)]
     pub basic_auth: Option<Credentials>,
+    /// For direct inbound: override destination host (required for production use)
+    #[serde(default)]
+    pub override_host: Option<String>,
+    /// For direct inbound: override destination port
+    #[serde(default)]
+    pub override_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -135,6 +146,9 @@ pub struct RuleIR {
     pub network: Vec<String>, // "tcp" | "udp"
     #[serde(default)]
     pub protocol: Vec<String>, // "http" | "socks"
+    /// Sniffed ALPN protocols (e.g., "h2", "http/1.1", "h3")
+    #[serde(default)]
+    pub alpn: Vec<String>,
     #[serde(default)]
     pub source: Vec<String>,
     #[serde(default)]
@@ -158,6 +172,9 @@ pub struct RuleIR {
     pub not_network: Vec<String>,
     #[serde(default)]
     pub not_protocol: Vec<String>,
+    /// Exclude connections whose sniffed ALPN is in this list
+    #[serde(default)]
+    pub not_alpn: Vec<String>,
     // 目的出站
     #[serde(default)]
     pub outbound: Option<String>,
@@ -189,6 +206,8 @@ impl OutboundIR {
             OutboundType::Socks => "socks",
             OutboundType::Block => "block",
             OutboundType::Selector => "selector",
+            OutboundType::Shadowtls => "shadowtls",
+            OutboundType::Hysteria2 => "hysteria2",
             OutboundType::Vless => "vless",
             OutboundType::Vmess => "vmess",
             OutboundType::Trojan => "trojan",

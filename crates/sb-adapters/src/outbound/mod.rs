@@ -38,6 +38,8 @@ pub mod dns;
 pub mod http;
 #[cfg(feature = "adapter-hysteria2")]
 pub mod hysteria2;
+#[cfg(feature = "adapter-shadowtls")]
+pub mod shadowtls;
 #[cfg(feature = "adapter-shadowsocks")]
 pub mod shadowsocks;
 #[cfg(feature = "adapter-socks")]
@@ -177,11 +179,52 @@ impl TryFrom<&sb_config::ir::OutboundIR> for vless::VlessConnector {
 impl TryFrom<&sb_config::ir::OutboundIR> for hysteria2::Hysteria2Connector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Hysteria2 {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected hysteria2 outbound type",
+            ));
+        }
+
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "hysteria2 requires server address",
+            ))?
+            .clone();
+        let port = ir.port.unwrap_or(443);
+        let password = ir
+            .password
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "hysteria2 requires password",
+            ))?
+            .clone();
+
+        let cfg = crate::outbound::hysteria2::Hysteria2AdapterConfig {
+            server,
+            port,
+            password,
+            skip_cert_verify: false,
+            sni: ir.tls_sni.clone(),
+            alpn: ir.tls_alpn.as_ref().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()),
+            congestion_control: None,
+            up_mbps: None,
+            down_mbps: None,
+            obfs: None,
+            salamander: None,
+        };
+
+        Ok(Self::new(cfg))
     }
 }
+
+// ShadowTLS outbound: IR mapping is not available yet because OutboundType
+// does not include `shadowtls` in sb-config IR. Adapter can still be used
+// programmatically.
 
 #[cfg(feature = "adapter-dns")]
 impl TryFrom<&sb_config::ir::OutboundIR> for dns::DnsConnector {
@@ -200,5 +243,37 @@ impl TryFrom<&sb_config::ir::OutboundIR> for tuic::TuicConnector {
     fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
         // For now, create default connector - real implementation would parse IR
         Ok(Self::default())
+    }
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
+    type Error = crate::error::AdapterError;
+
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Shadowtls {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected shadowtls outbound type",
+            ));
+        }
+
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "shadowtls requires server address",
+            ))?
+            .clone();
+        let port = ir.port.unwrap_or(443);
+        let cfg = crate::outbound::shadowtls::ShadowTlsAdapterConfig {
+            server,
+            port,
+            sni: ir.tls_sni.clone().unwrap_or_else(|| "example.com".to_string()),
+            alpn: ir.tls_alpn.clone(),
+            skip_cert_verify: false,
+        };
+        Ok(Self::new(cfg))
     }
 }

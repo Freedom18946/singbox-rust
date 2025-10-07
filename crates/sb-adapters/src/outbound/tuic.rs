@@ -1,18 +1,21 @@
-//! TUIC protocol outbound connector implementation
+//! TUIC outbound adapter
 //!
-//! TUIC (The Ultimate Internet Connector) is a QUIC-based proxy protocol
-//! that provides UDP relay and multiplexing features with authentication
-//! and session management.
+//! Wraps the sb-core TUIC implementation to provide the OutboundConnector interface.
 
 use crate::outbound::prelude::*;
 
-/// TUIC outbound connector
-#[derive(Debug, Clone)]
-#[derive(Default)]
+/// TUIC outbound connector adapter
+#[derive(Debug, Clone, Default)]
 pub struct TuicConnector {
-    _config: Option<()>, // Placeholder
+    _config: Option<()>,
 }
 
+impl TuicConnector {
+    /// Create new TUIC connector (stub - requires out_tuic feature in sb-core)
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 #[async_trait]
 impl OutboundConnector for TuicConnector {
@@ -22,11 +25,13 @@ impl OutboundConnector for TuicConnector {
 
     async fn start(&self) -> Result<()> {
         Err(AdapterError::NotImplemented {
-            what: "adapter-tuic",
+            what: "TUIC requires out_tuic feature in sb-core",
         })
     }
 
     async fn dial(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        Err(AdapterError::NotImplemented { what: "TUIC dial" })
+        Err(AdapterError::NotImplemented {
+            what: "TUIC requires out_tuic feature in sb-core",
+        })
     }
 }

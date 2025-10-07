@@ -46,20 +46,10 @@ fn admin_health_and_explain() {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
-        outbounds: vec![OutboundIR {
-            ty: OutboundType::Direct,
-            name: Some("direct".into()),
-            server: None,
-            port: None,
-            udp: None,
-            members: None,
-            credentials: None,
-            uuid: None,
-            flow: None,
-            network: None,
-            packet_encoding: None,
-        }],
+        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -70,13 +60,14 @@ fn admin_health_and_explain() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng.clone());
     let h = spawn_admin(&admin, eng.clone_as_static(), std::sync::Arc::new(br), None, None, None).unwrap();
     // wait a bit
     thread::sleep(Duration::from_millis(80));
 
     // GET /healthz
     let resp = get(&admin, "/healthz");
+    eprintln!("healthz resp=\n{}", resp);
     assert!(resp.contains("200 OK"));
     assert!(resp.contains("\"ok\":true"));
 

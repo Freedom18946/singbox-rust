@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use assert_cmd::Command;
 use std::io::Write;
 use std::net::TcpListener;

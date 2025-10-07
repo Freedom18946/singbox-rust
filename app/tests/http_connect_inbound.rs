@@ -75,7 +75,8 @@ fn http_connect(
             blank = 0;
         }
         prev = b;
-        if blank >= 1 {
+        // HTTP headers end with CRLF CRLF; ensure we consumed the empty line
+        if blank >= 2 {
             break;
         }
     }
@@ -100,20 +101,10 @@ fn http_connect_end2end_direct() {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
-        outbounds: vec![OutboundIR {
-            ty: OutboundType::Direct,
-            name: Some("direct".into()),
-            server: None,
-            port: None,
-            udp: None,
-            members: None,
-            credentials: None,
-            uuid: None,
-            flow: None,
-            network: None,
-            packet_encoding: None,
-        }],
+        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -124,7 +115,7 @@ fn http_connect_end2end_direct() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng.clone());
     let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();
     let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(80));

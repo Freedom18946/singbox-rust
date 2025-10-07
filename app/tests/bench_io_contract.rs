@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use assert_cmd::prelude::*;
 use std::process::Command;
 

@@ -14,6 +14,7 @@ fn main() {
     let mut port = 0u16;
     let mut proto = "tcp";
     let mut fmt = "json";
+    let mut alpn: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -54,6 +55,12 @@ fn main() {
                     fmt = Box::leak(args[i].clone().into_boxed_str());
                 }
             }
+            "--alpn" => {
+                i += 1;
+                if i < args.len() {
+                    alpn = Some(args[i].clone());
+                }
+            }
             "--json" => {
                 fmt = "json";
             }
@@ -76,6 +83,7 @@ fn main() {
             port,
             proto,
             transport: None,
+            alpn,
         },
     );
 

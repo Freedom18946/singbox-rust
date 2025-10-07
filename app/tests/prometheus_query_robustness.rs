@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 // app/tests/prometheus_query_robustness.rs
 use std::{env, fs, process::Command, time::Duration};
 use tempfile::TempDir;

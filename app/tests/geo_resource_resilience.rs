@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! GEO/DNS resource robustness tests
 //!
 //! Tests for resilient handling of missing, corrupt, and legacy GEO database files.

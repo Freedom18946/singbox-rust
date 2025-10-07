@@ -51,16 +51,10 @@ fn http_inbound_basic_auth_required() {
                 username_env: None,
                 password_env: None,
             }),
+            override_host: None,
+            override_port: None,
         }],
-        outbounds: vec![OutboundIR {
-            ty: OutboundType::Direct,
-            name: Some("direct".into()),
-            server: None,
-            port: None,
-            udp: None,
-            members: None,
-            credentials: None,
-        }],
+        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -71,7 +65,7 @@ fn http_inbound_basic_auth_required() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng.clone());
     let switchboard = OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, switchboard).start();
     thread::sleep(Duration::from_millis(80));

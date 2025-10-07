@@ -72,33 +72,14 @@ fn end2end_via_selector() {
             port: socks_addr.port(),
             sniff: false,
             udp: false,
-            auth: None,
+            basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
         outbounds: vec![
-            OutboundIR {
-                ty: OutboundType::Direct,
-                name: Some("A".into()),
-                server: None,
-                port: None,
-                udp: None,
-                members: None,
-            },
-            OutboundIR {
-                ty: OutboundType::Direct,
-                name: Some("B".into()),
-                server: None,
-                port: None,
-                udp: None,
-                members: None,
-            },
-            OutboundIR {
-                ty: OutboundType::Selector,
-                name: Some("S".into()),
-                server: None,
-                port: None,
-                udp: None,
-                members: Some(vec!["A".into(), "B".into()]),
-            },
+            OutboundIR { ty: OutboundType::Direct, name: Some("A".into()), ..Default::default() },
+            OutboundIR { ty: OutboundType::Direct, name: Some("B".into()), ..Default::default() },
+            OutboundIR { ty: OutboundType::Selector, name: Some("S".into()), members: Some(vec!["A".into(), "B".into()]), ..Default::default() },
         ],
         route: RouteIR {
             rules: vec![RuleIR {
@@ -111,7 +92,7 @@ fn end2end_via_selector() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());
-    let sb = sb_core::runtime::switchboard::OutboundSwitchboard::from_config_ir(&ir).unwrap();
+    let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
     let rt = Runtime::new(eng, br, sb).start();
     std::thread::sleep(Duration::from_millis(100));
     let out = socks_client_echo(socks_addr, echo_addr, b"hello selector");

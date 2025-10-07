@@ -228,6 +228,7 @@ impl DnsRuleEngine {
 mod tests {
     use super::*;
     use crate::router::ruleset::{DefaultRule, Rule, RuleSetFormat};
+    use std::net::IpAddr;
     use std::time::SystemTime;
 
     /// Mock DNS upstream for testing

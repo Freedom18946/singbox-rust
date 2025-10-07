@@ -36,16 +36,10 @@ fn admin_requires_token_when_configured() {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
-        outbounds: vec![OutboundIR {
-            ty: OutboundType::Direct,
-            name: Some("direct".into()),
-            server: None,
-            port: None,
-            udp: None,
-            members: None,
-            credentials: None,
-        }],
+        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -56,12 +50,14 @@ fn admin_requires_token_when_configured() {
         },
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng.clone());
     let th = spawn_admin(
         &h,
         eng.clone_as_static(),
         std::sync::Arc::new(br),
         Some("sekret".into()),
+        None,
+        None,
     )
     .unwrap();
     thread::sleep(Duration::from_millis(60));

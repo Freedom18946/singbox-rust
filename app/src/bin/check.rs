@@ -28,6 +28,12 @@ struct Opt {
     /// JSON Schema 文件路径，用于验证配置结构
     #[arg(long = "config-schema")]
     config_schema: Option<PathBuf>,
+    /// Validate using built-in schema v2 (feature-gated)
+    #[arg(long = "schema-v2-validate")]
+    schema_v2_validate: bool,
+    /// Output format: text|json
+    #[arg(long = "format", default_value = "text")]
+    format: String,
 }
 
 fn human_check(root: &Value) -> Result<()> {
@@ -76,6 +82,19 @@ fn human_check(root: &Value) -> Result<()> {
                             "{base}: 需要 `listen=\"ip:port\"` 或 `listen=\"ip\" + (`port`|`listen_port`)`"
                         ));
                     }
+                    // Validate port range if a separate port field is provided
+                    if let Some(p) = port_field {
+                        if p == 0 || p > 65535 {
+                            return Err(anyhow!("{base}.port 超出范围 (1-65535): {p}"));
+                        }
+                    } else if let Some((_, p)) = listen.rsplit_once(':') {
+                        // Or when embedded in listen
+                        if let Ok(p) = p.parse::<u64>() {
+                            if p == 0 || p > 65535 {
+                                return Err(anyhow!("{base}.listen 嵌入端口超出范围 (1-65535): {p}"));
+                            }
+                        }
+                    }
                 }
                 other => {
                     tracing::warn!(target: "app::check", base = %base, kind = %other, "type not in minimal checklist; skip deep checks");
@@ -88,6 +107,25 @@ fn human_check(root: &Value) -> Result<()> {
 
 fn main() -> Result<()> {
     let opt = Opt::parse();
+    // Handle schema-v2-validate gating early for better UX
+    if opt.schema_v2_validate {
+        #[cfg(not(feature = "schema-v2"))]
+        {
+            if opt.format.eq_ignore_ascii_case("json") {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "error": "feature_disabled",
+                        "detail": "schema-v2 feature disabled at build",
+                    })
+                );
+            } else {
+                eprintln!("schema-v2 feature disabled at build (rebuild with --features schema-v2)");
+            }
+            std::process::exit(2);
+        }
+    }
     let raw = fs::read_to_string(&opt.config)?;
     let v: Value = match serde_json::from_str::<Value>(&raw) {
         Ok(v) => v,

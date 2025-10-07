@@ -94,6 +94,8 @@ fn sni_drives_routing_decision() {
             port: 443,
             network: "tcp",
             protocol: "tun",
+            sniff_host: None,
+            sniff_alpn: None,
         },
         false,
     );

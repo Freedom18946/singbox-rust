@@ -1,6 +1,7 @@
 use sb_core::inbound::socks5::Socks5;
 use sb_core::routing::engine::Engine;
-use sb_core::routing::ir::{ConfigIR, InboundIR, InboundType, RouteIR};
+use sb_config::ir::{ConfigIR, InboundIR, InboundType, RouteIR};
+use sb_core::adapter::InboundService;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -74,14 +75,17 @@ fn end_to_end_echo() {
             port: socks_addr.port(),
             sniff: false,
             udp: false,
-            auth: None,
+            basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
         ..Default::default()
     };
-    let eng = Engine::new(&ir);
+    let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
+    let eng = Engine::new(ir_static);
     std::thread::spawn(move || {
-        let srv = Socks5::new("127.0.0.1".into(), socks_addr.port());
-        let _ = srv.serve(eng);
+        let srv = Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone_as_static());
+        let _ = srv.serve();
     });
     std::thread::sleep(Duration::from_millis(100));
     // 客户端经 socks 访问 echo

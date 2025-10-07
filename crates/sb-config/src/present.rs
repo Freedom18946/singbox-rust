@@ -49,6 +49,8 @@ pub fn to_ir(cfg: &Config) -> Result<ConfigIR> {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         });
     }
 
@@ -446,6 +448,7 @@ impl InboundIR {
             InboundType::Http => "http",
             InboundType::Socks => "socks",
             InboundType::Tun => "tun",
+            InboundType::Direct => "direct",
         }
     }
 }

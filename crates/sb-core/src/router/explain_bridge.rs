@@ -9,6 +9,13 @@ pub fn run(router: &RouterHandle, q: ExplainQuery) -> ExplainResult {
     // 从 Router 旁路导出只读索引（不会修改运行时）
     let idx = load_or_fetch_index(router);
 
+    // 0) sniff hints (record-only; routing decision not changed here)
+    if let Some(ref a) = q.alpn {
+        trace.push("sniff", "-", true, format!("alpn:{}", a));
+    } else {
+        trace.push("sniff", "-", false, "no_alpn");
+    }
+
     // 1) override
     if let Some((kind, when, to, why)) = try_override(&idx, &q) {
         let rid = crate::router::rule_id::rule_sha8(kind, when, to);

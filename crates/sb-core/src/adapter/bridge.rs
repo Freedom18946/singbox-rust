@@ -19,6 +19,7 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
             InboundType::Socks => "socks",
             InboundType::Http => "http",
             InboundType::Tun => "tun",
+            InboundType::Direct => "direct",
         }
         .to_string(),
         listen: ib.listen.clone(),
@@ -35,6 +36,8 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
         OutboundType::Socks => "socks",
         OutboundType::Block => "block",
         OutboundType::Selector => "selector",
+        OutboundType::Shadowtls => "shadowtls",
+        OutboundType::Hysteria2 => "hysteria2",
         OutboundType::Vless => "vless",
         OutboundType::Vmess => "vmess",
         OutboundType::Trojan => "trojan",

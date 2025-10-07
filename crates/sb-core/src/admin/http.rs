@@ -135,6 +135,11 @@ impl Drop for ConnGuard {
 fn inc_concurrency(ip: IpAddr, lim: &Limits) -> Result<ConnGuard, ()> {
     let mut m = PER_IP.lock().map_err(|_| ())?;
     let s = m.entry(ip).or_insert_with(ClientStat::default);
+    // Seed initial token bucket to allow the first request immediately
+    if s.concurrent == 0 && s.tokens == 0.0 {
+        s.tokens = lim.max_rps_per_ip as f64;
+        s.last_refill = Instant::now();
+    }
     if s.concurrent >= lim.max_conn_per_ip {
         return Err(());
     }
@@ -381,12 +386,7 @@ fn handle(
                 (dest.to_string(), 0)
             };
             let d = engine.decide(
-                &Input {
-                    host: &host,
-                    port,
-                    network,
-                    protocol,
-                },
+                &Input { host: &host, port, network, protocol, sniff_host: None, sniff_alpn: None },
                 false,
             );
             let obj = serde_json::json!({

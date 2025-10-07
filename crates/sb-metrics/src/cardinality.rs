@@ -240,17 +240,17 @@ mod tests {
     fn test_record_label_usage() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("test_metric", vec!["value1".to_string()]);
+        monitor.record_label_usage("test_metric", &vec!["value1".to_string()]);
         assert_eq!(monitor.get_cardinality("test_metric"), 1);
         assert_eq!(monitor.get_total_series(), 1);
 
         // Same labels - should not increase cardinality
-        monitor.record_label_usage("test_metric", vec!["value1".to_string()]);
+        monitor.record_label_usage("test_metric", &vec!["value1".to_string()]);
         assert_eq!(monitor.get_cardinality("test_metric"), 1);
         assert_eq!(monitor.get_total_series(), 1);
 
         // Different labels - should increase cardinality
-        monitor.record_label_usage("test_metric", vec!["value2".to_string()]);
+        monitor.record_label_usage("test_metric", &vec!["value2".to_string()]);
         assert_eq!(monitor.get_cardinality("test_metric"), 2);
         assert_eq!(monitor.get_total_series(), 2);
     }
@@ -259,9 +259,9 @@ mod tests {
     fn test_multiple_metrics() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("metric1", vec!["a".to_string()]);
-        monitor.record_label_usage("metric1", vec!["b".to_string()]);
-        monitor.record_label_usage("metric2", vec!["x".to_string()]);
+        monitor.record_label_usage("metric1", &vec!["a".to_string()]);
+        monitor.record_label_usage("metric1", &vec!["b".to_string()]);
+        monitor.record_label_usage("metric2", &vec!["x".to_string()]);
 
         assert_eq!(monitor.get_cardinality("metric1"), 2);
         assert_eq!(monitor.get_cardinality("metric2"), 1);
@@ -272,9 +272,9 @@ mod tests {
     fn test_cardinality_summary() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("metric1", vec!["a".to_string()]);
-        monitor.record_label_usage("metric1", vec!["b".to_string()]);
-        monitor.record_label_usage("metric2", vec!["x".to_string()]);
+        monitor.record_label_usage("metric1", &vec!["a".to_string()]);
+        monitor.record_label_usage("metric1", &vec!["b".to_string()]);
+        monitor.record_label_usage("metric2", &vec!["x".to_string()]);
 
         let summary = monitor.get_cardinality_summary();
         assert_eq!(summary.get("metric1"), Some(&2));
@@ -285,7 +285,7 @@ mod tests {
     fn test_reset() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("test", vec!["a".to_string()]);
+        monitor.record_label_usage("test", &vec!["a".to_string()]);
         assert_eq!(monitor.get_total_series(), 1);
 
         monitor.reset();
@@ -299,7 +299,7 @@ mod tests {
 
         // Add 6 unique combinations (exceeds threshold of 5)
         for i in 0..6 {
-            monitor.record_label_usage("test", vec![format!("value{}", i)]);
+            monitor.record_label_usage("test", &vec![format!("value{}", i)]);
         }
 
         assert_eq!(monitor.get_total_series(), 6);
@@ -310,9 +310,9 @@ mod tests {
     fn test_multiple_label_values() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("http_requests", vec!["GET".to_string(), "/api".to_string(), "200".to_string()]);
-        monitor.record_label_usage("http_requests", vec!["GET".to_string(), "/api".to_string(), "404".to_string()]);
-        monitor.record_label_usage("http_requests", vec!["POST".to_string(), "/api".to_string(), "200".to_string()]);
+        monitor.record_label_usage("http_requests", &vec!["GET".to_string(), "/api".to_string(), "200".to_string()]);
+        monitor.record_label_usage("http_requests", &vec!["GET".to_string(), "/api".to_string(), "404".to_string()]);
+        monitor.record_label_usage("http_requests", &vec!["POST".to_string(), "/api".to_string(), "200".to_string()]);
 
         assert_eq!(monitor.get_cardinality("http_requests"), 3);
     }

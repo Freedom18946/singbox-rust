@@ -60,6 +60,7 @@ pub mod minimize;
 pub mod model;
 pub mod normalize;
 pub mod outbound;
+pub mod inbound;
 pub mod present;
 pub mod rule;
 pub mod schema_v2;

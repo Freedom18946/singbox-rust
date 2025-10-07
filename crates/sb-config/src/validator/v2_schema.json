@@ -13,10 +13,14 @@
   "defs":{
     "inbound":{"type":"object","additionalProperties": false,"properties":{
       "name":{"type":"string"},
-      "type":{"enum":["socks","http","tun","mixed"]},
+      "type":{"enum":["socks","http","tun","mixed","direct"]},
       "listen":{"type":"string","minLength":1},
       "udp":{"type":"boolean"},
+      "network":{"type":"string","enum":["tcp","udp"]},
       "sniff":{"type":"boolean"},
+      "override_address":{"type":"string"},
+      "override_host":{"type":"string"},
+      "override_port":{"type":"integer","minimum":1,"maximum":65535},
       "interface_name":{"type":"string"},
       "inet4_address":{"type":"string"},
       "inet6_address":{"type":"string"},

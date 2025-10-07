@@ -1,3 +1,4 @@
+#![cfg(feature = "dev-cli")]
 use anyhow::Result;
 use sb_config::inbound::InboundDef;
 use sb_core::pipeline::Inbound; // 使 .serve() 在作用域内

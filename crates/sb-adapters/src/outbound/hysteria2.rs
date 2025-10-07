@@ -1,17 +1,64 @@
 //! Hysteria2 outbound connector implementation
 //!
-//! Hysteria2 is a QUIC-based proxy protocol designed for high performance
-//! and congestion control optimization.
+//! Wraps the sb-core Hysteria2 outbound to expose a unified adapter interface.
 
 use crate::outbound::prelude::*;
+#[cfg(feature = "adapter-hysteria2")]
+use sb_core::outbound::types::OutboundTcp;
+
+/// Adapter configuration for Hysteria2 outbound
+#[derive(Debug, Clone)]
+pub struct Hysteria2AdapterConfig {
+    pub server: String,
+    pub port: u16,
+    pub password: String,
+    pub skip_cert_verify: bool,
+    pub sni: Option<String>,
+    pub alpn: Option<Vec<String>>,
+    pub congestion_control: Option<String>,
+    pub up_mbps: Option<u32>,
+    pub down_mbps: Option<u32>,
+    pub obfs: Option<String>,
+    pub salamander: Option<String>,
+}
+
+impl Default for Hysteria2AdapterConfig {
+    fn default() -> Self {
+        Self {
+            server: "127.0.0.1".to_string(),
+            port: 443,
+            password: "password".to_string(),
+            skip_cert_verify: true,
+            sni: Some("example.com".to_string()),
+            alpn: Some(vec!["h3".to_string(), "hysteria2".to_string()]),
+            congestion_control: Some("bbr".to_string()),
+            up_mbps: None,
+            down_mbps: None,
+            obfs: None,
+            salamander: None,
+        }
+    }
+}
 
 /// Hysteria2 outbound connector
 #[derive(Debug, Clone)]
-#[derive(Default)]
 pub struct Hysteria2Connector {
-    _config: Option<()>, // Placeholder
+    cfg: Hysteria2AdapterConfig,
 }
 
+impl Default for Hysteria2Connector {
+    fn default() -> Self {
+        Self {
+            cfg: Hysteria2AdapterConfig::default(),
+        }
+    }
+}
+
+impl Hysteria2Connector {
+    pub fn new(cfg: Hysteria2AdapterConfig) -> Self {
+        Self { cfg }
+    }
+}
 
 #[async_trait]
 impl OutboundConnector for Hysteria2Connector {
@@ -20,14 +67,68 @@ impl OutboundConnector for Hysteria2Connector {
     }
 
     async fn start(&self) -> Result<()> {
-        Err(AdapterError::NotImplemented {
+        #[cfg(not(feature = "adapter-hysteria2"))]
+        return Err(AdapterError::NotImplemented {
             what: "adapter-hysteria2",
-        })
+        });
+
+        #[cfg(feature = "adapter-hysteria2")]
+        Ok(())
     }
 
-    async fn dial(&self, _target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        Err(AdapterError::NotImplemented {
-            what: "Hysteria2 dial",
-        })
+    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
+        #[cfg(not(feature = "adapter-hysteria2"))]
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-hysteria2",
+        });
+
+        #[cfg(feature = "adapter-hysteria2")]
+        {
+            if target.kind != TransportKind::Tcp {
+                return Err(AdapterError::Protocol(
+                    "Hysteria2 outbound only supports TCP".to_string(),
+                ));
+            }
+
+            let _span = crate::outbound::span_dial("hysteria2", &target);
+
+            // Bridge to sb-core implementation
+            let core_cfg = sb_core::outbound::hysteria2::Hysteria2Config {
+                server: self.cfg.server.clone(),
+                port: self.cfg.port,
+                password: self.cfg.password.clone(),
+                congestion_control: self.cfg.congestion_control.clone(),
+                up_mbps: self.cfg.up_mbps,
+                down_mbps: self.cfg.down_mbps,
+                obfs: self.cfg.obfs.clone(),
+                skip_cert_verify: self.cfg.skip_cert_verify,
+                sni: self.cfg.sni.clone(),
+                alpn: self.cfg.alpn.clone(),
+                salamander: self.cfg.salamander.clone(),
+                brutal: None,
+            };
+
+            let core = sb_core::outbound::hysteria2::Hysteria2Outbound::new(core_cfg)
+                .map_err(|e| AdapterError::Other(e.to_string()))?;
+
+            let hp = sb_core::outbound::types::HostPort::new(target.host.clone(), target.port);
+            let quic_stream = core
+                .connect(&hp)
+                .await
+                .map_err(AdapterError::Io)?;
+
+            Ok(Box::new(quic_stream) as BoxedStream)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hysteria2_connector_name() {
+        let c = Hysteria2Connector::new(Hysteria2AdapterConfig::default());
+        assert_eq!(c.name(), "hysteria2");
     }
 }

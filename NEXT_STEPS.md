@@ -7,21 +7,28 @@ Priority legend
 
 P0 — Close critical gaps
 - Sniffing pipeline
-  - Implement TLS SNI / HTTP Host / QUIC ALPN sniff on inbound path and expose as routing conditions.
-  - Add enable flags on inbounds (http/socks/mixed/tun) mirroring upstream.
-  - Wire to router conditions and explain trace.
+  - HTTP Host sniff: DONE — integrated with CONNECT inbound routing; tests added.
+  - Enable flags: DONE for http/socks/tun in scaffolds; config path accepts `sniff`.
+  - TLS SNI and QUIC ALPN: DONE — extract_sni_from_tls_client_hello, extract_alpn_from_tls_client_hello, and QUIC ALPN detection implemented; RouterInput has sniff_host/sniff_alpn fields; routing engine uses them for domain/ALPN matching; E2E tests added (router_sniff_sni_alpn.rs).
 - TLS features to production
   - REALITY: Complete handshake path and configuration glue (crates/sb-tls + sb-transport), add E2E tests.
   - ECH: Integrate runtime handshake using generated key/config; add QUIC/ECH alignment.
+  - ACME: Decide scope (optional parity); if included, add ACME issuer support for inbound TLS (Let's Encrypt/ZeroSSL via certmagic equivalent) or document as N/A.
 - Inbound/outbound coverage
   - Implement inbound: direct, hysteria (v1), hysteria2, anytls.
+    - direct: DONE (TCP+UDP forwarder with session-based NAT; automatic UDP timeout cleanup; E2E tests in inbound_direct_udp.rs).
   - Implement outbound: hysteria (v1), anytls; unify tuic/hysteria2 under sb-adapters and add tests.
+    - hysteria2: Adapter wrapper IMPLEMENTED (sb-adapters), basic unit tests added; E2E pending.
   - Promote shadowtls outbound from sb-core to adapters and add test coverage.
+    - DONE: Adapter wrapper implemented in `crates/sb-adapters/src/outbound/shadowtls.rs`; basic unit tests added.
   - SSH outbound: polish (host key handling), examples and E2E.
 - CLI parity (externally visible)
   - rule-set: DONE — compile/convert/merge/upgrade implemented (plus validate/info/format/decompile/match).
-  - format: DONE (app/src/bin/format.rs)
+  - format: DONE (app/src/bin/format.
+  rs)
   - generate: add vapid/wireguard key generation; tls/reality/ech are DONE.
+    - wireguard: DONE (X25519 keypair).
+    - vapid: AVAILABLE behind feature `jwt`.
   - tools: DONE — http3 fetch via reqwest http3 feature; connect and synctime are present.
   - geosite/geoip: DONE for geoip; geosite near-complete
     - geosite: list/lookup/export support upstream binary geosite.db. Optional: add `matcher` subcommand for display-only UX.
@@ -32,6 +39,7 @@ P1 — DNS/route/services completeness
 - DNS
   - DoH: expand to full behavior (GET/POST, content-types, error mapping, timeouts, HTTP/3 where applicable).
   - Add hosts override and per-domain bootstrap options; expose tailscale DNS server as N/A or implement equivalent if feasible.
+  - Add DHCP DNS server backend (`dns.servers[].type = "dhcp"`).
   - Extend DNS rule actions to parity with upstream (where practical).
 - Route engine
   - Consolidate keyword/regex conditions ergonomics; ensure rule-set remote caching and failure policies match upstream semantics.

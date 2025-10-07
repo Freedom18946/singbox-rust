@@ -6,6 +6,8 @@ pub mod socks5;
 pub mod http;
 #[cfg(feature = "scaffold")]
 pub mod tun;
+#[cfg(feature = "scaffold")]
+pub mod direct;
 
 pub mod manager;
 

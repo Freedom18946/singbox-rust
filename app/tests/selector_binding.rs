@@ -13,6 +13,8 @@ fn selector_is_bound_to_members() {
             sniff: false,
             udp: false,
             basic_auth: None,
+            override_host: None,
+            override_port: None,
         }],
         outbounds: vec![
             OutboundIR {
