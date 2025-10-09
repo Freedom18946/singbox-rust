@@ -71,18 +71,17 @@ pub mod utls {
 }
 
 /// Encrypted Client Hello
-/// TODO: Implement ECH support
 #[cfg(feature = "ech")]
-pub mod ech {
-    //! Encrypted Client Hello (placeholder)
-    //! TODO: Implement ECH for anti-SNI-blocking
-}
+pub mod ech;
 
 // Re-exports
 pub use standard::StandardTlsConnector;
 
 #[cfg(feature = "reality")]
-pub use reality::{RealityClientConfig, RealityConnector, RealityServerConfig};
+pub use reality::{RealityAcceptor, RealityClientConfig, RealityConnector, RealityServerConfig};
+
+#[cfg(feature = "ech")]
+pub use ech::{EchClientConfig, EchConnector, EchKeypair, EchServerConfig};
 
 /// TLS error types
 #[derive(Debug, thiserror::Error)]

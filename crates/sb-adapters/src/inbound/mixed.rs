@@ -188,11 +188,83 @@ async fn handle_socks5_inline(
         return Err(io::Error::new(io::ErrorKind::Unsupported, "only CONNECT supported"));
     }
 
-    // For now, reply with success and close
-    // Full implementation would parse target and establish connection
+    // Parse target address
+    let atyp = head[3];
+    let target_addr = match atyp {
+        0x01 => {
+            // IPv4
+            let mut addr = [0u8; 4];
+            cli.read_exact(&mut addr).await?;
+            let mut port_buf = [0u8; 2];
+            cli.read_exact(&mut port_buf).await?;
+            let port = u16::from_be_bytes(port_buf);
+            format!("{}:{}", std::net::Ipv4Addr::from(addr), port)
+        }
+        0x03 => {
+            // Domain
+            let len = read_u8(cli).await? as usize;
+            let mut domain = vec![0u8; len];
+            cli.read_exact(&mut domain).await?;
+            let mut port_buf = [0u8; 2];
+            cli.read_exact(&mut port_buf).await?;
+            let port = u16::from_be_bytes(port_buf);
+            format!("{}:{}", String::from_utf8_lossy(&domain), port)
+        }
+        0x04 => {
+            // IPv6
+            let mut addr = [0u8; 16];
+            cli.read_exact(&mut addr).await?;
+            let mut port_buf = [0u8; 2];
+            cli.read_exact(&mut port_buf).await?;
+            let port = u16::from_be_bytes(port_buf);
+            format!("[{}]:{}", std::net::Ipv6Addr::from(addr), port)
+        }
+        _ => {
+            reply_socks5(cli, 0x08, None).await?;
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported address type"));
+        }
+    };
+
+    debug!(peer=%peer, target=%target_addr, "mixed/socks5: connecting to target");
+
+    // Connect to target
+    let upstream = match TcpStream::connect(&target_addr).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            reply_socks5(cli, 0x05, None).await?; // Connection refused
+            return Err(e);
+        }
+    };
+
+    // Reply with success
     reply_socks5(cli, 0x00, None).await?;
 
-    debug!(peer=%peer, "mixed/socks5: connection handled (stub)");
+    // Bidirectional relay
+    let (mut cli_read, mut cli_write) = cli.split();
+    let (mut upstream_read, mut upstream_write) = upstream.into_split();
+
+    let client_to_server = async {
+        tokio::io::copy(&mut cli_read, &mut upstream_write).await
+    };
+
+    let server_to_client = async {
+        tokio::io::copy(&mut upstream_read, &mut cli_write).await
+    };
+
+    tokio::select! {
+        result = client_to_server => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/socks5: client to server copy failed");
+            }
+        }
+        result = server_to_client => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/socks5: server to client copy failed");
+            }
+        }
+    }
+
+    debug!(peer=%peer, "mixed/socks5: connection closed");
     Ok(())
 }
 
@@ -246,11 +318,79 @@ async fn handle_http_inline(
         return Ok(());
     }
 
-    // For now, reply with success and close
-    // Full implementation would parse target and establish connection
+    // Parse target from request line
+    // Format: "CONNECT host:port HTTP/1.1"
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        cli.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await?;
+        return Ok(());
+    }
+
+    let target_addr = parts[1];
+    debug!(peer=%peer, target=%target_addr, "mixed/http: connecting to target");
+
+    // Skip remaining headers
+    loop {
+        let mut line = Vec::new();
+        let mut byte = [0u8; 1];
+
+        loop {
+            cli.read_exact(&mut byte).await?;
+            line.push(byte[0]);
+
+            if line.len() >= 2 && line[line.len()-2] == b'\r' && line[line.len()-1] == b'\n' {
+                break;
+            }
+
+            if line.len() > 8192 {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "header line too long"));
+            }
+        }
+
+        // Empty line marks end of headers
+        if line.len() == 2 {
+            break;
+        }
+    }
+
+    // Connect to target
+    let upstream = match TcpStream::connect(target_addr).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            cli.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await?;
+            return Err(e);
+        }
+    };
+
+    // Reply with success
     cli.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
 
-    debug!(peer=%peer, "mixed/http: connection handled (stub)");
+    // Bidirectional relay
+    let (mut cli_read, mut cli_write) = cli.split();
+    let (mut upstream_read, mut upstream_write) = upstream.into_split();
+
+    let client_to_server = async {
+        tokio::io::copy(&mut cli_read, &mut upstream_write).await
+    };
+
+    let server_to_client = async {
+        tokio::io::copy(&mut upstream_read, &mut cli_write).await
+    };
+
+    tokio::select! {
+        result = client_to_server => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/http: client to server copy failed");
+            }
+        }
+        result = server_to_client => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/http: server to client copy failed");
+            }
+        }
+    }
+
+    debug!(peer=%peer, "mixed/http: connection closed");
     Ok(())
 }
 

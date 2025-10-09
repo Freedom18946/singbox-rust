@@ -1,0 +1,51 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "listen": "127.0.0.1:1080"
+    }
+  ],
+  "outbounds": [
+    {
+      "name": "tuic-out",
+      "type": "tuic",
+      "server": "example.com",
+      "port": 443,
+      "uuid": "2DD61D93-75D8-4DA4-AC0E-6AECE7EAC365",
+      "token": "my-secret-token",
+      "password": "optional-password",
+      "congestion_control": "cubic",
+      "udp_relay_mode": "native",
+      "udp_over_stream": false,
+      "zero_rtt_handshake": false,
+      "heartbeat": "10s",
+      "skip_cert_verify": false,
+      "tls": {
+        "enabled": true,
+        "sni": "example.com",
+        "alpn": "h3"
+      }
+    },
+    {
+      "name": "tuic-udp-stream",
+      "type": "tuic",
+      "server": "example.com",
+      "port": 443,
+      "uuid": "2DD61D93-75D8-4DA4-AC0E-6AECE7EAC365",
+      "token": "my-secret-token",
+      "congestion_control": "bbr",
+      "udp_over_stream": true,
+      "tls": {
+        "enabled": true,
+        "sni": "example.com"
+      }
+    }
+  ],
+  "route": {
+    "rules": [],
+    "final": "tuic-out"
+  }
+}

@@ -9,6 +9,8 @@ readme.workspace = true
 [features]
 default = []
 transport_tls = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:sha2", "dep:hex"]
+transport_reality = ["transport_tls", "dep:sb-tls"]
+transport_ech = ["transport_tls", "dep:sb-tls", "sb-tls/ech"]
 transport_quic = ["dep:quinn", "transport_tls"]
 transport_ws = ["dep:tokio-tungstenite", "dep:http"]
 transport_h2 = ["dep:h2", "dep:http"]
@@ -34,6 +36,7 @@ tracing = { workspace = true }
 rand = "0.8"
 base64 = "0.22"
 sb-metrics = { path = "../sb-metrics" }
+sb-tls = { path = "../sb-tls", optional = true }
 once_cell = { workspace = true }
 fail = { version = "0.5", optional = true }
 sha2 = { version = "0.10", optional = true }

@@ -26,7 +26,11 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tokio_rustls::rustls::{self, ServerConfig};
 use tokio_rustls::TlsAcceptor;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+
+#[cfg(feature = "tls_reality")]
+#[allow(unused_imports)]
+use sb_tls::RealityAcceptor;
 
 #[derive(Clone, Debug)]
 pub struct TrojanInboundConfig {
@@ -35,37 +39,44 @@ pub struct TrojanInboundConfig {
     pub cert_path: String,
     pub key_path: String,
     pub router: Arc<router::RouterHandle>,
+    /// Optional REALITY TLS configuration for inbound
+    #[cfg(feature = "tls_reality")]
+    pub reality: Option<sb_tls::RealityServerConfig>,
 }
 
 fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
     // Load cert chain
-    let mut cert_reader = BufReader::new(File::open(cert_path)?);
-    let certs = rustls_pemfile::certs(&mut cert_reader)
-        .map_err(|_| anyhow!("invalid cert file"))?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect::<Vec<_>>();
+    let cert_file = File::open(cert_path)?;
+    let mut cert_reader = BufReader::new(cert_file);
+    let certs: Vec<_> = rustls_pemfile::certs(&mut cert_reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| anyhow!("invalid cert file"))?;
 
     // Load private key (PKCS#8 or RSA)
-    let mut key_reader = BufReader::new(File::open(key_path)?);
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
-        .map_err(|_| anyhow!("invalid key file (pkcs8)"))?
-        .into_iter()
-        .map(rustls::PrivateKey)
-        .collect::<Vec<_>>();
-    if keys.is_empty() {
-        // try RSA
-        let mut key_reader = BufReader::new(File::open(key_path)?);
-        keys = rustls_pemfile::rsa_private_keys(&mut key_reader)
-            .map_err(|_| anyhow!("invalid key file (rsa)"))?
-            .into_iter()
-            .map(rustls::PrivateKey)
-            .collect::<Vec<_>>();
-    }
-    let key = keys.into_iter().next().ok_or_else(|| anyhow!("no private key found"))?;
+    let key_file = File::open(key_path)?;
+    let mut key_reader = BufReader::new(key_file);
+    
+    let key = {
+        // Try PKCS#8 first
+        if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
+            .next()
+            .transpose()
+            .map_err(|_| anyhow!("invalid key file (pkcs8)"))?
+        {
+            rustls_pki_types::PrivateKeyDer::Pkcs8(key)
+        } else {
+            // Try RSA
+            let key_file = File::open(key_path)?;
+            let mut key_reader = BufReader::new(key_file);
+            let key = rustls_pemfile::rsa_private_keys(&mut key_reader)
+                .next()
+                .ok_or_else(|| anyhow!("no private key found"))?
+                .map_err(|_| anyhow!("invalid key file (rsa)"))?;
+            rustls_pki_types::PrivateKeyDer::Pkcs1(key)
+        }
+    };
 
     let cfg = rustls::ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| anyhow!("tls config error: {}", e))?;
@@ -73,11 +84,40 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
 }
 
 pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
-    let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
-    let acceptor = TlsAcceptor::from(Arc::new(tls_cfg));
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
+    
+    // Create REALITY acceptor if configured, otherwise use standard TLS
+    #[cfg(feature = "tls_reality")]
+    let reality_acceptor = if let Some(ref reality_cfg) = cfg.reality {
+        info!(addr=?cfg.listen, actual=?actual, "trojan: REALITY TLS server bound");
+        Some(Arc::new(sb_tls::RealityAcceptor::new(reality_cfg.clone())
+            .map_err(|e| anyhow!("Failed to create REALITY acceptor: {}", e))?))
+    } else {
+        info!(addr=?cfg.listen, actual=?actual, "trojan: TLS server bound");
+        None
+    };
+    
+    #[cfg(not(feature = "tls_reality"))]
     info!(addr=?cfg.listen, actual=?actual, "trojan: TLS server bound");
+    
+    // Load standard TLS config if not using REALITY
+    let tls_acceptor = {
+        #[cfg(feature = "tls_reality")]
+        {
+            if cfg.reality.is_none() {
+                let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
+                Some(TlsAcceptor::from(Arc::new(tls_cfg)))
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "tls_reality"))]
+        {
+            let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
+            Some(TlsAcceptor::from(Arc::new(tls_cfg)))
+        }
+    };
 
     let mut hb = interval(Duration::from_secs(5));
     loop {
@@ -86,17 +126,66 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
             _ = hb.tick() => { tracing::debug!("trojan: accept-loop heartbeat"); }
             r = listener.accept() => {
                 let (cli, peer) = match r { Ok(v) => v, Err(e) => { warn!(error=%e, "trojan: accept error"); continue; } };
-                let acceptor = acceptor.clone();
+                
+                #[cfg(feature = "tls_reality")]
+                let reality_acceptor_clone = reality_acceptor.clone();
+                let tls_acceptor_clone = tls_acceptor.clone();
                 let cfg_clone = cfg.clone();
+                
                 tokio::spawn(async move {
-                    match acceptor.accept(cli).await {
-                        Ok(mut tls_stream) => {
-                            if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
-                                warn!(%peer, error=%e, "trojan: session error");
-                                let _ = tls_stream.shutdown().await;
+                    #[cfg(feature = "tls_reality")]
+                    {
+                        if let Some(acceptor) = reality_acceptor_clone {
+                            // Handle REALITY connection
+                            match acceptor.accept(cli).await {
+                                Ok(reality_conn) => {
+                                    match reality_conn.handle().await {
+                                        Ok(Some(mut tls_stream)) => {
+                                            // Proxy connection - handle Trojan protocol over TLS
+                                            if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
+                                                warn!(%peer, error=%e, "trojan: REALITY session error");
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            // Fallback connection - already handled by REALITY
+                                            debug!(%peer, "trojan: REALITY fallback completed");
+                                        }
+                                        Err(e) => {
+                                            warn!(%peer, error=%e, "trojan: REALITY connection handling error");
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(%peer, error=%e, "trojan: REALITY accept error");
+                                }
+                            }
+                        } else if let Some(acceptor) = tls_acceptor_clone {
+                            // Standard TLS
+                            match acceptor.accept(cli).await {
+                                Ok(mut tls_stream) => {
+                                    if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
+                                        warn!(%peer, error=%e, "trojan: session error");
+                                        let _ = tls_stream.shutdown().await;
+                                    }
+                                }
+                                Err(e) => warn!(%peer, error=%e, "trojan: tls accept error"),
                             }
                         }
-                        Err(e) => warn!(%peer, error=%e, "trojan: tls accept error"),
+                    }
+                    
+                    #[cfg(not(feature = "tls_reality"))]
+                    {
+                        if let Some(acceptor) = tls_acceptor_clone {
+                            match acceptor.accept(cli).await {
+                                Ok(mut tls_stream) => {
+                                    if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
+                                        warn!(%peer, error=%e, "trojan: session error");
+                                        let _ = tls_stream.shutdown().await;
+                                    }
+                                }
+                                Err(e) => warn!(%peer, error=%e, "trojan: tls accept error"),
+                            }
+                        }
                     }
                 });
             }

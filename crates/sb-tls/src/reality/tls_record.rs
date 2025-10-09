@@ -416,6 +416,8 @@ fn write_u24<W: Write>(writer: &mut W, value: u32) -> io::Result<()> {
 mod tests {
     use super::*;
 
+    // ========== REALITY Auth Extension Tests ==========
+
     #[test]
     fn test_reality_auth_extension() {
         let client_public_key = [0x42u8; 32];
@@ -433,6 +435,79 @@ mod tests {
         assert_eq!(parsed_sid, short_id);
         assert_eq!(parsed_hash, auth_hash);
     }
+
+    #[test]
+    fn test_reality_auth_extension_empty_short_id() {
+        let client_public_key = [0x11u8; 32];
+        let short_id = vec![];
+        let auth_hash = [0x22u8; 32];
+
+        let ext = TlsExtension::reality_auth(&client_public_key, &short_id, &auth_hash);
+
+        assert_eq!(ext.data.len(), 32 + 2 + 0 + 32); // 66 bytes
+
+        let (parsed_pk, parsed_sid, parsed_hash) = ext.parse_reality_auth().unwrap();
+        assert_eq!(parsed_pk, client_public_key);
+        assert_eq!(parsed_sid, short_id);
+        assert_eq!(parsed_hash, auth_hash);
+    }
+
+    #[test]
+    fn test_reality_auth_extension_max_short_id() {
+        let client_public_key = [0xAAu8; 32];
+        let short_id = vec![0xBB; 8]; // Max 8 bytes
+        let auth_hash = [0xCCu8; 32];
+
+        let ext = TlsExtension::reality_auth(&client_public_key, &short_id, &auth_hash);
+
+        let (parsed_pk, parsed_sid, parsed_hash) = ext.parse_reality_auth().unwrap();
+        assert_eq!(parsed_pk, client_public_key);
+        assert_eq!(parsed_sid, short_id);
+        assert_eq!(parsed_hash, auth_hash);
+    }
+
+    #[test]
+    fn test_reality_auth_extension_parse_invalid_type() {
+        let ext = TlsExtension {
+            extension_type: ExtensionType::ServerName as u16,
+            data: vec![0; 66],
+        };
+
+        let result = ext.parse_reality_auth();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_reality_auth_extension_parse_truncated() {
+        let ext = TlsExtension {
+            extension_type: ExtensionType::RealityAuth as u16,
+            data: vec![0; 10], // Too short
+        };
+
+        let result = ext.parse_reality_auth();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_reality_auth_extension_roundtrip() {
+        // Test various combinations
+        let test_cases = vec![
+            ([0x00u8; 32], vec![], [0xFFu8; 32]),
+            ([0x11u8; 32], vec![0x01], [0x22u8; 32]),
+            ([0x33u8; 32], vec![0x01, 0x02, 0x03, 0x04], [0x44u8; 32]),
+            ([0x55u8; 32], vec![0xAA; 8], [0x66u8; 32]),
+        ];
+
+        for (pk, sid, hash) in test_cases {
+            let ext = TlsExtension::reality_auth(&pk, &sid, &hash);
+            let (parsed_pk, parsed_sid, parsed_hash) = ext.parse_reality_auth().unwrap();
+            assert_eq!(parsed_pk, pk);
+            assert_eq!(parsed_sid, sid);
+            assert_eq!(parsed_hash, hash);
+        }
+    }
+
+    // ========== ClientHello Serialization Tests ==========
 
     #[test]
     fn test_client_hello_serialization() {
@@ -467,5 +542,211 @@ mod tests {
         assert_eq!(parsed.random, hello.random);
         assert_eq!(parsed.cipher_suites, hello.cipher_suites);
         assert_eq!(parsed.get_sni(), Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn test_client_hello_with_reality_extension() {
+        let mut hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        // Add REALITY auth extension
+        let client_pk = [0x11u8; 32];
+        let short_id = vec![0x01, 0xab];
+        let auth_hash = [0x22u8; 32];
+        hello.extensions.push(TlsExtension::reality_auth(&client_pk, &short_id, &auth_hash));
+
+        // Serialize and parse
+        let serialized = hello.serialize().unwrap();
+        let parsed = ClientHello::parse(&serialized).unwrap();
+
+        // Verify REALITY extension is preserved
+        let reality_ext = parsed.find_extension(ExtensionType::RealityAuth as u16).unwrap();
+        let (parsed_pk, parsed_sid, parsed_hash) = reality_ext.parse_reality_auth().unwrap();
+        assert_eq!(parsed_pk, client_pk);
+        assert_eq!(parsed_sid, short_id);
+        assert_eq!(parsed_hash, auth_hash);
+    }
+
+    #[test]
+    fn test_client_hello_multiple_extensions() {
+        let mut hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F, 0xC030],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        // Add SNI
+        let sni_data = {
+            let mut data = Vec::new();
+            let hostname = b"test.com";
+            write_u16(&mut data, (hostname.len() + 3) as u16).unwrap();
+            write_u8(&mut data, 0).unwrap();
+            write_u16(&mut data, hostname.len() as u16).unwrap();
+            data.extend_from_slice(hostname);
+            data
+        };
+        hello.set_extension(ExtensionType::ServerName as u16, sni_data);
+
+        // Add REALITY
+        hello.extensions.push(TlsExtension::reality_auth(
+            &[0x33u8; 32],
+            &[0xAB, 0xCD],
+            &[0x44u8; 32],
+        ));
+
+        // Serialize and parse
+        let serialized = hello.serialize().unwrap();
+        let parsed = ClientHello::parse(&serialized).unwrap();
+
+        assert_eq!(parsed.extensions.len(), 2);
+        assert_eq!(parsed.get_sni(), Some("test.com".to_string()));
+        assert!(parsed.find_extension(ExtensionType::RealityAuth as u16).is_some());
+    }
+
+    #[test]
+    fn test_client_hello_set_extension_replaces() {
+        let mut hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        // Add SNI
+        hello.set_extension(ExtensionType::ServerName as u16, vec![1, 2, 3]);
+        assert_eq!(hello.extensions.len(), 1);
+
+        // Replace SNI
+        hello.set_extension(ExtensionType::ServerName as u16, vec![4, 5, 6]);
+        assert_eq!(hello.extensions.len(), 1);
+        assert_eq!(hello.find_extension(ExtensionType::ServerName as u16).unwrap().data, vec![4, 5, 6]);
+    }
+
+    #[test]
+    fn test_client_hello_find_extension() {
+        let mut hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        // No extensions
+        assert!(hello.find_extension(ExtensionType::ServerName as u16).is_none());
+
+        // Add extension
+        hello.set_extension(ExtensionType::ServerName as u16, vec![1, 2, 3]);
+        assert!(hello.find_extension(ExtensionType::ServerName as u16).is_some());
+        assert!(hello.find_extension(ExtensionType::RealityAuth as u16).is_none());
+    }
+
+    #[test]
+    fn test_client_hello_get_sni_missing() {
+        let hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        assert!(hello.get_sni().is_none());
+    }
+
+    #[test]
+    fn test_client_hello_get_sni_invalid() {
+        let mut hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        // Add invalid SNI extension (too short)
+        hello.set_extension(ExtensionType::ServerName as u16, vec![0, 1]);
+        assert!(hello.get_sni().is_none());
+    }
+
+    #[test]
+    fn test_client_hello_with_session_id() {
+        let hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![0x01, 0x02, 0x03, 0x04],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        let serialized = hello.serialize().unwrap();
+        let parsed = ClientHello::parse(&serialized).unwrap();
+
+        assert_eq!(parsed.session_id, vec![0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn test_client_hello_multiple_cipher_suites() {
+        let hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F, 0xC030, 0x009C, 0x009D],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        let serialized = hello.serialize().unwrap();
+        let parsed = ClientHello::parse(&serialized).unwrap();
+
+        assert_eq!(parsed.cipher_suites, vec![0xC02F, 0xC030, 0x009C, 0x009D]);
+    }
+
+    #[test]
+    fn test_client_hello_no_extensions() {
+        let hello = ClientHello {
+            version: 0x0303,
+            random: [0x42; 32],
+            session_id: vec![],
+            cipher_suites: vec![0xC02F],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+
+        let serialized = hello.serialize().unwrap();
+        let parsed = ClientHello::parse(&serialized).unwrap();
+
+        assert_eq!(parsed.extensions.len(), 0);
+    }
+
+    // ========== Content Type Tests ==========
+
+    #[test]
+    fn test_content_type_conversion() {
+        assert_eq!(ContentType::try_from(22).unwrap(), ContentType::Handshake);
+        assert_eq!(ContentType::try_from(23).unwrap(), ContentType::ApplicationData);
+        assert!(ContentType::try_from(99).is_err());
+    }
+
+    #[test]
+    fn test_handshake_type_conversion() {
+        assert_eq!(HandshakeType::try_from(1).unwrap(), HandshakeType::ClientHello);
+        assert_eq!(HandshakeType::try_from(2).unwrap(), HandshakeType::ServerHello);
+        assert!(HandshakeType::try_from(99).is_err());
     }
 }

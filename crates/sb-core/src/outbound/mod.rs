@@ -71,6 +71,8 @@ pub mod quic {
     pub mod common;
     pub mod io;
 }
+#[cfg(feature = "out_hysteria")]
+pub mod hysteria;
 #[cfg(feature = "out_hysteria2")]
 pub mod hysteria2;
 #[cfg(feature = "out_ssh")]
@@ -79,6 +81,9 @@ pub mod ssh_stub;
 pub mod tuic;
 #[cfg(feature = "out_wireguard")]
 pub mod wireguard_stub;
+
+// Performance optimizations for P0 protocols
+pub mod optimizations;
 
 use crate::telemetry::{err_kind, outbound_connect, outbound_handshake};
 use std::{

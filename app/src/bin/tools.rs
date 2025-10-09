@@ -231,26 +231,71 @@ async fn synctime(server: String, timeout: u64) -> Result<()> {
         .context("recv ntp")?;
     if n < 48 { anyhow::bail!("short NTP packet"); }
 
+    let t0 = ntp_now_seconds();
+    let offset = compute_ntp_offset(t0, &buf);
+    println!("ntp_server={server} offset_seconds={:.6}", offset);
+    Ok(())
+}
+
+// Return current time in NTP seconds (seconds since 1900-01-01 with fractional part)
+fn ntp_now_seconds() -> f64 {
+    const NTP_UNIX_DELTA: u64 = 2_208_988_800; // seconds between 1900 and 1970
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    (now.as_secs() + NTP_UNIX_DELTA) as f64 + (now.subsec_nanos() as f64) / 1e9
+}
+
+// Compute NTP offset using a simplified approach when originate timestamp is unavailable in request
+// Uses server receive (t2) and transmit (t3) timestamps and local now (t0)
+fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
     // NTP timestamps are seconds since 1900-01-01 with 32.32 fixed point
     fn read_ts(b: &[u8]) -> f64 {
+        if b.len() < 8 {
+            return 0.0;
+        }
         let secs = u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as u64;
         let frac = u32::from_be_bytes([b[4], b[5], b[6], b[7]]) as u64;
         (secs as f64) + (frac as f64) / (u32::MAX as f64 + 1.0)
     }
-    let t1 = 0.0; // we didn't set originate TS; servers often echo zero; treat as zero
-    let t2 = read_ts(&buf[32..40]); // receive
-    let t3 = read_ts(&buf[40..48]); // transmit
-    let t0 = {
-        // Approx now in NTP seconds
-        const NTP_UNIX_DELTA: u64 = 2_208_988_800; // seconds between 1900 and 1970
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
-        (now.as_secs() + NTP_UNIX_DELTA) as f64 + (now.subsec_nanos() as f64) / 1e9
-    };
+    // In a fully correct exchange we would use t1 (originate), t2 (receive), t3 (transmit), t4 (arrival)
+    // Here we approximate with t1≈0 because we didn't set transmit timestamp in the request.
+    let t1 = 0.0f64;
+    let t2 = read_ts(&packet[32..40]); // server receive time
+    let t3 = read_ts(&packet[40..48]); // server transmit time
+    // offset ≈ ((t2 - t1) + (t3 - t0)) / 2
+    ((t2 - t1) + (t3 - t0_ntp_seconds)) / 2.0
+}
 
-    // Use simplified offset formula since T1=0: offset ≈ ((t2 - 0) + (t3 - t0)) / 2
-    let offset = ((t2 - t1) + (t3 - t0)) / 2.0;
-    println!("ntp_server={server} offset_seconds={:.6}", offset);
-    Ok(())
+#[cfg(test)]
+mod ntp_tests {
+    use super::*;
+
+    // Helper to write a 32.32 fixed-point NTP timestamp
+    fn write_ts(buf: &mut [u8], secs: u64, frac: u32) {
+        let s = (secs as u32).to_be_bytes();
+        let f = frac.to_be_bytes();
+        buf[..4].copy_from_slice(&s);
+        buf[4..8].copy_from_slice(&f);
+    }
+
+    #[test]
+    fn compute_offset_basic() {
+        // Construct minimal 48-byte NTP response
+        let mut pkt = [0u8; 48];
+        // Choose an arbitrary base time in NTP seconds (e.g., 3900000000)
+        let base_secs = 3_900_000_000u64;
+        // Server receive and transmit times are base+0.2s
+        let frac_0p2 = ((0.2f64) * (u32::MAX as f64 + 1.0)) as u32;
+        write_ts(&mut pkt[32..40], base_secs, frac_0p2); // t2
+        write_ts(&mut pkt[40..48], base_secs, frac_0p2); // t3
+
+        // Local now equals base time
+        let t0 = base_secs as f64;
+        let off = compute_ntp_offset(t0, &pkt);
+        // With t1≈0, offset ≈ ((t2-0)+(t3-t0))/2 = (base+0.2 + (base+0.2 - base))/2 = ~0.2
+        assert!(off > 0.19 && off < 0.21, "off={off}");
+    }
 }
 
 #[cfg(feature = "tools_http3")]

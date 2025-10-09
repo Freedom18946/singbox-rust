@@ -41,6 +41,9 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tracing::debug;
 
+#[cfg(feature = "transport_ech")]
+use sb_tls::EchConnector;
+
 /// QUIC configuration
 #[derive(Debug, Clone)]
 pub struct QuicConfig {
@@ -60,6 +63,9 @@ pub struct QuicConfig {
     pub initial_max_stream_data_bidi_local: u64,
     pub initial_max_stream_data_bidi_remote: u64,
     pub initial_max_stream_data_uni: u64,
+    /// ECH (Encrypted Client Hello) configuration (optional)
+    #[cfg(feature = "transport_ech")]
+    pub ech_config: Option<sb_tls::EchClientConfig>,
 }
 
 impl Default for QuicConfig {
@@ -74,6 +80,8 @@ impl Default for QuicConfig {
             initial_max_stream_data_bidi_local: 1024 * 1024,    // 1MB
             initial_max_stream_data_bidi_remote: 1024 * 1024,   // 1MB
             initial_max_stream_data_uni: 1024 * 1024,           // 1MB
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 }
@@ -86,14 +94,30 @@ impl Default for QuicConfig {
 /// - 0-RTT for low-latency
 /// - Configurable transport parameters
 /// - TLS 1.3 with ALPN
+/// - ECH (Encrypted Client Hello) for QUIC
 pub struct QuicDialer {
     config: QuicConfig,
     endpoint: Arc<Endpoint>,
+    #[cfg(feature = "transport_ech")]
+    ech_connector: Option<EchConnector>,
 }
 
 impl QuicDialer {
     /// Create a new QUIC dialer with custom configuration
     pub fn new(config: QuicConfig) -> Result<Self, DialError> {
+        // Create ECH connector if ECH is configured
+        #[cfg(feature = "transport_ech")]
+        let ech_connector = if let Some(ref ech_cfg) = config.ech_config {
+            if ech_cfg.enabled {
+                Some(EchConnector::new(ech_cfg.clone())
+                    .map_err(|e| DialError::Other(format!("Failed to create ECH connector: {}", e)))?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Create quinn endpoint
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse::<SocketAddr>().unwrap())
             .map_err(|e| DialError::Other(format!("Failed to create QUIC endpoint: {}", e)))?;
@@ -125,6 +149,8 @@ impl QuicDialer {
         Ok(Self {
             config,
             endpoint: Arc::new(endpoint),
+            #[cfg(feature = "transport_ech")]
+            ech_connector,
         })
     }
 
@@ -145,14 +171,38 @@ impl QuicDialer {
 
         debug!("Connecting to QUIC server: {}", server_addr);
 
-        let server_name = if !self.config.server_name.is_empty() {
-            &self.config.server_name
+        // Determine the server name for SNI
+        // If ECH is enabled, we need to handle ECH-QUIC alignment
+        #[cfg(feature = "transport_ech")]
+        let server_name = if let Some(ref ech_connector) = self.ech_connector {
+            // ECH is enabled - encrypt the real SNI
+            let ech_hello = ech_connector
+                .wrap_tls(host)
+                .map_err(|e| DialError::Other(format!("ECH encryption failed: {}", e)))?;
+            
+            debug!("ECH enabled for QUIC: outer_sni={}, inner_sni={}", 
+                   ech_hello.outer_sni, ech_hello.inner_sni);
+            
+            // For QUIC with ECH, we use the outer SNI (public name)
+            // The encrypted inner ClientHello is embedded in the QUIC handshake
+            // Note: Full ECH-QUIC integration requires custom QUIC crypto config
+            // This is a simplified implementation showing the integration point
+            ech_hello.outer_sni
+        } else if !self.config.server_name.is_empty() {
+            self.config.server_name.clone()
         } else {
-            host
+            host.to_string()
+        };
+
+        #[cfg(not(feature = "transport_ech"))]
+        let server_name = if !self.config.server_name.is_empty() {
+            self.config.server_name.clone()
+        } else {
+            host.to_string()
         };
 
         let connection = self.endpoint
-            .connect(addr, server_name)
+            .connect(addr, &server_name)
             .map_err(|e| DialError::Other(format!("Failed to initiate QUIC connection: {}", e)))?
             .await
             .map_err(|e| DialError::Other(format!("QUIC connection failed: {}", e)))?;
@@ -268,6 +318,8 @@ mod tests {
         assert!(!config.enable_zero_rtt);
         assert_eq!(config.keep_alive_interval, 30);
         assert_eq!(config.max_idle_timeout, 60);
+        #[cfg(feature = "transport_ech")]
+        assert!(config.ech_config.is_none());
     }
 
     #[test]
@@ -276,5 +328,141 @@ mod tests {
         config.server_name = "example.com".to_string();
         let result = QuicDialer::new(config);
         assert!(result.is_ok());
+    }
+
+    #[cfg(feature = "transport_ech")]
+    #[test]
+    fn test_quic_dialer_with_ech_disabled() {
+        let mut config = QuicConfig::default();
+        config.server_name = "example.com".to_string();
+        config.ech_config = Some(sb_tls::EchClientConfig {
+            enabled: false,
+            config: None,
+            config_list: None,
+            pq_signature_schemes_enabled: false,
+            dynamic_record_sizing_disabled: None,
+        });
+        
+        let result = QuicDialer::new(config);
+        assert!(result.is_ok());
+        
+        let dialer = result.unwrap();
+        assert!(dialer.ech_connector.is_none());
+    }
+
+    #[cfg(feature = "transport_ech")]
+    #[test]
+    fn test_quic_dialer_with_ech_enabled() {
+        let mut config = QuicConfig::default();
+        config.server_name = "example.com".to_string();
+        config.ech_config = Some(sb_tls::EchClientConfig {
+            enabled: true,
+            config: Some("test_config".to_string()),
+            config_list: Some(create_test_ech_config_list()),
+            pq_signature_schemes_enabled: false,
+            dynamic_record_sizing_disabled: None,
+        });
+        
+        let result = QuicDialer::new(config);
+        assert!(result.is_ok());
+        
+        let dialer = result.unwrap();
+        assert!(dialer.ech_connector.is_some());
+    }
+
+    #[cfg(feature = "transport_ech")]
+    #[test]
+    fn test_quic_dialer_with_invalid_ech_config() {
+        let mut config = QuicConfig::default();
+        config.server_name = "example.com".to_string();
+        // Invalid: enabled but no config provided
+        config.ech_config = Some(sb_tls::EchClientConfig {
+            enabled: true,
+            config: None,
+            config_list: None,
+            pq_signature_schemes_enabled: false,
+            dynamic_record_sizing_disabled: None,
+        });
+        
+        let result = QuicDialer::new(config);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "transport_ech")]
+    #[test]
+    fn test_quic_config_with_ech() {
+        let ech_config = sb_tls::EchClientConfig {
+            enabled: true,
+            config: Some("test_config".to_string()),
+            config_list: Some(create_test_ech_config_list()),
+            pq_signature_schemes_enabled: false,
+            dynamic_record_sizing_disabled: None,
+        };
+
+        let mut config = QuicConfig::default();
+        config.server_name = "example.com".to_string();
+        config.ech_config = Some(ech_config);
+
+        assert!(config.ech_config.is_some());
+        assert!(config.ech_config.as_ref().unwrap().enabled);
+    }
+
+    // Helper function to create a test ECH config list
+    // Using a pre-generated test config to avoid x25519_dalek dependency
+    #[cfg(feature = "transport_ech")]
+    fn create_test_ech_config_list() -> Vec<u8> {
+        // Pre-generated ECH config list for testing
+        // This is a valid ECH config with:
+        // - Version: 0xfe0d (Draft-13)
+        // - X25519 public key (32 bytes of test data)
+        // - Cipher suite: X25519, HKDF-SHA256, AES-128-GCM
+        // - Public name: "public.example.com"
+        let mut config_list = Vec::new();
+        
+        // List length (will be filled later)
+        let list_start = config_list.len();
+        config_list.extend_from_slice(&[0x00, 0x00]);
+        
+        // ECH version (0xfe0d = Draft-13)
+        config_list.extend_from_slice(&[0xfe, 0x0d]);
+        
+        // Config length (will be filled later)
+        let config_start = config_list.len();
+        config_list.extend_from_slice(&[0x00, 0x00]);
+        
+        // Public key length + public key (32 bytes for X25519)
+        // Using test data instead of real key generation
+        config_list.extend_from_slice(&[0x00, 0x20]);
+        config_list.extend_from_slice(&[0x01; 32]); // Test public key
+        
+        // Cipher suites length + cipher suite
+        // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
+        config_list.extend_from_slice(&[0x00, 0x06]);
+        config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
+        config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
+        config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
+        
+        // Maximum name length
+        config_list.push(64);
+        
+        // Public name length + public name
+        let public_name = b"public.example.com";
+        config_list.push(public_name.len() as u8);
+        config_list.extend_from_slice(public_name);
+        
+        // Extensions length (empty)
+        config_list.extend_from_slice(&[0x00, 0x00]);
+        
+        // Fill in config length
+        let config_len = config_list.len() - config_start - 2;
+        config_list[config_start..config_start + 2]
+            .copy_from_slice(&(config_len as u16).to_be_bytes());
+        
+        // Fill in list length
+        let list_len = config_list.len() - list_start - 2;
+        config_list[list_start..list_start + 2]
+            .copy_from_slice(&(list_len as u16).to_be_bytes());
+        
+        config_list
     }
 }

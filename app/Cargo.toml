@@ -269,7 +269,7 @@ criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
-sb-adapters = { path = "../crates/sb-adapters" }
+sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria"] }
 serial_test = "2"
 
 [build-dependencies]
@@ -284,3 +284,15 @@ required-features = ["admin_debug","auth","rate_limit"]
 name = "cli"
 path = "tests/cli.rs"
 required-features = ["admin_debug","auth","rate_limit"]
+
+[[test]]
+name = "reality_tls_e2e"
+path = "../tests/reality_tls_e2e.rs"
+
+[[test]]
+name = "hysteria_v1_e2e"
+path = "../tests/hysteria_v1_e2e.rs"
+
+[[bench]]
+name = "bench_p0_protocols"
+harness = false

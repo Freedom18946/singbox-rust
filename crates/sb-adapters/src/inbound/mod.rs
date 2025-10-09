@@ -42,3 +42,9 @@ pub mod naive;
 
 #[cfg(feature = "tuic")]
 pub mod tuic;
+
+#[cfg(feature = "adapter-hysteria")]
+pub mod hysteria;
+
+#[cfg(feature = "adapter-hysteria2")]
+pub mod hysteria2;

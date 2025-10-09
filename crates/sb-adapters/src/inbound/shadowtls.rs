@@ -42,36 +42,37 @@ pub struct ShadowTlsInboundConfig {
 
 fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
     // Load cert chain
-    let mut cert_reader = BufReader::new(File::open(cert_path)?);
-    let certs = rustls_pemfile::certs(&mut cert_reader)
-        .map_err(|_| anyhow!("invalid cert file"))?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect::<Vec<_>>();
+    let cert_file = File::open(cert_path)?;
+    let mut cert_reader = BufReader::new(cert_file);
+    let certs: Vec<_> = rustls_pemfile::certs(&mut cert_reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| anyhow!("invalid cert file"))?;
 
     // Load private key (PKCS#8 or RSA)
-    let mut key_reader = BufReader::new(File::open(key_path)?);
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
-        .map_err(|_| anyhow!("invalid key file (pkcs8)"))?
-        .into_iter()
-        .map(rustls::PrivateKey)
-        .collect::<Vec<_>>();
-    if keys.is_empty() {
-        // try RSA
-        let mut key_reader = BufReader::new(File::open(key_path)?);
-        keys = rustls_pemfile::rsa_private_keys(&mut key_reader)
-            .map_err(|_| anyhow!("invalid key file (rsa)"))?
-            .into_iter()
-            .map(rustls::PrivateKey)
-            .collect::<Vec<_>>();
-    }
-    let key = keys
-        .into_iter()
-        .next()
-        .ok_or_else(|| anyhow!("no private key found"))?;
+    let key_file = File::open(key_path)?;
+    let mut key_reader = BufReader::new(key_file);
+    
+    let key = {
+        // Try PKCS#8 first
+        if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
+            .next()
+            .transpose()
+            .map_err(|_| anyhow!("invalid key file (pkcs8)"))?
+        {
+            rustls_pki_types::PrivateKeyDer::Pkcs8(key)
+        } else {
+            // Try RSA
+            let key_file = File::open(key_path)?;
+            let mut key_reader = BufReader::new(key_file);
+            let key = rustls_pemfile::rsa_private_keys(&mut key_reader)
+                .next()
+                .ok_or_else(|| anyhow!("no private key found"))?
+                .map_err(|_| anyhow!("invalid key file (rsa)"))?;
+            rustls_pki_types::PrivateKeyDer::Pkcs1(key)
+        }
+    };
 
     let cfg = rustls::ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| anyhow!("tls config error: {}", e))?;

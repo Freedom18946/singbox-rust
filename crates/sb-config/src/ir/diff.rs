@@ -298,6 +298,8 @@ mod tests {
                 sniff: false,
                 udp: false,
                 basic_auth: None,
+                override_host: None,
+                override_port: None,
             }],
             outbounds: vec![OutboundIR {
                 ty: OutboundType::Direct,
@@ -321,6 +323,8 @@ mod tests {
                 port: 8081,
                 sniff: false,
                 udp: false,
+                override_host: None,
+                override_port: None,
                 basic_auth: None,
             }],
             outbounds: vec![OutboundIR {

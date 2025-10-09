@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "inbounds": [
+    {
+      "type": "http",
+      "name": "http-in",
+      "listen": "127.0.0.1:8080"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "name": "ech-vless",
+      "server": "example.com",
+      "port": 443,
+      "uuid": "12345678-1234-1234-1234-123456789abc",
+      "tls": {
+        "enabled": true,
+        "sni": "example.com",
+        "alpn": "h2,http/1.1",
+        "ech": {
+          "enabled": true,
+          "config": "base64_encoded_ech_config_list_here",
+          "pq_signature_schemes_enabled": false,
+          "dynamic_record_sizing_disabled": false
+        }
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "name": "ech-shadowsocks",
+      "server": "ss.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "your_password_here",
+      "tls": {
+        "enabled": true,
+        "sni": "ss.example.com",
+        "ech": {
+          "enabled": true,
+          "config": "base64_encoded_ech_config_list_here"
+        }
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain": ["example.com"],
+        "outbound": "ech-vless"
+      },
+      {
+        "domain": ["ss.example.com"],
+        "outbound": "ech-shadowsocks"
+      }
+    ],
+    "default": "direct"
+  }
+}

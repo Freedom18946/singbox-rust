@@ -110,6 +110,8 @@ fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
 mod tests {
     use super::*;
 
+    // ========== Key Generation Tests ==========
+
     #[test]
     fn test_key_generation() {
         let (private_key, public_key) = generate_keypair();
@@ -123,6 +125,48 @@ mod tests {
     }
 
     #[test]
+    fn test_key_generation_uniqueness() {
+        let (priv1, pub1) = generate_keypair();
+        let (priv2, pub2) = generate_keypair();
+
+        // Different keypairs should be generated
+        assert_ne!(priv1, priv2);
+        assert_ne!(pub1, pub2);
+    }
+
+    #[test]
+    fn test_reality_auth_generate() {
+        let auth1 = RealityAuth::generate();
+        let auth2 = RealityAuth::generate();
+
+        // Different instances should have different keys
+        assert_ne!(auth1.public_key_bytes(), auth2.public_key_bytes());
+        assert_ne!(auth1.private_key_bytes(), auth2.private_key_bytes());
+    }
+
+    #[test]
+    fn test_reality_auth_from_private_key() {
+        let private_key = [0x42u8; 32];
+        let auth = RealityAuth::from_private_key(private_key);
+
+        assert_eq!(auth.private_key_bytes(), private_key);
+        assert_eq!(auth.public_key_bytes().len(), 32);
+    }
+
+    #[test]
+    fn test_public_key_derivation_from_private() {
+        // Test that public key is correctly derived from private key
+        let private_key = [0x77u8; 32];
+        let auth1 = RealityAuth::from_private_key(private_key);
+        let auth2 = RealityAuth::from_private_key(private_key);
+
+        // Same private key should always produce same public key
+        assert_eq!(auth1.public_key_bytes(), auth2.public_key_bytes());
+    }
+
+    // ========== X25519 Key Exchange Tests ==========
+
+    #[test]
     fn test_ecdh_key_exchange() {
         let alice = RealityAuth::generate();
         let bob = RealityAuth::generate();
@@ -133,6 +177,67 @@ mod tests {
         // X25519 ECDH should produce the same shared secret on both sides
         assert_eq!(alice_shared, bob_shared);
     }
+
+    #[test]
+    fn test_ecdh_different_peers_different_secrets() {
+        let alice = RealityAuth::generate();
+        let bob = RealityAuth::generate();
+        let charlie = RealityAuth::generate();
+
+        let alice_bob_shared = alice.derive_shared_secret(&bob.public_key_bytes());
+        let alice_charlie_shared = alice.derive_shared_secret(&charlie.public_key_bytes());
+
+        // Different peers should produce different shared secrets
+        assert_ne!(alice_bob_shared, alice_charlie_shared);
+    }
+
+    #[test]
+    fn test_ecdh_commutative() {
+        // Test that ECDH is commutative: alice->bob == bob->alice
+        let alice = RealityAuth::generate();
+        let bob = RealityAuth::generate();
+
+        let shared1 = alice.derive_shared_secret(&bob.public_key_bytes());
+        let shared2 = bob.derive_shared_secret(&alice.public_key_bytes());
+
+        assert_eq!(shared1, shared2);
+    }
+
+    #[test]
+    fn test_multiple_key_exchanges() {
+        let auth = RealityAuth::generate();
+        let peer = RealityAuth::generate();
+        let peer_pub = peer.public_key_bytes();
+
+        // Should be able to derive shared secret multiple times
+        let shared1 = auth.derive_shared_secret(&peer_pub);
+        let shared2 = auth.derive_shared_secret(&peer_pub);
+        let shared3 = auth.derive_shared_secret(&peer_pub);
+
+        assert_eq!(shared1, shared2);
+        assert_eq!(shared2, shared3);
+    }
+
+    #[test]
+    fn test_key_derivation_deterministic() {
+        let private_key = [42u8; 32];
+        let auth1 = RealityAuth::from_private_key(private_key);
+        let auth2 = RealityAuth::from_private_key(private_key);
+
+        // Same private key should produce same public key
+        assert_eq!(auth1.public_key_bytes(), auth2.public_key_bytes());
+
+        // Shared secret with same peer should be identical
+        let peer = RealityAuth::generate();
+        let peer_pub = peer.public_key_bytes();
+
+        let shared1 = auth1.derive_shared_secret(&peer_pub);
+        let shared2 = auth2.derive_shared_secret(&peer_pub);
+
+        assert_eq!(shared1, shared2);
+    }
+
+    // ========== Authentication Hash Tests ==========
 
     #[test]
     fn test_auth_hash_verification() {
@@ -165,23 +270,142 @@ mod tests {
     }
 
     #[test]
-    fn test_key_derivation_deterministic() {
-        let private_key = [42u8; 32];
-        let auth1 = RealityAuth::from_private_key(private_key);
-        let auth2 = RealityAuth::from_private_key(private_key);
+    fn test_auth_hash_wrong_short_id() {
+        let server = RealityAuth::generate();
+        let client = RealityAuth::generate();
 
-        // Same private key should produce same public key
-        assert_eq!(auth1.public_key_bytes(), auth2.public_key_bytes());
+        let short_id = b"test";
+        let session_data = b"session123";
 
-        // Shared secret with same peer should be identical
-        let peer = RealityAuth::generate();
-        let peer_pub = peer.public_key_bytes();
+        let hash = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            short_id,
+            session_data,
+        );
 
-        let shared1 = auth1.derive_shared_secret(&peer_pub);
-        let shared2 = auth2.derive_shared_secret(&peer_pub);
-
-        assert_eq!(shared1, shared2);
+        // Wrong short_id should fail
+        assert!(!server.verify_auth_hash(
+            &client.public_key_bytes(),
+            b"wrong",
+            session_data,
+            &hash,
+        ));
     }
+
+    #[test]
+    fn test_auth_hash_wrong_peer_key() {
+        let server = RealityAuth::generate();
+        let client = RealityAuth::generate();
+        let imposter = RealityAuth::generate();
+
+        let short_id = b"test";
+        let session_data = b"session123";
+
+        let hash = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            short_id,
+            session_data,
+        );
+
+        // Wrong peer public key should fail
+        assert!(!server.verify_auth_hash(
+            &imposter.public_key_bytes(),
+            short_id,
+            session_data,
+            &hash,
+        ));
+    }
+
+    #[test]
+    fn test_auth_hash_deterministic() {
+        let server = RealityAuth::generate();
+        let client = RealityAuth::generate();
+
+        let short_id = b"test";
+        let session_data = b"session123";
+
+        let hash1 = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            short_id,
+            session_data,
+        );
+
+        let hash2 = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            short_id,
+            session_data,
+        );
+
+        // Same inputs should produce same hash
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_auth_hash_different_inputs() {
+        let server = RealityAuth::generate();
+        let client = RealityAuth::generate();
+
+        let hash1 = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            b"short1",
+            b"session1",
+        );
+
+        let hash2 = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            b"short2",
+            b"session2",
+        );
+
+        // Different inputs should produce different hashes
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_auth_hash_empty_short_id() {
+        let server = RealityAuth::generate();
+        let client = RealityAuth::generate();
+
+        let session_data = b"session123";
+
+        let hash = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            b"",
+            session_data,
+        );
+
+        // Empty short_id should work
+        assert!(server.verify_auth_hash(
+            &client.public_key_bytes(),
+            b"",
+            session_data,
+            &hash,
+        ));
+    }
+
+    #[test]
+    fn test_auth_hash_large_session_data() {
+        let server = RealityAuth::generate();
+        let client = RealityAuth::generate();
+
+        let short_id = b"test";
+        let session_data = vec![0x42u8; 1024]; // Large session data
+
+        let hash = client.compute_auth_hash(
+            &server.public_key_bytes(),
+            short_id,
+            &session_data,
+        );
+
+        assert!(server.verify_auth_hash(
+            &client.public_key_bytes(),
+            short_id,
+            &session_data,
+            &hash,
+        ));
+    }
+
+    // ========== Constant-Time Comparison Tests ==========
 
     #[test]
     fn test_constant_time_compare() {
@@ -195,17 +419,33 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_key_exchanges() {
-        let auth = RealityAuth::generate();
-        let peer = RealityAuth::generate();
-        let peer_pub = peer.public_key_bytes();
+    fn test_constant_time_compare_empty() {
+        assert!(constant_time_compare(&[], &[]));
+        assert!(!constant_time_compare(&[1], &[]));
+        assert!(!constant_time_compare(&[], &[1]));
+    }
 
-        // Should be able to derive shared secret multiple times
-        let shared1 = auth.derive_shared_secret(&peer_pub);
-        let shared2 = auth.derive_shared_secret(&peer_pub);
-        let shared3 = auth.derive_shared_secret(&peer_pub);
+    #[test]
+    fn test_constant_time_compare_all_zeros() {
+        let a = [0u8; 32];
+        let b = [0u8; 32];
+        assert!(constant_time_compare(&a, &b));
+    }
 
-        assert_eq!(shared1, shared2);
-        assert_eq!(shared2, shared3);
+    #[test]
+    fn test_constant_time_compare_single_bit_difference() {
+        let a = [0xFF; 32];
+        let mut b = [0xFF; 32];
+        b[15] = 0xFE; // Single bit difference
+
+        assert!(!constant_time_compare(&a, &b));
+    }
+
+    #[test]
+    fn test_constant_time_compare_length_mismatch() {
+        let a = [1, 2, 3, 4];
+        let b = [1, 2, 3, 4, 5];
+
+        assert!(!constant_time_compare(&a, &b));
     }
 }

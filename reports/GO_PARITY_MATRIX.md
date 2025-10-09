@@ -102,8 +102,8 @@ CLI Parity
 - generate tls/vapid/wireguard: Partial (tls-keypair implemented; vapid/wireguard missing)
 - geosite commands: Missing
 - geoip commands: Missing
-- tools fetch/http3/connect: Partial (connect TCP/UDP + fetch HTTP/HTTPS implemented; http3 pending)
- - tools synctime: Partial (offset query implemented)
+- tools fetch/http3/connect: Full (connect TCP/UDP + fetch HTTP/HTTPS implemented; http3 supported via reqwest `http3` feature when built with `tools_http3`)
+- tools synctime: Full (NTP offset computation implemented with unit tests)
 - merge (configs): Partial (app/src/bin/merge.rs; deep-merge + TLS/ECH/SSH path inlining; more edge-cases pending)
 
 Platform/Adapters

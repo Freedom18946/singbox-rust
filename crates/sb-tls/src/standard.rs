@@ -62,7 +62,10 @@ impl StandardTlsConnector {
 
 impl Default for StandardTlsConnector {
     fn default() -> Self {
-        Self::new().expect("Failed to create default TLS connector")
+        // This is safe because creating a default TLS connector with webpki-roots
+        // should never fail in normal circumstances
+        #[allow(clippy::expect_used)]
+        Self::new().expect("Failed to create default TLS connector with webpki-roots")
     }
 }
 

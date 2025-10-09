@@ -13,11 +13,11 @@ Baseline
 - Goal: CLI behavior and config surface compatible with upstream; functional parity prioritized by user impact.
 
 Inbounds
-- anytls: Missing
+- anytls: Deferred (requires external Rust library; upstream uses github.com/anytls/sing-anytls; see .kiro/specs/p0-production-parity/anytls-research.md)
 - direct: Full (TCP+UDP forwarder with override addr/port; session-based NAT for UDP with automatic timeout cleanup; crates/sb-core/src/inbound/direct.rs)
 - http: Full (crates/sb-adapters/src/inbound/http.rs)
-- hysteria: Missing
-- hysteria2: Missing
+- hysteria: Full (crates/sb-adapters/src/inbound/hysteria.rs; Hysteria v1 protocol with QUIC transport, custom congestion control, UDP relay)
+- hysteria2: Full (crates/sb-adapters/src/inbound/hysteria2.rs; Hysteria v2 with Salamander obfuscation, password auth, UDP over stream)
 - mixed: Full (crates/sb-adapters/src/inbound/mixed.rs)
 - naive: Full (crates/sb-adapters/src/inbound/naive.rs)
 - redirect: Full (crates/sb-adapters/src/inbound/redirect.rs)
@@ -32,21 +32,21 @@ Inbounds
 - vmess: Full (crates/sb-adapters/src/inbound/vmess.rs)
 
 Outbounds
-- anytls: Missing
+- anytls: Deferred (requires external Rust library; upstream uses github.com/anytls/sing-anytls; see .kiro/specs/p0-production-parity/anytls-research.md)
 - block: Full (crates/sb-adapters/src/outbound/block.rs)
 - direct: Full (crates/sb-adapters/src/outbound/direct.rs)
 - dns: Full (crates/sb-adapters/src/outbound/dns.rs)
 - http: Full (crates/sb-adapters/src/outbound/http.rs)
-- hysteria: Missing
-- hysteria2: Full (adapter wrapper implemented in crates/sb-adapters/src/outbound/hysteria2.rs; basic unit tests added; E2E pending)
+- hysteria: Full (crates/sb-adapters/src/outbound/hysteria.rs; Hysteria v1 with QUIC, custom congestion control, UDP relay)
+- hysteria2: Full (crates/sb-adapters/src/outbound/hysteria2.rs; comprehensive implementation with E2E tests, UDP over stream, Salamander obfuscation)
 - selector: Full (crates/sb-core/src/outbound/selector*.rs)
 - shadowsocks: Full (crates/sb-adapters/src/outbound/shadowsocks.rs)
 - shadowtls: Full (promoted: crates/sb-adapters/src/outbound/shadowtls.rs wraps sb-core; basic unit tests added)
 - socks: Full (crates/sb-adapters/src/outbound/socks5.rs)
-- ssh: Partial (feature `out_ssh`; implemented in `crates/sb-core/src/outbound/ssh_stub.rs`, config/IR + CLI wired for password auth via adapter bridge)
+- ssh: Full (crates/sb-adapters/src/outbound/ssh.rs; password and private key auth, host key verification, connection pooling, E2E tested)
 - tor: Missing
 - trojan: Full (crates/sb-adapters/src/outbound/trojan.rs)
-- tuic: Partial (stub in crates/sb-adapters/src/outbound/tuic.rs; sb-core implementation requires `out_tuic` feature enablement; tests pending)
+- tuic: Full (crates/sb-adapters/src/outbound/tuic.rs; full implementation with UDP over stream, authentication, E2E tests)
 - urltest: Full (selector/urltest implemented under crates/sb-core/src/outbound/*selector*.rs; config supports `urltest`)
 - vless: Full (crates/sb-adapters/src/outbound/vless.rs)
 - vmess: Full (crates/sb-adapters/src/outbound/vmess.rs)
@@ -73,8 +73,8 @@ DNS
 
 TLS/Transport
 - TLS (std): Full (crates/sb-transport/src/tls*.rs)
-- REALITY: Partial (crates/sb-tls/src/reality/*; handshake integration not complete end-to-end)
-- ECH: Partial (CLI keypair generation implemented; runtime handshake integration missing)
+- REALITY: Full (crates/sb-tls/src/reality/*; complete client/server handshake with X25519 key exchange, auth data embedding, fallback proxy, E2E tested)
+- ECH: Full (crates/sb-tls/src/ech/*; CLI keypair generation + runtime handshake with HPKE encryption, SNI encryption, E2E tested)
 - uTLS (ClientHello mimic): Missing (Go-only upstream tag `with_utls`)
 - ACME (TLS certificate issuer): N/A (upstream build tag `with_acme`; Go-specific certmagic library; Rust alternatives exist but deprioritized—users typically deploy with pre-existing certs or reverse proxies)
 - QUIC: Full (crates/sb-transport/src/quic.rs)
@@ -105,7 +105,7 @@ CLI Parity
 - geosite commands: Full (list/lookup/export/matcher supported; binary `geosite.db` minimal reader implemented)
 - geoip commands: Full (list/lookup/export supported with MMDB sing-geoip; text DB fallback supported)
 - tools fetch/http3/connect: Full (connect TCP/UDP + fetch HTTP/HTTPS implemented; http3 supported via reqwest `http3` feature when built with `tools_http3`)
-- tools synctime: Partial (offset query implemented)
+- tools synctime: Full (NTP offset computation implemented with unit tests)
 - merge (configs): Partial (app/src/bin/merge.rs; deep-merge + TLS/ECH/SSH path inlining; keep aligning edge cases with upstream)
 
 Platform/Adapters
@@ -132,4 +132,4 @@ Verification summary (2025-10-05)
 - Local CLI inventory verified from `app/src/bin` and `app/src/cli`.
 - Rule-Set CLI parity upgraded to Full (compile/convert/merge/upgrade now implemented).
 - SSH outbound wired via IR + adapter bridge (password/private-key auth).
- - New 1.13 features validated: AnyTLS (inbound/outbound) present upstream; `generate vapid`/`generate wireguard` present upstream; DNS `server.tailscale`/`server.dhcp` present upstream.
+- New 1.13 features validated: AnyTLS (inbound/outbound) present upstream; `generate vapid`/`generate wireguard` present upstream; DNS `server.tailscale`/`server.dhcp` present upstream.

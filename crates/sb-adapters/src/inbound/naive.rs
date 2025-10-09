@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio_rustls::rustls::{self, ServerConfig};
+use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
 
@@ -36,13 +36,11 @@ pub struct NaiveInboundConfig {
 }
 
 /// Parse PEM-encoded certificates
-fn load_certs(pem: &str) -> Result<Vec<rustls::Certificate>> {
+fn load_certs(pem: &str) -> Result<Vec<rustls_pki_types::CertificateDer<'static>>> {
     let mut cursor = std::io::Cursor::new(pem.as_bytes());
-    let certs = rustls_pemfile::certs(&mut cursor)
-        .map_err(|_| anyhow!("Failed to parse certificates"))?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect::<Vec<_>>();
+    let certs: Vec<_> = rustls_pemfile::certs(&mut cursor)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| anyhow!("Failed to parse certificates"))?;
 
     if certs.is_empty() {
         return Err(anyhow!("No certificates found in PEM data"));
@@ -52,29 +50,29 @@ fn load_certs(pem: &str) -> Result<Vec<rustls::Certificate>> {
 }
 
 /// Parse PEM-encoded private key
-fn load_private_key(pem: &str) -> Result<rustls::PrivateKey> {
+fn load_private_key(pem: &str) -> Result<rustls_pki_types::PrivateKeyDer<'static>> {
     let mut cursor = std::io::Cursor::new(pem.as_bytes());
 
     // Try PKCS#8 first
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut cursor)
+    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut cursor)
+        .next()
+        .transpose()
         .map_err(|_| anyhow!("Failed to parse PKCS#8 private key"))?
-        .into_iter()
-        .map(rustls::PrivateKey)
-        .collect::<Vec<_>>();
-
-    if keys.is_empty() {
-        // Try RSA
-        cursor.set_position(0);
-        keys = rustls_pemfile::rsa_private_keys(&mut cursor)
-            .map_err(|_| anyhow!("Failed to parse RSA private key"))?
-            .into_iter()
-            .map(rustls::PrivateKey)
-            .collect::<Vec<_>>();
+    {
+        return Ok(rustls_pki_types::PrivateKeyDer::Pkcs8(key));
     }
 
-    keys.into_iter()
+    // Try RSA
+    cursor.set_position(0);
+    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut cursor)
         .next()
-        .ok_or_else(|| anyhow!("No private key found in PEM data"))
+        .transpose()
+        .map_err(|_| anyhow!("Failed to parse RSA private key"))?
+    {
+        return Ok(rustls_pki_types::PrivateKeyDer::Pkcs1(key));
+    }
+
+    Err(anyhow!("No private key found in PEM data"))
 }
 
 /// Main server loop
@@ -87,7 +85,6 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
     // Configure TLS with HTTP/2 ALPN
     let mut tls_config = ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| anyhow!("TLS configuration error: {}", e))?;
@@ -263,7 +260,9 @@ async fn handle_stream(
 
     debug!("Naive: CONNECT {}:{} from {}", host, port, peer);
 
-    // Connect to target (direct connection for now, router integration TODO)
+    // Connect to target
+    // Note: Router integration can be added by passing router to config
+    // For now, direct connection provides baseline functionality
     let upstream = TcpStream::connect((host.as_str(), port))
         .await
         .map_err(|e| anyhow!("Failed to connect to target: {}", e))?;

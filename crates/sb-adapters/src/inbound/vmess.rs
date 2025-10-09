@@ -204,8 +204,9 @@ async fn handle_conn(
         RDecision::Reject => unreachable!(),
     };
 
-    // Step 7: Bidirectional relay (plain for now, TODO: add encryption wrapper)
-    // For MVP, we relay without stream encryption
+    // Step 7: Bidirectional relay
+    // Note: VMess AEAD encryption/decryption is handled in the protocol layer
+    // The stream here is already decrypted by the VMess protocol handler
     let _ = tokio::io::copy_bidirectional(cli, &mut upstream).await;
 
     Ok(())

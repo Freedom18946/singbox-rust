@@ -7,24 +7,24 @@ Priority legend
 
 P0 — Close critical gaps
 - Sniffing pipeline
-  - Implement TLS SNI / HTTP Host / QUIC ALPN sniff on inbound path and expose as routing conditions.
-  - Add enable flags on inbounds (http/socks/mixed/tun) mirroring upstream.
-  - Wire to router conditions and explain trace.
+  - DONE: TLS SNI / HTTP Host / QUIC ALPN sniff implemented and exposed to router conditions; explain trace supports sniff fields.
+  - DONE: Enable flags on inbounds (http/socks/mixed/tun) wired via `sniff` boolean in schema/IR.
 - TLS features to production
-  - REALITY: Complete handshake path and configuration glue (crates/sb-tls + sb-transport), add E2E tests.
-  - ECH: Integrate runtime handshake using generated key/config; add QUIC/ECH note alignment.
+  - REALITY: Complete handshake path and configuration glue (crates/sb-tls + sb-transport), add E2E tests. (remaining)
+  - ECH: Integrate runtime handshake using generated key/config; add QUIC/ECH note alignment. (remaining)
 - Inbound/outbound coverage
-  - Implement inbound: direct, hysteria, hysteria2, anytls.
-  - Implement outbound: hysteria (v1), anytls; unify tuic/hysteria2 implementations under sb-adapters and add integration tests.
-  - Promote shadowtls outbound from sb-core to adapters and add test coverage.
-  - SSH outbound: password/private-key wired via adapter bridge; add example + E2E, then host key management polish.
+  - inbound `direct`: DONE.
+  - inbound `hysteria`/`hysteria2`/`anytls`: remaining.
+  - outbound `hysteria` (v1), `anytls`: remaining; unify tuic/hysteria2 under sb-adapters with tests.
+  - shadowtls outbound: DONE (promoted to sb-adapters; basic tests landed).
+  - SSH outbound: password/private-key wired; add example + E2E; host key management polish. (remaining E2E)
 - CLI parity (externally visible)
-  - rule-set: add compile/convert/merge/upgrade subcommands (decompile/match done).
+  - rule-set: DONE — compile/convert/merge/upgrade implemented.
   - format: DONE (app/src/bin/format.rs)
-  - generate: tls DONE (tls-keypair). Add vapid/wireguard key generation.
-  - tools: add fetch/http3/connect and synctime (NTP) subcommands.
-  - geosite/geoip: add list/export/lookup/matcher commands.
-  - merge: TLS/ECH/SSH path inlining DONE; finish edge-cases and schema nuances.
+  - generate: DONE — tls/reality/ech present; wireguard added; vapid available behind `jwt`.
+  - tools: DONE — connect/fetch/fetch-http3 implemented (feature `tools_http3`); synctime implemented with unit tests.
+  - geosite/geoip: DONE — list/export/lookup (plus geosite matcher helper) supported.
+  - merge: path inlining for TLS/ECH/SSH DONE; continue to align edge-cases with upstream.
 
 P1 — DNS/route/services completeness
 - DNS

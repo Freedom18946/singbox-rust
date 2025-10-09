@@ -106,6 +106,12 @@ pub use tls::*;
 #[cfg(feature = "transport_tls")]
 pub use tls_secure::*;
 
+#[cfg(feature = "transport_reality")]
+pub use tls::RealityDialer;
+
+#[cfg(feature = "transport_ech")]
+pub use tls::EchDialer;
+
 pub use circuit_breaker::*;
 pub use mem::*;
 pub use resource_pressure::*;

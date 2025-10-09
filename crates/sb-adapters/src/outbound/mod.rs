@@ -36,6 +36,8 @@ pub(crate) fn span_dial(adapter: &'static str, target: &crate::traits::Target) -
 pub mod dns;
 #[cfg(feature = "adapter-http")]
 pub mod http;
+#[cfg(feature = "adapter-hysteria")]
+pub mod hysteria;
 #[cfg(feature = "adapter-hysteria2")]
 pub mod hysteria2;
 #[cfg(feature = "adapter-shadowtls")]
@@ -44,6 +46,8 @@ pub mod shadowtls;
 pub mod shadowsocks;
 #[cfg(feature = "adapter-socks")]
 pub mod socks5;
+#[cfg(feature = "adapter-ssh")]
+pub mod ssh;
 #[cfg(feature = "adapter-trojan")]
 pub mod trojan;
 #[cfg(feature = "tuic")]
@@ -90,6 +94,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for http::HttpProxyConnector {
             username: ir.credentials.as_ref().and_then(|c| c.username.clone()),
             password: ir.credentials.as_ref().and_then(|c| c.password.clone()),
             connect_timeout_sec: Some(30),
+            tls: None,
         };
 
         Ok(Self::new(config))
@@ -129,6 +134,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for socks5::Socks5Connector {
             username: ir.credentials.as_ref().and_then(|c| c.username.clone()),
             password: ir.credentials.as_ref().and_then(|c| c.password.clone()),
             connect_timeout_sec: Some(30),
+            tls: None,
         };
 
         Ok(Self::new(config))
@@ -274,6 +280,54 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
             alpn: ir.tls_alpn.clone(),
             skip_cert_verify: false,
         };
+        Ok(Self::new(cfg))
+    }
+}
+
+#[cfg(feature = "adapter-ssh")]
+impl TryFrom<&sb_config::ir::OutboundIR> for ssh::SshConnector {
+    type Error = crate::error::AdapterError;
+
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Ssh {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected ssh outbound type",
+            ));
+        }
+
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "SSH requires server address",
+            ))?
+            .clone();
+        let port = ir.port.unwrap_or(22);
+        let username = ir
+            .credentials
+            .as_ref()
+            .and_then(|c| c.username.clone())
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "SSH requires username",
+            ))?;
+
+        let cfg = crate::outbound::ssh::SshAdapterConfig {
+            server,
+            port,
+            username,
+            password: ir.credentials.as_ref().and_then(|c| c.password.clone()),
+            private_key: ir.ssh_private_key.clone(),
+            private_key_passphrase: ir.ssh_private_key_passphrase.clone(),
+            host_key_verification: ir.ssh_host_key_verification.unwrap_or(true),
+            known_hosts_path: ir.ssh_known_hosts_path.clone(),
+            connection_pool_size: ir.ssh_connection_pool_size,
+            compression: ir.ssh_compression.unwrap_or(false),
+            keepalive_interval: ir.ssh_keepalive_interval,
+            connect_timeout: ir.connect_timeout_sec.map(|s| s as u64),
+        };
+
         Ok(Self::new(cfg))
     }
 }

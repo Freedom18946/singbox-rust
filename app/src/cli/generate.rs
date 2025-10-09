@@ -173,4 +173,16 @@ mod tests {
         let result = generate_ech_keypair();
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_wireguard_keypair_generation() {
+        let result = generate_wireguard_keypair();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_tls_keypair_generation() {
+        let result = generate_tls_keypair("localhost".to_string(), 1);
+        assert!(result.is_ok());
+    }
 }

@@ -26,6 +26,16 @@ pub struct TuicConfig {
     pub congestion_control: Option<String>,
     pub alpn: Option<String>,
     pub skip_cert_verify: bool,
+    pub udp_relay_mode: UdpRelayMode,
+    pub udp_over_stream: bool,
+}
+
+#[cfg(feature = "out_tuic")]
+#[derive(Clone, Debug, Default)]
+pub enum UdpRelayMode {
+    #[default]
+    Native,
+    Quic,
 }
 
 #[cfg(feature = "out_tuic")]
@@ -155,11 +165,21 @@ impl TuicOutbound {
 
     /// Build TUIC connect packet
     fn build_connect_packet(&self, host: &str, port: u16) -> anyhow::Result<Vec<u8>> {
+        self.build_command_packet(0x02, host, port)
+    }
+
+    /// Build TUIC UDP associate packet
+    pub fn build_udp_associate_packet(&self, host: &str, port: u16) -> anyhow::Result<Vec<u8>> {
+        self.build_command_packet(0x03, host, port)
+    }
+
+    /// Build TUIC command packet (shared logic for connect and UDP associate)
+    fn build_command_packet(&self, command: u8, host: &str, port: u16) -> anyhow::Result<Vec<u8>> {
         let mut packet = Vec::new();
 
-        // TUIC v5 connect packet format:
+        // TUIC v5 command packet format:
         // [Command(1)] [Address_Type(1)] [Address(N)] [Port(2)]
-        packet.push(0x02); // Connect command
+        packet.push(command);
 
         // Address type and address
         if let Ok(ip) = host.parse::<std::net::IpAddr>() {
@@ -184,6 +204,134 @@ impl TuicOutbound {
         packet.extend_from_slice(&port.to_be_bytes());
 
         Ok(packet)
+    }
+
+    /// Encode UDP packet for TUIC UDP over stream mode
+    /// Format: [Length(2)] [Fragment_ID(1)] [Fragment_Total(1)] [Address_Type(1)] [Address(N)] [Port(2)] [Data(N)]
+    pub fn encode_udp_packet(
+        &self,
+        target_host: &str,
+        target_port: u16,
+        data: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // Reserve space for length (will be filled at the end)
+        packet.extend_from_slice(&[0u8; 2]);
+
+        // Fragment ID and total (no fragmentation for now)
+        packet.push(0); // Fragment ID
+        packet.push(1); // Fragment total (1 = no fragmentation)
+
+        // Address type and address
+        if let Ok(ip) = target_host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(ipv4) => {
+                    packet.push(0x01); // IPv4
+                    packet.extend_from_slice(&ipv4.octets());
+                }
+                std::net::IpAddr::V6(ipv6) => {
+                    packet.push(0x04); // IPv6
+                    packet.extend_from_slice(&ipv6.octets());
+                }
+            }
+        } else {
+            // Domain name
+            packet.push(0x03);
+            packet.push(target_host.len() as u8);
+            packet.extend_from_slice(target_host.as_bytes());
+        }
+
+        // Port
+        packet.extend_from_slice(&target_port.to_be_bytes());
+
+        // Data
+        packet.extend_from_slice(data);
+
+        // Fill in length (total packet length excluding the length field itself)
+        let length = (packet.len() - 2) as u16;
+        packet[0..2].copy_from_slice(&length.to_be_bytes());
+
+        Ok(packet)
+    }
+
+    /// Decode UDP packet from TUIC UDP over stream mode
+    /// Returns (target_host, target_port, data)
+    pub fn decode_udp_packet(data: &[u8]) -> anyhow::Result<(String, u16, Vec<u8>)> {
+        if data.len() < 2 {
+            return Err(anyhow::anyhow!("UDP packet too short"));
+        }
+
+        let mut offset = 0;
+
+        // Read length
+        let length = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
+        offset += 2;
+
+        if data.len() < offset + length {
+            return Err(anyhow::anyhow!("UDP packet length mismatch"));
+        }
+
+        // Skip fragment ID and total
+        offset += 2;
+
+        // Read address type
+        let addr_type = data[offset];
+        offset += 1;
+
+        // Parse address
+        let host = match addr_type {
+            0x01 => {
+                // IPv4
+                if data.len() < offset + 4 {
+                    return Err(anyhow::anyhow!("Invalid IPv4 address"));
+                }
+                let ipv4 = std::net::Ipv4Addr::new(
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                );
+                offset += 4;
+                ipv4.to_string()
+            }
+            0x03 => {
+                // Domain
+                let len = data[offset] as usize;
+                offset += 1;
+                if data.len() < offset + len {
+                    return Err(anyhow::anyhow!("Invalid domain length"));
+                }
+                let domain = String::from_utf8(data[offset..offset + len].to_vec())
+                    .map_err(|_| anyhow::anyhow!("Invalid UTF-8 in domain"))?;
+                offset += len;
+                domain
+            }
+            0x04 => {
+                // IPv6
+                if data.len() < offset + 16 {
+                    return Err(anyhow::anyhow!("Invalid IPv6 address"));
+                }
+                let mut ipv6_bytes = [0u8; 16];
+                ipv6_bytes.copy_from_slice(&data[offset..offset + 16]);
+                let ipv6 = std::net::Ipv6Addr::from(ipv6_bytes);
+                offset += 16;
+                ipv6.to_string()
+            }
+            _ => return Err(anyhow::anyhow!("Unknown address type: {}", addr_type)),
+        };
+
+        // Read port
+        if data.len() < offset + 2 {
+            return Err(anyhow::anyhow!("Missing port"));
+        }
+        let port = u16::from_be_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+
+        // Remaining data is the UDP payload
+        let payload = data[offset..].to_vec();
+
+        Ok((host, port, payload))
     }
 
     fn create_quinn_config(&self) -> io::Result<quinn::ClientConfig> {
@@ -461,6 +609,42 @@ impl OutboundTcp for TuicOutbound {
 }
 
 #[cfg(feature = "out_tuic")]
+impl TuicOutbound {
+    /// Create UDP transport for TUIC
+    pub async fn create_udp_transport(&self) -> io::Result<TuicUdpTransport> {
+        // Parse server address
+        let server_addr: SocketAddr = format!("{}:{}", self.config.server, self.config.port)
+            .parse()
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid server address: {}", e),
+                )
+            })?;
+
+        // Create quinn ClientConfig
+        let quinn_config = self.create_quinn_config()?;
+
+        // Establish QUIC connection to server
+        let server_name = if self.config.server.parse::<std::net::IpAddr>().is_ok() {
+            if self.quic_config.allow_insecure {
+                "localhost"
+            } else {
+                &self.config.server
+            }
+        } else {
+            &self.config.server
+        };
+
+        let connection = tuic_quic_connect(&quinn_config, server_addr, server_name)
+            .await
+            .map_err(|e| io::Error::other(format!("QUIC connection failed: {}", e)))?;
+
+        Ok(TuicUdpTransport::new(connection, self.config.clone()))
+    }
+}
+
+#[cfg(feature = "out_tuic")]
 async fn tuic_quic_connect(
     config: &quinn::ClientConfig,
     server_addr: std::net::SocketAddr,
@@ -572,9 +756,128 @@ impl crate::adapter::OutboundConnector for TuicOutbound {
 #[cfg(not(feature = "out_tuic"))]
 pub struct TuicConfig;
 
+/// TUIC UDP transport for UDP relay
+#[cfg(feature = "out_tuic")]
+pub struct TuicUdpTransport {
+    pub connection: quinn::Connection,
+    pub config: TuicConfig,
+}
+
+#[cfg(feature = "out_tuic")]
+impl TuicUdpTransport {
+    pub fn new(connection: quinn::Connection, config: TuicConfig) -> Self {
+        Self { connection, config }
+    }
+
+    /// Send UDP packet over QUIC stream (UDP over stream mode)
+    pub async fn send_udp_over_stream(
+        &self,
+        data: &[u8],
+        target_host: &str,
+        target_port: u16,
+    ) -> std::io::Result<usize> {
+        // Open a new unidirectional stream for each UDP packet
+        let mut send_stream = self.connection.open_uni().await.map_err(|e| {
+            std::io::Error::other(format!("Failed to open uni stream: {}", e))
+        })?;
+
+        // Encode UDP packet
+        let packet = TuicOutbound::encode_udp_packet_static(target_host, target_port, data)
+            .map_err(|e| std::io::Error::other(format!("Failed to encode UDP packet: {}", e)))?;
+
+        // Send packet
+        send_stream.write_all(&packet).await.map_err(|e| {
+            std::io::Error::other(format!("Failed to write UDP packet: {}", e))
+        })?;
+
+        send_stream.finish().map_err(|e| {
+            std::io::Error::other(format!("Failed to finish stream: {}", e))
+        })?;
+
+        Ok(data.len())
+    }
+
+    /// Receive UDP packet over QUIC stream (UDP over stream mode)
+    pub async fn recv_udp_over_stream(&self) -> std::io::Result<(Vec<u8>, String, u16)> {
+        // Accept a unidirectional stream
+        let mut recv_stream = self.connection.accept_uni().await.map_err(|e| {
+            std::io::Error::other(format!("Failed to accept uni stream: {}", e))
+        })?;
+
+        // Read the entire packet (up to 64KB)
+        let packet = recv_stream.read_to_end(1024 * 64).await.map_err(|e| {
+            std::io::Error::other(format!("Failed to read UDP packet: {}", e))
+        })?;
+
+        // Decode packet
+        let (host, port, data) = TuicOutbound::decode_udp_packet(&packet)
+            .map_err(|e| std::io::Error::other(format!("Failed to decode UDP packet: {}", e)))?;
+
+        Ok((data, host, port))
+    }
+}
+
+#[cfg(feature = "out_tuic")]
+impl TuicOutbound {
+    /// Static version of encode_udp_packet for use in TuicUdpTransport
+    pub fn encode_udp_packet_static(
+        target_host: &str,
+        target_port: u16,
+        data: &[u8],
+    ) -> anyhow::Result<Vec<u8>> {
+        let packet = Vec::new();
+        let mut packet = packet;
+
+        // Reserve space for length (will be filled at the end)
+        packet.extend_from_slice(&[0u8; 2]);
+
+        // Fragment ID and total (no fragmentation for now)
+        packet.push(0); // Fragment ID
+        packet.push(1); // Fragment total (1 = no fragmentation)
+
+        // Address type and address
+        if let Ok(ip) = target_host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(ipv4) => {
+                    packet.push(0x01); // IPv4
+                    packet.extend_from_slice(&ipv4.octets());
+                }
+                std::net::IpAddr::V6(ipv6) => {
+                    packet.push(0x04); // IPv6
+                    packet.extend_from_slice(&ipv6.octets());
+                }
+            }
+        } else {
+            // Domain name
+            packet.push(0x03);
+            packet.push(target_host.len() as u8);
+            packet.extend_from_slice(target_host.as_bytes());
+        }
+
+        // Port
+        packet.extend_from_slice(&target_port.to_be_bytes());
+
+        // Data
+        packet.extend_from_slice(data);
+
+        // Fill in length (total packet length excluding the length field itself)
+        let length = (packet.len() - 2) as u16;
+        packet[0..2].copy_from_slice(&length.to_be_bytes());
+
+        Ok(packet)
+    }
+}
+
+#[cfg(not(feature = "out_tuic"))]
+pub struct TuicConfig;
+
 #[cfg(not(feature = "out_tuic"))]
 impl TuicConfig {
     pub fn new() -> Self {
         Self
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "out_tuic")]
+mod tests;

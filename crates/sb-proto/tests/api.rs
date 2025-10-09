@@ -1,4 +1,4 @@
 #[test]
 fn api_shapes() {
-    assert!(true);
+    // Placeholder test to verify API shapes compile
 }

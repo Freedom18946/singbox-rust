@@ -9,7 +9,7 @@
 use anyhow::{anyhow, Result};
 use quinn::{Endpoint, ServerConfig};
 // Use types re-exported by quinn to satisfy trait bounds
-use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -88,9 +88,10 @@ impl TryFrom<u8> for AddressType {
 /// Parse PEM-encoded certificates
 fn load_certs(pem: &str) -> Result<Vec<CertificateDer<'static>>> {
     let mut cursor = std::io::Cursor::new(pem.as_bytes());
-    let certs = rustls_pemfile::certs(&mut cursor)
+    let certs: Vec<_> = rustls_pemfile::certs(&mut cursor)
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| anyhow!("Failed to parse certificates: {}", e))?;
-    Ok(certs.into_iter().map(CertificateDer::from).collect())
+    Ok(certs)
 }
 
 /// Parse PEM-encoded private key
@@ -100,13 +101,11 @@ fn load_private_key(pem: &str) -> Result<PrivateKeyDer<'static>> {
         match rustls_pemfile::read_one(&mut cursor)
             .map_err(|e| anyhow!("Failed to parse private key: {}", e))?
         {
-            Some(rustls_pemfile::Item::PKCS8Key(k)) => {
-                let pkcs8: PrivatePkcs8KeyDer<'static> = PrivatePkcs8KeyDer::from(k);
-                return Ok(pkcs8.into());
+            Some(rustls_pemfile::Item::Pkcs8Key(k)) => {
+                return Ok(PrivateKeyDer::Pkcs8(k));
             }
-            Some(rustls_pemfile::Item::RSAKey(_k)) => {
-                // For simplicity, expect PKCS8 keys
-                continue;
+            Some(rustls_pemfile::Item::Pkcs1Key(k)) => {
+                return Ok(PrivateKeyDer::Pkcs1(k));
             }
             Some(_other) => continue,
             None => break,
@@ -244,7 +243,9 @@ async fn handle_stream(
 
     debug!("TUIC: CONNECT {}:{} from {}", host, port, peer);
 
-    // 4. Connect to target (direct connection for now, router integration TODO)
+    // 4. Connect to target
+    // Note: Router integration can be added by passing router to config
+    // For now, direct connection provides baseline functionality
     let upstream = TcpStream::connect((host.as_str(), port))
         .await
         .map_err(|e| anyhow!("Failed to connect to target: {}", e))?;

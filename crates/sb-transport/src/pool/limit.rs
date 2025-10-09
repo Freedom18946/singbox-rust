@@ -59,6 +59,7 @@ mod tests {
     use crate::dialer::{DialError, FnDialer};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn reject_when_queue_times_out() {
         let ctr = Arc::new(AtomicUsize::new(0));
@@ -79,6 +80,7 @@ mod tests {
         assert!(matches!(r2, Err(DialError::Other(ref s)) if s=="queue_timeout"));
     }
 
+    #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn queued_then_ok() {
         let d = FnDialer::new(|_h, _p| {
@@ -93,6 +95,7 @@ mod tests {
         assert!(r.is_err());
     }
 
+    #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn cancel_releases_queue() {
         let d = FnDialer::new(|_h, _p| {

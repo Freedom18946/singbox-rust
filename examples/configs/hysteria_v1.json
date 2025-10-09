@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "inbounds": [
+    {
+      "type": "hysteria",
+      "name": "hysteria-v1-in",
+      "listen": "0.0.0.0:443",
+      "cert": "/path/to/cert.pem",
+      "key": "/path/to/key.pem",
+      "up_mbps": 100,
+      "down_mbps": 100,
+      "obfs": "obfs_password_here",
+      "auth": {
+        "username": "user",
+        "password": "pass"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "hysteria",
+      "name": "hysteria-v1-out",
+      "server": "hysteria.example.com",
+      "port": 443,
+      "up_mbps": 100,
+      "down_mbps": 100,
+      "obfs": "obfs_password_here",
+      "username": "user",
+      "password": "pass",
+      "skip_cert_verify": false,
+      "tls": {
+        "enabled": true,
+        "sni": "hysteria.example.com"
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [],
+    "default": "hysteria-v1-out"
+  }
+}

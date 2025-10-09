@@ -110,6 +110,15 @@ pub struct OutboundIR {
     pub tls_sni: Option<String>,
     #[serde(default)]
     pub tls_alpn: Option<String>,
+    /// REALITY TLS configuration
+    #[serde(default)]
+    pub reality_enabled: Option<bool>,
+    #[serde(default)]
+    pub reality_public_key: Option<String>,
+    #[serde(default)]
+    pub reality_short_id: Option<String>,
+    #[serde(default)]
+    pub reality_server_name: Option<String>,
     /// Trojan-specific fields
     #[serde(default)]
     pub password: Option<String>,
@@ -125,6 +134,14 @@ pub struct OutboundIR {
     pub ssh_host_key_verification: Option<bool>,
     #[serde(default)]
     pub ssh_known_hosts_path: Option<String>,
+    #[serde(default)]
+    pub ssh_connection_pool_size: Option<usize>,
+    #[serde(default)]
+    pub ssh_compression: Option<bool>,
+    #[serde(default)]
+    pub ssh_keepalive_interval: Option<u64>,
+    #[serde(default)]
+    pub connect_timeout_sec: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -214,6 +231,60 @@ impl OutboundIR {
             OutboundType::Ssh => "ssh",
         }
     }
+
+    /// Validate REALITY configuration if enabled
+    pub fn validate_reality(&self) -> Result<(), String> {
+        // Only validate if REALITY is explicitly enabled
+        if let Some(true) = self.reality_enabled {
+            // Validate public_key (must be 64 hex chars for X25519)
+            if let Some(ref public_key) = self.reality_public_key {
+                if !is_valid_hex(public_key) || public_key.len() != 64 {
+                    return Err(format!(
+                        "outbound '{}': reality.public_key must be 64 hex characters (X25519 public key)",
+                        self.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "outbound '{}': reality.public_key is required when reality is enabled",
+                    self.name.as_deref().unwrap_or("unnamed")
+                ));
+            }
+
+            // Validate short_id if present (0-16 hex chars, even length)
+            if let Some(ref short_id) = self.reality_short_id {
+                if !short_id.is_empty() {
+                    if !is_valid_hex(short_id) {
+                        return Err(format!(
+                            "outbound '{}': reality.short_id must be hex characters",
+                            self.name.as_deref().unwrap_or("unnamed")
+                        ));
+                    }
+                    if short_id.len() > 16 || short_id.len() % 2 != 0 {
+                        return Err(format!(
+                            "outbound '{}': reality.short_id must be 0-16 hex chars (length multiple of 2)",
+                            self.name.as_deref().unwrap_or("unnamed")
+                        ));
+                    }
+                }
+            }
+
+            // Validate server_name is present
+            if self.reality_server_name.is_none() || self.reality_server_name.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+                return Err(format!(
+                    "outbound '{}': reality.server_name is required when reality is enabled",
+                    self.name.as_deref().unwrap_or("unnamed")
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Helper function to validate hex strings
+fn is_valid_hex(s: &str) -> bool {
+    s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 impl ConfigIR {
@@ -229,6 +300,24 @@ impl ConfigIR {
                 || !r.not_protocol.is_empty()
         })
     }
+
+    /// Validate all outbound configurations including REALITY
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        // Validate REALITY configuration for all outbounds
+        for outbound in &self.outbounds {
+            if let Err(e) = outbound.validate_reality() {
+                errors.push(e);
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -242,5 +331,138 @@ mod tests {
             ..Default::default()
         });
         assert!(cfg.has_any_negation());
+    }
+
+    #[test]
+    fn test_reality_validation_valid() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_reality_validation_missing_public_key() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: None,
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+
+        assert!(outbound.validate_reality().is_err());
+        let err = outbound.validate_reality().unwrap_err();
+        assert!(err.contains("public_key is required"));
+    }
+
+    #[test]
+    fn test_reality_validation_invalid_public_key() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some("invalid".to_string()),
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+
+        assert!(outbound.validate_reality().is_err());
+        let err = outbound.validate_reality().unwrap_err();
+        assert!(err.contains("64 hex characters"));
+    }
+
+    #[test]
+    fn test_reality_validation_invalid_short_id() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_short_id: Some("xyz".to_string()), // Invalid hex
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+
+        assert!(outbound.validate_reality().is_err());
+        let err = outbound.validate_reality().unwrap_err();
+        assert!(err.contains("hex characters"));
+    }
+
+    #[test]
+    fn test_reality_validation_missing_server_name() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: None,
+            ..Default::default()
+        };
+
+        assert!(outbound.validate_reality().is_err());
+        let err = outbound.validate_reality().unwrap_err();
+        assert!(err.contains("server_name is required"));
+    }
+
+    #[test]
+    fn test_reality_validation_disabled() {
+        // When REALITY is not enabled, validation should pass even with missing fields
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(false),
+            reality_public_key: None,
+            reality_short_id: None,
+            reality_server_name: None,
+            ..Default::default()
+        };
+
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_config_ir_validate_reality() {
+        let mut config = ConfigIR::default();
+        
+        // Add valid outbound
+        config.outbounds.push(OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("valid".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        });
+
+        assert!(config.validate().is_ok());
+
+        // Add invalid outbound
+        config.outbounds.push(OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("invalid".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: None, // Missing required field
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        });
+
+        assert!(config.validate().is_err());
+        let errors = config.validate().unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("public_key is required"));
     }
 }

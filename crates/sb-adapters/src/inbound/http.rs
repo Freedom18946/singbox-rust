@@ -90,8 +90,9 @@ fn http_disable_stop_enabled() -> bool {
     )
 }
 /// 回滚开关：降级为"只写 + 关"
+/// Note: This is already defined above at line 38, removing duplicate
 #[cfg(test)]
-fn http_legacy_write_enabled() -> bool {
+fn http_legacy_write_enabled_test() -> bool {
     matches!(
         std::env::var("SB_HTTP_LEGACY_WRITE").ok().as_deref(),
         Some("1" | "true" | "TRUE")

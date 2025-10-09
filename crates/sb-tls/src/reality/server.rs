@@ -11,6 +11,12 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
+/// Combined trait for stream types used in fallback
+pub trait FallbackStream: AsyncRead + AsyncWrite + Unpin + Send {}
+
+// Blanket implementation for all types that satisfy the bounds
+impl<T> FallbackStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
+
 /// REALITY server acceptor
 ///
 /// This acceptor implements the REALITY protocol server side.
@@ -68,7 +74,7 @@ impl RealityAcceptor {
     pub async fn accept<S>(
         &self,
         stream: S,
-    ) -> RealityResult<RealityConnection<S>>
+    ) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -83,25 +89,19 @@ impl RealityAcceptor {
     async fn handle_handshake<S>(
         &self,
         mut stream: S,
-    ) -> RealityResult<RealityConnection<S>>
+    ) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         debug!("Handling REALITY handshake");
 
-        // TODO: Implement full REALITY server handshake
-        // For now, this is a placeholder showing the structure
-
-        // Step 1: Read ClientHello and extract REALITY extensions
-        // - Client public key
-        // - Short ID
-        // - Auth hash
-        // - SNI
-        let (client_public_key, short_id, auth_hash, sni) =
-            self.parse_client_hello(&mut stream).await?;
+        // Step 1: Read and parse ClientHello to extract REALITY extensions
+        // We need to buffer the data so we can replay it for the TLS handshake
+        let (client_public_key, short_id, auth_hash, sni, client_hello_data) =
+            self.parse_and_buffer_client_hello(&mut stream).await?;
 
         debug!(
-            "Parsed ClientHello: SNI={}, short_id={:?}",
+            "Parsed ClientHello: SNI={}, short_id={}",
             sni,
             hex::encode(&short_id)
         );
@@ -109,64 +109,75 @@ impl RealityAcceptor {
         // Step 2: Verify SNI is in accepted list
         if !self.config.server_names.contains(&sni) {
             warn!("SNI not in accepted list: {}", sni);
-            return self.fallback_to_target(stream).await;
+            // Replay the ClientHello data and fallback
+            let replay_stream = ReplayStream::new(stream, client_hello_data);
+            return self.fallback_to_target(replay_stream).await;
         }
 
         // Step 3: Verify short ID
         if !self.config.accepts_short_id(&short_id) {
-            warn!("Short ID not accepted: {:?}", hex::encode(&short_id));
-            return self.fallback_to_target(stream).await;
+            warn!("Short ID not accepted: {}", hex::encode(&short_id));
+            let replay_stream = ReplayStream::new(stream, client_hello_data);
+            return self.fallback_to_target(replay_stream).await;
         }
 
         // Step 4: Verify authentication hash
-        // Note: In a production implementation, session_data should be derived from
-        // the TLS handshake random values or other session-specific data
-        // For now, we use a placeholder that matches the client
-        let session_data = [0u8; 32]; // Should match client's session data
+        // Note: session_data should be derived from the TLS handshake random values
+        // For now, we use a placeholder that matches the client implementation
+        let session_data = [0u8; 32];
         if !self
             .auth
             .verify_auth_hash(&client_public_key, &short_id, &session_data, &auth_hash)
         {
-            warn!("Authentication failed");
-            return self.fallback_to_target(stream).await;
+            warn!("Authentication failed: invalid auth hash");
+            let replay_stream = ReplayStream::new(stream, client_hello_data);
+            return self.fallback_to_target(replay_stream).await;
         }
 
         info!("REALITY authentication successful");
 
-        // Step 5: Issue temporary certificate and establish proxy connection
-        // TODO: Generate temporary certificate signed by temporary CA
-        // TODO: Complete TLS handshake with temporary certificate
-        // TODO: Return encrypted stream for proxying
+        // Step 5: Complete TLS handshake with temporary certificate
+        // Replay the ClientHello data for rustls
+        let replay_stream = ReplayStream::new(stream, client_hello_data);
+        let tls_stream = self.complete_tls_handshake(replay_stream, &sni).await?;
 
-        warn!("REALITY server handshake stub: using placeholder connection");
-
-        Ok(RealityConnection::Proxy(Box::new(stream)))
+        Ok(RealityConnection::Proxy(tls_stream))
     }
 
-    /// Parse ClientHello and extract REALITY data
+    /// Parse ClientHello and buffer the data for replay
     ///
-    /// Reads the TLS ClientHello message and extracts:
-    /// - SNI extension
-    /// - REALITY authentication extension (client_public_key, short_id, auth_hash)
-    async fn parse_client_hello<S>(
+    /// Returns: (client_public_key, short_id, auth_hash, sni, buffered_data)
+    async fn parse_and_buffer_client_hello<S>(
         &self,
         stream: &mut S,
-    ) -> RealityResult<([u8; 32], Vec<u8>, [u8; 32], String)>
+    ) -> RealityResult<([u8; 32], Vec<u8>, [u8; 32], String, Vec<u8>)>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        use super::tls_record::{TlsRecordHeader, ClientHello, ExtensionType};
+        use super::tls_record::{ClientHello, ExtensionType, ContentType};
         use tokio::io::AsyncReadExt;
 
-        // Read TLS record header
-        let record_header = TlsRecordHeader::read_from(stream).await
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read TLS record: {}", e)))?;
+        // Read TLS record header (5 bytes)
+        let mut header_buf = [0u8; 5];
+        stream.read_exact(&mut header_buf).await
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read TLS record header: {}", e)))?;
 
-        debug!("TLS record: type={:?}, version=0x{:04x}, length={}",
-            record_header.content_type, record_header.version, record_header.length);
+        let content_type = ContentType::try_from(header_buf[0])
+            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid content type: {}", e)))?;
+        let version = u16::from_be_bytes([header_buf[1], header_buf[2]]);
+        let length = u16::from_be_bytes([header_buf[3], header_buf[4]]);
+
+        debug!("TLS record: type={:?}, version=0x{:04x}, length={}", content_type, version, length);
+
+        // Verify this is a handshake record
+        if content_type != ContentType::Handshake {
+            return Err(RealityError::HandshakeFailed(
+                format!("Expected Handshake record, got {:?}", content_type)
+            ));
+        }
 
         // Read handshake data
-        let mut handshake_data = vec![0u8; record_header.length as usize];
+        let mut handshake_data = vec![0u8; length as usize];
         stream.read_exact(&mut handshake_data).await
             .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read handshake: {}", e)))?;
 
@@ -195,7 +206,53 @@ impl RealityAcceptor {
             hex::encode(&short_id),
             hex::encode(&auth_hash[..8]));
 
-        Ok((client_public_key, short_id, auth_hash, sni))
+        // Combine header and handshake data for replay
+        let mut buffered_data = Vec::with_capacity(5 + handshake_data.len());
+        buffered_data.extend_from_slice(&header_buf);
+        buffered_data.extend_from_slice(&handshake_data);
+
+        Ok((client_public_key, short_id, auth_hash, sni, buffered_data))
+    }
+
+    /// Complete TLS handshake with temporary certificate
+    async fn complete_tls_handshake<S>(
+        &self,
+        stream: S,
+        server_name: &str,
+    ) -> RealityResult<crate::TlsIoStream>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use std::sync::Arc;
+
+        debug!("Completing TLS handshake for REALITY connection");
+
+        // Generate a temporary self-signed certificate
+        // In a production implementation, this would be derived from the shared secret
+        let cert = rcgen::generate_simple_self_signed(vec![server_name.to_string()])
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to generate certificate: {}", e)))?;
+
+        let cert_der = CertificateDer::from(cert.cert.der().to_vec());
+
+        let key_der = PrivateKeyDer::try_from(cert.key_pair.serialize_der())
+            .map_err(|_| RealityError::HandshakeFailed("Failed to serialize private key".to_string()))?;
+
+        // Create TLS server config with the temporary certificate
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der], key_der)
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to create TLS config: {}", e)))?;
+
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+
+        // Perform TLS handshake
+        let tls_stream = acceptor.accept(stream).await
+            .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {}", e)))?;
+
+        debug!("REALITY TLS handshake completed successfully");
+
+        Ok(Box::new(tls_stream))
     }
 
     /// Fallback to target website
@@ -205,7 +262,7 @@ impl RealityAcceptor {
     async fn fallback_to_target<S>(
         &self,
         stream: S,
-    ) -> RealityResult<RealityConnection<S>>
+    ) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -226,30 +283,24 @@ impl RealityAcceptor {
 
         Ok(RealityConnection::Fallback {
             client: Box::new(stream),
-            target: Box::new(target_stream),
+            target: target_stream,
         })
     }
 }
 
 /// REALITY connection type
-pub enum RealityConnection<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
+pub enum RealityConnection {
     /// Authenticated proxy connection
     Proxy(crate::TlsIoStream),
 
     /// Fallback connection (proxy to real target)
     Fallback {
-        client: Box<S>,
-        target: Box<TcpStream>,
+        client: Box<dyn FallbackStream>,
+        target: TcpStream,
     },
 }
 
-impl<S> RealityConnection<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
+impl RealityConnection {
     /// Check if this is a proxy connection
     pub fn is_proxy(&self) -> bool {
         matches!(self, RealityConnection::Proxy(_))
@@ -272,7 +323,7 @@ where
                 // Bidirectional copy between client and target
                 debug!("Starting fallback traffic relay");
 
-                match tokio::io::copy_bidirectional(&mut *client, &mut *target).await {
+                match tokio::io::copy_bidirectional(&mut client, &mut target).await {
                     Ok((client_to_target, target_to_client)) => {
                         debug!(
                             "Fallback relay complete: client->target={}, target->client={}",
@@ -288,6 +339,67 @@ where
                 Ok(None)
             }
         }
+    }
+}
+
+/// Stream wrapper that replays buffered data before reading from underlying stream
+struct ReplayStream<S> {
+    inner: S,
+    buffer: Vec<u8>,
+    position: usize,
+}
+
+impl<S> ReplayStream<S> {
+    fn new(inner: S, buffer: Vec<u8>) -> Self {
+        Self {
+            inner,
+            buffer,
+            position: 0,
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for ReplayStream<S> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        // First, return buffered data
+        if self.position < self.buffer.len() {
+            let remaining = &self.buffer[self.position..];
+            let to_copy = std::cmp::min(remaining.len(), buf.remaining());
+            buf.put_slice(&remaining[..to_copy]);
+            self.position += to_copy;
+            return std::task::Poll::Ready(Ok(()));
+        }
+
+        // Then read from underlying stream
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for ReplayStream<S> {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
 

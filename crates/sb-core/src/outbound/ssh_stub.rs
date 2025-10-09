@@ -197,6 +197,15 @@ struct SshConnection {
 }
 
 #[cfg(feature = "out_ssh")]
+impl std::fmt::Debug for SshConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshConnection")
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
+#[cfg(feature = "out_ssh")]
 impl SshConnection {
     async fn new(config: SshConfig) -> anyhow::Result<Self> {
         let client_config = Arc::new(client::Config::default());
@@ -334,6 +343,7 @@ impl SshConnection {
 
 #[cfg(feature = "out_ssh")]
 // Removed SshTunnelStream in favor of loopback TcpStream bridging
+#[derive(Debug)]
 pub struct SshOutbound {
     config: SshConfig,
     connection_pool: Arc<Mutex<HashMap<String, Vec<Arc<SshConnection>>>>>,
@@ -454,5 +464,738 @@ impl SshOutbound {
         Err(anyhow::anyhow!(
             "SSH support not compiled in. Enable 'out_ssh' feature."
         ))
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "out_ssh")]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // Configuration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_ssh_config_default() {
+        let config = SshConfig::default();
+        assert_eq!(config.port, 22);
+        assert!(config.host_key_verification);
+        assert_eq!(config.keepalive_interval, Some(30));
+        assert_eq!(config.connect_timeout, Some(10));
+        assert_eq!(config.connection_pool_size, Some(4));
+        assert!(!config.compression);
+    }
+
+    #[test]
+    fn test_ssh_config_with_password() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 2222,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            private_key: None,
+            private_key_passphrase: None,
+            host_key_verification: true,
+            compression: false,
+            keepalive_interval: Some(60),
+            connect_timeout: Some(15),
+            connection_pool_size: Some(8),
+            known_hosts_path: Some("/home/user/.ssh/known_hosts".to_string()),
+        };
+
+        assert_eq!(config.server, "ssh.example.com");
+        assert_eq!(config.port, 2222);
+        assert_eq!(config.username, "testuser");
+        assert_eq!(config.password, Some("testpass".to_string()));
+        assert!(config.private_key.is_none());
+        assert!(config.host_key_verification);
+    }
+
+    #[test]
+    fn test_ssh_config_with_private_key() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "keyuser".to_string(),
+            password: None,
+            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            private_key_passphrase: Some("keypass".to_string()),
+            host_key_verification: false,
+            compression: true,
+            keepalive_interval: Some(30),
+            connect_timeout: Some(10),
+            connection_pool_size: Some(4),
+            known_hosts_path: None,
+        };
+
+        assert_eq!(config.username, "keyuser");
+        assert!(config.password.is_none());
+        assert!(config.private_key.is_some());
+        assert_eq!(config.private_key_passphrase, Some("keypass".to_string()));
+        assert!(!config.host_key_verification);
+        assert!(config.compression);
+    }
+
+    // ============================================================================
+    // Validation Tests
+    // ============================================================================
+
+    #[test]
+    fn test_ssh_outbound_validation_missing_server() {
+        let config = SshConfig {
+            server: "".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("server address is required"));
+    }
+
+    #[test]
+    fn test_ssh_outbound_validation_missing_username() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("username is required"));
+    }
+
+    #[test]
+    fn test_ssh_outbound_validation_missing_auth() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: None,
+            private_key: None,
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("password or private key is required"));
+    }
+
+    #[test]
+    fn test_ssh_outbound_validation_valid_password_auth() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            private_key: None,
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ssh_outbound_validation_valid_key_auth() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "keyuser".to_string(),
+            password: None,
+            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ssh_outbound_validation_both_auth_methods() {
+        // Having both password and private key should be valid (password takes precedence)
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // Host Key Verification Tests
+    // ============================================================================
+
+    #[test]
+    fn test_host_key_verification_disabled() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            host_key_verification: false,
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(!outbound.config.host_key_verification);
+    }
+
+    #[test]
+    fn test_host_key_verification_enabled_with_known_hosts() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            host_key_verification: true,
+            known_hosts_path: Some("/tmp/test_known_hosts".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.host_key_verification);
+        assert_eq!(outbound.config.known_hosts_path, Some("/tmp/test_known_hosts".to_string()));
+    }
+
+    #[test]
+    fn test_host_key_verification_enabled_without_known_hosts() {
+        // Should still be valid - will use default known_hosts location
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            host_key_verification: true,
+            known_hosts_path: None,
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.host_key_verification);
+        assert!(outbound.config.known_hosts_path.is_none());
+    }
+
+    // ============================================================================
+    // Private Key Parsing Tests
+    // ============================================================================
+
+    #[test]
+    fn test_private_key_pem_format() {
+        let pem_key = "-----BEGIN OPENSSH PRIVATE KEY-----\ntest_key_content\n-----END OPENSSH PRIVATE KEY-----";
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "keyuser".to_string(),
+            password: None,
+            private_key: Some(pem_key.to_string()),
+            private_key_passphrase: None,
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.private_key.is_some());
+        assert!(outbound.config.private_key.unwrap().starts_with("-----BEGIN"));
+    }
+
+    #[test]
+    fn test_private_key_with_passphrase() {
+        let pem_key = "-----BEGIN OPENSSH PRIVATE KEY-----\nencrypted_key\n-----END OPENSSH PRIVATE KEY-----";
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "keyuser".to_string(),
+            password: None,
+            private_key: Some(pem_key.to_string()),
+            private_key_passphrase: Some("my_passphrase".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.private_key.is_some());
+        assert_eq!(outbound.config.private_key_passphrase, Some("my_passphrase".to_string()));
+    }
+
+    #[test]
+    fn test_private_key_file_path() {
+        // Test that file path format is accepted
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "keyuser".to_string(),
+            password: None,
+            private_key: Some("/home/user/.ssh/id_rsa".to_string()),
+            private_key_passphrase: None,
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.private_key.is_some());
+        assert_eq!(outbound.config.private_key.unwrap(), "/home/user/.ssh/id_rsa");
+    }
+
+    // ============================================================================
+    // Authentication Method Tests
+    // ============================================================================
+
+    #[test]
+    fn test_password_authentication_method() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("secure_password".to_string()),
+            private_key: None,
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.password.is_some());
+        assert!(outbound.config.private_key.is_none());
+    }
+
+    #[test]
+    fn test_public_key_authentication_method() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "keyuser".to_string(),
+            password: None,
+            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.password.is_none());
+        assert!(outbound.config.private_key.is_some());
+    }
+
+    #[test]
+    fn test_password_takes_precedence_over_key() {
+        // When both are provided, password should be used first
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("password".to_string()),
+            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.password.is_some());
+        assert!(outbound.config.private_key.is_some());
+    }
+
+    // ============================================================================
+    // Connection Pooling Tests
+    // ============================================================================
+
+    #[test]
+    fn test_connection_pool_default_size() {
+        let config = SshConfig::default();
+        // Default config should have pool size of 4
+        assert_eq!(config.connection_pool_size, Some(4));
+        
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.connection_pool_size, Some(4));
+    }
+
+    #[test]
+    fn test_connection_pool_custom_size() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            connection_pool_size: Some(10),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.connection_pool_size, Some(10));
+    }
+
+    #[test]
+    fn test_connection_pool_zero_size() {
+        // Zero should be treated as 1 (minimum)
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            connection_pool_size: Some(0),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.connection_pool_size, Some(0));
+    }
+
+    #[test]
+    fn test_connection_pool_disabled() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            connection_pool_size: Some(1),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.connection_pool_size, Some(1));
+    }
+
+    #[test]
+    fn test_connection_pool_initialization() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            connection_pool_size: Some(5),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        // Pool should be initialized but empty
+        assert_eq!(outbound.rr.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    // ============================================================================
+    // Protocol Name Tests
+    // ============================================================================
+
+    #[test]
+    fn test_protocol_name() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.protocol_name(), "ssh");
+    }
+
+    // ============================================================================
+    // Timeout Configuration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_connect_timeout_default() {
+        let config = SshConfig::default();
+        // Default config should have timeout of 10 seconds
+        assert_eq!(config.connect_timeout, Some(10));
+        
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.connect_timeout, Some(10));
+    }
+
+    #[test]
+    fn test_connect_timeout_custom() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            connect_timeout: Some(30),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.connect_timeout, Some(30));
+    }
+
+    #[test]
+    fn test_keepalive_interval_default() {
+        let config = SshConfig::default();
+        // Default config should have keepalive of 30 seconds
+        assert_eq!(config.keepalive_interval, Some(30));
+        
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.keepalive_interval, Some(30));
+    }
+
+    #[test]
+    fn test_keepalive_interval_custom() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            keepalive_interval: Some(60),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.keepalive_interval, Some(60));
+    }
+
+    #[test]
+    fn test_keepalive_disabled() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            keepalive_interval: Some(0),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.keepalive_interval, Some(0));
+    }
+
+    // ============================================================================
+    // Compression Tests
+    // ============================================================================
+
+    #[test]
+    fn test_compression_disabled_by_default() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(!outbound.config.compression);
+    }
+
+    #[test]
+    fn test_compression_enabled() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            compression: true,
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert!(outbound.config.compression);
+    }
+
+    // ============================================================================
+    // Edge Cases and Error Handling Tests
+    // ============================================================================
+
+    #[test]
+    fn test_empty_password() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("".to_string()),
+            private_key: None,
+            ..Default::default()
+        };
+
+        // Empty password should still be valid (some servers allow it)
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_non_standard_port() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 2222,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let outbound = SshOutbound::new(config).unwrap();
+        assert_eq!(outbound.config.port, 2222);
+    }
+
+    #[test]
+    fn test_ipv4_server_address() {
+        let config = SshConfig {
+            server: "192.168.1.100".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ipv6_server_address() {
+        let config = SshConfig {
+            server: "2001:db8::1".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_hostname_with_domain() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let result = SshOutbound::new(config);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // SshShared Tests
+    // ============================================================================
+
+    #[test]
+    fn test_ssh_shared_creation() {
+        let host_id = "ssh.example.com:22".to_string();
+        let known_hosts = Some(PathBuf::from("/tmp/known_hosts"));
+        let verify = true;
+
+        let shared = SshShared::new(host_id.clone(), known_hosts.clone(), verify);
+        assert_eq!(shared.host_id, host_id);
+        assert_eq!(shared.known_hosts, known_hosts);
+        assert_eq!(shared.verify, verify);
+    }
+
+    #[test]
+    fn test_ssh_shared_without_known_hosts() {
+        let host_id = "ssh.example.com:22".to_string();
+        let shared = SshShared::new(host_id.clone(), None, false);
+        assert_eq!(shared.host_id, host_id);
+        assert!(shared.known_hosts.is_none());
+        assert!(!shared.verify);
+    }
+
+    // ============================================================================
+    // Integration-style Tests (without actual network)
+    // ============================================================================
+
+    #[test]
+    fn test_multiple_outbound_instances() {
+        let config1 = SshConfig {
+            server: "ssh1.example.com".to_string(),
+            port: 22,
+            username: "user1".to_string(),
+            password: Some("pass1".to_string()),
+            ..Default::default()
+        };
+
+        let config2 = SshConfig {
+            server: "ssh2.example.com".to_string(),
+            port: 2222,
+            username: "user2".to_string(),
+            password: Some("pass2".to_string()),
+            ..Default::default()
+        };
+
+        let outbound1 = SshOutbound::new(config1).unwrap();
+        let outbound2 = SshOutbound::new(config2).unwrap();
+
+        assert_eq!(outbound1.config.server, "ssh1.example.com");
+        assert_eq!(outbound2.config.server, "ssh2.example.com");
+        assert_eq!(outbound1.config.port, 22);
+        assert_eq!(outbound2.config.port, 2222);
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let cloned = config.clone();
+        assert_eq!(config.server, cloned.server);
+        assert_eq!(config.port, cloned.port);
+        assert_eq!(config.username, cloned.username);
+        assert_eq!(config.password, cloned.password);
+    }
+
+    #[test]
+    fn test_config_debug_format() {
+        let config = SshConfig {
+            server: "ssh.example.com".to_string(),
+            port: 22,
+            username: "testuser".to_string(),
+            password: Some("testpass".to_string()),
+            ..Default::default()
+        };
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("ssh.example.com"));
+        assert!(debug_str.contains("testuser"));
+        // Password should be in debug output (be careful in production)
+        assert!(debug_str.contains("testpass"));
+    }
+}
+
+// Tests for non-feature case
+#[cfg(test)]
+#[cfg(not(feature = "out_ssh"))]
+mod tests_no_feature {
+    use super::*;
+
+    #[test]
+    fn test_ssh_outbound_without_feature() {
+        let config = SshConfig::new();
+        let result = SshOutbound::new(config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not compiled in"));
     }
 }

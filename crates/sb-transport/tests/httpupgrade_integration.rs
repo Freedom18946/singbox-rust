@@ -1,5 +1,7 @@
 //! HTTPUpgrade server/client integration tests
 
+#![cfg(feature = "transport_httpupgrade")]
+
 use sb_transport::httpupgrade::{HttpUpgradeDialer, HttpUpgradeListener, HttpUpgradeServerConfig, HttpUpgradeConfig};
 use sb_transport::{Dialer, TcpDialer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

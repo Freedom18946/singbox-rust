@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "outbounds": [
+    {
+      "name": "http-with-ech",
+      "type": "http",
+      "server": "proxy.example.com:443",
+      "tls": {
+        "enabled": true,
+        "sni": "proxy.example.com",
+        "ech": {
+          "enabled": true,
+          "config": "base64_encoded_ech_config_list_here",
+          "pq_signature_schemes_enabled": false
+        }
+      }
+    },
+    {
+      "name": "socks5-with-ech",
+      "type": "socks",
+      "server": "socks.example.com:1080",
+      "tls": {
+        "enabled": true,
+        "sni": "socks.example.com",
+        "ech": {
+          "enabled": true,
+          "config": "base64_encoded_ech_config_list_here",
+          "pq_signature_schemes_enabled": false,
+          "dynamic_record_sizing_disabled": false
+        }
+      }
+    },
+    {
+      "name": "vless-with-ech",
+      "type": "vless",
+      "server": "vless.example.com",
+      "port": 443,
+      "uuid": "12345678-1234-1234-1234-123456789012",
+      "tls": {
+        "enabled": true,
+        "sni": "vless.example.com",
+        "ech": {
+          "enabled": true,
+          "config": "base64_encoded_ech_config_list_here"
+        }
+      }
+    },
+    {
+      "name": "vmess-with-ech",
+      "type": "vmess",
+      "server": "vmess.example.com:443",
+      "uuid": "12345678-1234-1234-1234-123456789012",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "sni": "vmess.example.com",
+        "alpn": "h2,http/1.1",
+        "ech": {
+          "enabled": true,
+          "config": "base64_encoded_ech_config_list_here",
+          "pq_signature_schemes_enabled": true
+        }
+      }
+    }
+  ]
+}

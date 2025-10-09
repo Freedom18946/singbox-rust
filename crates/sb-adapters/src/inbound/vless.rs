@@ -23,6 +23,10 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+#[cfg(feature = "tls_reality")]
+#[allow(unused_imports)]
+use sb_tls::RealityAcceptor;
+
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -39,6 +43,9 @@ pub struct VlessInboundConfig {
     pub listen: SocketAddr,
     pub uuid: Uuid,
     pub router: Arc<router::RouterHandle>,
+    /// Optional REALITY TLS configuration for inbound
+    #[cfg(feature = "tls_reality")]
+    pub reality: Option<sb_tls::RealityServerConfig>,
 }
 
 // VLESS protocol constants
@@ -53,13 +60,22 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     let actual = listener.local_addr().unwrap_or(cfg.listen);
     info!(addr=?cfg.listen, actual=?actual, "vless: inbound bound");
 
+    // Create REALITY acceptor if configured
+    #[cfg(feature = "tls_reality")]
+    let reality_acceptor = if let Some(ref reality_cfg) = cfg.reality {
+        Some(Arc::new(sb_tls::RealityAcceptor::new(reality_cfg.clone())
+            .map_err(|e| anyhow!("Failed to create REALITY acceptor: {}", e))?))
+    } else {
+        None
+    };
+
     let mut hb = interval(Duration::from_secs(5));
     loop {
         select! {
             _ = stop_rx.recv() => break,
             _ = hb.tick() => { debug!("vless: accept-loop heartbeat"); }
             r = listener.accept() => {
-                let (mut cli, peer) = match r {
+                let (cli, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vless: accept error");
@@ -67,10 +83,54 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     }
                 };
                 let cfg_clone = cfg.clone();
+                
+                #[cfg(feature = "tls_reality")]
+                let reality_acceptor_clone = reality_acceptor.clone();
+                
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(&cfg_clone, &mut cli, peer).await {
-                        warn!(%peer, error=%e, "vless: session error");
-                        let _ = cli.shutdown().await;
+                    #[cfg(feature = "tls_reality")]
+                    {
+                        if let Some(acceptor) = reality_acceptor_clone {
+                            // Handle REALITY connection
+                            match acceptor.accept(cli).await {
+                                Ok(reality_conn) => {
+                                    match reality_conn.handle().await {
+                                        Ok(Some(mut tls_stream)) => {
+                                            // Proxy connection - handle VLESS protocol over TLS
+                                            if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
+                                                warn!(%peer, error=%e, "vless: REALITY session error");
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            // Fallback connection - already handled by REALITY
+                                            debug!(%peer, "vless: REALITY fallback completed");
+                                        }
+                                        Err(e) => {
+                                            warn!(%peer, error=%e, "vless: REALITY connection handling error");
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(%peer, error=%e, "vless: REALITY accept error");
+                                }
+                            }
+                        } else {
+                            // No REALITY - handle plain connection
+                            let mut cli = cli;
+                            if let Err(e) = handle_conn(&cfg_clone, &mut cli, peer).await {
+                                warn!(%peer, error=%e, "vless: session error");
+                                let _ = cli.shutdown().await;
+                            }
+                        }
+                    }
+                    
+                    #[cfg(not(feature = "tls_reality"))]
+                    {
+                        let mut cli = cli;
+                        if let Err(e) = handle_conn(&cfg_clone, &mut cli, peer).await {
+                            warn!(%peer, error=%e, "vless: session error");
+                            let _ = cli.shutdown().await;
+                        }
                     }
                 });
             }

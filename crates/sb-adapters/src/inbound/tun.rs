@@ -1171,32 +1171,24 @@ mod tests {
     use serde_json::json;
     use tokio::net::TcpStream;
 
-    /// A dummy router that won't be used in Phase 1 serve(), but satisfies type construction.
-    struct DummyRouter;
-    impl sb_core::router::Router for DummyRouter {
-        fn select(&self, _meta: &RequestMeta) -> DynOutbound {
-            struct NopOutbound;
-            #[async_trait]
-            impl Outbound for NopOutbound {
-                async fn connect(&self, _dst: Address) -> std::io::Result<TcpStream> {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "nop"))
-                }
-            }
-            Arc::new(NopOutbound)
-        }
+    /// Create a dummy router handle for testing
+    fn create_dummy_router() -> Arc<RouterHandle> {
+        // Create a minimal RouterHandle for testing using from_env
+        // This will initialize with default/empty rules
+        Arc::new(RouterHandle::from_env())
     }
 
     #[tokio::test]
     async fn tun_phase1_skeleton_starts() {
         let cfg = TunInboundConfig::default();
-        let router = Arc::new(DummyRouter);
+        let router = create_dummy_router();
         let inbound = TunInbound::new(cfg, router);
         inbound.serve().await.unwrap();
     }
 
     #[tokio::test]
     async fn tun_from_json_and_feeder_works() {
-        let router = Arc::new(DummyRouter);
+        let router = create_dummy_router();
         let v = json!({
             "platform": "mac",
             "name": "utun9",

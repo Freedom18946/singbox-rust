@@ -46,6 +46,9 @@ pub struct HttpProxyConfig {
     /// 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
+    /// TLS configuration
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +62,9 @@ pub struct Socks5Config {
     pub password: Option<String>,
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
+    /// TLS configuration
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +96,9 @@ pub struct VmessConfig {
     /// 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
+    /// TLS configuration
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 fn default_vmess_security() -> String {
@@ -116,6 +125,9 @@ pub struct VlessConfig {
     /// 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
+    /// TLS configuration
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 fn default_vless_network() -> String {
@@ -156,6 +168,9 @@ pub struct TuicConfig {
     /// 网络类型
     #[serde(default)]
     pub network: Option<Vec<String>>,
+    /// TLS configuration
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
 }
 
 fn default_tuic_congestion_control() -> String {
@@ -217,4 +232,59 @@ fn default_url_test_timeout() -> u64 {
 
 fn default_url_test_tolerance() -> u64 {
     50
+}
+
+/// TLS configuration for outbound connections
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TlsConfig {
+    /// Enable TLS
+    #[serde(default)]
+    pub enabled: bool,
+    /// Server Name Indication (SNI)
+    #[serde(default)]
+    pub sni: Option<String>,
+    /// Application Layer Protocol Negotiation (ALPN)
+    #[serde(default)]
+    pub alpn: Option<String>,
+    /// Skip certificate verification (insecure)
+    #[serde(default)]
+    pub insecure: bool,
+    /// REALITY TLS configuration
+    #[serde(default)]
+    pub reality: Option<RealityConfig>,
+    /// ECH (Encrypted Client Hello) configuration
+    #[serde(default)]
+    pub ech: Option<EchConfig>,
+}
+
+/// REALITY TLS configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealityConfig {
+    /// Enable REALITY
+    #[serde(default)]
+    pub enabled: bool,
+    /// Server public key (64-character hex string)
+    pub public_key: String,
+    /// Short ID (0-16 character hex string)
+    #[serde(default)]
+    pub short_id: Option<String>,
+    /// Server name for SNI
+    pub server_name: String,
+}
+
+/// ECH (Encrypted Client Hello) configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EchConfig {
+    /// Enable ECH
+    #[serde(default)]
+    pub enabled: bool,
+    /// ECH configuration list (base64 encoded)
+    #[serde(default)]
+    pub config: Option<String>,
+    /// Enable post-quantum signature schemes
+    #[serde(default)]
+    pub pq_signature_schemes_enabled: bool,
+    /// Disable dynamic record sizing
+    #[serde(default)]
+    pub dynamic_record_sizing_disabled: Option<bool>,
 }

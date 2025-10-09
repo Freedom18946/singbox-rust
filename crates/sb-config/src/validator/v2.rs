@@ -301,12 +301,20 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 h2_host: o.get("h2_host").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 tls_sni: o.get("tls_sni").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 tls_alpn: o.get("tls_alpn").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                reality_enabled: None,
+                reality_public_key: None,
+                reality_short_id: None,
+                reality_server_name: None,
                 password: o.get("password").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 ssh_private_key: None,
                 ssh_private_key_path: None,
                 ssh_private_key_passphrase: None,
                 ssh_host_key_verification: None,
                 ssh_known_hosts_path: None,
+                ssh_connection_pool_size: None,
+                ssh_compression: None,
+                ssh_keepalive_interval: None,
+                connect_timeout_sec: None,
             };
 
             // Fallback: allow top-level username/password for ssh/http/socks
@@ -344,7 +352,23 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("known_hosts_path")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
+                ob.ssh_connection_pool_size = o
+                    .get("connection_pool_size")
+                    .and_then(|v| v.as_u64())
+                    .map(|x| x as usize);
+                ob.ssh_compression = o
+                    .get("compression")
+                    .and_then(|v| v.as_bool());
+                ob.ssh_keepalive_interval = o
+                    .get("keepalive_interval")
+                    .and_then(|v| v.as_u64());
             }
+
+            // Parse connect_timeout for all outbound types
+            ob.connect_timeout_sec = o
+                .get("connect_timeout")
+                .and_then(|v| v.as_u64())
+                .map(|x| x as u32);
 
             // Backward-compat: allow nested sections `ws`, `h2`, `tls` as objects
             if let Some(ws) = o.get("ws").and_then(|v| v.as_object()) {
@@ -369,6 +393,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 }
                 if ob.tls_alpn.is_none() {
                     ob.tls_alpn = tls.get("alpn").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+                
+                // Parse REALITY configuration
+                if let Some(reality) = tls.get("reality").and_then(|v| v.as_object()) {
+                    ob.reality_enabled = reality.get("enabled").and_then(|v| v.as_bool());
+                    ob.reality_public_key = reality.get("public_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.reality_short_id = reality.get("short_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.reality_server_name = reality.get("server_name").and_then(|v| v.as_str()).map(|s| s.to_string());
                 }
             }
 
@@ -423,4 +455,155 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
     }
     normalize_credentials(&mut ir);
     ir
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_reality_config() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "name": "reality-out",
+                "server": "example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "tls": {
+                    "enabled": true,
+                    "sni": "www.apple.com",
+                    "reality": {
+                        "enabled": true,
+                        "public_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        "short_id": "01ab",
+                        "server_name": "www.apple.com"
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        
+        assert_eq!(outbound.name, Some("reality-out".to_string()));
+        assert_eq!(outbound.reality_enabled, Some(true));
+        assert_eq!(
+            outbound.reality_public_key,
+            Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string())
+        );
+        assert_eq!(outbound.reality_short_id, Some("01ab".to_string()));
+        assert_eq!(outbound.reality_server_name, Some("www.apple.com".to_string()));
+        
+        // Validate the parsed config
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_parse_reality_config_nested_tls() {
+        // Test backward compatibility with nested tls object
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "name": "reality-out",
+                "server": "example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "tls": {
+                    "sni": "www.apple.com",
+                    "alpn": "h2,http/1.1",
+                    "reality": {
+                        "enabled": true,
+                        "public_key": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                        "short_id": "cdef",
+                        "server_name": "www.cloudflare.com"
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        
+        // Check TLS fields are parsed
+        assert_eq!(outbound.tls_sni, Some("www.apple.com".to_string()));
+        assert_eq!(outbound.tls_alpn, Some("h2,http/1.1".to_string()));
+        
+        // Check REALITY fields are parsed
+        assert_eq!(outbound.reality_enabled, Some(true));
+        assert_eq!(
+            outbound.reality_public_key,
+            Some("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string())
+        );
+        assert_eq!(outbound.reality_short_id, Some("cdef".to_string()));
+        assert_eq!(outbound.reality_server_name, Some("www.cloudflare.com".to_string()));
+    }
+
+    #[test]
+    fn test_parse_reality_config_disabled() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "name": "normal-vless",
+                "server": "example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "tls": {
+                    "enabled": true,
+                    "sni": "example.com",
+                    "reality": {
+                        "enabled": false
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        
+        assert_eq!(outbound.reality_enabled, Some(false));
+        // When disabled, validation should pass even without other fields
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_parse_reality_config_without_reality() {
+        // Test that outbounds without REALITY config work normally
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "name": "normal-vless",
+                "server": "example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "tls": {
+                    "enabled": true,
+                    "sni": "example.com"
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        
+        assert_eq!(outbound.reality_enabled, None);
+        assert_eq!(outbound.reality_public_key, None);
+        assert_eq!(outbound.reality_short_id, None);
+        assert_eq!(outbound.reality_server_name, None);
+        
+        // Should pass validation when REALITY is not enabled
+        assert!(outbound.validate_reality().is_ok());
+    }
 }

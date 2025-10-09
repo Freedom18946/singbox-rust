@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "inbounds": [
+    {
+      "type": "hysteria2",
+      "name": "hysteria2-in",
+      "listen": "0.0.0.0:443",
+      "cert": "/path/to/cert.pem",
+      "key": "/path/to/key.pem",
+      "up_mbps": 100,
+      "down_mbps": 100,
+      "salamander": "salamander_password",
+      "users": [
+        {
+          "password": "user_password_1"
+        },
+        {
+          "password": "user_password_2"
+        }
+      ],
+      "congestion_control": "bbr"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "hysteria2",
+      "name": "hysteria2-out",
+      "server": "hysteria2.example.com",
+      "port": 443,
+      "password": "user_password_1",
+      "salamander": "salamander_password",
+      "congestion_control": "bbr",
+      "skip_cert_verify": false,
+      "tls": {
+        "enabled": true,
+        "sni": "hysteria2.example.com"
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [],
+    "default": "hysteria2-out"
+  }
+}

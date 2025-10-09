@@ -1,5 +1,7 @@
 //! HTTP/2 server/client integration tests
 
+#![cfg(feature = "transport_h2")]
+
 use sb_transport::http2::{Http2Dialer, Http2Listener, Http2ServerConfig, Http2Config};
 use sb_transport::{Dialer, TcpDialer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

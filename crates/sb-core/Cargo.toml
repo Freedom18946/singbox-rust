@@ -32,6 +32,7 @@ rand = "0.8"
 regex = "1.10"
 ring = "0.17"
 rustls = "0.23"
+rustls-pemfile = "2.0"
 sb-config = { path = "../sb-config" }
 sb-metrics = { path = "../sb-metrics" }
 sb-platform = { path = "../sb-platform" }
@@ -117,6 +118,7 @@ labels             = []
 metrics            = []
 minijson           = []
 obs                = []
+out_hysteria       = ["out_quic", "tls_rustls"]
 out_hysteria2      = ["out_quic", "tls_rustls"]
 out_naive          = []
 out_quic           = []
@@ -124,7 +126,7 @@ out_shadowtls      = ["tls_rustls"]
 out_ssh            = ["dep:thrussh", "dep:thrussh-keys"]
 out_ss             = []
 out_trojan         = []
-out_tuic           = []
+out_tuic           = ["out_quic", "tls_rustls"]
 out_vless          = []
 out_vmess          = []
 out_wireguard      = []

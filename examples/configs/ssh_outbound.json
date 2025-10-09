@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1:1080"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "ssh",
+      "name": "ssh-password",
+      "server": "ssh.example.com",
+      "port": 22,
+      "username": "proxyuser",
+      "password": "your_password_here",
+      "host_key_verification": true,
+      "known_hosts_path": "~/.ssh/known_hosts",
+      "connection_pool_size": 5,
+      "connect_timeout": 30
+    },
+    {
+      "type": "ssh",
+      "name": "ssh-privatekey",
+      "server": "ssh2.example.com",
+      "port": 22,
+      "username": "proxyuser",
+      "private_key": "/path/to/private_key",
+      "private_key_passphrase": "optional_passphrase",
+      "host_key_verification": true,
+      "known_hosts_path": "~/.ssh/known_hosts",
+      "connection_pool_size": 5
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "domain": ["internal.example.com"],
+        "outbound": "ssh-password"
+      },
+      {
+        "domain": ["secure.example.com"],
+        "outbound": "ssh-privatekey"
+      }
+    ],
+    "default": "direct"
+  }
+}

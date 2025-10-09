@@ -13,9 +13,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 #[cfg(feature = "http-tls")]
-use rustls::{ClientConfig, ServerName};
+use tokio_rustls::{TlsConnector, rustls::ClientConfig};
 #[cfg(feature = "http-tls")]
-use tokio_rustls::TlsConnector;
+use rustls_pki_types::ServerName;
 
 use sb_config::outbound::HttpProxyConfig;
 
@@ -24,22 +24,53 @@ use sb_config::outbound::HttpProxyConfig;
 pub struct HttpProxyConnector {
     config: HttpProxyConfig,
     use_tls: bool,
+    #[cfg(feature = "transport_ech")]
+    #[allow(dead_code)]
+    ech_config: Option<sb_tls::EchClientConfig>,
 }
 
 impl HttpProxyConnector {
     pub fn new(config: HttpProxyConfig) -> Self {
+        #[cfg(feature = "transport_ech")]
+        let ech_config = config.tls.as_ref()
+            .and_then(|tls| tls.ech.as_ref())
+            .filter(|ech| ech.enabled)
+            .map(|ech| sb_tls::EchClientConfig {
+                enabled: ech.enabled,
+                config: ech.config.clone(),
+                config_list: None, // Will be decoded from config
+                pq_signature_schemes_enabled: ech.pq_signature_schemes_enabled,
+                dynamic_record_sizing_disabled: ech.dynamic_record_sizing_disabled,
+            });
+
         Self {
             config,
             use_tls: false,
+            #[cfg(feature = "transport_ech")]
+            ech_config,
         }
     }
 
     /// Create a connector with TLS support
     #[cfg(feature = "http-tls")]
     pub fn with_tls(config: HttpProxyConfig) -> Self {
+        #[cfg(feature = "transport_ech")]
+        let ech_config = config.tls.as_ref()
+            .and_then(|tls| tls.ech.as_ref())
+            .filter(|ech| ech.enabled)
+            .map(|ech| sb_tls::EchClientConfig {
+                enabled: ech.enabled,
+                config: ech.config.clone(),
+                config_list: None,
+                pq_signature_schemes_enabled: ech.pq_signature_schemes_enabled,
+                dynamic_record_sizing_disabled: ech.dynamic_record_sizing_disabled,
+            });
+
         Self {
             config,
             use_tls: true,
+            #[cfg(feature = "transport_ech")]
+            ech_config,
         }
     }
 
@@ -52,8 +83,11 @@ impl HttpProxyConnector {
                 username: None,
                 password: None,
                 connect_timeout_sec: Some(30),
+                tls: None,
             },
             use_tls: false,
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 
@@ -67,8 +101,11 @@ impl HttpProxyConnector {
                 username: None,
                 password: None,
                 connect_timeout_sec: Some(30),
+                tls: None,
             },
             use_tls: true,
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 
@@ -85,8 +122,11 @@ impl HttpProxyConnector {
                 username: Some(username.into()),
                 password: Some(password.into()),
                 connect_timeout_sec: Some(30),
+                tls: None,
             },
             use_tls: false,
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 
@@ -104,8 +144,11 @@ impl HttpProxyConnector {
                 username: Some(username.into()),
                 password: Some(password.into()),
                 connect_timeout_sec: Some(30),
+                tls: None,
             },
             use_tls: true,
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 }
@@ -194,27 +237,21 @@ impl OutboundConnector for HttpProxyConnector {
                         .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                         // Create TLS config
-                        let mut root_store = rustls::RootCertStore::empty();
-                        root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(
-                            |ta| {
-                                rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                                    ta.subject,
-                                    ta.spki,
-                                    ta.name_constraints,
-                                )
-                            },
-                        ));
+                        let root_store = tokio_rustls::rustls::RootCertStore {
+                            roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
+                        };
 
                         let config = ClientConfig::builder()
-                            .with_safe_defaults()
                             .with_root_certificates(root_store)
                             .with_no_client_auth();
 
                         let connector = TlsConnector::from(Arc::new(config));
 
-                        let server_name = ServerName::try_from(host).map_err(|_| {
-                            AdapterError::InvalidConfig("Invalid server name for TLS")
-                        })?;
+                        let server_name = ServerName::try_from(host)
+                            .map_err(|_| {
+                                AdapterError::InvalidConfig("Invalid server name for TLS")
+                            })?
+                            .to_owned();
 
                         // Perform TLS handshake
                         let tls_stream = tokio::time::timeout(
@@ -557,6 +594,7 @@ mod tests {
             username: None,
             password: None,
             connect_timeout_sec: Some(30),
+            tls: None,
         };
 
         let connector = HttpProxyConnector::new(config);

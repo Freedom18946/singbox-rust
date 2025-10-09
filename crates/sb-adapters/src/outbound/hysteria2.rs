@@ -58,6 +58,41 @@ impl Hysteria2Connector {
     pub fn new(cfg: Hysteria2AdapterConfig) -> Self {
         Self { cfg }
     }
+
+    #[cfg(feature = "adapter-hysteria2")]
+    /// Create a UDP session for UDP relay
+    pub async fn create_udp_session(
+        &self,
+    ) -> Result<sb_core::outbound::hysteria2::Hysteria2UdpSession> {
+        use sb_core::outbound::hysteria2::Hysteria2Config;
+        use sb_core::outbound::hysteria2::Hysteria2Outbound;
+
+        let core_cfg = Hysteria2Config {
+            server: self.cfg.server.clone(),
+            port: self.cfg.port,
+            password: self.cfg.password.clone(),
+            congestion_control: self.cfg.congestion_control.clone(),
+            up_mbps: self.cfg.up_mbps,
+            down_mbps: self.cfg.down_mbps,
+            obfs: self.cfg.obfs.clone(),
+            skip_cert_verify: self.cfg.skip_cert_verify,
+            sni: self.cfg.sni.clone(),
+            alpn: self.cfg.alpn.clone(),
+            salamander: self.cfg.salamander.clone(),
+            brutal: None,
+        };
+
+        let core = Hysteria2Outbound::new(core_cfg)
+            .map_err(|e| AdapterError::Other(e.to_string()))?;
+
+        // Get connection
+        let connection = core.get_connection().await.map_err(AdapterError::Io)?;
+
+        // Create UDP session
+        core.create_udp_session(&connection)
+            .await
+            .map_err(AdapterError::Io)
+    }
 }
 
 #[async_trait]

@@ -13,7 +13,7 @@
   "defs":{
     "inbound":{"type":"object","additionalProperties": false,"properties":{
       "name":{"type":"string"},
-      "type":{"enum":["socks","http","tun","mixed","direct"]},
+      "type":{"enum":["socks","http","tun","mixed","direct","hysteria","hysteria2","tuic"]},
       "listen":{"type":"string","minLength":1},
       "udp":{"type":"boolean"},
       "network":{"type":"string","enum":["tcp","udp"]},
@@ -28,17 +28,62 @@
       "auth":{"type":"object","additionalProperties": false,"properties":{
         "username":{"type":"string"},
         "password":{"type":"string"}
-      }}
+      }},
+      "users":{"type":"array","items":{"type":"object","properties":{
+        "password":{"type":"string"}
+      }}},
+      "cert":{"type":"string"},
+      "key":{"type":"string"},
+      "congestion_control":{"type":"string","enum":["bbr","cubic","new_reno"]},
+      "salamander":{"type":"string"},
+      "obfs":{"type":"string"},
+      "up_mbps":{"type":"integer","minimum":1},
+      "down_mbps":{"type":"integer","minimum":1}
     },"required":["type","listen"]},
     "outbound":{"type":"object","additionalProperties": false,"properties":{
       "name":{"type":"string"},
-      "type":{"enum":["direct","http","socks","block","shadowsocks","vmess","vless","hysteria2","tuic"]},
+      "type":{"enum":["direct","http","socks","block","shadowsocks","vmess","vless","hysteria","hysteria2","tuic","ssh"]},
       "server":{"type":"string"},
       "port":{"type":"integer","minimum":1,"maximum":65535},
       "udp":{"type":["boolean","string"]},
       "method":{"type":"string"},
       "password":{"type":"string"},
-      "username":{"type":"string"}
+      "username":{"type":"string"},
+      "private_key":{"type":"string"},
+      "private_key_passphrase":{"type":"string"},
+      "host_key_verification":{"type":"boolean"},
+      "known_hosts_path":{"type":"string"},
+      "connection_pool_size":{"type":"integer","minimum":1},
+      "compression":{"type":"boolean"},
+      "keepalive_interval":{"type":"integer","minimum":0},
+      "connect_timeout":{"type":"integer","minimum":1},
+      "uuid":{"type":"string","pattern":"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"},
+      "flow":{"type":"string"},
+      "token":{"type":"string"},
+      "congestion_control":{"enum":["cubic","new_reno","bbr"]},
+      "udp_relay_mode":{"enum":["native","quic"]},
+      "udp_over_stream":{"type":"boolean"},
+      "zero_rtt_handshake":{"type":"boolean"},
+      "heartbeat":{"type":"string"},
+      "alpn":{"type":"array","items":{"type":"string"}},
+      "skip_cert_verify":{"type":"boolean"},
+      "tls":{"type":"object","additionalProperties":false,"properties":{
+        "enabled":{"type":"boolean"},
+        "sni":{"type":"string"},
+        "alpn":{"type":"string"},
+        "reality":{"type":"object","additionalProperties":false,"properties":{
+          "enabled":{"type":"boolean"},
+          "public_key":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+          "short_id":{"type":"string","pattern":"^[0-9a-fA-F]{0,16}$"},
+          "server_name":{"type":"string"}
+        }},
+        "ech":{"type":"object","additionalProperties":false,"properties":{
+          "enabled":{"type":"boolean"},
+          "config":{"type":"string"},
+          "pq_signature_schemes_enabled":{"type":"boolean"},
+          "dynamic_record_sizing_disabled":{"type":"boolean"}
+        }}
+      }}
     },"required":["type"]},
     "route":{"type":"object","additionalProperties": false,"properties":{
       "rules":{"type":"array","items":{"$ref":"#/defs/rule"}},

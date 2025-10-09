@@ -18,11 +18,30 @@ use sb_config::outbound::Socks5Config;
 #[derive(Debug, Clone)]
 pub struct Socks5Connector {
     config: Socks5Config,
+    #[cfg(feature = "transport_ech")]
+    #[allow(dead_code)]
+    ech_config: Option<sb_tls::EchClientConfig>,
 }
 
 impl Socks5Connector {
     pub fn new(config: Socks5Config) -> Self {
-        Self { config }
+        #[cfg(feature = "transport_ech")]
+        let ech_config = config.tls.as_ref()
+            .and_then(|tls| tls.ech.as_ref())
+            .filter(|ech| ech.enabled)
+            .map(|ech| sb_tls::EchClientConfig {
+                enabled: ech.enabled,
+                config: ech.config.clone(),
+                config_list: None,
+                pq_signature_schemes_enabled: ech.pq_signature_schemes_enabled,
+                dynamic_record_sizing_disabled: ech.dynamic_record_sizing_disabled,
+            });
+
+        Self {
+            config,
+            #[cfg(feature = "transport_ech")]
+            ech_config,
+        }
     }
 
     /// Create a connector with no authentication
@@ -34,7 +53,10 @@ impl Socks5Connector {
                 username: None,
                 password: None,
                 connect_timeout_sec: Some(30),
+                tls: None,
             },
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 
@@ -51,7 +73,10 @@ impl Socks5Connector {
                 username: Some(username.into()),
                 password: Some(password.into()),
                 connect_timeout_sec: Some(30),
+                tls: None,
             },
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
         }
     }
 }
@@ -1095,6 +1120,7 @@ mod tests {
             username: None,
             password: None,
             connect_timeout_sec: Some(30),
+            tls: None,
         };
 
         let connector = Socks5Connector::new(config);

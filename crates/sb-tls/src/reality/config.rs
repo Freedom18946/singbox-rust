@@ -185,6 +185,8 @@ fn default_true() -> bool {
 mod tests {
     use super::*;
 
+    // ========== Client Config Validation Tests ==========
+
     #[test]
     fn test_reality_client_config_validation() {
         let mut config = RealityClientConfig {
@@ -215,6 +217,141 @@ mod tests {
     }
 
     #[test]
+    fn test_client_config_empty_target() {
+        let config = RealityClientConfig {
+            target: "".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("target domain cannot be empty"));
+    }
+
+    #[test]
+    fn test_client_config_invalid_public_key_length() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "0123456789abcdef".to_string(), // Too short
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("64 hex characters"));
+    }
+
+    #[test]
+    fn test_client_config_invalid_public_key_chars() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg".to_string(),
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_client_config_valid_short_ids() {
+        let test_cases = vec![
+            ("", true),           // Empty is valid
+            ("01", true),         // 1 byte
+            ("0123", true),       // 2 bytes
+            ("01234567", true),   // 4 bytes
+            ("0123456789abcdef", true), // 8 bytes (max)
+        ];
+
+        for (short_id, should_be_valid) in test_cases {
+            let config = RealityClientConfig {
+                target: "www.apple.com".to_string(),
+                server_name: "www.apple.com".to_string(),
+                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                short_id: if short_id.is_empty() { None } else { Some(short_id.to_string()) },
+                fingerprint: "chrome".to_string(),
+                alpn: vec![],
+            };
+
+            assert_eq!(config.validate().is_ok(), should_be_valid, "short_id: {}", short_id);
+        }
+    }
+
+    #[test]
+    fn test_client_config_invalid_short_ids() {
+        let test_cases = vec![
+            "a",                  // Odd length
+            "abc",                // Odd length
+            "01234567890123456789", // Too long (>16 chars)
+            "gg",                 // Invalid hex
+        ];
+
+        for short_id in test_cases {
+            let config = RealityClientConfig {
+                target: "www.apple.com".to_string(),
+                server_name: "www.apple.com".to_string(),
+                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                short_id: Some(short_id.to_string()),
+                fingerprint: "chrome".to_string(),
+                alpn: vec![],
+            };
+
+            assert!(config.validate().is_err(), "short_id should be invalid: {}", short_id);
+        }
+    }
+
+    #[test]
+    fn test_client_config_public_key_bytes() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_id: None,
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        let bytes = config.public_key_bytes().unwrap();
+        assert_eq!(bytes.len(), 32);
+        assert_eq!(bytes[0], 0x01);
+        assert_eq!(bytes[1], 0x23);
+    }
+
+    #[test]
+    fn test_client_config_short_id_bytes() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_id: Some("01ab".to_string()),
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        let bytes = config.short_id_bytes().unwrap();
+        assert_eq!(bytes, vec![0x01, 0xab]);
+
+        // Test None case
+        let config_no_short_id = RealityClientConfig {
+            short_id: None,
+            ..config
+        };
+        assert!(config_no_short_id.short_id_bytes().is_none());
+    }
+
+    // ========== Server Config Validation Tests ==========
+
+    #[test]
     fn test_reality_server_config_validation() {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
@@ -227,6 +364,105 @@ mod tests {
 
         assert!(config.validate().is_ok());
     }
+
+    #[test]
+    fn test_server_config_empty_target() {
+        let config = RealityServerConfig {
+            target: "".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("target cannot be empty"));
+    }
+
+    #[test]
+    fn test_server_config_empty_server_names() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec![],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("server_names cannot be empty"));
+    }
+
+    #[test]
+    fn test_server_config_invalid_private_key() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "invalid".to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("64 hex characters"));
+    }
+
+    #[test]
+    fn test_server_config_invalid_short_ids() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_ids: vec!["invalid".to_string()],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_server_config_private_key_bytes() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210".to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        let bytes = config.private_key_bytes().unwrap();
+        assert_eq!(bytes.len(), 32);
+        assert_eq!(bytes[0], 0xfe);
+        assert_eq!(bytes[1], 0xdc);
+    }
+
+    #[test]
+    fn test_server_config_short_ids_bytes() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_ids: vec!["01ab".to_string(), "cdef".to_string()],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        let bytes_vec = config.short_ids_bytes();
+        assert_eq!(bytes_vec.len(), 2);
+        assert_eq!(bytes_vec[0], vec![0x01, 0xab]);
+        assert_eq!(bytes_vec[1], vec![0xcd, 0xef]);
+    }
+
+    // ========== Short ID Acceptance Tests ==========
 
     #[test]
     fn test_short_id_acceptance() {
@@ -249,5 +485,40 @@ mod tests {
             ..config
         };
         assert!(config_accept_all.accepts_short_id(&hex::decode("ffff").unwrap()));
+    }
+
+    #[test]
+    fn test_short_id_acceptance_empty_list() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        // Empty list should accept any short_id
+        assert!(config.accepts_short_id(&[0x00]));
+        assert!(config.accepts_short_id(&[0xff, 0xff]));
+        assert!(config.accepts_short_id(&[]));
+    }
+
+    #[test]
+    fn test_short_id_acceptance_multiple() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            short_ids: vec!["00".to_string(), "0102".to_string(), "010203".to_string()],
+            handshake_timeout: 5,
+            enable_fallback: true,
+        };
+
+        assert!(config.accepts_short_id(&[0x00]));
+        assert!(config.accepts_short_id(&[0x01, 0x02]));
+        assert!(config.accepts_short_id(&[0x01, 0x02, 0x03]));
+        assert!(!config.accepts_short_id(&[0x01]));
+        assert!(!config.accepts_short_id(&[0xff]));
     }
 }
