@@ -50,6 +50,7 @@ pub struct ShadowsocksInboundConfig {
     pub method: String,    // e.g., aes-256-gcm, chacha20-ietf-poly1305
     pub password: String,  // master key (derived to 32 bytes via KDF below)
     pub router: Arc<router::RouterHandle>,
+    pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
 }
 
 fn evp_bytes_to_key(password: &str, key_len: usize) -> Vec<u8> {
@@ -183,31 +184,86 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
 
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
-    info!(addr=?cfg.listen, actual=?actual, "shadowsocks: inbound bound");
+    info!(addr=?cfg.listen, actual=?actual, multiplex=?cfg.multiplex.is_some(), "shadowsocks: inbound bound");
 
-    let mut hb = interval(Duration::from_secs(5));
-    loop {
-        select! {
-            _ = stop_rx.recv() => break,
-            _ = hb.tick() => { tracing::debug!("shadowsocks: accept-loop heartbeat"); }
-            r = listener.accept() => {
-                let (mut cli, peer) = match r { Ok(v) => v, Err(e) => { warn!(error=%e, "ss: accept error"); continue; } };
-                let cfg_clone = cfg.clone();
-                let method_clone = method.clone();
-                let master_clone = master.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_conn(&cfg_clone, method_clone, &master_clone, &mut cli, peer).await {
-                        warn!(%peer, error=%e, "ss: session error");
-                        let _ = cli.shutdown().await;
-                    }
-                });
+    // If multiplex is enabled, wrap the listener
+    if let Some(mux_config) = cfg.multiplex.clone() {
+        info!("shadowsocks: multiplex enabled");
+        let mux_listener = sb_transport::multiplex::MultiplexListener::new(listener, mux_config);
+        
+        let mut hb = interval(Duration::from_secs(5));
+        loop {
+            select! {
+                _ = stop_rx.recv() => break,
+                _ = hb.tick() => { tracing::debug!("shadowsocks: multiplex accept-loop heartbeat"); }
+                r = mux_listener.accept() => {
+                    let mut stream = match r { 
+                        Ok(v) => v, 
+                        Err(e) => { 
+                            warn!(error=%e, "ss: multiplex accept error"); 
+                            continue; 
+                        } 
+                    };
+                    let cfg_clone = cfg.clone();
+                    let method_clone = method.clone();
+                    let master_clone = master.clone();
+                    tokio::spawn(async move {
+                        // For multiplexed streams, we don't have a peer address
+                        let peer = SocketAddr::from(([0, 0, 0, 0], 0));
+                        if let Err(e) = handle_conn_stream(&cfg_clone, method_clone, &master_clone, &mut stream, peer).await {
+                            warn!(%peer, error=%e, "ss: multiplex session error");
+                        }
+                    });
+                }
+            }
+        }
+    } else {
+        // Standard TCP listener without multiplex
+        let mut hb = interval(Duration::from_secs(5));
+        loop {
+            select! {
+                _ = stop_rx.recv() => break,
+                _ = hb.tick() => { tracing::debug!("shadowsocks: accept-loop heartbeat"); }
+                r = listener.accept() => {
+                    let (mut cli, peer) = match r { Ok(v) => v, Err(e) => { warn!(error=%e, "ss: accept error"); continue; } };
+                    let cfg_clone = cfg.clone();
+                    let method_clone = method.clone();
+                    let master_clone = master.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_conn(&cfg_clone, method_clone, &master_clone, &mut cli, peer).await {
+                            warn!(%peer, error=%e, "ss: session error");
+                            let _ = cli.shutdown().await;
+                        }
+                    });
+                }
             }
         }
     }
     Ok(())
 }
 
+// Helper function to handle connections from generic streams (for multiplex support)
+async fn handle_conn_stream(
+    _cfg: &ShadowsocksInboundConfig,
+    cipher: AeadCipherKind,
+    master_key: &[u8],
+    cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send),
+    peer: SocketAddr,
+) -> Result<()> {
+    handle_conn_impl(_cfg, cipher, master_key, cli, peer).await
+}
+
 async fn handle_conn(
+    _cfg: &ShadowsocksInboundConfig,
+    cipher: AeadCipherKind,
+    master_key: &[u8],
+    cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
+    peer: SocketAddr,
+) -> Result<()> {
+    handle_conn_impl(_cfg, cipher, master_key, cli, peer).await
+}
+
+async fn handle_conn_impl(
     _cfg: &ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
     master_key: &[u8],

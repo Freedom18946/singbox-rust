@@ -195,22 +195,34 @@ sb_prefetch_jobs_total{event=...}
 - ✅ **Sprint 2** (2025-10-02): macOS native process matching (**149.4x faster**), cardinality monitoring
 - ✅ **Sprint 3** (2025-10-02): Windows native process matching, VLESS support
 - ✅ **Sprint 4** (2025-10-02): Constant-time credential verification, comprehensive module documentation
-- ✅ **Sprint 5** (2025-10-04): **ALL SERVER INBOUNDS (10/10)** + **ALL CORE TRANSPORTS (13/13 tests)** + **ALL CLI TOOLS** ✨
+- ✅ **Sprint 5** (2025-10-09): **TLS INFRASTRUCTURE COMPLETE** - REALITY, ECH, Hysteria v1/v2, TUIC, Direct inbound ✨
+
+**Sprint 5 Major Breakthrough (2025-10-09)**:
+- 🎉 **TLS Infrastructure**: REALITY, ECH, Standard TLS complete in new `crates/sb-tls` crate
+- 🎉 **REALITY TLS**: Client/server handshake with X25519 key exchange, auth data embedding, fallback proxy
+- 🎉 **ECH**: Runtime handshake with HPKE encryption, SNI encryption, ECHConfigList parsing
+- 🎉 **Direct Inbound**: TCP+UDP forwarder with session-based NAT, automatic timeout cleanup
+- 🎉 **Hysteria v1**: Full client/server with QUIC transport, custom congestion control, UDP relay
+- 🎉 **Hysteria2**: Complete with Salamander obfuscation, password auth, UDP over stream
+- 🎉 **TUIC Outbound**: Full UDP over stream support with authentication
+- 🎉 **Sniffing Pipeline**: HTTP Host, TLS SNI, QUIC ALPN detection integrated with routing
 
 **Major Milestones Achieved**:
-- 🎉 **Server Inbounds**: 12/12 complete (shadowsocks, trojan, vmess, vless, shadowtls, naive, tuic, hysteria, hysteria2)
-- 🎉 **Transport Layer**: 13/13 tests passing (WebSocket, HTTP/2, HTTPUpgrade, Multiplex/yamux)
-- 🎉 **CLI Parity**: 100% complete (generate reality-keypair, ech-keypair, rule-set tools)
-- 🎉 **P0 Protocols**: Production-ready REALITY TLS, ECH, Hysteria v1/v2, SSH, TUIC
-- 🔐 **Advanced TLS**: REALITY handshake with X25519 key exchange, ECH with HPKE encryption
-- 🚀 Cross-platform native process matching - macOS (libproc 149.4x), Windows (iphlpapi 20-50x)
-- 📊 Prometheus metrics with cardinality monitoring (prevents label explosion)
-- 🔐 Timing-attack resistant credential verification
-- 📚 Comprehensive Rule-Set system (SRS binary format, remote caching, auto-update)
-- 🔄 Proxy selector groups (URLTest with health checks, load balancing)
-- 🌐 DNS advanced features (FakeIP, multiple strategies, DoH/DoT/DoQ)
+- 🎉 **TLS Infrastructure**: REALITY, ECH, Standard TLS (NEW - unblocks 15+ protocols)
+- 🎉 **Inbounds**: 5/15 Full, 8/15 Partial (33.3% complete)
+- 🎉 **Outbounds**: 6/17 Full, 7/17 Partial (35.3% complete)
+- 🎉 **Transport Layer**: WebSocket, HTTP/2, HTTPUpgrade, Multiplex complete
+- 🎉 **CLI Tools**: 100% complete (generate, rule-set, geoip, geosite tools)
+- 🔐 **Advanced TLS**: REALITY handshake, ECH with HPKE, Standard TLS 1.2/1.3
+- 🚀 **Cross-platform**: Native process matching - macOS (149.4x), Windows (20-50x)
+- 📊 **Observability**: Prometheus metrics with cardinality monitoring
+- 🔐 **Security**: Timing-attack resistant credential verification
+- 📚 **Rule-Set**: SRS binary format, remote caching, auto-update
+- 🔄 **Proxy Selectors**: URLTest with health checks, load balancing
+- 🌐 **DNS**: FakeIP, multiple strategies, DoH/DoT/DoQ support
 
-**Next Steps**: Performance optimization, integration testing, production deployment validation
+**Next Steps**: Multiplex integration, V2Ray transports, DNS/Routing engine completion
+**For detailed feature status, see**: [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) and [NEXT_STEPS.md](NEXT_STEPS.md)
 
 ## Deployment (Quickstart)
 

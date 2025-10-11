@@ -42,6 +42,8 @@ pub struct TrojanInboundConfig {
     /// Optional REALITY TLS configuration for inbound
     #[cfg(feature = "tls_reality")]
     pub reality: Option<sb_tls::RealityServerConfig>,
+    /// Optional Multiplex configuration
+    pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
 }
 
 fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
@@ -87,19 +89,26 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
     
+    // Note: Multiplex support for Trojan inbound is configured but not yet fully implemented
+    // Trojan typically uses TLS directly, and multiplex integration would require
+    // wrapping TLS streams with multiplex, which needs architectural changes
+    if cfg.multiplex.is_some() {
+        warn!("Multiplex configuration present but not yet fully implemented for Trojan inbound");
+    }
+    
     // Create REALITY acceptor if configured, otherwise use standard TLS
     #[cfg(feature = "tls_reality")]
     let reality_acceptor = if let Some(ref reality_cfg) = cfg.reality {
-        info!(addr=?cfg.listen, actual=?actual, "trojan: REALITY TLS server bound");
+        info!(addr=?cfg.listen, actual=?actual, multiplex=?cfg.multiplex.is_some(), "trojan: REALITY TLS server bound");
         Some(Arc::new(sb_tls::RealityAcceptor::new(reality_cfg.clone())
             .map_err(|e| anyhow!("Failed to create REALITY acceptor: {}", e))?))
     } else {
-        info!(addr=?cfg.listen, actual=?actual, "trojan: TLS server bound");
+        info!(addr=?cfg.listen, actual=?actual, multiplex=?cfg.multiplex.is_some(), "trojan: TLS server bound");
         None
     };
     
     #[cfg(not(feature = "tls_reality"))]
-    info!(addr=?cfg.listen, actual=?actual, "trojan: TLS server bound");
+    info!(addr=?cfg.listen, actual=?actual, multiplex=?cfg.multiplex.is_some(), "trojan: TLS server bound");
     
     // Load standard TLS config if not using REALITY
     let tls_acceptor = {

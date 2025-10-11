@@ -210,11 +210,11 @@ impl Target {
 /// Boxed async stream for connections (temporary abstraction)
 pub type BoxedStream = Box<dyn AsyncStream>;
 
-/// Combined trait for async read + write + unpin + send
-pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+/// Combined trait for async read + write + unpin + send + sync
+pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
 
 /// Blanket implementation for any type that implements the required traits
-impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
 
 /// Lightweight UDP abstraction for outbound datagram connections
 /// Provides optional packet-level interface without breaking existing dial() API

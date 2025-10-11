@@ -55,13 +55,14 @@ pub enum DialError {
 // - 实现 `tokio::io::AsyncWrite`（异步写入）
 // - 实现 `Unpin`（可安全移动）
 // - 实现 `Send`（可在线程间传递）
-pub trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+// - 实现 `Sync`（可在线程间共享）
+pub trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
 
 /// 为所有满足条件的类型自动实现 `AsyncReadWrite`
 ///
 /// 这是一个 blanket implementation，意味着任何同时满足
-/// AsyncRead + AsyncWrite + Unpin + Send 的类型都会自动获得该实现
-impl<T> AsyncReadWrite for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+/// AsyncRead + AsyncWrite + Unpin + Send + Sync 的类型都会自动获得该实现
+impl<T> AsyncReadWrite for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
 
 /// 统一的异步 IO 流类型别名
 ///

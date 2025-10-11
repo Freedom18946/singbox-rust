@@ -1,136 +1,446 @@
-# TLS 客户端（rustls 0.23 / tokio-rustls 0.26）
+# TLS Infrastructure (`sb-tls` crate)
 
-## 架构
+## Overview
 
-- 统一入口：`sb_core::transport::tls::TlsClient`
-- 默认 **WebPKI 根** 校验；可通过环境变量切换 **NoVerify**（仅测试）
-- 指标：`outbound_connect_seconds_bucket{kind="tls",phase="tls_handshake"}`、`outbound_error_total{kind="tls",phase="tls_handshake",class}`
+The `sb-tls` crate provides comprehensive TLS abstractions and anti-censorship protocols for singbox-rust:
 
-## 环境变量
+- **Standard TLS 1.2/1.3**: Production-ready TLS using rustls
+- **REALITY**: Anti-censorship protocol with TLS fingerprint masquerading
+- **ECH (Encrypted Client Hello)**: HPKE-based SNI encryption for privacy
+- **uTLS**: TLS fingerprint mimicry (future)
 
-- `SB_TLS_NO_VERIFY=1`：关闭证书校验（**仅测试**）
+## Architecture
 
-## 兼容性
+```
+┌─────────────────────────────────────────┐
+│         TlsConnector Trait              │
+│  (Unified abstraction for all TLS)      │
+└──────────┬──────────────────────────────┘
+           │
+     ┌─────┴──────┬─────────────┬──────────┐
+     │            │             │          │
+┌────▼────┐ ┌────▼────┐  ┌────▼────┐ ┌──▼──┐
+│Standard │ │ REALITY │  │   ECH   │ │uTLS │
+│   TLS   │ │  Client │  │ Client  │ │(TBD)│
+└─────────┘ └─────────┘  └─────────┘ └─────┘
+```
 
-- 未启用 `tls_rustls` feature 时，`TlsClient` 退化为桩（透传），**不改变既有行为**。
-- `dns_dot` 需与 `tls_rustls` **共同启用**。
+### Key Design Principles
 
-## 使用方式
+1. **Pluggable**: All TLS implementations use the same `TlsConnector` trait
+2. **Async-first**: Built on `tokio` with `#[async_trait]`
+3. **Zero-cost abstractions**: Feature flags enable/disable implementations
+4. **Security-focused**: Proper key management, authentication, validation
 
-### 基本用法
+## Components
 
+### 1. Standard TLS (`standard.rs`)
+
+Production-ready TLS 1.2/1.3 implementation using rustls.
+
+**Features**:
+- WebPKI root certificate verification
+- ALPN negotiation support
+- SNI configuration
+- Custom CA certificate support
+- Client certificate authentication
+
+**Usage**:
 ```rust
-use sb_core::transport::tls::TlsClient;
+use sb_tls::{StandardTlsConnector, TlsConnector};
 
-// 从环境变量创建客户端
-let tls = TlsClient::from_env();
-
-// 连接并完成 TLS 握手
-let stream = tls.connect("example.com", tcp_stream).await?;
+let tls = StandardTlsConnector::new()?;
+let stream = tls.connect(tcp_stream, "example.com").await?;
 ```
 
-### 自定义配置
+**Configuration**:
+- `ALPN`: Set via config (e.g., `["h2", "http/1.1"]`)
+- `SNI`: Automatically derived from server name
+- `Certificate Verification`: Enabled by default, disable only for testing
 
+### 2. REALITY Protocol (`reality/`)
+
+Anti-censorship protocol that masquerades as legitimate TLS traffic to bypass DPI.
+
+**How it works**:
+1. Client performs X25519 key exchange with server's public key
+2. Auth data is embedded in TLS ClientHello extension
+3. Server verifies auth data using shared secret
+4. On success: Connection proceeds normally
+5. On failure: Fallback to configured target server (e.g., `www.microsoft.com`)
+
+**Client Implementation** (`reality/client.rs`):
 ```rust
-use sb_core::transport::tls::{TlsClient, ClientAuth};
+use sb_tls::{RealityConnector, RealityClientConfig};
 
-let tls = TlsClient::builder()
-    .verified_default_roots()  // 或 .no_verify() 用于测试
-    .build();
+let config = RealityClientConfig {
+    public_key: "YOUR_PUBLIC_KEY_HEX",
+    short_id: "SHORT_ID_HEX",
+    server_name: "www.microsoft.com",
+    fallback_addr: Some("www.microsoft.com:443"),
+};
 
-let stream = tls.connect("example.com", tcp_stream).await?;
+let reality = RealityConnector::new(config)?;
+let stream = reality.connect(tcp_stream, "www.microsoft.com").await?;
 ```
 
-## Feature 控制
+**Server Implementation** (`reality/server.rs`):
+```rust
+use sb_tls::{RealityAcceptor, RealityServerConfig};
 
-- `tls_rustls`：启用真实 TLS 实现（rustls 0.23）
-- 未启用时：TLS 客户端为桩实现，直接透传流量（不加密）
+let config = RealityServerConfig {
+    private_key: "YOUR_PRIVATE_KEY_HEX",
+    short_ids: vec!["SHORT_ID_HEX".to_string()],
+    fallback_addr: "www.microsoft.com:443",
+};
 
-## 指标监控
+let acceptor = RealityAcceptor::new(config)?;
+let stream = acceptor.accept(tcp_stream).await?;
+```
 
-启用 `metrics` feature 时，TLS 握手会产生以下指标：
+**Key Generation**:
+```bash
+# Generate REALITY keypair
+sing-box generate reality-keypair
 
-- `outbound_connect_seconds_bucket{kind="tls",phase="tls_handshake"}`: 握手耗时分布
-- `outbound_connect_total{kind="tls",phase="tls_handshake",result="ok"}`: 成功握手计数
-- `outbound_error_total{kind="tls",phase="tls_handshake",class="..."}`: 错误分类计数
+# Output:
+# Private key: <64 hex characters>
+# Public key: <64 hex characters>
+```
 
-### 错误分类
+**Configuration Fields**:
+- `public_key`: Server's X25519 public key (64 hex chars)
+- `private_key`: Server's X25519 private key (64 hex chars)
+- `short_id`: Authentication identifier (0-16 hex chars)
+- `server_name`: Target domain for SNI
+- `fallback_addr`: Where to forward unauthenticated connections
 
-TLS 错误会根据类型分类为：
-- `tls_cert`: 证书错误
-- `tls_verify`: 证书验证失败
-- `handshake`: 握手协议错误
-- `timeout`: 超时
-- `io`: I/O 错误
+**Security**:
+- ✅ Constant-time comparison for auth verification
+- ✅ Secure X25519 key exchange
+- ✅ Fallback prevents active probing
 
-## 安全注意事项
+### 3. ECH (Encrypted Client Hello) (`ech/`)
 
-⚠️ **重要**：`SB_TLS_NO_VERIFY=1` 会跳过所有证书验证，仅应用于：
-- 测试环境
-- 内网自签证书场景
-- **绝不应在生产环境使用**
+HPKE-based encryption of TLS ClientHello to hide SNI from network observers.
 
-默认行为使用 WebPKI 根证书进行严格验证，这是生产环境的推荐配置。
+**How it works**:
+1. Client obtains server's ECHConfigList (public ECH configuration)
+2. Client generates ephemeral X25519 keypair
+3. SNI and sensitive extensions are encrypted using HPKE
+4. Server decrypts inner ClientHello using private key
+5. Handshake proceeds with encrypted SNI
 
-## 示例与测试
+**Client Implementation** (`ech/mod.rs`):
+```rust
+use sb_tls::{EchConnector, EchClientConfig};
 
-### 运行示例
+let config = EchClientConfig {
+    config_list: "BASE64_ENCODED_ECHCONFIGLIST",
+    outer_sni: "public.example.com",
+    inner_sni: "secret.example.com",
+};
+
+let ech = EchConnector::new(config)?;
+let stream = ech.connect(tcp_stream, "public.example.com").await?;
+```
+
+**Server Implementation** (future):
+```rust
+// Server-side ECH acceptance (not yet implemented)
+// See: crates/sb-tls/src/ech/server.rs (TODO)
+```
+
+**Key Generation**:
+```bash
+# Generate ECH keypair
+sing-box generate ech-keypair
+
+# Output:
+# Private key: <64 hex characters>
+# ECH config: <base64 encoded ECHConfigList>
+```
+
+**Configuration Fields**:
+- `config_list`: Base64-encoded ECHConfigList (from server)
+- `outer_sni`: Public SNI visible to observers
+- `inner_sni`: Real SNI encrypted in inner ClientHello
+
+**Cryptographic Details**:
+- **KEM**: DHKEM-X25519-HKDF-SHA256
+- **KDF**: HKDF-SHA256
+- **AEAD**: CHACHA20POLY1305
+- **HPKE Mode**: Base mode (mode 0)
+
+**Security**:
+- ✅ SNI encrypted end-to-end
+- ✅ HPKE provides forward secrecy
+- ✅ Prevents SNI-based censorship
+
+### 4. uTLS (Future)
+
+TLS fingerprint mimicry for bypassing fingerprint-based detection.
+
+**Status**: Placeholder module exists (`src/utls.rs`)
+**Implementation**: Requires Rust equivalent of Go uTLS library
+**Research**: See `.kiro/specs/p0-production-parity/` for investigation notes
+
+## Feature Flags
+
+Enable TLS implementations via Cargo features:
+
+```toml
+[dependencies]
+sb-tls = { path = "crates/sb-tls", features = ["reality", "ech"] }
+```
+
+**Available features**:
+- `reality`: REALITY anti-censorship protocol (default)
+- `ech`: Encrypted Client Hello support (default)
+- `utls`: uTLS fingerprint mimicry (future)
+
+## Integration with Protocols
+
+TLS infrastructure integrates with protocol adapters:
+
+### VLESS + REALITY
+```rust
+// VLESS outbound with REALITY TLS
+use sb_adapters::outbound::VlessOutbound;
+use sb_tls::{RealityConnector, RealityClientConfig};
+
+let reality_config = RealityClientConfig {
+    public_key: "...",
+    short_id: "...",
+    server_name: "www.microsoft.com",
+    fallback_addr: Some("www.microsoft.com:443"),
+};
+
+let vless = VlessOutbound::new(config)
+    .with_tls(RealityConnector::new(reality_config)?);
+```
+
+### VMess + ECH
+```rust
+// VMess outbound with ECH
+use sb_adapters::outbound::VmessOutbound;
+use sb_tls::{EchConnector, EchClientConfig};
+
+let ech_config = EchClientConfig {
+    config_list: "...",
+    outer_sni: "cdn.example.com",
+    inner_sni: "real.example.com",
+};
+
+let vmess = VmessOutbound::new(config)
+    .with_tls(EchConnector::new(ech_config)?);
+```
+
+### Trojan + Standard TLS
+```rust
+// Trojan outbound with standard TLS
+use sb_adapters::outbound::TrojanOutbound;
+use sb_tls::StandardTlsConnector;
+
+let trojan = TrojanOutbound::new(config)
+    .with_tls(StandardTlsConnector::new()?);
+```
+
+## Testing
+
+### Unit Tests
 
 ```bash
-# 基本 TLS 握手测试
-cargo run --example tls_handshake --features tls_rustls -- example.com 443
+# Run sb-tls unit tests
+cargo test -p sb-tls
 
-# 使用自定义主机和端口
-HOST=httpbin.org PORT=443 cargo run --example tls_handshake --features tls_rustls
-
-# 跳过证书验证（仅测试）
-SB_TLS_NO_VERIFY=1 cargo run --example tls_handshake --features tls_rustls -- badssl.com 443
+# Run with specific features
+cargo test -p sb-tls --features reality,ech
 ```
 
-### 运行烟雾测试
+### E2E Tests
 
 ```bash
-# 完整的 TLS 烟雾测试（包括指标检查）
-./scripts/e2e_tls_smoke.zsh
+# REALITY end-to-end tests
+cargo test --test reality_tls_e2e
 
-# 自定义测试目标
-HOST=httpbin.org PORT=443 ./scripts/e2e_tls_smoke.zsh
+# ECH end-to-end tests
+cargo test --test e2e/ech_handshake
+
+# All TLS-related E2E tests
+cargo test reality ech tls
 ```
 
-## DoT 集成
+## Troubleshooting
 
-DNS over TLS (DoT) 已集成使用统一的 TLS 客户端：
+### REALITY Issues
 
-- DoT 需要同时启用 `dns_dot` 和 `tls_rustls` features
-- DoT 查询会自动使用 `TlsClient::from_env()` 配置
-- 支持通过 `SB_TLS_NO_VERIFY=1` 跳过证书验证（测试）
+**Authentication failures**:
+- ✅ Verify `public_key` matches server's public key
+- ✅ Verify `short_id` is in server's allowed list
+- ✅ Check `server_name` is a valid, reachable domain
+- ✅ Ensure fallback address is accessible
 
-## 故障排除
+**Handshake errors**:
+- ✅ Target server must be real and respond to TLS
+- ✅ Check network connectivity to fallback address
+- ✅ Verify X25519 keys are 64 hex characters
 
-### 编译错误
-
-如果遇到 TLS 相关编译错误：
-1. 确保启用了 `tls_rustls` feature
-2. 检查 rustls 版本兼容性（应为 0.23.x）
-3. 确保 tokio-rustls 版本为 0.26.x
-
-### 运行时错误
-
-- **证书验证失败**：检查系统时间，确认目标证书有效
-- **连接超时**：检查网络连接和防火墙设置
-- **TLS 协议错误**：目标服务器可能不支持 TLS 1.2/1.3
-
-### 调试
-
-启用详细日志：
+**Config validation**:
 ```bash
-RUST_LOG=debug cargo run --example tls_handshake --features tls_rustls
+# Test REALITY config
+sing-box check --config your-config.yaml
+
+# Generate test keys
+sing-box generate reality-keypair
 ```
 
-## 版本信息
+### ECH Issues
 
-- rustls: 0.23.x
-- tokio-rustls: 0.26.x
-- webpki-roots: 0.26.x
+**Config format errors**:
+- ✅ ECHConfigList must be valid base64
+- ✅ Use `sing-box generate ech-keypair` for correct format
+- ✅ Verify outer_sni is a valid domain
 
-这些版本确保与 sing-box-rust 生态系统的兼容性。
+**Handshake failures**:
+- ✅ Server must support ECH
+- ✅ Check ECH config version compatibility
+- ✅ Verify HPKE cipher suite is supported
+
+**SNI encryption verification**:
+```bash
+# Capture traffic to verify SNI is encrypted
+tcpdump -i any -w ech-test.pcap port 443
+
+# Analyze with Wireshark
+# Look for "encrypted_client_hello" extension in ClientHello
+```
+
+### Standard TLS Issues
+
+**Certificate verification failures**:
+- ✅ Check system time is correct
+- ✅ Verify target certificate is valid and not expired
+- ✅ Ensure CA certificates are installed
+
+**ALPN negotiation failures**:
+- ✅ Server must support requested ALPN protocols
+- ✅ Check protocol list order (client preference)
+
+**SNI mismatch**:
+- ✅ Verify `sni` field matches server certificate
+- ✅ Use wildcard certificates if needed
+
+## Performance
+
+### Benchmarks
+
+```bash
+# Run TLS benchmarks
+cargo bench -p sb-tls
+
+# Specific benchmark groups
+cargo bench -p sb-tls -- reality
+cargo bench -p sb-tls -- ech
+```
+
+**Expected Performance**:
+- **REALITY handshake**: ~1-2ms overhead (X25519 key exchange)
+- **ECH handshake**: ~2-3ms overhead (HPKE encryption)
+- **Standard TLS**: ~0.5-1ms (rustls handshake)
+
+### Optimization Tips
+
+1. **Connection Pooling**: Reuse TLS connections when possible
+2. **Session Resumption**: Enable TLS session tickets (rustls default)
+3. **ALPN**: Negotiate H2 for multiplexing
+4. **Key Caching**: Cache X25519 keys for REALITY/ECH
+
+## Debugging
+
+### Enable Debug Logging
+
+```bash
+# Verbose TLS logging
+RUST_LOG=sb_tls=debug cargo run
+
+# REALITY-specific logging
+RUST_LOG=sb_tls::reality=trace cargo run
+
+# ECH-specific logging
+RUST_LOG=sb_tls::ech=trace cargo run
+```
+
+### Common Debug Patterns
+
+**REALITY auth debugging**:
+```rust
+// Add logging to see auth data
+tracing::debug!(
+    short_id = %config.short_id,
+    server_name = %config.server_name,
+    "REALITY auth attempt"
+);
+```
+
+**ECH config parsing**:
+```rust
+// Verify ECHConfigList parsing
+let config_list = base64::decode(&ech_config)?;
+tracing::debug!(config_len = config_list.len(), "Parsed ECH config");
+```
+
+## Security Considerations
+
+### Production Checklist
+
+- [ ] **REALITY**: Use strong, randomly generated X25519 keys
+- [ ] **ECH**: Rotate ECH config periodically
+- [ ] **Standard TLS**: Enable certificate verification
+- [ ] **ALPN**: Use H2 for better multiplexing
+- [ ] **SNI**: Set correct SNI for certificate validation
+- [ ] **Fallback**: Configure real, accessible fallback targets
+- [ ] **Logging**: Redact sensitive keys in logs
+- [ ] **Config**: Store private keys securely (not in configs)
+
+### Threat Model
+
+**REALITY protects against**:
+- ✅ Active probing (fallback to real server)
+- ✅ DPI fingerprinting (TLS looks legitimate)
+- ✅ SNI-based censorship (uses real domains)
+
+**ECH protects against**:
+- ✅ SNI snooping (encrypted in ClientHello)
+- ✅ Passive observation of target domains
+- ✅ Censorship based on SNI patterns
+
+**Standard TLS protects against**:
+- ✅ Passive eavesdropping
+- ✅ Man-in-the-middle attacks (with cert verification)
+- ✅ Downgrade attacks (TLS 1.2+ only)
+
+## References
+
+- **REALITY**: [XTLS/REALITY GitHub](https://github.com/XTLS/REALITY)
+- **ECH**: [RFC 9460 - Encrypted Client Hello](https://datatracker.ietf.org/doc/rfc9460/)
+- **HPKE**: [RFC 9180 - Hybrid Public Key Encryption](https://datatracker.ietf.org/doc/rfc9180/)
+- **rustls**: [rustls Documentation](https://docs.rs/rustls/)
+
+## Related Documentation
+
+- **REALITY Details**: `crates/sb-tls/docs/reality.md`
+- **ECH Configuration**: `docs/ECH_CONFIG.md`
+- **Protocol Integration**: `crates/sb-adapters/README.md`
+- **Transport Layer**: `crates/sb-transport/README.md`
+- **Feature Parity**: `GO_PARITY_MATRIX.md`
+
+## Version Information
+
+- **sb-tls**: 0.1.0
+- **rustls**: 0.23.x
+- **tokio-rustls**: 0.26.x
+- **hpke**: Latest stable
+- **x25519-dalek**: 2.x
+
+Last Updated: 2025-10-09

@@ -50,6 +50,7 @@ sb-types = { path = "../sb-types" }
 sb-metrics = { path = "../sb-metrics", optional = true }
 sb-platform = { path = "../sb-platform", optional = true }
 sb-tls = { path = "../sb-tls", optional = true }
+sb-transport = { path = "../sb-transport", optional = true }
 
 # Additional dependencies needed by adapters
 hex = "0.4"
@@ -123,7 +124,7 @@ socks-udp = ["adapter-socks"]
 socks-bind = ["adapter-socks"]
 adapter-http = []
 http-tls = ["adapter-http", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls"]
-adapter-shadowsocks = []
+adapter-shadowsocks = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/serde"]
 adapter-trojan = ["dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
 adapter-vmess = []
 adapter-vless = []

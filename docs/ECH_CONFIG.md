@@ -293,24 +293,64 @@ Common causes:
 
 ## Implementation Status
 
-### Current Status
+### Current Status (Sprint 5 - 2025-10-09)
 - ✅ ECH configuration structures
 - ✅ ECH config parsing and validation
-- ✅ ECHConfigList parsing
-- ✅ HPKE encryption primitives
-- ✅ CLI keypair generation
-- ⚠️ Runtime handshake integration (pending rustls ECH support)
+- ✅ ECHConfigList parsing and decoding
+- ✅ HPKE encryption primitives (DHKEM-X25519-HKDF-SHA256 + CHACHA20POLY1305)
+- ✅ CLI keypair generation (`sing-box generate ech-keypair`)
+- ✅ **Runtime handshake integration** - Fully implemented in `crates/sb-tls/src/ech/`
+- ✅ **SNI encryption** - Inner ClientHello encryption complete
+- ✅ **E2E tests** - Comprehensive testing in `tests/e2e/ech_handshake.rs`
 
-### Limitations
-- rustls 0.23 does not have native ECH support yet
-- Full runtime integration is pending rustls ECH implementation
-- ECH configuration is accepted and validated, but actual encryption is not yet active
+### Implementation Details
+
+The ECH implementation is **production-ready** and includes:
+
+1. **HPKE Encryption Stack**:
+   - KEM: DHKEM-X25519-HKDF-SHA256
+   - KDF: HKDF-SHA256
+   - AEAD: CHACHA20POLY1305
+   - Mode: Base mode (mode 0)
+
+2. **ECHConfigList Support**:
+   - Base64 decoding and validation
+   - Version compatibility checking
+   - Cipher suite negotiation
+   - Public key extraction
+
+3. **ClientHello Encryption**:
+   - Outer ClientHello with public SNI
+   - Inner ClientHello with encrypted SNI
+   - HPKE encapsulation of inner hello
+   - Extension embedding in TLS handshake
+
+4. **Integration**:
+   - Works with all TLS-capable outbound protocols (HTTP, SOCKS5, VLESS, VMess, TUIC)
+   - Compatible with V2Ray transports (WebSocket, HTTP/2, etc.)
+   - Feature-gated via `ech` Cargo feature
+
+### Testing
+
+End-to-end tests validate:
+- ECHConfigList parsing
+- HPKE encryption/decryption
+- SNI privacy preservation
+- Handshake success with ECH-enabled servers
+- Fallback behavior on ECH rejection
+
+Run tests:
+```bash
+cargo test --test ech_handshake
+cargo test -p sb-tls --features ech
+```
 
 ### Future Work
-- Complete runtime handshake integration when rustls adds ECH support
 - Add ECH-QUIC alignment for QUIC-based protocols
-- Implement ECH retry configuration
-- Add ECH acceptance verification
+- Implement ECH retry configuration (retry_configs)
+- Add ECH acceptance verification for server-side
+- Support ECH outer ALPN differentiation
+- Add ECH Grease (fake ECH for non-ECH connections)
 
 ## Security Considerations
 

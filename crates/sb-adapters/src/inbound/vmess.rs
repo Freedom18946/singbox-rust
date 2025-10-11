@@ -45,6 +45,10 @@ pub struct VmessInboundConfig {
     pub uuid: Uuid,
     pub security: String, // "aes-128-gcm" or "chacha20-poly1305"
     pub router: Arc<router::RouterHandle>,
+    /// Optional Multiplex configuration
+    pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
+    /// Optional TLS configuration
+    pub tls: Option<sb_transport::TlsConfig>,
 }
 
 #[derive(Clone, Debug)]
@@ -73,7 +77,14 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
-    info!(addr=?cfg.listen, actual=?actual, "vmess: inbound bound");
+    info!(addr=?cfg.listen, actual=?actual, multiplex=?cfg.multiplex.is_some(), tls=?cfg.tls.is_some(), "vmess: inbound bound");
+
+    // Note: Multiplex support for VMess inbound is configured but not yet fully implemented
+    // VMess protocol has its own encryption layer, and multiplex integration would require
+    // careful coordination with the VMess protocol state machine
+    if cfg.multiplex.is_some() {
+        warn!("Multiplex configuration present but not yet fully implemented for VMess inbound");
+    }
 
     let mut hb = interval(Duration::from_secs(5));
     loop {
@@ -81,7 +92,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
             _ = stop_rx.recv() => break,
             _ = hb.tick() => { debug!("vmess: accept-loop heartbeat"); }
             r = listener.accept() => {
-                let (mut cli, peer) = match r {
+                let (cli, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vmess: accept error");
@@ -91,9 +102,27 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 let cfg_clone = cfg.clone();
                 let security_clone = security.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(&cfg_clone, security_clone, &mut cli, peer).await {
-                        warn!(%peer, error=%e, "vmess: session error");
-                        let _ = cli.shutdown().await;
+                    // Wrap with TLS if configured
+                    if let Some(ref tls_config) = cfg_clone.tls {
+                        let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
+                        match tls_transport.wrap_server(cli).await {
+                            Ok(mut tls_stream) => {
+                                debug!(%peer, "vmess: TLS handshake successful");
+                                if let Err(e) = handle_conn_boxed(&cfg_clone, security_clone, &mut tls_stream, peer).await {
+                                    warn!(%peer, error=%e, "vmess: TLS session error");
+                                }
+                            }
+                            Err(e) => {
+                                warn!(%peer, error=?e, "vmess: TLS handshake failed");
+                            }
+                        }
+                    } else {
+                        // No TLS, handle plain connection
+                        let mut plain_stream = cli;
+                        if let Err(e) = handle_conn(&cfg_clone, security_clone, &mut plain_stream, peer).await {
+                            warn!(%peer, error=%e, "vmess: session error");
+                            let _ = plain_stream.shutdown().await;
+                        }
                     }
                 });
             }
@@ -106,6 +135,117 @@ async fn handle_conn(
     cfg: &VmessInboundConfig,
     security: SecurityMethod,
     cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
+    peer: SocketAddr,
+) -> Result<()> {
+    // Step 1: Read and validate authentication header
+    let mut auth_header = [0u8; AUTH_HEADER_LEN];
+    cli.read_exact(&mut auth_header).await?;
+
+    let timestamp = u64::from_be_bytes(auth_header[..8].try_into().unwrap());
+    let received_hmac = &auth_header[8..];
+
+    // Validate timestamp (within 2 minutes)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    if timestamp.abs_diff(now) > 120 {
+        return Err(anyhow!("vmess: timestamp out of range"));
+    }
+
+    // Validate HMAC
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(cfg.uuid.as_bytes())
+        .map_err(|e| anyhow!("HMAC init error: {}", e))?;
+    mac.update(&auth_header[..8]); // Hash timestamp only
+    let expected_hmac = mac.finalize().into_bytes();
+
+    if received_hmac != &expected_hmac[..16] {
+        return Err(anyhow!("vmess: authentication failed"));
+    }
+
+    debug!(%peer, "vmess: authentication successful");
+
+    // Step 2: Read encrypted request
+    let request_key = generate_request_key(&cfg.uuid);
+    let encrypted_request = read_encrypted_request(cli).await?;
+    let request = decrypt_request(&security, &request_key, &encrypted_request)?;
+
+    // Step 3: Parse request
+    let (target_host, target_port, _request_security) = parse_vmess_request(&request)?;
+
+    debug!(%peer, host=%target_host, port=%target_port, "vmess: parsed target");
+
+    // Step 4: Send response tag
+    let response_key = generate_response_key(&cfg.uuid);
+    let response_tag = generate_response_tag(&request_key, &response_key)?;
+    debug_assert_eq!(response_tag.len(), RESPONSE_TAG_LEN);
+    cli.write_all(&response_tag).await?;
+
+    // Step 5: Router decision
+    let mut decision = RDecision::Direct;
+    if let Some(eng) = rules_global::global() {
+        let ctx = RouteCtx {
+            domain: Some(target_host.as_str()),
+            ip: None,
+            transport_udp: false,
+            port: Some(target_port),
+            process_name: None,
+            process_path: None,
+        };
+        let d = eng.decide(&ctx);
+        if matches!(d, RDecision::Reject) {
+            return Err(anyhow!("vmess: rejected by rules"));
+        }
+        decision = d;
+    }
+
+    // Step 6: Connect to upstream
+    let proxy = default_proxy();
+    let opts = ConnectOpts::default();
+    let mut upstream = match decision {
+        RDecision::Direct => direct_connect_hostport(&target_host, target_port, &opts).await?,
+        RDecision::Proxy(Some(name)) => {
+            let sel = PoolSelector::new("vmess".into(), "default".into());
+            if let Some(reg) = registry::global() {
+                if let Some(_pool) = reg.pools.get(&name) {
+                    if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", target_host, target_port), &()) {
+                        match ep.kind {
+                            sb_core::outbound::endpoint::ProxyKind::Http => {
+                                http_proxy_connect_through_proxy(&ep.addr.to_string(), &target_host, target_port, &opts).await?
+                            }
+                            sb_core::outbound::endpoint::ProxyKind::Socks5 => {
+                                socks5_connect_through_socks5(&ep.addr.to_string(), &target_host, target_port, &opts).await?
+                            }
+                        }
+                    } else {
+                        fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                    }
+                } else {
+                    fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                }
+            } else {
+                fallback_connect(&proxy, &target_host, target_port, &opts).await?
+            }
+        }
+        RDecision::Proxy(None) => {
+            fallback_connect(&proxy, &target_host, target_port, &opts).await?
+        }
+        RDecision::Reject => unreachable!(),
+    };
+
+    // Step 7: Bidirectional relay
+    // Note: VMess AEAD encryption/decryption is handled in the protocol layer
+    // The stream here is already decrypted by the VMess protocol handler
+    let _ = tokio::io::copy_bidirectional(cli, &mut upstream).await;
+
+    Ok(())
+}
+
+/// Handle VMess connection with boxed stream (for TLS-wrapped connections)
+async fn handle_conn_boxed(
+    cfg: &VmessInboundConfig,
+    security: SecurityMethod,
+    cli: &mut sb_transport::IoStream,
     peer: SocketAddr,
 ) -> Result<()> {
     // Step 1: Read and validate authentication header

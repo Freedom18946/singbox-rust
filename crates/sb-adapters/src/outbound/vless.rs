@@ -2,11 +2,15 @@
 //!
 //! VLESS is a stateless, lightweight protocol that reduces overhead compared to VMess.
 //! It supports multiple flow control modes and encryption options.
+//! Supports both TCP and UDP relay.
 
 use crate::outbound::prelude::*;
+use crate::traits::OutboundDatagram;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UdpSocket;
 use uuid::Uuid;
 
 #[cfg(feature = "tls_reality")]
@@ -73,25 +77,14 @@ pub struct VlessConfig {
     pub timeout: Option<u64>,
     /// Enable TCP fast open
     pub tcp_fast_open: bool,
-    /// Multiplex settings
-    pub multiplex: Option<MultiplexConfig>,
+    /// Multiplex settings (using transport layer multiplex)
+    pub multiplex: Option<sb_transport::multiplex::MultiplexConfig>,
     /// Optional REALITY TLS configuration for outbound
     #[cfg(feature = "tls_reality")]
     pub reality: Option<sb_tls::RealityClientConfig>,
     /// Optional ECH configuration for outbound
     #[cfg(feature = "transport_ech")]
     pub ech: Option<sb_tls::EchClientConfig>,
-}
-
-/// Multiplex configuration for VLESS
-#[derive(Debug, Clone)]
-pub struct MultiplexConfig {
-    /// Enable multiplexing
-    pub enabled: bool,
-    /// Maximum concurrent streams
-    pub max_streams: u16,
-    /// Minimum streams to maintain
-    pub min_streams: u16,
 }
 
 impl Default for VlessConfig {
@@ -117,12 +110,24 @@ impl Default for VlessConfig {
 #[derive(Debug, Clone)]
 pub struct VlessConnector {
     config: VlessConfig,
+    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
 }
 
 impl VlessConnector {
     /// Create a new VLESS connector with the given configuration
     pub fn new(config: VlessConfig) -> Self {
-        Self { config }
+        // Create multiplex dialer if configured
+        let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
+            let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
+            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
+        } else {
+            None
+        };
+
+        Self { 
+            config,
+            multiplex_dialer,
+        }
     }
 
     /// Build VLESS request header
@@ -166,6 +171,34 @@ impl VlessConnector {
         header
     }
 
+    /// Create UDP relay connection (returns OutboundDatagram)
+    pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
+        tracing::debug!(
+            server = %self.config.server_addr,
+            target = %format!(\"{}:{}\", target.host, target.port),
+            \"Creating VLESS UDP relay\"
+        );
+
+        // Create local UDP socket
+        let local_socket = UdpSocket::bind(\"0.0.0.0:0\")
+            .await
+            .map_err(AdapterError::Io)?;
+
+        // Connect to VLESS server for easier packet routing
+        local_socket
+            .connect(self.config.server_addr)
+            .await
+            .map_err(|e| AdapterError::Network(format!(\"UDP connect failed: {}\", e)))?;
+
+        // Create VLESS UDP socket wrapper
+        let vless_udp = VlessUdpSocket::new(
+            Arc::new(local_socket),
+            self.config.uuid,
+        )?;
+
+        Ok(Box::new(vless_udp))
+    }
+
     /// Perform VLESS handshake
     async fn handshake(&self, stream: &mut BoxedStream, target: &Target) -> Result<()> {
         // Send VLESS request header
@@ -197,23 +230,41 @@ impl VlessConnector {
     async fn create_connection(&self) -> Result<BoxedStream> {
         let timeout = std::time::Duration::from_secs(self.config.timeout.unwrap_or(30));
 
-        // Connect to server with timeout
-        let tcp_stream = tokio::time::timeout(
-            timeout,
-            tokio::net::TcpStream::connect(self.config.server_addr),
-        )
-        .await
-        .map_err(|_| AdapterError::Timeout(timeout))?
-        .map_err(AdapterError::Io)?;
+        // Use multiplex dialer if configured, otherwise use direct TCP connection
+        let boxed_stream: BoxedStream = if let Some(ref mux_dialer) = self.multiplex_dialer {
+            tracing::debug!("Using multiplex dialer for VLESS connection");
+            
+            // Use multiplex dialer
+            let stream = tokio::time::timeout(
+                timeout,
+                mux_dialer.connect(
+                    &self.config.server_addr.ip().to_string(),
+                    self.config.server_addr.port()
+                ),
+            )
+            .await
+            .map_err(|_| AdapterError::Timeout(timeout))?
+            .map_err(|e| AdapterError::Other(format!("Multiplex dial failed: {}", e)))?;
+            
+            stream
+        } else {
+            // Connect to server with timeout
+            let tcp_stream = tokio::time::timeout(
+                timeout,
+                tokio::net::TcpStream::connect(self.config.server_addr),
+            )
+            .await
+            .map_err(|_| AdapterError::Timeout(timeout))?
+            .map_err(AdapterError::Io)?;
 
-        // Configure TCP options
-        if self.config.tcp_fast_open {
-            // Note: TCP_FASTOPEN is platform-specific and would need proper socket configuration
-            tracing::debug!("TCP Fast Open requested (implementation platform-specific)");
-        }
+            // Configure TCP options
+            if self.config.tcp_fast_open {
+                // Note: TCP_FASTOPEN is platform-specific and would need proper socket configuration
+                tracing::debug!("TCP Fast Open requested (implementation platform-specific)");
+            }
 
-        // Wrap in appropriate stream type
-        let boxed_stream: BoxedStream = Box::new(tcp_stream);
+            Box::new(tcp_stream)
+        };
 
         Ok(boxed_stream)
     }
@@ -303,6 +354,203 @@ impl OutboundConnector for VlessConnector {
         tracing::debug!("VLESS connection established to: {:?}", target);
 
         Ok(stream)
+    }
+}
+
+/// VLESS UDP socket wrapper that implements OutboundDatagram
+#[derive(Debug)]
+pub struct VlessUdpSocket {
+    socket: Arc<UdpSocket>,
+    uuid: Uuid,
+    target_addr: tokio::sync::Mutex<Option<Target>>,
+}
+
+impl VlessUdpSocket {
+    pub fn new(socket: Arc<UdpSocket>, uuid: Uuid) -> Result<Self> {
+        Ok(Self {
+            socket,
+            uuid,
+            target_addr: tokio::sync::Mutex::new(None),
+        })
+    }
+
+    /// Set target address for subsequent operations
+    pub async fn set_target(&self, target: Target) {
+        let mut addr = self.target_addr.lock().await;
+        *addr = Some(target);
+    }
+
+    /// Encode VLESS UDP packet
+    /// Format: VER(0x00) + UUID(16) + CMD(0x02) + ATYP + DST.ADDR + PORT + PAYLOAD
+    fn encode_packet(&self, data: &[u8], target: &Target) -> Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // VLESS version (1 byte)
+        packet.push(0x00);
+
+        // UUID (16 bytes)
+        packet.extend_from_slice(self.uuid.as_bytes());
+
+        // CMD: UDP (0x02)
+        packet.push(0x02);
+
+        // Address type and address
+        if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(ipv4) => {
+                    packet.push(0x01); // IPv4
+                    packet.extend_from_slice(&ipv4.octets());
+                }
+                std::net::IpAddr::V6(ipv6) => {
+                    packet.push(0x03); // IPv6
+                    packet.extend_from_slice(&ipv6.octets());
+                }
+            }
+        } else {
+            // Domain name
+            packet.push(0x02); // Domain
+            let hostname_bytes = target.host.as_bytes();
+            if hostname_bytes.len() > 255 {
+                return Err(AdapterError::InvalidConfig("Hostname too long"));
+            }
+            packet.push(hostname_bytes.len() as u8);
+            packet.extend_from_slice(hostname_bytes);
+        }
+
+        // Port (2 bytes, big endian)
+        packet.extend_from_slice(&target.port.to_be_bytes());
+
+        // Payload
+        packet.extend_from_slice(data);
+
+        Ok(packet)
+    }
+
+    /// Parse VLESS UDP packet and extract payload
+    fn decode_packet(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        if packet.is_empty() {
+            return Err(AdapterError::Protocol("Empty packet".to_string()));
+        }
+
+        // Version should be 0x00
+        if packet[0] != 0x00 {
+            return Err(AdapterError::Protocol(format!("Invalid version: {}", packet[0])));
+        }
+
+        let mut offset = 1;
+
+        // Skip UUID (16 bytes)
+        if packet.len() < offset + 16 {
+            return Err(AdapterError::Protocol("Packet too short for UUID".to_string()));
+        }
+        offset += 16;
+
+        // Skip CMD (1 byte)
+        if packet.len() < offset + 1 {
+            return Err(AdapterError::Protocol("Packet too short for CMD".to_string()));
+        }
+        offset += 1;
+
+        // Parse address type
+        if packet.len() < offset + 1 {
+            return Err(AdapterError::Protocol("Packet too short for ATYP".to_string()));
+        }
+
+        let atyp = packet[offset];
+        offset += 1;
+
+        match atyp {
+            0x01 => {
+                // IPv4: 4 bytes + 2 bytes port
+                offset += 4 + 2;
+            }
+            0x02 => {
+                // Domain: length byte + domain + 2 bytes port
+                if packet.len() < offset + 1 {
+                    return Err(AdapterError::Protocol("Invalid domain length".to_string()));
+                }
+                let domain_len = packet[offset] as usize;
+                offset += 1 + domain_len + 2;
+            }
+            0x03 => {
+                // IPv6: 16 bytes + 2 bytes port
+                offset += 16 + 2;
+            }
+            _ => {
+                return Err(AdapterError::Protocol(format!("Invalid ATYP: {}", atyp)));
+            }
+        }
+
+        if offset > packet.len() {
+            return Err(AdapterError::Protocol("Packet truncated".to_string()));
+        }
+
+        // Return payload
+        Ok(packet[offset..].to_vec())
+    }
+}
+
+#[async_trait]
+impl OutboundDatagram for VlessUdpSocket {
+    async fn send_to(&self, payload: &[u8]) -> Result<usize> {
+        // Get target address
+        let target = {
+            let addr_lock = self.target_addr.lock().await;
+            addr_lock
+                .as_ref()
+                .ok_or_else(|| AdapterError::Other("Target address not set".to_string()))?
+                .clone()
+        };
+
+        // Encode packet
+        let packet = self.encode_packet(payload, &target)?;
+
+        // Send to VLESS server
+        let sent = self
+            .socket
+            .send(&packet)
+            .await
+            .map_err(AdapterError::Io)?;
+
+        tracing::trace!(
+            target = %format!("{}:{}", target.host, target.port),
+            sent = sent,
+            "VLESS UDP packet sent"
+        );
+
+        Ok(payload.len())
+    }
+
+    async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
+        // Receive from VLESS server
+        let (n, _peer) = self
+            .socket
+            .recv_from(buf)
+            .await
+            .map_err(AdapterError::Io)?;
+
+        // Decode packet
+        let payload = self.decode_packet(&buf[..n])?;
+
+        // Copy payload back to buffer
+        if payload.len() > buf.len() {
+            return Err(AdapterError::Other("Buffer too small".to_string()));
+        }
+
+        buf[..payload.len()].copy_from_slice(&payload);
+
+        tracing::trace!(
+            received = n,
+            payload_len = payload.len(),
+            "VLESS UDP packet received"
+        );
+
+        Ok(payload.len())
+    }
+
+    async fn close(&self) -> Result<()> {
+        tracing::debug!("VLESS UDP socket closed");
+        Ok(())
     }
 }
 

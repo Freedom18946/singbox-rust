@@ -38,6 +38,7 @@ pub struct ShadowTlsInboundConfig {
     pub cert_path: String,
     pub key_path: String,
     pub router: Arc<router::RouterHandle>,
+    pub tls: Option<sb_transport::TlsConfig>,
 }
 
 fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
@@ -80,11 +81,25 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
 }
 
 pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
-    let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
-    let acceptor = TlsAcceptor::from(Arc::new(tls_cfg));
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
     info!(addr=?cfg.listen, actual=?actual, "shadowtls: TLS server bound");
+
+    // Create TLS transport if configured, otherwise fall back to legacy
+    let tls_transport = if let Some(ref tls_config) = cfg.tls {
+        Some(sb_transport::TlsTransport::new(tls_config.clone()))
+    } else {
+        // Legacy mode: use old TLS config
+        None
+    };
+
+    // Legacy TLS acceptor (for backward compatibility)
+    let legacy_acceptor = if tls_transport.is_none() {
+        let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
+        Some(TlsAcceptor::from(Arc::new(tls_cfg)))
+    } else {
+        None
+    };
 
     let mut hb = interval(Duration::from_secs(5));
     loop {
@@ -99,17 +114,33 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
                         continue;
                     }
                 };
-                let acceptor = acceptor.clone();
+                
                 let cfg_clone = cfg.clone();
+                let tls_transport_clone = tls_transport.clone();
+                let legacy_acceptor_clone = legacy_acceptor.clone();
+                
                 tokio::spawn(async move {
-                    match acceptor.accept(cli).await {
-                        Ok(mut tls_stream) => {
-                            if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
-                                warn!(%peer, error=%e, "shadowtls: session error");
-                                let _ = tls_stream.shutdown().await;
+                    // Use new TLS infrastructure if available
+                    if let Some(transport) = tls_transport_clone {
+                        match transport.wrap_server(cli).await {
+                            Ok(tls_stream) => {
+                                if let Err(e) = handle_conn_generic(&cfg_clone, tls_stream, peer).await {
+                                    warn!(%peer, error=%e, "shadowtls: session error");
+                                }
                             }
+                            Err(e) => warn!(%peer, error=%e, "shadowtls: tls accept error (new)"),
                         }
-                        Err(e) => warn!(%peer, error=%e, "shadowtls: tls accept error"),
+                    } else if let Some(acceptor) = legacy_acceptor_clone {
+                        // Legacy mode
+                        match acceptor.accept(cli).await {
+                            Ok(mut tls_stream) => {
+                                if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
+                                    warn!(%peer, error=%e, "shadowtls: session error");
+                                    let _ = tls_stream.shutdown().await;
+                                }
+                            }
+                            Err(e) => warn!(%peer, error=%e, "shadowtls: tls accept error (legacy)"),
+                        }
                     }
                 });
             }
@@ -245,4 +276,122 @@ async fn fallback_connect(
         }
         ProxyChoice::Socks5(addr) => Ok(socks5_connect_through_socks5(addr, host, port, opts).await?),
     }
+}
+
+/// Generic handle_conn for new TLS infrastructure
+async fn handle_conn_generic<S>(
+    _cfg: &ShadowTlsInboundConfig,
+    mut tls: S,
+    peer: SocketAddr,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
+    // Read HTTP CONNECT header
+    // Format: CONNECT host:port HTTP/1.1\r\nHost: host:port\r\n\r\n
+    let mut buf = Vec::with_capacity(512);
+    let mut tmp = [0u8; 256];
+    loop {
+        let n = tls.read(&mut tmp).await?;
+        if n == 0 {
+            return Err(anyhow!("shadowtls: client closed"));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+        if buf.len() > 8192 {
+            return Err(anyhow!("shadowtls: header too large"));
+        }
+    }
+
+    // Parse CONNECT line
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines = text.split("\r\n");
+    let connect_line = lines.next().unwrap_or("");
+
+    // Parse: CONNECT host:port HTTP/1.1
+    let mut parts = connect_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    if !method.eq_ignore_ascii_case("CONNECT") {
+        return Err(anyhow!("shadowtls: unsupported method: {}", method));
+    }
+
+    let target = parts.next().ok_or_else(|| anyhow!("shadowtls: missing target"))?;
+
+    // Parse host:port
+    let (host, port) = if let Some(colon_pos) = target.rfind(':') {
+        let host = &target[..colon_pos];
+        let port_str = &target[colon_pos + 1..];
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| anyhow!("shadowtls: invalid port"))?;
+        (host.to_string(), port)
+    } else {
+        return Err(anyhow!("shadowtls: invalid target format"));
+    };
+
+    debug!(%peer, host=%host, port=%port, "shadowtls: parsed target");
+
+    // Router decision
+    let mut decision = RDecision::Direct;
+    if let Some(eng) = rules_global::global() {
+        let ctx = RouteCtx {
+            domain: Some(host.as_str()),
+            ip: None,
+            transport_udp: false,
+            port: Some(port),
+            process_name: None,
+            process_path: None,
+        };
+        let d = eng.decide(&ctx);
+        if matches!(d, RDecision::Reject) {
+            return Err(anyhow!("shadowtls: rejected by rules"));
+        }
+        decision = d;
+    }
+
+    let proxy = default_proxy();
+    let opts = ConnectOpts::default();
+    let mut upstream = match decision {
+        RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
+        RDecision::Proxy(Some(name)) => {
+            let sel = PoolSelector::new("shadowtls".into(), "default".into());
+            if let Some(reg) = registry::global() {
+                if let Some(_pool) = reg.pools.get(&name) {
+                    if let Some(ep) =
+                        sel.select(&name, peer, &format!("{}:{}", host, port), &())
+                    {
+                        match ep.kind {
+                            sb_core::outbound::endpoint::ProxyKind::Http => {
+                                http_proxy_connect_through_proxy(
+                                    &ep.addr.to_string(),
+                                    &host,
+                                    port,
+                                    &opts,
+                                )
+                                .await?
+                            }
+                            sb_core::outbound::endpoint::ProxyKind::Socks5 => {
+                                socks5_connect_through_socks5(&ep.addr.to_string(), &host, port, &opts)
+                                    .await?
+                            }
+                        }
+                    } else {
+                        fallback_connect(&proxy, &host, port, &opts).await?
+                    }
+                } else {
+                    fallback_connect(&proxy, &host, port, &opts).await?
+                }
+            } else {
+                fallback_connect(&proxy, &host, port, &opts).await?
+            }
+        }
+        RDecision::Proxy(None) => fallback_connect(&proxy, &host, port, &opts).await?,
+        RDecision::Reject => unreachable!(),
+    };
+
+    // Relay
+    let _ = tokio::io::copy_bidirectional(&mut tls, &mut upstream).await;
+    Ok(())
 }

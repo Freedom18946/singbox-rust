@@ -46,6 +46,8 @@ pub struct VlessInboundConfig {
     /// Optional REALITY TLS configuration for inbound
     #[cfg(feature = "tls_reality")]
     pub reality: Option<sb_tls::RealityServerConfig>,
+    /// Optional Multiplex configuration
+    pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
 }
 
 // VLESS protocol constants
@@ -58,7 +60,14 @@ const ATYP_IPV6: u8 = 0x03;
 pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
-    info!(addr=?cfg.listen, actual=?actual, "vless: inbound bound");
+    info!(addr=?cfg.listen, actual=?actual, multiplex=?cfg.multiplex.is_some(), "vless: inbound bound");
+    
+    // Note: Multiplex support for VLESS inbound is configured but not yet fully implemented
+    // VLESS can work with or without TLS, and multiplex integration would require
+    // wrapping streams appropriately based on the configuration
+    if cfg.multiplex.is_some() {
+        warn!("Multiplex configuration present but not yet fully implemented for VLESS inbound");
+    }
 
     // Create REALITY acceptor if configured
     #[cfg(feature = "tls_reality")]

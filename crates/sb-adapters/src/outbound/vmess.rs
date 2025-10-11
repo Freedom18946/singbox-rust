@@ -100,6 +100,10 @@ pub struct VmessConfig {
     pub packet_encoding: bool,
     /// Custom headers for obfuscation
     pub headers: HashMap<String, String>,
+    /// Multiplex configuration
+    pub multiplex: Option<sb_transport::multiplex::MultiplexConfig>,
+    /// TLS configuration
+    pub tls: Option<sb_transport::TlsConfig>,
 }
 
 impl Default for VmessConfig {
@@ -116,6 +120,8 @@ impl Default for VmessConfig {
             timeout: Some(std::time::Duration::from_secs(30)),
             packet_encoding: false,
             headers: HashMap::new(),
+            multiplex: None,
+            tls: None,
         }
     }
 }
@@ -141,14 +147,24 @@ pub struct VmessConnector {
     /// Cached authentication data
     #[allow(dead_code)]
     auth_cache: Option<Vec<u8>>,
+    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
 }
 
 impl VmessConnector {
     /// Create a new VMess connector with the given configuration
     pub fn new(config: VmessConfig) -> Self {
+        // Create multiplex dialer if configured
+        let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
+            let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
+            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
+        } else {
+            None
+        };
+
         Self {
             config,
             auth_cache: None,
+            multiplex_dialer,
         }
     }
 
@@ -299,23 +315,60 @@ impl VmessConnector {
             .timeout
             .unwrap_or(std::time::Duration::from_secs(30));
 
-        // Connect with timeout
-        let tcp_stream = tokio::time::timeout(
-            timeout,
-            tokio::net::TcpStream::connect(self.config.server_addr),
-        )
-        .await
-        .map_err(|_| AdapterError::Timeout(timeout))?
-        .map_err(AdapterError::Io)?;
+        // Use multiplex dialer if configured, otherwise use direct TCP connection
+        let mut boxed_stream: BoxedStream = if let Some(ref mux_dialer) = self.multiplex_dialer {
+            tracing::debug!("Using multiplex dialer for VMess connection");
 
-        // Configure transport options
-        if self.config.transport.tcp_no_delay {
-            if let Err(e) = tcp_stream.set_nodelay(true) {
-                tracing::warn!("Failed to set TCP_NODELAY: {}", e);
+            // Use multiplex dialer
+            let stream = tokio::time::timeout(
+                timeout,
+                mux_dialer.connect(
+                    &self.config.server_addr.ip().to_string(),
+                    self.config.server_addr.port()
+                ),
+            )
+            .await
+            .map_err(|_| AdapterError::Timeout(timeout))?
+            .map_err(|e| AdapterError::Other(format!("Multiplex dial failed: {}", e)))?;
+
+            stream
+        } else {
+            // Connect with timeout
+            let tcp_stream = tokio::time::timeout(
+                timeout,
+                tokio::net::TcpStream::connect(self.config.server_addr),
+            )
+            .await
+            .map_err(|_| AdapterError::Timeout(timeout))?
+            .map_err(AdapterError::Io)?;
+
+            // Configure transport options
+            if self.config.transport.tcp_no_delay {
+                if let Err(e) = tcp_stream.set_nodelay(true) {
+                    tracing::warn!("Failed to set TCP_NODELAY: {}", e);
+                }
             }
+
+            Box::new(tcp_stream)
+        };
+
+        // Wrap with TLS if configured
+        if let Some(ref tls_config) = self.config.tls {
+            tracing::debug!("Wrapping VMess connection with TLS");
+            let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
+            let server_name = self.config.server_addr.ip().to_string();
+
+            boxed_stream = tokio::time::timeout(
+                timeout,
+                tls_transport.wrap_client(boxed_stream, &server_name)
+            )
+            .await
+            .map_err(|_| AdapterError::Timeout(timeout))?
+            .map_err(|e| AdapterError::Other(format!("TLS handshake failed: {}", e)))?;
+
+            tracing::debug!("VMess TLS handshake successful");
         }
 
-        let boxed_stream: BoxedStream = Box::new(tcp_stream);
         Ok(boxed_stream)
     }
 

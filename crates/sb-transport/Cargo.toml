@@ -8,7 +8,8 @@ readme.workspace = true
 
 [features]
 default = []
-transport_tls = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:sha2", "dep:hex"]
+serde = ["dep:serde", "dep:serde_json"]
+transport_tls = ["dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile", "dep:webpki-roots", "dep:sha2", "dep:hex", "dep:serde", "dep:serde_json"]
 transport_reality = ["transport_tls", "dep:sb-tls"]
 transport_ech = ["transport_tls", "dep:sb-tls", "sb-tls/ech"]
 transport_quic = ["dep:quinn", "transport_tls"]
@@ -26,6 +27,9 @@ thiserror = { workspace = true }
 pin-project-lite = "0.2"
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "logging", "tls12"] }
 tokio-rustls = { version = "0.26", optional = true, default-features = false }
+rustls-pemfile = { version = "2.0", optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
 webpki-roots = { version = "0.26", optional = true }
 quinn = { version = "0.11", optional = true }
 uuid = "1.0"
@@ -53,3 +57,4 @@ tonic-build = { version = "0.12", optional = true }
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }

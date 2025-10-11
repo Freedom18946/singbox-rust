@@ -30,6 +30,7 @@ pub struct MixedInboundConfig {
     pub router: Arc<RouterHandle>,
     pub outbounds: Arc<OutboundRegistryHandle>,
     pub read_timeout: Option<Duration>,
+    pub tls: Option<sb_transport::TlsConfig>,
 }
 
 pub async fn serve_mixed(
@@ -106,7 +107,14 @@ async fn handle_mixed_conn(
             let first = first_byte[0];
 
             // Protocol detection
-            if first == 0x05 {
+            if first == 0x16 {
+                // TLS handshake (0x16 = TLS handshake record type)
+                debug!(peer=%peer, "mixed: detected TLS protocol");
+                #[cfg(feature = "metrics")]
+                counter!("mixed_protocol_detection_total", "protocol" => "tls").increment(1);
+
+                handle_tls(cli, peer, cfg).await
+            } else if first == 0x05 {
                 // SOCKS5 protocol
                 debug!(peer=%peer, "mixed: detected SOCKS5 protocol");
                 #[cfg(feature = "metrics")]
@@ -268,6 +276,79 @@ async fn handle_socks5_inline(
     Ok(())
 }
 
+/// Handle TLS connection
+async fn handle_tls(
+    cli: TcpStream,
+    peer: SocketAddr,
+    cfg: &MixedInboundConfig,
+) -> io::Result<()> {
+    // Check if TLS is configured
+    let tls_config = match &cfg.tls {
+        Some(config) => config,
+        None => {
+            warn!(peer=%peer, "mixed: TLS detected but not configured");
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "TLS not configured",
+            ));
+        }
+    };
+
+    // Wrap stream with TLS
+    let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
+    let mut tls_stream = match tls_transport.wrap_server(cli).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            warn!(peer=%peer, error=%e, "mixed: TLS handshake failed");
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                format!("TLS handshake failed: {}", e),
+            ));
+        }
+    };
+
+    debug!(peer=%peer, "mixed: TLS handshake successful, detecting inner protocol");
+
+    // Now detect the inner protocol by peeking at the first byte
+    // We need to read a byte to detect the protocol
+    let mut first_byte = [0u8; 1];
+    use tokio::io::AsyncReadExt;
+    
+    let n = tls_stream.read(&mut first_byte).await?;
+    if n == 0 {
+        return Ok(());
+    }
+
+    let first = first_byte[0];
+
+    // Detect inner protocol
+    if first == 0x05 {
+        // SOCKS5 over TLS
+        debug!(peer=%peer, "mixed/tls: detected SOCKS5 protocol");
+        #[cfg(feature = "metrics")]
+        counter!("mixed_protocol_detection_total", "protocol" => "tls_socks5").increment(1);
+
+        // We need to prepend the byte we read back to the stream
+        // For simplicity, we'll handle SOCKS5 inline with the byte already consumed
+        handle_socks5_with_first_byte(tls_stream, first_byte[0], peer, cfg).await
+    } else if first.is_ascii_alphabetic() {
+        // HTTP over TLS
+        debug!(peer=%peer, "mixed/tls: detected HTTP protocol");
+        #[cfg(feature = "metrics")]
+        counter!("mixed_protocol_detection_total", "protocol" => "tls_http").increment(1);
+
+        // Handle HTTP with the byte already consumed
+        handle_http_with_first_byte(tls_stream, first_byte[0], peer, cfg).await
+    } else {
+        // Unknown protocol over TLS
+        warn!(peer=%peer, first_byte=first, "mixed/tls: unknown inner protocol");
+        #[cfg(feature = "metrics")]
+        counter!("mixed_protocol_detection_total", "protocol" => "tls_unknown").increment(1);
+
+        Err(io::Error::new(io::ErrorKind::InvalidData, "unknown protocol over TLS"))
+    }
+}
+
 /// Handle HTTP CONNECT connection
 async fn handle_http(
     mut cli: TcpStream,
@@ -406,6 +487,257 @@ async fn read_u8(s: &mut TcpStream) -> io::Result<u8> {
     let mut b = [0u8; 1];
     s.read_exact(&mut b).await?;
     Ok(b[0])
+}
+
+/// Handle SOCKS5 with first byte already consumed
+async fn handle_socks5_with_first_byte<S>(
+    mut stream: S,
+    first_byte: u8,
+    peer: SocketAddr,
+    cfg: &MixedInboundConfig,
+) -> io::Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // Verify SOCKS version
+    if first_byte != 0x05 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad SOCKS version"));
+    }
+
+    // Read methods
+    let n_methods = {
+        let mut buf = [0u8; 1];
+        stream.read_exact(&mut buf).await?;
+        buf[0] as usize
+    };
+    let mut methods = vec![0u8; n_methods];
+    stream.read_exact(&mut methods).await?;
+
+    // Reply: NO AUTH
+    stream.write_all(&[0x05, 0x00]).await?;
+
+    // Read request
+    let mut head = [0u8; 4];
+    stream.read_exact(&mut head).await?;
+
+    if head[0] != 0x05 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad request version"));
+    }
+
+    let cmd = head[1];
+    if cmd != 0x01 {
+        // Only CONNECT supported
+        reply_socks5_generic(&mut stream, 0x07, None).await?;
+        return Err(io::Error::new(io::ErrorKind::Unsupported, "only CONNECT supported"));
+    }
+
+    // Parse target address
+    let atyp = head[3];
+    let target_addr = match atyp {
+        0x01 => {
+            // IPv4
+            let mut addr = [0u8; 4];
+            stream.read_exact(&mut addr).await?;
+            let mut port_buf = [0u8; 2];
+            stream.read_exact(&mut port_buf).await?;
+            let port = u16::from_be_bytes(port_buf);
+            format!("{}:{}", std::net::Ipv4Addr::from(addr), port)
+        }
+        0x03 => {
+            // Domain
+            let mut len_buf = [0u8; 1];
+            stream.read_exact(&mut len_buf).await?;
+            let len = len_buf[0] as usize;
+            let mut domain = vec![0u8; len];
+            stream.read_exact(&mut domain).await?;
+            let mut port_buf = [0u8; 2];
+            stream.read_exact(&mut port_buf).await?;
+            let port = u16::from_be_bytes(port_buf);
+            format!("{}:{}", String::from_utf8_lossy(&domain), port)
+        }
+        0x04 => {
+            // IPv6
+            let mut addr = [0u8; 16];
+            stream.read_exact(&mut addr).await?;
+            let mut port_buf = [0u8; 2];
+            stream.read_exact(&mut port_buf).await?;
+            let port = u16::from_be_bytes(port_buf);
+            format!("[{}]:{}", std::net::Ipv6Addr::from(addr), port)
+        }
+        _ => {
+            reply_socks5_generic(&mut stream, 0x08, None).await?;
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported address type"));
+        }
+    };
+
+    debug!(peer=%peer, target=%target_addr, "mixed/tls/socks5: connecting to target");
+
+    // Connect to target
+    let upstream = match TcpStream::connect(&target_addr).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            reply_socks5_generic(&mut stream, 0x05, None).await?;
+            return Err(e);
+        }
+    };
+
+    // Reply with success
+    reply_socks5_generic(&mut stream, 0x00, None).await?;
+
+    // Bidirectional relay
+    let (mut stream_read, mut stream_write) = tokio::io::split(stream);
+    let (mut upstream_read, mut upstream_write) = upstream.into_split();
+
+    let client_to_server = async {
+        tokio::io::copy(&mut stream_read, &mut upstream_write).await
+    };
+
+    let server_to_client = async {
+        tokio::io::copy(&mut upstream_read, &mut stream_write).await
+    };
+
+    tokio::select! {
+        result = client_to_server => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/tls/socks5: client to server copy failed");
+            }
+        }
+        result = server_to_client => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/tls/socks5: server to client copy failed");
+            }
+        }
+    }
+
+    debug!(peer=%peer, "mixed/tls/socks5: connection closed");
+    Ok(())
+}
+
+/// Handle HTTP with first byte already consumed
+async fn handle_http_with_first_byte<S>(
+    mut stream: S,
+    first_byte: u8,
+    peer: SocketAddr,
+    _cfg: &MixedInboundConfig,
+) -> io::Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    // Read HTTP request line (we already have the first byte)
+    let mut buf = vec![first_byte];
+    let mut line_buf = [0u8; 1];
+
+    // Read until \r\n
+    loop {
+        stream.read_exact(&mut line_buf).await?;
+        buf.push(line_buf[0]);
+
+        if buf.len() >= 2 && buf[buf.len()-2] == b'\r' && buf[buf.len()-1] == b'\n' {
+            break;
+        }
+
+        if buf.len() > 8192 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "request line too long"));
+        }
+    }
+
+    let request_line = String::from_utf8_lossy(&buf[..buf.len()-2]);
+
+    // Check if it's CONNECT method
+    if !request_line.starts_with("CONNECT ") {
+        // Non-CONNECT methods not supported
+        stream.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n").await?;
+        return Ok(());
+    }
+
+    // Parse target from request line
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await?;
+        return Ok(());
+    }
+
+    let target_addr = parts[1];
+    debug!(peer=%peer, target=%target_addr, "mixed/tls/http: connecting to target");
+
+    // Skip remaining headers
+    loop {
+        let mut line = Vec::new();
+        let mut byte = [0u8; 1];
+
+        loop {
+            stream.read_exact(&mut byte).await?;
+            line.push(byte[0]);
+
+            if line.len() >= 2 && line[line.len()-2] == b'\r' && line[line.len()-1] == b'\n' {
+                break;
+            }
+
+            if line.len() > 8192 {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "header line too long"));
+            }
+        }
+
+        // Empty line marks end of headers
+        if line.len() == 2 {
+            break;
+        }
+    }
+
+    // Connect to target
+    let upstream = match TcpStream::connect(target_addr).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await?;
+            return Err(e);
+        }
+    };
+
+    // Reply with success
+    stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
+
+    // Bidirectional relay
+    let (mut stream_read, mut stream_write) = tokio::io::split(stream);
+    let (mut upstream_read, mut upstream_write) = upstream.into_split();
+
+    let client_to_server = async {
+        tokio::io::copy(&mut stream_read, &mut upstream_write).await
+    };
+
+    let server_to_client = async {
+        tokio::io::copy(&mut upstream_read, &mut stream_write).await
+    };
+
+    tokio::select! {
+        result = client_to_server => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/tls/http: client to server copy failed");
+            }
+        }
+        result = server_to_client => {
+            if let Err(e) = result {
+                debug!(peer=%peer, error=%e, "mixed/tls/http: server to client copy failed");
+            }
+        }
+    }
+
+    debug!(peer=%peer, "mixed/tls/http: connection closed");
+    Ok(())
+}
+
+/// Reply to SOCKS5 client (generic version for any stream)
+async fn reply_socks5_generic<S>(stream: &mut S, rep: u8, _bnd: Option<SocketAddr>) -> io::Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+    // Simple reply: VER=5, REP=rep, RSV=0, ATYP=1 (IPv4), ADDR=0.0.0.0, PORT=0
+    let reply = [0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
+    stream.write_all(&reply).await
 }
 
 #[cfg(test)]

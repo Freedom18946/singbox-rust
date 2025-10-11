@@ -2,8 +2,11 @@
 //!
 //! This module provides Trojan protocol support for outbound connections.
 //! Trojan is a proxy protocol that disguises traffic as TLS traffic.
+//! Supports both TCP and UDP relay.
 
 use crate::outbound::prelude::*;
+use crate::traits::OutboundDatagram;
+use std::sync::Arc;
 
 #[cfg(feature = "adapter-trojan")]
 mod tls_helper {
@@ -88,6 +91,9 @@ pub struct TrojanConfig {
     #[cfg(feature = "tls_reality")]
     #[serde(default)]
     pub reality: Option<sb_tls::RealityClientConfig>,
+    /// Multiplex configuration
+    #[serde(default)]
+    pub multiplex: Option<sb_transport::multiplex::MultiplexConfig>,
 }
 
 /// Trojan outbound connector
@@ -95,12 +101,22 @@ pub struct TrojanConfig {
 #[derive(Default)]
 pub struct TrojanConnector {
     _config: Option<TrojanConfig>,
+    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
 }
 
 impl TrojanConnector {
     pub fn new(config: TrojanConfig) -> Self {
+        // Create multiplex dialer if configured
+        let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
+            let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
+            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
+        } else {
+            None
+        };
+
         Self {
             _config: Some(config),
+            multiplex_dialer,
         }
     }
 
@@ -150,6 +166,79 @@ impl TrojanConnector {
 
         Ok(tls_stream)
     }
+
+    /// Create UDP relay connection (returns OutboundDatagram)
+    #[cfg(feature = "adapter-trojan")]
+    pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
+        use sha2::{Sha224, Digest};
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UdpSocket;
+
+        let config = self._config.as_ref().ok_or_else(|| {
+            AdapterError::Other("Trojan config not set".to_string())
+        })?;
+
+        tracing::debug!(
+            server = %config.server,
+            target = %format!("{}:{}", target.host, target.port),
+            "Creating Trojan UDP relay"
+        );
+
+        // Parse server address
+        let server_addr: std::net::SocketAddr = config.server
+            .parse()
+            .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
+
+        // Step 1: Establish TCP connection for UDP ASSOCIATE command
+        let tcp_stream = tokio::net::TcpStream::connect(&config.server)
+            .await
+            .map_err(AdapterError::Io)?;
+
+        // Step 2: Perform TLS handshake
+        let mut tls_stream = self.perform_standard_tls_handshake(tcp_stream, config).await?;
+
+        // Step 3: Send UDP ASSOCIATE command (CMD=0x03)
+        let mut request = Vec::new();
+
+        // Password hash (SHA224)
+        let mut hasher = Sha224::new();
+        hasher.update(config.password.as_bytes());
+        let password_hash = hasher.finalize();
+        request.extend_from_slice(&hex::encode(password_hash).as_bytes());
+        request.extend_from_slice(b"\r\n");
+
+        // Command: UDP ASSOCIATE (0x03)
+        request.push(0x03);
+
+        // Address: server itself for UDP associate
+        request.push(0x01); // IPv4
+        request.extend_from_slice(&server_addr.ip().to_string().parse::<std::net::Ipv4Addr>()
+            .unwrap_or(std::net::Ipv4Addr::new(127, 0, 0, 1)).octets());
+        request.extend_from_slice(&server_addr.port().to_be_bytes());
+        request.extend_from_slice(b"\r\n");
+
+        // Send UDP ASSOCIATE request
+        tls_stream.write_all(&request).await.map_err(AdapterError::Io)?;
+        tls_stream.flush().await.map_err(AdapterError::Io)?;
+
+        // Step 4: Create UDP socket for actual data transfer
+        let udp_socket = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .map_err(AdapterError::Io)?;
+
+        udp_socket
+            .connect(server_addr)
+            .await
+            .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
+
+        // Create Trojan UDP socket wrapper
+        let trojan_udp = TrojanUdpSocket::new(
+            Arc::new(udp_socket),
+            config.password.clone(),
+        )?;
+
+        Ok(Box::new(trojan_udp))
+    }
 }
 
 
@@ -185,6 +274,14 @@ impl OutboundConnector for TrojanConnector {
             })?;
 
             let _span = crate::outbound::span_dial("trojan", &target);
+
+            // Note: Multiplex support for Trojan outbound is configured but not yet fully implemented
+            // Trojan protocol flow is: TCP -> TLS -> Trojan Protocol
+            // Multiplex would need to be: TCP -> TLS -> Multiplex -> Trojan Protocol
+            // This requires architectural changes to wrap TLS streams with multiplex
+            if config.multiplex.is_some() {
+                tracing::warn!("Multiplex configuration present but not yet fully implemented for Trojan outbound");
+            }
 
             // Parse server address
             let server_addr = config.server.clone();
@@ -273,6 +370,188 @@ impl OutboundConnector for TrojanConnector {
     }
 }
 
+/// Trojan UDP socket wrapper that implements OutboundDatagram
+#[cfg(feature = "adapter-trojan")]
+#[derive(Debug)]
+pub struct TrojanUdpSocket {
+    socket: Arc<tokio::net::UdpSocket>,
+    password: String,
+    target_addr: tokio::sync::Mutex<Option<Target>>,
+}
+
+#[cfg(feature = "adapter-trojan")]
+impl TrojanUdpSocket {
+    pub fn new(socket: Arc<tokio::net::UdpSocket>, password: String) -> Result<Self> {
+        Ok(Self {
+            socket,
+            password,
+            target_addr: tokio::sync::Mutex::new(None),
+        })
+    }
+
+    /// Set target address for subsequent operations
+    pub async fn set_target(&self, target: Target) {
+        let mut addr = self.target_addr.lock().await;
+        *addr = Some(target);
+    }
+
+    /// Encode Trojan UDP packet
+    /// Format: CMD(0x03) + ATYP + DST.ADDR + PORT + PAYLOAD
+    fn encode_packet(&self, data: &[u8], target: &Target) -> Result<Vec<u8>> {
+        let mut packet = Vec::new();
+
+        // CMD: UDP (0x03)
+        packet.push(0x03);
+
+        // Address type and address
+        if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(ipv4) => {
+                    packet.push(0x01); // IPv4
+                    packet.extend_from_slice(&ipv4.octets());
+                }
+                std::net::IpAddr::V6(ipv6) => {
+                    packet.push(0x04); // IPv6
+                    packet.extend_from_slice(&ipv6.octets());
+                }
+            }
+        } else {
+            // Domain name
+            packet.push(0x03); // Domain
+            let hostname_bytes = target.host.as_bytes();
+            if hostname_bytes.len() > 255 {
+                return Err(AdapterError::InvalidConfig("Hostname too long"));
+            }
+            packet.push(hostname_bytes.len() as u8);
+            packet.extend_from_slice(hostname_bytes);
+        }
+
+        // Port
+        packet.extend_from_slice(&target.port.to_be_bytes());
+
+        // Payload
+        packet.extend_from_slice(data);
+
+        Ok(packet)
+    }
+
+    /// Parse Trojan UDP packet and extract payload
+    fn decode_packet(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        if packet.is_empty() {
+            return Err(AdapterError::Protocol("Empty packet".to_string()));
+        }
+
+        // CMD should be 0x03
+        if packet[0] != 0x03 {
+            return Err(AdapterError::Protocol(format!("Invalid CMD: {}", packet[0])));
+        }
+
+        let mut offset = 1;
+
+        // Parse address type
+        if packet.len() < offset + 1 {
+            return Err(AdapterError::Protocol("Packet too short".to_string()));
+        }
+
+        let atyp = packet[offset];
+        offset += 1;
+
+        match atyp {
+            0x01 => {
+                // IPv4: 4 bytes + 2 bytes port
+                offset += 4 + 2;
+            }
+            0x03 => {
+                // Domain: length byte + domain + 2 bytes port
+                if packet.len() < offset + 1 {
+                    return Err(AdapterError::Protocol("Invalid domain length".to_string()));
+                }
+                let domain_len = packet[offset] as usize;
+                offset += 1 + domain_len + 2;
+            }
+            0x04 => {
+                // IPv6: 16 bytes + 2 bytes port
+                offset += 16 + 2;
+            }
+            _ => {
+                return Err(AdapterError::Protocol(format!("Invalid ATYP: {}", atyp)));
+            }
+        }
+
+        if offset > packet.len() {
+            return Err(AdapterError::Protocol("Packet truncated".to_string()));
+        }
+
+        // Return payload
+        Ok(packet[offset..].to_vec())
+    }
+}
+
+#[cfg(feature = "adapter-trojan")]
+#[async_trait]
+impl OutboundDatagram for TrojanUdpSocket {
+    async fn send_to(&self, payload: &[u8]) -> Result<usize> {
+        // Get target address
+        let target = {
+            let addr_lock = self.target_addr.lock().await;
+            addr_lock
+                .as_ref()
+                .ok_or_else(|| AdapterError::Other("Target address not set".to_string()))?
+                .clone()
+        };
+
+        // Encode packet
+        let packet = self.encode_packet(payload, &target)?;
+
+        // Send to Trojan server
+        let sent = self
+            .socket
+            .send(&packet)
+            .await
+            .map_err(AdapterError::Io)?;
+
+        tracing::trace!(
+            target = %format!("{}:{}", target.host, target.port),
+            sent = sent,
+            "Trojan UDP packet sent"
+        );
+
+        Ok(payload.len())
+    }
+
+    async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
+        // Receive from Trojan server
+        let (n, _peer) = self
+            .socket
+            .recv_from(buf)
+            .await
+            .map_err(AdapterError::Io)?;
+
+        // Decode packet
+        let payload = self.decode_packet(&buf[..n])?;
+
+        // Copy payload back to buffer
+        if payload.len() > buf.len() {
+            return Err(AdapterError::Other("Buffer too small".to_string()));
+        }
+
+        buf[..payload.len()].copy_from_slice(&payload);
+
+        tracing::trace!(
+            received = n,
+            payload_len = payload.len(),
+            "Trojan UDP packet received"
+        );
+
+        Ok(payload.len())
+    }
+
+    async fn close(&self) -> Result<()> {
+        tracing::debug!("Trojan UDP socket closed");
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +567,7 @@ mod tests {
             skip_cert_verify: false,
             #[cfg(feature = "tls_reality")]
             reality: None,
+            multiplex: None,
         };
 
         let connector = TrojanConnector::new(config);

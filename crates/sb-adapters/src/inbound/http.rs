@@ -115,6 +115,7 @@ pub struct HttpProxyConfig {
     pub listen: SocketAddr,
     pub router: Arc<router::RouterHandle>,
     pub outbounds: Arc<OutboundRegistryHandle>,
+    pub tls: Option<sb_transport::TlsConfig>,
 }
 
 /// ready_tx：可选的就绪信号；当 socket 绑定完成后发送。
@@ -181,7 +182,21 @@ pub async fn serve_http(
                 }
                 let cfg_clone = cfg.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(cli, peer, &cfg_clone).await {
+                    // Wrap with TLS if configured
+                    let stream: Box<dyn tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> = if let Some(ref tls_config) = cfg_clone.tls {
+                        let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
+                        match tls_transport.wrap_server(cli).await {
+                            Ok(tls_stream) => tls_stream,
+                            Err(e) => {
+                                warn!(peer=%peer, error=%e, "http: TLS handshake failed");
+                                return;
+                            }
+                        }
+                    } else {
+                        Box::new(cli)
+                    };
+                    
+                    if let Err(e) = handle_client(stream, peer, &cfg_clone).await {
                         warn!(peer=%peer, error=%e, "http connect session error");
                     }
                 });
@@ -202,11 +217,14 @@ pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()
     serve_http(cfg, stop_rx, None).await
 }
 
-async fn handle_client(
-    mut cli: TcpStream,
+async fn handle_client<S>(
+    mut cli: S,
     _peer: SocketAddr,
     _cfg: &HttpProxyConfig,
-) -> Result<()> {
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
     use tracing::info;
     let peer = cli.peer_addr().ok();
     info!(?peer, "http: accepted");
@@ -446,7 +464,10 @@ async fn handle_client(
     Ok(())
 }
 
-async fn read_request_line(cli: &mut TcpStream) -> Result<(String, String)> {
+async fn read_request_line<S>(cli: &mut S) -> Result<(String, String)>
+where
+    S: tokio::io::AsyncRead + Unpin,
+{
     use anyhow::anyhow;
     use tokio::io::AsyncReadExt;
     use tokio::time::{timeout, Duration, Instant};
@@ -545,7 +566,10 @@ fn split_host_port(s: &str) -> Option<(&str, u16)> {
 }
 
 // （已在文件顶部导入 Instant，这里删除重复导入）
-async fn respond_405_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
+async fn respond_405_stream<S>(stream: &mut S) -> anyhow::Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
     let t0 = Instant::now();
     let payload = b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n";
     stream.write_all(payload).await?;
@@ -608,7 +632,10 @@ where
     Ok(())
 }
 
-async fn respond_400(stream: &mut TcpStream, msg: &str) -> anyhow::Result<()> {
+async fn respond_400<S>(stream: &mut S, msg: &str) -> anyhow::Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
     let t0 = Instant::now();
     let body = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
     stream.write_all(body).await?;
