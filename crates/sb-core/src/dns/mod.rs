@@ -23,20 +23,21 @@ pub mod doh;
 #[cfg(all(feature = "dns_dot", feature = "tls_rustls"))]
 pub mod dot;
 pub mod enhanced_client;
+pub mod fakeip;
+pub mod hosts;
 #[cfg(feature = "dns_http")]
 pub mod http_client;
 pub mod message;
 pub mod metrics;
 pub mod resolve;
 pub mod resolver;
+#[cfg(feature = "router")]
+pub mod rule_engine;
 pub mod strategy;
 pub mod stub;
 pub mod system;
 pub mod transport;
 pub mod upstream;
-pub mod fakeip;
-#[cfg(feature = "router")]
-pub mod rule_engine;
 
 #[cfg(test)]
 mod integration_tests;
