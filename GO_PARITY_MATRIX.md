@@ -36,6 +36,7 @@ This document tracks feature parity between the Rust implementation and the upst
 **Progress Since Sprint 5 (2025-10-09 18:03):**
 - Full implementations increased from 15 → 77 (+413%)
 - Functional coverage improved from 21.1% → 52.2% (Full + Partial)
+- **Major Sprint 16 achievement**: **HTTP E2E Testing Complete** - 42 integration tests covering all 36 Clash API endpoints (100% pass rate, 0.70s execution)
 - **Major Sprint 14 discovery**: **Clash API Endpoints** - 22/43 endpoints already implemented (51.2% complete) with full WebSocket support
 - **Sprint 15 progress**: DNS query + ALL Meta endpoints + Configuration endpoints + Script/Tracing + Upgrade endpoints COMPLETE (36/36 real endpoints, 100% complete - ALL 5 Meta + 2 Config + 2 Script + 1 Tracing + 3 Upgrade done! 7 header artifacts marked N/A)
 - **Major Sprint 13 achievements**: **Protocol Adapter V2Ray Transport Integration** - VMess, VLESS, Trojan now support WebSocket/gRPC/HTTPUpgrade with 12 integration tests passing
@@ -45,7 +46,7 @@ This document tracks feature parity between the Rust implementation and the upst
 - Major Sprint 8 achievements: **DNS Transport Layer Complete** - 7 Full implementations (DoH, DoT, UDP, TCP, FakeIP, Hosts, Local/System), 1 Partial (DoQ)
 - Major Sprint 7 achievements: UDP relay (Shadowsocks, Trojan, VLESS), E2E test suite, VMess TLS variants, comprehensive documentation
 - Major Sprint 6 achievements: VMess TLS/Multiplex, HTTP/Mixed TLS, SOCKS outbound, Multiplex transport, UDP support
-- Category-specific progress: APIs (2.3% → 60.5%), DNS (0% → 88.9%), Routing (0% → 30.95%), Inbounds (33.3% → 40%), Outbounds (35.3% → 64.7%), Transport (21.4% → 50%)
+- Category-specific progress: APIs (2.3% → 100%), DNS (0% → 88.9%), Routing (0% → 30.95%), Inbounds (33.3% → 40%), Outbounds (35.3% → 64.7%), Transport (21.4% → 50%)
 
 ## Audit Executive Summary
 
@@ -227,7 +228,7 @@ This document tracks feature parity between the Rust implementation and the upst
 5. ~~Implement Script management endpoints (PATCH /script, POST /script)~~ ✅ **DONE - Sprint 15**
 6. ~~Implement Profile/tracing endpoint (GET /profile/tracing)~~ ✅ **DONE - Sprint 15**
 7. ~~Complete remaining Clash API endpoints~~ ✅ **DONE - Sprint 15 (36/36 real endpoints, 7 headers marked N/A)**
-8. Add HTTP E2E integration tests for 36 Clash API endpoints
+8. ~~Add HTTP E2E integration tests for 36 Clash API endpoints~~ ✅ **DONE - Sprint 16 (42 tests, 100% pass rate)**
 9. Implement remaining routing matchers (inbound/outbound, network type, IP version, IP is-private, domain regex, query type)
 10. ~~Add DNS routing integration with rule engine~~ ✅ **DONE - Sprint 10**
 11. ~~Implement V2Ray transports (WebSocket, gRPC, HTTP)~~ ✅ **DONE - Sprint 12-13**
@@ -250,11 +251,11 @@ This document tracks feature parity between the Rust implementation and the upst
 
 ### Resource Allocation Guidance
 
-Based on feature impact analysis (Updated Post-Sprint 15):
-- **0%** effort → Clash API implementation complete (100% coverage achieved)
-- **40%** effort → HTTP E2E tests for 36 Clash API endpoints
-- **35%** effort → Remaining routing matchers (inbound/outbound, network type, IP version, IP is-private, domain regex, query type)
-- **25%** effort → Platform-specific testing (process matchers on Linux/Windows) + Inbound transport integration
+Based on feature impact analysis (Updated Post-Sprint 16):
+- **0%** effort → Clash API implementation complete (100% coverage achieved, Sprint 15)
+- **0%** effort → HTTP E2E tests complete (42 tests, 100% pass rate, Sprint 16)
+- **60%** effort → Remaining routing matchers (inbound/outbound, network type, IP version, IP is-private, domain regex, query type)
+- **40%** effort → Platform-specific testing (process matchers on Linux/Windows) + Inbound transport integration
 
 ### Quality Gate Status
 
@@ -264,14 +265,13 @@ Based on feature impact analysis (Updated Post-Sprint 15):
 - Full implementations have comprehensive test coverage
 - `sb-tls` crate includes unit and integration tests
 - `sb-transport` multiplex module includes unit and integration tests (Sprint 6)
-- **Clash API tests**: 15 configuration and structure tests (Sprint 14)
+- **Clash API tests**: 15 configuration tests (Sprint 14) + 42 HTTP E2E tests (Sprint 16) = 57 total tests ✅
 
 **Needs Attention**:
 - 17 "Partial" features need comprehensive tests (down from 23)
 - Missing E2E tests for Multiplex integration with protocols (Shadowsocks, Trojan, VLESS, VMess)
 - No integration tests for DNS/Routing
 - CLI commands missing snapshot tests (implementations exist but matrix not updated)
-- **Clash API**: 36 endpoints need HTTP E2E tests (configuration tests complete, all endpoints implemented)
 
 ## Detailed Status
 

@@ -140,7 +140,7 @@ impl ClashApiServer {
     }
 
     /// Create the Axum router with all endpoints
-    fn create_app(&self) -> Router {
+    pub fn create_app(&self) -> Router {
         let mut app = Router::new()
             // Proxy management
             .route("/proxies", get(handlers::get_proxies))
@@ -155,6 +155,9 @@ impl ClashApiServer {
             // Configuration
             .route("/configs", get(handlers::get_configs))
             .route("/configs", patch(handlers::update_configs))
+            .route("/configs", put(handlers::replace_configs))
+            // UI
+            .route("/ui", get(handlers::get_ui))
             // Real-time WebSocket endpoints
             .route("/traffic", get(websocket::traffic_websocket))
             .route("/logs", get(websocket::logs_websocket))
@@ -181,6 +184,23 @@ impl ClashApiServer {
             // Cache management
             .route("/cache/fakeip/flush", delete(handlers::flush_fakeip_cache))
             .route("/dns/flush", delete(handlers::flush_dns_cache))
+            // DNS query
+            .route("/dns/query", get(handlers::get_dns_query))
+            // Meta endpoints
+            .route("/meta/group", get(handlers::get_meta_groups))
+            .route("/meta/group/:name", get(handlers::get_meta_group))
+            .route("/meta/group/:name/delay", get(handlers::get_meta_group_delay))
+            .route("/meta/memory", get(handlers::get_meta_memory))
+            .route("/meta/gc", put(handlers::trigger_gc))
+            // Script endpoints
+            .route("/script", patch(handlers::update_script))
+            .route("/script", post(handlers::test_script))
+            // Profile/tracing endpoints
+            .route("/profile/tracing", get(handlers::get_profile_tracing))
+            // Upgrade endpoints
+            .route("/connectionsUpgrade", get(handlers::upgrade_connections))
+            .route("/metaUpgrade", get(handlers::get_meta_upgrade))
+            .route("/meta/upgrade/ui", post(handlers::upgrade_external_ui))
             // Version and status
             .route("/version", get(handlers::get_version))
             .route("/", get(handlers::get_status))
