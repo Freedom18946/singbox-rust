@@ -104,7 +104,11 @@ impl Dialer for GrpcDialer {
         );
 
         // Build endpoint URL
-        let scheme = if self.config.enable_tls { "https" } else { "http" };
+        let scheme = if self.config.enable_tls {
+            "https"
+        } else {
+            "http"
+        };
         let url = format!("{}://{}:{}", scheme, host, port);
 
         // Create gRPC channel
@@ -155,44 +159,59 @@ pub struct GrpcStreamAdapter {
 
 impl GrpcStreamAdapter {
     async fn new(channel: Channel, _config: &GrpcConfig) -> Result<Self, DialError> {
+        use tonic::Request;
+        use tunnel::tunnel_service_client::TunnelServiceClient;
+        use tunnel::{TunnelRequest, TunnelResponse};
+
         // Create channels for bidirectional communication
         let (send_tx, mut send_rx) = mpsc::unbounded_channel::<Bytes>();
-        let (_recv_tx, recv_rx) = mpsc::unbounded_channel::<Result<Bytes, tonic::Status>>();
+        let (recv_tx, recv_rx) = mpsc::unbounded_channel::<Result<Bytes, tonic::Status>>();
 
-        // Note: In a real implementation, we would use the generated gRPC client
-        // to create a bidirectional stream. For this demonstration, we'll create
-        // a simplified version that shows the structure.
-        //
-        // The actual implementation would look like:
-        // ```
-        // let mut client = TunnelServiceClient::new(channel);
-        // let outbound = async_stream::stream! {
-        //     while let Some(data) = send_rx.recv().await {
-        //         yield TunnelRequest { data: data.to_vec() };
-        //     }
-        // };
-        // let response = client.tunnel(Request::new(outbound)).await?;
-        // let mut inbound = response.into_inner();
-        // while let Some(msg) = inbound.message().await? {
-        //     recv_tx.send(Ok(Bytes::from(msg.data))).await;
-        // }
-        // ```
+        // Create gRPC client
+        let mut client = TunnelServiceClient::new(channel);
 
-        // Spawn task to handle outbound stream (write)
-        let _channel_clone = channel.clone();
+        // Spawn task to manage the bidirectional gRPC stream
         tokio::spawn(async move {
-            while let Some(_data) = send_rx.recv().await {
-                // In production: send data via gRPC stream
-                debug!("Sending data via gRPC stream (stub)");
+            // Create outbound stream from send_rx channel
+            let outbound_stream = async_stream::stream! {
+                while let Some(data) = send_rx.recv().await {
+                    yield TunnelRequest { data: data.to_vec() };
+                }
+                debug!("gRPC outbound stream completed");
+            };
+
+            // Establish bidirectional stream
+            match client.tunnel(Request::new(outbound_stream)).await {
+                Ok(response) => {
+                    let mut inbound = response.into_inner();
+                    debug!("gRPC bidirectional stream established");
+
+                    // Forward inbound messages to recv_tx
+                    loop {
+                        match inbound.message().await {
+                            Ok(Some(TunnelResponse { data })) => {
+                                if let Err(e) = recv_tx.send(Ok(Bytes::from(data))) {
+                                    debug!("Failed to forward gRPC message: {}", e);
+                                    break;
+                                }
+                            }
+                            Ok(None) => {
+                                debug!("gRPC inbound stream closed normally");
+                                break;
+                            }
+                            Err(status) => {
+                                debug!("gRPC stream error: {}", status);
+                                let _ = recv_tx.send(Err(status));
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(status) => {
+                    debug!("Failed to establish gRPC stream: {}", status);
+                    let _ = recv_tx.send(Err(status));
+                }
             }
-            debug!("gRPC send stream closed");
-        });
-
-        // Spawn task to handle inbound stream (read)
-        tokio::spawn(async move {
-            // In production: receive data from gRPC stream and forward to recv_tx
-            debug!("gRPC recv stream started (stub)");
-            // This is a stub - in real implementation, we'd receive from gRPC stream
         });
 
         Ok(Self {

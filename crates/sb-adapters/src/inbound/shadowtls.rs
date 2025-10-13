@@ -1,26 +1,25 @@
 //! ShadowTLS inbound (TLS server) implementation
 //!
-//! Minimal ShadowTLS server supporting:
-//! - TLS server with provided cert/key (PEM)
+//! Complete ShadowTLS server supporting:
+//! - TLS server using sb-tls infrastructure (Standard TLS, REALITY, ECH)
 //! - Expects client to send: `CONNECT host:port HTTP/1.1\r\nHost: host:port\r\n\r\n`
 //! - Parses target from HTTP CONNECT, routes via sb-core router/outbounds
 //! - Bidirectional relay
 //!
 //! ShadowTLS masks proxy traffic as legitimate TLS connections.
+//! Sprint 19 Phase 1.1: Complete integration with sb-tls infrastructure from Sprint 5
 
 use anyhow::{anyhow, Result};
+use sb_core::outbound::registry;
+use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::outbound::selector::PoolSelector;
-use sb_core::outbound::registry;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
-use std::fs::File;
-use std::io::BufReader;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -28,78 +27,28 @@ use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
-use tokio_rustls::rustls::{self, ServerConfig};
-use tokio_rustls::TlsAcceptor;
 use tracing::{debug, info, warn};
 
 #[derive(Clone, Debug)]
 pub struct ShadowTlsInboundConfig {
     pub listen: SocketAddr,
-    pub cert_path: String,
-    pub key_path: String,
+    /// TLS configuration using sb-tls infrastructure (Standard, REALITY, ECH)
+    pub tls: sb_transport::TlsConfig,
     pub router: Arc<router::RouterHandle>,
-    pub tls: Option<sb_transport::TlsConfig>,
-}
-
-fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
-    // Load cert chain
-    let cert_file = File::open(cert_path)?;
-    let mut cert_reader = BufReader::new(cert_file);
-    let certs: Vec<_> = rustls_pemfile::certs(&mut cert_reader)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| anyhow!("invalid cert file"))?;
-
-    // Load private key (PKCS#8 or RSA)
-    let key_file = File::open(key_path)?;
-    let mut key_reader = BufReader::new(key_file);
-    
-    let key = {
-        // Try PKCS#8 first
-        if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
-            .next()
-            .transpose()
-            .map_err(|_| anyhow!("invalid key file (pkcs8)"))?
-        {
-            rustls_pki_types::PrivateKeyDer::Pkcs8(key)
-        } else {
-            // Try RSA
-            let key_file = File::open(key_path)?;
-            let mut key_reader = BufReader::new(key_file);
-            let key = rustls_pemfile::rsa_private_keys(&mut key_reader)
-                .next()
-                .ok_or_else(|| anyhow!("no private key found"))?
-                .map_err(|_| anyhow!("invalid key file (rsa)"))?;
-            rustls_pki_types::PrivateKeyDer::Pkcs1(key)
-        }
-    };
-
-    let cfg = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| anyhow!("tls config error: {}", e))?;
-    Ok(cfg)
 }
 
 pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
     let listener = TcpListener::bind(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
-    info!(addr=?cfg.listen, actual=?actual, "shadowtls: TLS server bound");
+    info!(
+        addr=?cfg.listen,
+        actual=?actual,
+        tls=?cfg.tls.transport_type(),
+        "shadowtls: TLS server bound"
+    );
 
-    // Create TLS transport if configured, otherwise fall back to legacy
-    let tls_transport = if let Some(ref tls_config) = cfg.tls {
-        Some(sb_transport::TlsTransport::new(tls_config.clone()))
-    } else {
-        // Legacy mode: use old TLS config
-        None
-    };
-
-    // Legacy TLS acceptor (for backward compatibility)
-    let legacy_acceptor = if tls_transport.is_none() {
-        let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
-        Some(TlsAcceptor::from(Arc::new(tls_cfg)))
-    } else {
-        None
-    };
+    // Create TLS transport using sb-tls infrastructure
+    let tls_transport = sb_transport::TlsTransport::new(cfg.tls.clone());
 
     let mut hb = interval(Duration::from_secs(5));
     loop {
@@ -114,33 +63,18 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
                         continue;
                     }
                 };
-                
+
                 let cfg_clone = cfg.clone();
                 let tls_transport_clone = tls_transport.clone();
-                let legacy_acceptor_clone = legacy_acceptor.clone();
-                
+
                 tokio::spawn(async move {
-                    // Use new TLS infrastructure if available
-                    if let Some(transport) = tls_transport_clone {
-                        match transport.wrap_server(cli).await {
-                            Ok(tls_stream) => {
-                                if let Err(e) = handle_conn_generic(&cfg_clone, tls_stream, peer).await {
-                                    warn!(%peer, error=%e, "shadowtls: session error");
-                                }
+                    match tls_transport_clone.wrap_server(cli).await {
+                        Ok(tls_stream) => {
+                            if let Err(e) = handle_conn(&cfg_clone, tls_stream, peer).await {
+                                warn!(%peer, error=%e, "shadowtls: session error");
                             }
-                            Err(e) => warn!(%peer, error=%e, "shadowtls: tls accept error (new)"),
                         }
-                    } else if let Some(acceptor) = legacy_acceptor_clone {
-                        // Legacy mode
-                        match acceptor.accept(cli).await {
-                            Ok(mut tls_stream) => {
-                                if let Err(e) = handle_conn(&cfg_clone, &mut tls_stream, peer).await {
-                                    warn!(%peer, error=%e, "shadowtls: session error");
-                                    let _ = tls_stream.shutdown().await;
-                                }
-                            }
-                            Err(e) => warn!(%peer, error=%e, "shadowtls: tls accept error (legacy)"),
-                        }
+                        Err(e) => warn!(%peer, error=%e, "shadowtls: TLS handshake failed"),
                     }
                 });
             }
@@ -149,141 +83,7 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
     Ok(())
 }
 
-async fn handle_conn(
-    _cfg: &ShadowTlsInboundConfig,
-    tls: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
-    peer: SocketAddr,
-) -> Result<()> {
-    // Read HTTP CONNECT header
-    // Format: CONNECT host:port HTTP/1.1\r\nHost: host:port\r\n\r\n
-    let mut buf = Vec::with_capacity(512);
-    let mut tmp = [0u8; 256];
-    loop {
-        let n = tls.read(&mut tmp).await?;
-        if n == 0 {
-            return Err(anyhow!("shadowtls: client closed"));
-        }
-        buf.extend_from_slice(&tmp[..n]);
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-            break;
-        }
-        if buf.len() > 8192 {
-            return Err(anyhow!("shadowtls: header too large"));
-        }
-    }
-
-    // Parse CONNECT line
-    let text = String::from_utf8_lossy(&buf);
-    let mut lines = text.split("\r\n");
-    let connect_line = lines.next().unwrap_or("");
-
-    // Parse: CONNECT host:port HTTP/1.1
-    let mut parts = connect_line.split_whitespace();
-    let method = parts.next().unwrap_or("");
-    if !method.eq_ignore_ascii_case("CONNECT") {
-        return Err(anyhow!("shadowtls: unsupported method: {}", method));
-    }
-
-    let target = parts.next().ok_or_else(|| anyhow!("shadowtls: missing target"))?;
-
-    // Parse host:port
-    let (host, port) = if let Some(colon_pos) = target.rfind(':') {
-        let host = &target[..colon_pos];
-        let port_str = &target[colon_pos + 1..];
-        let port: u16 = port_str
-            .parse()
-            .map_err(|_| anyhow!("shadowtls: invalid port"))?;
-        (host.to_string(), port)
-    } else {
-        return Err(anyhow!("shadowtls: invalid target format"));
-    };
-
-    debug!(%peer, host=%host, port=%port, "shadowtls: parsed target");
-
-    // Router decision
-    let mut decision = RDecision::Direct;
-    if let Some(eng) = rules_global::global() {
-        let ctx = RouteCtx {
-            domain: Some(host.as_str()),
-            ip: None,
-            transport_udp: false,
-            port: Some(port),
-            process_name: None,
-            process_path: None,
-        };
-        let d = eng.decide(&ctx);
-        if matches!(d, RDecision::Reject) {
-            return Err(anyhow!("shadowtls: rejected by rules"));
-        }
-        decision = d;
-    }
-
-    let proxy = default_proxy();
-    let opts = ConnectOpts::default();
-    let mut upstream = match decision {
-        RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
-        RDecision::Proxy(Some(name)) => {
-            let sel = PoolSelector::new("shadowtls".into(), "default".into());
-            if let Some(reg) = registry::global() {
-                if let Some(_pool) = reg.pools.get(&name) {
-                    if let Some(ep) =
-                        sel.select(&name, peer, &format!("{}:{}", host, port), &())
-                    {
-                        match ep.kind {
-                            sb_core::outbound::endpoint::ProxyKind::Http => {
-                                http_proxy_connect_through_proxy(
-                                    &ep.addr.to_string(),
-                                    &host,
-                                    port,
-                                    &opts,
-                                )
-                                .await?
-                            }
-                            sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(&ep.addr.to_string(), &host, port, &opts)
-                                    .await?
-                            }
-                        }
-                    } else {
-                        fallback_connect(&proxy, &host, port, &opts).await?
-                    }
-                } else {
-                    fallback_connect(&proxy, &host, port, &opts).await?
-                }
-            } else {
-                fallback_connect(&proxy, &host, port, &opts).await?
-            }
-        }
-        RDecision::Proxy(None) => fallback_connect(&proxy, &host, port, &opts).await?,
-        RDecision::Reject => unreachable!(),
-    };
-
-    // Relay
-    let _ = tokio::io::copy_bidirectional(tls, &mut upstream).await;
-    Ok(())
-}
-
-async fn fallback_connect(
-    proxy: &ProxyChoice,
-    host: &str,
-    port: u16,
-    opts: &ConnectOpts,
-) -> Result<tokio::net::TcpStream> {
-    match proxy {
-        ProxyChoice::Direct => Ok(direct_connect_hostport(host, port, opts).await?),
-        ProxyChoice::Http(addr) => {
-            Ok(http_proxy_connect_through_proxy(addr, host, port, opts).await?)
-        }
-        ProxyChoice::Socks5(addr) => Ok(socks5_connect_through_socks5(addr, host, port, opts).await?),
-    }
-}
-
-/// Generic handle_conn for new TLS infrastructure
-async fn handle_conn_generic<S>(
-    _cfg: &ShadowTlsInboundConfig,
-    mut tls: S,
-    peer: SocketAddr,
-) -> Result<()>
+async fn handle_conn<S>(_cfg: &ShadowTlsInboundConfig, mut tls: S, peer: SocketAddr) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
@@ -317,7 +117,9 @@ where
         return Err(anyhow!("shadowtls: unsupported method: {}", method));
     }
 
-    let target = parts.next().ok_or_else(|| anyhow!("shadowtls: missing target"))?;
+    let target = parts
+        .next()
+        .ok_or_else(|| anyhow!("shadowtls: missing target"))?;
 
     // Parse host:port
     let (host, port) = if let Some(colon_pos) = target.rfind(':') {
@@ -333,7 +135,7 @@ where
 
     debug!(%peer, host=%host, port=%port, "shadowtls: parsed target");
 
-    // Router decision
+    // Router decision with updated RouteCtx (Sprint 19 Phase 1.1)
     let mut decision = RDecision::Direct;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
@@ -343,6 +145,10 @@ where
             port: Some(port),
             process_name: None,
             process_path: None,
+            inbound_tag: None, // Could be set from config if needed
+            outbound_tag: None,
+            auth_user: None,  // ShadowTLS doesn't have user auth
+            query_type: None, // Not a DNS query
         };
         let d = eng.decide(&ctx);
         if matches!(d, RDecision::Reject) {
@@ -359,9 +165,7 @@ where
             let sel = PoolSelector::new("shadowtls".into(), "default".into());
             if let Some(reg) = registry::global() {
                 if let Some(_pool) = reg.pools.get(&name) {
-                    if let Some(ep) =
-                        sel.select(&name, peer, &format!("{}:{}", host, port), &())
-                    {
+                    if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
                             sb_core::outbound::endpoint::ProxyKind::Http => {
                                 http_proxy_connect_through_proxy(
@@ -373,8 +177,13 @@ where
                                 .await?
                             }
                             sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                socks5_connect_through_socks5(&ep.addr.to_string(), &host, port, &opts)
-                                    .await?
+                                socks5_connect_through_socks5(
+                                    &ep.addr.to_string(),
+                                    &host,
+                                    port,
+                                    &opts,
+                                )
+                                .await?
                             }
                         }
                     } else {
@@ -391,7 +200,24 @@ where
         RDecision::Reject => unreachable!(),
     };
 
-    // Relay
+    // Bidirectional relay
     let _ = tokio::io::copy_bidirectional(&mut tls, &mut upstream).await;
     Ok(())
+}
+
+async fn fallback_connect(
+    proxy: &ProxyChoice,
+    host: &str,
+    port: u16,
+    opts: &ConnectOpts,
+) -> Result<tokio::net::TcpStream> {
+    match proxy {
+        ProxyChoice::Direct => Ok(direct_connect_hostport(host, port, opts).await?),
+        ProxyChoice::Http(addr) => {
+            Ok(http_proxy_connect_through_proxy(addr, host, port, opts).await?)
+        }
+        ProxyChoice::Socks5(addr) => {
+            Ok(socks5_connect_through_socks5(addr, host, port, opts).await?)
+        }
+    }
 }

@@ -236,6 +236,91 @@ impl DnsResolver {
             .find(|(_, ip)| ip.as_str() == fake_ip)
             .map(|(domain, _)| domain.clone())
     }
+
+    /// Query DNS for a domain
+    ///
+    /// This performs a DNS query and returns the resolved IP addresses.
+    /// The query is cached with TTL for performance.
+    pub async fn query_dns(&self, name: &str, query_type: &str) -> ApiResult<Vec<String>> {
+        // Check cache first
+        let cache = self.cache.read().await;
+        if let Some(entry) = cache.get(name) {
+            if entry.expires_at > Instant::now() && entry.query_type == query_type {
+                log::debug!("DNS cache hit for {} ({})", name, query_type);
+                return Ok(entry.addresses.iter().map(|a| a.ip().to_string()).collect());
+            }
+        }
+        drop(cache);
+
+        log::info!("Performing DNS query for {} (type: {})", name, query_type);
+
+        // Perform actual DNS query using tokio's resolver
+        let addresses = match query_type {
+            "A" | "AAAA" => {
+                // Use tokio's DNS resolver
+                match tokio::net::lookup_host(format!("{}:0", name)).await {
+                    Ok(addrs) => {
+                        let filtered: Vec<SocketAddr> = addrs
+                            .filter(|addr| {
+                                if query_type == "A" {
+                                    addr.is_ipv4()
+                                } else {
+                                    addr.is_ipv6()
+                                }
+                            })
+                            .collect();
+
+                        if filtered.is_empty() {
+                            // If no addresses of requested type, return all
+                            tokio::net::lookup_host(format!("{}:0", name))
+                                .await
+                                .map_err(|e| crate::error::ApiError::Internal { source: e.into() })?
+                                .collect::<Vec<_>>()
+                        } else {
+                            filtered
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("DNS query failed for {}: {}", name, e);
+                        return Err(crate::error::ApiError::Internal { source: e.into() });
+                    }
+                }
+            }
+            _ => {
+                // Unsupported query type, fallback to A record
+                log::warn!(
+                    "Unsupported DNS query type {}, falling back to A",
+                    query_type
+                );
+                tokio::net::lookup_host(format!("{}:0", name))
+                    .await
+                    .map_err(|e| crate::error::ApiError::Internal { source: e.into() })?
+                    .filter(|addr| addr.is_ipv4())
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        if addresses.is_empty() {
+            log::warn!(
+                "DNS query returned no results for {} ({})",
+                name,
+                query_type
+            );
+            return Ok(Vec::new());
+        }
+
+        // Cache the result
+        let cache_entry = DnsCacheEntry {
+            addresses: addresses.clone(),
+            expires_at: Instant::now() + Duration::from_secs(300), // 5 minute TTL
+            query_type: query_type.to_string(),
+        };
+
+        let mut cache = self.cache.write().await;
+        cache.insert(name.to_string(), cache_entry);
+
+        Ok(addresses.iter().map(|a| a.ip().to_string()).collect())
+    }
 }
 
 impl Default for DnsResolver {

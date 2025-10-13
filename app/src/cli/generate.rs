@@ -48,8 +48,8 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
 /// Generate REALITY X25519 keypair
 fn generate_reality_keypair() -> Result<()> {
-    use x25519_dalek::{PublicKey, StaticSecret};
     use rand::rngs::OsRng;
+    use x25519_dalek::{PublicKey, StaticSecret};
 
     // Generate private key
     let private_key = StaticSecret::random_from_rng(OsRng);
@@ -60,11 +60,11 @@ fn generate_reality_keypair() -> Result<()> {
     // Convert to base64 for output (compatible with sing-box format)
     let private_base64 = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
-        private_key.to_bytes()
+        private_key.to_bytes(),
     );
     let public_base64 = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
-        public_key.as_bytes()
+        public_key.as_bytes(),
     );
 
     // Output in sing-box compatible format
@@ -76,8 +76,8 @@ fn generate_reality_keypair() -> Result<()> {
 
 /// Generate ECH keypair (X25519 for HPKE)
 fn generate_ech_keypair() -> Result<()> {
-    use x25519_dalek::{PublicKey, StaticSecret};
     use rand::rngs::OsRng;
+    use x25519_dalek::{PublicKey, StaticSecret};
 
     // Generate private key (X25519 scalar)
     let private_key = StaticSecret::random_from_rng(OsRng);
@@ -88,11 +88,11 @@ fn generate_ech_keypair() -> Result<()> {
     // Convert to base64 for output (compatible with sing-box format)
     let private_base64 = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
-        private_key.to_bytes()
+        private_key.to_bytes(),
     );
     let public_base64 = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
-        public_key.as_bytes()
+        public_key.as_bytes(),
     );
 
     // Output in sing-box compatible format
@@ -111,8 +111,8 @@ fn generate_ech_keypair() -> Result<()> {
 fn generate_tls_keypair(cn: String, days: u32) -> Result<()> {
     use rcgen::generate_simple_self_signed;
     let _ = days; // rcgen simple API doesn't expose validity; ignore for now.
-    let cert = generate_simple_self_signed(vec![cn])
-        .map_err(|e| anyhow::anyhow!("generate cert: {e}"))?;
+    let cert =
+        generate_simple_self_signed(vec![cn]).map_err(|e| anyhow::anyhow!("generate cert: {e}"))?;
     let cert_pem = cert
         .serialize_pem()
         .map_err(|e| anyhow::anyhow!("serialize cert: {e}"))?;

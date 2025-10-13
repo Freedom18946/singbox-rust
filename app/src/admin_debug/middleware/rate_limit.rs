@@ -94,7 +94,7 @@ impl Default for RateLimitConfig {
 }
 
 impl RateLimitConfig {
-    #[must_use] 
+    #[must_use]
     pub const fn new(max_requests: u32, window_secs: u64) -> Self {
         Self {
             max_requests,
@@ -104,13 +104,13 @@ impl RateLimitConfig {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn with_strategy(mut self, strategy: RateLimitStrategy) -> Self {
         self.strategy = strategy;
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn with_burst(mut self, burst_capacity: u32) -> Self {
         self.burst_capacity = Some(burst_capacity);
         self
@@ -133,7 +133,7 @@ pub struct RateLimitMiddleware {
 }
 
 impl RateLimitMiddleware {
-    #[must_use] 
+    #[must_use]
     pub fn new(config: RateLimitConfig) -> Self {
         Self {
             config,
@@ -215,7 +215,7 @@ fn normalize_endpoint(path: &str) -> String {
 }
 
 /// Create rate limiter from environment configuration
-#[must_use] 
+#[must_use]
 pub fn from_env() -> Option<RateLimitMiddleware> {
     // Check if rate limiting is enabled
     let enabled = std::env::var("SB_ADMIN_RATE_LIMIT_ENABLED").ok().as_deref() == Some("1");

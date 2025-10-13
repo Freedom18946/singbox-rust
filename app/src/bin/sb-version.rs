@@ -33,4 +33,3 @@ fn build_fingerprint() -> String {
         option_env!("BUILD_TS").unwrap_or("dev")
     )
 }
-

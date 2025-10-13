@@ -14,7 +14,10 @@ fn start_echo() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
         Ok(l) => l,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping http_connect_auth echo due to sandbox PermissionDenied on bind: {}", e);
+                eprintln!(
+                    "skipping http_connect_auth echo due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
                 // Spawn a dummy thread and return a dummy addr (won't be used if caller also checks)
                 let h = thread::spawn(|| {});
                 return ("127.0.0.1:0".parse().unwrap(), h);
@@ -55,7 +58,10 @@ fn http_inbound_basic_auth_required() {
         Ok(l) => l,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping http_connect_auth due to sandbox PermissionDenied on bind: {}", e);
+                eprintln!(
+                    "skipping http_connect_auth due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
                 return;
             } else {
                 panic!("bind failed: {}", e);
@@ -80,7 +86,11 @@ fn http_inbound_basic_auth_required() {
             override_host: None,
             override_port: None,
         }],
-        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Direct,
+            name: Some("direct".into()),
+            ..Default::default()
+        }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],

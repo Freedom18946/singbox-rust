@@ -224,9 +224,7 @@ async fn handle_socks_connection(
                 SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             )
             .await?;
-            Err(io::Error::other(
-                "command not supported",
-            ))
+            Err(io::Error::other("command not supported"))
         }
     }
 }
@@ -291,11 +289,11 @@ async fn handle_connect(
         ctx = ctx.with_process_info(core_proc);
     }
 
-    let outbound = bridge.outbound.connect_tcp(&ctx).await.map_err(|e| {
-        io::Error::other(
-            format!("outbound connect failed: {e}"),
-        )
-    })?;
+    let outbound = bridge
+        .outbound
+        .connect_tcp(&ctx)
+        .await
+        .map_err(|e| io::Error::other(format!("outbound connect failed: {e}")))?;
 
     reply(stream, 0x00, outbound.local_addr().unwrap_or(local_addr)).await?;
 
@@ -644,9 +642,11 @@ impl UdpSessionManager {
             ctx
         };
 
-        let transport = self.outbound.connect_udp(&ctx).await.map_err(|e| {
-            io::Error::other(format!("udp connect failed: {e}"))
-        })?;
+        let transport = self
+            .outbound
+            .connect_udp(&ctx)
+            .await
+            .map_err(|e| io::Error::other(format!("udp connect failed: {e}")))?;
         let transport: Arc<dyn UdpTransport> = transport.into();
 
         if let Some(router) = self.process_router.as_ref() {

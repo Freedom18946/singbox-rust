@@ -13,6 +13,10 @@ fn decide_txt(json_txt: &str, dom: Option<&str>, udp: bool, port: Option<u16>) -
         port,
         process_name: None,
         process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     })
 }
 

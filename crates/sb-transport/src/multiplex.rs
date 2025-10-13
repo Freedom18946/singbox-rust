@@ -124,8 +124,8 @@ impl Default for MultiplexConfig {
     fn default() -> Self {
         Self {
             max_num_streams: 256,
-            initial_stream_window: 256 * 1024,      // 256KB
-            max_stream_window: 1024 * 1024,         // 1MB
+            initial_stream_window: 256 * 1024, // 256KB
+            max_stream_window: 1024 * 1024,    // 1MB
             enable_keepalive: true,
             keepalive_interval: 30,
             max_connections: 4,
@@ -171,7 +171,9 @@ impl MultiplexConnection {
     }
 
     fn decrement_stream_count(&self) -> usize {
-        self.stream_count.fetch_sub(1, Ordering::SeqCst).saturating_sub(1)
+        self.stream_count
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1)
     }
 
     fn get_stream_count(&self) -> usize {
@@ -293,7 +295,11 @@ impl MultiplexDialer {
     }
 
     /// Get or create a yamux connection with health checks and stream limits
-    async fn get_or_create_connection(&self, host: &str, port: u16) -> Result<Arc<MultiplexConnection>, DialError> {
+    async fn get_or_create_connection(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<Arc<MultiplexConnection>, DialError> {
         let key = format!("{}:{}", host, port);
 
         // Try to get existing connection from pool
@@ -303,7 +309,7 @@ impl MultiplexDialer {
                 // Check if connection is healthy
                 if mux_conn.is_healthy().await {
                     let stream_count = mux_conn.get_stream_count();
-                    
+
                     // Check if we can reuse this connection (not at max streams)
                     if stream_count < self.config.max_streams_per_connection {
                         debug!(
@@ -319,7 +325,10 @@ impl MultiplexDialer {
                         );
                     }
                 } else {
-                    debug!("Connection {} is unhealthy, will create new connection", key);
+                    debug!(
+                        "Connection {} is unhealthy, will create new connection",
+                        key
+                    );
                 }
             }
         }
@@ -331,8 +340,9 @@ impl MultiplexDialer {
                 // Try to find a connection with available capacity
                 for (existing_key, mux_conn) in pool.iter() {
                     if existing_key.starts_with(&format!("{}:", host)) {
-                        if mux_conn.is_healthy().await 
-                            && mux_conn.get_stream_count() < self.config.max_streams_per_connection {
+                        if mux_conn.is_healthy().await
+                            && mux_conn.get_stream_count() < self.config.max_streams_per_connection
+                        {
                             debug!(
                                 "Max connections reached, reusing existing connection: {}",
                                 existing_key
@@ -344,10 +354,7 @@ impl MultiplexDialer {
                 }
 
                 // If no available connection, remove oldest idle connection
-                if let Some((oldest_key, _)) = pool
-                    .iter()
-                    .max_by_key(|(_, conn)| conn.age())
-                {
+                if let Some((oldest_key, _)) = pool.iter().max_by_key(|(_, conn)| conn.age()) {
                     let oldest_key = oldest_key.clone();
                     drop(pool);
                     let mut pool = self.pool.lock().await;
@@ -382,7 +389,10 @@ impl MultiplexDialer {
                     Some(Ok(_stream)) => {
                         // We don't expect inbound streams on client side, but we need to poll
                         // to drive the connection and handle control frames
-                        debug!("Unexpected inbound stream on client connection: {}", key_clone);
+                        debug!(
+                            "Unexpected inbound stream on client connection: {}",
+                            key_clone
+                        );
                     }
                     Some(Err(e)) => {
                         debug!("yamux connection error for {}: {}", key_clone, e);
@@ -525,8 +535,8 @@ impl Default for MultiplexServerConfig {
     fn default() -> Self {
         Self {
             max_num_streams: 256,
-            initial_stream_window: 256 * 1024,      // 256KB
-            max_stream_window: 1024 * 1024,         // 1MB
+            initial_stream_window: 256 * 1024, // 256KB
+            max_stream_window: 1024 * 1024,    // 1MB
             enable_keepalive: true,
             brutal: None,
         }
@@ -571,9 +581,10 @@ impl MultiplexListener {
     /// Create a new multiplex listener from a TCP listener
     pub fn new(tcp_listener: tokio::net::TcpListener, config: MultiplexServerConfig) -> Self {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::unbounded_channel();
-        let local_addr = tcp_listener.local_addr()
+        let local_addr = tcp_listener
+            .local_addr()
             .expect("Failed to get local address");
-        
+
         // Start background task to accept TCP connections and handle yamux
         Self::start_accept_task(tcp_listener, config.clone(), stream_tx.clone());
 
@@ -632,9 +643,12 @@ impl MultiplexListener {
                 // Spawn task to handle this yamux connection
                 let stream_tx = stream_tx.clone();
                 let config = config.clone();
-                
+
                 tokio::spawn(async move {
-                    if let Err(e) = Self::handle_yamux_connection(tcp_stream, peer_addr, config, stream_tx).await {
+                    if let Err(e) =
+                        Self::handle_yamux_connection(tcp_stream, peer_addr, config, stream_tx)
+                            .await
+                    {
                         warn!("Error handling yamux connection from {}: {}", peer_addr, e);
                     }
                 });
@@ -665,11 +679,11 @@ impl MultiplexListener {
             match poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                 Some(Ok(stream)) => {
                     debug!("Accepted yamux stream from {}", peer_addr);
-                    
+
                     // Convert yamux stream back to tokio traits and box it
                     let tokio_stream = stream.compat();
                     let boxed_stream: IoStream = Box::new(tokio_stream);
-                    
+
                     // Send stream through channel
                     if stream_tx.send(boxed_stream).is_err() {
                         warn!("Failed to send stream to channel, listener may be closed");
@@ -696,7 +710,7 @@ impl MultiplexListener {
     /// by the background task handling yamux connections.
     pub async fn accept(&self) -> Result<IoStream, DialError> {
         let mut stream_rx = self.stream_rx.lock().await;
-        
+
         stream_rx
             .recv()
             .await

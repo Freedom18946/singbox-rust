@@ -7,7 +7,7 @@ use crate::error::{SbError, SbResult};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use std::io::{Read, Cursor};
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 /// Load rule-set from a file
@@ -41,8 +41,11 @@ pub fn parse_binary(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
         return Err(SbError::Config {
             code: crate::error::IssueCode::InvalidType,
             ptr: "/rule_set/binary/magic".to_string(),
-            msg: format!("invalid magic number: expected {:?}, got {:?}",
-                        SRS_MAGIC, &data[0..3]),
+            msg: format!(
+                "invalid magic number: expected {:?}, got {:?}",
+                SRS_MAGIC,
+                &data[0..3]
+            ),
             hint: Some("This does not appear to be a valid .srs file".to_string()),
         });
     }
@@ -53,8 +56,10 @@ pub fn parse_binary(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
         return Err(SbError::Config {
             code: crate::error::IssueCode::InvalidType,
             ptr: "/rule_set/binary/version".to_string(),
-            msg: format!("unsupported version: {}, max supported: {}",
-                        version, RULESET_VERSION_CURRENT),
+            msg: format!(
+                "unsupported version: {}, max supported: {}",
+                version, RULESET_VERSION_CURRENT
+            ),
             hint: Some("Update singbox-rust or use an older rule-set file".to_string()),
         });
     }
@@ -62,12 +67,14 @@ pub fn parse_binary(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
     // Decompress with zlib
     let mut decoder = ZlibDecoder::new(&data[4..]);
     let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed).map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::InvalidType,
-        ptr: "/rule_set/binary/compression".to_string(),
-        msg: format!("failed to decompress rule-set: {}", e),
-        hint: Some("File may be corrupted or not properly compressed with zlib".to_string()),
-    })?;
+    decoder
+        .read_to_end(&mut decompressed)
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::InvalidType,
+            ptr: "/rule_set/binary/compression".to_string(),
+            msg: format!("failed to decompress rule-set: {}", e),
+            hint: Some("File may be corrupted or not properly compressed with zlib".to_string()),
+        })?;
 
     // Parse decompressed data
     let mut cursor = Cursor::new(decompressed);
@@ -108,12 +115,11 @@ pub fn parse_json(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
     })?;
 
     // Parse version
-    let version = json.get("version")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1) as u8;
+    let version = json.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u8;
 
     // Parse rules array
-    let rules_array = json.get("rules")
+    let rules_array = json
+        .get("rules")
         .and_then(|v| v.as_array())
         .ok_or_else(|| SbError::Config {
             code: crate::error::IssueCode::MissingRequired,
@@ -186,12 +192,14 @@ fn parse_binary_rule(cursor: &mut Cursor<Vec<u8>>) -> SbResult<Rule> {
             let mode = match read_u8(cursor)? {
                 0 => LogicalMode::And,
                 1 => LogicalMode::Or,
-                m => return Err(SbError::Config {
-                    code: crate::error::IssueCode::InvalidType,
-                    ptr: "/rule_set/logical/mode".to_string(),
-                    msg: format!("invalid logical mode: {}", m),
-                    hint: None,
-                }),
+                m => {
+                    return Err(SbError::Config {
+                        code: crate::error::IssueCode::InvalidType,
+                        ptr: "/rule_set/logical/mode".to_string(),
+                        msg: format!("invalid logical mode: {}", m),
+                        hint: None,
+                    })
+                }
             };
 
             let invert = read_u8(cursor)? != 0;
@@ -218,7 +226,11 @@ fn parse_binary_rule(cursor: &mut Cursor<Vec<u8>>) -> SbResult<Rule> {
 }
 
 /// Parse a rule item based on type
-fn parse_rule_item(cursor: &mut Cursor<Vec<u8>>, item_type: u8, rule: &mut DefaultRule) -> SbResult<()> {
+fn parse_rule_item(
+    cursor: &mut Cursor<Vec<u8>>,
+    item_type: u8,
+    rule: &mut DefaultRule,
+) -> SbResult<()> {
     match item_type {
         // Domain (exact)
         0 => {
@@ -281,6 +293,11 @@ fn parse_rule_item(cursor: &mut Cursor<Vec<u8>>, item_type: u8, rule: &mut Defau
             let path = read_string(cursor)?;
             rule.process_path.push(path);
         }
+        // Process path regex
+        11 => {
+            let pattern = read_string(cursor)?;
+            rule.process_path_regex.push(pattern);
+        }
         _ => {
             // Unknown item type, skip it
             tracing::warn!("unknown rule item type: {}, skipping", item_type);
@@ -304,12 +321,14 @@ fn parse_json_rule(value: &serde_json::Value, index: usize) -> SbResult<Rule> {
         let mode = match obj.get("mode").and_then(|v| v.as_str()) {
             Some("and") => LogicalMode::And,
             Some("or") => LogicalMode::Or,
-            _ => return Err(SbError::Config {
-                code: crate::error::IssueCode::MissingRequired,
-                ptr: format!("/rule_set/rules/{}/mode", index),
-                msg: "logical rule must have mode (and/or)".to_string(),
-                hint: None,
-            }),
+            _ => {
+                return Err(SbError::Config {
+                    code: crate::error::IssueCode::MissingRequired,
+                    ptr: format!("/rule_set/rules/{}/mode", index),
+                    msg: "logical rule must have mode (and/or)".to_string(),
+                    hint: None,
+                })
+            }
         };
 
         let invert = obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -403,6 +422,30 @@ fn parse_json_rule(value: &serde_json::Value, index: usize) -> SbResult<Rule> {
         for n in networks {
             if let Some(s) = n.as_str() {
                 rule.network.push(s.to_string());
+            }
+        }
+    }
+
+    if let Some(process_names) = obj.get("process_name").and_then(|v| v.as_array()) {
+        for n in process_names {
+            if let Some(s) = n.as_str() {
+                rule.process_name.push(s.to_string());
+            }
+        }
+    }
+
+    if let Some(process_paths) = obj.get("process_path").and_then(|v| v.as_array()) {
+        for p in process_paths {
+            if let Some(s) = p.as_str() {
+                rule.process_path.push(s.to_string());
+            }
+        }
+    }
+
+    if let Some(process_path_regex) = obj.get("process_path_regex").and_then(|v| v.as_array()) {
+        for pattern in process_path_regex {
+            if let Some(s) = pattern.as_str() {
+                rule.process_path_regex.push(s.to_string());
             }
         }
     }
@@ -586,12 +629,14 @@ pub async fn write_to_file(path: &Path, rules: &[Rule], version: u8) -> SbResult
     out.push(version);
     out.extend_from_slice(&compressed);
 
-    tokio::fs::write(path, out).await.map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::MissingRequired,
-        ptr: "/rule_set/output".to_string(),
-        msg: format!("failed to write rule-set file: {}", e),
-        hint: None,
-    })
+    tokio::fs::write(path, out)
+        .await
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::MissingRequired,
+            ptr: "/rule_set/output".to_string(),
+            msg: format!("failed to write rule-set file: {}", e),
+            hint: None,
+        })
 }
 
 fn write_rules(buf: &mut Vec<u8>, rules: &[Rule]) -> SbResult<()> {
@@ -611,7 +656,11 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
             // Compute item count
             let mut count = 0u64;
             // domain (derived from r.domain exact only)
-            count += r.domain.iter().filter(|d| matches!(d, super::DomainRule::Exact(_))).count() as u64;
+            count += r
+                .domain
+                .iter()
+                .filter(|d| matches!(d, super::DomainRule::Exact(_)))
+                .count() as u64;
             count += r.domain_suffix.len() as u64;
             count += r.domain_keyword.len() as u64;
             count += r.domain_regex.len() as u64;
@@ -622,6 +671,7 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
             count += r.network.len() as u64;
             count += r.process_name.len() as u64;
             count += r.process_path.len() as u64;
+            count += r.process_path_regex.len() as u64;
             write_varint(buf, count);
 
             // Emit items in deterministic order
@@ -680,10 +730,17 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
                 buf.push(10);
                 write_string(buf, s);
             }
+            for s in &r.process_path_regex {
+                buf.push(11);
+                write_string(buf, s);
+            }
         }
         Rule::Logical(r) => {
             buf.push(1); // logical
-            buf.push(match r.mode { super::LogicalMode::And => 0, super::LogicalMode::Or => 1 });
+            buf.push(match r.mode {
+                super::LogicalMode::And => 0,
+                super::LogicalMode::Or => 1,
+            });
             buf.push(if r.invert { 1 } else { 0 });
             write_varint(buf, r.rules.len() as u64);
             for sub in &r.rules {
@@ -698,9 +755,13 @@ fn write_varint(buf: &mut Vec<u8>, mut v: u64) {
     loop {
         let mut b = (v & 0x7F) as u8;
         v >>= 7;
-        if v != 0 { b |= 0x80; }
+        if v != 0 {
+            b |= 0x80;
+        }
         buf.push(b);
-        if v == 0 { break; }
+        if v == 0 {
+            break;
+        }
     }
 }
 
@@ -756,7 +817,9 @@ mod tests {
         // Write to temp .srs
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rt.srs");
-        write_to_file(&path, &rs.rules, RULESET_VERSION_CURRENT).await.unwrap();
+        write_to_file(&path, &rs.rules, RULESET_VERSION_CURRENT)
+            .await
+            .unwrap();
 
         // Read back
         let rs2 = tokio::fs::read(&path).await.unwrap();
@@ -765,7 +828,10 @@ mod tests {
         match &parsed.rules[0] {
             Rule::Default(r) => {
                 // Check domain exact present
-                assert!(r.domain.iter().any(|d| matches!(d, DomainRule::Exact(s) if s == "example.com")));
+                assert!(r
+                    .domain
+                    .iter()
+                    .any(|d| matches!(d, DomainRule::Exact(s) if s == "example.com")));
                 // Check suffix present
                 assert!(r.domain_suffix.iter().any(|s| s == "rust-lang.org"));
                 // Check port and network

@@ -241,9 +241,7 @@ impl ShadowsocksStream {
                             aad: &[],
                         },
                     )
-                    .map_err(|_| {
-                        std::io::Error::other("encryption failed")
-                    })?
+                    .map_err(|_| std::io::Error::other("encryption failed"))?
             }
             ShadowsocksCipher::Chacha20Poly1305 => {
                 use chacha20poly1305::aead::{Aead, Payload};
@@ -259,9 +257,7 @@ impl ShadowsocksStream {
                             aad: &[],
                         },
                     )
-                    .map_err(|_| {
-                        std::io::Error::other("encryption failed")
-                    })?
+                    .map_err(|_| std::io::Error::other("encryption failed"))?
             }
         };
 
@@ -284,9 +280,7 @@ impl AsyncRead for ShadowsocksStream {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         if !self.handshake_complete {
-            return Poll::Ready(Err(std::io::Error::other(
-                "handshake not complete",
-            )));
+            return Poll::Ready(Err(std::io::Error::other("handshake not complete")));
         }
 
         // For simplicity, we'll implement a basic pass-through for now
@@ -303,9 +297,7 @@ impl AsyncWrite for ShadowsocksStream {
         buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
         if !self.handshake_complete {
-            return Poll::Ready(Err(std::io::Error::other(
-                "handshake not complete",
-            )));
+            return Poll::Ready(Err(std::io::Error::other("handshake not complete")));
         }
 
         // For simplicity, we'll implement a basic pass-through for now

@@ -51,7 +51,10 @@ fn http_connect(
         Ok(s) => s,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping http_connect attempt due to sandbox PermissionDenied on connect: {}", e);
+                eprintln!(
+                    "skipping http_connect attempt due to sandbox PermissionDenied on connect: {}",
+                    e
+                );
                 return Vec::new();
             } else {
                 panic!("connect failed: {}", e);
@@ -73,7 +76,10 @@ fn http_connect(
     loop {
         let n = s.read(&mut buf).unwrap();
         if n == 0 {
-            assert!(false, "Unexpected EOF while reading HTTP CONNECT response status line");
+            assert!(
+                false,
+                "Unexpected EOF while reading HTTP CONNECT response status line"
+            );
         }
         line.push(buf[0] as char);
         if last_cr && buf[0] == b'\n' {
@@ -110,13 +116,18 @@ fn http_connect(
 #[test]
 fn http_connect_end2end_direct() {
     let (echo_addr, _h) = start_echo();
-    if echo_addr.port() == 0 { return; }
+    if echo_addr.port() == 0 {
+        return;
+    }
     // HTTP 入站监听随机端口
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping http_connect_inbound due to sandbox PermissionDenied on bind: {}", e);
+                eprintln!(
+                    "skipping http_connect_inbound due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
                 return;
             } else {
                 panic!("bind failed: {}", e);
@@ -136,7 +147,11 @@ fn http_connect_end2end_direct() {
             override_host: None,
             override_port: None,
         }],
-        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Direct,
+            name: Some("direct".into()),
+            ..Default::default()
+        }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -152,7 +167,9 @@ fn http_connect_end2end_direct() {
     let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(80));
     let out = http_connect(http_addr, echo_addr, b"hello http-connect");
-    if out.is_empty() { return; }
+    if out.is_empty() {
+        return;
+    }
     assert_eq!(&out, b"hello http-connect");
     rt.shutdown();
 }

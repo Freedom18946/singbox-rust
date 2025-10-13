@@ -137,7 +137,13 @@ impl UpSocksSession {
         // Lightweight IO observation
         if self.obs_enabled {
             if let (Some(pool), Some(index)) = (&self.obs_pool, &self.obs_index) {
-                tracing::trace!("UDP obs: pool={} index={} dst={} bytes={}", pool, index, dst, n);
+                tracing::trace!(
+                    "UDP obs: pool={} index={} dst={} bytes={}",
+                    pool,
+                    index,
+                    dst,
+                    n
+                );
             }
         }
 

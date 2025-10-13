@@ -76,7 +76,8 @@ impl HostsResolver {
         }
         #[cfg(windows)]
         {
-            let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
+            let system_root =
+                std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
             PathBuf::from(system_root).join("System32\\drivers\\etc\\hosts")
         }
         #[cfg(not(any(unix, windows)))]
@@ -92,8 +93,8 @@ impl HostsResolver {
             return Ok(());
         }
 
-        let content = std::fs::read_to_string(&self.file_path)
-            .context("Failed to read hosts file")?;
+        let content =
+            std::fs::read_to_string(&self.file_path).context("Failed to read hosts file")?;
 
         let mut hosts = HashMap::new();
 
@@ -135,9 +136,7 @@ impl HostsResolver {
             .next()
             .ok_or_else(|| anyhow::anyhow!("Missing IP address"))?;
 
-        let ip: IpAddr = ip_str
-            .parse()
-            .context("Invalid IP address")?;
+        let ip: IpAddr = ip_str.parse().context("Invalid IP address")?;
 
         // 后续所有部分都是主机名（可能有多个别名）
         for hostname in parts {
@@ -146,10 +145,7 @@ impl HostsResolver {
                 continue;
             }
 
-            hosts
-                .entry(hostname.clone())
-                .or_default()
-                .push(ip);
+            hosts.entry(hostname.clone()).or_default().push(ip);
         }
 
         Ok(())

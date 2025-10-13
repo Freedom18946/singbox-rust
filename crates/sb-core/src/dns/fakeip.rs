@@ -2,8 +2,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::OnceLock;
 
 use lru::LruCache;
-use std::num::NonZeroUsize;
 use parking_lot::Mutex;
+use std::num::NonZeroUsize;
 
 #[derive(Debug)]
 struct State {
@@ -29,13 +29,22 @@ fn state() -> &'static Mutex<State> {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(Ipv4Addr::new(240, 0, 0, 0));
-        let v4_mask: u8 = std::env::var("SB_FAKEIP_V4_MASK").ok().and_then(|s| s.parse().ok()).unwrap_or(8);
+        let v4_mask: u8 = std::env::var("SB_FAKEIP_V4_MASK")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
         let v6_base: Ipv6Addr = std::env::var("SB_FAKEIP_V6_BASE")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(Ipv6Addr::new(0xfd00,0,0,0,0,0,0,0));
-        let v6_mask: u8 = std::env::var("SB_FAKEIP_V6_MASK").ok().and_then(|s| s.parse().ok()).unwrap_or(8);
-        let cap: usize = std::env::var("SB_FAKEIP_CAP").ok().and_then(|s| s.parse().ok()).unwrap_or(16384);
+            .unwrap_or(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0));
+        let v6_mask: u8 = std::env::var("SB_FAKEIP_V6_MASK")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
+        let cap: usize = std::env::var("SB_FAKEIP_CAP")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(16384);
         let cap_nz = NonZeroUsize::new(cap).unwrap_or(NonZeroUsize::new(1024).unwrap());
         Mutex::new(State {
             v4_base,
@@ -84,7 +93,11 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
     // Compute next IPv6 within prefix
     let base_u128 = u128::from(st.v6_base);
     let host_bits = 128 - st.v6_mask as u32;
-    let max_hosts = if host_bits >= 128 { u128::MAX } else { 1u128 << host_bits };
+    let max_hosts = if host_bits >= 128 {
+        u128::MAX
+    } else {
+        1u128 << host_bits
+    };
     let offset = (st.next6 % max_hosts).max(1);
     st.next6 = st.next6.wrapping_add(1);
     let ip = Ipv6Addr::from(base_u128.wrapping_add(offset));
@@ -101,18 +114,30 @@ pub fn lookup_domain(ip: &IpAddr) -> Option<String> {
 
 fn mask_v4(ip: Ipv4Addr, mask: u8) -> Ipv4Addr {
     let ipn = u32::from(ip);
-    let m = if mask == 0 { 0 } else { u32::MAX << (32 - mask as u32) };
+    let m = if mask == 0 {
+        0
+    } else {
+        u32::MAX << (32 - mask as u32)
+    };
     Ipv4Addr::from(ipn & m)
 }
 
 fn mask_v6(ip: Ipv6Addr, mask: u8) -> Ipv6Addr {
     let ipn = u128::from(ip);
-    let m: u128 = if mask == 0 { 0 } else { u128::MAX << (128 - mask as u32) };
+    let m: u128 = if mask == 0 {
+        0
+    } else {
+        u128::MAX << (128 - mask as u32)
+    };
     Ipv6Addr::from(ipn & m)
 }
 
-fn is_fake_v4(ip: Ipv4Addr, base: Ipv4Addr, mask: u8) -> bool { mask_v4(ip, mask) == mask_v4(base, mask) }
-fn is_fake_v6(ip: Ipv6Addr, base: Ipv6Addr, mask: u8) -> bool { mask_v6(ip, mask) == mask_v6(base, mask) }
+fn is_fake_v4(ip: Ipv4Addr, base: Ipv4Addr, mask: u8) -> bool {
+    mask_v4(ip, mask) == mask_v4(base, mask)
+}
+fn is_fake_v6(ip: Ipv6Addr, base: Ipv6Addr, mask: u8) -> bool {
+    mask_v6(ip, mask) == mask_v6(base, mask)
+}
 
 pub fn is_fake_ip(ip: &IpAddr) -> bool {
     let st = state().lock();
@@ -123,7 +148,11 @@ pub fn is_fake_ip(ip: &IpAddr) -> bool {
 }
 
 pub fn to_domain(ip: &IpAddr) -> Option<String> {
-    if is_fake_ip(ip) { lookup_domain(ip) } else { None }
+    if is_fake_ip(ip) {
+        lookup_domain(ip)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

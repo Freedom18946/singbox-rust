@@ -88,10 +88,17 @@ impl TuicOutbound {
         stream.read_exact(&mut response).await?;
 
         if response[0] != 0x00 {
-            return Err(anyhow::anyhow!("TUIC authentication failed: {:02x}", response[0]));
+            return Err(anyhow::anyhow!(
+                "TUIC authentication failed: {:02x}",
+                response[0]
+            ));
         }
 
-        log::info!("TUIC handshake completed successfully for {}:{}", target_host, target_port);
+        log::info!(
+            "TUIC handshake completed successfully for {}:{}",
+            target_host,
+            target_port
+        );
         Ok(())
     }
 
@@ -105,9 +112,8 @@ impl TuicOutbound {
         let addr = listener.local_addr()?;
 
         // Accept connection in background
-        let server_task = tokio::spawn(async move {
-            listener.accept().await.map(|(stream, _)| stream)
-        });
+        let server_task =
+            tokio::spawn(async move { listener.accept().await.map(|(stream, _)| stream) });
 
         // Connect to the listener
         let client = tokio::net::TcpStream::connect(addr).await?;
@@ -133,7 +139,11 @@ impl TuicOutbound {
         // Use the streams directly for bidirectional copy
         match copy_bidirectional(&mut tcp_stream, &mut tuic_stream).await {
             Ok((sent, received)) => {
-                log::debug!("TUIC relay completed: sent {} bytes, received {} bytes", sent, received);
+                log::debug!(
+                    "TUIC relay completed: sent {} bytes, received {} bytes",
+                    sent,
+                    received
+                );
                 Ok(())
             }
             Err(e) => {
@@ -362,19 +372,17 @@ impl TuicOutbound {
         }
 
         // Use platform verifier for TLS roots; ALPN/SNI can be provided on connect.
-        quinn::ClientConfig::try_with_platform_verifier()
-            .map_err(io::Error::other)
+        quinn::ClientConfig::try_with_platform_verifier().map_err(io::Error::other)
     }
 
     /// Authenticates connection (reserved for advanced auth flows)
     #[allow(dead_code)]
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
         // Open authentication stream
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::other(
-                format!("Failed to open auth stream: {}", e),
-            )
-        })?;
+        let (mut send_stream, mut recv_stream) = connection
+            .open_bi()
+            .await
+            .map_err(|e| io::Error::other(format!("Failed to open auth stream: {}", e)))?;
 
         // Send authentication packet
         // TUIC authentication typically includes UUID and token
@@ -383,19 +391,21 @@ impl TuicOutbound {
         auth_packet.extend_from_slice(self.config.uuid.as_bytes());
         auth_packet.extend_from_slice(self.config.token.as_bytes());
 
-        send_stream.write_all(&auth_packet).await.map_err(|e| {
-            io::Error::other(format!("Auth write failed: {}", e))
-        })?;
+        send_stream
+            .write_all(&auth_packet)
+            .await
+            .map_err(|e| io::Error::other(format!("Auth write failed: {}", e)))?;
 
-        send_stream.finish().map_err(|e| {
-            io::Error::other(format!("Auth finish failed: {}", e))
-        })?;
+        send_stream
+            .finish()
+            .map_err(|e| io::Error::other(format!("Auth finish failed: {}", e)))?;
 
         // Read authentication response
         let mut response = [0u8; 1];
-        recv_stream.read_exact(&mut response).await.map_err(|e| {
-            io::Error::other(format!("Auth read failed: {}", e))
-        })?;
+        recv_stream
+            .read_exact(&mut response)
+            .await
+            .map_err(|e| io::Error::other(format!("Auth read failed: {}", e)))?;
 
         if response[0] != 0x00 {
             return Err(io::Error::new(
@@ -415,11 +425,10 @@ impl TuicOutbound {
         target: &HostPort,
     ) -> io::Result<(quinn::SendStream, quinn::RecvStream)> {
         // Open bidirectional stream for the tunnel
-        let (mut send_stream, recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::other(
-                format!("Failed to open tunnel stream: {}", e),
-            )
-        })?;
+        let (mut send_stream, recv_stream) = connection
+            .open_bi()
+            .await
+            .map_err(|e| io::Error::other(format!("Failed to open tunnel stream: {}", e)))?;
 
         // Send CONNECT request
         let mut connect_packet = Vec::new();
@@ -430,9 +439,10 @@ impl TuicOutbound {
         connect_packet.push(target_bytes.len() as u8);
         connect_packet.extend_from_slice(target_bytes.as_bytes());
 
-        send_stream.write_all(&connect_packet).await.map_err(|e| {
-            io::Error::other(format!("Connect write failed: {}", e))
-        })?;
+        send_stream
+            .write_all(&connect_packet)
+            .await
+            .map_err(|e| io::Error::other(format!("Connect write failed: {}", e)))?;
 
         Ok((send_stream, recv_stream))
     }
@@ -492,9 +502,7 @@ impl OutboundTcp for TuicOutbound {
                     counter!("tuic_connect_total", "result" => "quic_fail").increment(1);
                 }
 
-                return Err(io::Error::other(
-                    format!("QUIC connection failed: {}", e),
-                ));
+                return Err(io::Error::other(format!("QUIC connection failed: {}", e)));
             }
         };
 
@@ -513,9 +521,7 @@ impl OutboundTcp for TuicOutbound {
                     counter!("tuic_connect_total", "result" => "bi_stream_fail").increment(1);
                 }
 
-                return Err(io::Error::other(
-                    format!("Failed to open bi stream: {}", e),
-                ));
+                return Err(io::Error::other(format!("Failed to open bi stream: {}", e)));
             }
         };
 
@@ -541,9 +547,7 @@ impl OutboundTcp for TuicOutbound {
                 crate::outbound::OutboundKind::Direct,
                 OutboundErrorClass::Protocol,
             );
-            return Err(io::Error::other(
-                format!("Stream finish failed: {}", e),
-            ));
+            return Err(io::Error::other(format!("Stream finish failed: {}", e)));
         }
 
         // Read 1KB response for minimal validation
@@ -580,9 +584,7 @@ impl OutboundTcp for TuicOutbound {
                     crate::outbound::OutboundKind::Direct,
                     OutboundErrorClass::Protocol,
                 );
-                return Err(io::Error::other(
-                    format!("Failed to reopen streams: {}", e),
-                ));
+                return Err(io::Error::other(format!("Failed to reopen streams: {}", e)));
             }
         };
 
@@ -734,18 +736,22 @@ impl tokio::io::AsyncWrite for TuicStream {
 impl crate::adapter::OutboundConnector for TuicOutbound {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
         // Establish QUIC connection first
-        let conn = super::quic::common::connect(&self.quic_config).await
+        let conn = super::quic::common::connect(&self.quic_config)
+            .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
 
         // Open a bidirectional stream for TUIC protocol
-        let (send_stream, recv_stream) = conn.open_bi().await
+        let (send_stream, recv_stream) = conn
+            .open_bi()
+            .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
 
         // Perform TUIC handshake and authentication
         let mut tuic_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
 
         // TUIC protocol: Send authentication and target request
-        self.tuic_handshake(&mut tuic_stream, host, port).await
+        self.tuic_handshake(&mut tuic_stream, host, port)
+            .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
 
         // Create async TcpStream proxy
@@ -777,22 +783,25 @@ impl TuicUdpTransport {
         target_port: u16,
     ) -> std::io::Result<usize> {
         // Open a new unidirectional stream for each UDP packet
-        let mut send_stream = self.connection.open_uni().await.map_err(|e| {
-            std::io::Error::other(format!("Failed to open uni stream: {}", e))
-        })?;
+        let mut send_stream = self
+            .connection
+            .open_uni()
+            .await
+            .map_err(|e| std::io::Error::other(format!("Failed to open uni stream: {}", e)))?;
 
         // Encode UDP packet
         let packet = TuicOutbound::encode_udp_packet_static(target_host, target_port, data)
             .map_err(|e| std::io::Error::other(format!("Failed to encode UDP packet: {}", e)))?;
 
         // Send packet
-        send_stream.write_all(&packet).await.map_err(|e| {
-            std::io::Error::other(format!("Failed to write UDP packet: {}", e))
-        })?;
+        send_stream
+            .write_all(&packet)
+            .await
+            .map_err(|e| std::io::Error::other(format!("Failed to write UDP packet: {}", e)))?;
 
-        send_stream.finish().map_err(|e| {
-            std::io::Error::other(format!("Failed to finish stream: {}", e))
-        })?;
+        send_stream
+            .finish()
+            .map_err(|e| std::io::Error::other(format!("Failed to finish stream: {}", e)))?;
 
         Ok(data.len())
     }
@@ -800,14 +809,16 @@ impl TuicUdpTransport {
     /// Receive UDP packet over QUIC stream (UDP over stream mode)
     pub async fn recv_udp_over_stream(&self) -> std::io::Result<(Vec<u8>, String, u16)> {
         // Accept a unidirectional stream
-        let mut recv_stream = self.connection.accept_uni().await.map_err(|e| {
-            std::io::Error::other(format!("Failed to accept uni stream: {}", e))
-        })?;
+        let mut recv_stream =
+            self.connection.accept_uni().await.map_err(|e| {
+                std::io::Error::other(format!("Failed to accept uni stream: {}", e))
+            })?;
 
         // Read the entire packet (up to 64KB)
-        let packet = recv_stream.read_to_end(1024 * 64).await.map_err(|e| {
-            std::io::Error::other(format!("Failed to read UDP packet: {}", e))
-        })?;
+        let packet = recv_stream
+            .read_to_end(1024 * 64)
+            .await
+            .map_err(|e| std::io::Error::other(format!("Failed to read UDP packet: {}", e)))?;
 
         // Decode packet
         let (host, port, data) = TuicOutbound::decode_udp_packet(&packet)

@@ -10,6 +10,7 @@ pub enum DnsBackend {
     Udp,
     Dot,
     Doh,
+    Doq,
     Auto,
 }
 
@@ -43,6 +44,7 @@ fn backend_from_env() -> DnsBackend {
         "udp" => DnsBackend::Udp,
         "dot" => DnsBackend::Dot,
         "doh" => DnsBackend::Doh,
+        "doq" => DnsBackend::Doq,
         "auto" => DnsBackend::Auto,
         _ => DnsBackend::System,
     }
@@ -86,6 +88,7 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
                 DnsBackend::Udp => udp_resolve(&host, port, timeout).await,
                 DnsBackend::Dot => dot_resolve(&host, port, timeout).await,
                 DnsBackend::Doh => doh_resolve(&host, port, timeout).await,
+                DnsBackend::Doq => doq_resolve(&host, port, timeout).await,
                 DnsBackend::Auto => {
                     // Safety: Auto backend is handled separately at line 101-102, never passed to this closure
                     unreachable!("DnsBackend::Auto is handled at the outer level")
@@ -130,6 +133,7 @@ fn label(b: DnsBackend) -> &'static str {
         DnsBackend::Udp => "udp",
         DnsBackend::Dot => "dot",
         DnsBackend::Doh => "doh",
+        DnsBackend::Doq => "doq",
         DnsBackend::Auto => "auto",
     }
 }
@@ -197,6 +201,7 @@ async fn resolve_qsel_qtype(
         DnsBackend::Udp => udp_resolve_qtype(host, port, timeout_ms, qtype).await,
         DnsBackend::Dot => dot_resolve_qtype(host, port, timeout_ms, qtype).await,
         DnsBackend::Doh => doh_resolve_qtype(host, port, timeout_ms, qtype).await,
+        DnsBackend::Doq => doq_resolve_qtype(host, port, timeout_ms, qtype).await,
         DnsBackend::Auto => {
             if let Ok(v) = udp_resolve_qtype(host, port, timeout_ms, qtype).await {
                 return Ok(v);
@@ -204,7 +209,10 @@ async fn resolve_qsel_qtype(
             if let Ok(v) = dot_resolve_qtype(host, port, timeout_ms, qtype).await {
                 return Ok(v);
             }
-            doh_resolve_qtype(host, port, timeout_ms, qtype).await
+            if let Ok(v) = doh_resolve_qtype(host, port, timeout_ms, qtype).await {
+                return Ok(v);
+            }
+            doq_resolve_qtype(host, port, timeout_ms, qtype).await
         }
     }
 }
@@ -254,7 +262,8 @@ async fn dot_resolve_qtype(
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::dot::query_dot_once;
     #[cfg(any(test, feature = "dev-cli"))]
-    let addr = dot_addr_from_env().unwrap_or_else(|| std::net::SocketAddr::from(([1, 1, 1, 1], 853)));
+    let addr =
+        dot_addr_from_env().unwrap_or_else(|| std::net::SocketAddr::from(([1, 1, 1, 1], 853)));
     #[cfg(not(any(test, feature = "dev-cli")))]
     let addr = std::net::SocketAddr::from(([1, 1, 1, 1], 853));
     let (ips, _ttl) = query_dot_once(addr, host, qtype, timeout_ms).await?;
@@ -323,6 +332,62 @@ async fn doh_resolve(_host: &str, _port: u16, _timeout_ms: u64) -> Result<Vec<So
     Err(anyhow::anyhow!("dns_doh feature disabled"))
 }
 
+#[cfg(any(test, feature = "dev-cli"))]
+fn doq_addr_from_env() -> Option<SocketAddr> {
+    std::env::var("SB_DNS_DOQ_ADDR")
+        .ok()
+        .and_then(|s| s.parse::<SocketAddr>().ok())
+}
+
+#[cfg(any(test, feature = "dev-cli"))]
+fn doq_server_name_from_env() -> Option<String> {
+    std::env::var("SB_DNS_DOQ_SERVER_NAME").ok()
+}
+
+#[cfg(feature = "dns_doq")]
+async fn doq_resolve_qtype(
+    host: &str,
+    port: u16,
+    timeout_ms: u64,
+    qtype: u16,
+) -> Result<Vec<SocketAddr>> {
+    use crate::dns::doq::query_doq_once;
+    #[cfg(any(test, feature = "dev-cli"))]
+    let addr =
+        doq_addr_from_env().unwrap_or_else(|| std::net::SocketAddr::from(([1, 1, 1, 1], 853)));
+    #[cfg(not(any(test, feature = "dev-cli")))]
+    let addr = std::net::SocketAddr::from(([1, 1, 1, 1], 853));
+    #[cfg(any(test, feature = "dev-cli"))]
+    let sni = doq_server_name_from_env().unwrap_or_else(|| "cloudflare-dns.com".to_string());
+    #[cfg(not(any(test, feature = "dev-cli")))]
+    let sni = "cloudflare-dns.com".to_string();
+    let (ips, _ttl) = query_doq_once(addr, &sni, host, qtype, timeout_ms).await?;
+    Ok(ips
+        .into_iter()
+        .map(|ip| SocketAddr::new(ip, port))
+        .collect())
+}
+
+#[cfg(feature = "dns_doq")]
+async fn doq_resolve(host: &str, port: u16, timeout_ms: u64) -> Result<Vec<SocketAddr>> {
+    doq_resolve_qtype(host, port, timeout_ms, 1).await
+}
+
+#[cfg(not(feature = "dns_doq"))]
+async fn doq_resolve_qtype(
+    _host: &str,
+    _port: u16,
+    _timeout_ms: u64,
+    _qtype: u16,
+) -> Result<Vec<SocketAddr>> {
+    Err(anyhow::anyhow!("dns_doq feature disabled"))
+}
+
+#[cfg(not(feature = "dns_doq"))]
+async fn doq_resolve(_host: &str, _port: u16, _timeout_ms: u64) -> Result<Vec<SocketAddr>> {
+    Err(anyhow::anyhow!("dns_doq feature disabled"))
+}
+
 /// Compatibility function for the simple resolver API
 pub async fn resolve_socketaddr(host: &str, port: u16) -> std::io::Result<SocketAddr> {
     let addrs = resolve_all(host, port)
@@ -386,8 +451,24 @@ where
         QSel::Auto => {
             // Auto: concurrent A/AAAA queries with cache using custom run function
             let run_clone = run.clone();
-            let a_fut = resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::A, run);
-            let aaaa_fut = resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::AAAA, run_clone);
+            let a_fut = resolve_cached_qtype_with_runner(
+                cache,
+                backend,
+                &host,
+                port,
+                timeout,
+                QType::A,
+                run,
+            );
+            let aaaa_fut = resolve_cached_qtype_with_runner(
+                cache,
+                backend,
+                &host,
+                port,
+                timeout,
+                QType::AAAA,
+                run_clone,
+            );
             let (ra, rb) = tokio::join!(a_fut, aaaa_fut);
             let mut out = Vec::<SocketAddr>::new();
             if let Ok(v) = ra {
@@ -399,10 +480,28 @@ where
             Ok(out)
         }
         QSel::A => {
-            return resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::A, run).await;
+            return resolve_cached_qtype_with_runner(
+                cache,
+                backend,
+                &host,
+                port,
+                timeout,
+                QType::A,
+                run,
+            )
+            .await;
         }
         QSel::AAAA => {
-            return resolve_cached_qtype_with_runner(cache, backend, &host, port, timeout, QType::AAAA, run).await;
+            return resolve_cached_qtype_with_runner(
+                cache,
+                backend,
+                &host,
+                port,
+                timeout,
+                QType::AAAA,
+                run,
+            )
+            .await;
         }
     }
 }

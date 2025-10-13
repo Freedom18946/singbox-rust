@@ -43,12 +43,15 @@ pub struct TuicUser {
 /// TUIC protocol version
 const TUIC_VERSION: u8 = 0x05;
 
-/// TUIC commands
+/// TUIC commands (TUIC v5 protocol)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum TuicCommand {
     Auth = 0x01,
     Connect = 0x02,
+    Packet = 0x03,     // UDP packet
+    Dissociate = 0x04, // Close UDP association
+    Heartbeat = 0x05,  // Keep-alive
 }
 
 impl TryFrom<u8> for TuicCommand {
@@ -58,6 +61,9 @@ impl TryFrom<u8> for TuicCommand {
         match value {
             0x01 => Ok(TuicCommand::Auth),
             0x02 => Ok(TuicCommand::Connect),
+            0x03 => Ok(TuicCommand::Packet),
+            0x04 => Ok(TuicCommand::Dissociate),
+            0x05 => Ok(TuicCommand::Heartbeat),
             _ => Err(anyhow!("Unknown TUIC command: {:#x}", value)),
         }
     }
@@ -134,16 +140,25 @@ pub async fn serve(cfg: TuicInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> R
     if let Some(ref cc) = cfg.congestion_control {
         match cc.as_str() {
             "cubic" => {
-                transport_config.congestion_controller_factory(Arc::new(quinn::congestion::CubicConfig::default()));
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::CubicConfig::default(),
+                ));
             }
             "bbr" => {
-                transport_config.congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::BbrConfig::default(),
+                ));
             }
             "new_reno" => {
-                transport_config.congestion_controller_factory(Arc::new(quinn::congestion::NewRenoConfig::default()));
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::NewRenoConfig::default(),
+                ));
             }
             _ => {
-                warn!("Unknown congestion control algorithm: {}, using default", cc);
+                warn!(
+                    "Unknown congestion control algorithm: {}, using default",
+                    cc
+                );
             }
         };
     }
@@ -219,6 +234,7 @@ async fn handle_conn(cfg: Arc<TuicInboundConfig>, conn: quinn::Connection) -> Re
 }
 
 /// Handle single QUIC bidirectional stream
+/// Sprint 19 Phase 1.2: Added UDP relay support (Packet command)
 async fn handle_stream(
     cfg: Arc<TuicInboundConfig>,
     (mut send, mut recv): (quinn::SendStream, quinn::RecvStream),
@@ -238,12 +254,52 @@ async fn handle_stream(
 
     debug!("TUIC: authenticated UUID {} from {}", uuid, peer);
 
-    // 3. Parse connect packet
+    // 3. Read command byte to determine operation type
+    let mut cmd_byte = [0u8; 1];
+    recv.read_exact(&mut cmd_byte).await?;
+    let cmd = TuicCommand::try_from(cmd_byte[0])?;
+
+    match cmd {
+        TuicCommand::Connect => {
+            // TCP relay (existing functionality)
+            handle_tcp_relay(cfg, send, recv, peer).await
+        }
+        TuicCommand::Packet => {
+            // UDP relay (new functionality - Sprint 19 Phase 1.2)
+            handle_udp_relay(cfg, send, recv, peer).await
+        }
+        TuicCommand::Heartbeat => {
+            // Send heartbeat response
+            debug!("TUIC: heartbeat from {}", peer);
+            send.write_all(&[0x00]).await?;
+            send.finish()?;
+            Ok(())
+        }
+        TuicCommand::Dissociate => {
+            // Close UDP association
+            debug!("TUIC: dissociate from {}", peer);
+            Ok(())
+        }
+        TuicCommand::Auth => {
+            // Auth already handled
+            Err(anyhow!("Unexpected Auth command after authentication"))
+        }
+    }
+}
+
+/// Handle TCP relay over QUIC stream
+async fn handle_tcp_relay(
+    _cfg: Arc<TuicInboundConfig>,
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    peer: SocketAddr,
+) -> Result<()> {
+    // Parse connect packet
     let (host, port) = parse_connect_packet(&mut recv).await?;
 
-    debug!("TUIC: CONNECT {}:{} from {}", host, port, peer);
+    debug!("TUIC: TCP CONNECT {}:{} from {}", host, port, peer);
 
-    // 4. Connect to target
+    // Connect to target
     // Note: Router integration can be added by passing router to config
     // For now, direct connection provides baseline functionality
     let upstream = TcpStream::connect((host.as_str(), port))
@@ -252,12 +308,47 @@ async fn handle_stream(
 
     debug!("TUIC: connected to {}:{}", host, port);
 
-    // 5. Send success response
+    // Send success response
     let response = vec![0x00; 16];
     send.write_all(&response).await?;
 
-    // 6. Bidirectional relay
+    // Bidirectional relay
     relay_quic_tcp(send, recv, upstream).await?;
+
+    Ok(())
+}
+
+/// Handle UDP relay over QUIC stream (Sprint 19 Phase 1.2)
+async fn handle_udp_relay(
+    _cfg: Arc<TuicInboundConfig>,
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    peer: SocketAddr,
+) -> Result<()> {
+    use tokio::net::UdpSocket;
+
+    // Parse target address from packet
+    let (host, port) = parse_address_port(&mut recv).await?;
+
+    debug!("TUIC: UDP PACKET {}:{} from {}", host, port, peer);
+
+    // Bind local UDP socket
+    let udp = UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| anyhow!("Failed to bind UDP socket: {}", e))?;
+
+    // Connect UDP socket to target
+    udp.connect((host.as_str(), port))
+        .await
+        .map_err(|e| anyhow!("Failed to connect UDP socket: {}", e))?;
+
+    debug!("TUIC: UDP connected to {}:{}", host, port);
+
+    // Send success response
+    send.write_all(&[0x00]).await?;
+
+    // Bidirectional relay for UDP packets
+    relay_quic_udp(send, recv, udp).await?;
 
     Ok(())
 }
@@ -294,23 +385,20 @@ async fn parse_auth_packet(recv: &mut quinn::RecvStream) -> Result<(Uuid, String
     // Read token
     let mut token_bytes = vec![0u8; token_len];
     recv.read_exact(&mut token_bytes).await?;
-    let token = String::from_utf8(token_bytes)
-        .map_err(|_| anyhow!("Invalid UTF-8 in token"))?;
+    let token = String::from_utf8(token_bytes).map_err(|_| anyhow!("Invalid UTF-8 in token"))?;
 
     Ok((uuid, token))
 }
 
 /// Parse TUIC connect packet
 async fn parse_connect_packet(recv: &mut quinn::RecvStream) -> Result<(String, u16)> {
-    // Read command (1 byte)
-    let mut command = [0u8; 1];
-    recv.read_exact(&mut command).await?;
+    // Parse address and port
+    parse_address_port(recv).await
+}
 
-    let cmd = TuicCommand::try_from(command[0])?;
-    if cmd != TuicCommand::Connect {
-        return Err(anyhow!("Expected Connect command, got {:?}", cmd));
-    }
-
+/// Parse address and port from TUIC packet (Sprint 19 Phase 1.2)
+/// Used for both Connect and Packet commands
+async fn parse_address_port(recv: &mut quinn::RecvStream) -> Result<(String, u16)> {
     // Read address type (1 byte)
     let mut addr_type = [0u8; 1];
     recv.read_exact(&mut addr_type).await?;
@@ -336,8 +424,7 @@ async fn parse_connect_packet(recv: &mut quinn::RecvStream) -> Result<(String, u
 
             let mut domain = vec![0u8; len];
             recv.read_exact(&mut domain).await?;
-            String::from_utf8(domain)
-                .map_err(|_| anyhow!("Invalid UTF-8 in domain"))?
+            String::from_utf8(domain).map_err(|_| anyhow!("Invalid UTF-8 in domain"))?
         }
     };
 
@@ -406,6 +493,73 @@ async fn relay_quic_tcp(
     }
 }
 
+/// Relay UDP packets between QUIC stream and UDP socket (Sprint 19 Phase 1.2)
+async fn relay_quic_udp(
+    mut quic_send: quinn::SendStream,
+    mut quic_recv: quinn::RecvStream,
+    udp: tokio::net::UdpSocket,
+) -> Result<()> {
+    let udp = Arc::new(udp);
+    let udp_clone = udp.clone();
+
+    let quic_to_udp = async move {
+        let mut buf = vec![0u8; 65535]; // Max UDP packet size
+        loop {
+            // Read packet length (2 bytes)
+            let mut len_buf = [0u8; 2];
+            if quic_recv.read_exact(&mut len_buf).await.is_err() {
+                break;
+            }
+            let len = u16::from_be_bytes(len_buf) as usize;
+
+            if len > buf.len() {
+                warn!("TUIC UDP: packet too large: {}", len);
+                break;
+            }
+
+            // Read packet data
+            if quic_recv.read_exact(&mut buf[..len]).await.is_err() {
+                break;
+            }
+
+            // Send to UDP socket
+            if udp_clone.send(&buf[..len]).await.is_err() {
+                break;
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    };
+
+    let udp_to_quic = async move {
+        let mut buf = vec![0u8; 65535];
+        loop {
+            // Receive from UDP socket
+            let n = match udp.recv(&mut buf).await {
+                Ok(n) => n,
+                Err(_) => break,
+            };
+
+            // Write packet length (2 bytes)
+            let len_bytes = (n as u16).to_be_bytes();
+            if quic_send.write_all(&len_bytes).await.is_err() {
+                break;
+            }
+
+            // Write packet data
+            if quic_send.write_all(&buf[..n]).await.is_err() {
+                break;
+            }
+        }
+        quic_send.finish().ok();
+        Ok::<_, anyhow::Error>(())
+    };
+
+    tokio::select! {
+        r1 = quic_to_udp => r1,
+        r2 = udp_to_quic => r2,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,6 +568,12 @@ mod tests {
     fn test_command_conversion() {
         assert_eq!(TuicCommand::try_from(0x01).unwrap(), TuicCommand::Auth);
         assert_eq!(TuicCommand::try_from(0x02).unwrap(), TuicCommand::Connect);
+        assert_eq!(TuicCommand::try_from(0x03).unwrap(), TuicCommand::Packet);
+        assert_eq!(
+            TuicCommand::try_from(0x04).unwrap(),
+            TuicCommand::Dissociate
+        );
+        assert_eq!(TuicCommand::try_from(0x05).unwrap(), TuicCommand::Heartbeat);
         assert!(TuicCommand::try_from(0xFF).is_err());
     }
 

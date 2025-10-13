@@ -239,17 +239,26 @@ impl TunInbound {
                                                 None
                                             }
                                         } else if port == 80 {
-                                            sb_core::router::sniff::extract_http_host_from_request(head)
-                                        } else { None }
-                                    } else { None };
+                                            sb_core::router::sniff::extract_http_host_from_request(
+                                                head,
+                                            )
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    };
                                     let host_str = match sniff_host.as_ref() {
                                         Some(s) if !s.is_empty() => s.clone(),
                                         _ => format!("{}:{}", ip, port),
                                     };
                                     // Heuristic ALPN: UDP:443 is likely QUIC → h3
-                                    let _sniff_alpn = if matches!(pkt.proto, sys_macos::L4::Udp) && port == 443 {
-                                        Some("h3".to_string())
-                                    } else { None };
+                                    let _sniff_alpn =
+                                        if matches!(pkt.proto, sys_macos::L4::Udp) && port == 443 {
+                                            Some("h3".to_string())
+                                        } else {
+                                            None
+                                        };
                                     if let Some(ref a) = _sniff_alpn {
                                         tracing::debug!("tun sniff alpn={}", a);
                                     }
@@ -290,10 +299,10 @@ impl TunInbound {
                                             let _meta = RequestMeta {
                                                 inbound: Some(self.cfg.name.clone()),
                                                 user: self.cfg.user_tag.clone(),
-                                        transport: transport_opt,
-                                        sniff_host: sniff_host.clone(),
-                                        ..Default::default()
-                                    };
+                                                transport: transport_opt,
+                                                sniff_host: sniff_host.clone(),
+                                                ..Default::default()
+                                            };
                                             // 重用之前的路由选择结果
                                             let _probe_selected = selected.clone();
                                             // 避免把 tokio::time::timeout() 遮蔽：本地变量不要叫 `timeout`
@@ -528,7 +537,11 @@ impl TunInbound {
                                                 );
                                             }
                                             (L4::Udp, Some(ip), Some(port)) => {
-                                                tracing::trace!("tun: UDP -> {}:{} (drop)", ip, port);
+                                                tracing::trace!(
+                                                    "tun: UDP -> {}:{} (drop)",
+                                                    ip,
+                                                    port
+                                                );
                                             }
                                             _ => {
                                                 tracing::trace!("tun: other/short packet");
@@ -556,7 +569,11 @@ impl TunInbound {
                 tracing::info!("tun inbound: Windows TUN feature not enabled");
             }
         }
-        #[cfg(all(not(target_os = "macos"), not(target_os = "windows"), not(target_os = "linux")))]
+        #[cfg(all(
+            not(target_os = "macos"),
+            not(target_os = "windows"),
+            not(target_os = "linux")
+        ))]
         {
             // Not implemented for this OS
             tracing::info!("tun inbound: this OS is not currently supported");
@@ -577,7 +594,6 @@ impl TunInbound {
         port: u16,
         timeout: std::time::Duration,
     ) -> Result<(), std::io::Error> {
-        
         use tokio::net::TcpStream;
 
         let target_addr = format!("{}:{}", ip, port);
@@ -918,26 +934,20 @@ mod sys_linux {
     #[allow(dead_code)]
     pub fn probe() -> io::Result<()> {
         // Check if /dev/net/tun exists and is accessible
-        std::fs::metadata("/dev/net/tun")
-            .map(|_| ())
-            .map_err(|e| io::Error::new(
+        std::fs::metadata("/dev/net/tun").map(|_| ()).map_err(|e| {
+            io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("TUN device not available: {}", e)
-            ))
+                format!("TUN device not available: {}", e),
+            )
+        })
     }
 
     /// Open Linux TUN device and return async device
     #[cfg(feature = "tun")]
-    pub fn open_tun_device(
-        name_hint: &str,
-        mtu: u32,
-    ) -> io::Result<tun::platform::Device> {
+    pub fn open_tun_device(name_hint: &str, mtu: u32) -> io::Result<tun::platform::Device> {
         let mut config = tun::Configuration::default();
 
-        config
-            .name(name_hint)
-            .mtu(mtu as i32)
-            .up();
+        config.name(name_hint).mtu(mtu as i32).up();
 
         // Configure as TUN (layer 3) not TAP (layer 2)
         #[cfg(target_os = "linux")]
@@ -1017,7 +1027,11 @@ mod sys_linux {
                     return Some((super::L4::Other(next), Some(dst), None));
                 }
                 let port = u16::from_be_bytes([pkt[42], pkt[43]]);
-                let l4 = if next == 6 { super::L4::Tcp } else { super::L4::Udp };
+                let l4 = if next == 6 {
+                    super::L4::Tcp
+                } else {
+                    super::L4::Udp
+                };
                 Some((l4, Some(dst), Some(port)))
             }
             _ => Some((super::L4::Other(next), Some(dst), None)),
@@ -1056,10 +1070,7 @@ mod sys_windows {
 
     /// Open Windows wintun adapter
     #[cfg(feature = "tun")]
-    pub fn open_wintun_adapter(
-        name_hint: &str,
-        mtu: u32,
-    ) -> io::Result<Arc<wintun::Adapter>> {
+    pub fn open_wintun_adapter(name_hint: &str, mtu: u32) -> io::Result<Arc<wintun::Adapter>> {
         let wintun = wintun::load().map_err(|e| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -1069,13 +1080,13 @@ mod sys_windows {
 
         // Create adapter with a GUID (you may want to make this configurable)
         let adapter = wintun::Adapter::create(
-            &wintun,
-            name_hint,
-            "SingBox",
-            None, // Let wintun generate a GUID
+            &wintun, name_hint, "SingBox", None, // Let wintun generate a GUID
         )
         .map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("Failed to create adapter: {}", e))
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to create adapter: {}", e),
+            )
         })?;
 
         // Set MTU (wintun doesn't have direct MTU setting in the API,
@@ -1150,7 +1161,11 @@ mod sys_windows {
                     return Some((super::L4::Other(next), Some(dst), None));
                 }
                 let port = u16::from_be_bytes([pkt[42], pkt[43]]);
-                let l4 = if next == 6 { super::L4::Tcp } else { super::L4::Udp };
+                let l4 = if next == 6 {
+                    super::L4::Tcp
+                } else {
+                    super::L4::Udp
+                };
                 Some((l4, Some(dst), Some(port)))
             }
             _ => Some((super::L4::Other(next), Some(dst), None)),

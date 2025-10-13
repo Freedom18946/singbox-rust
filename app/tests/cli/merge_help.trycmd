@@ -7,5 +7,6 @@ Usage: merge [OPTIONS] <OUTPUT_PATH>
 Options:
   -c, --config <CONFIG>[
   -C, --config-directory <CONFIG_DIRECTORY>[
+      --help-json[..]Print help information in JSON format and exit
   -h, --help[..]Print help
 ```

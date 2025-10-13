@@ -86,7 +86,8 @@ impl Bridge {
                             .parse()
                             .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
 
-                        Arc::new(Socks5::new(addr.ip().to_string(), addr.port())) as Arc<dyn InboundService>
+                        Arc::new(Socks5::new(addr.ip().to_string(), addr.port()))
+                            as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Http => {
                         // Create HTTP CONNECT inbound service (optionally with Basic auth)
@@ -100,8 +101,14 @@ impl Bridge {
                         let mut cfg = HttpConfig::default();
                         if let Some(creds) = &inbound.basic_auth {
                             // Enable basic auth if username/password both present
-                            let user = creds.username.clone().or_else(|| creds.username_env.clone());
-                            let pass = creds.password.clone().or_else(|| creds.password_env.clone());
+                            let user = creds
+                                .username
+                                .clone()
+                                .or_else(|| creds.username_env.clone());
+                            let pass = creds
+                                .password
+                                .clone()
+                                .or_else(|| creds.password_env.clone());
                             if user.is_some() && pass.is_some() {
                                 cfg.auth_enabled = true;
                                 cfg.username = user;
@@ -110,7 +117,8 @@ impl Bridge {
                         }
                         cfg.sniff_enabled = inbound.sniff;
 
-                        Arc::new(HttpInboundService::with_config(addr, cfg)) as Arc<dyn InboundService>
+                        Arc::new(HttpInboundService::with_config(addr, cfg))
+                            as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Tun => {
                         // TUN inbound service
@@ -119,19 +127,21 @@ impl Bridge {
                         Arc::new(TunInboundService::new()) as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Direct => {
-                        use std::net::SocketAddr;
                         use crate::inbound::direct::DirectForward;
+                        use std::net::SocketAddr;
                         let addr: SocketAddr = format!("{}:{}", inbound.listen, inbound.port)
                             .parse()
                             .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
-                        let host = inbound
-                            .override_host
-                            .clone()
-                            .ok_or_else(|| anyhow::anyhow!("direct inbound requires override_address/override_host"))?;
-                        let dst_port = inbound
-                            .override_port
-                            .ok_or_else(|| anyhow::anyhow!("direct inbound requires override_port"))?;
-                        Arc::new(DirectForward::new(addr, host, dst_port, inbound.udp)) as Arc<dyn InboundService>
+                        let host = inbound.override_host.clone().ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "direct inbound requires override_address/override_host"
+                            )
+                        })?;
+                        let dst_port = inbound.override_port.ok_or_else(|| {
+                            anyhow::anyhow!("direct inbound requires override_port")
+                        })?;
+                        Arc::new(DirectForward::new(addr, host, dst_port, inbound.udp))
+                            as Arc<dyn InboundService>
                     }
                 };
 
@@ -151,13 +161,18 @@ impl Bridge {
         #[cfg(not(feature = "scaffold"))]
         {
             if !ir.inbounds.is_empty() {
-                return Err(anyhow::anyhow!("Inbound services not available without scaffold feature"));
+                return Err(anyhow::anyhow!(
+                    "Inbound services not available without scaffold feature"
+                ));
             }
         }
 
         // Build outbound connectors from IR
         for outbound in &ir.outbounds {
-            let name = outbound.name.clone().unwrap_or_else(|| format!("outbound_{}", outbound.ty_str()));
+            let name = outbound
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("outbound_{}", outbound.ty_str()));
             let kind = outbound.ty_str().to_string();
 
             let connector = match outbound.ty {
@@ -193,8 +208,8 @@ impl Bridge {
                 sb_config::ir::OutboundType::Vless => {
                     #[cfg(feature = "out_vless")]
                     {
-                        use crate::outbound::vless::VlessOutbound;
                         use crate::outbound::vless::VlessConfig;
+                        use crate::outbound::vless::VlessOutbound;
 
                         if let (Some(server), Some(port)) = (&outbound.server, outbound.port) {
                             let config = VlessConfig {

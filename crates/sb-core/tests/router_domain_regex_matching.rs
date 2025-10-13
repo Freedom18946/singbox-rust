@@ -1,0 +1,756 @@
+//! Integration tests for domain regex matching
+//!
+//! Tests the routing engine's ability to route based on regular expression patterns
+//! matching domain names. This allows for flexible pattern-based domain routing.
+//!
+//! Use cases:
+//! - Match multiple subdomains with a single pattern
+//! - Match domains with specific patterns (e.g., all .co.uk domains)
+//! - Advanced domain filtering with regex power
+//! - Dynamic domain matching without pre-defining all domains
+
+use sb_core::router::rules::{Decision, DomainRegexMatcher, Engine, RouteCtx, Rule, RuleKind};
+
+#[test]
+fn test_basic_regex_match() {
+    let matcher = DomainRegexMatcher::new(r"^.*\.google\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Should match any subdomain of google.com
+    let ctx1 = RouteCtx {
+        domain: Some("www.google.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
+
+    let ctx2 = RouteCtx {
+        domain: Some("mail.google.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
+
+    // Should not match google.com itself (no subdomain)
+    let ctx3 = RouteCtx {
+        domain: Some("google.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx3), Decision::Direct);
+
+    // Should not match different domain
+    let ctx4 = RouteCtx {
+        domain: Some("example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx4), Decision::Direct);
+}
+
+#[test]
+fn test_regex_match_multiple_tlds() {
+    // Match all .co.uk, .co.jp, .co.kr domains
+    let matcher = DomainRegexMatcher::new(r"^.*\.co\.(uk|jp|kr)$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(Some("uk_jp_kr_proxy".to_string())),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Should match .co.uk
+    let ctx1 = RouteCtx {
+        domain: Some("bbc.co.uk"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(
+        engine.decide(&ctx1),
+        Decision::Proxy(Some("uk_jp_kr_proxy".to_string()))
+    );
+
+    // Should match .co.jp
+    let ctx2 = RouteCtx {
+        domain: Some("yahoo.co.jp"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(
+        engine.decide(&ctx2),
+        Decision::Proxy(Some("uk_jp_kr_proxy".to_string()))
+    );
+
+    // Should not match .com
+    let ctx3 = RouteCtx {
+        domain: Some("example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx3), Decision::Direct);
+}
+
+#[test]
+fn test_regex_priority_after_exact() {
+    let matcher = DomainRegexMatcher::new(r"^.*\.example\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::Exact("api.example.com".to_string()),
+            decision: Decision::Direct,
+        },
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Reject,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Exact match should have priority
+    let ctx1 = RouteCtx {
+        domain: Some("api.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Direct);
+
+    // Other subdomains should match regex
+    let ctx2 = RouteCtx {
+        domain: Some("www.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
+}
+
+#[test]
+fn test_regex_priority_after_suffix() {
+    let matcher = DomainRegexMatcher::new(r"^cdn-.*\.cloudflare\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::Suffix(".cloudflare.com".to_string()),
+            decision: Decision::Direct,
+        },
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Reject,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Suffix match should have priority
+    let ctx1 = RouteCtx {
+        domain: Some("cdn-12345.cloudflare.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Direct);
+}
+
+#[test]
+fn test_regex_priority_after_keyword() {
+    let matcher = DomainRegexMatcher::new(r"^.*\.tracker\..*$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::Keyword("tracker".to_string()),
+            decision: Decision::Reject,
+        },
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Keyword match should have priority
+    let ctx1 = RouteCtx {
+        domain: Some("ads.tracker.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Reject);
+}
+
+#[test]
+fn test_regex_priority_before_inbound() {
+    let matcher = DomainRegexMatcher::new(r"^blocked-.*\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Reject,
+        },
+        Rule {
+            kind: RuleKind::InboundTag("http".to_string()),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Regex should take priority over inbound
+    let ctx1 = RouteCtx {
+        domain: Some("blocked-site.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: Some("http"),
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Reject);
+
+    // Non-matching domain should use inbound rule
+    let ctx2 = RouteCtx {
+        domain: Some("normal-site.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: Some("http"),
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
+}
+
+#[test]
+fn test_regex_match_with_anchors() {
+    // Test that ^ and $ anchors work correctly
+    let matcher = DomainRegexMatcher::new(r"^api-\d+\.example\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Should match api-123.example.com
+    let ctx1 = RouteCtx {
+        domain: Some("api-123.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
+
+    // Should not match without digits
+    let ctx2 = RouteCtx {
+        domain: Some("api-.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx2), Decision::Direct);
+
+    // Should not match with extra subdomain
+    let ctx3 = RouteCtx {
+        domain: Some("cdn.api-123.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx3), Decision::Direct);
+}
+
+#[test]
+fn test_regex_case_sensitive() {
+    // Regex matching is case-sensitive by default
+    let matcher = DomainRegexMatcher::new(r"^API\.example\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Should match exact case
+    let ctx1 = RouteCtx {
+        domain: Some("API.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
+
+    // Should not match different case
+    let ctx2 = RouteCtx {
+        domain: Some("api.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx2), Decision::Direct);
+}
+
+#[test]
+fn test_regex_case_insensitive_with_flag() {
+    // Using (?i) flag for case-insensitive matching
+    let matcher = DomainRegexMatcher::new(r"(?i)^api\.example\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Should match any case
+    let ctx1 = RouteCtx {
+        domain: Some("api.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
+
+    let ctx2 = RouteCtx {
+        domain: Some("API.EXAMPLE.COM"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
+
+    let ctx3 = RouteCtx {
+        domain: Some("Api.Example.Com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx3), Decision::Proxy(None));
+}
+
+#[test]
+fn test_multiple_regex_rules() {
+    let matcher1 = DomainRegexMatcher::new(r"^.*\.cdn\..*$".to_string()).unwrap();
+    let matcher2 = DomainRegexMatcher::new(r"^.*\.cloudflare\.com$".to_string()).unwrap();
+    let matcher3 = DomainRegexMatcher::new(r"^static-\d+\..*$".to_string()).unwrap();
+
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher1),
+            decision: Decision::Proxy(Some("cdn_proxy".to_string())),
+        },
+        Rule {
+            kind: RuleKind::DomainRegex(matcher2),
+            decision: Decision::Proxy(Some("cloudflare_proxy".to_string())),
+        },
+        Rule {
+            kind: RuleKind::DomainRegex(matcher3),
+            decision: Decision::Direct,
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Reject,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // First regex should match
+    let ctx1 = RouteCtx {
+        domain: Some("assets.cdn.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(
+        engine.decide(&ctx1),
+        Decision::Proxy(Some("cdn_proxy".to_string()))
+    );
+
+    // Second regex should match (but only if first doesn't)
+    let ctx2 = RouteCtx {
+        domain: Some("images.cloudflare.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(
+        engine.decide(&ctx2),
+        Decision::Proxy(Some("cloudflare_proxy".to_string()))
+    );
+
+    // Third regex should match
+    let ctx3 = RouteCtx {
+        domain: Some("static-42.example.com"),
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx3), Decision::Direct);
+}
+
+#[test]
+fn test_regex_with_no_domain() {
+    let matcher = DomainRegexMatcher::new(r"^.*\.google\.com$".to_string()).unwrap();
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Proxy(None),
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // No domain provided should not match regex
+    let ctx = RouteCtx {
+        domain: None,
+        ip: Some("8.8.8.8".parse().unwrap()),
+        transport_udp: false,
+        port: None,
+        process_name: None,
+        process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+    assert_eq!(engine.decide(&ctx), Decision::Direct);
+}
+
+#[test]
+fn test_parse_rules_with_regex() {
+    use sb_core::router::rules::parse_rules;
+
+    let rules_text = r#"
+regex:^.*\.google\.com$=proxy
+regex:^api-\d+\.example\.com$=direct
+exact:test.com=proxy
+default=direct
+"#;
+
+    let rules = parse_rules(rules_text);
+    assert!(rules.len() >= 3); // At least regex rules + exact + default
+
+    // Check that regex rules were parsed correctly
+    let regex_rules: Vec<_> = rules
+        .iter()
+        .filter(|r| matches!(r.kind, RuleKind::DomainRegex(_)))
+        .collect();
+    assert_eq!(regex_rules.len(), 2);
+
+    // Verify first regex rule
+    if let RuleKind::DomainRegex(matcher) = &regex_rules[0].kind {
+        assert_eq!(matcher.pattern(), r"^.*\.google\.com$");
+        assert_eq!(regex_rules[0].decision, Decision::Proxy(None));
+    } else {
+        panic!("Expected DomainRegex rule");
+    }
+
+    // Verify second regex rule
+    if let RuleKind::DomainRegex(matcher) = &regex_rules[1].kind {
+        assert_eq!(matcher.pattern(), r"^api-\d+\.example\.com$");
+        assert_eq!(regex_rules[1].decision, Decision::Direct);
+    } else {
+        panic!("Expected DomainRegex rule");
+    }
+}
+
+#[test]
+fn test_invalid_regex_pattern_skipped() {
+    use sb_core::router::rules::parse_rules;
+
+    let rules_text = r#"
+regex:^(invalid=proxy
+exact:test.com=direct
+default=direct
+"#;
+
+    let rules = parse_rules(rules_text);
+
+    // Invalid regex should be skipped, only exact and default remain
+    let regex_rules: Vec<_> = rules
+        .iter()
+        .filter(|r| matches!(r.kind, RuleKind::DomainRegex(_)))
+        .collect();
+    assert_eq!(regex_rules.len(), 0, "Invalid regex should be skipped");
+
+    // Exact rule should still be present
+    let exact_rules: Vec<_> = rules
+        .iter()
+        .filter(|r| matches!(r.kind, RuleKind::Exact(_)))
+        .collect();
+    assert_eq!(exact_rules.len(), 1);
+}
+
+#[test]
+fn test_regex_real_world_ad_blocking() {
+    // Match common ad/tracking domains
+    let matcher = DomainRegexMatcher::new(
+        r"(?i)^(ads?|adservice|analytics?|doubleclick|google-analytics|trackers?|telemetry)\."
+            .to_string(),
+    )
+    .unwrap();
+
+    let rules = vec![
+        Rule {
+            kind: RuleKind::DomainRegex(matcher),
+            decision: Decision::Reject,
+        },
+        Rule {
+            kind: RuleKind::Default,
+            decision: Decision::Direct,
+        },
+    ];
+
+    let engine = Engine::build(rules);
+
+    // Should block ad domains
+    let ad_domains = vec![
+        "ads.example.com",
+        "ad.doubleclick.net",
+        "analytics.google.com",
+        "tracker.facebook.com",
+        "telemetry.microsoft.com",
+    ];
+
+    for domain in ad_domains {
+        let ctx = RouteCtx {
+            domain: Some(domain),
+            ip: None,
+            transport_udp: false,
+            port: None,
+            process_name: None,
+            process_path: None,
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
+        };
+        assert_eq!(
+            engine.decide(&ctx),
+            Decision::Reject,
+            "{} should be blocked",
+            domain
+        );
+    }
+
+    // Should allow normal domains
+    let normal_domains = vec!["www.example.com", "mail.google.com", "github.com"];
+
+    for domain in normal_domains {
+        let ctx = RouteCtx {
+            domain: Some(domain),
+            ip: None,
+            transport_udp: false,
+            port: None,
+            process_name: None,
+            process_path: None,
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
+        };
+        assert_eq!(
+            engine.decide(&ctx),
+            Decision::Direct,
+            "{} should be allowed",
+            domain
+        );
+    }
+}

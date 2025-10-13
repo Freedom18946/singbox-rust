@@ -99,6 +99,12 @@ pub struct VmessConfig {
     /// TLS configuration
     #[serde(default)]
     pub tls: Option<TlsConfig>,
+    /// Transport configuration (WebSocket, gRPC, HTTPUpgrade)
+    #[serde(default)]
+    pub transport: Option<TransportConfig>,
+    /// Multiplex configuration
+    #[serde(default)]
+    pub multiplex: Option<MultiplexConfig>,
 }
 
 fn default_vmess_security() -> String {
@@ -128,6 +134,12 @@ pub struct VlessConfig {
     /// TLS configuration
     #[serde(default)]
     pub tls: Option<TlsConfig>,
+    /// Transport configuration (WebSocket, gRPC, HTTPUpgrade)
+    #[serde(default)]
+    pub transport: Option<TransportConfig>,
+    /// Multiplex configuration
+    #[serde(default)]
+    pub multiplex: Option<MultiplexConfig>,
 }
 
 fn default_vless_network() -> String {
@@ -287,4 +299,143 @@ pub struct EchConfig {
     /// Disable dynamic record sizing
     #[serde(default)]
     pub dynamic_record_sizing_disabled: Option<bool>,
+}
+
+/// Transport configuration for V2Ray protocols (VMess, VLESS, Trojan)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum TransportConfig {
+    /// Direct TCP connection (default)
+    Tcp,
+    /// WebSocket transport
+    #[serde(rename = "ws")]
+    WebSocket {
+        /// WebSocket path
+        #[serde(default = "default_ws_path")]
+        path: String,
+        /// Custom headers
+        #[serde(default)]
+        headers: Option<std::collections::HashMap<String, String>>,
+        /// Maximum message size in bytes
+        #[serde(default)]
+        max_message_size: Option<usize>,
+        /// Maximum frame size in bytes
+        #[serde(default)]
+        max_frame_size: Option<usize>,
+    },
+    /// gRPC bidirectional streaming
+    #[serde(rename = "grpc")]
+    Grpc {
+        /// Service name
+        #[serde(default = "default_grpc_service")]
+        service_name: String,
+        /// Method name
+        #[serde(default = "default_grpc_method")]
+        method_name: String,
+        /// Custom metadata
+        #[serde(default)]
+        metadata: Option<std::collections::HashMap<String, String>>,
+    },
+    /// HTTP/1.1 Upgrade
+    #[serde(rename = "httpupgrade")]
+    HttpUpgrade {
+        /// Path
+        #[serde(default = "default_httpupgrade_path")]
+        path: String,
+        /// Custom headers
+        #[serde(default)]
+        headers: Option<std::collections::HashMap<String, String>>,
+    },
+}
+
+impl Default for TransportConfig {
+    fn default() -> Self {
+        Self::Tcp
+    }
+}
+
+fn default_ws_path() -> String {
+    "/".to_string()
+}
+
+fn default_grpc_service() -> String {
+    "TunnelService".to_string()
+}
+
+fn default_grpc_method() -> String {
+    "Tunnel".to_string()
+}
+
+fn default_httpupgrade_path() -> String {
+    "/".to_string()
+}
+
+/// Multiplex configuration (yamux-based stream multiplexing)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiplexConfig {
+    /// Enable multiplex
+    #[serde(default)]
+    pub enabled: bool,
+    /// Protocol (only "yamux" supported)
+    #[serde(default = "default_multiplex_protocol")]
+    pub protocol: String,
+    /// Maximum connections in pool
+    #[serde(default = "default_multiplex_max_connections")]
+    pub max_connections: usize,
+    /// Minimum connections to keep alive
+    #[serde(default = "default_multiplex_min_streams")]
+    pub min_streams: usize,
+    /// Maximum streams per connection
+    #[serde(default = "default_multiplex_max_streams")]
+    pub max_streams: usize,
+    /// Padding (bytes)
+    #[serde(default)]
+    pub padding: bool,
+    /// Brutal congestion control configuration
+    #[serde(default)]
+    pub brutal: Option<BrutalConfig>,
+}
+
+impl Default for MultiplexConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            protocol: default_multiplex_protocol(),
+            max_connections: default_multiplex_max_connections(),
+            min_streams: default_multiplex_min_streams(),
+            max_streams: default_multiplex_max_streams(),
+            padding: false,
+            brutal: None,
+        }
+    }
+}
+
+fn default_multiplex_protocol() -> String {
+    "yamux".to_string()
+}
+
+fn default_multiplex_max_connections() -> usize {
+    4
+}
+
+fn default_multiplex_min_streams() -> usize {
+    4
+}
+
+fn default_multiplex_max_streams() -> usize {
+    16
+}
+
+/// Brutal congestion control configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrutalConfig {
+    /// Enable brutal congestion control
+    #[serde(default)]
+    pub enabled: bool,
+    /// Upload bandwidth in Mbps
+    #[serde(default)]
+    pub up_mbps: u32,
+    /// Download bandwidth in Mbps
+    #[serde(default)]
+    pub down_mbps: u32,
 }

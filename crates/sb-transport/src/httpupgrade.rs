@@ -56,7 +56,10 @@ pub struct HttpUpgradeConfig {
 
 impl Default for HttpUpgradeConfig {
     fn default() -> Self {
-        Self { path: "/".to_string(), headers: Vec::new() }
+        Self {
+            path: "/".to_string(),
+            headers: Vec::new(),
+        }
     }
 }
 
@@ -66,8 +69,12 @@ pub struct HttpUpgradeDialer {
 }
 
 impl HttpUpgradeDialer {
-    pub fn new(config: HttpUpgradeConfig, inner: Box<dyn Dialer>) -> Self { Self { config, inner } }
-    pub fn with_default_config(inner: Box<dyn Dialer>) -> Self { Self::new(HttpUpgradeConfig::default(), inner) }
+    pub fn new(config: HttpUpgradeConfig, inner: Box<dyn Dialer>) -> Self {
+        Self { config, inner }
+    }
+    pub fn with_default_config(inner: Box<dyn Dialer>) -> Self {
+        Self::new(HttpUpgradeConfig::default(), inner)
+    }
 }
 
 #[async_trait]
@@ -100,10 +107,16 @@ impl Dialer for HttpUpgradeDialer {
                 .read(&mut tmp)
                 .await
                 .map_err(|e| DialError::Other(format!("HTTPUpgrade read failed: {}", e)))?;
-            if n == 0 { return Err(DialError::Other("HTTPUpgrade: EOF before headers".into())); }
+            if n == 0 {
+                return Err(DialError::Other("HTTPUpgrade: EOF before headers".into()));
+            }
             buf.extend_from_slice(&tmp[..n]);
-            if buf.windows(4).any(|w| w == b"\r\n\r\n") { break; }
-            if buf.len() > 8192 { return Err(DialError::Other("HTTPUpgrade: header too large".into())); }
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if buf.len() > 8192 {
+                return Err(DialError::Other("HTTPUpgrade: header too large".into()));
+            }
         }
 
         // Validate status line contains 101
@@ -111,10 +124,17 @@ impl Dialer for HttpUpgradeDialer {
         let ok = header_str
             .lines()
             .next()
-            .map(|line| line.contains(" 101 ") || line.starts_with("HTTP/1.1 101") || line.starts_with("HTTP/1.0 101"))
+            .map(|line| {
+                line.contains(" 101 ")
+                    || line.starts_with("HTTP/1.1 101")
+                    || line.starts_with("HTTP/1.0 101")
+            })
             .unwrap_or(false);
         if !ok {
-            return Err(DialError::Other(format!("HTTPUpgrade: bad status line: {}", header_str.lines().next().unwrap_or(""))));
+            return Err(DialError::Other(format!(
+                "HTTPUpgrade: bad status line: {}",
+                header_str.lines().next().unwrap_or("")
+            )));
         }
 
         Ok(stream)
@@ -215,14 +235,18 @@ impl HttpUpgradeListener {
                 .await
                 .map_err(|e| DialError::Other(format!("HTTPUpgrade read failed: {}", e)))?;
             if n == 0 {
-                return Err(DialError::Other("HTTPUpgrade: client closed before headers".into()));
+                return Err(DialError::Other(
+                    "HTTPUpgrade: client closed before headers".into(),
+                ));
             }
             buf.extend_from_slice(&tmp[..n]);
             if buf.windows(4).any(|w| w == b"\r\n\r\n") {
                 break;
             }
             if buf.len() > 8192 {
-                return Err(DialError::Other("HTTPUpgrade: request header too large".into()));
+                return Err(DialError::Other(
+                    "HTTPUpgrade: request header too large".into(),
+                ));
             }
         }
 

@@ -132,9 +132,9 @@ impl Dialer for WebSocketDialer {
 
         // Build WebSocket handshake request
         let uri = format!("ws://{}:{}{}", host, port, self.config.path);
-        let uri: Uri = uri.parse().map_err(|e| {
-            DialError::Other(format!("Invalid WebSocket URI: {}", e))
-        })?;
+        let uri: Uri = uri
+            .parse()
+            .map_err(|e| DialError::Other(format!("Invalid WebSocket URI: {}", e)))?;
 
         let mut request = Request::get(uri)
             .body(())
@@ -152,11 +152,23 @@ impl Dialer for WebSocketDialer {
             base64::engine::general_purpose::STANDARD.encode(&random_bytes)
         };
 
-        headers.insert("Upgrade", http::header::HeaderValue::from_static("websocket"));
-        headers.insert("Connection", http::header::HeaderValue::from_static("Upgrade"));
-        headers.insert("Sec-WebSocket-Key", http::header::HeaderValue::from_str(&key)
-            .map_err(|e| DialError::Other(format!("Invalid WebSocket key: {}", e)))?);
-        headers.insert("Sec-WebSocket-Version", http::header::HeaderValue::from_static("13"));
+        headers.insert(
+            "Upgrade",
+            http::header::HeaderValue::from_static("websocket"),
+        );
+        headers.insert(
+            "Connection",
+            http::header::HeaderValue::from_static("Upgrade"),
+        );
+        headers.insert(
+            "Sec-WebSocket-Key",
+            http::header::HeaderValue::from_str(&key)
+                .map_err(|e| DialError::Other(format!("Invalid WebSocket key: {}", e)))?,
+        );
+        headers.insert(
+            "Sec-WebSocket-Version",
+            http::header::HeaderValue::from_static("13"),
+        );
 
         // Add custom headers (may override defaults)
         for (key, value) in &self.config.headers {
@@ -193,9 +205,10 @@ impl Dialer for WebSocketDialer {
 
         // Perform WebSocket handshake
         // Use client_async_with_config so we can apply size limits
-        let (ws_stream, response) = tokio_tungstenite::client_async_with_config(request, stream, Some(ws_cfg))
-            .await
-            .map_err(|e| DialError::Other(format!("WebSocket handshake failed: {}", e)))?;
+        let (ws_stream, response) =
+            tokio_tungstenite::client_async_with_config(request, stream, Some(ws_cfg))
+                .await
+                .map_err(|e| DialError::Other(format!("WebSocket handshake failed: {}", e)))?;
 
         debug!(
             "WebSocket handshake successful, status: {}",
@@ -339,15 +352,13 @@ where
         let msg = Message::Binary(buf.to_vec());
 
         match self.inner.poll_ready_unpin(cx) {
-            Poll::Ready(Ok(())) => {
-                match self.inner.start_send_unpin(msg) {
-                    Ok(()) => Poll::Ready(Ok(buf.len())),
-                    Err(e) => Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("WebSocket send error: {}", e),
-                    ))),
-                }
-            }
+            Poll::Ready(Ok(())) => match self.inner.start_send_unpin(msg) {
+                Ok(()) => Poll::Ready(Ok(buf.len())),
+                Err(e) => Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("WebSocket send error: {}", e),
+                ))),
+            },
             Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("WebSocket error: {}", e),

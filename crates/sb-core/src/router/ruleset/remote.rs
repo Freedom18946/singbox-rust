@@ -19,12 +19,14 @@ pub async fn load_from_url(
     format: RuleSetFormat,
 ) -> SbResult<RuleSet> {
     // Create cache directory if it doesn't exist
-    fs::create_dir_all(cache_dir).await.map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::MissingRequired,
-        ptr: "/rule_set/cache_dir".to_string(),
-        msg: format!("failed to create cache directory: {}", e),
-        hint: None,
-    })?;
+    fs::create_dir_all(cache_dir)
+        .await
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::MissingRequired,
+            ptr: "/rule_set/cache_dir".to_string(),
+            msg: format!("failed to create cache directory: {}", e),
+            hint: None,
+        })?;
 
     // Generate cache file name from URL
     let cache_file = get_cache_path(cache_dir, url, format);
@@ -40,14 +42,19 @@ pub async fn load_from_url(
             tracing::debug!("rule-set not modified, using cache: {}", url);
             load_from_cache(&cache_file, format, url).await
         }
-        Ok(DownloadResult::Downloaded { data, etag, last_modified }) => {
+        Ok(DownloadResult::Downloaded {
+            data,
+            etag,
+            last_modified,
+        }) => {
             // Save to cache
             tracing::info!("downloaded rule-set: {} ({} bytes)", url, data.len());
             save_to_cache(&cache_file, &meta_file, &data, etag, last_modified).await?;
 
             // Parse and return
-            super::binary::parse_binary(&data, RuleSetSource::Remote(url.to_string()))
-                .or_else(|_| super::binary::parse_json(&data, RuleSetSource::Remote(url.to_string())))
+            super::binary::parse_binary(&data, RuleSetSource::Remote(url.to_string())).or_else(
+                |_| super::binary::parse_json(&data, RuleSetSource::Remote(url.to_string())),
+            )
         }
         Err(e) => {
             // Download failed, try to use cached version
@@ -88,7 +95,10 @@ struct CacheMeta {
 }
 
 /// Download with conditional request support
-async fn download_with_cache(url: &str, cached_meta: &Option<CacheMeta>) -> SbResult<DownloadResult> {
+async fn download_with_cache(
+    url: &str,
+    cached_meta: &Option<CacheMeta>,
+) -> SbResult<DownloadResult> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -146,12 +156,16 @@ async fn download_with_cache(url: &str, cached_meta: &Option<CacheMeta>) -> SbRe
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let data = response.bytes().await.map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::InvalidType,
-        ptr: "/rule_set/download/body".to_string(),
-        msg: format!("failed to read response body: {}", e),
-        hint: None,
-    })?.to_vec();
+    let data = response
+        .bytes()
+        .await
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::InvalidType,
+            ptr: "/rule_set/download/body".to_string(),
+            msg: format!("failed to read response body: {}", e),
+            hint: None,
+        })?
+        .to_vec();
 
     Ok(DownloadResult::Downloaded {
         data,
@@ -177,12 +191,14 @@ async fn save_to_cache(
     last_modified: Option<String>,
 ) -> SbResult<()> {
     // Save data
-    let mut file = fs::File::create(cache_file).await.map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::MissingRequired,
-        ptr: "/rule_set/cache/save".to_string(),
-        msg: format!("failed to create cache file: {}", e),
-        hint: None,
-    })?;
+    let mut file = fs::File::create(cache_file)
+        .await
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::MissingRequired,
+            ptr: "/rule_set/cache/save".to_string(),
+            msg: format!("failed to create cache file: {}", e),
+            hint: None,
+        })?;
 
     file.write_all(data).await.map_err(|e| SbError::Config {
         code: crate::error::IssueCode::MissingRequired,
@@ -209,12 +225,14 @@ async fn save_to_cache(
         hint: None,
     })?;
 
-    fs::write(meta_file, meta_json).await.map_err(|e| SbError::Config {
-        code: crate::error::IssueCode::MissingRequired,
-        ptr: "/rule_set/cache/meta/write".to_string(),
-        msg: format!("failed to write cache metadata: {}", e),
-        hint: None,
-    })?;
+    fs::write(meta_file, meta_json)
+        .await
+        .map_err(|e| SbError::Config {
+            code: crate::error::IssueCode::MissingRequired,
+            ptr: "/rule_set/cache/meta/write".to_string(),
+            msg: format!("failed to write cache metadata: {}", e),
+            hint: None,
+        })?;
 
     Ok(())
 }

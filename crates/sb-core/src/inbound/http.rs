@@ -4,6 +4,7 @@
 //! This implementation handles HTTP CONNECT requests and establishes tunnels
 //! to target destinations.
 
+use crate::adapter::InboundService;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -13,7 +14,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
-use crate::adapter::InboundService;
 
 /// HTTP proxy configuration
 #[derive(Debug, Clone)]
@@ -86,7 +86,9 @@ impl HttpInboundService {
     }
 
     /// Parse HTTP request line and extract method and target
-    async fn parse_request_line(reader: &mut BufReader<&mut TcpStream>) -> io::Result<(String, String)> {
+    async fn parse_request_line(
+        reader: &mut BufReader<&mut TcpStream>,
+    ) -> io::Result<(String, String)> {
         let mut line = String::new();
         reader.read_line(&mut line).await?;
 
@@ -112,9 +114,9 @@ impl HttpInboundService {
         }
 
         let host = parts[0].to_string();
-        let port = parts[1].parse().map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "Invalid port number")
-        })?;
+        let port = parts[1]
+            .parse()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid port number"))?;
 
         Ok((host, port))
     }
@@ -278,10 +280,7 @@ impl HttpInboundService {
                 break;
             }
 
-            let accept_result = timeout(
-                Duration::from_millis(1000),
-                listener.accept(),
-            ).await;
+            let accept_result = timeout(Duration::from_millis(1000), listener.accept()).await;
 
             match accept_result {
                 Ok(Ok((stream, peer))) => {
@@ -331,12 +330,9 @@ impl InboundService for HttpInboundService {
         info!("Starting HTTP CONNECT proxy server on {}", self.addr);
 
         // Create async runtime for the server
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(io::Error::other)?;
+        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
 
         // Run the server
-        rt.block_on(async {
-            self.serve_async().await
-        })
+        rt.block_on(async { self.serve_async().await })
     }
 }

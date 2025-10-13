@@ -33,7 +33,7 @@ pub fn get_or_generate_request_id(headers: &HashMap<String, String>) -> String {
         .unwrap_or_else(generate_request_id)
 }
 
-#[must_use] 
+#[must_use]
 pub fn parse_query(q: &str) -> HashMap<String, String> {
     let mut m = HashMap::new();
     for kv in q.split('&') {
@@ -44,7 +44,7 @@ pub fn parse_query(q: &str) -> HashMap<String, String> {
     m
 }
 
-#[must_use] 
+#[must_use]
 pub fn url_decode(s: &str) -> String {
     percent_decode_str(s).decode_utf8_lossy().to_string()
 }
@@ -327,7 +327,7 @@ pub fn supported_patch_kinds() -> &'static [String] {
 }
 
 /// Check if networking is allowed via environment variable
-#[must_use] 
+#[must_use]
 pub fn is_networking_allowed() -> bool {
     match std::env::var("SB_ADMIN_ALLOW_NET") {
         Ok(val) => val != "0" && !val.is_empty(),
@@ -345,7 +345,7 @@ pub fn validate_url_scheme(url: &str) -> Result<(), &'static str> {
 }
 
 /// Get supported kinds as a comma-separated string for error messages
-#[must_use] 
+#[must_use]
 pub fn supported_patch_kinds_hint() -> String {
     let kinds = supported_patch_kinds();
     if kinds.is_empty() {

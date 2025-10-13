@@ -27,7 +27,10 @@ fn admin_requires_token_when_configured() {
         Ok(l) => l,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping admin_http_token test due to sandbox PermissionDenied on bind: {}", e);
+                eprintln!(
+                    "skipping admin_http_token test due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
                 return;
             } else {
                 panic!("bind failed: {}", e);
@@ -49,7 +52,11 @@ fn admin_requires_token_when_configured() {
             override_host: None,
             override_port: None,
         }],
-        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Direct,
+            name: Some("direct".into()),
+            ..Default::default()
+        }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -72,7 +79,10 @@ fn admin_requires_token_when_configured() {
         Ok(h) => h,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping admin_http_token test due to sandbox PermissionDenied: {}", e);
+                eprintln!(
+                    "skipping admin_http_token test due to sandbox PermissionDenied: {}",
+                    e
+                );
                 return;
             } else {
                 panic!("spawn_admin failed: {}", e);

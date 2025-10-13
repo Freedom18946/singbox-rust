@@ -11,15 +11,15 @@ pub trait DnsTransport: Send + Sync {
 }
 
 pub mod enhanced_udp;
-mod udp;
 pub mod tcp;
+mod udp;
 
 #[cfg(feature = "dns_doh")]
 pub mod doh;
-#[cfg(feature = "dns_dot")]
-pub mod dot;
 #[cfg(feature = "dns_doq")]
 pub mod doq;
+#[cfg(feature = "dns_dot")]
+pub mod dot;
 
 pub use enhanced_udp::EnhancedUdpTransport;
 pub use tcp::TcpTransport;
@@ -27,10 +27,10 @@ pub use udp::{UdpTransport, UdpUpstream};
 
 #[cfg(feature = "dns_doh")]
 pub use doh::{DohConfig, DohServers, DohTransport};
-#[cfg(feature = "dns_dot")]
-pub use dot::DotTransport;
 #[cfg(feature = "dns_doq")]
 pub use doq::DoqTransport;
+#[cfg(feature = "dns_dot")]
+pub use dot::DotTransport;
 
 // Client type aliases for compatibility
 #[cfg(feature = "dns_doh")]

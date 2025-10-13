@@ -7,4 +7,4 @@
 pub mod v1;
 
 #[cfg(feature = "out_hysteria")]
-pub use v1::{HysteriaV1Config, HysteriaV1Outbound, HysteriaV1Inbound};
+pub use v1::{HysteriaV1Config, HysteriaV1Inbound, HysteriaV1Outbound};

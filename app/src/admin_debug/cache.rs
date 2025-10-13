@@ -37,7 +37,7 @@ pub enum TierEntry {
 }
 
 impl TierEntry {
-    #[must_use] 
+    #[must_use]
     pub const fn body_len(&self) -> usize {
         match self {
             Self::Mem(entry) => entry.body.len(),
@@ -45,7 +45,7 @@ impl TierEntry {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn etag(&self) -> Option<&String> {
         match self {
             Self::Mem(entry) => entry.etag.as_ref(),
@@ -53,7 +53,7 @@ impl TierEntry {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn content_type(&self) -> Option<&String> {
         match self {
             Self::Mem(entry) => entry.content_type.as_ref(),
@@ -61,7 +61,7 @@ impl TierEntry {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn timestamp(&self) -> Instant {
         match self {
             Self::Mem(entry) => entry.timestamp,
@@ -92,7 +92,7 @@ pub struct Lru {
 }
 
 impl Lru {
-    #[must_use] 
+    #[must_use]
     pub fn new(cap_items: usize, ttl_ms: u64) -> Self {
         Self::with_byte_limit(cap_items, ttl_ms, 10 * 1024 * 1024) // 10MB default
     }
@@ -234,12 +234,12 @@ impl Lru {
             .join(format!("{:x}", hash))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn size(&self) -> usize {
         self.map.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn byte_usage(&self) -> (usize, usize) {
         let mem_bytes = self
             .map
@@ -258,7 +258,7 @@ impl Lru {
         (mem_bytes, disk_bytes)
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn metrics(&self) -> (u64, u64, u64) {
         (self.evict_count_mem, self.evict_count_disk, self.head_count)
     }

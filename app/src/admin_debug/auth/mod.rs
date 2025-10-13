@@ -113,7 +113,7 @@ impl AuthError {
     }
 
     /// Get the error message
-    #[must_use] 
+    #[must_use]
     pub fn message(&self) -> &str {
         match self {
             Self::InvalidCredentials { message } => message,
@@ -124,7 +124,7 @@ impl AuthError {
     }
 
     /// Get a hint for the error
-    #[must_use] 
+    #[must_use]
     pub fn hint(&self) -> Option<String> {
         match self {
             Self::MissingCredentials { .. } => {

@@ -48,7 +48,9 @@ impl RealityClientConfig {
                     return Err("short_id must be hex characters".to_string());
                 }
                 if short_id.len() > 16 || short_id.len() % 2 != 0 {
-                    return Err("short_id must be 0-16 hex chars (length multiple of 2)".to_string());
+                    return Err(
+                        "short_id must be 0-16 hex chars (length multiple of 2)".to_string()
+                    );
                 }
             }
         }
@@ -58,17 +60,16 @@ impl RealityClientConfig {
 
     /// Get short ID as bytes
     pub fn short_id_bytes(&self) -> Option<Vec<u8>> {
-        self.short_id
-            .as_ref()
-            .and_then(|s| hex::decode(s).ok())
+        self.short_id.as_ref().and_then(|s| hex::decode(s).ok())
     }
 
     /// Get public key as bytes
     pub fn public_key_bytes(&self) -> Result<[u8; 32], String> {
-        let bytes = hex::decode(&self.public_key)
-            .map_err(|e| format!("invalid public key hex: {}", e))?;
+        let bytes =
+            hex::decode(&self.public_key).map_err(|e| format!("invalid public key hex: {}", e))?;
 
-        bytes.try_into()
+        bytes
+            .try_into()
             .map_err(|_| "public key must be 32 bytes".to_string())
     }
 }
@@ -135,7 +136,8 @@ impl RealityServerConfig {
         let bytes = hex::decode(&self.private_key)
             .map_err(|e| format!("invalid private key hex: {}", e))?;
 
-        bytes.try_into()
+        bytes
+            .try_into()
             .map_err(|_| "private key must be 32 bytes".to_string())
     }
 
@@ -192,7 +194,8 @@ mod tests {
         let mut config = RealityClientConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec!["h2".to_string()],
@@ -205,7 +208,8 @@ mod tests {
         assert!(config.validate().is_err());
 
         // Fix public key
-        config.public_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
+        config.public_key =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
 
         // Invalid short_id (odd length)
         config.short_id = Some("abc".to_string());
@@ -221,7 +225,8 @@ mod tests {
         let config = RealityClientConfig {
             target: "".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
@@ -229,7 +234,11 @@ mod tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("target domain cannot be empty"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("target domain cannot be empty")
+        );
     }
 
     #[test]
@@ -253,7 +262,8 @@ mod tests {
         let config = RealityClientConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg".to_string(),
+            public_key: "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
@@ -266,10 +276,10 @@ mod tests {
     #[test]
     fn test_client_config_valid_short_ids() {
         let test_cases = vec![
-            ("", true),           // Empty is valid
-            ("01", true),         // 1 byte
-            ("0123", true),       // 2 bytes
-            ("01234567", true),   // 4 bytes
+            ("", true),                 // Empty is valid
+            ("01", true),               // 1 byte
+            ("0123", true),             // 2 bytes
+            ("01234567", true),         // 4 bytes
             ("0123456789abcdef", true), // 8 bytes (max)
         ];
 
@@ -277,36 +287,51 @@ mod tests {
             let config = RealityClientConfig {
                 target: "www.apple.com".to_string(),
                 server_name: "www.apple.com".to_string(),
-                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
-                short_id: if short_id.is_empty() { None } else { Some(short_id.to_string()) },
+                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
+                short_id: if short_id.is_empty() {
+                    None
+                } else {
+                    Some(short_id.to_string())
+                },
                 fingerprint: "chrome".to_string(),
                 alpn: vec![],
             };
 
-            assert_eq!(config.validate().is_ok(), should_be_valid, "short_id: {}", short_id);
+            assert_eq!(
+                config.validate().is_ok(),
+                should_be_valid,
+                "short_id: {}",
+                short_id
+            );
         }
     }
 
     #[test]
     fn test_client_config_invalid_short_ids() {
         let test_cases = vec![
-            "a",                  // Odd length
-            "abc",                // Odd length
+            "a",                    // Odd length
+            "abc",                  // Odd length
             "01234567890123456789", // Too long (>16 chars)
-            "gg",                 // Invalid hex
+            "gg",                   // Invalid hex
         ];
 
         for short_id in test_cases {
             let config = RealityClientConfig {
                 target: "www.apple.com".to_string(),
                 server_name: "www.apple.com".to_string(),
-                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
                 short_id: Some(short_id.to_string()),
                 fingerprint: "chrome".to_string(),
                 alpn: vec![],
             };
 
-            assert!(config.validate().is_err(), "short_id should be invalid: {}", short_id);
+            assert!(
+                config.validate().is_err(),
+                "short_id should be invalid: {}",
+                short_id
+            );
         }
     }
 
@@ -315,7 +340,8 @@ mod tests {
         let config = RealityClientConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
@@ -332,7 +358,8 @@ mod tests {
         let config = RealityClientConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec![],
@@ -356,7 +383,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec!["01ab".to_string()],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -370,7 +398,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -386,7 +415,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec![],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -418,7 +448,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec!["invalid".to_string()],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -433,7 +464,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210".to_string(),
+            private_key: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+                .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -450,7 +482,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec!["01ab".to_string(), "cdef".to_string()],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -469,7 +502,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec!["01ab".to_string(), "cdef".to_string()],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -492,7 +526,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
             enable_fallback: true,
@@ -509,7 +544,8 @@ mod tests {
         let config = RealityServerConfig {
             target: "www.apple.com:443".to_string(),
             server_names: vec!["example.com".to_string()],
-            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_ids: vec!["00".to_string(), "0102".to_string(), "010203".to_string()],
             handshake_timeout: 5,
             enable_fallback: true,

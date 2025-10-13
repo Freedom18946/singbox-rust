@@ -239,22 +239,19 @@ mod tests {
 #[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for DirectConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        let endpoint = crate::types::Endpoint::new(
-            crate::types::Host::domain(host.to_string()),
-            port
-        );
-        let src = std::net::SocketAddr::new(
-            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
-            0
-        );
+        let endpoint =
+            crate::types::Endpoint::new(crate::types::Host::domain(host.to_string()), port);
+        let src =
+            std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0);
         let ctx = crate::types::ConnCtx::new(
             0, // id
             crate::types::Network::Tcp,
             src,
-            endpoint
+            endpoint,
         );
 
-        self.connect_tcp(&ctx).await
+        self.connect_tcp(&ctx)
+            .await
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }

@@ -119,10 +119,14 @@ fn test_reality_with_urltest_selector() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "REALITY with URLTest selector should be valid. Output: {}", output);
+    assert!(
+        success,
+        "REALITY with URLTest selector should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test Hysteria v2 with fallback selector
@@ -177,10 +181,14 @@ fn test_hysteria2_with_fallback_selector() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Hysteria2 with fallback selector should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Hysteria2 with fallback selector should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test SSH with manual selector
@@ -233,10 +241,14 @@ fn test_ssh_with_manual_selector() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "SSH with manual selector should be valid. Output: {}", output);
+    assert!(
+        success,
+        "SSH with manual selector should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUIC with URLTest selector
@@ -292,10 +304,14 @@ fn test_tuic_with_urltest_selector() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUIC with URLTest selector should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUIC with URLTest selector should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test mixed P0 protocols in single URLTest selector
@@ -376,10 +392,14 @@ fn test_mixed_p0_protocols_in_urltest() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Mixed P0 protocols in URLTest should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Mixed P0 protocols in URLTest should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test Hysteria v1 with selector
@@ -435,10 +455,14 @@ fn test_hysteria_v1_with_selector() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Hysteria v1 with selector should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Hysteria v1 with selector should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test ECH-enabled outbound with selector
@@ -505,10 +529,14 @@ fn test_ech_with_selector() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "ECH with selector should be valid. Output: {}", output);
+    assert!(
+        success,
+        "ECH with selector should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test nested selectors with P0 protocols
@@ -593,10 +621,14 @@ fn test_nested_selectors_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Nested selectors with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Nested selectors with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test health check behavior with P0 protocols
@@ -662,8 +694,12 @@ fn test_health_check_config_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Health check config with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Health check config with P0 protocols should be valid. Output: {}",
+        output
+    );
 }

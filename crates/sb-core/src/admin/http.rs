@@ -386,7 +386,14 @@ fn handle(
                 (dest.to_string(), 0)
             };
             let d = engine.decide(
-                &Input { host: &host, port, network, protocol, sniff_host: None, sniff_alpn: None },
+                &Input {
+                    host: &host,
+                    port,
+                    network,
+                    protocol,
+                    sniff_host: None,
+                    sniff_alpn: None,
+                },
                 false,
             );
             let obj = serde_json::json!({

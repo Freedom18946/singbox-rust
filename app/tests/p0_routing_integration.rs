@@ -104,10 +104,14 @@ fn test_domain_routing_with_reality() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Domain routing with REALITY should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Domain routing with REALITY should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test IP-based routing with Hysteria v2
@@ -155,10 +159,14 @@ fn test_ip_routing_with_hysteria2() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "IP routing with Hysteria2 should be valid. Output: {}", output);
+    assert!(
+        success,
+        "IP routing with Hysteria2 should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test port-based routing with SSH
@@ -205,10 +213,14 @@ fn test_port_routing_with_ssh() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Port routing with SSH should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Port routing with SSH should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test process-based routing with TUIC
@@ -251,10 +263,14 @@ fn test_process_routing_with_tuic() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Process routing with TUIC should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Process routing with TUIC should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test combined routing rules with mixed P0 protocols
@@ -348,10 +364,14 @@ fn test_combined_routing_with_mixed_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Combined routing with mixed protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Combined routing with mixed protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test domain keyword routing with Hysteria v1
@@ -396,10 +416,14 @@ fn test_domain_keyword_routing_with_hysteria_v1() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Domain keyword routing with Hysteria v1 should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Domain keyword routing with Hysteria v1 should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test GeoIP routing with ECH-enabled outbound
@@ -453,10 +477,14 @@ fn test_geoip_routing_with_ech() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "GeoIP routing with ECH should be valid. Output: {}", output);
+    assert!(
+        success,
+        "GeoIP routing with ECH should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test GeoSite routing with P0 protocols
@@ -516,10 +544,14 @@ fn test_geosite_routing_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "GeoSite routing with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "GeoSite routing with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test invert rule with P0 protocols
@@ -572,10 +604,14 @@ fn test_invert_rule_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Invert rule with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Invert rule with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test protocol-based routing with P0 protocols
@@ -631,10 +667,14 @@ fn test_protocol_routing_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Protocol routing with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Protocol routing with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test source IP routing with P0 protocols
@@ -681,8 +721,12 @@ fn test_source_ip_routing_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Source IP routing with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Source IP routing with P0 protocols should be valid. Output: {}",
+        output
+    );
 }

@@ -11,9 +11,9 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 // Import Trojan adapters
-use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
 use sb_adapters::inbound::trojan::TrojanInboundConfig;
-use sb_adapters::outbound::{OutboundConnector, Target, DialOpts};
+use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
+use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
@@ -136,10 +136,7 @@ async fn test_trojan_multiplex_single_stream() {
     let mut response = vec![0u8; test_data.len()];
     stream.read_exact(&mut response).await.unwrap();
 
-    assert_eq!(
-        response, test_data,
-        "Echo response should match sent data"
-    );
+    assert_eq!(response, test_data, "Echo response should match sent data");
 }
 
 #[tokio::test]

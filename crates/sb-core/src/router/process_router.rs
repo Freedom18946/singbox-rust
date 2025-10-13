@@ -53,6 +53,10 @@ impl ProcessRouter {
             port,
             process_name: process_name.as_deref(),
             process_path: process_path.as_deref(),
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
         };
 
         // Make routing decision
@@ -75,6 +79,10 @@ impl ProcessRouter {
             port,
             process_name: None,
             process_path: None,
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
         };
 
         let engine = self.engine.read().await;
@@ -174,6 +182,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("firefox"),
                 process_path: Some("/usr/bin/firefox"),
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let engine = router.engine.read().await;
@@ -213,6 +225,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("curl"),
                 process_path: Some("/usr/bin/curl"),
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let eng = router.engine.read().await;
@@ -228,6 +244,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("Telegram"),
                 process_path: Some("/Applications/Telegram.app"),
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let eng = router.engine.read().await;
@@ -266,6 +286,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("firefox"),
                 process_path: None,
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let eng = router.engine.read().await;
@@ -319,12 +343,10 @@ mod tests {
     async fn test_udp_tcp_transport_distinction() {
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         {
-            let rules = vec![
-                Rule {
-                    kind: RuleKind::Default,
-                    decision: Decision::Direct,
-                },
-            ];
+            let rules = vec![Rule {
+                kind: RuleKind::Default,
+                decision: Decision::Direct,
+            }];
 
             let engine = Engine::build(rules);
             let router = ProcessRouter::new(engine).unwrap();
@@ -377,6 +399,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("firefox"),
                 process_path: None,
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let eng = router.engine.read().await;
@@ -392,6 +418,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("chrome"),
                 process_path: None,
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let eng = router.engine.read().await;
@@ -407,6 +437,10 @@ mod tests {
                 port: Some(443),
                 process_name: Some("curl"),
                 process_path: None,
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
 
             let eng = router.engine.read().await;

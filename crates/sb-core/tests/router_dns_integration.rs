@@ -242,6 +242,9 @@ async fn test_dns_bridge_integration() {
             assert_eq!(ips.len(), 1);
             assert_eq!(ips[0], "192.168.1.1".parse::<IpAddr>().unwrap());
         }
-        _ => assert!(false, "Expected successful DNS resolution with IP addresses"),
+        _ => assert!(
+            false,
+            "Expected successful DNS resolution with IP addresses"
+        ),
     }
 }

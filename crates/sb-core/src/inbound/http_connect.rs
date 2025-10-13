@@ -1,9 +1,9 @@
 //! Async HTTP/1.1 CONNECT inbound (scaffold).
 //! - Optional Basic auth via (username,password)
 //! - Route decision via Engine; outbound resolved by Bridge (adapter优先)
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use std::sync::Arc;
 
 use crate::adapter::Bridge;
 use crate::adapter::InboundService;
@@ -46,7 +46,9 @@ impl Engine {
 #[cfg(not(feature = "router"))]
 impl Clone for Engine {
     fn clone(&self) -> Self {
-        Self { cfg: self.cfg.clone() }
+        Self {
+            cfg: self.cfg.clone(),
+        }
     }
 }
 
@@ -72,7 +74,9 @@ impl Input {
     }
 }
 
-async fn read_headers(reader: &mut BufReader<&mut TcpStream>) -> std::io::Result<Vec<(String, String)>> {
+async fn read_headers(
+    reader: &mut BufReader<&mut TcpStream>,
+) -> std::io::Result<Vec<(String, String)>> {
     let mut headers = Vec::new();
     loop {
         let mut line = String::new();
@@ -121,7 +125,8 @@ async fn handle(
     let _ver = parts.next().unwrap_or("");
 
     if method != "CONNECT" || !target.contains(':') {
-        cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n").await?;
+        cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
+            .await?;
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "only CONNECT supported",
@@ -174,12 +179,24 @@ async fn handle(
     // Build route input and decide
     #[cfg(feature = "router")]
     let d = {
-        let input = RouterInput { host: &host, port, network: "tcp", protocol: "http-connect", sniff_host: Some(&host), sniff_alpn: None };
+        let input = RouterInput {
+            host: &host,
+            port,
+            network: "tcp",
+            protocol: "http-connect",
+            sniff_host: Some(&host),
+            sniff_alpn: None,
+        };
         eng.decide(&input, false)
     };
     #[cfg(not(feature = "router"))]
     let d = {
-        let input = Input { host: host.clone(), port, network: "tcp".to_string(), protocol: "http-connect".to_string() };
+        let input = Input {
+            host: host.clone(),
+            port,
+            network: "tcp".to_string(),
+            protocol: "http-connect".to_string(),
+        };
         eng.decide(&input, false)
     };
     let out_name = d.outbound;
@@ -192,18 +209,23 @@ async fn handle(
         Some(connector) => match connector.connect(&host, port).await {
             Ok(stream) => stream,
             Err(e) => {
-                let _ = cli.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n").await;
+                let _ = cli
+                    .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                    .await;
                 return Err(e);
             }
         },
         None => {
-            let _ = cli.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n").await;
+            let _ = cli
+                .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                .await;
             return Err(std::io::Error::other("no outbound connector available"));
         }
     };
 
     // 成功回包
-    cli.write_all(b"HTTP/1.1 200 Connection Established\r\nContent-Length: 0\r\n\r\n").await?;
+    cli.write_all(b"HTTP/1.1 200 Connection Established\r\nContent-Length: 0\r\n\r\n")
+        .await?;
 
     // 使用 tokio 的高性能双向复制
     let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
@@ -271,7 +293,11 @@ impl HttpConnect {
     async fn do_serve_async(&self, eng: EngineX<'static>, br: Arc<Bridge>) -> std::io::Result<()> {
         let addr = format!("{}:{}", self.listen, self.port);
         let listener = TcpListener::bind(&addr).await?;
-        crate::log::log(Level::Info, "http-connect listening (async)", &[("addr", &addr)]);
+        crate::log::log(
+            Level::Info,
+            "http-connect listening (async)",
+            &[("addr", &addr)],
+        );
 
         loop {
             match listener.accept().await {

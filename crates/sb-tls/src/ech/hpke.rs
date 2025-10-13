@@ -6,7 +6,7 @@
 //! - AES-128-GCM: Authenticated encryption
 
 use super::{EchError, EchResult, HpkeAead, HpkeKdf, HpkeKem};
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_128_GCM};
+use ring::aead::{AES_128_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret};
 
@@ -50,7 +50,7 @@ impl HpkeContext {
 
         let key = LessSafeKey::new(unbound_key);
         let mut in_out = plaintext.to_vec();
-        
+
         key.seal_in_place_append_tag(nonce_obj, Aad::from(aad), &mut in_out)
             .map_err(|e| EchError::EncryptionFailed(format!("AEAD seal failed: {}", e)))?;
 
@@ -142,7 +142,7 @@ impl HpkeSender {
     ) -> EchResult<(Vec<u8>, Vec<u8>)> {
         // Simplified key derivation using SHA256
         // In a full HPKE implementation, this would use proper HKDF-Expand
-        
+
         // Derive encryption key
         let mut hasher = Sha256::new();
         hasher.update(shared_secret);
@@ -190,9 +190,7 @@ mod tests {
         );
 
         let info = b"test info";
-        let (_enc, mut sender_ctx) = sender
-            .setup(recipient_public.as_bytes(), info)
-            .unwrap();
+        let (_enc, mut sender_ctx) = sender.setup(recipient_public.as_bytes(), info).unwrap();
 
         let plaintext = b"Hello, ECH!";
         let aad = b"additional data";
@@ -214,10 +212,10 @@ mod tests {
 
         let info = b"test info";
         let result = sender.setup(recipient_public.as_bytes(), info);
-        
+
         assert!(result.is_ok());
         let (encapsulated_key, _context) = result.unwrap();
-        
+
         // X25519 public key should be 32 bytes
         assert_eq!(encapsulated_key.len(), 32);
     }
@@ -233,7 +231,7 @@ mod tests {
         // Invalid key length (16 bytes instead of 32)
         let invalid_key = vec![0u8; 16];
         let result = sender.setup(&invalid_key, b"info");
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
             EchError::HpkeFailed(msg) => {
@@ -254,9 +252,7 @@ mod tests {
             HpkeAead::Aes128Gcm,
         );
 
-        let (_enc, mut context) = sender
-            .setup(recipient_public.as_bytes(), b"info")
-            .unwrap();
+        let (_enc, mut context) = sender.setup(recipient_public.as_bytes(), b"info").unwrap();
 
         let plaintext = b"Secret message";
         let aad = b"";
@@ -277,9 +273,7 @@ mod tests {
             HpkeAead::Aes128Gcm,
         );
 
-        let (_enc, mut context) = sender
-            .setup(recipient_public.as_bytes(), b"info")
-            .unwrap();
+        let (_enc, mut context) = sender.setup(recipient_public.as_bytes(), b"info").unwrap();
 
         let plaintext = b"Secret message";
         let aad = b"additional authenticated data";
@@ -300,21 +294,19 @@ mod tests {
             HpkeAead::Aes128Gcm,
         );
 
-        let (_enc, mut context) = sender
-            .setup(recipient_public.as_bytes(), b"info")
-            .unwrap();
+        let (_enc, mut context) = sender.setup(recipient_public.as_bytes(), b"info").unwrap();
 
         // Seal multiple messages with the same context
         let plaintext1 = b"Message 1";
         let ciphertext1 = context.seal(plaintext1, b"").unwrap();
-        
+
         let plaintext2 = b"Message 2";
         let ciphertext2 = context.seal(plaintext2, b"").unwrap();
 
         // Both should succeed
         assert_eq!(ciphertext1.len(), plaintext1.len() + 16);
         assert_eq!(ciphertext2.len(), plaintext2.len() + 16);
-        
+
         // Ciphertexts should be different (different nonces)
         assert_ne!(ciphertext1, ciphertext2);
     }
@@ -346,7 +338,7 @@ mod tests {
 
         let result = context.compute_nonce();
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::HpkeFailed(msg) => {
                 assert!(msg.contains("Invalid base nonce length"));
@@ -379,9 +371,7 @@ mod tests {
             HpkeAead::Aes128Gcm,
         );
 
-        let (_enc, mut context) = sender
-            .setup(recipient_public.as_bytes(), b"info")
-            .unwrap();
+        let (_enc, mut context) = sender.setup(recipient_public.as_bytes(), b"info").unwrap();
 
         // Seal empty plaintext
         let plaintext = b"";
@@ -402,9 +392,7 @@ mod tests {
             HpkeAead::Aes128Gcm,
         );
 
-        let (_enc, mut context) = sender
-            .setup(recipient_public.as_bytes(), b"info")
-            .unwrap();
+        let (_enc, mut context) = sender.setup(recipient_public.as_bytes(), b"info").unwrap();
 
         // Seal large plaintext (1KB)
         let plaintext = vec![0x42u8; 1024];

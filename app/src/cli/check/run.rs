@@ -101,9 +101,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
 
     // Generate report
     let ok = (issues.is_empty() || !args.strict)
-        && !issues
-            .iter()
-            .any(|i| matches!(i.kind, IssueKind::Error));
+        && !issues.iter().any(|i| matches!(i.kind, IssueKind::Error));
 
     let fingerprint = if args.fingerprint {
         Some(fingerprint_of(&raw))
@@ -549,17 +547,45 @@ fn diff_configs(old_path: &str, new_path: &str, args: &CheckArgs) -> Result<i32>
     }
 
     println!("Config differences detected:");
-    println!("Old: {} (fingerprint: {})", old_path, &old_fingerprint[..16]);
-    println!("New: {} (fingerprint: {})", new_path, &new_fingerprint[..16]);
+    println!(
+        "Old: {} (fingerprint: {})",
+        old_path,
+        &old_fingerprint[..16]
+    );
+    println!(
+        "New: {} (fingerprint: {})",
+        new_path,
+        &new_fingerprint[..16]
+    );
     println!();
 
     // Compare key sections
-    diff_section(&old_normalized, &new_normalized, "inbounds", "Inbound configurations");
-    diff_section(&old_normalized, &new_normalized, "outbounds", "Outbound configurations");
-    diff_section(&old_normalized, &new_normalized, "route", "Route configuration");
+    diff_section(
+        &old_normalized,
+        &new_normalized,
+        "inbounds",
+        "Inbound configurations",
+    );
+    diff_section(
+        &old_normalized,
+        &new_normalized,
+        "outbounds",
+        "Outbound configurations",
+    );
+    diff_section(
+        &old_normalized,
+        &new_normalized,
+        "route",
+        "Route configuration",
+    );
     diff_section(&old_normalized, &new_normalized, "dns", "DNS configuration");
     diff_section(&old_normalized, &new_normalized, "log", "Log configuration");
-    diff_section(&old_normalized, &new_normalized, "experimental", "Experimental features");
+    diff_section(
+        &old_normalized,
+        &new_normalized,
+        "experimental",
+        "Experimental features",
+    );
 
     Ok(1) // Return 1 to indicate differences found
 }
@@ -629,7 +655,12 @@ fn print_section_diff(old: &Value, new: &Value, section: &str) {
         }
         (Value::Array(old_arr), Value::Array(new_arr)) => {
             if old_arr.len() != new_arr.len() {
-                println!("  {} length: {} -> {}", section, old_arr.len(), new_arr.len());
+                println!(
+                    "  {} length: {} -> {}",
+                    section,
+                    old_arr.len(),
+                    new_arr.len()
+                );
             }
             // Could add more detailed array comparison here
         }

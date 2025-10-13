@@ -18,9 +18,7 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
         let body = {
             // For now, provide a minimal implementation
             // In the future, this should integrate with sb-core geoip
-            format!(
-                r#"{{"ip":"{ip}","cc":"Unknown","note":"GeoIP not implemented"}}"#
-            )
+            format!(r#"{{"ip":"{ip}","cc":"Unknown","note":"GeoIP not implemented"}}"#)
         };
 
         #[cfg(not(feature = "router"))]

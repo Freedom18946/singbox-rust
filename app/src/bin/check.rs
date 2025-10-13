@@ -13,7 +13,7 @@
 //!
 //! 样本均衡：`--cluster-by reason_kind --max-per-cluster 8`，仅影响 samples，不影响矩阵。
 use anyhow::{anyhow, Result};
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use serde_json::Value;
 #[allow(unused_imports)]
 use std::fmt;
@@ -34,6 +34,9 @@ struct Opt {
     /// Output format: text|json
     #[arg(long = "format", default_value = "text")]
     format: String,
+    /// Print help information in JSON format and exit
+    #[arg(long = "help-json", action = ArgAction::SetTrue)]
+    help_json: bool,
 }
 
 fn human_check(root: &Value) -> Result<()> {
@@ -91,7 +94,9 @@ fn human_check(root: &Value) -> Result<()> {
                         // Or when embedded in listen
                         if let Ok(p) = p.parse::<u64>() {
                             if p == 0 || p > 65535 {
-                                return Err(anyhow!("{base}.listen 嵌入端口超出范围 (1-65535): {p}"));
+                                return Err(anyhow!(
+                                    "{base}.listen 嵌入端口超出范围 (1-65535): {p}"
+                                ));
                             }
                         }
                     }
@@ -106,6 +111,9 @@ fn human_check(root: &Value) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    if std::env::args().skip(1).any(|arg| arg == "--help-json") {
+        app::cli::help::print_help_json::<Opt>();
+    }
     let opt = Opt::parse();
     // Handle schema-v2-validate gating early for better UX
     if opt.schema_v2_validate {
@@ -121,7 +129,9 @@ fn main() -> Result<()> {
                     })
                 );
             } else {
-                eprintln!("schema-v2 feature disabled at build (rebuild with --features schema-v2)");
+                eprintln!(
+                    "schema-v2 feature disabled at build (rebuild with --features schema-v2)"
+                );
             }
             std::process::exit(2);
         }
@@ -152,7 +162,8 @@ fn main() -> Result<()> {
                 .map_err(|e| anyhow!("编译 JSON Schema 失败：{e}"))?;
 
             if !validator.is_valid(&v) {
-                let errors: Vec<String> = validator.validate(&v)
+                let errors: Vec<String> = validator
+                    .validate(&v)
                     .unwrap_err()
                     .take(5)
                     .map(|e| format!("{}", e))

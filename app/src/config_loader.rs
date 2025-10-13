@@ -107,9 +107,13 @@ async fn reload_config(path: &Path) -> Result<()> {
 
         // Convert ConfigIR to router rules format and build new index
         // Convert Config to ConfigIR for processing
-        let config_ir = sb_config::present::to_ir(&new_config).map_err(|e| anyhow::anyhow!("Failed to convert config to IR: {e}"))?;
+        let config_ir = sb_config::present::to_ir(&new_config)
+            .map_err(|e| anyhow::anyhow!("Failed to convert config to IR: {e}"))?;
         let rules_text = config_ir_to_router_rules(&config_ir);
-        tracing::debug!("Generated router rules from config: {} lines", rules_text.lines().count());
+        tracing::debug!(
+            "Generated router rules from config: {} lines",
+            rules_text.lines().count()
+        );
 
         match sb_core::router::router_build_index_from_str(&rules_text, 100_000) {
             Ok(new_index) => {
@@ -127,7 +131,8 @@ async fn reload_config(path: &Path) -> Result<()> {
     }
 
     // 4) Update inbound/outbound registries
-    let config_ir = sb_config::present::to_ir(&new_config).map_err(|e| anyhow::anyhow!("Failed to convert config to IR: {e}"))?;
+    let config_ir = sb_config::present::to_ir(&new_config)
+        .map_err(|e| anyhow::anyhow!("Failed to convert config to IR: {e}"))?;
     if !config_ir.inbounds.is_empty() || !config_ir.outbounds.is_empty() {
         tracing::debug!(
             "Config contains {} inbounds, {} outbounds - registry updates ready for integration",
@@ -138,11 +143,16 @@ async fn reload_config(path: &Path) -> Result<()> {
     }
 
     // 5) Update bridge/selector registries
-    let selectors: Vec<_> = config_ir.outbounds.iter()
+    let selectors: Vec<_> = config_ir
+        .outbounds
+        .iter()
         .filter(|o| o.ty == sb_config::ir::OutboundType::Selector)
         .collect();
     if !selectors.is_empty() {
-        tracing::debug!("Config contains {} selectors - bridge updates ready for integration", selectors.len());
+        tracing::debug!(
+            "Config contains {} selectors - bridge updates ready for integration",
+            selectors.len()
+        );
         // Bridge/selector update implementation would integrate with adapter interfaces here
     }
 
@@ -166,7 +176,7 @@ pub fn check_only<P: AsRef<Path>>(path: P) -> Result<(usize, usize, usize)> {
     cfg.validate()?;
     // 构建以验证引用完整性/默认值语义，但不启动任何任务
     cfg.build_registry_and_router()?; // Stub validation
-    Ok((cfg.inbounds.len(), cfg.outbounds.len(), cfg.rules.len()))
+    Ok(cfg.stats())
 }
 
 /// Convert `ConfigIR` to router rules text format
@@ -195,7 +205,11 @@ fn config_ir_to_router_rules(config: &sb_config::ir::ConfigIR) -> String {
         // Handle IP CIDR matches
         for ipcidr in &rule.ipcidr {
             // Detect IPv4 vs IPv6 by presence of ':'
-            let rule_type = if ipcidr.contains(':') { "cidr6" } else { "cidr4" };
+            let rule_type = if ipcidr.contains(':') {
+                "cidr6"
+            } else {
+                "cidr4"
+            };
             rules.push(format!("{rule_type}:{ipcidr}={outbound}"));
         }
 

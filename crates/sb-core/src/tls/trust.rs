@@ -20,7 +20,6 @@ pub struct TlsOpts {
     pub sni: String,
 }
 
-
 impl TlsOpts {
     pub fn new(sni: String) -> Self {
         Self {

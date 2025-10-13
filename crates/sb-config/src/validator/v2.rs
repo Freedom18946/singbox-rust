@@ -291,21 +291,43 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("packet_encoding")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                transport: o
-                    .get("transport")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()),
-                ws_path: o.get("ws_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                ws_host: o.get("ws_host").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                h2_path: o.get("h2_path").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                h2_host: o.get("h2_host").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                tls_sni: o.get("tls_sni").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                tls_alpn: o.get("tls_alpn").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                transport: o.get("transport").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                }),
+                ws_path: o
+                    .get("ws_path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                ws_host: o
+                    .get("ws_host")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                h2_path: o
+                    .get("h2_path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                h2_host: o
+                    .get("h2_host")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                tls_sni: o
+                    .get("tls_sni")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                tls_alpn: o
+                    .get("tls_alpn")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 reality_enabled: None,
                 reality_public_key: None,
                 reality_short_id: None,
                 reality_server_name: None,
-                password: o.get("password").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                password: o
+                    .get("password")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 ssh_private_key: None,
                 ssh_private_key_path: None,
                 ssh_private_key_passphrase: None,
@@ -319,8 +341,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
             // Fallback: allow top-level username/password for ssh/http/socks
             if ob.credentials.is_none() {
-                let top_user = o.get("username").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let top_pass = o.get("password").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let top_user = o
+                    .get("username")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let top_pass = o
+                    .get("password")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 if top_user.is_some() || top_pass.is_some() {
                     ob.credentials = Some(Credentials {
                         username: top_user,
@@ -345,9 +373,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("private_key_passphrase")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                ob.ssh_host_key_verification = o
-                    .get("host_key_verification")
-                    .and_then(|v| v.as_bool());
+                ob.ssh_host_key_verification =
+                    o.get("host_key_verification").and_then(|v| v.as_bool());
                 ob.ssh_known_hosts_path = o
                     .get("known_hosts_path")
                     .and_then(|v| v.as_str())
@@ -356,12 +383,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("connection_pool_size")
                     .and_then(|v| v.as_u64())
                     .map(|x| x as usize);
-                ob.ssh_compression = o
-                    .get("compression")
-                    .and_then(|v| v.as_bool());
-                ob.ssh_keepalive_interval = o
-                    .get("keepalive_interval")
-                    .and_then(|v| v.as_u64());
+                ob.ssh_compression = o.get("compression").and_then(|v| v.as_bool());
+                ob.ssh_keepalive_interval = o.get("keepalive_interval").and_then(|v| v.as_u64());
             }
 
             // Parse connect_timeout for all outbound types
@@ -373,34 +396,61 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             // Backward-compat: allow nested sections `ws`, `h2`, `tls` as objects
             if let Some(ws) = o.get("ws").and_then(|v| v.as_object()) {
                 if ob.ws_path.is_none() {
-                    ob.ws_path = ws.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.ws_path = ws
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
                 if ob.ws_host.is_none() {
-                    ob.ws_host = ws.get("host").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.ws_host = ws
+                        .get("host")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
             }
             if let Some(h2) = o.get("h2").and_then(|v| v.as_object()) {
                 if ob.h2_path.is_none() {
-                    ob.h2_path = h2.get("path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.h2_path = h2
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
                 if ob.h2_host.is_none() {
-                    ob.h2_host = h2.get("host").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.h2_host = h2
+                        .get("host")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
             }
             if let Some(tls) = o.get("tls").and_then(|v| v.as_object()) {
                 if ob.tls_sni.is_none() {
-                    ob.tls_sni = tls.get("sni").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.tls_sni = tls
+                        .get("sni")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
                 if ob.tls_alpn.is_none() {
-                    ob.tls_alpn = tls.get("alpn").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.tls_alpn = tls
+                        .get("alpn")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
-                
+
                 // Parse REALITY configuration
                 if let Some(reality) = tls.get("reality").and_then(|v| v.as_object()) {
                     ob.reality_enabled = reality.get("enabled").and_then(|v| v.as_bool());
-                    ob.reality_public_key = reality.get("public_key").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    ob.reality_short_id = reality.get("short_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    ob.reality_server_name = reality.get("server_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    ob.reality_public_key = reality
+                        .get("public_key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    ob.reality_short_id = reality
+                        .get("short_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    ob.reality_server_name = reality
+                        .get("server_name")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                 }
             }
 
@@ -485,10 +535,10 @@ mod tests {
         });
 
         let ir = to_ir_v1(&json);
-        
+
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        
+
         assert_eq!(outbound.name, Some("reality-out".to_string()));
         assert_eq!(outbound.reality_enabled, Some(true));
         assert_eq!(
@@ -496,8 +546,11 @@ mod tests {
             Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string())
         );
         assert_eq!(outbound.reality_short_id, Some("01ab".to_string()));
-        assert_eq!(outbound.reality_server_name, Some("www.apple.com".to_string()));
-        
+        assert_eq!(
+            outbound.reality_server_name,
+            Some("www.apple.com".to_string())
+        );
+
         // Validate the parsed config
         assert!(outbound.validate_reality().is_ok());
     }
@@ -527,14 +580,14 @@ mod tests {
         });
 
         let ir = to_ir_v1(&json);
-        
+
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        
+
         // Check TLS fields are parsed
         assert_eq!(outbound.tls_sni, Some("www.apple.com".to_string()));
         assert_eq!(outbound.tls_alpn, Some("h2,http/1.1".to_string()));
-        
+
         // Check REALITY fields are parsed
         assert_eq!(outbound.reality_enabled, Some(true));
         assert_eq!(
@@ -542,7 +595,10 @@ mod tests {
             Some("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string())
         );
         assert_eq!(outbound.reality_short_id, Some("cdef".to_string()));
-        assert_eq!(outbound.reality_server_name, Some("www.cloudflare.com".to_string()));
+        assert_eq!(
+            outbound.reality_server_name,
+            Some("www.cloudflare.com".to_string())
+        );
     }
 
     #[test]
@@ -566,10 +622,10 @@ mod tests {
         });
 
         let ir = to_ir_v1(&json);
-        
+
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        
+
         assert_eq!(outbound.reality_enabled, Some(false));
         // When disabled, validation should pass even without other fields
         assert!(outbound.validate_reality().is_ok());
@@ -594,15 +650,15 @@ mod tests {
         });
 
         let ir = to_ir_v1(&json);
-        
+
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        
+
         assert_eq!(outbound.reality_enabled, None);
         assert_eq!(outbound.reality_public_key, None);
         assert_eq!(outbound.reality_short_id, None);
         assert_eq!(outbound.reality_server_name, None);
-        
+
         // Should pass validation when REALITY is not enabled
         assert!(outbound.validate_reality().is_ok());
     }

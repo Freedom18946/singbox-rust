@@ -519,7 +519,10 @@ mod tests {
             port: 22,
             username: "keyuser".to_string(),
             password: None,
-            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            private_key: Some(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                    .to_string(),
+            ),
             private_key_passphrase: Some("keypass".to_string()),
             host_key_verification: false,
             compression: true,
@@ -553,7 +556,10 @@ mod tests {
 
         let result = SshOutbound::new(config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("server address is required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("server address is required"));
     }
 
     #[test]
@@ -568,7 +574,10 @@ mod tests {
 
         let result = SshOutbound::new(config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("username is required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("username is required"));
     }
 
     #[test]
@@ -584,7 +593,10 @@ mod tests {
 
         let result = SshOutbound::new(config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("password or private key is required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("password or private key is required"));
     }
 
     #[test]
@@ -609,7 +621,10 @@ mod tests {
             port: 22,
             username: "keyuser".to_string(),
             password: None,
-            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            private_key: Some(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                    .to_string(),
+            ),
             ..Default::default()
         };
 
@@ -625,7 +640,10 @@ mod tests {
             port: 22,
             username: "testuser".to_string(),
             password: Some("testpass".to_string()),
-            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            private_key: Some(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                    .to_string(),
+            ),
             ..Default::default()
         };
 
@@ -666,7 +684,10 @@ mod tests {
 
         let outbound = SshOutbound::new(config).unwrap();
         assert!(outbound.config.host_key_verification);
-        assert_eq!(outbound.config.known_hosts_path, Some("/tmp/test_known_hosts".to_string()));
+        assert_eq!(
+            outbound.config.known_hosts_path,
+            Some("/tmp/test_known_hosts".to_string())
+        );
     }
 
     #[test]
@@ -706,12 +727,17 @@ mod tests {
 
         let outbound = SshOutbound::new(config).unwrap();
         assert!(outbound.config.private_key.is_some());
-        assert!(outbound.config.private_key.unwrap().starts_with("-----BEGIN"));
+        assert!(outbound
+            .config
+            .private_key
+            .unwrap()
+            .starts_with("-----BEGIN"));
     }
 
     #[test]
     fn test_private_key_with_passphrase() {
-        let pem_key = "-----BEGIN OPENSSH PRIVATE KEY-----\nencrypted_key\n-----END OPENSSH PRIVATE KEY-----";
+        let pem_key =
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nencrypted_key\n-----END OPENSSH PRIVATE KEY-----";
         let config = SshConfig {
             server: "ssh.example.com".to_string(),
             port: 22,
@@ -724,7 +750,10 @@ mod tests {
 
         let outbound = SshOutbound::new(config).unwrap();
         assert!(outbound.config.private_key.is_some());
-        assert_eq!(outbound.config.private_key_passphrase, Some("my_passphrase".to_string()));
+        assert_eq!(
+            outbound.config.private_key_passphrase,
+            Some("my_passphrase".to_string())
+        );
     }
 
     #[test]
@@ -742,7 +771,10 @@ mod tests {
 
         let outbound = SshOutbound::new(config).unwrap();
         assert!(outbound.config.private_key.is_some());
-        assert_eq!(outbound.config.private_key.unwrap(), "/home/user/.ssh/id_rsa");
+        assert_eq!(
+            outbound.config.private_key.unwrap(),
+            "/home/user/.ssh/id_rsa"
+        );
     }
 
     // ============================================================================
@@ -772,7 +804,10 @@ mod tests {
             port: 22,
             username: "keyuser".to_string(),
             password: None,
-            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            private_key: Some(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                    .to_string(),
+            ),
             ..Default::default()
         };
 
@@ -789,7 +824,10 @@ mod tests {
             port: 22,
             username: "testuser".to_string(),
             password: Some("password".to_string()),
-            private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+            private_key: Some(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                    .to_string(),
+            ),
             ..Default::default()
         };
 
@@ -807,7 +845,7 @@ mod tests {
         let config = SshConfig::default();
         // Default config should have pool size of 4
         assert_eq!(config.connection_pool_size, Some(4));
-        
+
         let config = SshConfig {
             server: "ssh.example.com".to_string(),
             port: 22,
@@ -909,7 +947,7 @@ mod tests {
         let config = SshConfig::default();
         // Default config should have timeout of 10 seconds
         assert_eq!(config.connect_timeout, Some(10));
-        
+
         let config = SshConfig {
             server: "ssh.example.com".to_string(),
             port: 22,
@@ -942,7 +980,7 @@ mod tests {
         let config = SshConfig::default();
         // Default config should have keepalive of 30 seconds
         assert_eq!(config.keepalive_interval, Some(30));
-        
+
         let config = SshConfig {
             server: "ssh.example.com".to_string(),
             port: 22,

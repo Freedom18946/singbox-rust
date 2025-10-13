@@ -7,7 +7,9 @@
 //! - Error conditions are handled gracefully
 
 use std::net::TcpListener;
-fn is_perm(e: &std::io::Error) -> bool { e.kind() == std::io::ErrorKind::PermissionDenied }
+fn is_perm(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::PermissionDenied
+}
 
 /// Test that HTTP inbound can route to direct outbound
 #[tokio::test]
@@ -16,7 +18,17 @@ async fn test_http_to_direct() {
     // Real implementation would set up HTTP inbound → router → direct outbound
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
-        Err(e) => { if is_perm(&e) { eprintln!("skipping protocol_interop_e2e due to sandbox PermissionDenied on bind: {}", e); return; } else { panic!("failed to bind: {}", e); } }
+        Err(e) => {
+            if is_perm(&e) {
+                eprintln!(
+                    "skipping protocol_interop_e2e due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
+                return;
+            } else {
+                panic!("failed to bind: {}", e);
+            }
+        }
     };
     let addr = listener.local_addr().expect("no local addr");
     drop(listener);
@@ -63,7 +75,16 @@ async fn test_concurrent_protocol_connections() {
 /// Helper to create a simple echo server for testing
 #[allow(dead_code)]
 fn create_echo_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
-    let listener = match TcpListener::bind("127.0.0.1:0") { Ok(l) => l, Err(e) => { if is_perm(&e) { panic!("skip"); } else { panic!("failed to bind: {}", e); } } };
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(e) => {
+            if is_perm(&e) {
+                panic!("skip");
+            } else {
+                panic!("failed to bind: {}", e);
+            }
+        }
+    };
     let addr = listener.local_addr().expect("no local addr");
 
     let handle = tokio::spawn(async move {

@@ -82,8 +82,8 @@ impl Hysteria2Connector {
             brutal: None,
         };
 
-        let core = Hysteria2Outbound::new(core_cfg)
-            .map_err(|e| AdapterError::Other(e.to_string()))?;
+        let core =
+            Hysteria2Outbound::new(core_cfg).map_err(|e| AdapterError::Other(e.to_string()))?;
 
         // Get connection
         let connection = core.get_connection().await.map_err(AdapterError::Io)?;
@@ -147,10 +147,7 @@ impl OutboundConnector for Hysteria2Connector {
                 .map_err(|e| AdapterError::Other(e.to_string()))?;
 
             let hp = sb_core::outbound::types::HostPort::new(target.host.clone(), target.port);
-            let quic_stream = core
-                .connect(&hp)
-                .await
-                .map_err(AdapterError::Io)?;
+            let quic_stream = core.connect(&hp).await.map_err(AdapterError::Io)?;
 
             Ok(Box::new(quic_stream) as BoxedStream)
         }

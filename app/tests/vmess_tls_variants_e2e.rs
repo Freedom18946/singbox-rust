@@ -14,9 +14,11 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 // Import VMess adapters
-use sb_adapters::outbound::vmess::{VmessConfig, VmessConnector, VmessAuth, VmessTransport, Security};
 use sb_adapters::inbound::vmess::VmessInboundConfig;
-use sb_adapters::outbound::{OutboundConnector, Target, DialOpts};
+use sb_adapters::outbound::vmess::{
+    Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
+};
+use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::{TlsConfig, TlsVersion};
@@ -49,7 +51,9 @@ async fn start_echo_server() -> SocketAddr {
 }
 
 /// Helper: Start VMess server with TLS
-async fn start_vmess_tls_server(tls_config: Option<TlsConfig>) -> (SocketAddr, Uuid, mpsc::Sender<()>) {
+async fn start_vmess_tls_server(
+    tls_config: Option<TlsConfig>,
+) -> (SocketAddr, Uuid, mpsc::Sender<()>) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind VMess server");
@@ -145,10 +149,7 @@ async fn test_vmess_standard_tls() {
     let mut response = vec![0u8; test_data.len()];
     stream.read_exact(&mut response).await.unwrap();
 
-    assert_eq!(
-        response, test_data,
-        "Echo response should match sent data"
-    );
+    assert_eq!(response, test_data, "Echo response should match sent data");
 }
 
 #[tokio::test]
@@ -179,7 +180,8 @@ async fn test_vmess_tls_with_alpn() {
             ca_certificate_file: None,
         };
 
-        let (vmess_addr, test_uuid, _stop_tx) = start_vmess_tls_server(Some(tls_config.clone())).await;
+        let (vmess_addr, test_uuid, _stop_tx) =
+            start_vmess_tls_server(Some(tls_config.clone())).await;
 
         let client_config = VmessConfig {
             server_addr: vmess_addr,
@@ -248,7 +250,8 @@ async fn test_vmess_tls_versions() {
             ca_certificate_file: None,
         };
 
-        let (vmess_addr, test_uuid, _stop_tx) = start_vmess_tls_server(Some(tls_config.clone())).await;
+        let (vmess_addr, test_uuid, _stop_tx) =
+            start_vmess_tls_server(Some(tls_config.clone())).await;
 
         let client_config = VmessConfig {
             server_addr: vmess_addr,
@@ -277,7 +280,10 @@ async fn test_vmess_tls_versions() {
         let mut stream = connector
             .dial(target, DialOpts::default())
             .await
-            .expect(&format!("Failed to dial with TLS versions: {:?}-{:?}", min_ver, max_ver));
+            .expect(&format!(
+                "Failed to dial with TLS versions: {:?}-{:?}",
+                min_ver, max_ver
+            ));
 
         let test_data = format!("TLS: {:?}-{:?}", min_ver, max_ver);
         stream.write_all(test_data.as_bytes()).await.unwrap();

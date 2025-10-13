@@ -46,11 +46,7 @@ pub trait TlsConnector: Send + Sync {
     /// # Arguments
     /// - `stream`: The underlying TCP stream
     /// - `server_name`: The server name for SNI
-    async fn connect<S>(
-        &self,
-        stream: S,
-        server_name: &str,
-    ) -> io::Result<TlsIoStream>
+    async fn connect<S>(&self, stream: S, server_name: &str) -> io::Result<TlsIoStream>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static;
 }

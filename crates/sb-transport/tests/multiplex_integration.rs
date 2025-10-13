@@ -1,12 +1,14 @@
 //! Multiplex (yamux) server/client integration tests
 
 use sb_transport::dialer::Dialer;
-use sb_transport::multiplex::{BrutalConfig, MultiplexConfig, MultiplexDialer, MultiplexListener, MultiplexServerConfig};
+use sb_transport::multiplex::{
+    BrutalConfig, MultiplexConfig, MultiplexDialer, MultiplexListener, MultiplexServerConfig,
+};
 use sb_transport::TcpDialer;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_multiplex_server_client_echo() {
@@ -60,8 +62,8 @@ async fn test_multiplex_server_client_echo() {
     });
 
     // Send test data
-    use futures::io::AsyncWriteExt as FuturesAsyncWriteExt;
     use futures::io::AsyncReadExt as FuturesAsyncReadExt;
+    use futures::io::AsyncWriteExt as FuturesAsyncWriteExt;
 
     let test_data = b"Hello Multiplex!";
     client_stream.write_all(test_data).await.unwrap();
@@ -94,13 +96,17 @@ async fn test_multiplex_server_config() {
 // Helper function to start an echo server that runs until shutdown signal
 async fn start_echo_server(
     config: MultiplexServerConfig,
-) -> (std::net::SocketAddr, tokio::sync::mpsc::Sender<()>, tokio::task::JoinHandle<()>) {
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::mpsc::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
     let tcp_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server_addr = tcp_listener.local_addr().unwrap();
     let mux_listener = MultiplexListener::new(tcp_listener, config);
 
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::channel::<()>(1);
-    
+
     let server_handle = tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -129,8 +135,9 @@ async fn start_echo_server(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_connection_pooling_and_reuse() {
     // Start a TCP server that accepts multiple connections
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
-    
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
+
     // Give server time to start
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -149,22 +156,22 @@ async fn test_connection_pooling_and_reuse() {
 
     // First connection - should create new yamux connection
     let mut stream1 = mux_dialer.connect(host, port).await.unwrap();
-    
+
     // Second connection - should reuse the same yamux connection
     let mut stream2 = mux_dialer.connect(host, port).await.unwrap();
-    
+
     // Third connection - should reuse the same yamux connection
     let mut stream3 = mux_dialer.connect(host, port).await.unwrap();
 
     // Send data on all streams
     let test_data = b"Connection pooling test";
-    
+
     stream1.write_all(test_data).await.unwrap();
     stream1.flush().await.unwrap();
-    
+
     stream2.write_all(test_data).await.unwrap();
     stream2.flush().await.unwrap();
-    
+
     stream3.write_all(test_data).await.unwrap();
     stream3.flush().await.unwrap();
 
@@ -193,7 +200,8 @@ async fn test_connection_pooling_and_reuse() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_multiple_streams_over_single_connection() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer
@@ -207,15 +215,15 @@ async fn test_multiple_streams_over_single_connection() {
         let dialer = mux_dialer.clone();
         let host = "127.0.0.1".to_string();
         let port = server_addr.port();
-        
+
         let handle = tokio::spawn(async move {
             let mut stream = dialer.connect(&host, port).await.unwrap();
-            
+
             // Send unique data on each stream
             let test_data = format!("Data from stream {}", i);
             stream.write_all(test_data.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
-            
+
             // Read response
             let mut response = vec![0u8; test_data.len()];
             stream.read_exact(&mut response).await.unwrap();
@@ -237,7 +245,8 @@ async fn test_multiple_streams_over_single_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_stream_lifecycle_management() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer
@@ -252,7 +261,7 @@ async fn test_stream_lifecycle_management() {
     let mut stream = mux_dialer.connect(host, port).await.unwrap();
     stream.write_all(b"Test 1").await.unwrap();
     stream.flush().await.unwrap();
-    
+
     let mut response = vec![0u8; 6];
     stream.read_exact(&mut response).await.unwrap();
     assert_eq!(&response, b"Test 1");
@@ -265,7 +274,7 @@ async fn test_stream_lifecycle_management() {
     let mut stream2 = mux_dialer.connect(host, port).await.unwrap();
     stream2.write_all(b"Test 2").await.unwrap();
     stream2.flush().await.unwrap();
-    
+
     let mut response2 = vec![0u8; 6];
     stream2.read_exact(&mut response2).await.unwrap();
     assert_eq!(&response2, b"Test 2");
@@ -278,7 +287,8 @@ async fn test_stream_lifecycle_management() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_max_streams_limit_enforcement() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer with low max_streams_per_connection
@@ -335,7 +345,7 @@ async fn test_brutal_congestion_control() {
     let brutal = BrutalConfig::new(100, 50);
     assert_eq!(brutal.up_mbps, 100);
     assert_eq!(brutal.down_mbps, 50);
-    
+
     // Test bandwidth conversion
     assert_eq!(brutal.up_bytes_per_sec(), 100 * 1_000_000 / 8);
     assert_eq!(brutal.down_bytes_per_sec(), 50 * 1_000_000 / 8);
@@ -377,12 +387,15 @@ async fn test_brutal_with_connection() {
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     // Connect and test
-    let mut stream = mux_dialer.connect("127.0.0.1", server_addr.port()).await.unwrap();
-    
+    let mut stream = mux_dialer
+        .connect("127.0.0.1", server_addr.port())
+        .await
+        .unwrap();
+
     let test_data = b"Brutal test data";
     stream.write_all(test_data).await.unwrap();
     stream.flush().await.unwrap();
-    
+
     let mut response = vec![0u8; test_data.len()];
     stream.read_exact(&mut response).await.unwrap();
     assert_eq!(&response, test_data);
@@ -396,7 +409,8 @@ async fn test_brutal_with_connection() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_connection_health_and_cleanup() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer with short idle timeout
@@ -414,7 +428,7 @@ async fn test_connection_health_and_cleanup() {
     let mut stream1 = mux_dialer.connect(host, port).await.unwrap();
     stream1.write_all(b"Test 1").await.unwrap();
     stream1.flush().await.unwrap();
-    
+
     let mut response1 = vec![0u8; 6];
     stream1.read_exact(&mut response1).await.unwrap();
     assert_eq!(&response1, b"Test 1");
@@ -427,7 +441,7 @@ async fn test_connection_health_and_cleanup() {
     let mut stream2 = mux_dialer.connect(host, port).await.unwrap();
     stream2.write_all(b"Test 2").await.unwrap();
     stream2.flush().await.unwrap();
-    
+
     let mut response2 = vec![0u8; 6];
     stream2.read_exact(&mut response2).await.unwrap();
     assert_eq!(&response2, b"Test 2");
@@ -441,7 +455,8 @@ async fn test_connection_health_and_cleanup() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_concurrent_stream_creation() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer
@@ -455,14 +470,14 @@ async fn test_concurrent_stream_creation() {
         let dialer = mux_dialer.clone();
         let host = "127.0.0.1".to_string();
         let port = server_addr.port();
-        
+
         let handle = tokio::spawn(async move {
             let mut stream = dialer.connect(&host, port).await.unwrap();
-            
+
             let test_data = format!("Concurrent stream {}", i);
             stream.write_all(test_data.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
-            
+
             let mut response = vec![0u8; test_data.len()];
             stream.read_exact(&mut response).await.unwrap();
             assert_eq!(response, test_data.as_bytes());
@@ -483,7 +498,8 @@ async fn test_concurrent_stream_creation() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_max_connections_limit() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer with max_connections = 1
@@ -514,7 +530,8 @@ async fn test_max_connections_limit() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_stream_isolation() {
     // Start multiplex server
-    let (server_addr, shutdown_tx, server_handle) = start_echo_server(MultiplexServerConfig::default()).await;
+    let (server_addr, shutdown_tx, server_handle) =
+        start_echo_server(MultiplexServerConfig::default()).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Create MultiplexDialer

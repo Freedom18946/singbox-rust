@@ -43,6 +43,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -54,20 +55,20 @@ use std::path::Path;
 pub mod compat;
 pub mod de;
 pub mod defaults;
+pub mod inbound;
 pub mod ir;
 pub mod merge;
 pub mod minimize;
 pub mod model;
 pub mod normalize;
 pub mod outbound;
-pub mod inbound;
 pub mod present;
 pub mod rule;
 pub mod schema_v2;
 pub mod subscribe;
 pub mod validator;
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Schema version (2 by default)
     #[serde(default = "default_schema_version")]
@@ -81,9 +82,27 @@ pub struct Config {
     /// 可选的兜底出站（指向某个命名出站）；若未指定则使用 Direct
     #[serde(default)]
     pub default_outbound: Option<String>,
+    #[serde(skip)]
+    raw: Value,
+    #[serde(skip)]
+    ir: crate::ir::ConfigIR,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            schema_version: default_schema_version(),
+            inbounds: Vec::new(),
+            outbounds: Vec::new(),
+            rules: Vec::new(),
+            default_outbound: None,
+            raw: Value::Null,
+            ir: crate::ir::ConfigIR::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Inbound {
     #[serde(rename = "http")]
@@ -92,7 +111,7 @@ pub enum Inbound {
     Socks { listen: String },
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Outbound {
     #[serde(rename = "direct")]
@@ -172,7 +191,7 @@ pub enum Outbound {
         server: String,
         port: u16,
         uuid: String,
-        #[serde(default = "default_vmess_security")] 
+        #[serde(default = "default_vmess_security")]
         security: String,
         #[serde(default)]
         alter_id: u16,
@@ -202,7 +221,7 @@ pub struct Auth {
     pub password: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Rule {
     /// 域名后缀匹配（任意一个命中即生效）
     #[serde(default)]
@@ -221,6 +240,48 @@ pub struct Rule {
 }
 
 impl Config {
+    pub(crate) fn from_value(doc: Value) -> Result<Self> {
+        let mut cfg: Config =
+            serde_json::from_value(doc.clone()).map_err(|e| anyhow!("deserialize config: {e}"))?;
+        cfg.raw = doc;
+        cfg.ir = crate::validator::v2::to_ir_v1(&cfg.raw);
+        Ok(cfg)
+    }
+
+    pub fn raw(&self) -> &Value {
+        &self.raw
+    }
+
+    pub fn ir(&self) -> &crate::ir::ConfigIR {
+        &self.ir
+    }
+
+    pub fn stats(&self) -> (usize, usize, usize) {
+        (
+            self.ir.inbounds.len(),
+            self.ir.outbounds.len(),
+            self.ir.route.rules.len(),
+        )
+    }
+
+    /// Legacy helper: project IR inbounds into minimal HTTP/SOCKS entries.
+    pub fn legacy_inbounds(&self) -> Vec<Inbound> {
+        use crate::ir::InboundType;
+        self.ir
+            .inbounds
+            .iter()
+            .filter_map(|ib| match ib.ty {
+                InboundType::Http => Some(Inbound::Http {
+                    listen: format!("{}:{}", ib.listen, ib.port),
+                }),
+                InboundType::Socks => Some(Inbound::Socks {
+                    listen: format!("{}:{}", ib.listen, ib.port),
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// 暂存的兼容入口：先返回自身，后续可平滑替换为真正的构建产物
     pub fn build(self) -> Self {
         self
@@ -228,7 +289,12 @@ impl Config {
 
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let text = fs::read_to_string(path)?;
-        let cfg: Config = serde_yaml::from_str(&text)?;
+        let raw: Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(_) => serde_yaml::from_str(&text)?,
+        };
+        let migrated = compat::migrate_to_v2(&raw);
+        let cfg = Self::from_value(migrated)?;
         cfg.validate()?;
         Ok(cfg)
     }
@@ -383,8 +449,20 @@ impl Config {
 
     /// 便捷：就地合并（订阅 → 当前配置）
     pub fn merge_in_place(&mut self, sub: Config) {
-        let merged = crate::merge::merge(std::mem::take(self), sub);
-        *self = merged;
+        let merged_raw = merge_raw(&self.raw, &sub.raw);
+        match Config::from_value(merged_raw) {
+            Ok(cfg) => {
+                *self = cfg;
+            }
+            Err(e) => {
+                let merged = crate::merge::merge(std::mem::take(self), sub);
+                *self = merged;
+                let _ = e;
+                self.raw =
+                    compat::migrate_to_v2(&serde_json::to_value(&*self).unwrap_or(Value::Null));
+                self.ir = crate::validator::v2::to_ir_v1(&self.raw);
+            }
+        }
     }
 }
 
@@ -397,6 +475,42 @@ fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
         .with_context(|| format!("resolve failed: {}", qp))?;
     it.next()
         .ok_or_else(|| anyhow!("no address resolved for {}", qp))
+}
+
+pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
+    use serde_json::Map;
+
+    let mut merged: Map<String, Value> = base.as_object().cloned().unwrap_or_else(Map::new);
+
+    if let Some(sub_obj) = sub.as_object() {
+        if let Some(outbounds) = sub_obj.get("outbounds") {
+            merged.insert("outbounds".to_string(), outbounds.clone());
+        }
+        if let Some(route) = sub_obj.get("route") {
+            merged.insert("route".to_string(), route.clone());
+        }
+        if let Some(default_outbound) = sub_obj.get("default_outbound") {
+            merged.insert("default_outbound".to_string(), default_outbound.clone());
+        }
+        for (k, v) in sub_obj {
+            if matches!(
+                k.as_str(),
+                "outbounds" | "route" | "inbounds" | "schema_version" | "default_outbound"
+            ) {
+                continue;
+            }
+            merged.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+
+    if !merged.contains_key("inbounds") {
+        if let Some(inbounds) = sub.get("inbounds") {
+            merged.insert("inbounds".to_string(), inbounds.clone());
+        }
+    }
+
+    merged.insert("schema_version".to_string(), Value::from(2));
+    Value::Object(merged)
 }
 
 #[allow(dead_code)]

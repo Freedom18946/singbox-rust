@@ -4,8 +4,8 @@
 //! and ALPN information to make routing decisions.
 
 use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
-use sb_core::routing::engine::{Engine, Input};
 use sb_core::router::sniff::extract_sni_from_tls_client_hello;
+use sb_core::routing::engine::{Engine, Input};
 
 /// Build a minimal TLS ClientHello with SNI and ALPN
 fn build_tls_client_hello(sni: &str, alpn: &str) -> Vec<u8> {
@@ -123,7 +123,10 @@ fn test_sni_based_routing() {
         },
         false,
     );
-    assert_eq!(dec.outbound, "proxy", "SNI-based routing should select proxy");
+    assert_eq!(
+        dec.outbound, "proxy",
+        "SNI-based routing should select proxy"
+    );
 
     // Test 2: Without SNI, IP doesn't match -> direct
     let dec2 = eng.decide(
@@ -192,7 +195,9 @@ fn test_alpn_based_routing() {
 
 #[test]
 fn test_combined_sni_and_alpn_routing() {
-    use sb_core::router::sniff::{extract_alpn_from_tls_client_hello, extract_sni_from_tls_client_hello};
+    use sb_core::router::sniff::{
+        extract_alpn_from_tls_client_hello, extract_sni_from_tls_client_hello,
+    };
 
     // Build ClientHello with both SNI and ALPN
     let ch = build_tls_client_hello("api.cdn.example.com", "h2");
@@ -232,8 +237,7 @@ fn test_combined_sni_and_alpn_routing() {
 
     // Test: SNI matches but ALPN doesn't -> should not match
     let ch_http1 = build_tls_client_hello("api.cdn.example.com", "http/1.1");
-    let alpn_http1 =
-        extract_alpn_from_tls_client_hello(&ch_http1).expect("ALPN extraction failed");
+    let alpn_http1 = extract_alpn_from_tls_client_hello(&ch_http1).expect("ALPN extraction failed");
 
     let dec2 = eng.decide(
         &Input {

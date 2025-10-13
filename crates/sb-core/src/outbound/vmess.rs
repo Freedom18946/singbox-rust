@@ -179,16 +179,15 @@ impl VmessOutbound {
     fn encrypt_request(&self, plaintext: &[u8], key: &[u8; 16]) -> io::Result<Vec<u8>> {
         match self.config.security.as_str() {
             "aes-128-gcm" => {
-                let cipher = Aes128Gcm::new_from_slice(key).map_err(|e| {
-                    io::Error::other(format!("AES key error: {}", e))
-                })?;
+                let cipher = Aes128Gcm::new_from_slice(key)
+                    .map_err(|e| io::Error::other(format!("AES key error: {}", e)))?;
 
                 // Generate random nonce
                 let nonce = Nonce::from_slice(&[0u8; 12]); // In real implementation, use random nonce
 
-                let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    io::Error::other(format!("AES encryption error: {}", e))
-                })?;
+                let ciphertext = cipher
+                    .encrypt(nonce, plaintext)
+                    .map_err(|e| io::Error::other(format!("AES encryption error: {}", e)))?;
 
                 // Prepend nonce to ciphertext
                 let mut result = nonce.to_vec();
@@ -202,11 +201,9 @@ impl VmessOutbound {
                 // Generate random nonce
                 let nonce = chacha20poly1305::Nonce::from_slice(&[0u8; 12]); // In real implementation, use random nonce
 
-                let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|e| {
-                    io::Error::other(
-                        format!("ChaCha20 encryption error: {}", e),
-                    )
-                })?;
+                let ciphertext = cipher
+                    .encrypt(nonce, plaintext)
+                    .map_err(|e| io::Error::other(format!("ChaCha20 encryption error: {}", e)))?;
 
                 // Prepend nonce to ciphertext
                 let mut result = nonce.to_vec();
@@ -242,15 +239,15 @@ impl VmessOutbound {
 
         // Padding and Security (4 bits each)
         let padding_security = match self.config.security.as_str() {
-                "aes-128-gcm" => 0x03,
-                "chacha20-poly1305" => 0x04,
-                _ => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        "Unknown security method",
-                    ))
-                }
-            };
+            "aes-128-gcm" => 0x03,
+            "chacha20-poly1305" => 0x04,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Unknown security method",
+                ))
+            }
+        };
         request.push(padding_security);
 
         // Reserved (1 byte)
@@ -305,23 +302,24 @@ impl OutboundTcp for VmessOutbound {
         let start = std::time::Instant::now();
 
         // Connect to VMess server
-        let mut stream = match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
-            Ok(stream) => stream,
-            Err(e) => {
-                record_connect_error(
-                    crate::outbound::OutboundKind::Direct,
-                    OutboundErrorClass::Io,
-                );
+        let mut stream =
+            match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    record_connect_error(
+                        crate::outbound::OutboundKind::Direct,
+                        OutboundErrorClass::Io,
+                    );
 
-                #[cfg(feature = "metrics")]
-                {
-                    use metrics::counter;
-                    counter!("vmess_connect_total", "result" => "connect_fail").increment(1);
+                    #[cfg(feature = "metrics")]
+                    {
+                        use metrics::counter;
+                        counter!("vmess_connect_total", "result" => "connect_fail").increment(1);
+                    }
+
+                    return Err(e);
                 }
-
-                return Err(e);
-            }
-        };
+            };
 
         // Perform handshake on the connected stream
         if let Err(e) = self.do_handshake_on(target, &mut stream).await {
@@ -459,8 +457,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
             .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;
 
         // Perform VMess handshake over the established stream
-        self
-            .do_handshake_on(&target, &mut *stream)
+        self.do_handshake_on(&target, &mut *stream)
             .await
             .map_err(crate::error::SbError::from)?;
 

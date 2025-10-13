@@ -2,7 +2,7 @@
 
 use super::auth::RealityAuth;
 use super::config::RealityClientConfig;
-use super::tls_record::{ClientHello, TlsExtension, ContentType, HandshakeType};
+use super::tls_record::{ClientHello, ContentType, HandshakeType, TlsExtension};
 use super::{RealityError, RealityResult};
 use crate::TlsConnector;
 use async_trait::async_trait;
@@ -67,10 +67,7 @@ impl RealityConnector {
     /// 2. Build ClientHello with forged SNI and embedded auth data
     /// 3. Use rustls with custom certificate verifier for TLS handshake
     /// 4. Verify server response (temporary cert vs real target cert)
-    async fn reality_handshake<S>(
-        &self,
-        stream: S,
-    ) -> RealityResult<crate::TlsIoStream>
+    async fn reality_handshake<S>(&self, stream: S) -> RealityResult<crate::TlsIoStream>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -92,7 +89,7 @@ impl RealityConnector {
 
         // Perform X25519 key exchange to derive shared secret
         let shared_secret = self.auth.derive_shared_secret(&server_public_key);
-        
+
         // Compute authentication hash using shared secret
         let auth_hash = self
             .auth
@@ -128,24 +125,21 @@ impl RealityConnector {
 
         // Step 3: Wrap the stream with REALITY ClientHello interceptor
         // This will inject the REALITY auth extension into the ClientHello
-        let reality_stream = RealityClientStream::new(
-            stream,
-            self.auth.public_key_bytes(),
-            short_id,
-            auth_hash,
-        );
+        let reality_stream =
+            RealityClientStream::new(stream, self.auth.public_key_bytes(), short_id, auth_hash);
 
         // Step 4: Perform TLS handshake with forged SNI
         let server_name = rustls_pki_types::ServerName::try_from(self.config.server_name.clone())
             .map_err(|e| {
-                RealityError::HandshakeFailed(format!("Invalid server name: {:?}", e))
-            })?;
+            RealityError::HandshakeFailed(format!("Invalid server name: {:?}", e))
+        })?;
 
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
 
-        let tls_stream = connector.connect(server_name, reality_stream).await.map_err(|e| {
-            RealityError::HandshakeFailed(format!("TLS handshake failed: {}", e))
-        })?;
+        let tls_stream = connector
+            .connect(server_name, reality_stream)
+            .await
+            .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {}", e)))?;
 
         debug!("REALITY handshake completed successfully");
 
@@ -155,11 +149,7 @@ impl RealityConnector {
 
 #[async_trait]
 impl TlsConnector for RealityConnector {
-    async fn connect<S>(
-        &self,
-        stream: S,
-        server_name: &str,
-    ) -> io::Result<crate::TlsIoStream>
+    async fn connect<S>(&self, stream: S, server_name: &str) -> io::Result<crate::TlsIoStream>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -187,12 +177,7 @@ struct RealityClientStream<S> {
 }
 
 impl<S> RealityClientStream<S> {
-    fn new(
-        inner: S,
-        client_public_key: [u8; 32],
-        short_id: Vec<u8>,
-        auth_hash: [u8; 32],
-    ) -> Self {
+    fn new(inner: S, client_public_key: [u8; 32], short_id: Vec<u8>, auth_hash: [u8; 32]) -> Self {
         Self {
             inner,
             client_public_key,
@@ -231,22 +216,25 @@ impl<S> RealityClientStream<S> {
 
         // Parse ClientHello
         let mut client_hello = ClientHello::parse(handshake_data).map_err(|e| {
-            io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse ClientHello: {}", e))
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to parse ClientHello: {}", e),
+            )
         })?;
 
         debug!("Intercepted ClientHello, injecting REALITY auth extension");
 
         // Add REALITY auth extension
-        let reality_ext = TlsExtension::reality_auth(
-            &self.client_public_key,
-            &self.short_id,
-            &self.auth_hash,
-        );
+        let reality_ext =
+            TlsExtension::reality_auth(&self.client_public_key, &self.short_id, &self.auth_hash);
         client_hello.extensions.push(reality_ext);
 
         // Serialize modified ClientHello
         let modified_handshake = client_hello.serialize().map_err(|e| {
-            io::Error::new(io::ErrorKind::InvalidData, format!("Failed to serialize ClientHello: {}", e))
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to serialize ClientHello: {}", e),
+            )
         })?;
 
         // Build new TLS record
@@ -295,14 +283,17 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for RealityClientStream<S> {
             let modified = match self.inject_reality_extension(buf) {
                 Ok(modified) => modified,
                 Err(e) => {
-                    warn!("Failed to inject REALITY extension: {}, falling back to standard TLS", e);
+                    warn!(
+                        "Failed to inject REALITY extension: {}, falling back to standard TLS",
+                        e
+                    );
                     return Pin::new(&mut self.inner).poll_write(cx, buf);
                 }
             };
 
             // Store the original buffer length to return
             let original_len = buf.len();
-            
+
             // Write modified data to inner stream
             let this = self.get_mut();
             match Pin::new(&mut this.inner).poll_write(cx, &modified) {
@@ -357,7 +348,7 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
         _now: rustls_pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         // REALITY certificate verification logic:
-        // 
+        //
         // The server can respond in two ways:
         // 1. Proxy mode (authenticated): Server presents a temporary certificate
         //    - This certificate is derived from the shared secret
@@ -367,7 +358,7 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
         //    - This happens when authentication fails
         //    - Server acts as a transparent proxy to the real target
         //    - This prevents detection by censors
-        
+
         debug!(
             "REALITY cert verification: server_name={:?}, cert_len={}",
             server_name,
@@ -410,9 +401,9 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
         //
         // For now, we accept any certificate that matches the server name
         // This allows both proxy and crawler modes to work
-        
+
         debug!("REALITY: Accepting certificate (proxy or crawler mode)");
-        
+
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
 

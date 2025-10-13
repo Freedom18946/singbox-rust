@@ -97,7 +97,10 @@ pub fn verify_credentials(
     let username_match = match expected_username {
         Some(expected) => {
             // Use constant-time comparison
-            expected.as_bytes().ct_eq(provided_username.as_bytes()).into()
+            expected
+                .as_bytes()
+                .ct_eq(provided_username.as_bytes())
+                .into()
         }
         None => true, // No username requirement = always matches
     };
@@ -105,7 +108,10 @@ pub fn verify_credentials(
     let password_match = match expected_password {
         Some(expected) => {
             // Use constant-time comparison
-            expected.as_bytes().ct_eq(provided_password.as_bytes()).into()
+            expected
+                .as_bytes()
+                .ct_eq(provided_password.as_bytes())
+                .into()
         }
         None => true, // No password requirement = always matches
     };
@@ -153,8 +159,12 @@ pub fn verify_credentials_required(
     provided_password: &str,
 ) -> bool {
     // Always compare both to maintain constant time
-    let username_match = expected_username.as_bytes().ct_eq(provided_username.as_bytes());
-    let password_match = expected_password.as_bytes().ct_eq(provided_password.as_bytes());
+    let username_match = expected_username
+        .as_bytes()
+        .ct_eq(provided_username.as_bytes());
+    let password_match = expected_password
+        .as_bytes()
+        .ct_eq(provided_password.as_bytes());
 
     // Convert Choice to bool: true if both match
     bool::from(username_match & password_match)
@@ -264,8 +274,12 @@ mod tests {
     #[test]
     fn test_verify_credentials_required() {
         assert!(verify_credentials_required("user", "pass", "user", "pass"));
-        assert!(!verify_credentials_required("user", "pass", "wrong", "pass"));
-        assert!(!verify_credentials_required("user", "pass", "user", "wrong"));
+        assert!(!verify_credentials_required(
+            "user", "pass", "wrong", "pass"
+        ));
+        assert!(!verify_credentials_required(
+            "user", "pass", "user", "wrong"
+        ));
     }
 
     #[test]

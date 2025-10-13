@@ -33,7 +33,7 @@ pub struct TlsConf {
 }
 
 impl TlsConf {
-    #[must_use] 
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -74,7 +74,7 @@ pub enum AuthConf {
 }
 
 impl AuthConf {
-    #[must_use] 
+    #[must_use]
     pub fn from_env() -> Self {
         if std::env::var("SB_ADMIN_NO_AUTH").ok().as_deref() == Some("1") {
             return Self::Disabled;
@@ -98,7 +98,7 @@ impl AuthConf {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub const fn mode(&self) -> &'static str {
         match self {
             Self::Disabled => "disabled",
@@ -111,7 +111,7 @@ impl AuthConf {
 
     /// Convert legacy `AuthConf` to new `AuthConfig`
     #[cfg(feature = "auth")]
-    #[must_use] 
+    #[must_use]
     pub fn to_auth_config(&self) -> AuthConfig {
         match self {
             Self::Disabled | Self::Mtls { .. } => AuthConfig::None,
@@ -137,7 +137,7 @@ impl AuthConf {
 
 pub static START: OnceLock<std::time::Instant> = OnceLock::new();
 
-#[must_use] 
+#[must_use]
 pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
     // Check if auth is disabled
     if std::env::var("SB_ADMIN_NO_AUTH").ok().as_deref() == Some("1") {
@@ -284,7 +284,7 @@ fn check_hmac_auth(hmac_auth: &str, path: &str) -> bool {
         .into()
 }
 
-#[must_use] 
+#[must_use]
 pub fn get_auth_mode() -> &'static str {
     if std::env::var("SB_ADMIN_NO_AUTH").ok().as_deref() == Some("1") {
         "disabled"

@@ -24,7 +24,7 @@ impl OutboundConnector for BlockConnector {
     async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
         Err(std::io::Error::new(
             std::io::ErrorKind::ConnectionRefused,
-            "blocked by policy"
+            "blocked by policy",
         ))
     }
 }

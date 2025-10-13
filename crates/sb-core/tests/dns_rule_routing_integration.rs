@@ -5,7 +5,7 @@
 #[cfg(all(feature = "router", feature = "suffix_trie"))]
 #[tokio::test]
 async fn test_dns_rule_routing_integration() {
-    use sb_core::dns::rule_engine::{DnsRuleEngine, DnsRoutingRule};
+    use sb_core::dns::rule_engine::{DnsRoutingRule, DnsRuleEngine};
     use sb_core::dns::{DnsAnswer, DnsUpstream, RecordType};
     use sb_core::router::ruleset::{
         DefaultRule, IpPrefixTree, Rule, RuleSet, RuleSetFormat, RuleSetSource,
@@ -24,7 +24,11 @@ async fn test_dns_rule_routing_integration() {
 
     #[async_trait::async_trait]
     impl DnsUpstream for TestUpstream {
-        async fn query(&self, _domain: &str, _record_type: RecordType) -> anyhow::Result<DnsAnswer> {
+        async fn query(
+            &self,
+            _domain: &str,
+            _record_type: RecordType,
+        ) -> anyhow::Result<DnsAnswer> {
             Ok(DnsAnswer::new(
                 vec![self.response_ip],
                 std::time::Duration::from_secs(300),
@@ -120,7 +124,10 @@ async fn test_dns_rule_routing_integration() {
     let engine = DnsRuleEngine::new(routing_rules, upstreams, "default_dns".to_string());
 
     // Test Case 1: Google domain should route to Google DNS (8.8.8.8)
-    let result = engine.resolve("www.google.com", RecordType::A).await.unwrap();
+    let result = engine
+        .resolve("www.google.com", RecordType::A)
+        .await
+        .unwrap();
     assert_eq!(result.ips.len(), 1);
     assert_eq!(result.ips[0], IpAddr::from([8, 8, 8, 8]));
     println!("✅ Test 1: www.google.com → 8.8.8.8 (Google DNS)");
@@ -134,12 +141,18 @@ async fn test_dns_rule_routing_integration() {
     println!("✅ Test 2: maps.googleapis.com → 8.8.8.8 (Google DNS)");
 
     // Test Case 3: CN domain should route to CN DNS (114.114.114.114)
-    let result = engine.resolve("www.baidu.com", RecordType::A).await.unwrap();
+    let result = engine
+        .resolve("www.baidu.com", RecordType::A)
+        .await
+        .unwrap();
     assert_eq!(result.ips[0], IpAddr::from([114, 114, 114, 114]));
     println!("✅ Test 3: www.baidu.com → 114.114.114.114 (CN DNS)");
 
     // Test Case 4: Unknown domain should route to default DNS (1.1.1.1)
-    let result = engine.resolve("www.example.com", RecordType::A).await.unwrap();
+    let result = engine
+        .resolve("www.example.com", RecordType::A)
+        .await
+        .unwrap();
     assert_eq!(result.ips[0], IpAddr::from([1, 1, 1, 1]));
     println!("✅ Test 4: www.example.com → 1.1.1.1 (Default DNS)");
 
@@ -153,7 +166,10 @@ async fn test_dns_rule_routing_integration() {
     );
 
     // Test Case 6: Second query should hit cache
-    let result = engine.resolve("www.google.com", RecordType::A).await.unwrap();
+    let result = engine
+        .resolve("www.google.com", RecordType::A)
+        .await
+        .unwrap();
     assert_eq!(result.ips[0], IpAddr::from([8, 8, 8, 8]));
     let (cache_len_after, _) = engine.cache_stats();
     assert_eq!(cache_len_after, 4); // Still 4 (cache hit)

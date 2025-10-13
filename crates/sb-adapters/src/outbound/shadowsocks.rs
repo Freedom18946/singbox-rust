@@ -7,11 +7,11 @@
 use crate::outbound::prelude::*;
 use crate::traits::{OutboundDatagram, ResolveMode};
 use anyhow::Context;
+use sb_transport::Dialer;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpStream, UdpSocket};
-use sb_transport::Dialer;
 
 // Crypto imports
 use aes_gcm::aead::{generic_array::GenericArray, Aead};
@@ -96,7 +96,9 @@ impl ShadowsocksConnector {
         // Create multiplex dialer if configured
         let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
             let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
-            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
+            Some(std::sync::Arc::new(
+                sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer),
+            ))
         } else {
             None
         };
@@ -278,13 +280,16 @@ impl OutboundConnector for ShadowsocksConnector {
                     let io_stream = mux_dialer
                         .connect(&server_addr.ip().to_string(), server_addr.port())
                         .await
-                        .map_err(|e| AdapterError::Other(format!("Multiplex dial failed: {}", e)))?;
+                        .map_err(|e| {
+                            AdapterError::Other(format!("Multiplex dial failed: {}", e))
+                        })?;
                     // Convert IoStream to BoxedStream
                     Box::new(io_stream) as BoxedStream
                 } else {
                     // Standard TCP connection
-                    let timeout =
-                        std::time::Duration::from_secs(self.config.connect_timeout_sec.unwrap_or(30));
+                    let timeout = std::time::Duration::from_secs(
+                        self.config.connect_timeout_sec.unwrap_or(30),
+                    );
                     let tcp_stream = tokio::time::timeout(timeout, TcpStream::connect(server_addr))
                         .await
                         .with_context(|| {
@@ -790,11 +795,7 @@ impl OutboundDatagram for ShadowsocksUdpSocket {
 
     async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
         // Receive from Shadowsocks server
-        let (n, _peer) = self
-            .socket
-            .recv_from(buf)
-            .await
-            .map_err(AdapterError::Io)?;
+        let (n, _peer) = self.socket.recv_from(buf).await.map_err(AdapterError::Io)?;
 
         // Decrypt packet
         let decrypted = self.decrypt_packet(&buf[..n])?;
@@ -888,9 +889,10 @@ mod tests {
     fn test_udp_socket_address_encoding_ipv4() {
         use crate::traits::TransportKind;
 
-        let socket = Arc::new(tokio::net::UdpSocket::from_std(
-            std::net::UdpSocket::bind("127.0.0.1:0").unwrap(),
-        ).unwrap());
+        let socket = Arc::new(
+            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
+                .unwrap(),
+        );
 
         let udp_socket = ShadowsocksUdpSocket::new(
             socket,
@@ -915,9 +917,10 @@ mod tests {
     fn test_udp_socket_address_encoding_domain() {
         use crate::traits::TransportKind;
 
-        let socket = Arc::new(tokio::net::UdpSocket::from_std(
-            std::net::UdpSocket::bind("127.0.0.1:0").unwrap(),
-        ).unwrap());
+        let socket = Arc::new(
+            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
+                .unwrap(),
+        );
 
         let udp_socket = ShadowsocksUdpSocket::new(
             socket,
@@ -942,9 +945,10 @@ mod tests {
     fn test_udp_packet_encryption_decryption() {
         use crate::traits::TransportKind;
 
-        let socket = Arc::new(tokio::net::UdpSocket::from_std(
-            std::net::UdpSocket::bind("127.0.0.1:0").unwrap(),
-        ).unwrap());
+        let socket = Arc::new(
+            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
+                .unwrap(),
+        );
 
         let udp_socket = ShadowsocksUdpSocket::new(
             socket,
@@ -973,9 +977,10 @@ mod tests {
     #[cfg(feature = "adapter-shadowsocks")]
     #[test]
     fn test_parse_address_length() {
-        let socket = Arc::new(tokio::net::UdpSocket::from_std(
-            std::net::UdpSocket::bind("127.0.0.1:0").unwrap(),
-        ).unwrap());
+        let socket = Arc::new(
+            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
+                .unwrap(),
+        );
 
         let udp_socket = ShadowsocksUdpSocket::new(
             socket,
@@ -991,8 +996,7 @@ mod tests {
 
         // Domain: ATYP(1) + LEN(1) + DOMAIN(11) + PORT(2) = 15
         let domain_data = vec![
-            0x03, 11, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o', b'm', 0x01,
-            0xbb,
+            0x03, 11, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o', b'm', 0x01, 0xbb,
         ];
         assert_eq!(udp_socket.parse_address_length(&domain_data).unwrap(), 15);
 

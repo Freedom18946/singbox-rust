@@ -25,11 +25,7 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::outbound::{
-    health::MultiHealthView,
-    registry,
-    selector::PoolSelector,
-};
+use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
@@ -273,7 +269,7 @@ async fn handle_conn(
                     }
                 },
                 RDecision::Proxy(pool_name) => {
-                    if let Some(name) = pool_name{
+                    if let Some(name) = pool_name {
                         // Named proxy pool selection
                         let sel = SELECTOR.get_or_init(|| {
                             let ttl = std::env::var("SB_PROXY_STICKY_TTL_MS")

@@ -111,13 +111,17 @@ impl OutboundConnector for SshConnector {
 
     async fn start(&self) -> Result<()> {
         #[cfg(not(feature = "adapter-ssh"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-ssh" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-ssh",
+        });
 
         #[cfg(feature = "adapter-ssh")]
         {
             // Validate configuration
             if self.config.server.is_empty() {
-                return Err(AdapterError::InvalidConfig("SSH server address is required"));
+                return Err(AdapterError::InvalidConfig(
+                    "SSH server address is required",
+                ));
             }
             if self.config.username.is_empty() {
                 return Err(AdapterError::InvalidConfig("SSH username is required"));
@@ -145,7 +149,9 @@ impl OutboundConnector for SshConnector {
 
     async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-ssh"))]
-        return Err(AdapterError::NotImplemented { what: "adapter-ssh" });
+        return Err(AdapterError::NotImplemented {
+            what: "adapter-ssh",
+        });
 
         #[cfg(feature = "adapter-ssh")]
         {

@@ -1,6 +1,8 @@
 //! WebSocket server/client integration tests
 
-use sb_transport::websocket::{WebSocketDialer, WebSocketListener, WebSocketServerConfig, WebSocketConfig};
+use sb_transport::websocket::{
+    WebSocketConfig, WebSocketDialer, WebSocketListener, WebSocketServerConfig,
+};
 use sb_transport::{Dialer, TcpDialer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;

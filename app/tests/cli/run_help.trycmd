@@ -6,6 +6,7 @@ Usage: run[..]
 
 Options:
 [..]
+      --help-json[..]Print help information in JSON format and exit
   -h, --help[..]Print help
 [..]
 

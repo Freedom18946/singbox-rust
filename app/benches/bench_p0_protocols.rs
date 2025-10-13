@@ -72,24 +72,24 @@ fn bench_baseline_throughput(c: &mut Criterion) {
     let addr = rt.block_on(start_echo_server());
 
     let mut group = c.benchmark_group("baseline_throughput");
-    
+
     for size in [1024, 10 * 1024, 100 * 1024, 1024 * 1024].iter() {
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.to_async(&rt).iter(|| async {
                 let mut stream = TcpStream::connect(addr).await.unwrap();
                 let data = vec![0xAB; size];
-                
+
                 stream.write_all(&data).await.unwrap();
-                
+
                 let mut received = vec![0u8; size];
                 stream.read_exact(&mut received).await.unwrap();
-                
+
                 black_box(received);
             });
         });
     }
-    
+
     group.finish();
 }
 
@@ -99,21 +99,21 @@ fn bench_baseline_latency(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("baseline_latency");
     group.sample_size(1000);
-    
+
     group.bench_function("small_payload", |b| {
         b.to_async(&rt).iter(|| async {
             let mut stream = TcpStream::connect(addr).await.unwrap();
             let data = b"PING";
-            
+
             stream.write_all(data).await.unwrap();
-            
+
             let mut received = [0u8; 4];
             stream.read_exact(&mut received).await.unwrap();
-            
+
             black_box(received);
         });
     });
-    
+
     group.finish();
 }
 
@@ -123,14 +123,14 @@ fn bench_baseline_connection_establishment(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("baseline_connection");
     group.sample_size(500);
-    
+
     group.bench_function("tcp_connect", |b| {
         b.to_async(&rt).iter(|| async {
             let stream = TcpStream::connect(addr).await.unwrap();
             black_box(stream);
         });
     });
-    
+
     group.finish();
 }
 
@@ -146,11 +146,11 @@ mod reality_benches {
 
     pub fn bench_reality_handshake(c: &mut Criterion) {
         let rt = create_runtime();
-        
+
         // Generate test keypair
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
-        
+
         let config = RealityClientConfig {
             enabled: true,
             public_key: hex::encode(public_key.as_bytes()),
@@ -160,7 +160,7 @@ mod reality_benches {
 
         let mut group = c.benchmark_group("reality");
         group.sample_size(100);
-        
+
         // Note: This benchmarks config creation and validation
         // Full handshake requires a REALITY server
         group.bench_function("config_validation", |b| {
@@ -169,7 +169,7 @@ mod reality_benches {
                 black_box(cfg.validate());
             });
         });
-        
+
         group.finish();
     }
 
@@ -199,16 +199,13 @@ mod ech_benches {
 
     pub fn bench_ech_encryption(c: &mut Criterion) {
         let rt = create_runtime();
-        
+
         // Generate test keypair
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
-        
-        let keypair = EchKeypair::new(
-            secret.to_bytes().to_vec(),
-            public_key.as_bytes().to_vec(),
-        );
-        
+
+        let keypair = EchKeypair::new(secret.to_bytes().to_vec(), public_key.as_bytes().to_vec());
+
         let config = EchClientConfig {
             enabled: true,
             config: Some("test_config".to_string()),
@@ -219,14 +216,14 @@ mod ech_benches {
 
         let mut group = c.benchmark_group("ech");
         group.sample_size(500);
-        
+
         group.bench_function("config_validation", |b| {
             b.iter(|| {
                 let cfg = config.clone();
                 black_box(cfg.validate());
             });
         });
-        
+
         group.bench_function("keypair_generation", |b| {
             b.iter(|| {
                 let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
@@ -234,7 +231,7 @@ mod ech_benches {
                 black_box((secret, public_key));
             });
         });
-        
+
         group.finish();
     }
 }
@@ -309,13 +306,13 @@ mod ssh_benches {
         // TODO: Requires SSH server setup
         let mut group = c.benchmark_group("ssh_connection");
         group.sample_size(50);
-        
+
         group.bench_function("placeholder", |b| {
             b.iter(|| {
                 black_box(1);
             });
         });
-        
+
         group.finish();
     }
 
@@ -354,13 +351,13 @@ mod tuic_benches {
         // TODO: Requires TUIC server setup
         let mut group = c.benchmark_group("tuic_connection");
         group.sample_size(100);
-        
+
         group.bench_function("placeholder", |b| {
             b.iter(|| {
                 black_box(1);
             });
         });
-        
+
         group.finish();
     }
 
@@ -397,7 +394,7 @@ fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("memory_usage");
     group.sample_size(10);
-    
+
     for conn_count in [10, 50, 100, 500].iter() {
         group.bench_with_input(
             BenchmarkId::new("concurrent_connections", conn_count),
@@ -405,7 +402,7 @@ fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
             |b, &count| {
                 b.to_async(&rt).iter(|| async {
                     let mut handles = Vec::new();
-                    
+
                     for _ in 0..count {
                         let handle = tokio::spawn(async move {
                             let mut stream = TcpStream::connect(addr).await.unwrap();
@@ -417,7 +414,7 @@ fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
                         });
                         handles.push(handle);
                     }
-                    
+
                     for handle in handles {
                         handle.await.unwrap();
                     }
@@ -425,7 +422,7 @@ fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
             },
         );
     }
-    
+
     group.finish();
 }
 
@@ -449,10 +446,7 @@ criterion_group!(
 );
 
 #[cfg(feature = "tls_ech")]
-criterion_group!(
-    ech_benches_group,
-    ech_benches::bench_ech_encryption
-);
+criterion_group!(ech_benches_group, ech_benches::bench_ech_encryption);
 
 #[cfg(feature = "adapter-hysteria")]
 criterion_group!(
@@ -487,28 +481,28 @@ criterion_group!(
 // Custom main function to handle conditional feature compilation
 fn main() {
     let mut criterion = Criterion::default().configure_from_args();
-    
+
     // Always run baseline benchmarks
     baseline_benches(&mut criterion);
-    
+
     // Conditionally run P0 protocol benchmarks based on enabled features
     #[cfg(feature = "tls_reality")]
     reality_benches_group(&mut criterion);
-    
+
     #[cfg(feature = "tls_ech")]
     ech_benches_group(&mut criterion);
-    
+
     #[cfg(feature = "adapter-hysteria")]
     hysteria_benches_group(&mut criterion);
-    
+
     #[cfg(feature = "adapter-hysteria2")]
     hysteria2_benches_group(&mut criterion);
-    
+
     #[cfg(feature = "adapter-ssh")]
     ssh_benches_group(&mut criterion);
-    
+
     #[cfg(feature = "sb-core/out_tuic")]
     tuic_benches_group(&mut criterion);
-    
+
     criterion.final_summary();
 }

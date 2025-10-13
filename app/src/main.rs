@@ -61,6 +61,29 @@ async fn main() -> anyhow::Result<()> {
             cli::generate::run(a)?;
             Ok(())
         }
+        cli::Commands::Merge(a) => {
+            cli::merge::run(a).await?;
+            Ok(())
+        }
+        cli::Commands::Format(a) => {
+            cli::format::run(a).await?;
+            Ok(())
+        }
+        #[cfg(feature = "router")]
+        cli::Commands::Geoip(a) => {
+            cli::geoip::run(a).await?;
+            Ok(())
+        }
+        #[cfg(feature = "router")]
+        cli::Commands::Geosite(a) => {
+            cli::geosite::run(a).await?;
+            Ok(())
+        }
+        #[cfg(feature = "router")]
+        cli::Commands::Ruleset(a) => {
+            cli::ruleset::run(a).await?;
+            Ok(())
+        }
         #[cfg(feature = "manpage")]
         cli::Commands::Man(a) => {
             cli::man::main(a)?;
@@ -71,6 +94,11 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(feature = "router")]
         cli::Commands::Route(a) => {
             cli::route::run(a)?;
+            Ok(())
+        }
+        #[cfg(feature = "tools")]
+        cli::Commands::Tools(a) => {
+            cli::tools::run(a).await?;
             Ok(())
         }
         cli::Commands::Version(a) => {

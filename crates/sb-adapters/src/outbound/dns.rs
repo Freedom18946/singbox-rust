@@ -144,14 +144,19 @@ impl DnsConnector {
                         // Default to Cloudflare DoH for convenience
                         "https://cloudflare-dns.com/dns-query".to_string()
                     };
-                    let doh = sb_core::dns::transport::doh::DohConfig { url, ..Default::default() }
-                        .build()
-                        .map_err(|e| AdapterError::Other(format!("DoH setup failed: {}", e)))?;
+                    let doh = sb_core::dns::transport::doh::DohConfig {
+                        url,
+                        ..Default::default()
+                    }
+                    .build()
+                    .map_err(|e| AdapterError::Other(format!("DoH setup failed: {}", e)))?;
                     Ok(Box::new(DohStreamWrapper::new(doh)))
                 }
                 #[cfg(not(feature = "dns_doh"))]
                 {
-                    Err(AdapterError::Other("DoH not compiled (enable feature dns_doh)".into()))
+                    Err(AdapterError::Other(
+                        "DoH not compiled (enable feature dns_doh)".into(),
+                    ))
                 }
             }
             DnsTransport::DoQ => {
@@ -170,7 +175,9 @@ impl DnsConnector {
                 }
                 #[cfg(not(feature = "dns_doq"))]
                 {
-                    Err(AdapterError::Other("DoQ not compiled (enable feature dns_doq)".into()))
+                    Err(AdapterError::Other(
+                        "DoQ not compiled (enable feature dns_doq)".into(),
+                    ))
                 }
             }
         }
@@ -331,7 +338,13 @@ struct DoqStreamWrapper {
 #[cfg(feature = "dns_doq")]
 impl DoqStreamWrapper {
     fn new(doq: sb_core::dns::transport::DoqTransport) -> Self {
-        Self { doq: std::sync::Arc::new(doq), write_buf: Vec::new(), read_buf: Vec::new(), read_pos: 0, responded: false }
+        Self {
+            doq: std::sync::Arc::new(doq),
+            write_buf: Vec::new(),
+            read_buf: Vec::new(),
+            read_pos: 0,
+            responded: false,
+        }
     }
 }
 
@@ -375,7 +388,9 @@ impl tokio::io::AsyncWrite for DoqStreamWrapper {
     fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> { std::task::Poll::Ready(Ok(())) }
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
 }
 
 #[cfg(feature = "dns_doq")]
@@ -392,7 +407,9 @@ impl tokio::io::AsyncRead for DoqStreamWrapper {
             self.read_pos += to_copy;
             return std::task::Poll::Ready(Ok(()));
         }
-        if !self.responded { return std::task::Poll::Pending; }
+        if !self.responded {
+            return std::task::Poll::Pending;
+        }
         std::task::Poll::Ready(Ok(()))
     }
 }
@@ -410,7 +427,13 @@ struct DohStreamWrapper {
 #[cfg(feature = "dns_doh")]
 impl DohStreamWrapper {
     fn new(doh: sb_core::dns::transport::doh::DohTransport) -> Self {
-        Self { doh: std::sync::Arc::new(doh), write_buf: Vec::new(), read_buf: Vec::new(), read_pos: 0, responded: false }
+        Self {
+            doh: std::sync::Arc::new(doh),
+            write_buf: Vec::new(),
+            read_buf: Vec::new(),
+            read_pos: 0,
+            responded: false,
+        }
     }
 }
 
@@ -473,10 +496,14 @@ impl tokio::io::AsyncRead for DohStreamWrapper {
             self.read_pos += to_copy;
             return std::task::Poll::Ready(Ok(()));
         }
-        if !self.responded { return std::task::Poll::Pending; }
+        if !self.responded {
+            return std::task::Poll::Pending;
+        }
         // Try to collect the response using a background task stored in a global map is overkill; as a simple approach,
         // issue the DoH call synchronously here if buffer empty (edge case when reader is called before flush).
-        if !self.write_buf.is_empty() && self.read_buf.is_empty() { return std::task::Poll::Pending; }
+        if !self.write_buf.is_empty() && self.read_buf.is_empty() {
+            return std::task::Poll::Pending;
+        }
         // No more data
         std::task::Poll::Ready(Ok(()))
     }

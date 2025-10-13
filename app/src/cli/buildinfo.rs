@@ -8,7 +8,7 @@ pub struct BuildInfo {
     pub build_ts: &'static str,
 }
 
-#[must_use] 
+#[must_use]
 pub const fn current() -> BuildInfo {
     BuildInfo {
         name: env!("CARGO_PKG_NAME"),

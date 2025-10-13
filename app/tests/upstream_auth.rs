@@ -133,21 +133,19 @@ fn upstream_http_basic_auth_sent() {
             override_host: None,
             override_port: None,
         }],
-        outbounds: vec![
-            OutboundIR {
-                ty: OutboundType::Http,
-                name: Some("B".into()),
-                server: Some(http_up_addr.ip().to_string()),
-                port: Some(http_up_addr.port()),
-                credentials: Some(Credentials {
-                    username: Some("u".into()),
-                    password: Some("p".into()),
-                    username_env: None,
-                    password_env: None,
-                }),
-                ..Default::default()
-            }
-        ],
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Http,
+            name: Some("B".into()),
+            server: Some(http_up_addr.ip().to_string()),
+            port: Some(http_up_addr.port()),
+            credentials: Some(Credentials {
+                username: Some("u".into()),
+                password: Some("p".into()),
+                username_env: None,
+                password_env: None,
+            }),
+            ..Default::default()
+        }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],

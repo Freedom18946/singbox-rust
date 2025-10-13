@@ -16,7 +16,8 @@ pub fn install() {
         let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
         let file = format!("target/crash/crash-{ts}-{git}.log");
         let thread = std::thread::current()
-            .name().map_or_else(|| "unnamed".to_string(), std::string::ToString::to_string);
+            .name()
+            .map_or_else(|| "unnamed".to_string(), std::string::ToString::to_string);
         let trace_id = if std::env::var("SB_TRACE_ID").ok().as_deref() == Some("1") {
             Some(crate::telemetry::next_trace_id())
         } else {

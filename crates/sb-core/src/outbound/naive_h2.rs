@@ -123,9 +123,7 @@ impl OutboundTcp for NaiveH2Outbound {
             .await
             .map_err(|e| {
                 record_connect_total(Proto::NaiveH2, ResultTag::HandshakeFail);
-                io::Error::other(
-                    format!("HTTP/2 handshake failed: {}", e),
-                )
+                io::Error::other(format!("HTTP/2 handshake failed: {}", e))
             })?;
 
         // Spawn connection task
@@ -156,9 +154,7 @@ impl OutboundTcp for NaiveH2Outbound {
 
         let response = send_request.send_request(req).await.map_err(|e| {
             record_connect_total(Proto::NaiveH2, ResultTag::ProtocolError);
-            io::Error::other(
-                format!("HTTP/2 request failed: {}", e),
-            )
+            io::Error::other(format!("HTTP/2 request failed: {}", e))
         })?;
 
         // Check response status

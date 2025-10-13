@@ -135,9 +135,10 @@ impl RuleMatcher {
         // Domain suffix matching (convenience field)
         if !rule.domain_suffix.is_empty() {
             if let Some(ref domain) = ctx.domain {
-                let matched = rule.domain_suffix.iter().any(|suffix| {
-                    domain == suffix || domain.ends_with(&format!(".{}", suffix))
-                });
+                let matched = rule
+                    .domain_suffix
+                    .iter()
+                    .any(|suffix| domain == suffix || domain.ends_with(&format!(".{}", suffix)));
                 if !matched {
                     return false;
                 }
@@ -149,7 +150,10 @@ impl RuleMatcher {
         // Domain keyword matching (convenience field)
         if !rule.domain_keyword.is_empty() {
             if let Some(ref domain) = ctx.domain {
-                let matched = rule.domain_keyword.iter().any(|keyword| domain.contains(keyword));
+                let matched = rule
+                    .domain_keyword
+                    .iter()
+                    .any(|keyword| domain.contains(keyword));
                 if !matched {
                     return false;
                 }
@@ -161,12 +165,13 @@ impl RuleMatcher {
         // Domain regex matching (convenience field)
         if !rule.domain_regex.is_empty() {
             if let Some(ref domain) = ctx.domain {
-                let matched = rule.domain_regex.iter().any(|pattern| {
-                    match Regex::new(pattern) {
+                let matched = rule
+                    .domain_regex
+                    .iter()
+                    .any(|pattern| match Regex::new(pattern) {
                         Ok(re) => re.is_match(domain),
                         Err(_) => false,
-                    }
-                });
+                    });
                 if !matched {
                     return false;
                 }
@@ -196,9 +201,10 @@ impl RuleMatcher {
         // Port range matching
         if !rule.port_range.is_empty() {
             let port = ctx.destination_port;
-            let in_range = rule.port_range.iter().any(|(start, end)| {
-                port >= *start && port <= *end
-            });
+            let in_range = rule
+                .port_range
+                .iter()
+                .any(|(start, end)| port >= *start && port <= *end);
             if !in_range {
                 return false;
             }
@@ -230,6 +236,22 @@ impl RuleMatcher {
         if !rule.process_path.is_empty() {
             if let Some(ref path) = ctx.process_path {
                 if !rule.process_path.iter().any(|p| p == path) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // Process path regex matching
+        if !rule.process_path_regex.is_empty() {
+            if let Some(ref path) = ctx.process_path {
+                let matched = rule.process_path_regex.iter().any(|pattern| {
+                    self.get_or_compile_regex(pattern)
+                        .map(|regex| regex.is_match(path))
+                        .unwrap_or(false)
+                });
+                if !matched {
                     return false;
                 }
             } else {
@@ -274,35 +296,17 @@ impl RuleMatcher {
                 #[cfg(not(feature = "suffix_trie"))]
                 {
                     // Fallback: check if domain ends with any suffix
-                    self.ruleset.domain_suffixes.iter().any(|suffix| {
-                        domain == suffix || domain.ends_with(&format!(".{}", suffix))
-                    })
+                    self.ruleset
+                        .domain_suffixes
+                        .iter()
+                        .any(|suffix| domain == suffix || domain.ends_with(&format!(".{}", suffix)))
                 }
             }
             DomainRule::Keyword(keyword) => domain.contains(keyword),
-            DomainRule::Regex(pattern) => {
-                // Get or compile regex
-                let regex = {
-                    let cache = self.regex_cache.read();
-                    if let Some(regex) = cache.get(pattern) {
-                        regex.clone()
-                    } else {
-                        drop(cache);
-                        let mut cache = self.regex_cache.write();
-                        let regex = match Regex::new(pattern) {
-                            Ok(r) => r,
-                            Err(e) => {
-                                tracing::warn!("invalid regex pattern '{}': {}", pattern, e);
-                                return false;
-                            }
-                        };
-                        cache.insert(pattern.clone(), regex.clone());
-                        regex
-                    }
-                };
-
-                regex.is_match(domain)
-            }
+            DomainRule::Regex(pattern) => match self.get_or_compile_regex(pattern) {
+                Some(regex) => regex.is_match(domain),
+                None => false,
+            },
         }
     }
 
@@ -326,6 +330,28 @@ impl RuleMatcher {
     pub fn cache_stats(&self) -> (usize, usize) {
         let cache = self.result_cache.lock();
         (cache.len(), cache.cap().get())
+    }
+
+    /// Retrieve a compiled regex from cache or compile and store it.
+    fn get_or_compile_regex(&self, pattern: &str) -> Option<Regex> {
+        {
+            let cache = self.regex_cache.read();
+            if let Some(regex) = cache.get(pattern) {
+                return Some(regex.clone());
+            }
+        }
+
+        let mut cache = self.regex_cache.write();
+        match Regex::new(pattern) {
+            Ok(regex) => {
+                cache.insert(pattern.to_string(), regex.clone());
+                Some(regex)
+            }
+            Err(e) => {
+                tracing::warn!("invalid regex pattern '{}': {}", pattern, e);
+                None
+            }
+        }
     }
 }
 

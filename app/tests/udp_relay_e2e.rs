@@ -11,13 +11,13 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 // Import adapters
-use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::vless::{VlessConfig, VlessConnector, FlowControl, Encryption};
-use sb_adapters::traits::{OutboundDatagram, Target, TransportKind};
 use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
 use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::inbound::vless::VlessInboundConfig;
+use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
+use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
+use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
+use sb_adapters::traits::{OutboundDatagram, Target, TransportKind};
 use sb_core::router::engine::RouterHandle;
 
 /// Helper: Start UDP echo server
@@ -142,8 +142,8 @@ async fn test_shadowsocks_udp_relay() {
         multiplex: None,
     };
 
-    let connector = ShadowsocksConnector::new(config)
-        .expect("Failed to create Shadowsocks connector");
+    let connector =
+        ShadowsocksConnector::new(config).expect("Failed to create Shadowsocks connector");
 
     // Create UDP relay
     let target = Target {
@@ -158,7 +158,10 @@ async fn test_shadowsocks_udp_relay() {
         .expect("Failed to create UDP relay");
 
     // Set target for subsequent operations
-    if let Some(ss_udp) = udp_socket.as_any().downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>() {
+    if let Some(ss_udp) = udp_socket
+        .as_any()
+        .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
+    ) {
         ss_udp.set_target(target).await;
     }
 
@@ -217,7 +220,10 @@ async fn test_trojan_udp_relay() {
         .expect("Failed to create UDP relay");
 
     // Set target for subsequent operations
-    if let Some(trojan_udp) = udp_socket.as_any().downcast_ref::<sb_adapters::outbound::trojan::TrojanUdpSocket>() {
+    if let Some(trojan_udp) = udp_socket
+        .as_any()
+        .downcast_ref::<sb_adapters::outbound::trojan::TrojanUdpSocket>()
+    {
         trojan_udp.set_target(target).await;
     }
 
@@ -279,7 +285,10 @@ async fn test_vless_udp_relay() {
         .expect("Failed to create UDP relay");
 
     // Set target for subsequent operations
-    if let Some(vless_udp) = udp_socket.as_any().downcast_ref::<sb_adapters::outbound::vless::VlessUdpSocket>() {
+    if let Some(vless_udp) = udp_socket
+        .as_any()
+        .downcast_ref::<sb_adapters::outbound::vless::VlessUdpSocket>()
+    {
         vless_udp.set_target(target).await;
     }
 
@@ -320,8 +329,8 @@ async fn test_shadowsocks_udp_large_packet() {
         multiplex: None,
     };
 
-    let connector = ShadowsocksConnector::new(config)
-        .expect("Failed to create Shadowsocks connector");
+    let connector =
+        ShadowsocksConnector::new(config).expect("Failed to create Shadowsocks connector");
 
     // Create UDP relay
     let target = Target {
@@ -335,7 +344,10 @@ async fn test_shadowsocks_udp_large_packet() {
         .await
         .expect("Failed to create UDP relay");
 
-    if let Some(ss_udp) = udp_socket.as_any().downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>() {
+    if let Some(ss_udp) = udp_socket
+        .as_any()
+        .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
+    ) {
         ss_udp.set_target(target).await;
     }
 
@@ -376,8 +388,8 @@ async fn test_udp_relay_multiple_packets() {
         multiplex: None,
     };
 
-    let connector = ShadowsocksConnector::new(config)
-        .expect("Failed to create Shadowsocks connector");
+    let connector =
+        ShadowsocksConnector::new(config).expect("Failed to create Shadowsocks connector");
 
     // Create UDP relay
     let target = Target {
@@ -391,7 +403,10 @@ async fn test_udp_relay_multiple_packets() {
         .await
         .expect("Failed to create UDP relay");
 
-    if let Some(ss_udp) = udp_socket.as_any().downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>() {
+    if let Some(ss_udp) = udp_socket
+        .as_any()
+        .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
+    ) {
         ss_udp.set_target(target).await;
     }
 
@@ -447,7 +462,10 @@ async fn test_udp_relay_concurrent_operations() {
 
             let udp_socket = connector.udp_relay_dial(target.clone()).await.unwrap();
 
-            if let Some(ss_udp) = udp_socket.as_any().downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>() {
+            if let Some(ss_udp) = udp_socket
+                .as_any()
+                .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
+            ) {
                 ss_udp.set_target(target).await;
             }
 

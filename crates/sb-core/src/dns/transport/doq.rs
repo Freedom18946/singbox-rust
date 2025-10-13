@@ -31,16 +31,12 @@ impl DoqTransport {
                 .unwrap_or(5000),
         );
         // Create client endpoint and config once with DoQ ALPN
-        let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())
-            .map_err(io::Error::other)?;
+        let mut endpoint =
+            quinn::Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(io::Error::other)?;
 
         // Build rustls config with ALPN for DoQ using webpki-roots
         let mut roots = rustls::RootCertStore::empty();
-        roots.extend(
-            webpki_roots::TLS_SERVER_ROOTS
-                .iter()
-                .cloned()
-        );
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
         let mut crypto = rustls::ClientConfig::builder()
             .with_root_certificates(roots)
@@ -48,8 +44,7 @@ impl DoqTransport {
         crypto.alpn_protocols = vec![b"doq".to_vec()];
 
         let client_cfg = quinn::ClientConfig::new(std::sync::Arc::new(
-            quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
-                .map_err(io::Error::other)?
+            quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(io::Error::other)?,
         ));
 
         // Set default client config once during construction
@@ -77,7 +72,9 @@ impl DoqTransport {
                     .map_err(io::Error::other)?;
                 let connected = tokio::time::timeout(self.timeout, connecting)
                     .await
-                    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ connect timeout"))??;
+                    .map_err(|_| {
+                        io::Error::new(io::ErrorKind::TimedOut, "DoQ connect timeout")
+                    })??;
                 *guard = Some(connected.clone());
                 connected
             }
@@ -91,17 +88,25 @@ impl DoqTransport {
         // Send length-prefixed DNS query
         let len = packet.len() as u16;
         let len_be = len.to_be_bytes();
-        tokio::time::timeout(self.timeout, send.write_all(&len_be)).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ write len timeout"))??;
-        tokio::time::timeout(self.timeout, send.write_all(packet)).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ write pkt timeout"))??;
+        tokio::time::timeout(self.timeout, send.write_all(&len_be))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ write len timeout"))??;
+        tokio::time::timeout(self.timeout, send.write_all(packet))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ write pkt timeout"))??;
         let _ = send.finish();
 
         // Read response via tokio compat
         let mut recv = recv.compat();
         let mut len_buf = [0u8; 2];
-        tokio::time::timeout(self.timeout, recv.read_exact(&mut len_buf)).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ read len timeout"))??;
+        tokio::time::timeout(self.timeout, recv.read_exact(&mut len_buf))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ read len timeout"))??;
         let resp_len = u16::from_be_bytes(len_buf) as usize;
         let mut resp = vec![0u8; resp_len];
-        tokio::time::timeout(self.timeout, recv.read_exact(&mut resp)).await.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ read body timeout"))??;
+        tokio::time::timeout(self.timeout, recv.read_exact(&mut resp))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "DoQ read body timeout"))??;
 
         Ok(resp)
     }
@@ -112,5 +117,7 @@ impl DnsTransport for DoqTransport {
     async fn query(&self, packet: &[u8]) -> Result<Vec<u8>> {
         self.query_once(packet).await
     }
-    fn name(&self) -> &'static str { "doq" }
+    fn name(&self) -> &'static str {
+        "doq"
+    }
 }

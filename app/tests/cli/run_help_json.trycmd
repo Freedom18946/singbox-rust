@@ -1,0 +1,16 @@
+```console
+$ cargo run --bin run -- --help-json
+{
+  "name": "run",
+  "usage": "Usage: run [OPTIONS] --config <CONFIG>",
+  "help": "Usage: run [OPTIONS] --config <CONFIG>\n\nOptions:\n  -c, --config <CONFIG>\n          config path\n\n      --prom-listen <PROM_LISTEN>\n          optional prometheus exporter listen addr, e.g., 127.0.0.1:19090\n\n      --format <FORMAT>\n          output format text|json\n          \n          [default: text]\n\n      --health\n          enable outbound health task (also can set HEALTH=1)\n\n      --dns-from-env\n          enable DNS stub+cache via env (DNS_STUB=1)\n\n      --admin-listen <ADMIN_LISTEN>\n          admin http listen (e.g. 127.0.0.1:19090). Also can be set via ADMIN_LISTEN env var\n\n      --admin-token <ADMIN_TOKEN>\n          admin http token (optional). Also can be set via ADMIN_TOKEN env var\n\n      --grace <GRACE>\n          graceful shutdown timeout in milliseconds\n          \n          [default: 1500]\n\n      --reload-path <RELOAD_PATH>\n          config path for SIGHUP reload (optional)\n\n      --admin-impl <ADMIN_IMPL>\n          admin implementation: core|debug (default: core). Also can be set via SB_ADMIN_IMPL env var\n          \n          [default: core]\n\n      --help-json\n          Print help information in JSON format and exit\n\n  -h, --help\n          Print help\n",
+  "about": null,
+  "long_about": null,
+  "before_help": null,
+  "after_help": null,
+  "version": null,
+  "long_version": null,
+  "subcommands": []
+}
+
+```

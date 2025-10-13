@@ -102,10 +102,14 @@ fn test_tun_with_reality_outbound() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN with REALITY outbound should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN with REALITY outbound should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN inbound with Hysteria v2 outbound
@@ -147,10 +151,14 @@ fn test_tun_with_hysteria2_outbound() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN with Hysteria2 outbound should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN with Hysteria2 outbound should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN inbound with SSH outbound
@@ -191,10 +199,14 @@ fn test_tun_with_ssh_outbound() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN with SSH outbound should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN with SSH outbound should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN inbound with TUIC outbound
@@ -237,10 +249,14 @@ fn test_tun_with_tuic_outbound() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN with TUIC outbound should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN with TUIC outbound should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN UDP relay with Hysteria v1
@@ -288,10 +304,14 @@ fn test_tun_udp_relay_with_hysteria_v1() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN UDP relay with Hysteria v1 should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN UDP relay with Hysteria v1 should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN with ECH-enabled outbound
@@ -339,10 +359,14 @@ fn test_tun_with_ech_outbound() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN with ECH outbound should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN with ECH outbound should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN with routing rules to P0 protocols
@@ -427,10 +451,14 @@ fn test_tun_routing_to_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN routing to P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN routing to P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN with DNS and P0 protocols
@@ -480,10 +508,14 @@ fn test_tun_dns_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN DNS with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN DNS with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN with Fake-IP and P0 protocols
@@ -540,10 +572,14 @@ fn test_tun_fakeip_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN Fake-IP with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN Fake-IP with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN with mixed stack and P0 protocols
@@ -593,10 +629,14 @@ fn test_tun_mixed_stack_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN mixed stack with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN mixed stack with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test TUN with IPv6 and P0 protocols
@@ -639,8 +679,12 @@ fn test_tun_ipv6_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "TUN IPv6 with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "TUN IPv6 with P0 protocols should be valid. Output: {}",
+        output
+    );
 }

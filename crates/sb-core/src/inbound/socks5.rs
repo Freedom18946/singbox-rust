@@ -1,8 +1,8 @@
 //! Async SOCKS5 server: no auth, CONNECT only, TCP only.
 //! feature = "scaffold"
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use std::sync::Arc;
 
 use crate::adapter::{Bridge, InboundService};
 use crate::log::{self, Level};
@@ -42,7 +42,9 @@ impl Engine {
 #[cfg(not(feature = "router"))]
 impl Clone for Engine {
     fn clone(&self) -> Self {
-        Self { cfg: self.cfg.clone() }
+        Self {
+            cfg: self.cfg.clone(),
+        }
     }
 }
 
@@ -68,7 +70,11 @@ impl Input {
     }
 }
 
-async fn handle_conn(mut cli: TcpStream, eng: &EngineX<'_>, bridge: &Bridge) -> std::io::Result<()> {
+async fn handle_conn(
+    mut cli: TcpStream,
+    eng: &EngineX<'_>,
+    bridge: &Bridge,
+) -> std::io::Result<()> {
     // greeting
     let mut head = [0u8; 2];
     cli.read_exact(&mut head).await?;
@@ -89,7 +95,8 @@ async fn handle_conn(mut cli: TcpStream, eng: &EngineX<'_>, bridge: &Bridge) -> 
     cli.read_exact(&mut reqh).await?;
     if reqh[1] != 0x01 {
         // CONNECT only
-        cli.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        cli.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
         return Err(std::io::Error::other("only CONNECT supported"));
     }
 
@@ -129,12 +136,24 @@ async fn handle_conn(mut cli: TcpStream, eng: &EngineX<'_>, bridge: &Bridge) -> 
     // 路由决策（默认 direct） → 解析命名出站
     #[cfg(feature = "router")]
     let d = {
-        let input = RouterInput { host: &host, port, network: "tcp", protocol: "socks", sniff_host: None, sniff_alpn: None };
+        let input = RouterInput {
+            host: &host,
+            port,
+            network: "tcp",
+            protocol: "socks",
+            sniff_host: None,
+            sniff_alpn: None,
+        };
         eng.decide(&input, false)
     };
     #[cfg(not(feature = "router"))]
     let d = {
-        let input = Input { host: host.clone(), port, network: "tcp".to_string(), protocol: "socks".to_string() };
+        let input = Input {
+            host: host.clone(),
+            port,
+            network: "tcp".to_string(),
+            protocol: "socks".to_string(),
+        };
         eng.decide(&input, false)
     };
     let out_name = d.outbound;
@@ -147,18 +166,23 @@ async fn handle_conn(mut cli: TcpStream, eng: &EngineX<'_>, bridge: &Bridge) -> 
         Some(connector) => match connector.connect(&host, port).await {
             Ok(stream) => stream,
             Err(e) => {
-                let _ = cli.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await;
+                let _ = cli
+                    .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                    .await;
                 return Err(e);
             }
         },
         None => {
-            let _ = cli.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await;
+            let _ = cli
+                .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await;
             return Err(std::io::Error::other("no outbound connector available"));
         }
     };
 
     // 成功回包（bound addr 使用 0.0.0.0:0）
-    cli.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+    cli.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
 
     // 使用 tokio 的高性能双向复制
     let _ = tokio::io::copy_bidirectional(&mut cli, &mut upstream).await;
@@ -293,7 +317,8 @@ pub async fn udp_associate(
 
     // For simplicity, return a dummy relay address
     let relay_addr = bind_hint.unwrap_or_else(|| {
-        "127.0.0.1:8080".parse()
+        "127.0.0.1:8080"
+            .parse()
             .expect("Default relay address should always be valid")
     });
 

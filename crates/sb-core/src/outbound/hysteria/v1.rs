@@ -320,15 +320,25 @@ impl HysteriaV1Inbound {
         use std::sync::Arc;
 
         // Load TLS certificate and key
-        let cert_chain = std::fs::read(&self.config.cert_path)
-            .map_err(|e| io::Error::new(io::ErrorKind::NotFound, format!("Failed to read cert: {}", e)))?;
-        let key = std::fs::read(&self.config.key_path)
-            .map_err(|e| io::Error::new(io::ErrorKind::NotFound, format!("Failed to read key: {}", e)))?;
+        let cert_chain = std::fs::read(&self.config.cert_path).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Failed to read cert: {}", e),
+            )
+        })?;
+        let key = std::fs::read(&self.config.key_path).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Failed to read key: {}", e),
+            )
+        })?;
 
         // Parse certificate and key
         let cert_chain = rustls_pemfile::certs(&mut &cert_chain[..])
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Invalid cert: {}", e)))?;
+            .map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, format!("Invalid cert: {}", e))
+            })?;
 
         let key = rustls_pemfile::private_key(&mut &key[..])
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Invalid key: {}", e)))?
@@ -338,27 +348,38 @@ impl HysteriaV1Inbound {
         let mut tls_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(cert_chain, key)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("TLS config error: {}", e)))?;
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("TLS config error: {}", e),
+                )
+            })?;
 
         tls_config.alpn_protocols = vec![b"hysteria".to_vec()];
 
         // Build QUIC server config
         let mut server_config = ServerConfig::with_crypto(Arc::new(
-            quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("QUIC config error: {}", e)))?,
+            quinn::crypto::rustls::QuicServerConfig::try_from(tls_config).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("QUIC config error: {}", e),
+                )
+            })?,
         ));
 
         // Configure transport
         let mut transport_config = quinn::TransportConfig::default();
         if let Some(recv_window) = self.config.recv_window_conn {
-            let streams = quinn::VarInt::from_u64(recv_window).unwrap_or(quinn::VarInt::from_u32(100));
+            let streams =
+                quinn::VarInt::from_u64(recv_window).unwrap_or(quinn::VarInt::from_u32(100));
             transport_config.max_concurrent_bidi_streams(streams);
         }
         server_config.transport_config(Arc::new(transport_config));
 
         // Create endpoint
-        let endpoint = Endpoint::server(server_config, self.config.listen)
-            .map_err(|e| io::Error::new(io::ErrorKind::AddrInUse, format!("Failed to bind: {}", e)))?;
+        let endpoint = Endpoint::server(server_config, self.config.listen).map_err(|e| {
+            io::Error::new(io::ErrorKind::AddrInUse, format!("Failed to bind: {}", e))
+        })?;
 
         let mut ep_lock = self.endpoint.lock().await;
         *ep_lock = Some(endpoint);
@@ -370,9 +391,10 @@ impl HysteriaV1Inbound {
     pub async fn accept(&self) -> io::Result<(HysteriaV1Stream, SocketAddr)> {
         let endpoint = {
             let ep_lock = self.endpoint.lock().await;
-            ep_lock.as_ref().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::NotConnected, "Server not started")
-            })?.clone()
+            ep_lock
+                .as_ref()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Server not started"))?
+                .clone()
         };
 
         // Accept QUIC connection
@@ -381,24 +403,34 @@ impl HysteriaV1Inbound {
             .await
             .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionAborted, "Endpoint closed"))?;
 
-        let connection = connecting
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, format!("Connection failed: {}", e)))?;
+        let connection = connecting.await.map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                format!("Connection failed: {}", e),
+            )
+        })?;
 
         let client_addr = connection.remote_address();
 
         // Accept handshake stream
-        let (send_stream, mut recv_stream) = connection
-            .accept_bi()
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, format!("Failed to accept stream: {}", e)))?;
+        let (send_stream, mut recv_stream) = connection.accept_bi().await.map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                format!("Failed to accept stream: {}", e),
+            )
+        })?;
 
         // Read handshake
         let mut handshake_buf = vec![0u8; 1024];
         let n = recv_stream
             .read(&mut handshake_buf)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Handshake read failed: {}", e)))?
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Handshake read failed: {}", e),
+                )
+            })?
             .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "Empty handshake"))?;
 
         handshake_buf.truncate(n);
@@ -413,15 +445,20 @@ impl HysteriaV1Inbound {
 
         // Send success response
         let mut send = send_stream;
-        send.write_all(&[0x00, 0x00])
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::BrokenPipe, format!("Response write failed: {}", e)))?;
+        send.write_all(&[0x00, 0x00]).await.map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                format!("Response write failed: {}", e),
+            )
+        })?;
 
         // Accept data stream
-        let (send_stream, recv_stream) = connection
-            .accept_bi()
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionAborted, format!("Failed to accept data stream: {}", e)))?;
+        let (send_stream, recv_stream) = connection.accept_bi().await.map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                format!("Failed to accept data stream: {}", e),
+            )
+        })?;
 
         Ok((
             HysteriaV1Stream {
@@ -435,7 +472,10 @@ impl HysteriaV1Inbound {
     /// Validate handshake data
     fn validate_handshake(&self, data: &[u8]) -> io::Result<()> {
         if data.is_empty() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Empty handshake"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Empty handshake",
+            ));
         }
 
         let mut cursor = 0;
@@ -451,20 +491,29 @@ impl HysteriaV1Inbound {
 
         // Skip bandwidth config (8 bytes)
         if data.len() < cursor + 8 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Incomplete handshake"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Incomplete handshake",
+            ));
         }
         cursor += 8;
 
         // Check auth
         if data.len() < cursor + 1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Missing auth length"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Missing auth length",
+            ));
         }
         let auth_len = data[cursor] as usize;
         cursor += 1;
 
         if auth_len > 0 {
             if data.len() < cursor + auth_len {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Incomplete auth"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Incomplete auth",
+                ));
             }
 
             let client_auth = std::str::from_utf8(&data[cursor..cursor + auth_len])

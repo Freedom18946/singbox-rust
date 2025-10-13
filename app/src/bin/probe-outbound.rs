@@ -89,4 +89,3 @@ fn extract_first_line(bytes: &[u8]) -> String {
     let s = String::from_utf8_lossy(bytes);
     s.lines().next().unwrap_or("").to_string()
 }
-

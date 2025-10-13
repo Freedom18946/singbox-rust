@@ -9,6 +9,10 @@ fn ctx(dom: Option<&str>, ip: Option<IpAddr>, udp: bool, port: Option<u16>) -> R
         port,
         process_name: None,
         process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     }
 }
 

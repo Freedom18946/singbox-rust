@@ -270,7 +270,13 @@ impl OutboundIR {
             }
 
             // Validate server_name is present
-            if self.reality_server_name.is_none() || self.reality_server_name.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+            if self.reality_server_name.is_none()
+                || self
+                    .reality_server_name
+                    .as_ref()
+                    .map(|s| s.is_empty())
+                    .unwrap_or(true)
+            {
                 return Err(format!(
                     "outbound '{}': reality.server_name is required when reality is enabled",
                     self.name.as_deref().unwrap_or("unnamed")
@@ -339,7 +345,9 @@ mod tests {
             ty: OutboundType::Vless,
             name: Some("test-vless".to_string()),
             reality_enabled: Some(true),
-            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_public_key: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
             reality_short_id: Some("01ab".to_string()),
             reality_server_name: Some("www.apple.com".to_string()),
             ..Default::default()
@@ -388,7 +396,9 @@ mod tests {
             ty: OutboundType::Vless,
             name: Some("test-vless".to_string()),
             reality_enabled: Some(true),
-            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_public_key: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
             reality_short_id: Some("xyz".to_string()), // Invalid hex
             reality_server_name: Some("www.apple.com".to_string()),
             ..Default::default()
@@ -405,7 +415,9 @@ mod tests {
             ty: OutboundType::Vless,
             name: Some("test-vless".to_string()),
             reality_enabled: Some(true),
-            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_public_key: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
             reality_short_id: Some("01ab".to_string()),
             reality_server_name: None,
             ..Default::default()
@@ -435,13 +447,15 @@ mod tests {
     #[test]
     fn test_config_ir_validate_reality() {
         let mut config = ConfigIR::default();
-        
+
         // Add valid outbound
         config.outbounds.push(OutboundIR {
             ty: OutboundType::Vless,
             name: Some("valid".to_string()),
             reality_enabled: Some(true),
-            reality_public_key: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+            reality_public_key: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
             reality_short_id: Some("01ab".to_string()),
             reality_server_name: Some("www.apple.com".to_string()),
             ..Default::default()

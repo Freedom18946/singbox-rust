@@ -6,13 +6,14 @@
 
 use crate::outbound::prelude::*;
 use crate::traits::OutboundDatagram;
+use crate::transport_config::TransportConfig;
 use std::sync::Arc;
 
 #[cfg(feature = "adapter-trojan")]
 mod tls_helper {
-    use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
-    use rustls::{DigitallySignedStruct, SignatureScheme};
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::{DigitallySignedStruct, SignatureScheme};
+    use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
 
     /// No-op certificate verifier for testing (INSECURE - skips all verification)
     #[derive(Debug)]
@@ -87,6 +88,9 @@ pub struct TrojanConfig {
     /// Skip certificate verification
     #[serde(default)]
     pub skip_cert_verify: bool,
+    /// Transport layer (TCP/WebSocket/gRPC/HTTPUpgrade)
+    #[serde(default)]
+    pub transport_layer: TransportConfig,
     /// Optional REALITY TLS configuration for outbound
     #[cfg(feature = "tls_reality")]
     #[serde(default)]
@@ -97,37 +101,52 @@ pub struct TrojanConfig {
 }
 
 /// Trojan outbound connector
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TrojanConnector {
     _config: Option<TrojanConfig>,
-    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
+    /// Transport dialer with optional TLS and Multiplex layers
+    #[cfg(feature = "dep:sb-transport")]
+    dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
 }
 
 impl TrojanConnector {
     pub fn new(config: TrojanConfig) -> Self {
-        // Create multiplex dialer if configured
-        let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
-            let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
-            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
-        } else {
-            None
+        // Create dialer with transport layer and multiplex layers
+        // Note: TLS is handled separately for Trojan (mandatory protocol requirement)
+        #[cfg(feature = "dep:sb-transport")]
+        let dialer = {
+            let tls_config = None; // TLS handled separately in dial()
+
+            #[cfg(feature = "transport_mux")]
+            let multiplex_config = config.multiplex.as_ref();
+            #[cfg(not(feature = "transport_mux"))]
+            let multiplex_config = None;
+
+            Some(
+                config
+                    .transport_layer
+                    .create_dialer_with_layers(tls_config, multiplex_config),
+            )
         };
 
         Self {
             _config: Some(config),
-            multiplex_dialer,
+            #[cfg(feature = "dep:sb-transport")]
+            dialer,
         }
     }
 
     #[cfg(feature = "adapter-trojan")]
-    async fn perform_standard_tls_handshake(
+    async fn perform_standard_tls_handshake<S>(
         &self,
-        tcp_stream: tokio::net::TcpStream,
+        stream: S,
         config: &TrojanConfig,
-    ) -> Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
-        use tokio_rustls::{TlsConnector, rustls::ClientConfig};
+    ) -> Result<tokio_rustls::client::TlsStream<S>>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
         use std::sync::Arc;
+        use tokio_rustls::{rustls::ClientConfig, TlsConnector};
 
         // Create TLS config
         let tls_config = if config.skip_cert_verify {
@@ -147,20 +166,26 @@ impl TrojanConnector {
         };
 
         let connector = TlsConnector::from(Arc::new(tls_config));
-        
+
         // Determine server name for SNI
         let server_name = if let Some(ref sni) = config.sni {
             sni.clone()
         } else {
             // Extract hostname from server address
-            config.server.split(':').next().unwrap_or("localhost").to_string()
+            config
+                .server
+                .split(':')
+                .next()
+                .unwrap_or("localhost")
+                .to_string()
         };
 
         let domain = rustls_pki_types::ServerName::try_from(server_name.as_str())
             .map_err(|e| AdapterError::Other(format!("Invalid server name: {}", e)))?
             .to_owned();
 
-        let tls_stream = connector.connect(domain, tcp_stream)
+        let tls_stream = connector
+            .connect(domain, stream)
             .await
             .map_err(|e| AdapterError::Other(format!("TLS handshake failed: {}", e)))?;
 
@@ -170,13 +195,14 @@ impl TrojanConnector {
     /// Create UDP relay connection (returns OutboundDatagram)
     #[cfg(feature = "adapter-trojan")]
     pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
-        use sha2::{Sha224, Digest};
+        use sha2::{Digest, Sha224};
         use tokio::io::AsyncWriteExt;
         use tokio::net::UdpSocket;
 
-        let config = self._config.as_ref().ok_or_else(|| {
-            AdapterError::Other("Trojan config not set".to_string())
-        })?;
+        let config = self
+            ._config
+            .as_ref()
+            .ok_or_else(|| AdapterError::Other("Trojan config not set".to_string()))?;
 
         tracing::debug!(
             server = %config.server,
@@ -185,7 +211,8 @@ impl TrojanConnector {
         );
 
         // Parse server address
-        let server_addr: std::net::SocketAddr = config.server
+        let server_addr: std::net::SocketAddr = config
+            .server
             .parse()
             .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
 
@@ -195,7 +222,9 @@ impl TrojanConnector {
             .map_err(AdapterError::Io)?;
 
         // Step 2: Perform TLS handshake
-        let mut tls_stream = self.perform_standard_tls_handshake(tcp_stream, config).await?;
+        let mut tls_stream = self
+            .perform_standard_tls_handshake(tcp_stream, config)
+            .await?;
 
         // Step 3: Send UDP ASSOCIATE command (CMD=0x03)
         let mut request = Vec::new();
@@ -212,13 +241,22 @@ impl TrojanConnector {
 
         // Address: server itself for UDP associate
         request.push(0x01); // IPv4
-        request.extend_from_slice(&server_addr.ip().to_string().parse::<std::net::Ipv4Addr>()
-            .unwrap_or(std::net::Ipv4Addr::new(127, 0, 0, 1)).octets());
+        request.extend_from_slice(
+            &server_addr
+                .ip()
+                .to_string()
+                .parse::<std::net::Ipv4Addr>()
+                .unwrap_or(std::net::Ipv4Addr::new(127, 0, 0, 1))
+                .octets(),
+        );
         request.extend_from_slice(&server_addr.port().to_be_bytes());
         request.extend_from_slice(b"\r\n");
 
         // Send UDP ASSOCIATE request
-        tls_stream.write_all(&request).await.map_err(AdapterError::Io)?;
+        tls_stream
+            .write_all(&request)
+            .await
+            .map_err(AdapterError::Io)?;
         tls_stream.flush().await.map_err(AdapterError::Io)?;
 
         // Step 4: Create UDP socket for actual data transfer
@@ -232,15 +270,11 @@ impl TrojanConnector {
             .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
 
         // Create Trojan UDP socket wrapper
-        let trojan_udp = TrojanUdpSocket::new(
-            Arc::new(udp_socket),
-            config.password.clone(),
-        )?;
+        let trojan_udp = TrojanUdpSocket::new(Arc::new(udp_socket), config.password.clone())?;
 
         Ok(Box::new(trojan_udp))
     }
 }
-
 
 #[async_trait]
 impl OutboundConnector for TrojanConnector {
@@ -266,30 +300,65 @@ impl OutboundConnector for TrojanConnector {
 
         #[cfg(feature = "adapter-trojan")]
         {
-            use sha2::{Sha224, Digest};
+            use sha2::{Digest, Sha224};
             use tokio::io::AsyncWriteExt;
-            
-            let config = self._config.as_ref().ok_or_else(|| {
-                AdapterError::Other("Trojan config not set".to_string())
-            })?;
+
+            let config = self
+                ._config
+                .as_ref()
+                .ok_or_else(|| AdapterError::Other("Trojan config not set".to_string()))?;
 
             let _span = crate::outbound::span_dial("trojan", &target);
 
-            // Note: Multiplex support for Trojan outbound is configured but not yet fully implemented
-            // Trojan protocol flow is: TCP -> TLS -> Trojan Protocol
-            // Multiplex would need to be: TCP -> TLS -> Multiplex -> Trojan Protocol
-            // This requires architectural changes to wrap TLS streams with multiplex
-            if config.multiplex.is_some() {
-                tracing::warn!("Multiplex configuration present but not yet fully implemented for Trojan outbound");
-            }
+            // Update comment: Multiplex is now integrated via transport layer
+            // Trojan protocol flow with V2Ray transports:
+            // Transport (TCP/WebSocket/gRPC) -> TLS (REALITY or standard) -> Multiplex -> Trojan Protocol
+            tracing::debug!(
+                "Using transport dialer for Trojan connection (transport: {:?})",
+                config.transport_layer.transport_type()
+            );
 
-            // Parse server address
-            let server_addr = config.server.clone();
-            
-            // Step 1: Establish TCP connection to Trojan server
-            let tcp_stream = tokio::net::TcpStream::connect(&server_addr)
-                .await
-                .map_err(AdapterError::Io)?;
+            // Step 1: Establish base connection via dialer (handles transport layer + multiplex)
+            let timeout = std::time::Duration::from_secs(config.connect_timeout_sec.unwrap_or(30));
+
+            // Parse server address for host and port
+            let server_addr: std::net::SocketAddr = config
+                .server
+                .parse()
+                .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
+
+            #[cfg(feature = "dep:sb-transport")]
+            let base_stream = {
+                if let Some(ref dialer) = self.dialer {
+                    tokio::time::timeout(
+                        timeout,
+                        dialer.connect(&server_addr.ip().to_string(), server_addr.port()),
+                    )
+                    .await
+                    .map_err(|_| AdapterError::Timeout(timeout))?
+                    .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?
+                } else {
+                    // Fallback to direct TCP connection
+                    let tcp_stream = tokio::time::timeout(
+                        timeout,
+                        tokio::net::TcpStream::connect(&config.server),
+                    )
+                    .await
+                    .map_err(|_| AdapterError::Timeout(timeout))?
+                    .map_err(AdapterError::Io)?;
+                    Box::new(tcp_stream) as BoxedStream
+                }
+            };
+
+            #[cfg(not(feature = "dep:sb-transport"))]
+            let base_stream = {
+                let tcp_stream =
+                    tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&config.server))
+                        .await
+                        .map_err(|_| AdapterError::Timeout(timeout))?
+                        .map_err(AdapterError::Io)?;
+                Box::new(tcp_stream) as BoxedStream
+            };
 
             // Step 2: Perform TLS handshake
             #[cfg(feature = "tls_reality")]
@@ -297,46 +366,53 @@ impl OutboundConnector for TrojanConnector {
                 // Use REALITY TLS
                 use sb_tls::TlsConnector;
                 let reality_connector = sb_tls::reality::RealityConnector::new(reality_cfg.clone())
-                    .map_err(|e| AdapterError::Other(format!("Failed to create REALITY connector: {}", e)))?;
-                
+                    .map_err(|e| {
+                        AdapterError::Other(format!("Failed to create REALITY connector: {}", e))
+                    })?;
+
                 let server_name = reality_cfg.server_name.clone();
-                let tls_stream = reality_connector.connect(tcp_stream, &server_name)
+                let tls_stream = reality_connector
+                    .connect(base_stream, &server_name)
                     .await
                     .map_err(|e| AdapterError::Other(format!("REALITY handshake failed: {}", e)))?;
-                
+
                 Box::new(tls_stream)
             } else {
                 // Use standard TLS
-                let tls_stream = self.perform_standard_tls_handshake(tcp_stream, config).await?;
+                let tls_stream = self
+                    .perform_standard_tls_handshake(base_stream, config)
+                    .await?;
                 Box::new(tls_stream)
             };
-            
+
             #[cfg(not(feature = "tls_reality"))]
             let mut stream: BoxedStream = {
                 // Use standard TLS
-                let tls_stream = self.perform_standard_tls_handshake(tcp_stream, config).await?;
+                let tls_stream = self
+                    .perform_standard_tls_handshake(base_stream, config)
+                    .await?;
                 Box::new(tls_stream)
             };
 
             // Step 3: Perform Trojan handshake
-            
+
             // Trojan request format:
             // [SHA224(password)][CRLF][CMD][ATYP][DST.ADDR][DST.PORT][CRLF]
             // CMD: 0x01 for CONNECT
             // ATYP: 0x01 (IPv4), 0x03 (Domain), 0x04 (IPv6)
-            
+
             let mut request = Vec::new();
-            
+
             // Password hash (SHA224)
             let mut hasher = Sha224::new();
             hasher.update(config.password.as_bytes());
             let password_hash = hasher.finalize();
             request.extend_from_slice(&hex::encode(password_hash).as_bytes());
             request.extend_from_slice(b"\r\n");
-            
+
             // Command: CONNECT (0x01)
             request.push(0x01);
-            
+
             // Address type and address
             if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
                 match ip {
@@ -355,15 +431,15 @@ impl OutboundConnector for TrojanConnector {
                 request.push(target.host.len() as u8);
                 request.extend_from_slice(target.host.as_bytes());
             }
-            
+
             // Port (big-endian)
             request.extend_from_slice(&target.port.to_be_bytes());
             request.extend_from_slice(b"\r\n");
-            
+
             // Send Trojan request
             stream.write_all(&request).await.map_err(AdapterError::Io)?;
             stream.flush().await.map_err(AdapterError::Io)?;
-            
+
             // Trojan doesn't send a response for CONNECT, connection is ready
             Ok(Box::new(stream) as BoxedStream)
         }
@@ -443,7 +519,10 @@ impl TrojanUdpSocket {
 
         // CMD should be 0x03
         if packet[0] != 0x03 {
-            return Err(AdapterError::Protocol(format!("Invalid CMD: {}", packet[0])));
+            return Err(AdapterError::Protocol(format!(
+                "Invalid CMD: {}",
+                packet[0]
+            )));
         }
 
         let mut offset = 1;
@@ -504,11 +583,7 @@ impl OutboundDatagram for TrojanUdpSocket {
         let packet = self.encode_packet(payload, &target)?;
 
         // Send to Trojan server
-        let sent = self
-            .socket
-            .send(&packet)
-            .await
-            .map_err(AdapterError::Io)?;
+        let sent = self.socket.send(&packet).await.map_err(AdapterError::Io)?;
 
         tracing::trace!(
             target = %format!("{}:{}", target.host, target.port),
@@ -521,11 +596,7 @@ impl OutboundDatagram for TrojanUdpSocket {
 
     async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
         // Receive from Trojan server
-        let (n, _peer) = self
-            .socket
-            .recv_from(buf)
-            .await
-            .map_err(AdapterError::Io)?;
+        let (n, _peer) = self.socket.recv_from(buf).await.map_err(AdapterError::Io)?;
 
         // Decode packet
         let payload = self.decode_packet(&buf[..n])?;
@@ -565,6 +636,7 @@ mod tests {
             connect_timeout_sec: Some(30),
             sni: Some("example.com".to_string()),
             skip_cert_verify: false,
+            transport_layer: TransportConfig::default(),
             #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,

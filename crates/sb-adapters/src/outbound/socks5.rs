@@ -26,7 +26,9 @@ pub struct Socks5Connector {
 impl Socks5Connector {
     pub fn new(config: Socks5Config) -> Self {
         #[cfg(feature = "transport_ech")]
-        let ech_config = config.tls.as_ref()
+        let ech_config = config
+            .tls
+            .as_ref()
             .and_then(|tls| tls.ech.as_ref())
             .filter(|ech| ech.enabled)
             .map(|ech| sb_tls::EchClientConfig {
@@ -537,14 +539,15 @@ impl Socks5Connector {
 
     /// Perform username/password authentication
     async fn socks5_auth(&self, stream: &mut TcpStream, timeout: Duration) -> Result<()> {
-        let (username, password) = match (self.config.username.as_ref(), self.config.password.as_ref()) {
-            (Some(u), Some(p)) => (u, p),
-            _ => {
-                return Err(AdapterError::InvalidConfig(
-                    "Username/password required but missing in config",
-                ))
-            }
-        };
+        let (username, password) =
+            match (self.config.username.as_ref(), self.config.password.as_ref()) {
+                (Some(u), Some(p)) => (u, p),
+                _ => {
+                    return Err(AdapterError::InvalidConfig(
+                        "Username/password required but missing in config",
+                    ))
+                }
+            };
 
         if username.len() > 255 || password.len() > 255 {
             return Err(AdapterError::InvalidConfig("Username or password too long"));
@@ -1079,9 +1082,7 @@ impl Socks5Connector {
             let mut head2 = [0u8; 4];
             stream.read_exact(&mut head2).await?;
             if head2[0] != 0x05 || head2[1] != 0x00 {
-                return Err(std::io::Error::other(
-                    "BIND not accepted",
-                ));
+                return Err(std::io::Error::other("BIND not accepted"));
             }
             // Skip addr
             let skip2 = match head2[3] {

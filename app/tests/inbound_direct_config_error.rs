@@ -19,10 +19,12 @@ fn direct_inbound_missing_override_errors() {
             name: Some("direct".into()),
             ..Default::default()
         }],
-        route: sb_config::ir::RouteIR { rules: vec![], default: Some("direct".into()) },
+        route: sb_config::ir::RouteIR {
+            rules: vec![],
+            default: Some("direct".into()),
+        },
     };
 
     let res = Bridge::new_from_config(&ir);
     assert!(res.is_err(), "expected error for missing override fields");
 }
-

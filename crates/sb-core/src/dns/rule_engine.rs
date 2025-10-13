@@ -298,11 +298,7 @@ mod tests {
             }) as Arc<dyn DnsUpstream>,
         );
 
-        let engine = DnsRuleEngine::new(
-            vec![routing_rule],
-            upstreams,
-            "default_dns".to_string(),
-        );
+        let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "default_dns".to_string());
 
         // Test: google.com should route to google_dns
         let result = engine.resolve("www.google.com", RecordType::A).await;

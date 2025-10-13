@@ -60,15 +60,12 @@ impl TcpTransport {
         let length_bytes = length.to_be_bytes();
 
         // 发送长度前缀和查询包
-        tokio::time::timeout(
-            self.timeout,
-            async {
-                stream.write_all(&length_bytes).await?;
-                stream.write_all(packet).await?;
-                stream.flush().await?;
-                Ok::<(), std::io::Error>(())
-            },
-        )
+        tokio::time::timeout(self.timeout, async {
+            stream.write_all(&length_bytes).await?;
+            stream.write_all(packet).await?;
+            stream.flush().await?;
+            Ok::<(), std::io::Error>(())
+        })
         .await
         .context("TCP DNS write timeout")?
         .context("Failed to write DNS query")?;
@@ -207,7 +204,11 @@ mod tests {
         );
 
         // 验证响应标识与查询匹配
-        assert_eq!(response[0..2], query_packet[0..2], "Transaction ID mismatch");
+        assert_eq!(
+            response[0..2],
+            query_packet[0..2],
+            "Transaction ID mismatch"
+        );
     }
 
     #[tokio::test]

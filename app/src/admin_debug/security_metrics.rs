@@ -22,7 +22,7 @@ pub enum SecurityErrorKind {
 }
 
 impl SecurityErrorKind {
-    #[must_use] 
+    #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Timeout => "timeout",
@@ -760,16 +760,14 @@ pub fn snapshot() -> SecuritySnapshot {
         .and_then(|m| m.lock().ok())
         .map(|m| m.clone())
         .unwrap_or_default();
-    let (buckets, count, sum) = LATENCY_SNAPSHOT
-        .get().cloned()
-        .unwrap_or_else(|| {
-            // Initialize with zero counts if no latency has been recorded yet
-            let empty_buckets: Vec<(f64, u64)> = LAT_BUCKETS
-                .iter()
-                .map(|&b| (b as f64 / 1000.0, 0))
-                .collect();
-            (empty_buckets, 0, 0)
-        });
+    let (buckets, count, sum) = LATENCY_SNAPSHOT.get().cloned().unwrap_or_else(|| {
+        // Initialize with zero counts if no latency has been recorded yet
+        let empty_buckets: Vec<(f64, u64)> = LAT_BUCKETS
+            .iter()
+            .map(|&b| (b as f64 / 1000.0, 0))
+            .collect();
+        (empty_buckets, 0, 0)
+    });
 
     // Get cache byte usage
     let (cache_bytes_mem, cache_bytes_disk) = crate::admin_debug::cache::global()

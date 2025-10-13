@@ -220,7 +220,10 @@ mod tests {
 
         let result = EchKeypair::from_base64(private_b64, public_b64);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), super::super::EchError::InvalidConfig(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            super::super::EchError::InvalidConfig(_)
+        ));
     }
 
     #[test]
@@ -241,7 +244,7 @@ mod tests {
 
         let result = EchKeypair::from_base64(private_b64, public_b64);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             super::super::EchError::InvalidConfig(msg) => {
                 assert!(msg.contains("must be 32 bytes"));
@@ -262,14 +265,12 @@ mod tests {
     #[test]
     fn test_ech_client_config_with_valid_config() {
         let config_list = create_test_ech_config_list();
-        let config_b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &config_list
-        );
+        let config_b64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &config_list);
 
         let config = EchClientConfig::new(config_b64);
         assert!(config.is_ok());
-        
+
         let config = config.unwrap();
         assert!(config.enabled);
         assert!(config.config.is_some());
@@ -284,10 +285,8 @@ mod tests {
         assert!(result.is_err());
 
         // Valid base64 but invalid ECHConfigList
-        let invalid_config = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            b"invalid"
-        );
+        let invalid_config =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"invalid");
         let config = EchClientConfig::new(invalid_config).unwrap();
         assert!(config.validate().is_err());
     }
@@ -315,7 +314,7 @@ mod tests {
     #[test]
     fn test_ech_server_config_with_keypair() {
         let keypair = EchKeypair::new(vec![1u8; 32], vec![2u8; 32]);
-        
+
         let mut config = EchServerConfig::default();
         config.enabled = true;
         config.keypair = Some(keypair);
@@ -359,55 +358,54 @@ mod tests {
     // Helper function to create a test ECH config list
     fn create_test_ech_config_list() -> Vec<u8> {
         use x25519_dalek::{PublicKey, StaticSecret};
-        
+
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
-        
+
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version (0xfe0d = Draft-13)
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
-        
+
         // Cipher suites length + cipher suite
         // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
         config_list.extend_from_slice(&[0x00, 0x06]);
         config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
-        
+
         // Maximum name length
         config_list.push(64);
-        
+
         // Public name length + public name
         let public_name = b"public.example.com";
         config_list.push(public_name.len() as u8);
         config_list.extend_from_slice(public_name);
-        
+
         // Extensions length (empty)
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Fill in config length
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         // Fill in list length
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         config_list
     }
 }

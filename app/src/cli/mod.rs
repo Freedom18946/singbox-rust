@@ -56,14 +56,21 @@ pub mod bench;
 pub mod buildinfo;
 pub mod check;
 pub mod completion;
-pub mod generate;
+pub mod format;
 #[cfg(feature = "dev-cli")]
 pub mod fs_scan;
+pub mod generate;
+#[cfg(feature = "router")]
+pub mod geoip;
+#[cfg(feature = "router")]
+pub mod geosite;
 #[cfg(feature = "dev-cli")]
 pub mod health;
+pub mod help;
 pub mod json;
 #[cfg(feature = "manpage")]
 pub mod man;
+pub mod merge;
 pub mod output;
 #[cfg(feature = "prefetch")]
 pub mod prefetch;
@@ -73,7 +80,11 @@ pub mod report;
 #[cfg(feature = "router")]
 pub mod route;
 #[cfg(feature = "router")]
+pub mod ruleset;
+#[cfg(feature = "router")]
 pub mod run;
+#[cfg(feature = "tools")]
+pub mod tools;
 pub mod version;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -115,6 +126,19 @@ pub enum Commands {
     GenCompletions(completion::CompletionArgs),
     /// Generate cryptographic keys (REALITY, ECH)
     Generate(generate::GenerateArgs),
+    /// Merge configuration files/directories
+    Merge(merge::MergeArgs),
+    /// Format configuration files
+    Format(format::FormatArgs),
+    /// GeoIP tooling (list/lookup/export)
+    #[cfg(feature = "router")]
+    Geoip(geoip::GeoipArgs),
+    /// Geosite tooling (list/lookup/export/matcher)
+    #[cfg(feature = "router")]
+    Geosite(geosite::GeositeArgs),
+    /// Rule-set management (validate/compile/etc.)
+    #[cfg(feature = "router")]
+    Ruleset(ruleset::RulesetArgs),
     /// 生成 man page
     #[cfg(feature = "manpage")]
     Man(man::ManArgs),
@@ -124,6 +148,9 @@ pub enum Commands {
     #[cfg(feature = "router")]
     /// Route explain and test
     Route(route::RouteArgs),
+    /// Utility helpers (connect/fetch/synctime)
+    #[cfg(feature = "tools")]
+    Tools(tools::ToolsArgs),
     /// Display version information
     Version(VersionArgs),
 }

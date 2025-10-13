@@ -101,8 +101,8 @@ vmess = []
 vless = []
 # ShadowTLS inbound (TLS masquerading server)
 shadowtls = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile"]
-# Naive inbound (HTTP/2 CONNECT proxy server)
-naive = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile", "dep:h2", "dep:http"]
+# Naive inbound (HTTP/2 CONNECT proxy server) - Sprint 20: Migrated to sb-tls infrastructure
+naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 # TUIC inbound (QUIC-based server)
 tuic_server = ["dep:quinn", "dep:rustls", "dep:rustls-pemfile"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
@@ -125,14 +125,15 @@ socks-bind = ["adapter-socks"]
 adapter-http = []
 http-tls = ["adapter-http", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls"]
 adapter-shadowsocks = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/serde"]
-adapter-trojan = ["dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
-adapter-vmess = []
-adapter-vless = []
+adapter-trojan = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
+adapter-vmess = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde"]
+adapter-vless = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde"]
 adapter-hysteria = ["sb-core/out_hysteria"]
 adapter-hysteria2 = ["sb-core/out_hysteria2"]
-adapter-shadowtls = ["sb-core/out_shadowtls"]
+adapter-shadowtls = ["dep:sb-transport", "sb-transport/transport_tls", "sb-core/out_shadowtls"]
 adapter-ssh = ["sb-core/out_ssh"]
 adapter-tuic = ["sb-core/out_tuic"]
+adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 adapter-dns = []
 
 # TLS features

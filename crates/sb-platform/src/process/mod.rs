@@ -212,7 +212,8 @@ impl Default for ProcessMatcher {
             macos_impl: macos::MacOsProcessMatcher::new().unwrap_or(macos::MacOsProcessMatcher),
             #[cfg(target_os = "macos")]
             #[cfg(feature = "native-process-match")]
-            macos_native_impl: native_macos::NativeMacOsProcessMatcher::new().unwrap_or(native_macos::NativeMacOsProcessMatcher),
+            macos_native_impl: native_macos::NativeMacOsProcessMatcher::new()
+                .unwrap_or(native_macos::NativeMacOsProcessMatcher),
             #[cfg(target_os = "windows")]
             #[cfg(not(feature = "native-process-match"))]
             windows_impl: windows::WindowsProcessMatcher::new()

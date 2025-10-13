@@ -377,7 +377,9 @@ impl OutboundRegistryHandle {
                         use crate::outbound::crypto_types::HostPort as Hp;
                         use crate::outbound::traits::OutboundConnectorIo;
                         use crate::outbound::trojan::TrojanOutbound;
-                        use crate::types::{ConnCtx, Endpoint as CEndpoint, Host as CHost, Network};
+                        use crate::types::{
+                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
+                        };
                         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
                         let _target_hp = match ep.clone() {
@@ -387,7 +389,9 @@ impl OutboundRegistryHandle {
 
                         let dst = match ep {
                             Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => CEndpoint::new(CHost::domain(host), port),
+                            Endpoint::Domain(host, port) => {
+                                CEndpoint::new(CHost::domain(host), port)
+                            }
                         };
                         let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
                         let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
@@ -397,27 +401,31 @@ impl OutboundRegistryHandle {
 
                         let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
                             .await
-                            .map_err(|e| io::Error::other(format!("Trojan connect_io failed: {}", e)))?;
+                            .map_err(|e| {
+                                io::Error::other(format!("Trojan connect_io failed: {}", e))
+                            })?;
                         Ok(stream)
                     }
                     #[cfg(feature = "out_ss")]
-                    Some(OutboundImpl::Shadowsocks(_cfg)) => Err(io::Error::other(
-                        "Shadowsocks boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::Shadowsocks(_cfg)) => {
+                        Err(io::Error::other("Shadowsocks boxed IO not implemented"))
+                    }
                     #[cfg(feature = "out_shadowtls")]
-                    Some(OutboundImpl::ShadowTls(_cfg)) => Err(io::Error::other(
-                        "ShadowTls boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::ShadowTls(_cfg)) => {
+                        Err(io::Error::other("ShadowTls boxed IO not implemented"))
+                    }
                     #[cfg(feature = "out_naive")]
-                    Some(OutboundImpl::Naive(_cfg)) => Err(io::Error::other(
-                        "Naive HTTP/2 boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::Naive(_cfg)) => {
+                        Err(io::Error::other("Naive HTTP/2 boxed IO not implemented"))
+                    }
                     #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
                     Some(OutboundImpl::Vless(cfg)) => {
                         use crate::outbound::crypto_types::HostPort as Hp;
                         use crate::outbound::traits::OutboundConnectorIo;
                         use crate::outbound::vless::VlessOutbound;
-                        use crate::types::{ConnCtx, Endpoint as CEndpoint, Host as CHost, Network};
+                        use crate::types::{
+                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
+                        };
                         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
                         let _target_hp = match ep.clone() {
@@ -427,7 +435,9 @@ impl OutboundRegistryHandle {
 
                         let dst = match ep {
                             Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => CEndpoint::new(CHost::domain(host), port),
+                            Endpoint::Domain(host, port) => {
+                                CEndpoint::new(CHost::domain(host), port)
+                            }
                         };
                         let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
                         let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
@@ -437,16 +447,20 @@ impl OutboundRegistryHandle {
 
                         let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
                             .await
-                            .map_err(|e| io::Error::other(format!("VLESS connect_io failed: {}", e)))?;
+                            .map_err(|e| {
+                                io::Error::other(format!("VLESS connect_io failed: {}", e))
+                            })?;
                         Ok(stream)
                     }
                     #[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
                     Some(OutboundImpl::Vmess(cfg)) => {
                         // Use vmess connector to establish layered transport
-                        use crate::outbound::vmess::VmessOutbound;
                         use crate::outbound::crypto_types::HostPort as Hp;
                         use crate::outbound::traits::OutboundConnectorIo;
-                        use crate::types::{ConnCtx, Endpoint as CEndpoint, Host as CHost, Network};
+                        use crate::outbound::vmess::VmessOutbound;
+                        use crate::types::{
+                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
+                        };
                         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
                         let _target_hp = match ep.clone() {
@@ -457,7 +471,9 @@ impl OutboundRegistryHandle {
                         // Build minimal ConnCtx
                         let dst = match ep {
                             Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
-                            Endpoint::Domain(host, port) => CEndpoint::new(CHost::domain(host), port),
+                            Endpoint::Domain(host, port) => {
+                                CEndpoint::new(CHost::domain(host), port)
+                            }
                         };
                         let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
                         let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
@@ -467,25 +483,27 @@ impl OutboundRegistryHandle {
 
                         let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
                             .await
-                            .map_err(|e| io::Error::other(format!("VMess connect_io failed: {}", e)))?;
+                            .map_err(|e| {
+                                io::Error::other(format!("VMess connect_io failed: {}", e))
+                            })?;
                         Ok(stream)
                     }
                     #[cfg(feature = "out_tuic")]
-                    Some(OutboundImpl::Tuic(_cfg)) => Err(io::Error::other(
-                        "TUIC boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::Tuic(_cfg)) => {
+                        Err(io::Error::other("TUIC boxed IO not implemented"))
+                    }
                     #[cfg(feature = "out_hysteria2")]
-                    Some(OutboundImpl::Hysteria2(_cfg)) => Err(io::Error::other(
-                        "Hysteria2 boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::Hysteria2(_cfg)) => {
+                        Err(io::Error::other("Hysteria2 boxed IO not implemented"))
+                    }
                     #[cfg(feature = "out_wireguard")]
-                    Some(OutboundImpl::WireGuard(_cfg)) => Err(io::Error::other(
-                        "WireGuard boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::WireGuard(_cfg)) => {
+                        Err(io::Error::other("WireGuard boxed IO not implemented"))
+                    }
                     #[cfg(feature = "out_ssh")]
-                    Some(OutboundImpl::Ssh(_cfg)) => Err(io::Error::other(
-                        "SSH boxed IO not implemented",
-                    )),
+                    Some(OutboundImpl::Ssh(_cfg)) => {
+                        Err(io::Error::other("SSH boxed IO not implemented"))
+                    }
                     None => Err(io::Error::new(
                         io::ErrorKind::NotFound,
                         "outbound not found",
@@ -505,9 +523,13 @@ impl OutboundRegistryHandle {
     ) -> io::Result<sb_transport::IoStream> {
         #[cfg(feature = "v2ray_transport")]
         {
-            let use_v2ray = ["SB_VMESS_TRANSPORT", "SB_VLESS_TRANSPORT", "SB_TROJAN_TRANSPORT"]
-                .iter()
-                .any(|k| std::env::var(k).map(|v| !v.is_empty()).unwrap_or(false));
+            let use_v2ray = [
+                "SB_VMESS_TRANSPORT",
+                "SB_VLESS_TRANSPORT",
+                "SB_TROJAN_TRANSPORT",
+            ]
+            .iter()
+            .any(|k| std::env::var(k).map(|v| !v.is_empty()).unwrap_or(false));
             if use_v2ray {
                 if let Ok(s) = self.connect_io(target, ep.clone()).await {
                     return Ok(s);
@@ -999,11 +1021,8 @@ async fn shadowtls_connect(
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let _outbound = shadowtls::ShadowTlsOutbound::new(cfg.clone()).map_err(|e| {
-        io::Error::other(
-            format!("ShadowTLS setup failed: {}", e),
-        )
-    })?;
+    let _outbound = shadowtls::ShadowTlsOutbound::new(cfg.clone())
+        .map_err(|e| io::Error::other(format!("ShadowTLS setup failed: {}", e)))?;
 
     // Note: ShadowTLS returns a TLS stream, not a TcpStream
     // For now, return an error indicating this needs proper handling
@@ -1090,11 +1109,8 @@ async fn hysteria2_connect(
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let _outbound = hysteria2::Hysteria2Outbound::new(cfg.clone()).map_err(|e| {
-        io::Error::other(
-            format!("Hysteria2 setup failed: {}", e),
-        )
-    })?;
+    let _outbound = hysteria2::Hysteria2Outbound::new(cfg.clone())
+        .map_err(|e| io::Error::other(format!("Hysteria2 setup failed: {}", e)))?;
 
     // Note: Hysteria2 returns a compat stream, not a TcpStream
     Err(io::Error::other(
@@ -1114,11 +1130,8 @@ async fn wireguard_connect(
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = wireguard_stub::WireGuardOutbound::new(cfg.clone()).map_err(|e| {
-        io::Error::other(
-            format!("WireGuard setup failed: {}", e),
-        )
-    })?;
+    let outbound = wireguard_stub::WireGuardOutbound::new(cfg.clone())
+        .map_err(|e| io::Error::other(format!("WireGuard setup failed: {}", e)))?;
 
     outbound.connect(&target).await
 }

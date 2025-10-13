@@ -181,7 +181,10 @@ impl Dialer for Http2Dialer {
             .parse()
             .map_err(|e| DialError::Other(format!("Invalid HTTP/2 URI: {}", e)))?;
 
-        let method = self.config.method.parse::<Method>()
+        let method = self
+            .config
+            .method
+            .parse::<Method>()
             .map_err(|e| DialError::Other(format!("Invalid HTTP method: {}", e)))?;
 
         let mut request = Request::builder()
@@ -190,7 +193,8 @@ impl Dialer for Http2Dialer {
             .version(http::Version::HTTP_2);
 
         // Add custom headers
-        let headers = request.headers_mut()
+        let headers = request
+            .headers_mut()
             .ok_or_else(|| DialError::Other("Failed to get headers".to_string()))?;
 
         for (key, value) in &self.config.headers {
@@ -215,7 +219,8 @@ impl Dialer for Http2Dialer {
             );
         }
 
-        let request = request.body(())
+        let request = request
+            .body(())
             .map_err(|e| DialError::Other(format!("Failed to build request: {}", e)))?;
 
         // Send request and get response stream
@@ -226,7 +231,8 @@ impl Dialer for Http2Dialer {
         debug!("HTTP/2 request sent, waiting for response headers");
 
         // Wait for response headers
-        let response = response.await
+        let response = response
+            .await
             .map_err(|e| DialError::Other(format!("Failed to receive HTTP/2 response: {}", e)))?;
 
         debug!("HTTP/2 response received: {:?}", response.status());
@@ -334,14 +340,12 @@ impl AsyncWrite for Http2StreamAdapter {
                 let to_send = available.min(buf.len());
                 let data = Bytes::copy_from_slice(&buf[..to_send]);
 
-                self.send_stream
-                    .send_data(data, false)
-                    .map_err(|e| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("HTTP/2 send error: {}", e),
-                        )
-                    })?;
+                self.send_stream.send_data(data, false).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("HTTP/2 send error: {}", e),
+                    )
+                })?;
 
                 Poll::Ready(Ok(to_send))
             }
@@ -392,8 +396,8 @@ impl Default for Http2ServerConfig {
     fn default() -> Self {
         Self {
             max_concurrent_streams: 256,
-            initial_window_size: 1024 * 1024,             // 1MB
-            initial_connection_window_size: 1024 * 1024,  // 1MB
+            initial_window_size: 1024 * 1024,            // 1MB
+            initial_connection_window_size: 1024 * 1024, // 1MB
         }
     }
 }

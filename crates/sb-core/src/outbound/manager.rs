@@ -90,7 +90,9 @@ mod tests {
 
         // Add a connector
         let connector = Arc::new(DirectConnector::new());
-        manager.add_connector("direct".to_string(), connector.clone()).await;
+        manager
+            .add_connector("direct".to_string(), connector.clone())
+            .await;
 
         assert!(!manager.is_empty().await);
         assert_eq!(manager.len().await, 1);
@@ -112,8 +114,12 @@ mod tests {
         assert!(manager.is_empty().await);
 
         // Clear
-        manager.add_connector("direct1".to_string(), Arc::new(DirectConnector::new())).await;
-        manager.add_connector("direct2".to_string(), Arc::new(DirectConnector::new())).await;
+        manager
+            .add_connector("direct1".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+        manager
+            .add_connector("direct2".to_string(), Arc::new(DirectConnector::new()))
+            .await;
         assert_eq!(manager.len().await, 2);
         manager.clear().await;
         assert!(manager.is_empty().await);

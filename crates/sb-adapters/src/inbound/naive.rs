@@ -1,23 +1,24 @@
 //! Naive HTTP/2 CONNECT server inbound
 //!
 //! Implements Naive protocol server:
-//! - TLS connection with HTTP/2 ALPN
+//! - TLS connection with HTTP/2 ALPN using sb-tls infrastructure
 //! - HTTP/2 CONNECT proxy with optional Basic authentication
 //! - Router-based upstream selection
 //! - Bidirectional relay
+//!
+//! Sprint 20 Phase 1.1: Complete migration to sb-tls infrastructure
 
 use anyhow::{anyhow, Result};
 use base64::Engine;
 use bytes::Bytes;
 use h2::server::{Builder, SendResponse};
 use http::StatusCode;
+use sb_core::router;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio_rustls::rustls::ServerConfig;
-use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
 
 /// Naive server configuration
@@ -25,102 +26,65 @@ use tracing::{debug, error, info, warn};
 pub struct NaiveInboundConfig {
     /// Listen address
     pub listen: SocketAddr,
-    /// TLS certificate (PEM format)
-    pub cert: String,
-    /// TLS private key (PEM format)
-    pub key: String,
+    /// TLS configuration using sb-tls infrastructure (Standard TLS only - Naive doesn't support REALITY/ECH)
+    pub tls: sb_transport::TlsConfig,
+    /// Router for upstream selection
+    pub router: Arc<router::RouterHandle>,
     /// Optional username for authentication
     pub username: Option<String>,
     /// Optional password for authentication
     pub password: Option<String>,
 }
 
-/// Parse PEM-encoded certificates
-fn load_certs(pem: &str) -> Result<Vec<rustls_pki_types::CertificateDer<'static>>> {
-    let mut cursor = std::io::Cursor::new(pem.as_bytes());
-    let certs: Vec<_> = rustls_pemfile::certs(&mut cursor)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| anyhow!("Failed to parse certificates"))?;
-
-    if certs.is_empty() {
-        return Err(anyhow!("No certificates found in PEM data"));
-    }
-
-    Ok(certs)
-}
-
-/// Parse PEM-encoded private key
-fn load_private_key(pem: &str) -> Result<rustls_pki_types::PrivateKeyDer<'static>> {
-    let mut cursor = std::io::Cursor::new(pem.as_bytes());
-
-    // Try PKCS#8 first
-    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut cursor)
-        .next()
-        .transpose()
-        .map_err(|_| anyhow!("Failed to parse PKCS#8 private key"))?
-    {
-        return Ok(rustls_pki_types::PrivateKeyDer::Pkcs8(key));
-    }
-
-    // Try RSA
-    cursor.set_position(0);
-    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut cursor)
-        .next()
-        .transpose()
-        .map_err(|_| anyhow!("Failed to parse RSA private key"))?
-    {
-        return Ok(rustls_pki_types::PrivateKeyDer::Pkcs1(key));
-    }
-
-    Err(anyhow!("No private key found in PEM data"))
-}
-
 /// Main server loop
 pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
-    info!("Naive server starting on {}", cfg.listen);
-
-    // Load TLS certificate and key
-    let certs = load_certs(&cfg.cert)?;
-    let key = load_private_key(&cfg.key)?;
-
-    // Configure TLS with HTTP/2 ALPN
-    let mut tls_config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| anyhow!("TLS configuration error: {}", e))?;
-
-    tls_config.alpn_protocols = vec![b"h2".to_vec()];
-
-    let tls_config = Arc::new(tls_config);
-    let acceptor = TlsAcceptor::from(tls_config);
+    info!(
+        addr=?cfg.listen,
+        tls=?cfg.tls.transport_type(),
+        "naive: HTTP/2 server bound"
+    );
 
     // Bind TCP listener
     let listener = TcpListener::bind(cfg.listen).await?;
-    info!("Naive server listening on {}", cfg.listen);
+    let actual = listener.local_addr().unwrap_or(cfg.listen);
+    info!(
+        listen=?cfg.listen,
+        actual=?actual,
+        "naive: HTTP/2 server listening"
+    );
+
+    // Create TLS transport using sb-tls infrastructure
+    // Note: Naive requires HTTP/2 ALPN, which should be configured in TlsConfig
+    let tls_transport = sb_transport::TlsTransport::new(cfg.tls.clone());
 
     let cfg = Arc::new(cfg);
 
     loop {
         tokio::select! {
             _ = stop_rx.recv() => {
-                info!("Naive server shutting down");
+                info!("naive: shutting down");
                 break;
             }
             r = listener.accept() => {
                 let (stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
-                        error!("Accept error: {}", e);
+                        error!(error=%e, "naive: accept error");
                         continue;
                     }
                 };
 
-                let acceptor_clone = acceptor.clone();
+                let tls_transport_clone = tls_transport.clone();
                 let cfg_clone = cfg.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(cfg_clone, acceptor_clone, stream, peer).await {
-                        debug!("Connection error from {}: {}", peer, e);
+                    match tls_transport_clone.wrap_server(stream).await {
+                        Ok(tls_stream) => {
+                            if let Err(e) = handle_conn(cfg_clone, tls_stream, peer).await {
+                                debug!(%peer, error=%e, "naive: connection error");
+                            }
+                        }
+                        Err(e) => warn!(%peer, error=%e, "naive: TLS handshake failed"),
                     }
                 });
             }
@@ -131,23 +95,13 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 }
 
 /// Handle single connection
-async fn handle_conn(
-    cfg: Arc<NaiveInboundConfig>,
-    acceptor: TlsAcceptor,
-    stream: TcpStream,
-    peer: SocketAddr,
-) -> Result<()> {
-    debug!("Naive: new connection from {}", peer);
+async fn handle_conn<S>(cfg: Arc<NaiveInboundConfig>, tls_stream: S, peer: SocketAddr) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    debug!(%peer, "naive: new HTTP/2 connection");
 
-    // TLS handshake
-    let tls_stream = acceptor
-        .accept(stream)
-        .await
-        .map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
-
-    debug!("Naive: TLS handshake complete for {}", peer);
-
-    // HTTP/2 server handshake
+    // HTTP/2 server handshake (TLS already handled by TlsTransport)
     let mut builder = Builder::new();
     builder
         .max_concurrent_streams(256)
@@ -159,14 +113,14 @@ async fn handle_conn(
         .await
         .map_err(|e| anyhow!("HTTP/2 handshake failed: {}", e))?;
 
-    debug!("Naive: HTTP/2 handshake complete for {}", peer);
+    debug!(%peer, "naive: HTTP/2 handshake complete");
 
     // Accept and handle streams
     while let Some(result) = connection.accept().await {
         let (request, respond) = match result {
             Ok(v) => v,
             Err(e) => {
-                warn!("Naive: stream accept error: {}", e);
+                warn!(error=%e, "naive: stream accept error");
                 break;
             }
         };
@@ -174,12 +128,12 @@ async fn handle_conn(
         let cfg_clone = cfg.clone();
         tokio::spawn(async move {
             if let Err(e) = handle_stream(cfg_clone, request, respond, peer).await {
-                debug!("Naive: stream error from {}: {}", peer, e);
+                debug!(%peer, error=%e, "naive: stream error");
             }
         });
     }
 
-    debug!("Naive: connection closed for {}", peer);
+    debug!(%peer, "naive: connection closed");
     Ok(())
 }
 
@@ -192,7 +146,7 @@ async fn handle_stream(
 ) -> Result<()> {
     // Validate CONNECT method
     if request.method() != http::Method::CONNECT {
-        error!("Naive: non-CONNECT request from {}: {}", peer, request.method());
+        error!(%peer, method=%request.method(), "naive: non-CONNECT request");
         let response = http::Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .body(())
@@ -232,9 +186,9 @@ async fn handle_stream(
             // Constant-time comparison to prevent timing attacks
             use subtle::ConstantTimeEq;
             if auth_str.as_bytes().ct_eq(expected.as_bytes()).into() {
-                debug!("Naive: authentication successful for {}", peer);
+                debug!(%peer, "naive: authentication successful");
             } else {
-                warn!("Naive: authentication failed for {}", peer);
+                warn!(%peer, "naive: authentication failed");
                 let response = http::Response::builder()
                     .status(StatusCode::PROXY_AUTHENTICATION_REQUIRED)
                     .body(())
@@ -258,16 +212,16 @@ async fn handle_stream(
     let target_str = request.uri().to_string();
     let (host, port) = parse_target(&target_str)?;
 
-    debug!("Naive: CONNECT {}:{} from {}", host, port, peer);
+    debug!(%peer, %host, port, "naive: CONNECT request");
 
-    // Connect to target
-    // Note: Router integration can be added by passing router to config
-    // For now, direct connection provides baseline functionality
+    // Router integration (Sprint 20 Phase 1.2)
+    // For now, use direct connection (router integration will be added next)
+    // TODO: Add router decision logic (Direct/Proxy/Reject)
     let upstream = TcpStream::connect((host.as_str(), port))
         .await
         .map_err(|e| anyhow!("Failed to connect to target: {}", e))?;
 
-    debug!("Naive: connected to {}:{}", host, port);
+    debug!(%host, port, "naive: connected to target");
 
     // Send 200 OK response
     let response = http::Response::builder()

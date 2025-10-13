@@ -122,7 +122,7 @@ pub struct HostBreaker {
 }
 
 impl HostBreaker {
-    #[must_use] 
+    #[must_use]
     pub fn new(window_ms: u64, open_ms: u64, threshold: u32, ratio: f32) -> Self {
         Self {
             window: Duration::from_millis(window_ms),
@@ -289,12 +289,16 @@ impl HostBreaker {
         // Add 20-30% jitter only once when entering OPEN state
         let mut rng = rand::thread_rng();
         let jitter_factor = rng.gen_range(1.2..1.3); // 20-30% increase
-        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss
+        )]
         let final_ms = (base_duration.as_millis() as f64 * jitter_factor) as u64;
         Duration::from_millis(final_ms)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn stats(&self) -> Vec<(String, u32, u32, bool)> {
         let current_time = now();
         self.map
@@ -309,7 +313,7 @@ impl HostBreaker {
             .collect()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn state_stats(&self) -> Vec<(String, String, u32)> {
         let current_time = now();
         self.map

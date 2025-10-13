@@ -32,12 +32,16 @@ impl Clone for StressMetrics {
     fn clone(&self) -> Self {
         Self {
             total_connections: AtomicUsize::new(self.total_connections.load(Ordering::Relaxed)),
-            successful_connections: AtomicUsize::new(self.successful_connections.load(Ordering::Relaxed)),
+            successful_connections: AtomicUsize::new(
+                self.successful_connections.load(Ordering::Relaxed),
+            ),
             failed_connections: AtomicUsize::new(self.failed_connections.load(Ordering::Relaxed)),
             bytes_sent: AtomicU64::new(self.bytes_sent.load(Ordering::Relaxed)),
             bytes_received: AtomicU64::new(self.bytes_received.load(Ordering::Relaxed)),
             total_duration_ms: AtomicU64::new(self.total_duration_ms.load(Ordering::Relaxed)),
-            peak_concurrent_connections: AtomicUsize::new(self.peak_concurrent_connections.load(Ordering::Relaxed)),
+            peak_concurrent_connections: AtomicUsize::new(
+                self.peak_concurrent_connections.load(Ordering::Relaxed),
+            ),
         }
     }
 }
@@ -98,13 +102,29 @@ impl StressMetrics {
         println!("║              Stress Test Summary                       ║");
         println!("╚════════════════════════════════════════════════════════╝");
         println!("Total Connections:     {}", total);
-        println!("Successful:            {} ({:.2}%)", success, (success as f64 / total as f64) * 100.0);
-        println!("Failed:                {} ({:.2}%)", failed, (failed as f64 / total as f64) * 100.0);
-        println!("Bytes Sent:            {} ({:.2} MB)", sent, sent as f64 / 1_048_576.0);
-        println!("Bytes Received:        {} ({:.2} MB)", received, received as f64 / 1_048_576.0);
+        println!(
+            "Successful:            {} ({:.2}%)",
+            success,
+            (success as f64 / total as f64) * 100.0
+        );
+        println!(
+            "Failed:                {} ({:.2}%)",
+            failed,
+            (failed as f64 / total as f64) * 100.0
+        );
+        println!(
+            "Bytes Sent:            {} ({:.2} MB)",
+            sent,
+            sent as f64 / 1_048_576.0
+        );
+        println!(
+            "Bytes Received:        {} ({:.2} MB)",
+            received,
+            received as f64 / 1_048_576.0
+        );
         println!("Total Duration:        {} ms", duration);
         println!("Peak Concurrent:       {}", peak);
-        
+
         if total > 0 {
             let avg_duration = duration as f64 / total as f64;
             println!("Avg Connection Time:   {:.2} ms", avg_duration);
@@ -122,7 +142,7 @@ impl Default for StressMetrics {
 #[derive(Debug, Clone)]
 pub struct StressTestConfig {
     pub duration: Duration,
-    pub connection_rate: usize,  // connections per second
+    pub connection_rate: usize, // connections per second
     pub concurrent_limit: usize,
     pub payload_size: usize,
     pub enable_monitoring: bool,
@@ -203,7 +223,7 @@ pub async fn run_stress_test(
 
         let handle = tokio::spawn(async move {
             let conn_start = Instant::now();
-            
+
             match TcpStream::connect(addr).await {
                 Ok(mut stream) => {
                     // Send data
@@ -211,7 +231,7 @@ pub async fn run_stress_test(
                     match stream.write_all(&data).await {
                         Ok(_) => {
                             metrics_clone.record_bytes_sent(payload_size as u64);
-                            
+
                             // Receive echo
                             let mut received = vec![0u8; payload_size];
                             match stream.read_exact(&mut received).await {
@@ -250,8 +270,11 @@ pub async fn run_stress_test(
 
         // Progress reporting
         if connection_count % 100 == 0 {
-            println!("  Progress: {} connections, {:.1}s elapsed", 
-                connection_count, start_time.elapsed().as_secs_f64());
+            println!(
+                "  Progress: {} connections, {:.1}s elapsed",
+                connection_count,
+                start_time.elapsed().as_secs_f64()
+            );
         }
     }
 
@@ -260,8 +283,11 @@ pub async fn run_stress_test(
         let _ = handle.await;
     }
 
-    println!("Stress test completed in {:.2}s", start_time.elapsed().as_secs_f64());
-    
+    println!(
+        "Stress test completed in {:.2}s",
+        start_time.elapsed().as_secs_f64()
+    );
+
     Arc::try_unwrap(metrics).unwrap_or_else(|arc| (*arc).clone())
 }
 
@@ -307,12 +333,12 @@ impl ResourceSample {
     #[cfg(target_os = "macos")]
     fn count_open_fds() -> usize {
         use std::process::Command;
-        
+
         let pid = std::process::id();
         let output = Command::new("lsof")
             .args(&["-p", &pid.to_string()])
             .output();
-        
+
         match output {
             Ok(output) => {
                 String::from_utf8_lossy(&output.stdout)
@@ -327,10 +353,10 @@ impl ResourceSample {
     #[cfg(target_os = "linux")]
     fn count_open_fds() -> usize {
         use std::fs;
-        
+
         let pid = std::process::id();
         let fd_dir = format!("/proc/{}/fd", pid);
-        
+
         fs::read_dir(fd_dir)
             .map(|entries| entries.count())
             .unwrap_or(0)
@@ -370,8 +396,21 @@ impl ResourceReport {
             return false;
         }
 
-        let first_10_avg: usize = self.samples.iter().take(10).map(|s| s.open_fds).sum::<usize>() / 10;
-        let last_10_avg: usize = self.samples.iter().rev().take(10).map(|s| s.open_fds).sum::<usize>() / 10;
+        let first_10_avg: usize = self
+            .samples
+            .iter()
+            .take(10)
+            .map(|s| s.open_fds)
+            .sum::<usize>()
+            / 10;
+        let last_10_avg: usize = self
+            .samples
+            .iter()
+            .rev()
+            .take(10)
+            .map(|s| s.open_fds)
+            .sum::<usize>()
+            / 10;
 
         // Consider it a leak if FDs increased by more than 50%
         last_10_avg > first_10_avg + (first_10_avg / 2)
@@ -382,8 +421,21 @@ impl ResourceReport {
             return false;
         }
 
-        let first_10_avg: usize = self.samples.iter().take(10).map(|s| s.memory_kb).sum::<usize>() / 10;
-        let last_10_avg: usize = self.samples.iter().rev().take(10).map(|s| s.memory_kb).sum::<usize>() / 10;
+        let first_10_avg: usize = self
+            .samples
+            .iter()
+            .take(10)
+            .map(|s| s.memory_kb)
+            .sum::<usize>()
+            / 10;
+        let last_10_avg: usize = self
+            .samples
+            .iter()
+            .rev()
+            .take(10)
+            .map(|s| s.memory_kb)
+            .sum::<usize>()
+            / 10;
 
         // Consider it a leak if memory increased by more than 50%
         last_10_avg > first_10_avg + (first_10_avg / 2)
@@ -402,17 +454,29 @@ impl ResourceReport {
         println!("║           Resource Monitoring Summary                  ║");
         println!("╚════════════════════════════════════════════════════════╝");
         println!("Samples Collected:     {}", self.samples.len());
-        
+
         if let (Some(first), Some(last)) = (self.samples.first(), self.samples.last()) {
             println!("Initial FDs:           {}", first.open_fds);
             println!("Final FDs:             {}", last.open_fds);
-            println!("FD Change:             {:+}", last.open_fds as i64 - first.open_fds as i64);
-            println!("FD Leak Detected:      {}", if fd_leak { "⚠️  YES" } else { "✅ NO" });
-            
+            println!(
+                "FD Change:             {:+}",
+                last.open_fds as i64 - first.open_fds as i64
+            );
+            println!(
+                "FD Leak Detected:      {}",
+                if fd_leak { "⚠️  YES" } else { "✅ NO" }
+            );
+
             println!("Initial Memory:        {} KB", first.memory_kb);
             println!("Final Memory:          {} KB", last.memory_kb);
-            println!("Memory Change:         {:+} KB", last.memory_kb as i64 - first.memory_kb as i64);
-            println!("Memory Leak Detected:  {}", if mem_leak { "⚠️  YES" } else { "✅ NO" });
+            println!(
+                "Memory Change:         {:+} KB",
+                last.memory_kb as i64 - first.memory_kb as i64
+            );
+            println!(
+                "Memory Leak Detected:  {}",
+                if mem_leak { "⚠️  YES" } else { "✅ NO" }
+            );
         }
 
         let max_fds = self.samples.iter().map(|s| s.open_fds).max().unwrap_or(0);

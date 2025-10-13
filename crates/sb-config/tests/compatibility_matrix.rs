@@ -222,14 +222,15 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() {
 
     let issues = sb_config::validator::v2::validate_v2(&config, true); // allow_unknown=true for warnings
 
-    let warnings: Vec<_> = issues
-        .iter()
-        .filter(|i| i["kind"] == "warning")
-        .collect();
+    let warnings: Vec<_> = issues.iter().filter(|i| i["kind"] == "warning").collect();
     let errors: Vec<_> = issues.iter().filter(|i| i["kind"] == "error").collect();
 
     eprintln!("DEBUG all issues: {:?}", issues);
-    eprintln!("DEBUG warnings count: {}, errors count: {}", warnings.len(), errors.len());
+    eprintln!(
+        "DEBUG warnings count: {}, errors count: {}",
+        warnings.len(),
+        errors.len()
+    );
 
     // Should have warnings but no errors when allow_unknown is true
     assert!(
@@ -261,10 +262,7 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() {
     for warning in &unknown_field_warnings {
         eprintln!("DEBUG warning: {:?}", warning);
         assert!(
-            warning["msg"]
-                .as_str()
-                .unwrap()
-                .contains("unknown field"),
+            warning["msg"].as_str().unwrap().contains("unknown field"),
             "Warning should mention unknown field: {:?}",
             warning
         );

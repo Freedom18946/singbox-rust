@@ -150,9 +150,15 @@ impl OutboundSwitchboard {
         let connector_name = connector.name();
         let fut = async move {
             if let Err(e) = connector_clone.start().await {
-                error!("Failed to initialize outbound connector '{}': {}", connector_name, e);
+                error!(
+                    "Failed to initialize outbound connector '{}': {}",
+                    connector_name, e
+                );
             } else {
-                info!("Outbound connector '{}' initialized successfully", connector_name);
+                info!(
+                    "Outbound connector '{}' initialized successfully",
+                    connector_name
+                );
             }
         };
         match tokio::runtime::Handle::try_current() {
@@ -185,9 +191,15 @@ impl OutboundSwitchboard {
         let connector_name = connector.name();
         let fut = async move {
             if let Err(e) = connector_clone.start().await {
-                error!("Failed to initialize default outbound connector '{}': {}", connector_name, e);
+                error!(
+                    "Failed to initialize default outbound connector '{}': {}",
+                    connector_name, e
+                );
             } else {
-                info!("Default outbound connector '{}' initialized successfully", connector_name);
+                info!(
+                    "Default outbound connector '{}' initialized successfully",
+                    connector_name
+                );
             }
         };
         match tokio::runtime::Handle::try_current() {
@@ -572,28 +584,45 @@ impl OutboundConnector for TrojanConnector {
         // Compose transport chain from IR fields
         let mut builder = TransportBuilder::tcp();
         if let Some(chain) = &self.transport {
-            let want_h2 = chain.iter().any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
-            let alpn_from_ir = self
-                .tls_alpn
-                .as_ref()
-                .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect::<Vec<_>>());
+            let want_h2 = chain
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
+            let alpn_from_ir = self.tls_alpn.as_ref().map(|s| {
+                s.split(',')
+                    .map(|p| p.trim().as_bytes().to_vec())
+                    .collect::<Vec<_>>()
+            });
             for layer in chain {
                 match layer.to_ascii_lowercase().as_str() {
                     "tls" => {
                         let cfg = sb_transport::tls::webpki_roots_config();
-                        let alpn = alpn_from_ir.clone().or_else(|| if want_h2 { Some(vec![b"h2".to_vec()]) } else { None });
+                        let alpn = alpn_from_ir.clone().or_else(|| {
+                            if want_h2 {
+                                Some(vec![b"h2".to_vec()])
+                            } else {
+                                None
+                            }
+                        });
                         builder = builder.tls(cfg, self.tls_sni.clone(), alpn);
                     }
                     "ws" => {
                         let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-                        if let Some(p) = &self.ws_path { ws_cfg.path = p.clone(); }
-                        if let Some(h) = &self.ws_host { ws_cfg.headers.push(("Host".into(), h.clone())); }
+                        if let Some(p) = &self.ws_path {
+                            ws_cfg.path = p.clone();
+                        }
+                        if let Some(h) = &self.ws_host {
+                            ws_cfg.headers.push(("Host".into(), h.clone()));
+                        }
                         builder = builder.websocket(ws_cfg);
                     }
                     "h2" | "http2" => {
                         let mut h2_cfg = sb_transport::http2::Http2Config::default();
-                        if let Some(p) = &self.h2_path { h2_cfg.path = p.clone(); }
-                        if let Some(h) = &self.h2_host { h2_cfg.host = h.clone(); }
+                        if let Some(p) = &self.h2_path {
+                            h2_cfg.path = p.clone();
+                        }
+                        if let Some(h) = &self.h2_host {
+                            h2_cfg.host = h.clone();
+                        }
                         builder = builder.http2(h2_cfg);
                     }
                     "grpc" => {
@@ -606,7 +635,9 @@ impl OutboundConnector for TrojanConnector {
                     }
                     "httpupgrade" | "http_upgrade" => {
                         let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-                        if let Some(p) = &self.ws_path { cfg.path = p.clone(); }
+                        if let Some(p) = &self.ws_path {
+                            cfg.path = p.clone();
+                        }
                         builder = builder.http_upgrade(cfg);
                     }
                     _ => {}
@@ -619,7 +650,9 @@ impl OutboundConnector for TrojanConnector {
             .build()
             .connect(self.server.as_str(), self.port)
             .await
-            .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+            .map_err(|e| {
+                AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e)))
+            })?;
 
         // Perform Trojan handshake on the layered stream
         let hp = Hp::new(target.host.clone(), target.port);
@@ -629,7 +662,9 @@ impl OutboundConnector for TrojanConnector {
 
         Ok(Box::new(IoWrapper(stream)))
     }
-    fn name(&self) -> &'static str { "trojan" }
+    fn name(&self) -> &'static str {
+        "trojan"
+    }
 }
 // ----- VLESS connector (feature-gated) -----
 #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
@@ -677,33 +712,52 @@ impl OutboundConnector for VlessConnector {
         // Compose transport chain from IR fields
         let mut builder = TransportBuilder::tcp();
         if let Some(chain) = &self.transport {
-            let want_h2 = chain.iter().any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
-            let alpn_from_ir = self
-                .tls_alpn
-                .as_ref()
-                .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect::<Vec<_>>());
+            let want_h2 = chain
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
+            let alpn_from_ir = self.tls_alpn.as_ref().map(|s| {
+                s.split(',')
+                    .map(|p| p.trim().as_bytes().to_vec())
+                    .collect::<Vec<_>>()
+            });
             for layer in chain {
                 match layer.to_ascii_lowercase().as_str() {
                     "tls" => {
                         let cfg = sb_transport::tls::webpki_roots_config();
-                        let alpn = alpn_from_ir.clone().or_else(|| if want_h2 { Some(vec![b"h2".to_vec()]) } else { None });
+                        let alpn = alpn_from_ir.clone().or_else(|| {
+                            if want_h2 {
+                                Some(vec![b"h2".to_vec()])
+                            } else {
+                                None
+                            }
+                        });
                         builder = builder.tls(cfg, self.tls_sni.clone(), alpn);
                     }
                     "ws" => {
                         let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-                        if let Some(p) = &self.ws_path { ws_cfg.path = p.clone(); }
-                        if let Some(h) = &self.ws_host { ws_cfg.headers.push(("Host".into(), h.clone())); }
+                        if let Some(p) = &self.ws_path {
+                            ws_cfg.path = p.clone();
+                        }
+                        if let Some(h) = &self.ws_host {
+                            ws_cfg.headers.push(("Host".into(), h.clone()));
+                        }
                         builder = builder.websocket(ws_cfg);
                     }
                     "h2" | "http2" => {
                         let mut h2_cfg = sb_transport::http2::Http2Config::default();
-                        if let Some(p) = &self.h2_path { h2_cfg.path = p.clone(); }
-                        if let Some(h) = &self.h2_host { h2_cfg.host = h.clone(); }
+                        if let Some(p) = &self.h2_path {
+                            h2_cfg.path = p.clone();
+                        }
+                        if let Some(h) = &self.h2_host {
+                            h2_cfg.host = h.clone();
+                        }
                         builder = builder.http2(h2_cfg);
                     }
                     "httpupgrade" | "http_upgrade" => {
                         let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-                        if let Some(p) = &self.ws_path { cfg.path = p.clone(); }
+                        if let Some(p) = &self.ws_path {
+                            cfg.path = p.clone();
+                        }
                         builder = builder.http_upgrade(cfg);
                     }
                     _ => {}
@@ -716,7 +770,9 @@ impl OutboundConnector for VlessConnector {
             .build()
             .connect(self.server.as_str(), self.port)
             .await
-            .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+            .map_err(|e| {
+                AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e)))
+            })?;
 
         // Perform VLESS handshake on the layered stream
         let id = uuid::Uuid::parse_str(&self.uuid)
@@ -728,8 +784,8 @@ impl OutboundConnector for VlessConnector {
             flow: None,
             encryption: Some("none".into()),
         };
-        let outbound = VlessOutbound::new(cfg)
-            .map_err(|_| AdapterError::InvalidConfig("vless config"))?;
+        let outbound =
+            VlessOutbound::new(cfg).map_err(|_| AdapterError::InvalidConfig("vless config"))?;
         let hp = Hp::new(target.host.clone(), target.port);
         outbound
             .do_handshake_on(&hp, &mut *stream)
@@ -738,7 +794,9 @@ impl OutboundConnector for VlessConnector {
 
         Ok(Box::new(IoWrapper(stream)))
     }
-    fn name(&self) -> &'static str { "vless" }
+    fn name(&self) -> &'static str {
+        "vless"
+    }
 }
 #[cfg(all(feature = "out_vmess", feature = "v2ray_transport"))]
 #[async_trait::async_trait]
@@ -755,33 +813,52 @@ impl OutboundConnector for VmessConnector {
         // Determine desired order from transport vector
         if let Some(chain) = &self.transport {
             // Precompute ALPN if not explicitly set
-            let want_h2 = chain.iter().any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
-            let alpn_from_ir = self
-                .tls_alpn
-                .as_ref()
-                .map(|s| s.split(',').map(|p| p.trim().as_bytes().to_vec()).collect::<Vec<_>>());
+            let want_h2 = chain
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case("h2") || s.eq_ignore_ascii_case("http2"));
+            let alpn_from_ir = self.tls_alpn.as_ref().map(|s| {
+                s.split(',')
+                    .map(|p| p.trim().as_bytes().to_vec())
+                    .collect::<Vec<_>>()
+            });
             for layer in chain {
                 match layer.to_ascii_lowercase().as_str() {
                     "tls" => {
                         let cfg = sb_transport::tls::webpki_roots_config();
-                        let alpn = alpn_from_ir.clone().or_else(|| if want_h2 { Some(vec![b"h2".to_vec()]) } else { None });
+                        let alpn = alpn_from_ir.clone().or_else(|| {
+                            if want_h2 {
+                                Some(vec![b"h2".to_vec()])
+                            } else {
+                                None
+                            }
+                        });
                         builder = builder.tls(cfg, self.tls_sni.clone(), alpn);
                     }
                     "ws" => {
                         let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-                        if let Some(p) = &self.ws_path { ws_cfg.path = p.clone(); }
-                        if let Some(h) = &self.ws_host { ws_cfg.headers.push(("Host".into(), h.clone())); }
+                        if let Some(p) = &self.ws_path {
+                            ws_cfg.path = p.clone();
+                        }
+                        if let Some(h) = &self.ws_host {
+                            ws_cfg.headers.push(("Host".into(), h.clone()));
+                        }
                         builder = builder.websocket(ws_cfg);
                     }
                     "h2" | "http2" => {
                         let mut h2_cfg = sb_transport::http2::Http2Config::default();
-                        if let Some(p) = &self.h2_path { h2_cfg.path = p.clone(); }
-                        if let Some(h) = &self.h2_host { h2_cfg.host = h.clone(); }
+                        if let Some(p) = &self.h2_path {
+                            h2_cfg.path = p.clone();
+                        }
+                        if let Some(h) = &self.h2_host {
+                            h2_cfg.host = h.clone();
+                        }
                         builder = builder.http2(h2_cfg);
                     }
                     "httpupgrade" | "http_upgrade" => {
                         let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-                        if let Some(p) = &self.ws_path { cfg.path = p.clone(); }
+                        if let Some(p) = &self.ws_path {
+                            cfg.path = p.clone();
+                        }
                         builder = builder.http_upgrade(cfg);
                     }
                     _ => {}
@@ -796,7 +873,9 @@ impl OutboundConnector for VmessConnector {
             .build()
             .connect(self.server.as_str(), self.port)
             .await
-            .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+            .map_err(|e| {
+                AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e)))
+            })?;
 
         // Prepare VMess outbound and perform handshake over the layered stream
         let id = uuid::Uuid::parse_str(&self.uuid)
@@ -808,8 +887,8 @@ impl OutboundConnector for VmessConnector {
             security: "aes-128-gcm".to_string(),
             alter_id: 0,
         };
-        let outbound = VmessOutbound::new(vm_cfg)
-            .map_err(|_| AdapterError::InvalidConfig("vmess config"))?;
+        let outbound =
+            VmessOutbound::new(vm_cfg).map_err(|_| AdapterError::InvalidConfig("vmess config"))?;
         let hp = Hp::new(target.host.clone(), target.port);
         outbound
             .do_handshake_on(&hp, &mut *stream)
@@ -818,5 +897,7 @@ impl OutboundConnector for VmessConnector {
 
         Ok(Box::new(IoWrapper(stream)))
     }
-    fn name(&self) -> &'static str { "vmess" }
+    fn name(&self) -> &'static str {
+        "vmess"
+    }
 }

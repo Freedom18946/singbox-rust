@@ -4,7 +4,7 @@
 //! to routing decision based on process name and path.
 
 use sb_core::router::process_router::ProcessRouter;
-use sb_core::router::rules::{Decision, Engine, Rule, RuleKind};
+use sb_core::router::rules::{Decision, Engine, ProcessPathRegexMatcher, RouteCtx, Rule, RuleKind};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[tokio::test]
@@ -77,6 +77,61 @@ async fn test_process_path_routing() {
             .await;
 
         // Should fall back to Direct since process matching will likely fail in test environment
+        assert!(matches!(decision, Decision::Direct));
+    }
+}
+
+#[tokio::test]
+async fn test_process_path_regex_routing() {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        let rules = vec![
+            Rule {
+                kind: RuleKind::ProcessPathRegex(
+                    ProcessPathRegexMatcher::new(r"(?i).*/Chrome\.app$".to_string()).unwrap(),
+                ),
+                decision: Decision::Proxy(Some("regex_proxy".to_string())),
+            },
+            Rule {
+                kind: RuleKind::Default,
+                decision: Decision::Direct,
+            },
+        ];
+
+        let engine = Engine::build(rules);
+        let router = ProcessRouter::new(engine).expect("Failed to create ProcessRouter");
+
+        let eng = router.engine.read().await;
+        let matching_ctx = RouteCtx {
+            domain: Some("example.com"),
+            ip: None,
+            transport_udp: false,
+            port: Some(443),
+            process_name: Some("Google Chrome"),
+            process_path: Some("/Applications/Google Chrome.app"),
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
+        };
+        let decision = eng.decide(&matching_ctx);
+        assert!(matches!(decision, Decision::Proxy(Some(ref name)) if name == "regex_proxy"));
+        drop(eng);
+
+        let eng = router.engine.read().await;
+        let non_matching_ctx = RouteCtx {
+            domain: Some("example.com"),
+            ip: None,
+            transport_udp: false,
+            port: Some(443),
+            process_name: Some("curl"),
+            process_path: Some("/usr/bin/curl"),
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
+        };
+        let decision = eng.decide(&non_matching_ctx);
         assert!(matches!(decision, Decision::Direct));
     }
 }
@@ -213,14 +268,15 @@ fn test_process_rule_parsing() {
     let rules_text = r#"
         process_name:firefox=proxy
         process_path:/usr/bin/chrome=reject
+        process_path_regex:.*/Chrome\.app=proxy:chrome
         process_name:curl,port:80=direct
         default=direct
     "#;
 
     let rules = parse_rules(rules_text);
 
-    // Should have 5 rules (the third line creates 2 rules due to comma separation)
-    assert_eq!(rules.len(), 5);
+    // Should have 6 rules (the third line creates 2 rules due to comma separation)
+    assert_eq!(rules.len(), 6);
 
     // Check process name rule
     assert!(matches!(rules[0].kind, RuleKind::ProcessName(ref name) if name == "firefox"));
@@ -230,17 +286,21 @@ fn test_process_rule_parsing() {
     assert!(matches!(rules[1].kind, RuleKind::ProcessPath(ref path) if path == "/usr/bin/chrome"));
     assert!(matches!(rules[1].decision, Decision::Reject));
 
+    // Check process path regex rule
+    assert!(matches!(rules[2].kind, RuleKind::ProcessPathRegex(_)));
+    assert!(matches!(rules[2].decision, Decision::Proxy(Some(ref name)) if name == "chrome"));
+
     // Check combined rules (process_name and port)
-    assert!(matches!(rules[2].kind, RuleKind::ProcessName(ref name) if name == "curl"));
-    assert!(matches!(rules[3].kind, RuleKind::Port(80)));
+    assert!(matches!(rules[3].kind, RuleKind::ProcessName(ref name) if name == "curl"));
+    assert!(matches!(rules[4].kind, RuleKind::Port(80)));
 
     // Check default rule
-    assert!(matches!(rules[4].kind, RuleKind::Default));
+    assert!(matches!(rules[5].kind, RuleKind::Default));
 }
 
 #[test]
 fn test_process_rule_matching_logic() {
-    use sb_core::router::rules::{Decision, RouteCtx, Rule, RuleKind};
+    use sb_core::router::rules::{Decision, ProcessPathRegexMatcher, RouteCtx, Rule, RuleKind};
 
     // Test process name matching
     let rule = Rule {
@@ -255,6 +315,10 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: Some("firefox"),
         process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     };
 
     let engine = Engine::build(vec![rule]);
@@ -274,6 +338,10 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: None,
         process_path: Some("/usr/bin/firefox"),
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     };
 
     let engine = Engine::build(vec![rule]);
@@ -293,9 +361,55 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: None,
         process_path: Some("/usr/bin/firefox"),
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     };
 
     let engine = Engine::build(vec![rule]);
     let decision = engine.decide(&ctx);
     assert!(matches!(decision, Decision::Proxy(None)));
+
+    // Test process path regex matching
+    let rule = Rule {
+        kind: RuleKind::ProcessPathRegex(
+            ProcessPathRegexMatcher::new(r"(?i).*/Chrome\.app$".to_string()).unwrap(),
+        ),
+        decision: Decision::Proxy(Some("chrome".to_string())),
+    };
+
+    let ctx = RouteCtx {
+        domain: None,
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: Some("Google Chrome"),
+        process_path: Some("/Applications/Google Chrome.app"),
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+
+    let engine = Engine::build(vec![rule.clone()]);
+    let decision = engine.decide(&ctx);
+    assert!(matches!(decision, Decision::Proxy(Some(ref name)) if name == "chrome"));
+
+    let ctx = RouteCtx {
+        domain: None,
+        ip: None,
+        transport_udp: false,
+        port: None,
+        process_name: Some("curl"),
+        process_path: Some("/usr/bin/curl"),
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
+    };
+
+    let engine = Engine::build(vec![rule]);
+    let decision = engine.decide(&ctx);
+    assert!(matches!(decision, Decision::Direct));
 }

@@ -23,7 +23,12 @@ impl SocksUp {
         }
     }
 
-    async fn handshake(&self, mut stream: TcpStream, host: &str, port: u16) -> std::io::Result<TcpStream> {
+    async fn handshake(
+        &self,
+        mut stream: TcpStream,
+        host: &str,
+        port: u16,
+    ) -> std::io::Result<TcpStream> {
         // Greeting
         if self.user.is_some() {
             stream.write_all(&[0x05, 0x01, 0x02]).await?;
@@ -81,9 +86,10 @@ impl SocksUp {
         let mut h = [0u8; 4];
         stream.read_exact(&mut h).await?;
         if h[1] != 0x00 {
-            return Err(std::io::Error::other(
-                format!("socks connect failed: code={}", h[1]),
-            ));
+            return Err(std::io::Error::other(format!(
+                "socks connect failed: code={}",
+                h[1]
+            )));
         }
 
         // Skip bind address

@@ -119,11 +119,7 @@ mod config_tests {
 
     #[test]
     fn test_tuic_config_congestion_control_variants() {
-        let configs = vec![
-            ("cubic", "cubic"),
-            ("bbr", "bbr"),
-            ("newreno", "newreno"),
-        ];
+        let configs = vec![("cubic", "cubic"), ("bbr", "bbr"), ("newreno", "newreno")];
 
         for (cc_name, expected) in configs {
             let config = TuicConfig {
@@ -441,7 +437,7 @@ mod udp_framing_tests {
         let packet = outbound.encode_udp_packet("192.168.1.1", 53, data).unwrap();
 
         // Format: [Length(2)] [Fragment_ID(1)] [Fragment_Total(1)] [Address_Type(1)] [Address(N)] [Port(2)] [Data(N)]
-        
+
         // Check length field
         let length = u16::from_be_bytes([packet[0], packet[1]]);
         assert_eq!(length as usize, packet.len() - 2);
@@ -530,25 +526,25 @@ mod udp_framing_tests {
     fn test_udp_packet_decoding_ipv4() {
         // Create a valid UDP packet
         let mut packet = Vec::new();
-        
+
         // Length (will be filled)
         packet.extend_from_slice(&[0u8, 0u8]);
-        
+
         // Fragment ID and total
         packet.push(0); // Fragment ID
         packet.push(1); // Fragment total
-        
+
         // Address type and IPv4
         packet.push(0x01); // IPv4
         packet.extend_from_slice(&[192, 168, 1, 1]);
-        
+
         // Port
         packet.extend_from_slice(&53u16.to_be_bytes());
-        
+
         // Payload
         let payload = b"test data";
         packet.extend_from_slice(payload);
-        
+
         // Fill in length
         let length = (packet.len() - 2) as u16;
         packet[0..2].copy_from_slice(&length.to_be_bytes());
@@ -565,26 +561,26 @@ mod udp_framing_tests {
     fn test_udp_packet_decoding_domain() {
         // Create a valid UDP packet with domain
         let mut packet = Vec::new();
-        
+
         // Length (will be filled)
         packet.extend_from_slice(&[0u8, 0u8]);
-        
+
         // Fragment ID and total
         packet.push(0);
         packet.push(1);
-        
+
         // Address type and domain
         packet.push(0x03); // Domain
         packet.push(11); // Length of "example.com"
         packet.extend_from_slice(b"example.com");
-        
+
         // Port
         packet.extend_from_slice(&443u16.to_be_bytes());
-        
+
         // Payload
         let payload = b"test data";
         packet.extend_from_slice(payload);
-        
+
         // Fill in length
         let length = (packet.len() - 2) as u16;
         packet[0..2].copy_from_slice(&length.to_be_bytes());
@@ -613,16 +609,19 @@ mod udp_framing_tests {
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
-        
+
         let original_host = "example.com";
         let original_port = 443;
         let original_data = b"test payload data";
 
         // Encode
-        let packet = outbound.encode_udp_packet(original_host, original_port, original_data).unwrap();
+        let packet = outbound
+            .encode_udp_packet(original_host, original_port, original_data)
+            .unwrap();
 
         // Decode
-        let (decoded_host, decoded_port, decoded_data) = TuicOutbound::decode_udp_packet(&packet).unwrap();
+        let (decoded_host, decoded_port, decoded_data) =
+            TuicOutbound::decode_udp_packet(&packet).unwrap();
 
         assert_eq!(decoded_host, original_host);
         assert_eq!(decoded_port, original_port);
@@ -641,17 +640,17 @@ mod udp_framing_tests {
     #[test]
     fn test_udp_packet_decoding_invalid_address_type() {
         let mut packet = Vec::new();
-        
+
         // Length
         packet.extend_from_slice(&[0u8, 10]);
-        
+
         // Fragment ID and total
         packet.push(0);
         packet.push(1);
-        
+
         // Invalid address type
         packet.push(0xFF); // Invalid type
-        
+
         // Fill rest with dummy data
         packet.extend_from_slice(&[0u8; 10]);
 
@@ -702,7 +701,9 @@ mod udp_framing_tests {
 
         let outbound = TuicOutbound::new(config).unwrap();
         let large_data = vec![0xAB; 1400]; // Typical MTU size
-        let packet = outbound.encode_udp_packet("example.com", 443, &large_data).unwrap();
+        let packet = outbound
+            .encode_udp_packet("example.com", 443, &large_data)
+            .unwrap();
 
         let (host, port, data) = TuicOutbound::decode_udp_packet(&packet).unwrap();
 

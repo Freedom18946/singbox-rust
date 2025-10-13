@@ -59,11 +59,7 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::outbound::{
-    health::MultiHealthView,
-    registry,
-    selector::PoolSelector,
-};
+use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -195,7 +191,7 @@ pub async fn serve_http(
                     } else {
                         Box::new(cli)
                     };
-                    
+
                     if let Err(e) = handle_client(stream, peer, &cfg_clone).await {
                         warn!(peer=%peer, error=%e, "http connect session error");
                     }
@@ -217,11 +213,7 @@ pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()
     serve_http(cfg, stop_rx, None).await
 }
 
-async fn handle_client<S>(
-    mut cli: S,
-    _peer: SocketAddr,
-    _cfg: &HttpProxyConfig,
-) -> Result<()>
+async fn handle_client<S>(mut cli: S, _peer: SocketAddr, _cfg: &HttpProxyConfig) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {

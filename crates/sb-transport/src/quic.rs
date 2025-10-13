@@ -76,10 +76,10 @@ impl Default for QuicConfig {
             enable_zero_rtt: false,
             keep_alive_interval: 30,
             max_idle_timeout: 60,
-            initial_max_data: 10 * 1024 * 1024,         // 10MB
-            initial_max_stream_data_bidi_local: 1024 * 1024,    // 1MB
-            initial_max_stream_data_bidi_remote: 1024 * 1024,   // 1MB
-            initial_max_stream_data_uni: 1024 * 1024,           // 1MB
+            initial_max_data: 10 * 1024 * 1024, // 10MB
+            initial_max_stream_data_bidi_local: 1024 * 1024, // 1MB
+            initial_max_stream_data_bidi_remote: 1024 * 1024, // 1MB
+            initial_max_stream_data_uni: 1024 * 1024, // 1MB
             #[cfg(feature = "transport_ech")]
             ech_config: None,
         }
@@ -109,8 +109,9 @@ impl QuicDialer {
         #[cfg(feature = "transport_ech")]
         let ech_connector = if let Some(ref ech_cfg) = config.ech_config {
             if ech_cfg.enabled {
-                Some(EchConnector::new(ech_cfg.clone())
-                    .map_err(|e| DialError::Other(format!("Failed to create ECH connector: {}", e)))?)
+                Some(EchConnector::new(ech_cfg.clone()).map_err(|e| {
+                    DialError::Other(format!("Failed to create ECH connector: {}", e))
+                })?)
             } else {
                 None
             }
@@ -134,7 +135,9 @@ impl QuicDialer {
         // Configure transport parameters
         let mut transport_config = quinn::TransportConfig::default();
         transport_config.max_idle_timeout(Some(
-            VarInt::from_u64(config.max_idle_timeout * 1000).unwrap().into()
+            VarInt::from_u64(config.max_idle_timeout * 1000)
+                .unwrap()
+                .into(),
         ));
         transport_config.keep_alive_interval(Some(Duration::from_secs(config.keep_alive_interval)));
 
@@ -179,10 +182,12 @@ impl QuicDialer {
             let ech_hello = ech_connector
                 .wrap_tls(host)
                 .map_err(|e| DialError::Other(format!("ECH encryption failed: {}", e)))?;
-            
-            debug!("ECH enabled for QUIC: outer_sni={}, inner_sni={}", 
-                   ech_hello.outer_sni, ech_hello.inner_sni);
-            
+
+            debug!(
+                "ECH enabled for QUIC: outer_sni={}, inner_sni={}",
+                ech_hello.outer_sni, ech_hello.inner_sni
+            );
+
             // For QUIC with ECH, we use the outer SNI (public name)
             // The encrypted inner ClientHello is embedded in the QUIC handshake
             // Note: Full ECH-QUIC integration requires custom QUIC crypto config
@@ -201,7 +206,8 @@ impl QuicDialer {
             host.to_string()
         };
 
-        let connection = self.endpoint
+        let connection = self
+            .endpoint
             .connect(addr, &server_name)
             .map_err(|e| DialError::Other(format!("Failed to initiate QUIC connection: {}", e)))?
             .await
@@ -342,10 +348,10 @@ mod tests {
             pq_signature_schemes_enabled: false,
             dynamic_record_sizing_disabled: None,
         });
-        
+
         let result = QuicDialer::new(config);
         assert!(result.is_ok());
-        
+
         let dialer = result.unwrap();
         assert!(dialer.ech_connector.is_none());
     }
@@ -362,10 +368,10 @@ mod tests {
             pq_signature_schemes_enabled: false,
             dynamic_record_sizing_disabled: None,
         });
-        
+
         let result = QuicDialer::new(config);
         assert!(result.is_ok());
-        
+
         let dialer = result.unwrap();
         assert!(dialer.ech_connector.is_some());
     }
@@ -383,7 +389,7 @@ mod tests {
             pq_signature_schemes_enabled: false,
             dynamic_record_sizing_disabled: None,
         });
-        
+
         let result = QuicDialer::new(config);
         assert!(result.is_err());
     }
@@ -418,51 +424,50 @@ mod tests {
         // - Cipher suite: X25519, HKDF-SHA256, AES-128-GCM
         // - Public name: "public.example.com"
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version (0xfe0d = Draft-13)
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Public key length + public key (32 bytes for X25519)
         // Using test data instead of real key generation
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(&[0x01; 32]); // Test public key
-        
+
         // Cipher suites length + cipher suite
         // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
         config_list.extend_from_slice(&[0x00, 0x06]);
         config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
-        
+
         // Maximum name length
         config_list.push(64);
-        
+
         // Public name length + public name
         let public_name = b"public.example.com";
         config_list.push(public_name.len() as u8);
         config_list.extend_from_slice(public_name);
-        
+
         // Extensions length (empty)
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Fill in config length
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         // Fill in list length
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         config_list
     }
 }

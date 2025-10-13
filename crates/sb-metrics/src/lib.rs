@@ -5,11 +5,11 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
+pub mod cardinality;
 pub mod http;
 pub mod server;
 pub mod socks;
-pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线
-pub mod cardinality; // Cardinality monitoring for label explosion prevention
+pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线 // Cardinality monitoring for label explosion prevention
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -400,11 +400,10 @@ mod legacy {
 
     /// UDP NAT map size
     pub static UDP_MAP_SIZE: LazyLock<IntGauge> = LazyLock::new(|| {
-        let g = IntGauge::new("udp_map_size", "UDP NAT table size")
-            .unwrap_or_else(|_| {
-                #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
-                IntGauge::new("dummy_gauge", "dummy").unwrap()
-            });
+        let g = IntGauge::new("udp_map_size", "UDP NAT table size").unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
+            IntGauge::new("dummy_gauge", "dummy").unwrap()
+        });
         REGISTRY.register(Box::new(g.clone())).ok();
         g
     });
@@ -439,11 +438,12 @@ mod legacy {
 
     /// Route explain counter
     pub static ROUTE_EXPLAIN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-        let c = IntCounter::new("route_explain_total", "Route explain invocations")
-            .unwrap_or_else(|_| {
+        let c = IntCounter::new("route_explain_total", "Route explain invocations").unwrap_or_else(
+            |_| {
                 #[allow(clippy::unwrap_used)] // Fallback to dummy counter
                 IntCounter::new("dummy_counter", "dummy").unwrap()
-            });
+            },
+        );
         REGISTRY.register(Box::new(c.clone())).ok();
         c
     });
@@ -452,11 +452,10 @@ mod legacy {
     pub static TCP_CONNECT_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
         let opts = HistogramOpts::new("tcp_connect_duration_seconds", "TCP connect duration")
             .buckets(vec![0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]);
-        let h = Histogram::with_opts(opts)
-            .unwrap_or_else(|_| {
-                #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
-                Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
-            });
+        let h = Histogram::with_opts(opts).unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
+            Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
+        });
         REGISTRY.register(Box::new(h.clone())).ok();
         h
     });
@@ -492,11 +491,10 @@ mod legacy {
     /// Build info gauge
     #[allow(dead_code)] // Initialized for Prometheus export, never directly accessed
     pub static BUILD_INFO: LazyLock<IntGauge> = LazyLock::new(|| {
-        let g = IntGauge::new("sb_build_info", "Build information")
-            .unwrap_or_else(|_| {
-                #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
-                IntGauge::new("dummy_gauge", "dummy").unwrap()
-            });
+        let g = IntGauge::new("sb_build_info", "Build information").unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
+            IntGauge::new("dummy_gauge", "dummy").unwrap()
+        });
         REGISTRY.register(Box::new(g.clone())).ok();
         g.set(1);
         g
@@ -520,11 +518,10 @@ mod legacy {
     pub static UDP_TTL_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
         let opts = HistogramOpts::new("udp_nat_ttl_seconds", "UDP NAT entry TTL distribution")
             .buckets(vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0]);
-        let h = Histogram::with_opts(opts)
-            .unwrap_or_else(|_| {
-                #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
-                Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
-            });
+        let h = Histogram::with_opts(opts).unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback to dummy histogram
+            Histogram::with_opts(HistogramOpts::new("dummy_histogram", "dummy")).unwrap()
+        });
         REGISTRY.register(Box::new(h.clone())).ok();
         h
     });
@@ -572,7 +569,9 @@ pub fn observe_tcp_connect_seconds(secs: f64) {
 
 /// 便捷：设置代理选择分数
 pub fn set_proxy_select_score(proxy: &str, score: f64) {
-    legacy::PROXY_SELECT_SCORE.with_label_values(&[proxy]).set(score);
+    legacy::PROXY_SELECT_SCORE
+        .with_label_values(&[proxy])
+        .set(score);
 }
 
 /// 便捷：设置出站健康状态（1=up, 0=down）

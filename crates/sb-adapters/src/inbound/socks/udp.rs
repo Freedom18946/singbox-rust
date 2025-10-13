@@ -1146,8 +1146,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
             }
         };
 
-        let send_res: anyhow::Result<usize> = direct_sendto(upstream.as_ref(), &dst, body)
-            .await;
+        let send_res: anyhow::Result<usize> = direct_sendto(upstream.as_ref(), &dst, body).await;
 
         match send_res {
             Ok(_) => {

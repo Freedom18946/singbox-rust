@@ -18,8 +18,8 @@ use tokio::{
 
 use tracing::{debug, info, warn};
 
-use sb_core::router::RouterHandle;
 use sb_core::outbound::OutboundRegistryHandle;
+use sb_core::router::RouterHandle;
 
 #[cfg(feature = "metrics")]
 use metrics::counter;
@@ -92,7 +92,8 @@ async fn handle_mixed_conn(
 
     // Apply read timeout if configured
     let peek_result = if let Some(timeout) = cfg.read_timeout {
-        tokio::time::timeout(timeout, cli.peek(&mut first_byte)).await
+        tokio::time::timeout(timeout, cli.peek(&mut first_byte))
+            .await
             .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "protocol detection timeout"))?
     } else {
         cli.peek(&mut first_byte).await
@@ -134,7 +135,10 @@ async fn handle_mixed_conn(
                 #[cfg(feature = "metrics")]
                 counter!("mixed_protocol_detection_total", "protocol" => "unknown").increment(1);
 
-                Err(io::Error::new(io::ErrorKind::InvalidData, "unknown protocol"))
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unknown protocol",
+                ))
             }
         }
         Err(e) => Err(e),
@@ -170,7 +174,10 @@ async fn handle_socks5_inline(
     // Read version
     let ver = read_u8(cli).await?;
     if ver != 0x05 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad SOCKS version"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad SOCKS version",
+        ));
     }
 
     // Read methods
@@ -186,14 +193,20 @@ async fn handle_socks5_inline(
     cli.read_exact(&mut head).await?;
 
     if head[0] != 0x05 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad request version"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad request version",
+        ));
     }
 
     let cmd = head[1];
     if cmd != 0x01 {
         // Only CONNECT supported
         reply_socks5(cli, 0x07, None).await?;
-        return Err(io::Error::new(io::ErrorKind::Unsupported, "only CONNECT supported"));
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "only CONNECT supported",
+        ));
     }
 
     // Parse target address
@@ -229,7 +242,10 @@ async fn handle_socks5_inline(
         }
         _ => {
             reply_socks5(cli, 0x08, None).await?;
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported address type"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported address type",
+            ));
         }
     };
 
@@ -251,13 +267,9 @@ async fn handle_socks5_inline(
     let (mut cli_read, mut cli_write) = cli.split();
     let (mut upstream_read, mut upstream_write) = upstream.into_split();
 
-    let client_to_server = async {
-        tokio::io::copy(&mut cli_read, &mut upstream_write).await
-    };
+    let client_to_server = async { tokio::io::copy(&mut cli_read, &mut upstream_write).await };
 
-    let server_to_client = async {
-        tokio::io::copy(&mut upstream_read, &mut cli_write).await
-    };
+    let server_to_client = async { tokio::io::copy(&mut upstream_read, &mut cli_write).await };
 
     tokio::select! {
         result = client_to_server => {
@@ -277,11 +289,7 @@ async fn handle_socks5_inline(
 }
 
 /// Handle TLS connection
-async fn handle_tls(
-    cli: TcpStream,
-    peer: SocketAddr,
-    cfg: &MixedInboundConfig,
-) -> io::Result<()> {
+async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) -> io::Result<()> {
     // Check if TLS is configured
     let tls_config = match &cfg.tls {
         Some(config) => config,
@@ -313,7 +321,7 @@ async fn handle_tls(
     // We need to read a byte to detect the protocol
     let mut first_byte = [0u8; 1];
     use tokio::io::AsyncReadExt;
-    
+
     let n = tls_stream.read(&mut first_byte).await?;
     if n == 0 {
         return Ok(());
@@ -345,7 +353,10 @@ async fn handle_tls(
         #[cfg(feature = "metrics")]
         counter!("mixed_protocol_detection_total", "protocol" => "tls_unknown").increment(1);
 
-        Err(io::Error::new(io::ErrorKind::InvalidData, "unknown protocol over TLS"))
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unknown protocol over TLS",
+        ))
     }
 }
 
@@ -368,10 +379,7 @@ async fn handle_http(
 }
 
 /// Inline HTTP handler (simplified version)
-async fn handle_http_inline(
-    cli: &mut TcpStream,
-    peer: SocketAddr,
-) -> io::Result<()> {
+async fn handle_http_inline(cli: &mut TcpStream, peer: SocketAddr) -> io::Result<()> {
     // Read HTTP request line
     let mut buf = Vec::new();
     let mut line_buf = [0u8; 1];
@@ -381,21 +389,25 @@ async fn handle_http_inline(
         cli.read_exact(&mut line_buf).await?;
         buf.push(line_buf[0]);
 
-        if buf.len() >= 2 && buf[buf.len()-2] == b'\r' && buf[buf.len()-1] == b'\n' {
+        if buf.len() >= 2 && buf[buf.len() - 2] == b'\r' && buf[buf.len() - 1] == b'\n' {
             break;
         }
 
         if buf.len() > 8192 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "request line too long"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "request line too long",
+            ));
         }
     }
 
-    let request_line = String::from_utf8_lossy(&buf[..buf.len()-2]);
+    let request_line = String::from_utf8_lossy(&buf[..buf.len() - 2]);
 
     // Check if it's CONNECT method
     if !request_line.starts_with("CONNECT ") {
         // Non-CONNECT methods not supported
-        cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n").await?;
+        cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
+            .await?;
         return Ok(());
     }
 
@@ -419,12 +431,15 @@ async fn handle_http_inline(
             cli.read_exact(&mut byte).await?;
             line.push(byte[0]);
 
-            if line.len() >= 2 && line[line.len()-2] == b'\r' && line[line.len()-1] == b'\n' {
+            if line.len() >= 2 && line[line.len() - 2] == b'\r' && line[line.len() - 1] == b'\n' {
                 break;
             }
 
             if line.len() > 8192 {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "header line too long"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "header line too long",
+                ));
             }
         }
 
@@ -444,19 +459,16 @@ async fn handle_http_inline(
     };
 
     // Reply with success
-    cli.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
+    cli.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        .await?;
 
     // Bidirectional relay
     let (mut cli_read, mut cli_write) = cli.split();
     let (mut upstream_read, mut upstream_write) = upstream.into_split();
 
-    let client_to_server = async {
-        tokio::io::copy(&mut cli_read, &mut upstream_write).await
-    };
+    let client_to_server = async { tokio::io::copy(&mut cli_read, &mut upstream_write).await };
 
-    let server_to_client = async {
-        tokio::io::copy(&mut upstream_read, &mut cli_write).await
-    };
+    let server_to_client = async { tokio::io::copy(&mut upstream_read, &mut cli_write).await };
 
     tokio::select! {
         result = client_to_server => {
@@ -503,7 +515,10 @@ where
 
     // Verify SOCKS version
     if first_byte != 0x05 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad SOCKS version"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad SOCKS version",
+        ));
     }
 
     // Read methods
@@ -523,14 +538,20 @@ where
     stream.read_exact(&mut head).await?;
 
     if head[0] != 0x05 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad request version"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad request version",
+        ));
     }
 
     let cmd = head[1];
     if cmd != 0x01 {
         // Only CONNECT supported
         reply_socks5_generic(&mut stream, 0x07, None).await?;
-        return Err(io::Error::new(io::ErrorKind::Unsupported, "only CONNECT supported"));
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "only CONNECT supported",
+        ));
     }
 
     // Parse target address
@@ -568,7 +589,10 @@ where
         }
         _ => {
             reply_socks5_generic(&mut stream, 0x08, None).await?;
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported address type"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported address type",
+            ));
         }
     };
 
@@ -590,13 +614,9 @@ where
     let (mut stream_read, mut stream_write) = tokio::io::split(stream);
     let (mut upstream_read, mut upstream_write) = upstream.into_split();
 
-    let client_to_server = async {
-        tokio::io::copy(&mut stream_read, &mut upstream_write).await
-    };
+    let client_to_server = async { tokio::io::copy(&mut stream_read, &mut upstream_write).await };
 
-    let server_to_client = async {
-        tokio::io::copy(&mut upstream_read, &mut stream_write).await
-    };
+    let server_to_client = async { tokio::io::copy(&mut upstream_read, &mut stream_write).await };
 
     tokio::select! {
         result = client_to_server => {
@@ -636,28 +656,35 @@ where
         stream.read_exact(&mut line_buf).await?;
         buf.push(line_buf[0]);
 
-        if buf.len() >= 2 && buf[buf.len()-2] == b'\r' && buf[buf.len()-1] == b'\n' {
+        if buf.len() >= 2 && buf[buf.len() - 2] == b'\r' && buf[buf.len() - 1] == b'\n' {
             break;
         }
 
         if buf.len() > 8192 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "request line too long"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "request line too long",
+            ));
         }
     }
 
-    let request_line = String::from_utf8_lossy(&buf[..buf.len()-2]);
+    let request_line = String::from_utf8_lossy(&buf[..buf.len() - 2]);
 
     // Check if it's CONNECT method
     if !request_line.starts_with("CONNECT ") {
         // Non-CONNECT methods not supported
-        stream.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n").await?;
+        stream
+            .write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
+            .await?;
         return Ok(());
     }
 
     // Parse target from request line
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
-        stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await?;
+        stream
+            .write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+            .await?;
         return Ok(());
     }
 
@@ -673,12 +700,15 @@ where
             stream.read_exact(&mut byte).await?;
             line.push(byte[0]);
 
-            if line.len() >= 2 && line[line.len()-2] == b'\r' && line[line.len()-1] == b'\n' {
+            if line.len() >= 2 && line[line.len() - 2] == b'\r' && line[line.len() - 1] == b'\n' {
                 break;
             }
 
             if line.len() > 8192 {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "header line too long"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "header line too long",
+                ));
             }
         }
 
@@ -692,25 +722,25 @@ where
     let upstream = match TcpStream::connect(target_addr).await {
         Ok(stream) => stream,
         Err(e) => {
-            stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await?;
+            stream
+                .write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
+                .await?;
             return Err(e);
         }
     };
 
     // Reply with success
-    stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
+    stream
+        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        .await?;
 
     // Bidirectional relay
     let (mut stream_read, mut stream_write) = tokio::io::split(stream);
     let (mut upstream_read, mut upstream_write) = upstream.into_split();
 
-    let client_to_server = async {
-        tokio::io::copy(&mut stream_read, &mut upstream_write).await
-    };
+    let client_to_server = async { tokio::io::copy(&mut stream_read, &mut upstream_write).await };
 
-    let server_to_client = async {
-        tokio::io::copy(&mut upstream_read, &mut stream_write).await
-    };
+    let server_to_client = async { tokio::io::copy(&mut upstream_read, &mut stream_write).await };
 
     tokio::select! {
         result = client_to_server => {
@@ -730,7 +760,11 @@ where
 }
 
 /// Reply to SOCKS5 client (generic version for any stream)
-async fn reply_socks5_generic<S>(stream: &mut S, rep: u8, _bnd: Option<SocketAddr>) -> io::Result<()>
+async fn reply_socks5_generic<S>(
+    stream: &mut S,
+    rep: u8,
+    _bnd: Option<SocketAddr>,
+) -> io::Result<()>
 where
     S: tokio::io::AsyncWrite + Unpin,
 {

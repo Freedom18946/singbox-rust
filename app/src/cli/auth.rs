@@ -273,9 +273,7 @@ fn sign_ex(config: SignConfig) -> Result<()> {
         }
     };
 
-    println!(
-        "Authorization: SB-HMAC key_id=\"{key_id}\", ts={ts}, nonce=\"{nonce}\""
-    );
+    println!("Authorization: SB-HMAC key_id=\"{key_id}\", ts={ts}, nonce=\"{nonce}\"");
     println!("X-SB-Signature: {sig_b64}");
     if config.canon {
         println!("--- canonical ---\n{canon_str}");
@@ -378,13 +376,14 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                         break;
                     }
                     // 限速：取令牌
-                    let _p = if let Ok(p) = sem.acquire().await { p } else {
+                    let _p = if let Ok(p) = sem.acquire().await {
+                        p
+                    } else {
                         eprintln!("semaphore acquire failed, skipping request");
                         continue;
                     };
-                    let auth = format!(
-                        "SB-HMAC key_id=\"{key_id}\", ts={ts}, nonce=\"{nonce_cloned}\""
-                    );
+                    let auth =
+                        format!("SB-HMAC key_id=\"{key_id}\", ts={ts}, nonce=\"{nonce_cloned}\"");
                     let mut req = client.put(&url).header("Authorization", auth);
                     for h in &hdrs_vec {
                         if let Some((k, v)) = h.split_once(':') {
@@ -394,7 +393,9 @@ async fn replay(config: ReplayConfig) -> Result<()> {
                     // 签名头（使用 canonical 字符串包括可选的 body hash 头）
                     let header_strs: Vec<String> = hdrs_vec.clone();
                     let (canon_str, _) = build_canonical(ts, &nonce_cloned, &header_strs);
-                    let mut mac = if let Ok(m) = Hmac::<Sha256>::new_from_slice(secret.as_bytes()) { m } else {
+                    let mut mac = if let Ok(m) = Hmac::<Sha256>::new_from_slice(secret.as_bytes()) {
+                        m
+                    } else {
                         eprintln!("invalid HMAC key length, skipping request");
                         continue;
                     };

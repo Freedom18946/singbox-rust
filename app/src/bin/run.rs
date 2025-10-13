@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use sb_config::validator::v2::to_ir_v1;
 // Removed unused bridge import
 use sb_core::admin::http::spawn_admin;
@@ -9,7 +9,6 @@ use std::{fs, sync::Arc, thread, time::Duration};
 use tokio::signal;
 
 #[cfg(feature = "admin_debug")]
-
 #[derive(Parser, Debug, Clone)]
 struct Args {
     /// config path
@@ -42,10 +41,16 @@ struct Args {
     /// admin implementation: core|debug (default: core). Also can be set via SB_ADMIN_IMPL env var.
     #[arg(long = "admin-impl", default_value = "core")]
     admin_impl: String,
+    /// Print help information in JSON format and exit
+    #[arg(long = "help-json", action = ArgAction::SetTrue)]
+    help_json: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::args().skip(1).any(|arg| arg == "--help-json") {
+        app::cli::help::print_help_json::<Args>();
+    }
     let args = Args::parse();
 
     // 1) 可选 Prom 导出器

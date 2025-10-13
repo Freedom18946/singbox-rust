@@ -1,0 +1,16 @@
+```console
+$ cargo run --bin check -- --help-json
+{
+  "name": "check",
+  "usage": "Usage: check [OPTIONS] --config <CONFIG>",
+  "help": "singbox-rs config checker\n\nUsage: check [OPTIONS] --config <CONFIG>\n\nOptions:\n  -c, --config <CONFIG>\n          配置文件路径（自动识别 JSON 或 YAML）\n\n      --config-schema <CONFIG_SCHEMA>\n          JSON Schema 文件路径，用于验证配置结构\n\n      --schema-v2-validate\n          Validate using built-in schema v2 (feature-gated)\n\n      --format <FORMAT>\n          Output format: text|json\n          \n          [default: text]\n\n      --help-json\n          Print help information in JSON format and exit\n\n  -h, --help\n          Print help\n\n  -V, --version\n          Print version\n",
+  "about": "singbox-rs config checker",
+  "long_about": null,
+  "before_help": null,
+  "after_help": null,
+  "version": "0.1.0",
+  "long_version": null,
+  "subcommands": []
+}
+
+```

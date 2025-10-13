@@ -189,6 +189,7 @@
 - `dns_doh`：`SB_TEST_DOH=1` 时，对 Cloudflare DoH 发送一次查询（期望 `Status:0`）
 - `dns_dot_internal`：需要 `SB_E2E_DNS_DOT=1`，通过**内部 dot backend** 处理查询；断言 `dns_query_total{backend="dot"}` 的增量 **min=1, gate=1**
 - `dns_doh_internal`：需要 `SB_E2E_DNS_DOH=1`，通过**内部 doh backend** 处理查询；断言 `dns_query_total{backend="doh"}` 的增量 **min=1, gate=1**
+- `dns_doq_internal`：需要 `SB_E2E_DNS_DOQ=1`，通过**内部 doq backend** 处理查询；断言 `dns_query_total{backend="doq"}` 的增量 **min=1, gate=1**
 - `socks5_udp_upstream`：需要 `SB_E2E_UDP_UPSTREAM=1`，自管上游实例生命周期，验证主实例经**上游 SOCKS5** 的 UDP 查询；断言 `udp_upstream_pkts_in_total` 的增量 **min=1, gate=1**
 - `selector_p2_trend`：`SB_E2E_P2_TREND=1` 启用。脚本内起两套 SOCKS5 桩（快/慢），主实例 UDP 走命名池 `up`，启用 RTT 偏置；断言快端选择增量显著大于慢端（METRIC + COMPARE）。
 - `selector_p2_recovery`：`SB_E2E_P2_RECOVERY=1` 启用。独立池 `up2`，倒置快慢，验证收敛能自恢复（`COMPARE` 反向断言新快端 > 新慢端）。

@@ -77,9 +77,22 @@ fn end2end_via_selector() {
             override_port: None,
         }],
         outbounds: vec![
-            OutboundIR { ty: OutboundType::Direct, name: Some("A".into()), ..Default::default() },
-            OutboundIR { ty: OutboundType::Direct, name: Some("B".into()), ..Default::default() },
-            OutboundIR { ty: OutboundType::Selector, name: Some("S".into()), members: Some(vec!["A".into(), "B".into()]), ..Default::default() },
+            OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("A".into()),
+                ..Default::default()
+            },
+            OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("B".into()),
+                ..Default::default()
+            },
+            OutboundIR {
+                ty: OutboundType::Selector,
+                name: Some("S".into()),
+                members: Some(vec!["A".into(), "B".into()]),
+                ..Default::default()
+            },
         ],
         route: RouteIR {
             rules: vec![RuleIR {

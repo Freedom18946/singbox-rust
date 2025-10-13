@@ -445,10 +445,7 @@ impl GeoSiteDb {
                 }
             };
 
-            categories
-                .entry(category)
-                .or_default()
-                .push(domain_rule);
+            categories.entry(category).or_default().push(domain_rule);
         }
 
         Ok(Self {

@@ -332,7 +332,11 @@ impl TlsExtension {
     /// - 2 bytes: short_id length
     /// - N bytes: short_id
     /// - 32 bytes: auth_hash
-    pub fn reality_auth(client_public_key: &[u8; 32], short_id: &[u8], auth_hash: &[u8; 32]) -> Self {
+    pub fn reality_auth(
+        client_public_key: &[u8; 32],
+        short_id: &[u8],
+        auth_hash: &[u8; 32],
+    ) -> Self {
         let mut data = Vec::new();
         data.extend_from_slice(client_public_key);
         data.extend_from_slice(&(short_id.len() as u16).to_be_bytes());
@@ -559,14 +563,18 @@ mod tests {
         let client_pk = [0x11u8; 32];
         let short_id = vec![0x01, 0xab];
         let auth_hash = [0x22u8; 32];
-        hello.extensions.push(TlsExtension::reality_auth(&client_pk, &short_id, &auth_hash));
+        hello.extensions.push(TlsExtension::reality_auth(
+            &client_pk, &short_id, &auth_hash,
+        ));
 
         // Serialize and parse
         let serialized = hello.serialize().unwrap();
         let parsed = ClientHello::parse(&serialized).unwrap();
 
         // Verify REALITY extension is preserved
-        let reality_ext = parsed.find_extension(ExtensionType::RealityAuth as u16).unwrap();
+        let reality_ext = parsed
+            .find_extension(ExtensionType::RealityAuth as u16)
+            .unwrap();
         let (parsed_pk, parsed_sid, parsed_hash) = reality_ext.parse_reality_auth().unwrap();
         assert_eq!(parsed_pk, client_pk);
         assert_eq!(parsed_sid, short_id);
@@ -609,7 +617,11 @@ mod tests {
 
         assert_eq!(parsed.extensions.len(), 2);
         assert_eq!(parsed.get_sni(), Some("test.com".to_string()));
-        assert!(parsed.find_extension(ExtensionType::RealityAuth as u16).is_some());
+        assert!(
+            parsed
+                .find_extension(ExtensionType::RealityAuth as u16)
+                .is_some()
+        );
     }
 
     #[test]
@@ -630,7 +642,13 @@ mod tests {
         // Replace SNI
         hello.set_extension(ExtensionType::ServerName as u16, vec![4, 5, 6]);
         assert_eq!(hello.extensions.len(), 1);
-        assert_eq!(hello.find_extension(ExtensionType::ServerName as u16).unwrap().data, vec![4, 5, 6]);
+        assert_eq!(
+            hello
+                .find_extension(ExtensionType::ServerName as u16)
+                .unwrap()
+                .data,
+            vec![4, 5, 6]
+        );
     }
 
     #[test]
@@ -645,12 +663,24 @@ mod tests {
         };
 
         // No extensions
-        assert!(hello.find_extension(ExtensionType::ServerName as u16).is_none());
+        assert!(
+            hello
+                .find_extension(ExtensionType::ServerName as u16)
+                .is_none()
+        );
 
         // Add extension
         hello.set_extension(ExtensionType::ServerName as u16, vec![1, 2, 3]);
-        assert!(hello.find_extension(ExtensionType::ServerName as u16).is_some());
-        assert!(hello.find_extension(ExtensionType::RealityAuth as u16).is_none());
+        assert!(
+            hello
+                .find_extension(ExtensionType::ServerName as u16)
+                .is_some()
+        );
+        assert!(
+            hello
+                .find_extension(ExtensionType::RealityAuth as u16)
+                .is_none()
+        );
     }
 
     #[test]
@@ -739,14 +769,23 @@ mod tests {
     #[test]
     fn test_content_type_conversion() {
         assert_eq!(ContentType::try_from(22).unwrap(), ContentType::Handshake);
-        assert_eq!(ContentType::try_from(23).unwrap(), ContentType::ApplicationData);
+        assert_eq!(
+            ContentType::try_from(23).unwrap(),
+            ContentType::ApplicationData
+        );
         assert!(ContentType::try_from(99).is_err());
     }
 
     #[test]
     fn test_handshake_type_conversion() {
-        assert_eq!(HandshakeType::try_from(1).unwrap(), HandshakeType::ClientHello);
-        assert_eq!(HandshakeType::try_from(2).unwrap(), HandshakeType::ServerHello);
+        assert_eq!(
+            HandshakeType::try_from(1).unwrap(),
+            HandshakeType::ClientHello
+        );
+        assert_eq!(
+            HandshakeType::try_from(2).unwrap(),
+            HandshakeType::ServerHello
+        );
         assert!(HandshakeType::try_from(99).is_err());
     }
 }

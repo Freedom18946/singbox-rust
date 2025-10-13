@@ -12,9 +12,11 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 // Import VMess adapters
-use sb_adapters::outbound::vmess::{VmessConfig, VmessConnector, VmessAuth, VmessTransport, Security};
 use sb_adapters::inbound::vmess::VmessInboundConfig;
-use sb_adapters::outbound::{OutboundConnector, Target, DialOpts};
+use sb_adapters::outbound::vmess::{
+    Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
+};
+use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
@@ -147,10 +149,7 @@ async fn test_vmess_multiplex_single_stream() {
     let mut response = vec![0u8; test_data.len()];
     stream.read_exact(&mut response).await.unwrap();
 
-    assert_eq!(
-        response, test_data,
-        "Echo response should match sent data"
-    );
+    assert_eq!(response, test_data, "Echo response should match sent data");
 }
 
 #[tokio::test]
@@ -408,7 +407,11 @@ async fn test_vmess_multiplex_security_levels() {
     let (vmess_addr, test_uuid, _stop_tx) = start_vmess_server(true).await;
 
     // Test with different security levels
-    for security in &[Security::Auto, Security::Aes128Gcm, Security::ChaCha20Poly1305] {
+    for security in &[
+        Security::Auto,
+        Security::Aes128Gcm,
+        Security::ChaCha20Poly1305,
+    ] {
         let client_config = VmessConfig {
             server_addr: vmess_addr,
             auth: VmessAuth {

@@ -636,8 +636,45 @@ impl RouterHandle {
             }
         }
 
-        // 2) 字面量 IP
+        // 2) 字面量 IP (with FakeIP support)
         if let Ok(ip) = host_norm.parse::<IpAddr>() {
+            // Check if this is a FakeIP and resolve to original domain
+            if crate::dns::fakeip::enabled() {
+                if let Some(original_domain) = crate::dns::fakeip::to_domain(&ip) {
+                    // FakeIP detected - route based on original domain
+                    let normalized_domain = normalize_host(&original_domain);
+
+                    // Try domain-based routing first
+                    if let Some(d) = router_index_decide_exact_suffix(&idx, &normalized_domain) {
+                        self.cache_put(&cache_key, d);
+                        #[cfg(feature = "metrics")]
+                        {
+                            metrics::histogram!("router_decide_latency_ms_bucket")
+                                .record(started.elapsed().as_millis() as f64);
+                            metrics::counter!("router_decide_reason_total", "kind"=>"fakeip_domain").increment(1);
+                        }
+                        return d;
+                    }
+
+                    // Try GeoSite for FakeIP domain
+                    if let Some(geosite_db) = &self.geosite_db {
+                        if let Some(d) =
+                            router_index_decide_geosite(&idx, &normalized_domain, geosite_db)
+                        {
+                            self.cache_put(&cache_key, d);
+                            #[cfg(feature = "metrics")]
+                            {
+                                metrics::histogram!("router_decide_latency_ms_bucket")
+                                    .record(started.elapsed().as_millis() as f64);
+                                metrics::counter!("router_decide_reason_total", "kind"=>"fakeip_geosite").increment(1);
+                            }
+                            return d;
+                        }
+                    }
+                }
+            }
+
+            // Not a FakeIP or FakeIP domain rules didn't match - try IP-based routing
             if let Some(d) = router_index_decide_ip(&idx, ip) {
                 self.cache_put(&cache_key, d);
                 #[cfg(feature = "metrics")]

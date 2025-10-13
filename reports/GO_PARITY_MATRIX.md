@@ -63,12 +63,13 @@ Routing
 DNS
 - Client: Full (UDP/TCP, cache, parallel; crates/sb-core/src/dns)
 - DoT: Full (crates/sb-core/src/dns/dot.rs)
-- DoH: Partial (basic POST implementation; crates/sb-core/src/dns/doh.rs)
+ - DoH: Full (GET/POST with content-type checks and timeouts; crates/sb-core/src/dns/transport/doh.rs; resolve pipeline unified)
+- DoQ: Partial (transport implemented under crates/sb-core/src/dns/transport/doq.rs; resolver + pool integrated; needs verification tests)
 - Fake-IP: Full (crates/sb-core/src/dns/fakeip.rs)
 - DNS rule engine: Full (crates/sb-core/src/dns/rule_engine.rs)
 - DNS rule-set integration: Full (uses router ruleset)
 - Tailscale DNS server: Missing (upstream has server type `tailscale`)
-- Hosts override/system hosts: Missing
+- Hosts override/system hosts: Full (crates/sb-core/src/dns/hosts.rs; case-insensitive, reloadable)
 
 TLS/Transport
 - TLS (std): Full (crates/sb-transport/src/tls*.rs)
@@ -96,7 +97,7 @@ CLI Parity
 - version: Full (app/src/bin/version.rs and sb-version)
 - format (config): Full (app/src/bin/format.rs)
 - route (explain/trace helper): Full (app/src/bin/route.rs)
-- rule-set: Partial (validate/info/format present; decompile and match added; compile/convert/merge/upgrade still missing; app/src/bin/ruleset.rs)
+- rule-set: Full (validate/info/format/decompile/match/compile/convert/merge/upgrade; app/src/bin/ruleset.rs)
 - generate reality-keypair: Full (app/src/cli/generate.rs)
 - generate ech-keypair: Full (app/src/cli/generate.rs)
 - generate tls/vapid/wireguard: Partial (tls-keypair implemented; vapid/wireguard missing)

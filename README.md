@@ -24,6 +24,31 @@ scripts/e2e-run.sh   # optional e2e summary → .e2e/summary.json
 cargo run -p xtask -- e2e
 ```
 
+DNS backends (env-driven)
+
+```bash
+# Direct backend selection
+SB_DNS_ENABLE=1 SB_DNS_MODE=doh cargo run -p app -- run
+SB_DNS_ENABLE=1 SB_DNS_MODE=dot cargo run -p app -- run
+SB_DNS_ENABLE=1 SB_DNS_MODE=doq cargo run -p app --features "sb-core/dns_doq" -- run
+
+# Resolver pool (race strategy)
+SB_DNS_ENABLE=1 \
+SB_DNS_POOL="system,udp:127.0.0.1:1053,doh:https://cloudflare-dns.com/dns-query,dot:1.1.1.1:853,doq:1.1.1.1:853@cloudflare-dns.com" \
+SB_DNS_POOL_STRATEGY=race \
+cargo run -p app -- run
+```
+
+NTP background service (experimental)
+
+```bash
+# Build with service_ntp feature and enable via env
+SB_NTP_ENABLE=1 \
+SB_NTP_SERVER=time.google.com:123 \
+SB_NTP_INTERVAL_S=1800 \
+cargo build -p sb-core --features service_ntp
+```
+
 ### Logging & Docs
 
 - Runtime logs use `tracing` across binaries and libraries.
@@ -96,6 +121,23 @@ bash scripts/run-examples.sh examples/configs/full_stack.json
 
 ### 🧪 测试文档
 - [tests/README.md](tests/README.md) - 测试指南和目录结构
+
+### CLI Parity Commands
+
+The unified `app` binary now mirrors upstream `sing-box` subcommands. Run any tool with:
+
+```bash
+cargo run -p app -- <subcommand> [flags]
+```
+
+Common examples:
+
+- `cargo run -p app -- format -c config.json -w`
+- `cargo run -p app -- merge -c base.json -c override.json merged.json`
+- `cargo run -p app -- geoip --file geoip.db list`
+- `cargo run -p app -- geosite --file geosite.db export netflix`
+- `cargo run -p app -- ruleset validate rules.srs`
+- `cargo run -p app -- tools connect example.com:443 -c config.json`
 
 ### Admin 实现选择
 运行期可通过 CLI 或环境变量在 **核心实现** 与 **Debug 实现**间切换：

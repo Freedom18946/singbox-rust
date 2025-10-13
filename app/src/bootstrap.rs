@@ -87,7 +87,10 @@ fn process_inbounds(inbounds: Vec<sb_config::Inbound>) {
             sb_config::Inbound::Socks { listen: _listen } => {
                 #[cfg(feature = "socks")]
                 {
-                    warn!(?_listen, "SOCKS inbound temporarily disabled for subs tests");
+                    warn!(
+                        ?_listen,
+                        "SOCKS inbound temporarily disabled for subs tests"
+                    );
                 }
                 #[cfg(not(feature = "socks"))]
                 {
@@ -122,13 +125,11 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     let oh = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::default()));
 
-    let inbounds = cfg.inbounds.len();
-    let outbounds = cfg.outbounds.len();
-    let rules = cfg.rules.len();
+    let (inbounds, outbounds, rules) = cfg.stats();
     info!("sb bootstrap: inbounds={inbounds}, outbounds={outbounds}, rules={rules}");
 
     // 2) 起入站（HTTP / SOCKS），每个入站一个 stop 通道；当前不做热更新/回收
-    process_inbounds(cfg.inbounds);
+    process_inbounds(cfg.legacy_inbounds());
 
     Ok(Runtime {
         #[cfg(feature = "router")]

@@ -488,9 +488,7 @@ fn sample(
                 },
                 latency_ms: t1.as_millis() as u32,
                 size: crate::admin_debug::prefetch::get_last_prefetch_size() as u32,
-                hint: Some(format!(
-                    "queue: before={before} peak={peak} after={after}"
-                )),
+                hint: Some(format!("queue: before={before} peak={peak} after={after}")),
             };
 
             if use_envelope {

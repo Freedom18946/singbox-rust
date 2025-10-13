@@ -198,7 +198,7 @@ Common pitfalls (lint logged at parse time):
 ### DNS Resolver Pool (behind env)
 
 - SB_DNS_POOL: comma-separated upstreams, e.g. `system,udp:127.0.0.1:1053,udp:127.0.0.1:2053`
-- DoH/DoT examples: `doh:https://resolver.example/dns-query`, `dot:1.1.1.1:853` (features `dns_doh`/`dns_dot` must be enabled)
+- DoH/DoT/DoQ examples: `doh:https://resolver.example/dns-query`, `dot:1.1.1.1:853`, `doq:1.1.1.1:853@cloudflare-dns.com` (features `dns_doh`/`dns_dot`/`dns_doq` must be enabled)
 - SB_DNS_POOL_STRATEGY: `race|sequential|fanout` (default: `race`)
 - SB_DNS_RACE_WINDOW_MS: per-upstream race staggering window (default: 50)
 - SB_DNS_HE_ORDER: `A_FIRST|AAAA_FIRST` (default: `A_FIRST`)
@@ -219,13 +219,23 @@ Common pitfalls (lint logged at parse time):
   - 说明：这是**运行态桥接开关**；不修改调用方代码即可切换解析实现，遵守"Never break userspace"。
 
 ### DNS 选择与回退
-- `SB_DNS_MODE`：`system`（默认）| `udp` | `dot` | `doh` | `auto`
+- `SB_DNS_MODE`：`system`（默认）| `udp` | `dot` | `doh` | `doq` | `auto`
 - `SB_DNS_TIMEOUT_MS`：单次请求超时，默认 1500
 - `SB_DNS_QTYPE`：查询类型，`auto`（默认，并发 A/AAAA 并合并）| `a` | `aaaa`
 - `SB_DNS_UDP_SERVER`：UDP 服务器（默认 `1.1.1.1:53`）
 - `SB_DNS_DOT_ADDR`：DoT 服务器（默认 `1.1.1.1:853`）
 - `SB_DNS_DOH_URL`：DoH URL（默认 `https://cloudflare-dns.com/dns-query`）
-> 注：`dns_dot`/`dns_doh` 需对应 feature 开启；TLS 校验遵循 `SB_TLS_NO_VERIFY`。
+- `SB_DNS_DOQ_ADDR`：DoQ 服务器地址（测试/开发；默认 `1.1.1.1:853`）
+- `SB_DNS_DOQ_SERVER_NAME`：DoQ SNI 名称（测试/开发；默认 `cloudflare-dns.com`）
+> 注：`dns_dot`/`dns_doh`/`dns_doq` 需对应 feature 开启；DoT/DoQ 依赖 TLS（rustls），TLS 校验遵循 `SB_TLS_NO_VERIFY`。
+
+## NTP Service (experimental; behind feature)
+
+- `SB_NTP_ENABLE=1`：启用 NTP 后台服务（默认关闭）
+- `SB_NTP_SERVER`：NTP 服务器（默认 `time.google.com:123`）
+- `SB_NTP_INTERVAL_S`：测量间隔（秒，默认 `1800`）
+- `SB_NTP_TIMEOUT_MS`：单次 NTP 查询超时（毫秒，默认 `1500`）
+> 注：需在构建时启用 `sb-core` 特性 `service_ntp`；指标（启用 `metrics` 特性时）：`ntp_offset_seconds`（gauge）、`ntp_query_total{result}`（counter）。
 
 ### DNS 缓存（默认关闭；需 `--features dns_cache`）
 - `SB_DNS_CACHE_ENABLE=1`：启用缓存（正/负/stale）

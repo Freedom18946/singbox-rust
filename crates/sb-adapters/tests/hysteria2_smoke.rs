@@ -1,7 +1,7 @@
 #![cfg(feature = "adapter-hysteria2")]
 
 use sb_adapters::outbound::hysteria2::{Hysteria2AdapterConfig, Hysteria2Connector};
-use sb_adapters::traits::{OutboundConnector, Target, DialOpts};
+use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
 
 #[tokio::test]
 #[ignore]
@@ -25,4 +25,3 @@ async fn hysteria2_dial_closed_port_returns_error() {
     let res = conn.dial(target, DialOpts::default()).await;
     assert!(res.is_err());
 }
-

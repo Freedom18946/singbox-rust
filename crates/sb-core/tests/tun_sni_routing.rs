@@ -1,8 +1,8 @@
 use sb_core::router::sniff::extract_sni_from_tls_client_hello;
 
 // Use the routing engine over ConfigIR rules
-use sb_core::routing::engine::{Engine, Input};
 use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
+use sb_core::routing::engine::{Engine, Input};
 
 fn build_tls_client_hello_with_sni(host: &str) -> Vec<u8> {
     // Build minimal TLS 1.2 ClientHello with only server_name extension
@@ -19,7 +19,7 @@ fn build_tls_client_hello_with_sni(host: &str) -> Vec<u8> {
     // cipher_suites len (2) + one suite (2)
     hs.extend_from_slice(&[0x00, 0x02]);
     hs.extend_from_slice(&[0x00, 0x2f]); // TLS_RSA_WITH_AES_128_CBC_SHA
-    // compression_methods len (1) + null (1)
+                                         // compression_methods len (1) + null (1)
     hs.push(1);
     hs.push(0);
     // extensions placeholder: length(2)
@@ -57,7 +57,11 @@ fn build_tls_client_hello_with_sni(host: &str) -> Vec<u8> {
 
     // Fill handshake length (exclude the 4-byte handshake header itself)
     let hs_body_len = (hs.len() - 4) as u32;
-    hs[1..4].copy_from_slice(&[(hs_body_len >> 16) as u8, (hs_body_len >> 8) as u8, hs_body_len as u8]);
+    hs[1..4].copy_from_slice(&[
+        (hs_body_len >> 16) as u8,
+        (hs_body_len >> 8) as u8,
+        hs_body_len as u8,
+    ]);
 
     // TLS record: type(22)=handshake, version 03 03, length=hs.len()
     let mut rec = Vec::with_capacity(5 + hs.len());
@@ -101,4 +105,3 @@ fn sni_drives_routing_decision() {
     );
     assert_eq!(dec.outbound, "proxy");
 }
-

@@ -56,7 +56,10 @@ fn test_router_proxy_name_decision_from_str() {
 
     // Test parsing different decision strings
     assert_eq!(Decision::parse_decision("direct"), Some(Decision::Direct));
-    assert_eq!(Decision::parse_decision("proxy"), Some(Decision::Proxy(None)));
+    assert_eq!(
+        Decision::parse_decision("proxy"),
+        Some(Decision::Proxy(None))
+    );
     assert_eq!(
         Decision::parse_decision("proxy:poolA"),
         Some(Decision::Proxy(Some("poolA".to_string())))
@@ -69,7 +72,10 @@ fn test_router_proxy_name_decision_from_str() {
 
     // Test case insensitive parsing
     assert_eq!(Decision::parse_decision("DIRECT"), Some(Decision::Direct));
-    assert_eq!(Decision::parse_decision("PROXY"), Some(Decision::Proxy(None)));
+    assert_eq!(
+        Decision::parse_decision("PROXY"),
+        Some(Decision::Proxy(None))
+    );
     assert_eq!(Decision::parse_decision("REJECT"), Some(Decision::Reject));
 
     // Test invalid strings
@@ -145,13 +151,19 @@ fn test_router_proxy_name_with_whitespace() {
     let pool_a_rule = rules.iter().find(|r| matches!(&r.kind, sb_core::router::rules::RuleKind::Exact(domain) if domain == "example.com")).unwrap();
     match &pool_a_rule.decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "poolA"),
-        _ => assert!(false, "Expected Proxy decision with pool name 'poolA' for example.com"),
+        _ => assert!(
+            false,
+            "Expected Proxy decision with pool name 'poolA' for example.com"
+        ),
     }
 
     let pool_spaces_rule = rules.iter().find(|r| matches!(&r.kind, sb_core::router::rules::RuleKind::Exact(domain) if domain == "test.com")).unwrap();
     match &pool_spaces_rule.decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "pool-with-spaces"),
-        _ => assert!(false, "Expected Proxy decision with pool name 'pool-with-spaces'"),
+        _ => assert!(
+            false,
+            "Expected Proxy decision with pool name 'pool-with-spaces'"
+        ),
     }
 }
 
@@ -180,7 +192,10 @@ fn test_router_engine_proxy_name_decisions() {
     let decision = engine.decide(&ctx);
     match decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "specialPool"),
-        _ => assert!(false, "Expected named proxy decision for exact domain match"),
+        _ => assert!(
+            false,
+            "Expected named proxy decision for exact domain match"
+        ),
     }
 
     // Test suffix match with named pool
@@ -195,7 +210,10 @@ fn test_router_engine_proxy_name_decisions() {
     let decision = engine.decide(&ctx);
     match decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "internalPool"),
-        _ => assert!(false, "Expected named proxy decision for suffix domain match"),
+        _ => assert!(
+            false,
+            "Expected named proxy decision for suffix domain match"
+        ),
     }
 
     // Test default decision

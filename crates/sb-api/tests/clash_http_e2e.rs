@@ -7,10 +7,7 @@
 //! Coverage: 36 endpoints across 11 categories
 
 use reqwest::{Client, StatusCode};
-use sb_api::{
-    clash::ClashApiServer,
-    types::ApiConfig,
-};
+use sb_api::{clash::ClashApiServer, types::ApiConfig};
 use std::net::SocketAddr;
 use tokio::time::{sleep, Duration};
 
@@ -161,7 +158,7 @@ async fn test_patch_configs_valid() {
     });
 
     let response = server.patch("/configs", body).await;
-    assert_eq!(response.status(), StatusCode::OK);  // Returns 200, not 204
+    assert_eq!(response.status(), StatusCode::OK); // Returns 200, not 204
 }
 
 /// Test PATCH /configs - Invalid port (error case)
@@ -239,8 +236,8 @@ async fn test_select_proxy() {
     // Returns 503 if outbound manager not available, 404 if proxy doesn't exist, or 204 if successful
     assert!(
         response.status() == StatusCode::NO_CONTENT
-        || response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            || response.status() == StatusCode::NOT_FOUND
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -248,13 +245,12 @@ async fn test_select_proxy() {
 #[tokio::test]
 async fn test_get_proxy_delay() {
     let server = TestServer::start().await;
-    let response = server.get("/proxies/direct/delay?timeout=5000&url=http://www.gstatic.com/generate_204").await;
+    let response = server
+        .get("/proxies/direct/delay?timeout=5000&url=http://www.gstatic.com/generate_204")
+        .await;
 
     // Will return 404 if proxy doesn't exist or delay test result
-    assert!(
-        response.status() == StatusCode::OK
-        || response.status() == StatusCode::NOT_FOUND
-    );
+    assert!(response.status() == StatusCode::OK || response.status() == StatusCode::NOT_FOUND);
 }
 
 // ============================================================================
@@ -291,12 +287,13 @@ async fn test_close_all_connections() {
 #[tokio::test]
 async fn test_close_connection_not_found() {
     let server = TestServer::start().await;
-    let response = server.delete("/connections/nonexistent-connection-id").await;
+    let response = server
+        .delete("/connections/nonexistent-connection-id")
+        .await;
 
     // Returns 204 when connection manager not available, 404 for non-existent connection
     assert!(
-        response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::NO_CONTENT
+        response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::NO_CONTENT
     );
 }
 
@@ -342,7 +339,7 @@ async fn test_get_proxy_provider_not_found() {
     // Returns 503 when provider manager not available, 404 if provider not found
     assert!(
         response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -350,12 +347,14 @@ async fn test_get_proxy_provider_not_found() {
 #[tokio::test]
 async fn test_update_proxy_provider() {
     let server = TestServer::start().await;
-    let response = server.put("/providers/proxies/test-provider", serde_json::json!({})).await;
+    let response = server
+        .put("/providers/proxies/test-provider", serde_json::json!({}))
+        .await;
 
     // Returns 503 when provider manager not available, 404 if provider not found
     assert!(
         response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -363,13 +362,18 @@ async fn test_update_proxy_provider() {
 #[tokio::test]
 async fn test_healthcheck_proxy_provider() {
     let server = TestServer::start().await;
-    let response = server.post("/providers/proxies/test-provider/healthcheck", serde_json::json!({})).await;
+    let response = server
+        .post(
+            "/providers/proxies/test-provider/healthcheck",
+            serde_json::json!({}),
+        )
+        .await;
 
     // Returns 503 when provider manager not available, 404 if provider not found, 200 if successful
     assert!(
         response.status() == StatusCode::OK
-        || response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            || response.status() == StatusCode::NOT_FOUND
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -394,7 +398,7 @@ async fn test_get_rule_provider_not_found() {
     // Returns 503 when provider manager not available, 404 if provider not found
     assert!(
         response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -402,12 +406,14 @@ async fn test_get_rule_provider_not_found() {
 #[tokio::test]
 async fn test_update_rule_provider() {
     let server = TestServer::start().await;
-    let response = server.put("/providers/rules/test-provider", serde_json::json!({})).await;
+    let response = server
+        .put("/providers/rules/test-provider", serde_json::json!({}))
+        .await;
 
     // Returns 503 when provider manager not available, 404 if provider not found
     assert!(
         response.status() == StatusCode::NOT_FOUND
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -423,8 +429,7 @@ async fn test_flush_fakeip_cache() {
 
     // Returns 503 when DNS resolver not available, 200 if successful
     assert!(
-        response.status() == StatusCode::OK
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+        response.status() == StatusCode::OK || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -436,8 +441,7 @@ async fn test_flush_dns_cache() {
 
     // Returns 503 when DNS resolver not available, 200 if successful
     assert!(
-        response.status() == StatusCode::OK
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+        response.status() == StatusCode::OK || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -453,8 +457,7 @@ async fn test_dns_query_valid() {
 
     // Returns 503 when DNS resolver not available, 200 if successful
     assert!(
-        response.status() == StatusCode::OK
-        || response.status() == StatusCode::SERVICE_UNAVAILABLE
+        response.status() == StatusCode::OK || response.status() == StatusCode::SERVICE_UNAVAILABLE
     );
 }
 
@@ -498,13 +501,12 @@ async fn test_get_meta_group_not_found() {
 #[tokio::test]
 async fn test_get_meta_group_delay() {
     let server = TestServer::start().await;
-    let response = server.get("/meta/group/auto/delay?timeout=5000&url=http://www.gstatic.com/generate_204").await;
+    let response = server
+        .get("/meta/group/auto/delay?timeout=5000&url=http://www.gstatic.com/generate_204")
+        .await;
 
     // Will return 404 if group doesn't exist
-    assert!(
-        response.status() == StatusCode::OK
-        || response.status() == StatusCode::NOT_FOUND
-    );
+    assert!(response.status() == StatusCode::OK || response.status() == StatusCode::NOT_FOUND);
 }
 
 /// Test GET /meta/memory - Memory usage statistics
@@ -527,7 +529,7 @@ async fn test_trigger_gc() {
     let server = TestServer::start().await;
     let response = server.put("/meta/gc", serde_json::json!({})).await;
 
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);  // Returns 204
+    assert_eq!(response.status(), StatusCode::NO_CONTENT); // Returns 204
 }
 
 // ============================================================================
@@ -684,16 +686,16 @@ async fn test_upgrade_external_ui_missing_url() {
 #[test]
 fn test_http_e2e_coverage_summary() {
     let test_categories = vec![
-        ("Core Endpoints", 8),           // GET /, GET /version, GET/PATCH/PUT /configs (with error cases)
-        ("Proxy Management", 3),         // GET /proxies, PUT /proxies/:name, GET /proxies/:name/delay
-        ("Connection Management", 3),    // GET /connections, DELETE /connections, DELETE /connections/:id
-        ("Rules", 1),                    // GET /rules
-        ("Provider Management", 7),      // All 7 provider endpoints
-        ("Cache Management", 2),         // FakeIP + DNS flush
-        ("DNS Query", 2),                // Valid query + error case
-        ("Meta Endpoints", 5),           // All 5 Meta endpoints
-        ("UI and Script", 5),            // UI + 4 script tests (2 valid, 2 error)
-        ("Profile and Upgrade", 4),      // Tracing + 3 upgrade endpoints (with error cases)
+        ("Core Endpoints", 8), // GET /, GET /version, GET/PATCH/PUT /configs (with error cases)
+        ("Proxy Management", 3), // GET /proxies, PUT /proxies/:name, GET /proxies/:name/delay
+        ("Connection Management", 3), // GET /connections, DELETE /connections, DELETE /connections/:id
+        ("Rules", 1),                 // GET /rules
+        ("Provider Management", 7),   // All 7 provider endpoints
+        ("Cache Management", 2),      // FakeIP + DNS flush
+        ("DNS Query", 2),             // Valid query + error case
+        ("Meta Endpoints", 5),        // All 5 Meta endpoints
+        ("UI and Script", 5),         // UI + 4 script tests (2 valid, 2 error)
+        ("Profile and Upgrade", 4),   // Tracing + 3 upgrade endpoints (with error cases)
     ];
 
     let total_tests: usize = test_categories.iter().map(|(_, count)| count).sum();

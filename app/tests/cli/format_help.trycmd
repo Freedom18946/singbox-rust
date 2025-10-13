@@ -8,5 +8,6 @@ Options:
   -c, --config <CONFIG>[
   -C, --config-directory <CONFIG_DIRECTORY>[
   -w, --write[
+      --help-json[..]Print help information in JSON format and exit
   -h, --help[..]Print help
 ```

@@ -289,11 +289,9 @@ impl Hysteria2Outbound {
 
     /// Create a new QUIC connection with proper configuration
     async fn create_new_connection(&self) -> io::Result<Connection> {
-        let connection = quic_connect(&self.quic_config).await.map_err(|e| {
-            io::Error::other(
-                format!("QUIC connection failed: {}", e),
-            )
-        })?;
+        let connection = quic_connect(&self.quic_config)
+            .await
+            .map_err(|e| io::Error::other(format!("QUIC connection failed: {}", e)))?;
 
         // Configure congestion control
         self.configure_congestion_control(&connection).await?;
@@ -334,11 +332,10 @@ impl Hysteria2Outbound {
 
     async fn authenticate(&self, connection: &quinn::Connection) -> io::Result<()> {
         // Open authentication stream
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::other(
-                format!("Failed to open auth stream: {}", e),
-            )
-        })?;
+        let (mut send_stream, mut recv_stream) = connection
+            .open_bi()
+            .await
+            .map_err(|e| io::Error::other(format!("Failed to open auth stream: {}", e)))?;
 
         // Generate authentication hash
         let auth_hash = self.generate_auth_hash();
@@ -366,19 +363,21 @@ impl Hysteria2Outbound {
         // Apply obfuscation to the entire packet
         self.apply_obfuscation(&mut auth_packet);
 
-        send_stream.write_all(&auth_packet).await.map_err(|e| {
-            io::Error::other(format!("Auth write failed: {}", e))
-        })?;
+        send_stream
+            .write_all(&auth_packet)
+            .await
+            .map_err(|e| io::Error::other(format!("Auth write failed: {}", e)))?;
 
-        send_stream.finish().map_err(|e| {
-            io::Error::other(format!("Auth finish failed: {}", e))
-        })?;
+        send_stream
+            .finish()
+            .map_err(|e| io::Error::other(format!("Auth finish failed: {}", e)))?;
 
         // Read authentication response
         let mut response = [0u8; 4]; // Extended response for more info
-        let bytes_read = recv_stream.read(&mut response).await.map_err(|e| {
-            io::Error::other(format!("Auth read failed: {}", e))
-        })?;
+        let bytes_read = recv_stream
+            .read(&mut response)
+            .await
+            .map_err(|e| io::Error::other(format!("Auth read failed: {}", e)))?;
 
         if matches!(bytes_read, None | Some(0)) {
             return Err(io::Error::new(
@@ -433,11 +432,10 @@ impl Hysteria2Outbound {
         target: &HostPort,
     ) -> io::Result<(quinn::SendStream, quinn::RecvStream)> {
         // Open bidirectional stream for TCP relay
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await.map_err(|e| {
-            io::Error::other(
-                format!("Failed to open tunnel stream: {}", e),
-            )
-        })?;
+        let (mut send_stream, mut recv_stream) = connection
+            .open_bi()
+            .await
+            .map_err(|e| io::Error::other(format!("Failed to open tunnel stream: {}", e)))?;
 
         // Build TCP CONNECT request according to Hysteria2 protocol
         let mut connect_packet = Vec::new();
@@ -473,17 +471,17 @@ impl Hysteria2Outbound {
         // Apply obfuscation if configured
         self.apply_obfuscation(&mut connect_packet);
 
-        send_stream.write_all(&connect_packet).await.map_err(|e| {
-            io::Error::other(format!("Connect write failed: {}", e))
-        })?;
+        send_stream
+            .write_all(&connect_packet)
+            .await
+            .map_err(|e| io::Error::other(format!("Connect write failed: {}", e)))?;
 
         // Read connection response
         let mut response = [0u8; 2];
-        recv_stream.read_exact(&mut response).await.map_err(|e| {
-            io::Error::other(
-                format!("Connect response read failed: {}", e),
-            )
-        })?;
+        recv_stream
+            .read_exact(&mut response)
+            .await
+            .map_err(|e| io::Error::other(format!("Connect response read failed: {}", e)))?;
 
         match response[0] {
             0x00 => {
@@ -507,15 +505,19 @@ impl Hysteria2Outbound {
                 io::ErrorKind::NotFound,
                 "Hysteria2 TCP connect failed: host unreachable",
             )),
-            code => Err(io::Error::other(
-                format!("Hysteria2 TCP connect failed with code: {}", code),
-            )),
+            code => Err(io::Error::other(format!(
+                "Hysteria2 TCP connect failed with code: {}",
+                code
+            ))),
         }
     }
 
     /// Create UDP multiplexing session for high-performance data transfer
     /// Creates UDP session for future UDP support
-    pub async fn create_udp_session(&self, connection: &Connection) -> io::Result<Hysteria2UdpSession> {
+    pub async fn create_udp_session(
+        &self,
+        connection: &Connection,
+    ) -> io::Result<Hysteria2UdpSession> {
         // Send UDP session initialization datagram
         let mut init_packet = Vec::new();
         init_packet.push(0x03); // UDP session init command
@@ -528,11 +530,9 @@ impl Hysteria2Outbound {
         // Apply obfuscation
         self.apply_obfuscation(&mut init_packet);
 
-        connection.send_datagram(init_packet.into()).map_err(|e| {
-            io::Error::other(
-                format!("UDP session init failed: {}", e),
-            )
-        })?;
+        connection
+            .send_datagram(init_packet.into())
+            .map_err(|e| io::Error::other(format!("UDP session init failed: {}", e)))?;
 
         Ok(Hysteria2UdpSession {
             connection: connection.clone(),
@@ -576,7 +576,10 @@ impl Hysteria2Outbound {
                 tracing::debug!("Hysteria2 connection established to {}:{}", host, port);
                 Ok(())
             } else {
-                anyhow::bail!("Hysteria2 connection failed with code: {:02x}", connect_response[0]);
+                anyhow::bail!(
+                    "Hysteria2 connection failed with code: {:02x}",
+                    connect_response[0]
+                );
             }
         } else {
             anyhow::bail!("Invalid server hello response");
@@ -593,9 +596,8 @@ impl Hysteria2Outbound {
         let addr = listener.local_addr()?;
 
         // Accept connection in background
-        let server_task = tokio::spawn(async move {
-            listener.accept().await.map(|(stream, _)| stream)
-        });
+        let server_task =
+            tokio::spawn(async move { listener.accept().await.map(|(stream, _)| stream) });
 
         // Connect to the listener
         let client = tokio::net::TcpStream::connect(addr).await?;
@@ -621,7 +623,11 @@ impl Hysteria2Outbound {
         // Use the streams directly for bidirectional copy
         match copy_bidirectional(&mut tcp_stream, &mut hysteria2_stream).await {
             Ok((sent, received)) => {
-                tracing::debug!("Hysteria2 relay completed: sent {} bytes, received {} bytes", sent, received);
+                tracing::debug!(
+                    "Hysteria2 relay completed: sent {} bytes, received {} bytes",
+                    sent,
+                    received
+                );
                 Ok(())
             }
             Err(e) => {
@@ -682,7 +688,10 @@ impl Hysteria2Outbound {
         // Check version compatibility
         let server_version = data[3];
         if server_version < 0x02 {
-            tracing::warn!("Server version {} is older than client version 2", server_version);
+            tracing::warn!(
+                "Server version {} is older than client version 2",
+                server_version
+            );
         }
 
         tracing::debug!("Server hello verification passed");
@@ -763,10 +772,11 @@ impl Hysteria2UdpSession {
     }
 
     pub async fn recv_udp(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
-        let datagram =
-            self.connection.read_datagram().await.map_err(|e| {
-                io::Error::other(format!("UDP recv failed: {}", e))
-            })?;
+        let datagram = self
+            .connection
+            .read_datagram()
+            .await
+            .map_err(|e| io::Error::other(format!("UDP recv failed: {}", e)))?;
 
         let data = datagram.as_ref();
         if data.len() < 8 {
@@ -1034,18 +1044,22 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
 impl crate::adapter::OutboundConnector for Hysteria2Outbound {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
         // Establish QUIC connection first
-        let conn = super::quic::common::connect(&self.quic_config).await
+        let conn = super::quic::common::connect(&self.quic_config)
+            .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
 
         // Open a bidirectional stream for Hysteria2 protocol
-        let (send_stream, recv_stream) = conn.open_bi().await
+        let (send_stream, recv_stream) = conn
+            .open_bi()
+            .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionAborted, e))?;
 
         // Perform Hysteria2 handshake and authentication
         let mut hysteria2_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
 
         // Hysteria2 protocol: Send authentication and target request
-        self.hysteria2_handshake(&mut hysteria2_stream, host, port).await
+        self.hysteria2_handshake(&mut hysteria2_stream, host, port)
+            .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
 
         // Convert to async TcpStream-like behavior
@@ -1080,8 +1094,8 @@ pub mod inbound {
     //! Provides Hysteria2 protocol server support for accepting connections
     //! with password authentication, Salamander obfuscation, and UDP relay.
 
-    use quinn::{Connection, Endpoint, RecvStream, SendStream, ServerConfig};
     use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+    use quinn::{Connection, Endpoint, RecvStream, SendStream, ServerConfig};
     use sha2::{Digest, Sha256};
     use std::io;
     use std::net::SocketAddr;
@@ -1189,9 +1203,10 @@ pub mod inbound {
             };
 
             // Accept incoming connection
-            let incoming = endpoint.accept().await.ok_or_else(|| {
-                io::Error::new(io::ErrorKind::ConnectionAborted, "No connection")
-            })?;
+            let incoming = endpoint
+                .accept()
+                .await
+                .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionAborted, "No connection"))?;
 
             let connection = incoming
                 .await
@@ -1230,9 +1245,10 @@ pub mod inbound {
             };
 
             // Accept incoming connection for UDP
-            let incoming = endpoint.accept().await.ok_or_else(|| {
-                io::Error::new(io::ErrorKind::ConnectionAborted, "No connection")
-            })?;
+            let incoming = endpoint
+                .accept()
+                .await
+                .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionAborted, "No connection"))?;
 
             let connection = incoming
                 .await

@@ -5,7 +5,7 @@
 //! Run the server first: cargo run --example websocket_server_example --all-features
 //! Then run this client: cargo run --example websocket_client_example --all-features
 
-use sb_transport::websocket::{WebSocketDialer, WebSocketConfig};
+use sb_transport::websocket::{WebSocketConfig, WebSocketDialer};
 use sb_transport::{Dialer, TcpDialer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -21,9 +21,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create WebSocket dialer with custom config
     let ws_config = WebSocketConfig {
         path: "/".to_string(),
-        headers: vec![
-            ("User-Agent".to_string(), "singbox-rust-example/1.0".to_string()),
-        ],
+        headers: vec![(
+            "User-Agent".to_string(),
+            "singbox-rust-example/1.0".to_string(),
+        )],
         max_message_size: Some(64 * 1024 * 1024),
         max_frame_size: Some(16 * 1024 * 1024),
         early_data: false,

@@ -106,10 +106,14 @@ fn test_dns_resolution_with_reality() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS resolution with REALITY should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS resolution with REALITY should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS resolution with Hysteria v2
@@ -160,10 +164,14 @@ fn test_dns_resolution_with_hysteria2() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS resolution with Hysteria2 should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS resolution with Hysteria2 should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS resolution with SSH outbound
@@ -213,10 +221,14 @@ fn test_dns_resolution_with_ssh() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS resolution with SSH should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS resolution with SSH should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS resolution with TUIC outbound
@@ -262,10 +274,14 @@ fn test_dns_resolution_with_tuic() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS resolution with TUIC should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS resolution with TUIC should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test Fake-IP mode with P0 protocols
@@ -337,10 +353,14 @@ fn test_fakeip_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "Fake-IP with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Fake-IP with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS routing rules with P0 protocols
@@ -415,10 +435,14 @@ fn test_dns_routing_rules_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS routing rules with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS routing rules with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS over HTTPS (DoH) with ECH-enabled outbound
@@ -471,7 +495,7 @@ fn test_doh_with_ech() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
     assert!(success, "DoH with ECH should be valid. Output: {}", output);
@@ -522,10 +546,14 @@ fn test_dot_with_hysteria_v1() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DoT with Hysteria v1 should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DoT with Hysteria v1 should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS caching with P0 protocols
@@ -575,10 +603,14 @@ fn test_dns_caching_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS caching with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS caching with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS strategy (IPv4/IPv6 preference) with P0 protocols
@@ -640,10 +672,14 @@ fn test_dns_strategy_with_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS strategy with P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS strategy with P0 protocols should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test DNS with mixed P0 protocols
@@ -736,8 +772,12 @@ fn test_dns_with_mixed_p0_protocols() {
 
     let tmp = write_cfg(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
-    
+
     assert!(result.is_some(), "Check command should execute");
     let (success, output) = result.unwrap();
-    assert!(success, "DNS with mixed P0 protocols should be valid. Output: {}", output);
+    assert!(
+        success,
+        "DNS with mixed P0 protocols should be valid. Output: {}",
+        output
+    );
 }

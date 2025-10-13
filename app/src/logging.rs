@@ -180,7 +180,7 @@ where
 
         if let Some(config) = LOGGING_CONFIG.get() {
             if let Some(sampling) = &config.sampling {
-                if !should_sample(metadata.target(), sampling) {// Skip this event
+                if !should_sample(metadata.target(), sampling) { // Skip this event
                 }
             }
         }
@@ -314,8 +314,8 @@ pub fn flush_logs_sync() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use serial_test::serial;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     #[serial]

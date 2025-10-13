@@ -51,7 +51,8 @@ impl OutboundConnector for HttpUp {
             let mut status_line = String::new();
             reader.read_line(&mut status_line).await?;
 
-            let ok = status_line.starts_with("HTTP/1.1 200") || status_line.starts_with("HTTP/1.0 200");
+            let ok =
+                status_line.starts_with("HTTP/1.1 200") || status_line.starts_with("HTTP/1.0 200");
 
             // Discard remaining headers
             loop {
@@ -63,9 +64,10 @@ impl OutboundConnector for HttpUp {
             }
 
             if !ok {
-                return Err(std::io::Error::other(
-                    format!("http upstream not 200: {}", status_line.trim()),
-                ));
+                return Err(std::io::Error::other(format!(
+                    "http upstream not 200: {}",
+                    status_line.trim()
+                )));
             }
             // BufReader drops here, releasing the borrow
         }

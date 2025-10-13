@@ -149,13 +149,17 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
         });
     }
 
-    Ok(Config {
+    let interim = Config {
         schema_version: 2,
         inbounds: vec![], // 不从订阅生成入站
         outbounds,
         rules,
         default_outbound,
-    })
+        raw: JsonValue::Null,
+        ir: crate::ir::ConfigIR::default(),
+    };
+    let value = serde_json::to_value(&interim).unwrap_or(JsonValue::Null);
+    Config::from_value(value)
 }
 
 // ---------------- Sing-Box ----------------
@@ -284,13 +288,17 @@ fn parse_singbox_json_value(val: JsonValue) -> Result<Config> {
         });
     }
 
-    Ok(Config {
+    let interim = Config {
         schema_version: 2,
         inbounds: vec![],
         outbounds: outs,
         rules,
         default_outbound: None,
-    })
+        raw: JsonValue::Null,
+        ir: crate::ir::ConfigIR::default(),
+    };
+    let value = serde_json::to_value(&interim).unwrap_or(JsonValue::Null);
+    Config::from_value(value)
 }
 
 #[cfg(test)]

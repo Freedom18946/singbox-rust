@@ -18,7 +18,7 @@ This crate exposes a minimal, stable set of counters and gauges intended for das
 - `outbound_bytes_{in,out}_total{kind="direct|http|socks5"}`（若启用 metered 包装）
 
 ### 3. DNS
-- `dns_query_total{backend="system|udp|dot|doh", qtype="a|aaaa|auto"}`
+- `dns_query_total{backend="system|udp|dot|doh|doq", qtype="a|aaaa|auto"}`
 - `dns_rtt_seconds_bucket{backend,qtype}`
 - `dns_error_total{backend,qtype,class}`
 - `dns_cache_size`（gauge）

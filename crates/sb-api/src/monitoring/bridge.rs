@@ -266,7 +266,7 @@ impl MetricsBridge {
         // Collect outbound metrics from registry if available
         #[cfg(feature = "metrics")]
         {
-            use prometheus::{Registry, core::Collector};
+            use prometheus::{core::Collector, Registry};
             let registry = Registry::new();
 
             // Gather metrics from prometheus registry

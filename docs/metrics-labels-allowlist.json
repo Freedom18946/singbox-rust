@@ -12,7 +12,7 @@
       "name": "dns_query_total",
       "type": "counter",
       "labels": {
-        "backend": "^(system|udp|dot|doh)$",
+        "backend": "^(system|udp|dot|doh|doq)$",
         "qtype": "^(A|AAAA|AUTO)$"
       }
     },
@@ -20,7 +20,7 @@
       "name": "dns_rtt_seconds",
       "type": "histogram|summary",
       "labels": {
-        "backend": "^(system|udp|dot|doh)$"
+        "backend": "^(system|udp|dot|doh|doq)$"
       }
     },
     {

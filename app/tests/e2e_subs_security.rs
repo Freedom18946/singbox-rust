@@ -669,29 +669,29 @@ async fn admin_auth_bearer_token() {
         std::env::set_var("SB_ADMIN_TOKEN", "test-secret-token");
         std::env::remove_var("SB_ADMIN_NO_AUTH");
 
-    let mut headers = std::collections::HashMap::new();
+        let mut headers = std::collections::HashMap::new();
 
-    // Test without auth header - should fail
-    let result1 = app::admin_debug::http::check_auth(&headers, "/__health");
-    assert!(!result1);
+        // Test without auth header - should fail
+        let result1 = app::admin_debug::http::check_auth(&headers, "/__health");
+        assert!(!result1);
 
-    // Test with correct Bearer token - should pass
-    headers.insert(
-        "authorization".to_string(),
-        "Bearer test-secret-token".to_string(),
-    );
-    let result2 = app::admin_debug::http::check_auth(&headers, "/__health");
-    assert!(result2);
+        // Test with correct Bearer token - should pass
+        headers.insert(
+            "authorization".to_string(),
+            "Bearer test-secret-token".to_string(),
+        );
+        let result2 = app::admin_debug::http::check_auth(&headers, "/__health");
+        assert!(result2);
 
-    // Test with incorrect token - should fail
-    headers.insert(
-        "authorization".to_string(),
-        "Bearer wrong-token".to_string(),
-    );
-    let result3 = app::admin_debug::http::check_auth(&headers, "/__health");
-    assert!(!result3);
+        // Test with incorrect token - should fail
+        headers.insert(
+            "authorization".to_string(),
+            "Bearer wrong-token".to_string(),
+        );
+        let result3 = app::admin_debug::http::check_auth(&headers, "/__health");
+        assert!(!result3);
 
-    std::env::remove_var("SB_ADMIN_TOKEN");
+        std::env::remove_var("SB_ADMIN_TOKEN");
     }
 }
 

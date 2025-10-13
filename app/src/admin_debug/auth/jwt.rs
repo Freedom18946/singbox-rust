@@ -236,9 +236,9 @@ impl JwtProvider {
     /// Load JWKS from file
     #[cfg(feature = "jwt")]
     async fn load_jwks_from_file(&self, path: &str) -> Result<JwksResponse, AuthError> {
-        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
-            AuthError::internal(format!("Failed to read JWKS file {path}: {e}"))
-        })?;
+        let content = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| AuthError::internal(format!("Failed to read JWKS file {path}: {e}")))?;
 
         serde_json::from_str(&content)
             .map_err(|e| AuthError::internal(format!("Invalid JWKS format in {path}: {e}")))
@@ -247,9 +247,10 @@ impl JwtProvider {
     /// Fetch JWKS from URL
     #[cfg(feature = "jwt")]
     async fn fetch_jwks_from_url(&self, url: &str) -> Result<JwksResponse, AuthError> {
-        let response = self.http_client.get(url).send().await.map_err(|e| {
-            AuthError::internal(format!("Failed to fetch JWKS from {url}: {e}"))
-        })?;
+        let response =
+            self.http_client.get(url).send().await.map_err(|e| {
+                AuthError::internal(format!("Failed to fetch JWKS from {url}: {e}"))
+            })?;
 
         if !response.status().is_success() {
             return Err(AuthError::internal(format!(
@@ -259,9 +260,10 @@ impl JwtProvider {
             )));
         }
 
-        let jwks: JwksResponse = response.json().await.map_err(|e| {
-            AuthError::internal(format!("Invalid JWKS response from {url}: {e}"))
-        })?;
+        let jwks: JwksResponse = response
+            .json()
+            .await
+            .map_err(|e| AuthError::internal(format!("Invalid JWKS response from {url}: {e}")))?;
 
         Ok(jwks)
     }
@@ -466,9 +468,9 @@ impl JwtProvider {
                     .ok_or_else(|| AuthError::invalid("Missing 'kid' in JWT header"))?;
 
                 let jwks = self.get_jwks().await?;
-                let jwk = jwks.find_key(&kid).ok_or_else(|| {
-                    AuthError::invalid(format!("Key '{kid}' not found in JWKS"))
-                })?;
+                let jwk = jwks
+                    .find_key(&kid)
+                    .ok_or_else(|| AuthError::invalid(format!("Key '{kid}' not found in JWKS")))?;
 
                 self.jwk_to_decoding_key(jwk, &algorithm)?
             }

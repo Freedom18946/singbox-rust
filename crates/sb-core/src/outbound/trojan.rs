@@ -132,7 +132,11 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
         if want_tls {
             let tls_cfg = sb_transport::tls::webpki_roots_config();
             // Respect configured ALPN if any
-            let alpn = if want_h2 { Some(vec![b"h2".to_vec()]) } else { None };
+            let alpn = if want_h2 {
+                Some(vec![b"h2".to_vec()])
+            } else {
+                None
+            };
 
             // Optionally set SNI from TrojanConfig.sni via env override
             let sni_override = Some(self.config.sni.clone());
@@ -141,7 +145,9 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
 
         if want_ws {
             let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-            if let Ok(path) = std::env::var("SB_WS_PATH") { ws_cfg.path = path; }
+            if let Ok(path) = std::env::var("SB_WS_PATH") {
+                ws_cfg.path = path;
+            }
             if let Ok(host_header) = std::env::var("SB_WS_HOST") {
                 ws_cfg.headers.push(("Host".to_string(), host_header));
             }
@@ -150,14 +156,20 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
 
         if want_h2 {
             let mut h2_cfg = sb_transport::http2::Http2Config::default();
-            if let Ok(path) = std::env::var("SB_H2_PATH") { h2_cfg.path = path; }
-            if let Ok(host_header) = std::env::var("SB_H2_HOST") { h2_cfg.host = host_header; }
+            if let Ok(path) = std::env::var("SB_H2_PATH") {
+                h2_cfg.path = path;
+            }
+            if let Ok(host_header) = std::env::var("SB_H2_HOST") {
+                h2_cfg.host = host_header;
+            }
             builder = builder.http2(h2_cfg);
         }
 
         if want_hup {
             let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-            if let Ok(path) = std::env::var("SB_HUP_PATH") { hup_cfg.path = path; }
+            if let Ok(path) = std::env::var("SB_HUP_PATH") {
+                hup_cfg.path = path;
+            }
             builder = builder.http_upgrade(hup_cfg);
         }
 
@@ -218,9 +230,7 @@ impl OutboundTcp for TrojanOutbound {
         let mut tls_stream = connector.connect(server_name, tcp).await.map_err(|e| {
             #[cfg(feature = "metrics")]
             crate::telemetry::outbound_handshake("trojan", "error", Some("tls_handshake"));
-            std::io::Error::other(
-                format!("TLS handshake failed: {}", e),
-            )
+            std::io::Error::other(format!("TLS handshake failed: {}", e))
         })?;
 
         // Step 3: Trojan protocol handshake
@@ -354,7 +364,6 @@ impl TrojanOutbound {
             }
         }
     }
-
 }
 
 impl TrojanOutbound {
@@ -372,7 +381,6 @@ impl TrojanOutbound {
         let _ = Self::read_server_response_on(stream).await; // tolerant
         Ok(())
     }
-
 }
 
 #[cfg(not(feature = "out_trojan"))]

@@ -3,7 +3,7 @@
 //! Tests that Shadowsocks protocol correctly works with yamux-based multiplexing,
 //! allowing multiple concurrent streams over a single TCP connection.
 
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -11,9 +11,9 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 // Import Shadowsocks adapters
-use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
-use sb_adapters::outbound::{OutboundConnector, Target, DialOpts};
+use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
+use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
@@ -115,8 +115,8 @@ async fn test_shadowsocks_multiplex_single_stream() {
         }),
     };
 
-    let connector = ShadowsocksConnector::new(client_config)
-        .expect("Failed to create Shadowsocks connector");
+    let connector =
+        ShadowsocksConnector::new(client_config).expect("Failed to create Shadowsocks connector");
 
     // Dial through Shadowsocks to echo server
     let target = Target {
@@ -138,10 +138,7 @@ async fn test_shadowsocks_multiplex_single_stream() {
     let mut response = vec![0u8; test_data.len()];
     stream.read_exact(&mut response).await.unwrap();
 
-    assert_eq!(
-        response, test_data,
-        "Echo response should match sent data"
-    );
+    assert_eq!(response, test_data, "Echo response should match sent data");
 }
 
 #[tokio::test]
@@ -170,8 +167,7 @@ async fn test_shadowsocks_multiplex_concurrent_streams() {
     };
 
     let connector = Arc::new(
-        ShadowsocksConnector::new(client_config)
-            .expect("Failed to create Shadowsocks connector"),
+        ShadowsocksConnector::new(client_config).expect("Failed to create Shadowsocks connector"),
     );
 
     // Open 8 concurrent streams
@@ -243,8 +239,7 @@ async fn test_shadowsocks_multiplex_data_integrity() {
     };
 
     let connector = Arc::new(
-        ShadowsocksConnector::new(client_config)
-            .expect("Failed to create Shadowsocks connector"),
+        ShadowsocksConnector::new(client_config).expect("Failed to create Shadowsocks connector"),
     );
 
     // Test with large payload (8KB)

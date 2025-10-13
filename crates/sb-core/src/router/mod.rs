@@ -57,8 +57,8 @@ pub mod decision_intern;
 #[cfg(feature = "router_keyword")]
 pub mod keyword;
 // R35: Modern Rule-Set implementation (SRS binary format)
-pub mod ruleset;
 pub mod normalize;
+pub mod ruleset;
 // 路由解释链（旁路分析）
 #[cfg(feature = "rule_coverage")]
 pub mod coverage;
@@ -122,6 +122,8 @@ use serde::Serialize;
 use std::fs as sfs;
 #[allow(unused)]
 use std::io;
+#[cfg(feature = "metrics")]
+use std::time::Instant;
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -131,8 +133,6 @@ use std::{
     sync::{Arc, RwLock},
     time::{Duration, SystemTime},
 };
-#[cfg(feature = "metrics")]
-use std::time::Instant;
 use tokio::fs as tfs;
 use tokio::time::sleep;
 
@@ -255,8 +255,12 @@ impl RouterIndex {
             Mutex, OnceLock,
         };
         static ONCE: OnceLock<(AtomicU64, Mutex<suffix_trie::SuffixTrie>)> = OnceLock::new();
-        let (ver, trie) =
-            ONCE.get_or_init(|| (AtomicU64::new(0), Mutex::new(suffix_trie::SuffixTrie::new())));
+        let (ver, trie) = ONCE.get_or_init(|| {
+            (
+                AtomicU64::new(0),
+                Mutex::new(suffix_trie::SuffixTrie::new()),
+            )
+        });
         let cur = self.checksum_version64();
         if ver.load(Ordering::Relaxed) != cur {
             let mut t = suffix_trie::SuffixTrie::new();
@@ -1492,7 +1496,11 @@ impl HotReloader {
                         .unwrap_or(30000);
 
                     self.backoff_ms = std::cmp::min(
-                        if self.backoff_ms == 0 { 1000 } else { self.backoff_ms * 2 },
+                        if self.backoff_ms == 0 {
+                            1000
+                        } else {
+                            self.backoff_ms * 2
+                        },
                         cap,
                     );
                     #[cfg(feature = "metrics")]
@@ -1505,7 +1513,6 @@ impl HotReloader {
             }
         }
     }
-
 
     #[allow(dead_code)] // Hot reload implementation, to be activated when hot reload is enabled
     async fn try_reload_once(&mut self) -> Result<Option<Arc<RouterIndex>>, BuildError> {
@@ -1527,7 +1534,6 @@ impl HotReloader {
         Ok(Some(idx))
     }
 }
-
 
 // ---------------- R11: bench feature 下的最小导出（不影响运行路径） ----------------
 #[cfg(feature = "bench")]
@@ -1579,8 +1585,7 @@ pub async fn spawn_rules_hot_reload(
                 match read_rules_with_includes(&path, 0, &mut visited).await {
                     Ok(text) => {
                         // 与当前 checksum 比较，避免无谓切换
-                        let cur_sum =
-                            { shared.read().unwrap_or_else(|e| e.into_inner()).checksum };
+                        let cur_sum = { shared.read().unwrap_or_else(|e| e.into_inner()).checksum };
                         let mut hasher = Blake3::new();
                         hasher.update(text.as_bytes());
                         let new_sum = *hasher.finalize().as_bytes();
@@ -2068,8 +2073,7 @@ pub fn decide_http(target: &str) -> RouteDecision {
         };
     }
     #[cfg(not(feature = "metrics"))]
-    if let Some((d, _)) =
-        router_index_decide_transport_port_with_kind(&idx, port_opt, Some("tcp"))
+    if let Some((d, _)) = router_index_decide_transport_port_with_kind(&idx, port_opt, Some("tcp"))
     {
         return RouteDecision {
             target: d.to_string(),

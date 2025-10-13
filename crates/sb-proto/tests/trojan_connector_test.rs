@@ -1,21 +1,21 @@
 #[cfg(feature = "proto_trojan_min")]
 #[tokio::test]
 async fn trojan_connector_writes_hello() {
-    use sb_proto::trojan_connector::TrojanConnector;
     use sb_proto::connector::{OutboundConnector, Target};
+    use sb_proto::trojan_connector::TrojanConnector;
     use sb_transport::mem::DuplexDialer;
     use tokio::io::AsyncReadExt;
 
     // 内存双工拨号器：返回一对流，我们持有对端以读取客户端写入的首包
     let (dialer, mut server_side) = DuplexDialer::new_pair();
     let c = TrojanConnector::new(dialer, "pass");
-    
+
     // Create target with proper structure
     let target = Target {
         host: "example.com".to_string(),
         port: 443,
     };
-    
+
     let mut cli = c.connect(&target).await.expect("connect");
 
     // 读取服务端视角收到的首包

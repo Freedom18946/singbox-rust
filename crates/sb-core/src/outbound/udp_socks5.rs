@@ -116,7 +116,8 @@ pub async fn sendto_via_socks5_addr(
         Ok(relay) => relay,
         Err(e) => {
             #[cfg(feature = "metrics")]
-            metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"connect").increment(1);
+            metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"connect")
+                .increment(1);
             return Err(e);
         }
     };

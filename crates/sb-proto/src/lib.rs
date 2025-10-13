@@ -9,14 +9,14 @@ pub mod ss2022_core;
 pub mod ss2022_harness;
 #[cfg(feature = "proto_ss2022_min")]
 pub mod ss2022_min;
+#[cfg(feature = "proto_trojan_min")]
+pub mod trojan_connector;
 #[cfg(feature = "proto_trojan_dry")]
 pub mod trojan_dry;
 #[cfg(feature = "proto_trojan_min")]
 pub mod trojan_harness;
 #[cfg(feature = "proto_trojan_min")]
 pub mod trojan_min;
-#[cfg(feature = "proto_trojan_min")]
-pub mod trojan_connector;
 
 pub use connector::*;
 #[cfg(feature = "outbound_registry")]

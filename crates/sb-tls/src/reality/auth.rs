@@ -16,10 +16,7 @@ impl RealityAuth {
         let secret = StaticSecret::from(private_key);
         let public_key = PublicKey::from(&secret);
 
-        Self {
-            secret,
-            public_key,
-        }
+        Self { secret, public_key }
     }
 
     /// Generate new random keypair
@@ -27,10 +24,7 @@ impl RealityAuth {
         let secret = StaticSecret::random_from_rng(OsRng);
         let public_key = PublicKey::from(&secret);
 
-        Self {
-            secret,
-            public_key,
-        }
+        Self { secret, public_key }
     }
 
     /// Get public key bytes
@@ -247,26 +241,14 @@ mod tests {
         let short_id = b"test";
         let session_data = b"session123";
 
-        let hash = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            short_id,
-            session_data,
+        let hash = client.compute_auth_hash(&server.public_key_bytes(), short_id, session_data);
+
+        assert!(
+            server.verify_auth_hash(&client.public_key_bytes(), short_id, session_data, &hash,)
         );
 
-        assert!(server.verify_auth_hash(
-            &client.public_key_bytes(),
-            short_id,
-            session_data,
-            &hash,
-        ));
-
         // Wrong session data should fail
-        assert!(!server.verify_auth_hash(
-            &client.public_key_bytes(),
-            short_id,
-            b"wrong",
-            &hash,
-        ));
+        assert!(!server.verify_auth_hash(&client.public_key_bytes(), short_id, b"wrong", &hash,));
     }
 
     #[test]
@@ -277,11 +259,7 @@ mod tests {
         let short_id = b"test";
         let session_data = b"session123";
 
-        let hash = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            short_id,
-            session_data,
-        );
+        let hash = client.compute_auth_hash(&server.public_key_bytes(), short_id, session_data);
 
         // Wrong short_id should fail
         assert!(!server.verify_auth_hash(
@@ -301,11 +279,7 @@ mod tests {
         let short_id = b"test";
         let session_data = b"session123";
 
-        let hash = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            short_id,
-            session_data,
-        );
+        let hash = client.compute_auth_hash(&server.public_key_bytes(), short_id, session_data);
 
         // Wrong peer public key should fail
         assert!(!server.verify_auth_hash(
@@ -324,17 +298,9 @@ mod tests {
         let short_id = b"test";
         let session_data = b"session123";
 
-        let hash1 = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            short_id,
-            session_data,
-        );
+        let hash1 = client.compute_auth_hash(&server.public_key_bytes(), short_id, session_data);
 
-        let hash2 = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            short_id,
-            session_data,
-        );
+        let hash2 = client.compute_auth_hash(&server.public_key_bytes(), short_id, session_data);
 
         // Same inputs should produce same hash
         assert_eq!(hash1, hash2);
@@ -345,17 +311,9 @@ mod tests {
         let server = RealityAuth::generate();
         let client = RealityAuth::generate();
 
-        let hash1 = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            b"short1",
-            b"session1",
-        );
+        let hash1 = client.compute_auth_hash(&server.public_key_bytes(), b"short1", b"session1");
 
-        let hash2 = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            b"short2",
-            b"session2",
-        );
+        let hash2 = client.compute_auth_hash(&server.public_key_bytes(), b"short2", b"session2");
 
         // Different inputs should produce different hashes
         assert_ne!(hash1, hash2);
@@ -368,19 +326,10 @@ mod tests {
 
         let session_data = b"session123";
 
-        let hash = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            b"",
-            session_data,
-        );
+        let hash = client.compute_auth_hash(&server.public_key_bytes(), b"", session_data);
 
         // Empty short_id should work
-        assert!(server.verify_auth_hash(
-            &client.public_key_bytes(),
-            b"",
-            session_data,
-            &hash,
-        ));
+        assert!(server.verify_auth_hash(&client.public_key_bytes(), b"", session_data, &hash,));
     }
 
     #[test]
@@ -391,11 +340,7 @@ mod tests {
         let short_id = b"test";
         let session_data = vec![0x42u8; 1024]; // Large session data
 
-        let hash = client.compute_auth_hash(
-            &server.public_key_bytes(),
-            short_id,
-            &session_data,
-        );
+        let hash = client.compute_auth_hash(&server.public_key_bytes(), short_id, &session_data);
 
         assert!(server.verify_auth_hash(
             &client.public_key_bytes(),

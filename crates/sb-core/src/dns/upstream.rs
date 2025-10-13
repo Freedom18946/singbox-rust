@@ -390,15 +390,11 @@ impl DnsUpstream for DotUpstream {
 
 #[cfg(feature = "dns_dot")]
 impl DotUpstream {
-    async fn query_dot(
-        &self,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<DnsAnswer> {
-        use tokio::net::TcpStream;
-        use tokio_rustls::TlsConnector;
+    async fn query_dot(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
         use rustls::pki_types::ServerName;
         use std::sync::Arc;
+        use tokio::net::TcpStream;
+        use tokio_rustls::TlsConnector;
 
         // Create TLS configuration
         let config = rustls::ClientConfig::builder()
@@ -425,7 +421,7 @@ impl DotUpstream {
         full_packet.extend_from_slice(&length.to_be_bytes());
         full_packet.extend_from_slice(&query_packet);
 
-        use tokio::io::{AsyncWriteExt, AsyncReadExt};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         tls_stream.write_all(&full_packet).await?;
 
         // Read response length
@@ -452,12 +448,18 @@ impl DotUpstream {
 
         let id_bytes = id.to_be_bytes();
         let mut packet = vec![
-            id_bytes[0], id_bytes[1], // ID
-            0x01, 0x00, // RD=1, standard query
-            0x00, 0x01, // QDCOUNT=1
-            0x00, 0x00, // ANCOUNT=0
-            0x00, 0x00, // NSCOUNT=0
-            0x00, 0x00, // ARCOUNT=0
+            id_bytes[0],
+            id_bytes[1], // ID
+            0x01,
+            0x00, // RD=1, standard query
+            0x00,
+            0x01, // QDCOUNT=1
+            0x00,
+            0x00, // ANCOUNT=0
+            0x00,
+            0x00, // NSCOUNT=0
+            0x00,
+            0x00, // ARCOUNT=0
         ];
 
         // Build QNAME

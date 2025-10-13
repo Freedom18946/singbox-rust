@@ -169,7 +169,11 @@ impl Resolver for DnsResolver {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
-            let ip = if use_v6 { crate::dns::fakeip::allocate_v6(domain) } else { crate::dns::fakeip::allocate_v4(domain) };
+            let ip = if use_v6 {
+                crate::dns::fakeip::allocate_v6(domain)
+            } else {
+                crate::dns::fakeip::allocate_v4(domain)
+            };
             let ttl = std::time::Duration::from_secs(
                 std::env::var("SB_DNS_FAKEIP_TTL_S")
                     .ok()

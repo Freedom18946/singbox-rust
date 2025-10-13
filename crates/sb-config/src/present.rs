@@ -1,578 +1,114 @@
-//! Configuration presentation layer: conversion and formatting.
-//!
-//! This module provides two primary functions:
-//!
-//! 1. **Conversion (`to_ir`)**: The canonical transformation from user-facing `Config`
-//!    to the intermediate representation (`ConfigIR`) consumed by the routing engine
-//!    and runtime adapters. This is the **single source of truth** for Config→IR
-//!    conversion, invoked by `Config::build_registry_and_router` for validation and
-//!    by runtime components for actual IR consumption.
-//!
-//! 2. **Formatting (`to_view`)**: Transforms `ConfigIR` into external JSON formats
-//!    for compatibility with other tools (e.g., `FormatProfile::Go1124` for sing-box
-//!    Go version compatibility). Used for config inspection, debugging, and
-//!    interoperability.
-//!
-//! ## Design rationale
-//!
-//! - **Why not merge with `ir.rs`?** The `ir` module defines data structures;
-//!   this module handles transformations. Separation keeps concerns distinct.
-//! - **Why "present"?** The name reflects "presentation layer" - bridging
-//!   user-facing config and internal IR, plus external view formatting.
+//! Configuration presentation layer: conversion and formatting utilities.
 
-use crate::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleIR};
-
-use crate::{Config, Inbound, Outbound};
+use crate::ir::ConfigIR;
+use crate::Config;
 use anyhow::Result;
 use serde_json::{Map, Value};
 
 /// Convert Config to ConfigIR for routing engine
 pub fn to_ir(cfg: &Config) -> Result<ConfigIR> {
-    let mut ir = ConfigIR::default();
-
-    // Convert inbounds
-    for inbound in &cfg.inbounds {
-        let (ty, listen_addr, port) = match inbound {
-            Inbound::Http { listen } => {
-                let (addr, port) = parse_listen_addr(listen)?;
-                (InboundType::Http, addr, port)
-            }
-            Inbound::Socks { listen } => {
-                let (addr, port) = parse_listen_addr(listen)?;
-                (InboundType::Socks, addr, port)
-            }
-        };
-        ir.inbounds.push(InboundIR {
-            ty,
-            listen: listen_addr,
-            port,
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
-        });
-    }
-
-    // Convert outbounds
-    for outbound in &cfg.outbounds {
-        let outbound_ir = match outbound {
-            Outbound::Direct { name } => OutboundIR {
-                ty: OutboundType::Direct,
-                name: Some(name.clone()),
-                ..Default::default()
-            },
-            Outbound::Block { name } => OutboundIR {
-                ty: OutboundType::Block,
-                name: Some(name.clone()),
-                ..Default::default()
-            },
-            Outbound::Socks5 {
-                name,
-                server,
-                port,
-                auth,
-            } => OutboundIR {
-                ty: OutboundType::Socks,
-                name: Some(name.clone()),
-                server: Some(server.clone()),
-                port: Some(*port),
-                credentials: auth.as_ref().map(|a| crate::ir::Credentials {
-                    username: Some(a.username.clone()),
-                    password: Some(a.password.clone()),
-                    username_env: None,
-                    password_env: None,
-                }),
-                ..Default::default()
-            },
-            Outbound::Http {
-                name,
-                server,
-                port,
-                auth,
-            } => OutboundIR {
-                ty: OutboundType::Http,
-                name: Some(name.clone()),
-                server: Some(server.clone()),
-                port: Some(*port),
-                credentials: auth.as_ref().map(|a| crate::ir::Credentials {
-                    username: Some(a.username.clone()),
-                    password: Some(a.password.clone()),
-                    username_env: None,
-                    password_env: None,
-                }),
-                ..Default::default()
-            },
-            Outbound::Vless {
-                name,
-                server,
-                port,
-                uuid,
-                flow,
-                network,
-                packet_encoding,
-                connect_timeout_sec: _,
-                transport,
-                ws_path,
-                ws_host,
-                h2_path,
-                h2_host,
-                tls_sni,
-                tls_alpn,
-            } => OutboundIR {
-                ty: OutboundType::Vless,
-                name: Some(name.clone()),
-                server: Some(server.clone()),
-                port: Some(*port),
-                uuid: Some(uuid.clone()),
-                flow: flow.clone(),
-                network: Some(network.clone()),
-                packet_encoding: packet_encoding.clone(),
-                transport: transport.clone(),
-                ws_path: ws_path.clone(),
-                ws_host: ws_host.clone(),
-                h2_path: h2_path.clone(),
-                h2_host: h2_host.clone(),
-                tls_sni: tls_sni.clone(),
-                tls_alpn: tls_alpn.clone(),
-                ..Default::default()
-            },
-            Outbound::Vmess {
-                name,
-                server,
-                port,
-                uuid,
-                security: _,
-                alter_id: _,
-                connect_timeout_sec: _,
-                transport,
-                ws_path,
-                ws_host,
-                h2_path,
-                h2_host,
-                tls_sni,
-                tls_alpn,
-            } => OutboundIR {
-                ty: OutboundType::Vmess,
-                name: Some(name.clone()),
-                server: Some(server.clone()),
-                port: Some(*port),
-                uuid: Some(uuid.clone()),
-                transport: transport.clone(),
-                ws_path: ws_path.clone(),
-                ws_host: ws_host.clone(),
-                h2_path: h2_path.clone(),
-                h2_host: h2_host.clone(),
-                tls_sni: tls_sni.clone(),
-                tls_alpn: tls_alpn.clone(),
-                ..Default::default()
-            },
-            Outbound::Trojan {
-                name,
-                server,
-                port,
-                password,
-                transport,
-                ws_path,
-                ws_host,
-                h2_path,
-                h2_host,
-                tls_sni,
-                tls_alpn,
-            } => OutboundIR {
-                ty: OutboundType::Trojan,
-                name: Some(name.clone()),
-                server: Some(server.clone()),
-                port: Some(*port),
-                password: Some(password.clone()),
-                transport: transport.clone(),
-                ws_path: ws_path.clone(),
-                ws_host: ws_host.clone(),
-                h2_path: h2_path.clone(),
-                h2_host: h2_host.clone(),
-                tls_sni: tls_sni.clone(),
-                tls_alpn: tls_alpn.clone(),
-                ..Default::default()
-            },
-        };
-        ir.outbounds.push(outbound_ir);
-    }
-
-    // Convert rules
-    for rule in &cfg.rules {
-        let rule_ir = RuleIR {
-            domain: rule.domain_suffix.clone(),
-            outbound: Some(rule.outbound.clone()),
-            ..Default::default()
-        };
-        ir.route.rules.push(rule_ir);
-    }
-
-    // Set default outbound
-    ir.route.default = cfg.default_outbound.clone();
-
-    Ok(ir)
+    Ok(cfg.ir().clone())
 }
 
-fn parse_listen_addr(listen: &str) -> Result<(String, u16)> {
-    if let Some((host, port_str)) = listen.rsplit_once(':') {
-        let port = port_str
-            .parse::<u16>()
-            .map_err(|e| anyhow::anyhow!("invalid port in listen address '{}': {}", listen, e))?;
-        Ok((host.to_string(), port))
-    } else {
-        Err(anyhow::anyhow!("invalid listen address format: {}", listen))
-    }
-}
-
-pub enum FormatProfile {
-    Go1124, /*, Rich*/
-}
-
-pub fn to_view(cfg: &ConfigIR, prof: FormatProfile) -> Value {
-    match prof {
-        FormatProfile::Go1124 => go_1124_view(cfg),
-        // FormatProfile::Rich => rich_view(cfg),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_present_vmess_transport_mapping() {
-        let cfg = crate::Config {
-            schema_version: 2,
-            inbounds: vec![],
-            outbounds: vec![crate::Outbound::Vmess {
-                name: "v".into(),
-                server: "vmess.example.com".into(),
-                port: 443,
-                uuid: "00000000-0000-0000-0000-000000000000".into(),
-                security: "auto".into(),
-                alter_id: 0,
-                connect_timeout_sec: None,
-                transport: Some(vec!["tls".into(), "ws".into()]),
-                ws_path: Some("/ws".into()),
-                ws_host: Some("cdn.example.com".into()),
-                h2_path: None,
-                h2_host: None,
-                tls_sni: Some("cdn.example.com".into()),
-                tls_alpn: None,
-            }],
-            rules: vec![],
-            default_outbound: None,
-        };
-
-        let ir = to_ir(&cfg).expect("to_ir ok");
-        assert_eq!(ir.outbounds.len(), 1);
-        let ob = &ir.outbounds[0];
-        assert_eq!(ob.ty, OutboundType::Vmess);
-        assert_eq!(ob.server.as_deref(), Some("vmess.example.com"));
-        assert_eq!(ob.port, Some(443));
-        assert_eq!(ob.transport.as_ref().unwrap(), &vec![String::from("tls"), String::from("ws")]);
-        assert_eq!(ob.ws_path.as_deref(), Some("/ws"));
-        assert_eq!(ob.ws_host.as_deref(), Some("cdn.example.com"));
-        assert_eq!(ob.tls_sni.as_deref(), Some("cdn.example.com"));
-    }
-
-    #[test]
-    fn test_present_vless_transport_mapping() {
-        let cfg = crate::Config {
-            schema_version: 2,
-            inbounds: vec![],
-            outbounds: vec![crate::Outbound::Vless {
-                name: "vl".into(),
-                server: "vless.example.com".into(),
-                port: 8443,
-                uuid: "00000000-0000-0000-0000-000000000000".into(),
-                flow: None,
-                network: "tcp".into(),
-                packet_encoding: None,
-                connect_timeout_sec: None,
-                transport: Some(vec!["tls".into(), "h2".into()]),
-                ws_path: None,
-                ws_host: None,
-                h2_path: Some("/t".into()),
-                h2_host: Some("h2.example.com".into()),
-                tls_sni: Some("h2.example.com".into()),
-                tls_alpn: Some("h2".into()),
-            }],
-            rules: vec![],
-            default_outbound: None,
-        };
-
-        let ir = to_ir(&cfg).expect("to_ir ok");
-        assert_eq!(ir.outbounds.len(), 1);
-        let ob = &ir.outbounds[0];
-        assert_eq!(ob.ty, OutboundType::Vless);
-        assert_eq!(ob.transport.as_ref().unwrap(), &vec![String::from("tls"), String::from("h2")]);
-        assert_eq!(ob.h2_path.as_deref(), Some("/t"));
-        assert_eq!(ob.h2_host.as_deref(), Some("h2.example.com"));
-        assert_eq!(ob.tls_sni.as_deref(), Some("h2.example.com"));
-        assert_eq!(ob.tls_alpn.as_deref(), Some("h2"));
-    }
-
-    #[test]
-    fn test_present_trojan_transport_mapping() {
-        let cfg = crate::Config {
-            schema_version: 2,
-            inbounds: vec![],
-            outbounds: vec![crate::Outbound::Trojan {
-                name: "tr".into(),
-                server: "trojan.example.com".into(),
-                port: 443,
-                password: "secret".into(),
-                transport: Some(vec!["tls".into()]),
-                ws_path: None,
-                ws_host: None,
-                h2_path: None,
-                h2_host: None,
-                tls_sni: Some("trojan.example.com".into()),
-                tls_alpn: Some("http/1.1".into()),
-            }],
-            rules: vec![],
-            default_outbound: None,
-        };
-
-        let ir = to_ir(&cfg).expect("to_ir ok");
-        assert_eq!(ir.outbounds.len(), 1);
-        let ob = &ir.outbounds[0];
-        assert_eq!(ob.ty, OutboundType::Trojan);
-        assert_eq!(ob.password.as_deref(), Some("secret"));
-        assert_eq!(ob.tls_sni.as_deref(), Some("trojan.example.com"));
-        assert_eq!(ob.tls_alpn.as_deref(), Some("http/1.1"));
-    }
-}
-
-fn go_1124_view(cfg: &ConfigIR) -> Value {
-    // Convert ConfigIR to JSON view for compatibility
+/// Convert ConfigIR back to JSON view (legacy helper)
+pub fn to_view(ir: &ConfigIR) -> Value {
     let mut root = Map::new();
+    root.insert("schema_version".into(), Value::from(2));
 
-    // Convert inbounds
-    let inbounds: Vec<Value> = cfg
+    let inbounds = ir
         .inbounds
         .iter()
-        .map(|ib| {
-            let mut m = Map::new();
-            m.insert("type".into(), Value::String(ib.ty_str().to_string()));
-            m.insert(
-                "listen".into(),
-                Value::String(format!("{}:{}", ib.listen, ib.port)),
-            );
-            if ib.sniff {
-                m.insert("sniff".into(), Value::Bool(true));
-            }
-            if ib.udp {
-                m.insert("udp".into(), Value::Bool(true));
-            }
-            Value::Object(m)
+        .map(|inbound| {
+            let mut obj = Map::new();
+            let listen = format!("{}:{}", inbound.listen, inbound.port);
+            obj.insert("listen".into(), Value::from(listen));
+            let ty = match inbound.ty {
+                crate::ir::InboundType::Http => "http",
+                crate::ir::InboundType::Socks => "socks",
+                crate::ir::InboundType::Tun => "tun",
+                crate::ir::InboundType::Direct => "direct",
+            };
+            obj.insert("type".into(), Value::from(ty));
+            Value::Object(obj)
         })
         .collect();
+    root.insert("inbounds".into(), Value::Array(inbounds));
 
-    // Convert outbounds
-    let outbounds: Vec<Value> = cfg
+    let outbounds = ir
         .outbounds
         .iter()
-        .map(|ob| {
-            let mut m = Map::new();
-            m.insert("type".into(), Value::String(ob.ty_str().to_string()));
-            if let Some(name) = &ob.name {
-                m.insert("tag".into(), Value::String(name.clone()));
+        .map(|outbound| {
+            let mut obj = Map::new();
+            if let Some(name) = &outbound.name {
+                obj.insert("name".into(), Value::from(name.clone()));
             }
-            if let Some(server) = &ob.server {
-                m.insert("server".into(), Value::String(server.clone()));
+            if let Some(server) = &outbound.server {
+                obj.insert("server".into(), Value::from(server.clone()));
             }
-            if let Some(port) = ob.port {
-                m.insert("server_port".into(), Value::Number(port.into()));
+            if let Some(port) = outbound.port {
+                obj.insert("port".into(), Value::from(port));
             }
-            Value::Object(m)
-        })
-        .collect();
-
-    // Convert routing rules
-    let rules: Vec<Value> = cfg
-        .route
-        .rules
-        .iter()
-        .map(|rule| {
-            let mut m = Map::new();
-            if !rule.domain.is_empty() {
-                if rule.domain.len() == 1 {
-                    m.insert(
-                        "domain_suffix".into(),
-                        Value::String(rule.domain[0].clone()),
-                    );
-                } else {
-                    m.insert(
-                        "domain_suffix".into(),
-                        Value::Array(
-                            rule.domain
-                                .iter()
-                                .map(|d| Value::String(d.clone()))
-                                .collect(),
-                        ),
-                    );
+            if let Some(uuid) = &outbound.uuid {
+                obj.insert("uuid".into(), Value::from(uuid.clone()));
+            }
+            if let Some(password) = &outbound.password {
+                obj.insert("password".into(), Value::from(password.clone()));
+            }
+            if let Some(credentials) = &outbound.credentials {
+                let mut cred = Map::new();
+                if let Some(u) = &credentials.username {
+                    cred.insert("username".into(), Value::from(u.clone()));
                 }
+                if let Some(p) = &credentials.password {
+                    cred.insert("password".into(), Value::from(p.clone()));
+                }
+                obj.insert("credentials".into(), Value::Object(cred));
             }
-            if let Some(outbound) = &rule.outbound {
-                m.insert("outbound".into(), Value::String(outbound.clone()));
-            }
-            Value::Object(m)
+            let ty = match outbound.ty {
+                crate::ir::OutboundType::Direct => "direct",
+                crate::ir::OutboundType::Http => "http",
+                crate::ir::OutboundType::Socks => "socks",
+                crate::ir::OutboundType::Block => "block",
+                crate::ir::OutboundType::Selector => "selector",
+                crate::ir::OutboundType::Shadowtls => "shadowtls",
+                crate::ir::OutboundType::Hysteria2 => "hysteria2",
+                crate::ir::OutboundType::Vless => "vless",
+                crate::ir::OutboundType::Vmess => "vmess",
+                crate::ir::OutboundType::Trojan => "trojan",
+                crate::ir::OutboundType::Ssh => "ssh",
+            };
+            obj.insert("type".into(), Value::from(ty));
+            Value::Object(obj)
         })
         .collect();
+    root.insert("outbounds".into(), Value::Array(outbounds));
 
+    let mut rules = Vec::new();
+    for rule in &ir.route.rules {
+        let mut obj = Map::new();
+        if !rule.domain.is_empty() {
+            obj.insert("domain".into(), Value::from(rule.domain.clone()));
+        }
+        if !rule.geoip.is_empty() {
+            obj.insert("geoip".into(), Value::from(rule.geoip.clone()));
+        }
+        if !rule.port.is_empty() {
+            obj.insert("port".into(), Value::from(rule.port.clone()));
+        }
+        if !rule.network.is_empty() {
+            obj.insert("network".into(), Value::from(rule.network.clone()));
+        }
+        if let Some(outbound) = &rule.outbound {
+            obj.insert("outbound".into(), Value::from(outbound.clone()));
+        }
+        rules.push(Value::Object(obj));
+    }
     let mut route = Map::new();
     route.insert("rules".into(), Value::Array(rules));
-    if let Some(default) = &cfg.route.default {
-        route.insert("final".into(), Value::String(default.clone()));
+    if let Some(default) = &ir.route.default {
+        route.insert("default".into(), Value::from(default.clone()));
     }
-
-    if !inbounds.is_empty() {
-        root.insert("inbounds".into(), Value::Array(inbounds));
-    }
-    if !outbounds.is_empty() {
-        root.insert("outbounds".into(), Value::Array(outbounds));
-    }
-    if !route.is_empty() {
-        root.insert("route".into(), Value::Object(route));
-    }
+    root.insert("route".into(), Value::Object(route));
 
     Value::Object(root)
-}
-
-impl InboundIR {
-    fn ty_str(&self) -> &'static str {
-        match self.ty {
-            InboundType::Http => "http",
-            InboundType::Socks => "socks",
-            InboundType::Tun => "tun",
-            InboundType::Direct => "direct",
-        }
-    }
-}
-
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(dead_code)]
-fn parse_address(addr: &str) -> (String, String) {
-    if let Some(rest) = addr.strip_prefix("udp://") {
-        return ("udp".into(), rest.to_string());
-    }
-    if let Some(rest) = addr.strip_prefix("https://") {
-        let host = rest.split('/').next().unwrap_or(rest);
-        return ("https".into(), host.to_string());
-    }
-    if let Some(rest) = addr.strip_prefix("rcode://") {
-        return ("rcode".into(), rest.to_string());
-    }
-    ("other".into(), addr.to_string())
-}
-
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(dead_code)]
-fn fold_rule_singletons(r: &Value) -> Value {
-    if let Some(obj) = r.as_object() {
-        let mut m = obj.clone();
-        for k in ["domain_suffix", "geosite", "protocol"] {
-            if let Some(Value::Array(a)) = m.get(k) {
-                if a.len() == 1 {
-                    m.insert(k.into(), a[0].clone());
-                }
-            }
-        }
-        return Value::Object(m);
-    }
-    r.clone()
-}
-
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(dead_code)]
-fn insert_non_empty_val(root: &mut Map<String, Value>, k: &str, v: &Option<Value>) {
-    if let Some(Value::Object(m)) = v {
-        if !m.is_empty() {
-            root.insert(k.into(), Value::Object(m.clone()));
-        }
-    }
-}
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(clippy::ptr_arg)]
-#[allow(dead_code)]
-fn insert_non_empty_arr(root: &mut Map<String, Value>, k: &str, v: &Vec<Value>) {
-    if !v.is_empty() {
-        root.insert(k.into(), Value::Array(v.clone()));
-    }
-}
-
-/// 若 DNS server 未被规则引用，则移除（更贴近 sing-box format）
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(dead_code)]
-fn prune_unused_dns_servers(root: &mut Map<String, Value>) {
-    use std::collections::HashSet;
-    let mut used: HashSet<String> = HashSet::new();
-    if let Some(rules) = root
-        .get("dns")
-        .and_then(|x| x.get("rules"))
-        .and_then(|x| x.as_array())
-    {
-        for r in rules {
-            if let Some(srv) = r.get("server").and_then(|x| x.as_str()) {
-                used.insert(srv.to_string());
-            }
-        }
-    }
-    // If no servers are referenced by rules, do not prune anything.
-    if used.is_empty() {
-        return;
-    }
-    if let Some(servers) = root
-        .get_mut("dns")
-        .and_then(|x| x.get_mut("servers"))
-        .and_then(|x| x.as_array_mut())
-    {
-        servers.retain(|s| {
-            s.get("tag")
-                .and_then(|t| t.as_str())
-                .map(|tag| used.contains(tag))
-                .unwrap_or(true)
-        });
-    }
-}
-
-/// 将 route.rules[*].protocol 的单元素数组折叠为标量
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(dead_code)]
-fn fold_route_protocol_singletons(root: &mut Map<String, Value>) {
-    if let Some(rules) = root
-        .get_mut("route")
-        .and_then(|x| x.get_mut("rules"))
-        .and_then(|x| x.as_array_mut())
-    {
-        for r in rules {
-            if let Some(obj) = r.as_object_mut() {
-                if let Some(Value::Array(a)) = obj.get("protocol") {
-                    if a.len() == 1 {
-                        obj.insert("protocol".into(), a[0].clone());
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// 删除空的 inbounds/*/users
-#[cfg(any(test, feature = "dev-cli"))]
-#[allow(dead_code)]
-fn prune_empty_inbound_users(root: &mut Map<String, Value>) {
-    if let Some(inbounds) = root.get_mut("inbounds").and_then(|x| x.as_array_mut()) {
-        for ib in inbounds {
-            if let Some(obj) = ib.as_object_mut() {
-                if let Some(Value::Array(a)) = obj.get("users") {
-                    if a.is_empty() {
-                        obj.remove("users");
-                    }
-                }
-            }
-        }
-    }
 }

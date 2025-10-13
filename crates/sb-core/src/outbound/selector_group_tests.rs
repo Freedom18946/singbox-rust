@@ -3,7 +3,9 @@
 #[cfg(test)]
 mod tests {
     use crate::adapter::OutboundConnector;
-    use crate::outbound::selector_group::{parse_test_url, ProxyHealth, ProxyMember, SelectMode, SelectorGroup};
+    use crate::outbound::selector_group::{
+        parse_test_url, ProxyHealth, ProxyMember, SelectMode, SelectorGroup,
+    };
     use std::io;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -46,7 +48,10 @@ mod tests {
 
             let count = self.fail_count.fetch_add(1, Ordering::SeqCst);
             if count < self.max_fails {
-                return Err(io::Error::new(io::ErrorKind::ConnectionRefused, "mock failure"));
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionRefused,
+                    "mock failure",
+                ));
             }
 
             // Can't create a real TcpStream in tests, so return error
@@ -318,8 +323,7 @@ mod tests {
     #[test]
     fn test_parse_test_url() {
         // HTTP
-        let (host, port, https) =
-            parse_test_url("http://www.gstatic.com/generate_204").unwrap();
+        let (host, port, https) = parse_test_url("http://www.gstatic.com/generate_204").unwrap();
         assert_eq!(host, "www.gstatic.com");
         assert_eq!(port, 80);
         assert!(!https);
@@ -348,11 +352,8 @@ mod tests {
         members[1].health.record_failure();
         members[1].health.record_failure();
 
-        let selector = SelectorGroup::new_manual(
-            "test".to_string(),
-            members,
-            Some("proxy1".to_string()),
-        );
+        let selector =
+            SelectorGroup::new_manual("test".to_string(), members, Some("proxy1".to_string()));
 
         let status = selector.get_members();
         assert_eq!(status.len(), 2);

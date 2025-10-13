@@ -82,7 +82,7 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
-    #[must_use] 
+    #[must_use]
     pub fn from_env() -> Self {
         let mime_allow = std::env::var("SB_SUBS_MIME_ALLOW")
             .ok()

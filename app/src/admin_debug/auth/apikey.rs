@@ -27,7 +27,7 @@ impl ApiKeyProvider {
     /// # Arguments
     /// * `key` - The API key (used as Bearer token or HMAC secret)
     /// * `key_id` - Optional key ID for HMAC authentication
-    #[must_use] 
+    #[must_use]
     pub const fn new(key: String, key_id: Option<String>) -> Self {
         Self { key, key_id }
     }

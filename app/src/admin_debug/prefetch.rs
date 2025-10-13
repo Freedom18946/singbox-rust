@@ -152,7 +152,7 @@ async fn do_prefetch(job: &PrefetchJob) -> Result<()> {
 }
 
 /// For shutdown support - can be called once to take ownership for graceful shutdown
-#[must_use] 
+#[must_use]
 pub const fn global_take() -> Option<Prefetcher> {
     // Note: This is a simplified version - in production you'd want proper synchronization
     None // Current structure doesn't easily support taking ownership, placeholder for interface
@@ -168,7 +168,7 @@ pub fn get_last_prefetch_size() -> u64 {
     LAST_PREFETCH_SIZE.load(Ordering::Relaxed)
 }
 
-#[must_use] 
+#[must_use]
 pub fn enqueue_prefetch(url: &str, etag: Option<String>) -> bool {
     if std::env::var("SB_PREFETCH_ENABLE").ok().as_deref() != Some("1") {
         return false;

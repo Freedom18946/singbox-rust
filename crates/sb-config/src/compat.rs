@@ -32,8 +32,12 @@ pub fn migrate_to_v2(raw: &Value) -> Value {
                 // listen + listen_port -> listen: "IP:PORT"
                 if let Some(port) = inb_obj.remove("listen_port") {
                     if let Some(listen) = inb_obj.get("listen") {
-                        if let (Some(listen_str), Some(port_num)) = (listen.as_str(), port.as_u64()) {
-                            inb_obj.insert("listen".to_string(), Value::from(format!("{}:{}", listen_str, port_num)));
+                        if let (Some(listen_str), Some(port_num)) = (listen.as_str(), port.as_u64())
+                        {
+                            inb_obj.insert(
+                                "listen".to_string(),
+                                Value::from(format!("{}:{}", listen_str, port_num)),
+                            );
                         }
                     }
                 }
@@ -87,8 +91,17 @@ pub fn migrate_to_v2(raw: &Value) -> Value {
 
                     // Wrap V1 condition fields in 'when' object
                     let v1_condition_fields = vec![
-                        "domain", "domain_suffix", "domain_keyword", "domain_regex",
-                        "geosite", "geoip", "ip_cidr", "port", "network", "protocol", "process"
+                        "domain",
+                        "domain_suffix",
+                        "domain_keyword",
+                        "domain_regex",
+                        "geosite",
+                        "geoip",
+                        "ip_cidr",
+                        "port",
+                        "network",
+                        "protocol",
+                        "process",
                     ];
 
                     let mut when_obj = serde_json::Map::new();

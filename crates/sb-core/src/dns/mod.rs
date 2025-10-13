@@ -20,6 +20,8 @@ pub mod cache_v2;
 pub mod client;
 #[cfg(feature = "dns_doh")]
 pub mod doh;
+#[cfg(feature = "dns_doq")]
+pub mod doq;
 #[cfg(all(feature = "dns_dot", feature = "tls_rustls"))]
 pub mod dot;
 pub mod enhanced_client;
@@ -61,7 +63,12 @@ pub struct DnsAnswer {
 
 impl DnsAnswer {
     /// 创建新的 DNS 答案
-    pub fn new(ips: Vec<IpAddr>, ttl: Duration, source: cache::Source, rcode: cache::Rcode) -> Self {
+    pub fn new(
+        ips: Vec<IpAddr>,
+        ttl: Duration,
+        source: cache::Source,
+        rcode: cache::Rcode,
+    ) -> Self {
         Self {
             ips,
             ttl,
@@ -649,6 +656,7 @@ enum Upstream {
     Udp(std::net::SocketAddr),
     Doh(String),
     Dot(std::net::SocketAddr),
+    Doq(std::net::SocketAddr, String), // addr, sni
     Unsupported(String),
 }
 
@@ -664,6 +672,7 @@ fn up_key(up: &Upstream) -> String {
         Upstream::Udp(sa) => format!("udp://{}", sa),
         Upstream::Doh(u) => format!("doh://{}", u),
         Upstream::Dot(sa) => format!("dot://{}", sa),
+        Upstream::Doq(sa, sni) => format!("doq://{}@{}", sa, sni),
         Upstream::Unsupported(s) => s.clone(),
     }
 }
@@ -689,6 +698,18 @@ fn parse_pool(s: &str) -> Vec<Upstream> {
         if let Some(addr) = tok.strip_prefix("dot:") {
             if let Ok(sa) = addr.parse::<std::net::SocketAddr>() {
                 out.push(Upstream::Dot(sa));
+                continue;
+            }
+        }
+        if let Some(spec) = tok.strip_prefix("doq:") {
+            // Syntax: doq:host:port[@sni]  (default sni: cloudflare-dns.com)
+            let (addr_str, sni) = if let Some((a, s)) = spec.split_once('@') {
+                (a, s.to_string())
+            } else {
+                (spec, "cloudflare-dns.com".to_string())
+            };
+            if let Ok(sa) = addr_str.parse::<std::net::SocketAddr>() {
+                out.push(Upstream::Doq(sa, sni));
                 continue;
             }
         }
@@ -878,6 +899,65 @@ async fn query_one(
                 return Err(anyhow::anyhow!("dns_doh feature disabled"));
             }
         }
+
+        Upstream::Doq(_sa, _sni) => {
+            #[cfg(feature = "dns_doq")]
+            {
+                use crate::dns::doq::query_doq_once;
+                let sni = _sni.clone();
+                let q_a = {
+                    let sa = _sa;
+                    let sni = sni.clone();
+                    let h2 = host.clone();
+                    async move { query_doq_once(sa, &sni, &h2, 1, timeout_ms).await }
+                };
+                let q_aaaa = {
+                    let sa = _sa;
+                    let sni = sni.clone();
+                    let h2 = host.clone();
+                    async move { query_doq_once(sa, &sni, &h2, 28, timeout_ms).await }
+                };
+                let he_delay = Duration::from_millis(_he_race_ms);
+                let mut min_ttl: Option<u32> = None;
+                match _he_order {
+                    o if o.eq_ignore_ascii_case("AAAA_FIRST") => {
+                        let aaaa = tokio::spawn(q_aaaa);
+                        tokio::time::sleep(he_delay).await;
+                        let a = tokio::spawn(q_a);
+                        if let Ok(Ok((v6, t6))) = aaaa.await {
+                            ips.extend(v6);
+                            min_ttl = min_ttl.min(t6).or(t6);
+                        }
+                        if let Ok(Ok((v4, t4))) = a.await {
+                            ips.extend(v4);
+                            min_ttl = min_ttl.min(t4).or(t4);
+                        }
+                    }
+                    _ => {
+                        let a = tokio::spawn(q_a);
+                        tokio::time::sleep(he_delay).await;
+                        let aaaa = tokio::spawn(q_aaaa);
+                        if let Ok(Ok((v4, t4))) = a.await {
+                            ips.extend(v4);
+                            min_ttl = min_ttl.min(t4).or(t4);
+                        }
+                        if let Ok(Ok((v6, t6))) = aaaa.await {
+                            ips.extend(v6);
+                            min_ttl = min_ttl.min(t6).or(t6);
+                        }
+                    }
+                }
+                ttl = min_ttl
+                    .map(|s| Duration::from_secs(s as u64))
+                    .unwrap_or_else(|| Duration::from_secs(60));
+                #[cfg(feature="metrics")]
+                ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>format!("doq://{}@{}", _sa, _sni), "kind"=>"doq").increment(1);
+            }
+            #[cfg(not(feature = "dns_doq"))]
+            {
+                ttl = Duration::from_secs(60);
+            }
+        }
         Upstream::Dot(sa) => {
             #[cfg(not(all(feature = "dns_dot", feature = "tls_rustls")))]
             let _ = sa; // Suppress unused warning when feature is disabled
@@ -933,6 +1013,7 @@ async fn query_one(
             Upstream::Udp(_) => "udp",
             Upstream::Doh(_) => "doh",
             Upstream::Dot(_) => "dot",
+            Upstream::Doq(_, _) => "doq",
             Upstream::Unsupported(_) => "unsupported",
         };
         let up = up_key(&up);

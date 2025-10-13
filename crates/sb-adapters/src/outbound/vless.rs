@@ -6,6 +6,7 @@
 
 use crate::outbound::prelude::*;
 use crate::traits::OutboundDatagram;
+use crate::transport_config::TransportConfig;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -77,7 +78,10 @@ pub struct VlessConfig {
     pub timeout: Option<u64>,
     /// Enable TCP fast open
     pub tcp_fast_open: bool,
+    /// Transport layer (TCP/WebSocket/gRPC/HTTPUpgrade)
+    pub transport_layer: TransportConfig,
     /// Multiplex settings (using transport layer multiplex)
+    #[cfg(feature = "transport_mux")]
     pub multiplex: Option<sb_transport::multiplex::MultiplexConfig>,
     /// Optional REALITY TLS configuration for outbound
     #[cfg(feature = "tls_reality")]
@@ -97,6 +101,8 @@ impl Default for VlessConfig {
             headers: HashMap::new(),
             timeout: Some(30),
             tcp_fast_open: false,
+            transport_layer: TransportConfig::default(),
+            #[cfg(feature = "transport_mux")]
             multiplex: None,
             #[cfg(feature = "tls_reality")]
             reality: None,
@@ -110,23 +116,36 @@ impl Default for VlessConfig {
 #[derive(Debug, Clone)]
 pub struct VlessConnector {
     config: VlessConfig,
-    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
+    /// Transport dialer with optional TLS and Multiplex layers
+    #[cfg(feature = "dep:sb-transport")]
+    dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
 }
 
 impl VlessConnector {
     /// Create a new VLESS connector with the given configuration
     pub fn new(config: VlessConfig) -> Self {
-        // Create multiplex dialer if configured
-        let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
-            let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
-            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
-        } else {
-            None
+        // Create dialer with transport layer, TLS, and multiplex layers
+        #[cfg(feature = "dep:sb-transport")]
+        let dialer = {
+            // Note: TLS is handled separately for VLESS (REALITY/ECH)
+            let tls_config = None;
+
+            #[cfg(feature = "transport_mux")]
+            let multiplex_config = config.multiplex.as_ref();
+            #[cfg(not(feature = "transport_mux"))]
+            let multiplex_config = None;
+
+            Some(
+                config
+                    .transport_layer
+                    .create_dialer_with_layers(tls_config, multiplex_config),
+            )
         };
 
-        Self { 
+        Self {
             config,
-            multiplex_dialer,
+            #[cfg(feature = "dep:sb-transport")]
+            dialer,
         }
     }
 
@@ -175,12 +194,12 @@ impl VlessConnector {
     pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
         tracing::debug!(
             server = %self.config.server_addr,
-            target = %format!(\"{}:{}\", target.host, target.port),
-            \"Creating VLESS UDP relay\"
+            target = %format!("{}:{}", target.host, target.port),
+            "Creating VLESS UDP relay"
         );
 
         // Create local UDP socket
-        let local_socket = UdpSocket::bind(\"0.0.0.0:0\")
+        let local_socket = UdpSocket::bind("0.0.0.0:0")
             .await
             .map_err(AdapterError::Io)?;
 
@@ -188,13 +207,10 @@ impl VlessConnector {
         local_socket
             .connect(self.config.server_addr)
             .await
-            .map_err(|e| AdapterError::Network(format!(\"UDP connect failed: {}\", e)))?;
+            .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
 
         // Create VLESS UDP socket wrapper
-        let vless_udp = VlessUdpSocket::new(
-            Arc::new(local_socket),
-            self.config.uuid,
-        )?;
+        let vless_udp = VlessUdpSocket::new(Arc::new(local_socket), self.config.uuid)?;
 
         Ok(Box::new(vless_udp))
     }
@@ -230,43 +246,47 @@ impl VlessConnector {
     async fn create_connection(&self) -> Result<BoxedStream> {
         let timeout = std::time::Duration::from_secs(self.config.timeout.unwrap_or(30));
 
-        // Use multiplex dialer if configured, otherwise use direct TCP connection
-        let boxed_stream: BoxedStream = if let Some(ref mux_dialer) = self.multiplex_dialer {
-            tracing::debug!("Using multiplex dialer for VLESS connection");
-            
-            // Use multiplex dialer
-            let stream = tokio::time::timeout(
-                timeout,
-                mux_dialer.connect(
-                    &self.config.server_addr.ip().to_string(),
-                    self.config.server_addr.port()
-                ),
-            )
-            .await
-            .map_err(|_| AdapterError::Timeout(timeout))?
-            .map_err(|e| AdapterError::Other(format!("Multiplex dial failed: {}", e)))?;
-            
-            stream
-        } else {
-            // Connect to server with timeout
-            let tcp_stream = tokio::time::timeout(
-                timeout,
-                tokio::net::TcpStream::connect(self.config.server_addr),
-            )
-            .await
-            .map_err(|_| AdapterError::Timeout(timeout))?
-            .map_err(AdapterError::Io)?;
+        #[cfg(feature = "dep:sb-transport")]
+        {
+            // Use the configured dialer (which already has Transport → TLS → Multiplex layers)
+            if let Some(ref dialer) = self.dialer {
+                tracing::debug!(
+                    "Using transport dialer for VLESS connection (transport: {:?})",
+                    self.config.transport_layer.transport_type()
+                );
 
-            // Configure TCP options
-            if self.config.tcp_fast_open {
-                // Note: TCP_FASTOPEN is platform-specific and would need proper socket configuration
-                tracing::debug!("TCP Fast Open requested (implementation platform-specific)");
+                let stream = tokio::time::timeout(
+                    timeout,
+                    dialer.connect(
+                        &self.config.server_addr.ip().to_string(),
+                        self.config.server_addr.port(),
+                    ),
+                )
+                .await
+                .map_err(|_| AdapterError::Timeout(timeout))?
+                .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
+
+                return Ok(stream);
             }
+        }
 
-            Box::new(tcp_stream)
-        };
+        // Fallback to direct TCP connection (for backward compatibility or when sb-transport feature is disabled)
+        tracing::debug!("Using direct TCP connection for VLESS");
+        let tcp_stream = tokio::time::timeout(
+            timeout,
+            tokio::net::TcpStream::connect(self.config.server_addr),
+        )
+        .await
+        .map_err(|_| AdapterError::Timeout(timeout))?
+        .map_err(AdapterError::Io)?;
 
-        Ok(boxed_stream)
+        // Configure TCP options
+        if self.config.tcp_fast_open {
+            // Note: TCP_FASTOPEN is platform-specific and would need proper socket configuration
+            tracing::debug!("TCP Fast Open requested (implementation platform-specific)");
+        }
+
+        Ok(Box::new(tcp_stream))
     }
 }
 
@@ -308,24 +328,25 @@ impl OutboundConnector for VlessConnector {
         tracing::debug!("VLESS dialing target: {:?}", target);
 
         // Create connection to VLESS server
-        let stream = self.create_connection().await?;
+        let mut stream = self.create_connection().await?;
 
         // If REALITY is configured, wrap the stream with REALITY TLS
         #[cfg(feature = "tls_reality")]
         let stream: BoxedStream = if let Some(ref reality_cfg) = self.config.reality {
             tracing::debug!("VLESS using REALITY TLS");
-            
+
             // Create REALITY connector
-            let reality_connector = RealityConnector::new(reality_cfg.clone())
-                .map_err(|e| AdapterError::Other(format!("Failed to create REALITY connector: {}", e)))?;
-            
+            let reality_connector = RealityConnector::new(reality_cfg.clone()).map_err(|e| {
+                AdapterError::Other(format!("Failed to create REALITY connector: {}", e))
+            })?;
+
             // Perform REALITY handshake
             let server_name = &reality_cfg.server_name;
             let tls_stream = reality_connector
                 .connect(stream, server_name)
                 .await
                 .map_err(|e| AdapterError::Other(format!("REALITY handshake failed: {}", e)))?;
-            
+
             // Wrap the TLS stream in a BoxedStream adapter
             Box::new(TlsStreamAdapter { inner: tls_stream })
         } else {
@@ -337,7 +358,7 @@ impl OutboundConnector for VlessConnector {
         let mut stream: BoxedStream = if let Some(ref ech_cfg) = self.config.ech {
             if ech_cfg.enabled {
                 tracing::debug!("VLESS using ECH TLS");
-                
+
                 // ECH is integrated at the TLS transport layer
                 // The ECH handshake is performed during TLS connection establishment
                 // If we reach here, ECH has already been applied to the TLS stream
@@ -434,26 +455,35 @@ impl VlessUdpSocket {
 
         // Version should be 0x00
         if packet[0] != 0x00 {
-            return Err(AdapterError::Protocol(format!("Invalid version: {}", packet[0])));
+            return Err(AdapterError::Protocol(format!(
+                "Invalid version: {}",
+                packet[0]
+            )));
         }
 
         let mut offset = 1;
 
         // Skip UUID (16 bytes)
         if packet.len() < offset + 16 {
-            return Err(AdapterError::Protocol("Packet too short for UUID".to_string()));
+            return Err(AdapterError::Protocol(
+                "Packet too short for UUID".to_string(),
+            ));
         }
         offset += 16;
 
         // Skip CMD (1 byte)
         if packet.len() < offset + 1 {
-            return Err(AdapterError::Protocol("Packet too short for CMD".to_string()));
+            return Err(AdapterError::Protocol(
+                "Packet too short for CMD".to_string(),
+            ));
         }
         offset += 1;
 
         // Parse address type
         if packet.len() < offset + 1 {
-            return Err(AdapterError::Protocol("Packet too short for ATYP".to_string()));
+            return Err(AdapterError::Protocol(
+                "Packet too short for ATYP".to_string(),
+            ));
         }
 
         let atyp = packet[offset];
@@ -506,11 +536,7 @@ impl OutboundDatagram for VlessUdpSocket {
         let packet = self.encode_packet(payload, &target)?;
 
         // Send to VLESS server
-        let sent = self
-            .socket
-            .send(&packet)
-            .await
-            .map_err(AdapterError::Io)?;
+        let sent = self.socket.send(&packet).await.map_err(AdapterError::Io)?;
 
         tracing::trace!(
             target = %format!("{}:{}", target.host, target.port),
@@ -523,11 +549,7 @@ impl OutboundDatagram for VlessUdpSocket {
 
     async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
         // Receive from VLESS server
-        let (n, _peer) = self
-            .socket
-            .recv_from(buf)
-            .await
-            .map_err(AdapterError::Io)?;
+        let (n, _peer) = self.socket.recv_from(buf).await.map_err(AdapterError::Io)?;
 
         // Decode packet
         let payload = self.decode_packet(&buf[..n])?;

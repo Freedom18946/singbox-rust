@@ -153,8 +153,7 @@ impl InboundService for TunInboundService {
         self.init_device()?;
 
         // Create async runtime for packet processing
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(io::Error::other)?;
+        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
 
         // Run packet processing loop
         rt.block_on(async {

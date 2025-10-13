@@ -52,7 +52,10 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             server: ob.server.clone(),
             port: ob.port,
             credentials: ob.credentials.clone(),
-            ssh_private_key: ob.ssh_private_key.clone().or(ob.ssh_private_key_path.clone()),
+            ssh_private_key: ob
+                .ssh_private_key
+                .clone()
+                .or(ob.ssh_private_key_path.clone()),
             ssh_private_key_passphrase: ob.ssh_private_key_passphrase.clone(),
             ssh_host_key_verification: ob.ssh_host_key_verification,
             ssh_known_hosts_path: ob.ssh_known_hosts_path.clone(),
@@ -173,7 +176,9 @@ fn try_scaffold_outbound(p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>
 
             impl std::fmt::Debug for SshOc {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    f.debug_struct("SshOc").field("inner", &"<ssh-outbound>").finish()
+                    f.debug_struct("SshOc")
+                        .field("inner", &"<ssh-outbound>")
+                        .finish()
                 }
             }
             #[async_trait]
@@ -215,7 +220,11 @@ fn try_scaffold_outbound(p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>
                 known_hosts_path: p.ssh_known_hosts_path.clone(),
             };
             match SshOutbound::new(cfg) {
-                Ok(inner) => return Some(Arc::new(SshOc { inner: std::sync::Arc::new(inner) })),
+                Ok(inner) => {
+                    return Some(Arc::new(SshOc {
+                        inner: std::sync::Arc::new(inner),
+                    }))
+                }
                 Err(e) => {
                     tracing::warn!(target: "sb_core::adapter", error = %e, "ssh outbound init failed; fallback");
                     return None;

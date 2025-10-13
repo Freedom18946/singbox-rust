@@ -42,7 +42,7 @@ const fn is_ipv4_mapped_ipv6(ip: Ipv6Addr) -> bool {
     )
 }
 
-#[must_use] 
+#[must_use]
 pub fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_private_ipv4(v4),

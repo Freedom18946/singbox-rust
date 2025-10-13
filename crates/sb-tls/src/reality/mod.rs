@@ -28,16 +28,16 @@
 //! - Target domain certificate is "stolen" (proxied)
 //! - Falls back to real website on failure (anti-detection)
 
-pub mod config;
-pub mod client;
-pub mod server;
 pub mod auth;
+pub mod client;
+pub mod config;
+pub mod server;
 pub mod tls_record;
 
-pub use config::{RealityClientConfig, RealityServerConfig};
-pub use client::RealityConnector;
-pub use server::RealityAcceptor;
 pub use auth::{RealityAuth, generate_keypair};
+pub use client::RealityConnector;
+pub use config::{RealityClientConfig, RealityServerConfig};
+pub use server::RealityAcceptor;
 
 use thiserror::Error;
 

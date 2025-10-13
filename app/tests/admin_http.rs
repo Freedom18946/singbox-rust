@@ -36,7 +36,10 @@ fn admin_health_and_explain() {
         Ok(l) => l,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping admin_http test due to sandbox PermissionDenied on bind: {}", e);
+                eprintln!(
+                    "skipping admin_http test due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
                 return;
             } else {
                 panic!("bind failed: {}", e);
@@ -59,7 +62,11 @@ fn admin_health_and_explain() {
             override_host: None,
             override_port: None,
         }],
-        outbounds: vec![OutboundIR { ty: OutboundType::Direct, name: Some("direct".into()), ..Default::default() }],
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Direct,
+            name: Some("direct".into()),
+            ..Default::default()
+        }],
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
@@ -72,11 +79,21 @@ fn admin_health_and_explain() {
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());
     // Try to spawn admin server; sandboxed CI (macOS seatbelt) may deny binding
-    let h = match spawn_admin(&admin, eng.clone_as_static(), std::sync::Arc::new(br), None, None, None) {
+    let h = match spawn_admin(
+        &admin,
+        eng.clone_as_static(),
+        std::sync::Arc::new(br),
+        None,
+        None,
+        None,
+    ) {
         Ok(h) => h,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping admin_http test due to sandbox PermissionDenied: {}", e);
+                eprintln!(
+                    "skipping admin_http test due to sandbox PermissionDenied: {}",
+                    e
+                );
                 return; // skip in restricted environments
             } else {
                 panic!("spawn_admin failed: {}", e);

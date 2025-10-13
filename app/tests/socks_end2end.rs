@@ -1,7 +1,7 @@
-use sb_core::inbound::socks5::Socks5;
-use sb_core::routing::engine::Engine;
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, RouteIR};
 use sb_core::adapter::InboundService;
+use sb_core::inbound::socks5::Socks5;
+use sb_core::routing::engine::Engine;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -84,7 +84,8 @@ fn end_to_end_echo() {
     let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
     let eng = Engine::new(ir_static);
     std::thread::spawn(move || {
-        let srv = Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone_as_static());
+        let srv =
+            Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone_as_static());
         let _ = srv.serve();
     });
     std::thread::sleep(Duration::from_millis(100));

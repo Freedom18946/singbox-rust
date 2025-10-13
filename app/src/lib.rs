@@ -2,7 +2,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic, clippy::nursery)]
 // Allow relaxed linting for tests and non-critical code
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp))]
+#![cfg_attr(
+    test,
+    allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)
+)]
 #![cfg_attr(
     not(any(
         feature = "metrics",
@@ -13,10 +16,7 @@
     allow(dead_code, unused_imports, unused_variables)
 )]
 // Allow specific pedantic/nursery lints that are too strict for this project's style
-#![allow(
-    clippy::unnecessary_debug_formatting,
-    clippy::useless_let_if_seq
-)]
+#![allow(clippy::unnecessary_debug_formatting, clippy::useless_let_if_seq)]
 
 //! singbox-rust library crate
 //! 说明：真正的引导流程已经迁到 `bin/main.rs`；

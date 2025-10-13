@@ -10,7 +10,7 @@
 //! ```
 
 #[cfg(feature = "transport_ech")]
-use sb_transport::{Dialer, EchDialer, TcpDialer, webpki_roots_config};
+use sb_transport::{webpki_roots_config, Dialer, EchDialer, TcpDialer};
 
 #[cfg(feature = "transport_ech")]
 #[tokio::main]
@@ -26,12 +26,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match std::env::var("SB_ECH_CONFIG") {
         Ok(config) => {
             println!("  ECH_CONFIG found: {}...", &config[..config.len().min(20)]);
-            
+
             let tls_config = webpki_roots_config();
             match EchDialer::from_env(TcpDialer, tls_config) {
                 Ok(dialer) => {
                     println!("  ✓ ECH dialer created successfully");
-                    
+
                     // Try to connect (this will fail without a real server)
                     println!("  Attempting connection to example.com:443...");
                     match dialer.connect("example.com", 443).await {
@@ -56,10 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\nMethod 2: Manual configuration");
-    
+
     // Method 2: Create ECH dialer with manual configuration
     use sb_tls::EchClientConfig;
-    
+
     // Example configuration (this is a placeholder, not a real config)
     let ech_config = EchClientConfig {
         enabled: true,
@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\nMethod 3: Disabled ECH");
-    
+
     // Method 3: Create ECH dialer with ECH disabled
     let ech_config = EchClientConfig {
         enabled: false,
@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n=====================================");
     println!("Example complete!");
-    
+
     Ok(())
 }
 

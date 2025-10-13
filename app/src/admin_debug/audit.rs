@@ -45,13 +45,17 @@ pub fn log(entry: &AuditEntry) {
 #[must_use]
 pub fn recent(n: usize) -> Vec<AuditEntry> {
     let log = get_log();
-    log.lock().map_or_else(|_| Vec::new(), |queue| queue.iter().rev().take(n).cloned().collect())
+    log.lock().map_or_else(
+        |_| Vec::new(),
+        |queue| queue.iter().rev().take(n).cloned().collect(),
+    )
 }
 
 #[must_use]
 pub fn latest_ts() -> Option<u64> {
     let log = get_log();
-    log.lock().map_or(None, |queue| queue.back().map(|entry| entry.ts))
+    log.lock()
+        .map_or(None, |queue| queue.back().map(|entry| entry.ts))
 }
 
 #[allow(dead_code)]
@@ -80,7 +84,7 @@ pub fn create_entry(
 
 impl AuditEntry {
     #[allow(dead_code)]
-    #[must_use] 
+    #[must_use]
     pub const fn with_changed(mut self, changed: bool) -> Self {
         self.changed = Some(changed);
         self

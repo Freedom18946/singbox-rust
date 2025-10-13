@@ -3,10 +3,10 @@ use crate::admin_debug::http_util::{
 };
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use tokio::io::AsyncWriteExt;
-use std::fmt::Write as _;
 #[cfg(feature = "rules_capture")]
 use sb_core::router::engine::RouterHandle;
+use std::fmt::Write as _;
+use tokio::io::AsyncWriteExt;
 
 /// # Errors
 /// Returns an IO error if the response cannot be written to the socket
@@ -225,7 +225,8 @@ fn capture_current_rules() -> Result<String, Box<dyn std::error::Error + Send + 
     let router = RouterHandle::from_env();
 
     // Extract the current routing rules using the router's export functionality
-    let rules_json = router.export_rules_json()
+    let rules_json = router
+        .export_rules_json()
         .map_err(|e| format!("Failed to export router rules: {e}"))?;
 
     // Convert JSON to a normalized text format for analysis
@@ -234,7 +235,8 @@ fn capture_current_rules() -> Result<String, Box<dyn std::error::Error + Send + 
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    let mut output = format!("# Current Router Configuration (Captured)\n# Generated at: {timestamp}\n\n");
+    let mut output =
+        format!("# Current Router Configuration (Captured)\n# Generated at: {timestamp}\n\n");
 
     // Format CIDR rules
     if let Some(cidrs) = rules_json.get("cidr").and_then(|v| v.as_array()) {
@@ -243,7 +245,7 @@ fn capture_current_rules() -> Result<String, Box<dyn std::error::Error + Send + 
             for cidr in cidrs {
                 if let (Some(net), Some(to)) = (
                     cidr.get("net").and_then(|v| v.as_str()),
-                    cidr.get("to").and_then(|v| v.as_str())
+                    cidr.get("to").and_then(|v| v.as_str()),
                 ) {
                     let _ = writeln!(output, "cidr: {net} -> {to}");
                 }
@@ -259,7 +261,7 @@ fn capture_current_rules() -> Result<String, Box<dyn std::error::Error + Send + 
             for suffix in suffixes {
                 if let (Some(domain), Some(to)) = (
                     suffix.get("suffix").and_then(|v| v.as_str()),
-                    suffix.get("to").and_then(|v| v.as_str())
+                    suffix.get("to").and_then(|v| v.as_str()),
                 ) {
                     let _ = writeln!(output, "suffix: {domain} -> {to}");
                 }
@@ -275,7 +277,7 @@ fn capture_current_rules() -> Result<String, Box<dyn std::error::Error + Send + 
             for exact in exacts {
                 if let (Some(host), Some(to)) = (
                     exact.get("host").and_then(|v| v.as_str()),
-                    exact.get("to").and_then(|v| v.as_str())
+                    exact.get("to").and_then(|v| v.as_str()),
                 ) {
                     let _ = writeln!(output, "exact: {host} -> {to}");
                 }

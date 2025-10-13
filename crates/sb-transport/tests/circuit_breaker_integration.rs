@@ -208,7 +208,10 @@ async fn test_dialer_wrapper_integration() {
     }
 
     // Circuit should be open now
-    assert_eq!(cb_dialer.circuit_breaker().state().await, CircuitState::Open);
+    assert_eq!(
+        cb_dialer.circuit_breaker().state().await,
+        CircuitState::Open
+    );
 
     // Next call should be rejected by circuit breaker (not counted)
     let result = cb_dialer.connect("example.com", 80).await;
@@ -220,7 +223,10 @@ async fn test_dialer_wrapper_integration() {
     // Next call should succeed and close the circuit
     let result = cb_dialer.connect("example.com", 80).await;
     assert!(result.is_ok());
-    assert_eq!(cb_dialer.circuit_breaker().state().await, CircuitState::Closed);
+    assert_eq!(
+        cb_dialer.circuit_breaker().state().await,
+        CircuitState::Closed
+    );
 
     // Should only have made 4 actual calls (3 failures + 1 success)
     // The rejected call during open state didn't go through

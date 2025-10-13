@@ -30,7 +30,7 @@ pub struct HealthReport {
 }
 
 #[cfg(feature = "dev-cli")]
-#[must_use] 
+#[must_use]
 pub fn probe_from_portfile(portfile: Option<&Path>, timeout_ms: u64) -> HealthReport {
     let pf = portfile.map(std::path::Path::to_path_buf).or_else(|| {
         let p = Path::new("/tmp/admin.port");

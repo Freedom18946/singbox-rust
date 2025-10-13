@@ -16,7 +16,10 @@ async fn test_connection_refused_error() {
     let err = result.unwrap_err();
     // In restricted sandboxes, binding/connect may yield PermissionDenied instead of ConnectionRefused
     assert!(
-        matches!(err.kind(), ErrorKind::ConnectionRefused | ErrorKind::PermissionDenied),
+        matches!(
+            err.kind(),
+            ErrorKind::ConnectionRefused | ErrorKind::PermissionDenied
+        ),
         "Should be ConnectionRefused or PermissionDenied error, got {:?}",
         err.kind()
     );
@@ -161,7 +164,10 @@ async fn test_graceful_degradation() {
 #[test]
 fn test_error_message_clarity() {
     // Verify error messages are helpful for debugging
-    let error = Error::new(ErrorKind::ConnectionRefused, "Failed to connect to upstream");
+    let error = Error::new(
+        ErrorKind::ConnectionRefused,
+        "Failed to connect to upstream",
+    );
 
     let error_string = error.to_string();
     assert!(

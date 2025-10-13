@@ -75,7 +75,9 @@ where
         .unwrap_or(0);
     let t0 = tokio::time::Instant::now();
     // Check RBAC - X-Role header should be admin
-    let role = headers.get("x-role").map_or("", std::string::String::as_str);
+    let role = headers
+        .get("x-role")
+        .map_or("", std::string::String::as_str);
     if role != "admin" {
         let resp = ConfigPutResponse {
             status: "error",

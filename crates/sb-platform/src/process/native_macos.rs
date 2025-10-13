@@ -51,14 +51,13 @@ impl NativeMacOsProcessMatcher {
     /// Blocking implementation of get_process_info using libproc
     fn get_process_info_blocking(pid: u32) -> Result<ProcessInfo, ProcessMatchError> {
         // Get process path using proc_pidpath (native syscall)
-        let path = pidpath(pid as i32)
-            .map_err(|e| {
-                if e.contains("Operation not permitted") {
-                    ProcessMatchError::PermissionDenied
-                } else {
-                    ProcessMatchError::SystemError(format!("pidpath failed: {}", e))
-                }
-            })?;
+        let path = pidpath(pid as i32).map_err(|e| {
+            if e.contains("Operation not permitted") {
+                ProcessMatchError::PermissionDenied
+            } else {
+                ProcessMatchError::SystemError(format!("pidpath failed: {}", e))
+            }
+        })?;
 
         // Extract process name from path
         let name = std::path::Path::new(&path)
@@ -130,7 +129,10 @@ mod tests {
         let current_pid = std::process::id();
 
         let result = matcher.get_process_info(current_pid).await;
-        assert!(result.is_ok(), "Should be able to get info for current process");
+        assert!(
+            result.is_ok(),
+            "Should be able to get info for current process"
+        );
 
         let info = result.unwrap();
         assert_eq!(info.pid, current_pid);
@@ -206,7 +208,7 @@ mod tests {
             let speedup = cmdline_avg.as_micros() as f64 / native_avg.as_micros() as f64;
             (cmdline_duration, cmdline_avg, speedup)
         };
-        
+
         #[cfg(feature = "native-process-match")]
         let (cmdline_duration, cmdline_avg, speedup) = {
             // When native-process-match is enabled, macos module is not available
@@ -220,11 +222,19 @@ mod tests {
         // Print results
         println!("Native API (libproc pidpath):");
         println!("  Total: {:?}", native_duration);
-        println!("  Average: {:?} ({} μs)", native_avg, native_avg.as_micros());
+        println!(
+            "  Average: {:?} ({} μs)",
+            native_avg,
+            native_avg.as_micros()
+        );
 
         println!("\nCommand-line (ps):");
         println!("  Total: {:?}", cmdline_duration);
-        println!("  Average: {:?} ({} μs)", cmdline_avg, cmdline_avg.as_micros());
+        println!(
+            "  Average: {:?} ({} μs)",
+            cmdline_avg,
+            cmdline_avg.as_micros()
+        );
 
         println!("\nSpeedup: {:.1}x faster", speedup);
 
@@ -235,8 +245,9 @@ mod tests {
             speedup
         );
 
-        println!("\n✅ Native API is {:.1}x faster than command-line tools", speedup);
+        println!(
+            "\n✅ Native API is {:.1}x faster than command-line tools",
+            speedup
+        );
     }
 }
-
-

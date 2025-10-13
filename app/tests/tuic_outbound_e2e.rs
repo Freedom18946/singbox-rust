@@ -127,7 +127,10 @@ mod tuic_tests {
         };
 
         let outbound = TuicOutbound::new(config);
-        assert!(outbound.is_ok(), "TUIC outbound with valid config should succeed");
+        assert!(
+            outbound.is_ok(),
+            "TUIC outbound with valid config should succeed"
+        );
 
         // TODO: Connect to TUIC server
         // TODO: Verify authentication succeeds
@@ -197,7 +200,6 @@ mod tuic_tests {
 
         assert!(true, "All congestion control algorithms supported");
     }
-
 }
 
 // Packet encoding tests (don't require full TUIC implementation)
@@ -211,11 +213,7 @@ mod packet_tests {
         use sb_core::outbound::tuic::TuicOutbound;
 
         // Test IPv4 address
-        let packet = TuicOutbound::encode_udp_packet_static(
-            "192.168.1.1",
-            8080,
-            b"test data",
-        );
+        let packet = TuicOutbound::encode_udp_packet_static("192.168.1.1", 8080, b"test data");
         assert!(packet.is_ok(), "IPv4 packet encoding should succeed");
         let packet = packet.unwrap();
         assert!(packet.len() > 0, "Packet should not be empty");
@@ -227,11 +225,7 @@ mod packet_tests {
         assert_eq!(data, b"test data", "Data should match");
 
         // Test IPv6 address
-        let packet = TuicOutbound::encode_udp_packet_static(
-            "::1",
-            8080,
-            b"test data",
-        );
+        let packet = TuicOutbound::encode_udp_packet_static("::1", 8080, b"test data");
         assert!(packet.is_ok(), "IPv6 packet encoding should succeed");
         let packet = packet.unwrap();
 
@@ -241,11 +235,7 @@ mod packet_tests {
         assert_eq!(data, b"test data", "Data should match");
 
         // Test domain name
-        let packet = TuicOutbound::encode_udp_packet_static(
-            "example.com",
-            443,
-            b"hello world",
-        );
+        let packet = TuicOutbound::encode_udp_packet_static("example.com", 443, b"hello world");
         assert!(packet.is_ok(), "Domain packet encoding should succeed");
         let packet = packet.unwrap();
 
@@ -262,11 +252,7 @@ mod packet_tests {
 
         // Test with 1KB data
         let large_data = vec![0xAB; 1024];
-        let packet = TuicOutbound::encode_udp_packet_static(
-            "example.com",
-            443,
-            &large_data,
-        );
+        let packet = TuicOutbound::encode_udp_packet_static("example.com", 443, &large_data);
         assert!(packet.is_ok(), "Large packet encoding should succeed");
         let packet = packet.unwrap();
 
@@ -281,11 +267,7 @@ mod packet_tests {
     async fn test_tuic_empty_packet_encoding() {
         use sb_core::outbound::tuic::TuicOutbound;
 
-        let packet = TuicOutbound::encode_udp_packet_static(
-            "example.com",
-            443,
-            b"",
-        );
+        let packet = TuicOutbound::encode_udp_packet_static("example.com", 443, b"");
         assert!(packet.is_ok(), "Empty packet encoding should succeed");
         let packet = packet.unwrap();
 
@@ -377,7 +359,10 @@ mod packet_tests {
         };
 
         let outbound = TuicOutbound::new(config);
-        assert!(outbound.is_ok(), "TUIC outbound creation should succeed even with invalid address");
+        assert!(
+            outbound.is_ok(),
+            "TUIC outbound creation should succeed even with invalid address"
+        );
 
         // TODO: Test connection failure handling
         // TODO: Test timeout handling

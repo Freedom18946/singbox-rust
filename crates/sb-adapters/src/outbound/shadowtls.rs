@@ -91,10 +91,7 @@ impl OutboundConnector for ShadowTlsConnector {
                 .map_err(|e| AdapterError::Other(e.to_string()))?;
 
             let hp = sb_core::outbound::types::HostPort::new(target.host.clone(), target.port);
-            let tls_stream = core
-                .connect(&hp)
-                .await
-                .map_err(AdapterError::Io)?;
+            let tls_stream = core.connect(&hp).await.map_err(AdapterError::Io)?;
 
             Ok(Box::new(tls_stream) as BoxedStream)
         }

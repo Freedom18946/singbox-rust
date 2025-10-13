@@ -3,7 +3,7 @@
 //! This example shows how to use the unified TlsTransport interface
 //! to wrap streams with different TLS variants (Standard, REALITY, ECH).
 
-use sb_transport::{TlsTransport, TlsConfig, StandardTlsConfig};
+use sb_transport::{StandardTlsConfig, TlsConfig, TlsTransport};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cert_path: None,
         key_path: None,
     });
-    
+
     let transport = TlsTransport::new(standard_config);
     println!("   ✓ Created Standard TLS transport");
     println!("   - Server name: example.com");
@@ -32,17 +32,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "transport_reality")]
     {
         use sb_transport::RealityTlsConfig;
-        
+
         println!("2. REALITY TLS Configuration:");
         let reality_config = TlsConfig::Reality(RealityTlsConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         });
-        
+
         let _transport = TlsTransport::new(reality_config);
         println!("   ✓ Created REALITY TLS transport");
         println!("   - Target: www.apple.com");
@@ -53,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "transport_ech")]
     {
         use sb_transport::EchTlsConfig;
-        
+
         println!("3. ECH TLS Configuration:");
         let ech_config = TlsConfig::Ech(EchTlsConfig {
             enabled: true,
@@ -64,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             server_name: Some("public.example.com".to_string()),
             alpn: vec![],
         });
-        
+
         let _transport = TlsTransport::new(ech_config);
         println!("   ✓ Created ECH TLS transport");
         println!("   - Enabled: true");
@@ -80,15 +81,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cert_path: None,
         key_path: None,
     });
-    
+
     let json = serde_json::to_string_pretty(&config)?;
     println!("   JSON representation:");
     println!("{}\n", json);
-    
+
     let deserialized: TlsConfig = serde_json::from_str(&json)?;
     println!("   ✓ Successfully deserialized configuration\n");
 
     println!("Example completed successfully!");
-    
+
     Ok(())
 }

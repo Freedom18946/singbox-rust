@@ -13,8 +13,8 @@
 
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use std::sync::Arc;
 use rustls_pemfile;
+use std::sync::Arc;
 
 #[cfg(feature = "transport_reality")]
 use sb_tls::TlsConnector;
@@ -289,7 +289,7 @@ impl<D: Dialer + Send + Sync> Dialer for RealityDialer<D> {
         // 第二步：执行 REALITY 握手
         // 使用配置中的 server_name 作为 SNI（伪造的目标域名）
         let server_name = &self.connector.config().server_name;
-        
+
         let tls_stream = self
             .connector
             .connect(stream, server_name)
@@ -438,16 +438,16 @@ impl<D: Dialer> RealityDialer<D> {
         let target = std::env::var("SB_REALITY_TARGET")
             .map_err(|_| DialError::Tls("SB_REALITY_TARGET not set".to_string()))?;
 
-        let server_name = std::env::var("SB_REALITY_SERVER_NAME")
-            .unwrap_or_else(|_| target.clone());
+        let server_name =
+            std::env::var("SB_REALITY_SERVER_NAME").unwrap_or_else(|_| target.clone());
 
         let public_key = std::env::var("SB_REALITY_PUBLIC_KEY")
             .map_err(|_| DialError::Tls("SB_REALITY_PUBLIC_KEY not set".to_string()))?;
 
         let short_id = std::env::var("SB_REALITY_SHORT_ID").ok();
 
-        let fingerprint = std::env::var("SB_REALITY_FINGERPRINT")
-            .unwrap_or_else(|_| "chrome".to_string());
+        let fingerprint =
+            std::env::var("SB_REALITY_FINGERPRINT").unwrap_or_else(|_| "chrome".to_string());
 
         let config = sb_tls::RealityClientConfig {
             target,
@@ -827,7 +827,6 @@ impl<D: Dialer> EchDialer<D> {
     }
 }
 
-
 /// TLS Transport Wrapper
 ///
 /// This module provides a unified interface for wrapping streams with TLS
@@ -859,11 +858,11 @@ use serde::{Deserialize, Serialize};
 pub enum TlsConfig {
     /// Standard TLS 1.3 using rustls
     Standard(StandardTlsConfig),
-    
+
     /// REALITY anti-censorship protocol
     #[cfg(feature = "transport_reality")]
     Reality(RealityTlsConfig),
-    
+
     /// Encrypted Client Hello (ECH)
     #[cfg(feature = "transport_ech")]
     Ech(EchTlsConfig),
@@ -875,19 +874,19 @@ pub struct StandardTlsConfig {
     /// Server name for SNI (client-side)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_name: Option<String>,
-    
+
     /// ALPN protocols
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,
-    
+
     /// Skip certificate verification (insecure, for testing only)
     #[serde(default)]
     pub insecure: bool,
-    
+
     /// Certificate path (server-side)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cert_path: Option<String>,
-    
+
     /// Private key path (server-side)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
@@ -911,21 +910,21 @@ impl Default for StandardTlsConfig {
 pub struct RealityTlsConfig {
     /// Target domain for SNI forgery
     pub target: String,
-    
+
     /// Server name (usually same as target)
     pub server_name: String,
-    
+
     /// Server public key (hex-encoded)
     pub public_key: String,
-    
+
     /// Short ID for client identification
     #[serde(skip_serializing_if = "Option::is_none")]
     pub short_id: Option<String>,
-    
+
     /// Browser fingerprint to emulate
     #[serde(default = "default_fingerprint")]
     pub fingerprint: String,
-    
+
     /// ALPN protocols
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,
@@ -943,27 +942,27 @@ pub struct EchTlsConfig {
     /// Enable ECH
     #[serde(default)]
     pub enabled: bool,
-    
+
     /// ECH configuration (base64-encoded)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
-    
+
     /// ECH config list (raw bytes)
     #[serde(skip_serializing_if = "Option::is_none", with = "serde_bytes")]
     pub config_list: Option<Vec<u8>>,
-    
+
     /// Enable post-quantum signature schemes
     #[serde(default)]
     pub pq_signature_schemes_enabled: bool,
-    
+
     /// Disable dynamic record sizing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_record_sizing_disabled: Option<bool>,
-    
+
     /// Server name for outer SNI
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_name: Option<String>,
-    
+
     /// ALPN protocols
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,
@@ -971,9 +970,9 @@ pub struct EchTlsConfig {
 
 #[cfg(feature = "transport_ech")]
 mod serde_bytes {
+    use base64::{engine::general_purpose, Engine as _};
     use serde::{Deserialize, Deserializer, Serializer};
-    use base64::{Engine as _, engine::general_purpose};
-    
+
     pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -983,14 +982,15 @@ mod serde_bytes {
             None => serializer.serialize_none(),
         }
     }
-    
+
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s: Option<String> = Option::deserialize(deserializer)?;
         match s {
-            Some(s) => general_purpose::STANDARD.decode(&s)
+            Some(s) => general_purpose::STANDARD
+                .decode(&s)
                 .map(Some)
                 .map_err(serde::de::Error::custom),
             None => Ok(None),
@@ -1011,7 +1011,7 @@ impl TlsTransport {
     pub fn new(config: TlsConfig) -> Self {
         Self { config }
     }
-    
+
     /// Wrap a client stream with TLS
     ///
     /// # Arguments
@@ -1023,31 +1023,25 @@ impl TlsTransport {
     ///
     /// # Errors
     /// Returns `DialError::Tls` if the TLS handshake fails
-    pub async fn wrap_client<S>(
-        &self,
-        stream: S,
-        server_name: &str,
-    ) -> Result<IoStream, DialError>
+    pub async fn wrap_client<S>(&self, stream: S, server_name: &str) -> Result<IoStream, DialError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
     {
         match &self.config {
             TlsConfig::Standard(config) => {
                 self.wrap_standard_client(stream, server_name, config).await
             }
-            
+
             #[cfg(feature = "transport_reality")]
             TlsConfig::Reality(config) => {
                 self.wrap_reality_client(stream, server_name, config).await
             }
-            
+
             #[cfg(feature = "transport_ech")]
-            TlsConfig::Ech(config) => {
-                self.wrap_ech_client(stream, server_name, config).await
-            }
+            TlsConfig::Ech(config) => self.wrap_ech_client(stream, server_name, config).await,
         }
     }
-    
+
     /// Wrap a server stream with TLS
     ///
     /// # Arguments
@@ -1058,38 +1052,33 @@ impl TlsTransport {
     ///
     /// # Errors
     /// Returns `DialError::Tls` if the TLS handshake fails or server configuration is missing
-    pub async fn wrap_server<S>(
-        &self,
-        stream: S,
-    ) -> Result<IoStream, DialError>
+    pub async fn wrap_server<S>(&self, stream: S) -> Result<IoStream, DialError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
     {
         match &self.config {
-            TlsConfig::Standard(config) => {
-                self.wrap_standard_server(stream, config).await
-            }
-            
+            TlsConfig::Standard(config) => self.wrap_standard_server(stream, config).await,
+
             #[cfg(feature = "transport_reality")]
             TlsConfig::Reality(_config) => {
                 // REALITY server-side wrapping would use RealityAcceptor
                 // For now, return an error as server-side REALITY needs more context
                 Err(DialError::Tls(
-                    "REALITY server-side wrapping not yet implemented in TlsTransport".to_string()
+                    "REALITY server-side wrapping not yet implemented in TlsTransport".to_string(),
                 ))
             }
-            
+
             #[cfg(feature = "transport_ech")]
             TlsConfig::Ech(_config) => {
                 // ECH server-side wrapping would use ECH acceptor
                 // For now, return an error as server-side ECH needs more context
                 Err(DialError::Tls(
-                    "ECH server-side wrapping not yet implemented in TlsTransport".to_string()
+                    "ECH server-side wrapping not yet implemented in TlsTransport".to_string(),
                 ))
             }
         }
     }
-    
+
     /// Wrap client stream with Standard TLS
     async fn wrap_standard_client<S>(
         &self,
@@ -1098,11 +1087,11 @@ impl TlsTransport {
         config: &StandardTlsConfig,
     ) -> Result<IoStream, DialError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
     {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;
-        
+
         // Create rustls client config
         let mut tls_config = if config.insecure {
             // Insecure mode: skip certificate verification
@@ -1118,31 +1107,27 @@ impl TlsTransport {
                 .with_root_certificates(root_store)
                 .with_no_client_auth()
         };
-        
+
         // Configure ALPN
         if !config.alpn.is_empty() {
-            tls_config.alpn_protocols = config
-                .alpn
-                .iter()
-                .map(|s| s.as_bytes().to_vec())
-                .collect();
+            tls_config.alpn_protocols = config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
         }
-        
+
         // Parse server name
         let sni = config.server_name.as_deref().unwrap_or(server_name);
         let server_name = ServerName::try_from(sni.to_string())
             .map_err(|e| DialError::Tls(format!("Invalid server name: {:?}", e)))?;
-        
+
         // Perform TLS handshake
         let connector = TlsConnector::from(Arc::new(tls_config));
         let tls_stream = connector
             .connect(server_name, stream)
             .await
             .map_err(|e| DialError::Tls(format!("TLS handshake failed: {}", e)))?;
-        
+
         Ok(Box::new(tls_stream))
     }
-    
+
     /// Wrap server stream with Standard TLS
     async fn wrap_standard_server<S>(
         &self,
@@ -1150,45 +1135,45 @@ impl TlsTransport {
         config: &StandardTlsConfig,
     ) -> Result<IoStream, DialError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
     {
         use tokio_rustls::TlsAcceptor;
-        
+
         // Validate server configuration
-        let cert_path = config.cert_path.as_ref()
+        let cert_path = config
+            .cert_path
+            .as_ref()
             .ok_or_else(|| DialError::Tls("Server certificate path not configured".to_string()))?;
-        let key_path = config.key_path.as_ref()
+        let key_path = config
+            .key_path
+            .as_ref()
             .ok_or_else(|| DialError::Tls("Server private key path not configured".to_string()))?;
-        
+
         // Load certificate and private key
         let certs = load_certs(cert_path)?;
         let key = load_private_key(key_path)?;
-        
+
         // Create rustls server config
         let mut tls_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| DialError::Tls(format!("Invalid certificate or key: {}", e)))?;
-        
+
         // Configure ALPN
         if !config.alpn.is_empty() {
-            tls_config.alpn_protocols = config
-                .alpn
-                .iter()
-                .map(|s| s.as_bytes().to_vec())
-                .collect();
+            tls_config.alpn_protocols = config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
         }
-        
+
         // Perform TLS handshake
         let acceptor = TlsAcceptor::from(Arc::new(tls_config));
         let tls_stream = acceptor
             .accept(stream)
             .await
             .map_err(|e| DialError::Tls(format!("TLS accept failed: {}", e)))?;
-        
+
         Ok(Box::new(tls_stream))
     }
-    
+
     /// Wrap client stream with REALITY
     #[cfg(feature = "transport_reality")]
     async fn wrap_reality_client<S>(
@@ -1198,7 +1183,7 @@ impl TlsTransport {
         config: &RealityTlsConfig,
     ) -> Result<IoStream, DialError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
     {
         // Create REALITY client config
         let reality_config = sb_tls::RealityClientConfig {
@@ -1209,21 +1194,21 @@ impl TlsTransport {
             fingerprint: config.fingerprint.clone(),
             alpn: config.alpn.clone(),
         };
-        
+
         // Create REALITY connector
         let connector = sb_tls::RealityConnector::new(reality_config)
             .map_err(|e| DialError::Tls(format!("Failed to create REALITY connector: {}", e)))?;
-        
+
         // Perform REALITY handshake
         let tls_stream = connector
             .connect(stream, server_name)
             .await
             .map_err(|e| DialError::Tls(format!("REALITY handshake failed: {}", e)))?;
-        
+
         // Wrap the sb_tls::TlsIoStream in an adapter to convert to IoStream
         Ok(Box::new(TlsStreamAdapter { inner: tls_stream }))
     }
-    
+
     /// Wrap client stream with ECH
     #[cfg(feature = "transport_ech")]
     async fn wrap_ech_client<S>(
@@ -1237,7 +1222,7 @@ impl TlsTransport {
     {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;
-        
+
         // Create ECH client config
         let ech_config = sb_tls::EchClientConfig {
             enabled: config.enabled,
@@ -1246,35 +1231,31 @@ impl TlsTransport {
             pq_signature_schemes_enabled: config.pq_signature_schemes_enabled,
             dynamic_record_sizing_disabled: config.dynamic_record_sizing_disabled,
         };
-        
+
         // Create ECH connector
         let ech_connector = sb_tls::EchConnector::new(ech_config)
             .map_err(|e| DialError::Tls(format!("Failed to create ECH connector: {}", e)))?;
-        
+
         // Wrap TLS to get ECH ClientHello
         let ech_hello = ech_connector
             .wrap_tls(server_name)
             .map_err(|e| DialError::Tls(format!("ECH encryption failed: {}", e)))?;
-        
+
         // Create rustls client config
         let root_store = rustls::RootCertStore::empty();
         let mut tls_config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
-        
+
         // Configure ALPN
         if !config.alpn.is_empty() {
-            tls_config.alpn_protocols = config
-                .alpn
-                .iter()
-                .map(|s| s.as_bytes().to_vec())
-                .collect();
+            tls_config.alpn_protocols = config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
         }
-        
+
         // Use outer SNI from ECH
         let outer_sni = ServerName::try_from(ech_hello.outer_sni.clone())
             .map_err(|e| DialError::Tls(format!("Invalid outer SNI: {:?}", e)))?;
-        
+
         // Perform TLS handshake with ECH
         // Note: rustls 0.23 doesn't natively support ECH, so this is a placeholder
         // When rustls adds ECH support, we'll need to pass ech_hello.ech_payload
@@ -1283,7 +1264,7 @@ impl TlsTransport {
             .connect(outer_sni, stream)
             .await
             .map_err(|e| DialError::Tls(format!("ECH TLS handshake failed: {}", e)))?;
-        
+
         Ok(Box::new(tls_stream))
     }
 }
@@ -1291,53 +1272,49 @@ impl TlsTransport {
 /// Helper: Load certificates from PEM file
 fn load_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, DialError> {
     use std::io::BufReader;
-    
+
     let file = std::fs::File::open(path)
         .map_err(|e| DialError::Tls(format!("Failed to open certificate file: {}", e)))?;
-    
+
     let mut reader = BufReader::new(file);
     let certs = rustls_pemfile::certs(&mut reader)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| DialError::Tls(format!("Failed to parse certificates: {}", e)))?;
-    
+
     if certs.is_empty() {
         return Err(DialError::Tls("No certificates found in file".to_string()));
     }
-    
+
     Ok(certs)
 }
 
 /// Helper: Load private key from PEM file
 fn load_private_key(path: &str) -> Result<rustls::pki_types::PrivateKeyDer<'static>, DialError> {
     use std::io::BufReader;
-    
+
     let file = std::fs::File::open(path)
         .map_err(|e| DialError::Tls(format!("Failed to open private key file: {}", e)))?;
-    
+
     let mut reader = BufReader::new(file);
-    
+
     // Try to read as PKCS8 first
-    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader)
-        .next()
-    {
+    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader).next() {
         return key
             .map(rustls::pki_types::PrivateKeyDer::Pkcs8)
             .map_err(|e| DialError::Tls(format!("Failed to parse PKCS8 private key: {}", e)));
     }
-    
+
     // Reset reader and try RSA
     let file = std::fs::File::open(path)
         .map_err(|e| DialError::Tls(format!("Failed to reopen private key file: {}", e)))?;
     let mut reader = BufReader::new(file);
-    
-    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader)
-        .next()
-    {
+
+    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader).next() {
         return key
             .map(rustls::pki_types::PrivateKeyDer::Pkcs1)
             .map_err(|e| DialError::Tls(format!("Failed to parse RSA private key: {}", e)));
     }
-    
+
     Err(DialError::Tls("No private key found in file".to_string()))
 }
 
@@ -1402,7 +1379,7 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::danger::ServerCertVerified::assertion())
     }
-    
+
     fn verify_tls12_signature(
         &self,
         _message: &[u8],
@@ -1411,7 +1388,7 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
-    
+
     fn verify_tls13_signature(
         &self,
         _message: &[u8],
@@ -1420,7 +1397,7 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
-    
+
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         vec![
             rustls::SignatureScheme::RSA_PKCS1_SHA256,
@@ -1454,11 +1431,14 @@ mod ech_tests {
 
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::new(TcpDialer, tls_config, ech_config);
-        
+
         // 应该失败，因为 enabled=true 但没有提供配置
         assert!(result.is_err());
         if let Err(DialError::Tls(msg)) = result {
-            assert!(msg.contains("创建 ECH 连接器失败") || msg.contains("Failed to create ECH connector"));
+            assert!(
+                msg.contains("创建 ECH 连接器失败")
+                    || msg.contains("Failed to create ECH connector")
+            );
         }
     }
 
@@ -1475,7 +1455,7 @@ mod ech_tests {
 
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::new(TcpDialer, tls_config, ech_config);
-        
+
         // 应该成功，因为 ECH 被禁用
         assert!(result.is_ok());
     }
@@ -1493,7 +1473,7 @@ mod ech_tests {
 
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::new(TcpDialer, tls_config, ech_config);
-        
+
         // 应该成功
         assert!(result.is_ok());
     }
@@ -1511,7 +1491,7 @@ mod ech_tests {
 
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::new(TcpDialer, tls_config, ech_config);
-        
+
         assert!(result.is_ok());
         let dialer = result.unwrap();
         assert!(dialer.ech_connector.config().pq_signature_schemes_enabled);
@@ -1530,10 +1510,13 @@ mod ech_tests {
 
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::new(TcpDialer, tls_config, ech_config);
-        
+
         assert!(result.is_ok());
         let dialer = result.unwrap();
-        assert_eq!(dialer.ech_connector.config().dynamic_record_sizing_disabled, Some(true));
+        assert_eq!(
+            dialer.ech_connector.config().dynamic_record_sizing_disabled,
+            Some(true)
+        );
     }
 
     #[test]
@@ -1549,7 +1532,7 @@ mod ech_tests {
 
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::new(TcpDialer, tls_config, ech_config);
-        
+
         assert!(result.is_err());
         if let Err(DialError::Tls(msg)) = result {
             // 错误消息应该清晰地说明问题
@@ -1562,10 +1545,10 @@ mod ech_tests {
     fn test_ech_dialer_from_env_missing_config() {
         // 测试缺少环境变量的情况
         std::env::remove_var("SB_ECH_CONFIG");
-        
+
         let tls_config = smoke_empty_roots_config();
         let result = EchDialer::from_env(TcpDialer, tls_config);
-        
+
         assert!(result.is_err());
         if let Err(DialError::Tls(msg)) = result {
             assert!(msg.contains("SB_ECH_CONFIG") || msg.contains("环境变量"));
@@ -1577,61 +1560,59 @@ mod ech_tests {
     fn create_test_ech_config_list() -> Vec<u8> {
         // Use a fixed public key for testing (32 bytes of 0x01)
         let public_key = [0x01u8; 32];
-        
+
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version (0xfe0d = Draft-13)
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(&public_key);
-        
+
         // Cipher suites length + cipher suite
         // One suite: KEM=0x0020, KDF=0x0001, AEAD=0x0001
         config_list.extend_from_slice(&[0x00, 0x06]);
         config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
-        
+
         // Maximum name length
         config_list.push(64);
-        
+
         // Public name length + public name
         let public_name = b"public.example.com";
         config_list.push(public_name.len() as u8);
         config_list.extend_from_slice(public_name);
-        
+
         // Extensions length (empty)
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Fill in config length
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         // Fill in list length
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         config_list
     }
 }
 
-
 #[cfg(test)]
 mod tls_transport_tests {
     use super::*;
-    
+
     #[test]
     fn test_tls_config_standard_default() {
         let config = StandardTlsConfig::default();
@@ -1641,7 +1622,7 @@ mod tls_transport_tests {
         assert!(config.cert_path.is_none());
         assert!(config.key_path.is_none());
     }
-    
+
     #[test]
     fn test_tls_config_standard_with_alpn() {
         let config = StandardTlsConfig {
@@ -1652,56 +1633,58 @@ mod tls_transport_tests {
         assert_eq!(config.alpn[0], "h2");
         assert_eq!(config.alpn[1], "http/1.1");
     }
-    
+
     #[test]
     fn test_tls_transport_creation_standard() {
         let config = TlsConfig::Standard(StandardTlsConfig::default());
         let transport = TlsTransport::new(config);
-        
+
         match transport.config {
             TlsConfig::Standard(_) => (),
             #[allow(unreachable_patterns)]
             _ => panic!("Expected Standard config"),
         }
     }
-    
+
     #[cfg(feature = "transport_reality")]
     #[test]
     fn test_tls_config_reality() {
         let config = RealityTlsConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         };
-        
+
         assert_eq!(config.target, "www.apple.com");
         assert_eq!(config.fingerprint, "chrome");
     }
-    
+
     #[cfg(feature = "transport_reality")]
     #[test]
     fn test_tls_transport_creation_reality() {
         let config = TlsConfig::Reality(RealityTlsConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         });
-        
+
         let transport = TlsTransport::new(config);
-        
+
         match transport.config {
             TlsConfig::Reality(_) => (),
             #[allow(unreachable_patterns)]
             _ => panic!("Expected Reality config"),
         }
     }
-    
+
     #[cfg(feature = "transport_ech")]
     #[test]
     fn test_tls_config_ech() {
@@ -1714,11 +1697,11 @@ mod tls_transport_tests {
             server_name: Some("public.example.com".to_string()),
             alpn: vec![],
         };
-        
+
         assert!(config.enabled);
         assert_eq!(config.server_name, Some("public.example.com".to_string()));
     }
-    
+
     #[cfg(feature = "transport_ech")]
     #[test]
     fn test_tls_transport_creation_ech() {
@@ -1731,16 +1714,16 @@ mod tls_transport_tests {
             server_name: Some("public.example.com".to_string()),
             alpn: vec![],
         });
-        
+
         let transport = TlsTransport::new(config);
-        
+
         match transport.config {
             TlsConfig::Ech(_) => (),
             #[allow(unreachable_patterns)]
             _ => panic!("Expected ECH config"),
         }
     }
-    
+
     #[test]
     fn test_tls_config_serde_standard() {
         let config = TlsConfig::Standard(StandardTlsConfig {
@@ -1750,10 +1733,10 @@ mod tls_transport_tests {
             cert_path: None,
             key_path: None,
         });
-        
+
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: TlsConfig = serde_json::from_str(&json).unwrap();
-        
+
         match deserialized {
             TlsConfig::Standard(c) => {
                 assert_eq!(c.server_name, Some("example.com".to_string()));
@@ -1763,32 +1746,36 @@ mod tls_transport_tests {
             _ => panic!("Expected Standard config"),
         }
     }
-    
+
     #[cfg(feature = "transport_reality")]
     #[test]
     fn test_tls_config_serde_reality() {
         let config = TlsConfig::Reality(RealityTlsConfig {
             target: "www.apple.com".to_string(),
             server_name: "www.apple.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         });
-        
+
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: TlsConfig = serde_json::from_str(&json).unwrap();
-        
+
         match deserialized {
             TlsConfig::Reality(c) => {
                 assert_eq!(c.target, "www.apple.com");
-                assert_eq!(c.public_key, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+                assert_eq!(
+                    c.public_key,
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                );
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Expected Reality config"),
         }
     }
-    
+
     #[test]
     fn test_standard_tls_config_server_paths() {
         let config = StandardTlsConfig {
@@ -1796,28 +1783,28 @@ mod tls_transport_tests {
             key_path: Some("/path/to/key.pem".to_string()),
             ..Default::default()
         };
-        
+
         assert_eq!(config.cert_path, Some("/path/to/cert.pem".to_string()));
         assert_eq!(config.key_path, Some("/path/to/key.pem".to_string()));
     }
-    
+
     #[test]
     fn test_standard_tls_config_insecure() {
         let config = StandardTlsConfig {
             insecure: true,
             ..Default::default()
         };
-        
+
         assert!(config.insecure);
     }
-    
+
     #[cfg(feature = "transport_reality")]
     #[test]
     fn test_reality_config_default_fingerprint() {
         let fingerprint = default_fingerprint();
         assert_eq!(fingerprint, "chrome");
     }
-    
+
     #[cfg(feature = "transport_ech")]
     #[test]
     fn test_ech_config_pq_enabled() {
@@ -1830,81 +1817,80 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(config.pq_signature_schemes_enabled);
         assert_eq!(config.dynamic_record_sizing_disabled, Some(true));
     }
-    
+
     #[test]
     fn test_tls_transport_clone_config() {
         let config = TlsConfig::Standard(StandardTlsConfig::default());
         let cloned = config.clone();
-        
+
         match (config, cloned) {
             (TlsConfig::Standard(_), TlsConfig::Standard(_)) => (),
             #[allow(unreachable_patterns)]
             _ => panic!("Config clone failed"),
         }
     }
-    
+
     #[cfg(feature = "transport_ech")]
     fn create_test_ech_config_list() -> Vec<u8> {
         use x25519_dalek::{PublicKey, StaticSecret};
-        
+
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
-        
+
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version (0xfe0d = Draft-13)
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
-        
+
         // Cipher suites length + cipher suite
         config_list.extend_from_slice(&[0x00, 0x06]);
         config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
-        
+
         // Maximum name length
         config_list.push(64);
-        
+
         // Public name length + public name
         let public_name = b"public.example.com";
         config_list.push(public_name.len() as u8);
         config_list.extend_from_slice(public_name);
-        
+
         // Extensions length (empty)
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Fill in config length
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         // Fill in list length
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         config_list
     }
-    
+
     // ============================================================================
     // Comprehensive Unit Tests for TLS Transport Wrapper
     // ============================================================================
-    
+
     /// Test Standard TLS configuration with valid certificates
     #[test]
     fn test_standard_tls_config_with_valid_certs() {
@@ -1915,14 +1901,14 @@ mod tls_transport_tests {
             cert_path: Some("/path/to/cert.pem".to_string()),
             key_path: Some("/path/to/key.pem".to_string()),
         };
-        
+
         assert_eq!(config.server_name, Some("example.com".to_string()));
         assert_eq!(config.alpn.len(), 2);
         assert!(!config.insecure);
         assert!(config.cert_path.is_some());
         assert!(config.key_path.is_some());
     }
-    
+
     /// Test Standard TLS configuration with multiple ALPN protocols
     #[test]
     fn test_standard_tls_config_multiple_alpn() {
@@ -1931,16 +1917,16 @@ mod tls_transport_tests {
             "http/1.1".to_string(),
             "http/1.0".to_string(),
         ];
-        
+
         let config = StandardTlsConfig {
             alpn: alpn_protocols.clone(),
             ..Default::default()
         };
-        
+
         assert_eq!(config.alpn, alpn_protocols);
         assert_eq!(config.alpn.len(), 3);
     }
-    
+
     /// Test Standard TLS configuration with insecure mode (for testing)
     #[test]
     fn test_standard_tls_config_insecure_mode() {
@@ -1949,11 +1935,11 @@ mod tls_transport_tests {
             server_name: Some("test.local".to_string()),
             ..Default::default()
         };
-        
+
         assert!(config.insecure);
         assert_eq!(config.server_name, Some("test.local".to_string()));
     }
-    
+
     /// Test TLS transport creation with Standard config
     #[test]
     fn test_tls_transport_new_standard() {
@@ -1961,9 +1947,9 @@ mod tls_transport_tests {
             server_name: Some("example.com".to_string()),
             ..Default::default()
         });
-        
+
         let transport = TlsTransport::new(config);
-        
+
         match transport.config {
             TlsConfig::Standard(ref c) => {
                 assert_eq!(c.server_name, Some("example.com".to_string()));
@@ -1972,7 +1958,7 @@ mod tls_transport_tests {
             _ => panic!("Expected Standard config"),
         }
     }
-    
+
     /// Test error handling for invalid Standard TLS configuration
     #[test]
     fn test_standard_tls_invalid_config_missing_cert() {
@@ -1982,12 +1968,12 @@ mod tls_transport_tests {
             key_path: None, // Missing key
             ..Default::default()
         };
-        
+
         // This is a configuration error that would be caught at runtime
         assert!(config.cert_path.is_some());
         assert!(config.key_path.is_none());
     }
-    
+
     /// Test error handling for invalid Standard TLS configuration
     #[test]
     fn test_standard_tls_invalid_config_missing_key() {
@@ -1997,12 +1983,12 @@ mod tls_transport_tests {
             key_path: Some("/path/to/key.pem".to_string()),
             ..Default::default()
         };
-        
+
         // This is a configuration error that would be caught at runtime
         assert!(config.cert_path.is_none());
         assert!(config.key_path.is_some());
     }
-    
+
     /// Test REALITY configuration with valid auth data
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2010,12 +1996,13 @@ mod tls_transport_tests {
         let config = RealityTlsConfig {
             target: "www.cloudflare.com".to_string(),
             server_name: "www.cloudflare.com".to_string(),
-            public_key: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789".to_string(),
+            public_key: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+                .to_string(),
             short_id: Some("1234".to_string()),
             fingerprint: "firefox".to_string(),
             alpn: vec!["h2".to_string()],
         };
-        
+
         assert_eq!(config.target, "www.cloudflare.com");
         assert_eq!(config.server_name, "www.cloudflare.com");
         assert_eq!(config.public_key.len(), 64); // 32 bytes hex-encoded
@@ -2023,27 +2010,28 @@ mod tls_transport_tests {
         assert_eq!(config.fingerprint, "firefox");
         assert_eq!(config.alpn.len(), 1);
     }
-    
+
     /// Test REALITY configuration with different fingerprints
     #[cfg(feature = "transport_reality")]
     #[test]
     fn test_reality_config_different_fingerprints() {
         let fingerprints = vec!["chrome", "firefox", "safari", "edge"];
-        
+
         for fp in fingerprints {
             let config = RealityTlsConfig {
                 target: "www.example.com".to_string(),
                 server_name: "www.example.com".to_string(),
-                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
                 short_id: None,
                 fingerprint: fp.to_string(),
                 alpn: vec![],
             };
-            
+
             assert_eq!(config.fingerprint, fp);
         }
     }
-    
+
     /// Test REALITY configuration without short_id (optional)
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2051,15 +2039,16 @@ mod tls_transport_tests {
         let config = RealityTlsConfig {
             target: "www.example.com".to_string(),
             server_name: "www.example.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         };
-        
+
         assert!(config.short_id.is_none());
     }
-    
+
     /// Test REALITY configuration with ALPN
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2067,16 +2056,17 @@ mod tls_transport_tests {
         let config = RealityTlsConfig {
             target: "www.example.com".to_string(),
             server_name: "www.example.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("ab".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec!["h2".to_string(), "http/1.1".to_string()],
         };
-        
+
         assert_eq!(config.alpn.len(), 2);
         assert_eq!(config.alpn[0], "h2");
     }
-    
+
     /// Test REALITY transport creation
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2084,14 +2074,15 @@ mod tls_transport_tests {
         let config = TlsConfig::Reality(RealityTlsConfig {
             target: "www.example.com".to_string(),
             server_name: "www.example.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: Some("01".to_string()),
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         });
-        
+
         let transport = TlsTransport::new(config);
-        
+
         match transport.config {
             TlsConfig::Reality(ref c) => {
                 assert_eq!(c.target, "www.example.com");
@@ -2100,7 +2091,7 @@ mod tls_transport_tests {
             _ => panic!("Expected Reality config"),
         }
     }
-    
+
     /// Test error handling for invalid REALITY configuration (empty target)
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2108,15 +2099,16 @@ mod tls_transport_tests {
         let config = RealityTlsConfig {
             target: "".to_string(), // Invalid: empty
             server_name: "www.example.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         };
-        
+
         assert!(config.target.is_empty());
     }
-    
+
     /// Test error handling for invalid REALITY configuration (invalid public key)
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2129,11 +2121,11 @@ mod tls_transport_tests {
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         };
-        
+
         assert_eq!(config.public_key, "invalid_key");
         assert!(config.public_key.len() != 64);
     }
-    
+
     /// Test ECH configuration with encryption enabled
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2147,13 +2139,13 @@ mod tls_transport_tests {
             server_name: Some("public.example.com".to_string()),
             alpn: vec!["h2".to_string()],
         };
-        
+
         assert!(config.enabled);
         assert!(config.config.is_some());
         assert!(config.config_list.is_some());
         assert_eq!(config.server_name, Some("public.example.com".to_string()));
     }
-    
+
     /// Test ECH configuration with post-quantum enabled
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2167,10 +2159,10 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(config.pq_signature_schemes_enabled);
     }
-    
+
     /// Test ECH configuration with dynamic record sizing disabled
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2184,10 +2176,10 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert_eq!(config.dynamic_record_sizing_disabled, Some(true));
     }
-    
+
     /// Test ECH transport creation
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2201,9 +2193,9 @@ mod tls_transport_tests {
             server_name: Some("public.example.com".to_string()),
             alpn: vec![],
         });
-        
+
         let transport = TlsTransport::new(config);
-        
+
         match transport.config {
             TlsConfig::Ech(ref c) => {
                 assert!(c.enabled);
@@ -2213,13 +2205,13 @@ mod tls_transport_tests {
             _ => panic!("Expected ECH config"),
         }
     }
-    
+
     /// Test error handling for invalid ECH configuration (disabled but with config)
     #[cfg(feature = "transport_ech")]
     #[test]
     fn test_ech_config_invalid_disabled_with_config() {
         let config = EchTlsConfig {
-            enabled: false, // Disabled
+            enabled: false,                   // Disabled
             config: Some("test".to_string()), // But has config
             config_list: None,
             pq_signature_schemes_enabled: false,
@@ -2227,30 +2219,30 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(!config.enabled);
         assert!(config.config.is_some());
     }
-    
+
     /// Test error handling for invalid ECH configuration (enabled but no config)
     #[cfg(feature = "transport_ech")]
     #[test]
     fn test_ech_config_invalid_enabled_without_config() {
         let config = EchTlsConfig {
             enabled: true, // Enabled
-            config: None, // But no config
+            config: None,  // But no config
             config_list: None,
             pq_signature_schemes_enabled: false,
             dynamic_record_sizing_disabled: None,
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(config.enabled);
         assert!(config.config.is_none());
         assert!(config.config_list.is_none());
     }
-    
+
     /// Test TLS config serialization and deserialization (Standard)
     #[test]
     fn test_tls_config_serde_roundtrip_standard() {
@@ -2261,10 +2253,10 @@ mod tls_transport_tests {
             cert_path: Some("/cert.pem".to_string()),
             key_path: Some("/key.pem".to_string()),
         });
-        
+
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: TlsConfig = serde_json::from_str(&json).unwrap();
-        
+
         match deserialized {
             TlsConfig::Standard(c) => {
                 assert_eq!(c.server_name, Some("example.com".to_string()));
@@ -2275,15 +2267,15 @@ mod tls_transport_tests {
             _ => panic!("Expected Standard config"),
         }
     }
-    
+
     /// Test TLS config serialization with empty optional fields
     #[test]
     fn test_tls_config_serde_empty_optionals() {
         let config = TlsConfig::Standard(StandardTlsConfig::default());
-        
+
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: TlsConfig = serde_json::from_str(&json).unwrap();
-        
+
         match deserialized {
             TlsConfig::Standard(c) => {
                 assert!(c.server_name.is_none());
@@ -2295,7 +2287,7 @@ mod tls_transport_tests {
             _ => panic!("Expected Standard config"),
         }
     }
-    
+
     /// Test TLS config clone
     #[test]
     fn test_tls_config_clone() {
@@ -2306,9 +2298,9 @@ mod tls_transport_tests {
             cert_path: None,
             key_path: None,
         });
-        
+
         let cloned = original.clone();
-        
+
         match (original, cloned) {
             (TlsConfig::Standard(o), TlsConfig::Standard(c)) => {
                 assert_eq!(o.server_name, c.server_name);
@@ -2318,7 +2310,7 @@ mod tls_transport_tests {
             _ => panic!("Clone failed"),
         }
     }
-    
+
     /// Test TLS config debug formatting
     #[test]
     fn test_tls_config_debug() {
@@ -2326,12 +2318,12 @@ mod tls_transport_tests {
             server_name: Some("example.com".to_string()),
             ..Default::default()
         });
-        
+
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("Standard"));
         assert!(debug_str.contains("example.com"));
     }
-    
+
     /// Test Standard TLS config with empty ALPN
     #[test]
     fn test_standard_tls_config_empty_alpn() {
@@ -2339,10 +2331,10 @@ mod tls_transport_tests {
             alpn: vec![],
             ..Default::default()
         };
-        
+
         assert!(config.alpn.is_empty());
     }
-    
+
     /// Test Standard TLS config with single ALPN
     #[test]
     fn test_standard_tls_config_single_alpn() {
@@ -2350,11 +2342,11 @@ mod tls_transport_tests {
             alpn: vec!["h2".to_string()],
             ..Default::default()
         };
-        
+
         assert_eq!(config.alpn.len(), 1);
         assert_eq!(config.alpn[0], "h2");
     }
-    
+
     /// Test REALITY config with matching target and server_name
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2362,15 +2354,16 @@ mod tls_transport_tests {
         let config = RealityTlsConfig {
             target: "www.example.com".to_string(),
             server_name: "www.example.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         };
-        
+
         assert_eq!(config.target, config.server_name);
     }
-    
+
     /// Test REALITY config with different target and server_name
     #[cfg(feature = "transport_reality")]
     #[test]
@@ -2378,15 +2371,16 @@ mod tls_transport_tests {
         let config = RealityTlsConfig {
             target: "www.example.com".to_string(),
             server_name: "cdn.example.com".to_string(),
-            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
             short_id: None,
             fingerprint: "chrome".to_string(),
             alpn: vec![],
         };
-        
+
         assert_ne!(config.target, config.server_name);
     }
-    
+
     /// Test ECH config with both config and config_list
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2400,11 +2394,11 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(config.config.is_some());
         assert!(config.config_list.is_some());
     }
-    
+
     /// Test ECH config with only config (no config_list)
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2418,11 +2412,11 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(config.config.is_some());
         assert!(config.config_list.is_none());
     }
-    
+
     /// Test ECH config with only config_list (no config)
     #[cfg(feature = "transport_ech")]
     #[test]
@@ -2436,11 +2430,11 @@ mod tls_transport_tests {
             server_name: None,
             alpn: vec![],
         };
-        
+
         assert!(config.config.is_none());
         assert!(config.config_list.is_some());
     }
-    
+
     /// Test TLS transport wrapper with Standard config
     #[test]
     fn test_tls_transport_wrapper_standard() {
@@ -2451,9 +2445,9 @@ mod tls_transport_tests {
             cert_path: None,
             key_path: None,
         });
-        
+
         let transport = TlsTransport::new(config);
-        
+
         // Verify the transport was created successfully
         match &transport.config {
             TlsConfig::Standard(c) => {
@@ -2464,7 +2458,7 @@ mod tls_transport_tests {
             _ => panic!("Expected Standard config"),
         }
     }
-    
+
     /// Test TLS transport wrapper configuration validation
     #[test]
     fn test_tls_transport_config_validation() {
@@ -2476,11 +2470,11 @@ mod tls_transport_tests {
             cert_path: Some("/cert.pem".to_string()),
             key_path: Some("/key.pem".to_string()),
         };
-        
+
         assert!(valid_config.server_name.is_some());
         assert!(valid_config.cert_path.is_some());
         assert!(valid_config.key_path.is_some());
-        
+
         // Invalid config (cert without key)
         let invalid_config = StandardTlsConfig {
             server_name: Some("example.com".to_string()),
@@ -2489,7 +2483,7 @@ mod tls_transport_tests {
             cert_path: Some("/cert.pem".to_string()),
             key_path: None, // Missing
         };
-        
+
         assert!(invalid_config.cert_path.is_some());
         assert!(invalid_config.key_path.is_none());
     }

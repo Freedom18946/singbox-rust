@@ -18,8 +18,7 @@ use std::mem;
 use windows::Win32::Foundation::NO_ERROR;
 use windows::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID,
-    MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
-    UDP_TABLE_OWNER_PID,
+    MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
 };
 use windows::Win32::Networking::WinSock::AF_INET;
 use windows::Win32::System::ProcessStatus::{K32GetModuleFileNameExW, K32GetProcessImageFileNameW};
@@ -67,7 +66,10 @@ impl NativeWindowsProcessMatcher {
                 )
                 .ok()
                 .map_err(|e| {
-                    ProcessMatchError::SystemError(format!("GetExtendedTcpTable size query failed: {:?}", e))
+                    ProcessMatchError::SystemError(format!(
+                        "GetExtendedTcpTable size query failed: {:?}",
+                        e
+                    ))
                 })?;
 
                 // Allocate buffer
@@ -88,8 +90,7 @@ impl NativeWindowsProcessMatcher {
                 })?;
 
                 // Parse the table
-                let table =
-                    &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
+                let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
 
                 for i in 0..table.dwNumEntries {
                     let row = &table.table[i as usize];
@@ -129,7 +130,10 @@ impl NativeWindowsProcessMatcher {
                 )
                 .ok()
                 .map_err(|e| {
-                    ProcessMatchError::SystemError(format!("GetExtendedUdpTable size query failed: {:?}", e))
+                    ProcessMatchError::SystemError(format!(
+                        "GetExtendedUdpTable size query failed: {:?}",
+                        e
+                    ))
                 })?;
 
                 // Allocate buffer
@@ -150,8 +154,7 @@ impl NativeWindowsProcessMatcher {
                 })?;
 
                 // Parse the table
-                let table =
-                    &*(buffer.as_ptr() as *const MIB_UDPTABLE_OWNER_PID);
+                let table = &*(buffer.as_ptr() as *const MIB_UDPTABLE_OWNER_PID);
 
                 for i in 0..table.dwNumEntries {
                     let row = &table.table[i as usize];

@@ -88,6 +88,8 @@ pub struct DefaultRule {
     pub process_name: Vec<String>,
     /// Process path
     pub process_path: Vec<String>,
+    /// Process path regex
+    pub process_path_regex: Vec<String>,
 }
 
 /// Logical rule with AND/OR operations
@@ -137,7 +139,9 @@ impl IpCidr {
                 code: crate::error::IssueCode::InvalidType,
                 ptr: "/rule_set/ip_cidr".to_string(),
                 msg: format!("invalid CIDR notation: {}", s),
-                hint: Some("CIDR must be in format IP/PREFIX_LEN (e.g., 192.168.1.0/24)".to_string()),
+                hint: Some(
+                    "CIDR must be in format IP/PREFIX_LEN (e.g., 192.168.1.0/24)".to_string(),
+                ),
             });
         }
 
@@ -165,7 +169,10 @@ impl IpCidr {
             return Err(SbError::Config {
                 code: crate::error::IssueCode::InvalidType,
                 ptr: "/rule_set/ip_cidr/prefix".to_string(),
-                msg: format!("prefix length {} exceeds maximum {}", prefix_len, max_prefix),
+                msg: format!(
+                    "prefix length {} exceeds maximum {}",
+                    prefix_len, max_prefix
+                ),
                 hint: None,
             });
         }
@@ -390,7 +397,12 @@ impl RuleSetManager {
     }
 
     /// Load a rule-set
-    pub async fn load(&self, tag: String, source: RuleSetSource, format: RuleSetFormat) -> SbResult<Arc<RuleSet>> {
+    pub async fn load(
+        &self,
+        tag: String,
+        source: RuleSetSource,
+        format: RuleSetFormat,
+    ) -> SbResult<Arc<RuleSet>> {
         // Check cache first
         {
             let cache = self.rulesets.read();
@@ -401,9 +413,7 @@ impl RuleSetManager {
 
         // Load from source
         let ruleset = match source {
-            RuleSetSource::Local(ref path) => {
-                binary::load_from_file(path, format).await?
-            }
+            RuleSetSource::Local(ref path) => binary::load_from_file(path, format).await?,
             RuleSetSource::Remote(ref url) => {
                 remote::load_from_url(url, &self.cache_dir, format).await?
             }
@@ -431,7 +441,37 @@ impl RuleSetManager {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(self.update_interval).await;
-                // TODO: Implement auto-update logic with ETag checking
+
+                // Get list of rulesets to update
+                let tags_to_update: Vec<(String, RuleSetSource, RuleSetFormat)> = {
+                    let cache = self.rulesets.read();
+                    cache
+                        .iter()
+                        .map(|(tag, rs)| (tag.clone(), rs.source.clone(), rs.format))
+                        .collect()
+                };
+
+                // Update each ruleset
+                for (tag, source, format) in tags_to_update {
+                    match source {
+                        RuleSetSource::Remote(ref url) => {
+                            match remote::load_from_url(url, &self.cache_dir, format).await {
+                                Ok(new_ruleset) => {
+                                    let mut cache = self.rulesets.write();
+                                    cache.insert(tag.clone(), Arc::new(new_ruleset));
+                                    tracing::info!("auto-updated rule-set: {}", tag);
+                                }
+                                Err(e) => {
+                                    tracing::warn!("failed to auto-update rule-set {}: {}", tag, e);
+                                }
+                            }
+                        }
+                        RuleSetSource::Local(_) => {
+                            // Local files don't need auto-update
+                            continue;
+                        }
+                    }
+                }
             }
         });
     }

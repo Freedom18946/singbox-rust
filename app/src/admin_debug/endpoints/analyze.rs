@@ -171,13 +171,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                 Err(e) => {
                     let supported_list = supported_kinds().join(", ");
                     let hint = format!("supported kinds: [{supported_list}]");
-                    respond_json_error(
-                        sock,
-                        400,
-                        &format!("patch build failed: {e}"),
-                        Some(&hint),
-                    )
-                    .await
+                    respond_json_error(sock, 400, &format!("patch build failed: {e}"), Some(&hint))
+                        .await
                 }
             }
         }

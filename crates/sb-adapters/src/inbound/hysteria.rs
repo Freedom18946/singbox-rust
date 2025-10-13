@@ -5,9 +5,9 @@ use crate::traits::BoxedStream;
 use std::net::SocketAddr;
 
 #[cfg(feature = "adapter-hysteria")]
-use sb_core::outbound::hysteria::HysteriaV1Inbound as CoreInbound;
-#[cfg(feature = "adapter-hysteria")]
 use sb_core::outbound::hysteria::v1::HysteriaV1ServerConfig;
+#[cfg(feature = "adapter-hysteria")]
+use sb_core::outbound::hysteria::HysteriaV1Inbound as CoreInbound;
 
 /// Hysteria v1 inbound configuration
 #[derive(Debug, Clone)]
@@ -82,10 +82,7 @@ impl HysteriaInbound {
 
         #[cfg(feature = "adapter-hysteria")]
         {
-            self.core
-                .start()
-                .await
-                .map_err(AdapterError::Io)
+            self.core.start().await.map_err(AdapterError::Io)
         }
     }
 
@@ -97,10 +94,7 @@ impl HysteriaInbound {
 
         #[cfg(feature = "adapter-hysteria")]
         {
-            let (stream, addr) = self.core
-                .accept()
-                .await
-                .map_err(AdapterError::Io)?;
+            let (stream, addr) = self.core.accept().await.map_err(AdapterError::Io)?;
 
             Ok((Box::new(stream) as BoxedStream, addr))
         }

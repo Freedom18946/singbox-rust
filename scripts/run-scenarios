@@ -444,12 +444,13 @@ case "${PROFILE}" in
   smoke) SCENES=(check_good check_bad http_405 socks5_tcp_connect);;
   base)  SCENES=(check_good http_405 socks5_tcp_connect socks5_udp_direct dns_udp);;
   release) SCENES=(check_good check_bad http_405 socks5_tcp_connect udp_upstream_stability);; # 资源护栏在 gates.json 控
-  full)  SCENES=(http_405 socks5_tcp_connect socks5_udp_direct dns_udp dns_dot dns_doh dns_dot_internal dns_doh_internal socks5_udp_upstream socks5_udp_upstream_conf selector_p2_trend selector_p2_recovery udp_upstream_longrun udp_upstream_stability);;
+  full)  SCENES=(http_405 socks5_tcp_connect socks5_udp_direct dns_udp dns_dot dns_doh dns_dot_internal dns_doh_internal dns_doq_internal socks5_udp_upstream socks5_udp_upstream_conf selector_p2_trend selector_p2_recovery udp_upstream_longrun udp_upstream_stability);;
   *) ;;
 esac
 # 可选扩展场景（内部链路）：
 if [[ "${SB_E2E_DNS_DOT:-0}" == "1" ]]; then SCENES+=(dns_dot_internal); fi
 if [[ "${SB_E2E_DNS_DOH:-0}" == "1" ]]; then SCENES+=(dns_doh_internal); fi
+if [[ "${SB_E2E_DNS_DOQ:-0}" == "1" ]]; then SCENES+=(dns_doq_internal); fi
 if [[ "${SB_E2E_UDP_UPSTREAM:-0}" == "1" ]]; then SCENES+=(socks5_udp_upstream); fi
 if [[ "${SB_E2E_CHECK_SCHEMA_BAD:-0}" == "1" ]]; then SCENES+=(check_schema_bad); fi
 # 可选：配置路由的上游验证（经命名池）

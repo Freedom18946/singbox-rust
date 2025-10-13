@@ -115,10 +115,7 @@ impl OutboundConnector for HysteriaConnector {
                 .map_err(|e| AdapterError::Other(e.to_string()))?;
 
             let hp = HostPort::new(target.host.clone(), target.port);
-            let stream = core
-                .connect(&hp)
-                .await
-                .map_err(AdapterError::Io)?;
+            let stream = core.connect(&hp).await.map_err(AdapterError::Io)?;
 
             Ok(Box::new(stream) as BoxedStream)
         }

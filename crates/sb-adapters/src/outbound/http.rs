@@ -13,9 +13,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 #[cfg(feature = "http-tls")]
-use tokio_rustls::{TlsConnector, rustls::ClientConfig};
-#[cfg(feature = "http-tls")]
 use rustls_pki_types::ServerName;
+#[cfg(feature = "http-tls")]
+use tokio_rustls::{rustls::ClientConfig, TlsConnector};
 
 use sb_config::outbound::HttpProxyConfig;
 
@@ -32,7 +32,9 @@ pub struct HttpProxyConnector {
 impl HttpProxyConnector {
     pub fn new(config: HttpProxyConfig) -> Self {
         #[cfg(feature = "transport_ech")]
-        let ech_config = config.tls.as_ref()
+        let ech_config = config
+            .tls
+            .as_ref()
             .and_then(|tls| tls.ech.as_ref())
             .filter(|ech| ech.enabled)
             .map(|ech| sb_tls::EchClientConfig {
@@ -55,7 +57,9 @@ impl HttpProxyConnector {
     #[cfg(feature = "http-tls")]
     pub fn with_tls(config: HttpProxyConfig) -> Self {
         #[cfg(feature = "transport_ech")]
-        let ech_config = config.tls.as_ref()
+        let ech_config = config
+            .tls
+            .as_ref()
             .and_then(|tls| tls.ech.as_ref())
             .filter(|ech| ech.enabled)
             .map(|ech| sb_tls::EchClientConfig {

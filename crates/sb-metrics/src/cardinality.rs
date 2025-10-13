@@ -310,9 +310,18 @@ mod tests {
     fn test_multiple_label_values() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("http_requests", &vec!["GET".to_string(), "/api".to_string(), "200".to_string()]);
-        monitor.record_label_usage("http_requests", &vec!["GET".to_string(), "/api".to_string(), "404".to_string()]);
-        monitor.record_label_usage("http_requests", &vec!["POST".to_string(), "/api".to_string(), "200".to_string()]);
+        monitor.record_label_usage(
+            "http_requests",
+            &vec!["GET".to_string(), "/api".to_string(), "200".to_string()],
+        );
+        monitor.record_label_usage(
+            "http_requests",
+            &vec!["GET".to_string(), "/api".to_string(), "404".to_string()],
+        );
+        monitor.record_label_usage(
+            "http_requests",
+            &vec!["POST".to_string(), "/api".to_string(), "200".to_string()],
+        );
 
         assert_eq!(monitor.get_cardinality("http_requests"), 3);
     }

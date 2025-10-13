@@ -1,0 +1,16 @@
+```console
+$ cargo run --bin format -- --help-json
+{
+  "name": "format",
+  "usage": "Usage: format [OPTIONS]",
+  "help": "Format configuration\n\nUsage: format [OPTIONS]\n\nOptions:\n  -c, --config <CONFIG>\n          Configuration file path(s)\n\n  -C, --config-directory <CONFIG_DIRECTORY>\n          Configuration directory path(s) (non-recursive)\n\n  -w, --write\n          Write result to (source) file instead of stdout\n\n      --help-json\n          Print help information in JSON format and exit\n\n  -h, --help\n          Print help\n",
+  "about": "Format configuration",
+  "long_about": null,
+  "before_help": null,
+  "after_help": null,
+  "version": null,
+  "long_version": null,
+  "subcommands": []
+}
+
+```

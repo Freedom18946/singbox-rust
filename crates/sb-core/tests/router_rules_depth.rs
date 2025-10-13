@@ -13,7 +13,10 @@ fn include_glob_depth_guard() {
     let e = router_build_index_from_str(txt, 1024).unwrap_err();
     match e {
         BuildError::Invalid(InvalidReason::IncludeDepthExceeded) => {}
-        _ => assert!(false, "Expected IncludeDepthExceeded error for nested includes"),
+        _ => assert!(
+            false,
+            "Expected IncludeDepthExceeded error for nested includes"
+        ),
     }
     std::env::remove_var("SB_ROUTER_RULES_MAX_DEPTH");
 }

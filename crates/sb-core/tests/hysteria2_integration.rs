@@ -80,7 +80,11 @@ async fn test_hysteria2_congestion_control_mechanisms() {
             (CongestionControl::Bbr, CongestionControl::Bbr) => (),
             (CongestionControl::Cubic, CongestionControl::Cubic) => (),
             (CongestionControl::NewReno, CongestionControl::NewReno) => (),
-            _ => assert!(false, "Congestion control mismatch for {}: expected {:?}, got {:?}", name, expected, outbound.congestion_control),
+            _ => assert!(
+                false,
+                "Congestion control mismatch for {}: expected {:?}, got {:?}",
+                name, expected, outbound.congestion_control
+            ),
         }
     }
 }

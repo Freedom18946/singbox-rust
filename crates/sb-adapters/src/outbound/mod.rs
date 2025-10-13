@@ -40,10 +40,10 @@ pub mod http;
 pub mod hysteria;
 #[cfg(feature = "adapter-hysteria2")]
 pub mod hysteria2;
-#[cfg(feature = "adapter-shadowtls")]
-pub mod shadowtls;
 #[cfg(feature = "adapter-shadowsocks")]
 pub mod shadowsocks;
+#[cfg(feature = "adapter-shadowtls")]
+pub mod shadowtls;
 #[cfg(feature = "adapter-socks")]
 pub mod socks5;
 #[cfg(feature = "adapter-ssh")]
@@ -216,7 +216,12 @@ impl TryFrom<&sb_config::ir::OutboundIR> for hysteria2::Hysteria2Connector {
             password,
             skip_cert_verify: false,
             sni: ir.tls_sni.clone(),
-            alpn: ir.tls_alpn.as_ref().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()),
+            alpn: ir.tls_alpn.as_ref().map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            }),
             congestion_control: None,
             up_mbps: None,
             down_mbps: None,
@@ -276,7 +281,10 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
         let cfg = crate::outbound::shadowtls::ShadowTlsAdapterConfig {
             server,
             port,
-            sni: ir.tls_sni.clone().unwrap_or_else(|| "example.com".to_string()),
+            sni: ir
+                .tls_sni
+                .clone()
+                .unwrap_or_else(|| "example.com".to_string()),
             alpn: ir.tls_alpn.clone(),
             skip_cert_verify: false,
         };

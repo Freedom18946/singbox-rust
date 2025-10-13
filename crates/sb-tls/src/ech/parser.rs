@@ -168,9 +168,8 @@ fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchRes
 
     // Read public name (variable length with 1-byte length prefix)
     let public_name_bytes = parser.read_u8_length_prefixed_bytes()?;
-    let public_name = String::from_utf8(public_name_bytes.to_vec()).map_err(|e| {
-        EchError::ParseFailed(format!("Invalid public name UTF-8: {}", e))
-    })?;
+    let public_name = String::from_utf8(public_name_bytes.to_vec())
+        .map_err(|e| EchError::ParseFailed(format!("Invalid public name UTF-8: {}", e)))?;
 
     // Read extensions (variable length with 2-byte length prefix)
     let extensions = parser.read_length_prefixed_bytes()?;
@@ -202,13 +201,11 @@ fn parse_cipher_suites(data: &[u8]) -> EchResult<Vec<HpkeCipherSuite>> {
         let kdf_u16 = parser.read_u16()?;
         let aead_u16 = parser.read_u16()?;
 
-        let kem = HpkeKem::from_u16(kem_u16).ok_or_else(|| {
-            EchError::ParseFailed(format!("Unsupported KEM: 0x{:04x}", kem_u16))
-        })?;
+        let kem = HpkeKem::from_u16(kem_u16)
+            .ok_or_else(|| EchError::ParseFailed(format!("Unsupported KEM: 0x{:04x}", kem_u16)))?;
 
-        let kdf = HpkeKdf::from_u16(kdf_u16).ok_or_else(|| {
-            EchError::ParseFailed(format!("Unsupported KDF: 0x{:04x}", kdf_u16))
-        })?;
+        let kdf = HpkeKdf::from_u16(kdf_u16)
+            .ok_or_else(|| EchError::ParseFailed(format!("Unsupported KDF: 0x{:04x}", kdf_u16)))?;
 
         let aead = HpkeAead::from_u16(aead_u16).ok_or_else(|| {
             EchError::ParseFailed(format!("Unsupported AEAD: 0x{:04x}", aead_u16))
@@ -379,7 +376,7 @@ mod tests {
         let data = vec![0x00, 0x20, 0x00]; // Not multiple of 6
         let result = parse_cipher_suites(&data);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("must be multiple of 6"));
@@ -393,7 +390,7 @@ mod tests {
         let data = vec![];
         let result = parse_cipher_suites(&data);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("At least one cipher suite required"));
@@ -408,7 +405,7 @@ mod tests {
         let data = vec![0xFF, 0xFF, 0x00, 0x01, 0x00, 0x01];
         let result = parse_cipher_suites(&data);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("Unsupported KEM"));
@@ -423,7 +420,7 @@ mod tests {
         let data = vec![0x00, 0x20, 0xFF, 0xFF, 0x00, 0x01];
         let result = parse_cipher_suites(&data);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("Unsupported KDF"));
@@ -438,7 +435,7 @@ mod tests {
         let data = vec![0x00, 0x20, 0x00, 0x01, 0xFF, 0xFF];
         let result = parse_cipher_suites(&data);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("Unsupported AEAD"));
@@ -471,12 +468,12 @@ mod tests {
     fn test_parse_ech_config_list_valid() {
         let config_list = create_test_ech_config_list();
         let result = parse_ech_config_list(&config_list);
-        
+
         assert!(result.is_ok());
         let list = result.unwrap();
         assert_eq!(list.len(), 1);
         assert!(!list.is_empty());
-        
+
         let config = list.first().unwrap();
         assert_eq!(config.version, EchVersion::Draft13);
         assert_eq!(config.public_key.len(), 32);
@@ -490,7 +487,7 @@ mod tests {
         // Empty list (just length field)
         let data = vec![0x00, 0x00];
         let result = parse_ech_config_list(&data);
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
@@ -505,7 +502,7 @@ mod tests {
         // Invalid list length
         let data = vec![0x00, 0xFF, 0x01, 0x02];
         let result = parse_ech_config_list(&data);
-        
+
         assert!(result.is_err());
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
@@ -520,26 +517,26 @@ mod tests {
         // Truncated data
         let data = vec![0x00, 0x10, 0xfe, 0x0d];
         let result = parse_ech_config_list(&data);
-        
+
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_ech_config_unsupported_version() {
         let mut config_list = Vec::new();
-        
+
         // List length
         config_list.extend_from_slice(&[0x00, 0x04]);
-        
+
         // Unsupported version (0x0000)
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Config length
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         let result = parse_ech_config_list(&config_list);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("Unsupported ECH version"));
@@ -551,34 +548,33 @@ mod tests {
     #[test]
     fn test_parse_ech_config_invalid_public_key_length() {
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Invalid public key length (16 bytes instead of 32)
         config_list.extend_from_slice(&[0x00, 0x10]);
         config_list.extend_from_slice(&[0x00; 16]);
-        
+
         // Fill in lengths
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         let result = parse_ech_config_list(&config_list);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("Invalid public key length"));
@@ -590,48 +586,47 @@ mod tests {
     #[test]
     fn test_parse_ech_config_invalid_public_name_utf8() {
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Public key
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(&[0x00; 32]);
-        
+
         // Cipher suites
         config_list.extend_from_slice(&[0x00, 0x06]);
         config_list.extend_from_slice(&[0x00, 0x20, 0x00, 0x01, 0x00, 0x01]);
-        
+
         // Maximum name length
         config_list.push(64);
-        
+
         // Invalid UTF-8 in public name
         config_list.push(4);
         config_list.extend_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC]);
-        
+
         // Extensions
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Fill in lengths
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         let result = parse_ech_config_list(&config_list);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             EchError::ParseFailed(msg) => {
                 assert!(msg.contains("Invalid public name UTF-8"));
@@ -644,7 +639,7 @@ mod tests {
     fn test_ech_config_list_methods() {
         let config_list = create_test_ech_config_list();
         let list = parse_ech_config_list(&config_list).unwrap();
-        
+
         assert_eq!(list.len(), 1);
         assert!(!list.is_empty());
         assert!(list.first().is_some());
@@ -653,54 +648,53 @@ mod tests {
     // Helper function to create a test ECH config list
     fn create_test_ech_config_list() -> Vec<u8> {
         use x25519_dalek::{PublicKey, StaticSecret};
-        
+
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
-        
+
         let mut config_list = Vec::new();
-        
+
         // List length (will be filled later)
         let list_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // ECH version (0xfe0d = Draft-13)
         config_list.extend_from_slice(&[0xfe, 0x0d]);
-        
+
         // Config length (will be filled later)
         let config_start = config_list.len();
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Public key length + public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(public_key.as_bytes());
-        
+
         // Cipher suites length + cipher suite
         config_list.extend_from_slice(&[0x00, 0x06]);
         config_list.extend_from_slice(&[0x00, 0x20]); // KEM: X25519
         config_list.extend_from_slice(&[0x00, 0x01]); // KDF: HKDF-SHA256
         config_list.extend_from_slice(&[0x00, 0x01]); // AEAD: AES-128-GCM
-        
+
         // Maximum name length
         config_list.push(64);
-        
+
         // Public name length + public name
         let public_name = b"public.example.com";
         config_list.push(public_name.len() as u8);
         config_list.extend_from_slice(public_name);
-        
+
         // Extensions length (empty)
         config_list.extend_from_slice(&[0x00, 0x00]);
-        
+
         // Fill in config length
         let config_len = config_list.len() - config_start - 2;
         config_list[config_start..config_start + 2]
             .copy_from_slice(&(config_len as u16).to_be_bytes());
-        
+
         // Fill in list length
         let list_len = config_list.len() - list_start - 2;
-        config_list[list_start..list_start + 2]
-            .copy_from_slice(&(list_len as u16).to_be_bytes());
-        
+        config_list[list_start..list_start + 2].copy_from_slice(&(list_len as u16).to_be_bytes());
+
         config_list
     }
 }

@@ -116,7 +116,7 @@ mod tests {
     #[tokio::test]
     async fn test_circuit_breaker_allows_successful_requests() {
         use crate::dialer::TcpDialer;
-        
+
         // Use TcpDialer which already implements Dialer trait
         let success_dialer = TcpDialer;
 

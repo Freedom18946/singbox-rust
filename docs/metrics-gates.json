@@ -8,6 +8,12 @@
       ]
     },
     {
+      "name": "dns_doq_internal",
+      "metrics": [
+        { "key": "dns_query_total", "label": "backend=\"doq\"", "min": 1, "gate": 1, "owner": "dns", "severity": "error" }
+      ]
+    },
+    {
       "name": "socks5_tcp_connect",
       "metrics": [
         { "key": "proxy_select_total", "label": ".*", "min": 1, "gate": 1, "owner": "proxy", "severity": "error" }

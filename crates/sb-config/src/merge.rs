@@ -6,12 +6,33 @@
 //! - 若 sub.default_outbound 存在，则覆盖 base
 //! - 其余字段沿用 base
 use super::{Config, Outbound};
+use serde_json::Value;
 
 /// 非破坏性合并：返回新 Config
 pub fn merge(base: Config, sub: Config) -> Config {
+    let merged_raw = super::merge_raw(base.raw(), sub.raw());
+    match Config::from_value(merged_raw) {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            let mut typed = merge_typed(base, sub);
+            let value = serde_json::to_value(&typed).unwrap_or(Value::Null);
+            let migrated = super::compat::migrate_to_v2(&value);
+            match Config::from_value(migrated.clone()) {
+                Ok(cfg) => cfg,
+                Err(_) => {
+                    typed.raw = migrated;
+                    typed.ir = crate::validator::v2::to_ir_v1(&typed.raw);
+                    typed
+                }
+            }
+        }
+    }
+}
+
+fn merge_typed(mut base: Config, sub: Config) -> Config {
     let mut out_map = std::collections::BTreeMap::<String, Outbound>::new();
     // 先装入 base 的出站（作为缺省）
-    for o in base.outbounds.into_iter() {
+    for o in base.outbounds.drain(..) {
         match &o {
             Outbound::Direct { name }
             | Outbound::Block { name }
@@ -47,64 +68,53 @@ pub fn merge(base: Config, sub: Config) -> Config {
         outbounds,
         rules: sub.rules, // 订阅覆盖
         default_outbound: sub.default_outbound.or(base.default_outbound),
+        raw: Value::Null,
+        ir: crate::ir::ConfigIR::default(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Auth, Rule};
+    use serde_json::json;
 
     #[test]
     fn merge_replace_rules_and_outbounds() {
-        let base = Config {
-            schema_version: 1,
-            inbounds: vec![super::super::Inbound::Http {
-                listen: "127.0.0.1:8080".into(),
-            }],
-            outbounds: vec![
-                Outbound::Direct {
-                    name: "direct".into(),
-                },
-                Outbound::Http {
-                    name: "old".into(),
-                    server: "1.1.1.1".into(),
-                    port: 3128,
-                    auth: None,
-                },
+        let base = Config::from_value(json!({
+            "schema_version": 2,
+            "inbounds": [{"type":"http","listen":"127.0.0.1:8080"}],
+            "outbounds": [
+                {"type":"direct","name":"direct"},
+                {"type":"http","name":"old","server":"1.1.1.1","port":3128}
             ],
-            rules: vec![Rule {
-                domain_suffix: vec!["old.com".into()],
-                outbound: "old".into(),
-                ..Default::default()
-            }],
-            default_outbound: None,
-        };
+            "rules": [{
+                "domain_suffix": ["old.com"],
+                "outbound": "old"
+            }]
+        }))
+        .unwrap();
 
-        let sub = Config {
-            schema_version: 1,
-            inbounds: vec![], // 忽略
-            outbounds: vec![
-                Outbound::Socks5 {
-                    name: "corp".into(),
-                    server: "10.0.0.2".into(),
-                    port: 1080,
-                    auth: Some(Auth {
-                        username: "u".into(),
-                        password: "p".into(),
-                    }),
+        let sub = Config::from_value(json!({
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "type":"socks",
+                    "name":"corp",
+                    "server":"10.0.0.2",
+                    "port":1080,
+                    "credentials": {"username":"u","password":"p"}
                 },
-                Outbound::Direct {
-                    name: "direct".into(),
-                }, // 覆盖同名
+                {"type":"direct","name":"direct"}
             ],
-            rules: vec![Rule {
-                domain_suffix: vec!["new.com".into()],
-                outbound: "corp".into(),
-                ..Default::default()
-            }],
-            default_outbound: Some("corp".into()),
-        };
+            "route": {
+                "rules": [{
+                    "domain_suffix": ["new.com"],
+                    "outbound": "corp"
+                }],
+                "default": "corp"
+            }
+        }))
+        .unwrap();
 
         let m = merge(base, sub);
         assert!(m.inbounds.len() == 1);

@@ -102,7 +102,7 @@ impl Middleware for AuthMiddleware {
 }
 
 /// Helper function to check if authentication is required for a path
-#[must_use] 
+#[must_use]
 pub fn requires_auth(path: &str) -> bool {
     match path {
         // Protected endpoints that require authentication
@@ -125,7 +125,7 @@ pub struct SelectiveAuthMiddleware {
 }
 
 impl SelectiveAuthMiddleware {
-    #[must_use] 
+    #[must_use]
     pub fn new(auth_middleware: AuthMiddleware) -> Self {
         Self {
             auth_middleware,
@@ -136,7 +136,7 @@ impl SelectiveAuthMiddleware {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn with_exempt_paths(mut self, paths: Vec<String>) -> Self {
         self.exempt_paths = paths;
         self

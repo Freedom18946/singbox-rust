@@ -71,11 +71,7 @@ impl Default for StandardTlsConnector {
 
 #[async_trait]
 impl TlsConnector for StandardTlsConnector {
-    async fn connect<S>(
-        &self,
-        stream: S,
-        server_name: &str,
-    ) -> io::Result<crate::TlsIoStream>
+    async fn connect<S>(&self, stream: S, server_name: &str) -> io::Result<crate::TlsIoStream>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {

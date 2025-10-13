@@ -30,14 +30,14 @@ impl BufferPool {
     /// Get a buffer from the pool or allocate a new one
     pub fn get(&self, capacity: usize) -> BytesMut {
         let mut buffers = self.buffers.lock().unwrap();
-        
+
         // Try to find a buffer with sufficient capacity
         if let Some(pos) = buffers.iter().position(|b| b.capacity() >= capacity) {
             let mut buf = buffers.swap_remove(pos);
             buf.clear();
             return buf;
         }
-        
+
         // Allocate new buffer
         BytesMut::with_capacity(capacity)
     }
@@ -50,7 +50,7 @@ impl BufferPool {
         }
 
         buf.clear();
-        
+
         let mut buffers = self.buffers.lock().unwrap();
         if buffers.len() < self.max_size {
             buffers.push(buf);
@@ -64,7 +64,7 @@ impl BufferPool {
 }
 
 /// Global buffer pool for protocol operations
-pub static PROTOCOL_BUFFER_POOL: once_cell::sync::Lazy<BufferPool> = 
+pub static PROTOCOL_BUFFER_POOL: once_cell::sync::Lazy<BufferPool> =
     once_cell::sync::Lazy::new(|| {
         let max_size = std::env::var("SB_BUFFER_POOL_SIZE")
             .ok()
@@ -74,7 +74,7 @@ pub static PROTOCOL_BUFFER_POOL: once_cell::sync::Lazy<BufferPool> =
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(1024 * 1024); // 1MB
-        
+
         BufferPool::new(max_size, max_capacity)
     });
 
@@ -94,7 +94,7 @@ impl FastBandwidthLimiter {
     pub fn new(up_mbps: u32, down_mbps: u32) -> Self {
         let up_tokens = up_mbps * 1024 * 1024;
         let down_tokens = down_mbps * 1024 * 1024;
-        
+
         Self {
             up_tokens: AtomicU32::new(up_tokens),
             down_tokens: AtomicU32::new(down_tokens),
@@ -107,13 +107,13 @@ impl FastBandwidthLimiter {
     /// Try to consume upload tokens
     pub fn consume_up(&self, bytes: u32) -> bool {
         self.refill_if_needed();
-        
+
         let mut current = self.up_tokens.load(Ordering::Acquire);
         loop {
             if current < bytes {
                 return false;
             }
-            
+
             match self.up_tokens.compare_exchange_weak(
                 current,
                 current - bytes,
@@ -129,13 +129,13 @@ impl FastBandwidthLimiter {
     /// Try to consume download tokens
     pub fn consume_down(&self, bytes: u32) -> bool {
         self.refill_if_needed();
-        
+
         let mut current = self.down_tokens.load(Ordering::Acquire);
         loop {
             if current < bytes {
                 return false;
             }
-            
+
             match self.down_tokens.compare_exchange_weak(
                 current,
                 current - bytes,
@@ -152,15 +152,14 @@ impl FastBandwidthLimiter {
     fn refill_if_needed(&self) {
         let now = current_time_ms();
         let last = self.last_refill_ms.load(Ordering::Acquire);
-        
+
         if now - last >= 1000 {
             // Try to update the refill time
-            if self.last_refill_ms.compare_exchange(
-                last,
-                now,
-                Ordering::Release,
-                Ordering::Acquire,
-            ).is_ok() {
+            if self
+                .last_refill_ms
+                .compare_exchange(last, now, Ordering::Release, Ordering::Acquire)
+                .is_ok()
+            {
                 // We won the race, refill tokens
                 self.up_tokens.store(self.up_limit, Ordering::Release);
                 self.down_tokens.store(self.down_limit, Ordering::Release);
@@ -220,31 +219,31 @@ impl<T> ConnectionPool<T> {
         F: Fn(&T) -> bool,
     {
         let connections = self.connections.lock().unwrap();
-        
+
         if connections.is_empty() {
             return None;
         }
 
         let idx = self.round_robin.fetch_add(1, Ordering::Relaxed) as usize;
         let start_idx = idx % connections.len();
-        
+
         // Try round-robin selection first
         for i in 0..connections.len() {
             let idx = (start_idx + i) % connections.len();
             let conn = &connections[idx];
-            
+
             if is_healthy(&conn.connection) {
                 return Some(conn.connection.clone());
             }
         }
-        
+
         None
     }
 
     /// Add a connection to the pool
     pub fn put(&self, connection: Arc<T>) {
         let mut connections = self.connections.lock().unwrap();
-        
+
         if connections.len() < self.max_size {
             connections.push(PooledConnection {
                 connection,
@@ -300,24 +299,27 @@ where
     /// Get a value from the cache
     pub fn get(&self, key: &K) -> Option<Arc<V>> {
         let cache = self.cache.lock().unwrap();
-        
+
         if let Some(cached) = cache.get(key) {
             if cached.created_at.elapsed() < self.ttl {
                 return Some(cached.value.clone());
             }
         }
-        
+
         None
     }
 
     /// Put a value in the cache
     pub fn put(&self, key: K, value: V) {
         let mut cache = self.cache.lock().unwrap();
-        
-        cache.insert(key, CachedValue {
-            value: Arc::new(value),
-            created_at: Instant::now(),
-        });
+
+        cache.insert(
+            key,
+            CachedValue {
+                value: Arc::new(value),
+                created_at: Instant::now(),
+            },
+        );
     }
 
     /// Get or insert a value
@@ -333,12 +335,15 @@ where
         // Slow path: create and insert
         let value = Arc::new(create());
         let mut cache = self.cache.lock().unwrap();
-        
-        cache.insert(key, CachedValue {
-            value: value.clone(),
-            created_at: Instant::now(),
-        });
-        
+
+        cache.insert(
+            key,
+            CachedValue {
+                value: value.clone(),
+                created_at: Instant::now(),
+            },
+        );
+
         value
     }
 
@@ -367,7 +372,7 @@ pub mod metrics {
     /// Record buffer pool metrics
     pub fn record_buffer_pool_metrics() {
         use ::metrics::gauge;
-        
+
         let size = PROTOCOL_BUFFER_POOL.size();
         gauge!("buffer_pool_size").set(size as f64);
     }
@@ -375,7 +380,7 @@ pub mod metrics {
     /// Record connection pool metrics
     pub fn record_connection_pool_metrics<T>(pool: &ConnectionPool<T>, protocol: String) {
         use ::metrics::gauge;
-        
+
         let size = pool.size();
         gauge!("connection_pool_size", "protocol" => protocol).set(size as f64);
     }
@@ -383,18 +388,19 @@ pub mod metrics {
     /// Record bandwidth limiter metrics
     pub fn record_bandwidth_metrics(limiter: &FastBandwidthLimiter, protocol: String) {
         use ::metrics::gauge;
-        
-        gauge!("bandwidth_up_tokens", "protocol" => protocol.clone()).set(limiter.up_tokens() as f64);
+
+        gauge!("bandwidth_up_tokens", "protocol" => protocol.clone())
+            .set(limiter.up_tokens() as f64);
         gauge!("bandwidth_down_tokens", "protocol" => protocol).set(limiter.down_tokens() as f64);
     }
 
     /// Record cache metrics
-    pub fn record_cache_metrics<K, V>(cache: &TtlCache<K, V>, name: String) 
+    pub fn record_cache_metrics<K, V>(cache: &TtlCache<K, V>, name: String)
     where
         K: std::hash::Hash + Eq + Clone,
     {
         use ::metrics::gauge;
-        
+
         let size = cache.size();
         gauge!("cache_size", "cache" => name).set(size as f64);
     }
@@ -407,16 +413,16 @@ mod tests {
     #[test]
     fn test_buffer_pool() {
         let pool = BufferPool::new(10, 1024);
-        
+
         // Get a buffer
         let buf1 = pool.get(512);
         assert_eq!(buf1.capacity(), 512);
         assert_eq!(pool.size(), 0);
-        
+
         // Return it
         pool.put(buf1);
         assert_eq!(pool.size(), 1);
-        
+
         // Get it again
         let buf2 = pool.get(256);
         assert!(buf2.capacity() >= 256);
@@ -426,12 +432,12 @@ mod tests {
     #[test]
     fn test_buffer_pool_max_size() {
         let pool = BufferPool::new(2, 1024);
-        
+
         // Fill the pool
         pool.put(BytesMut::with_capacity(512));
         pool.put(BytesMut::with_capacity(512));
         assert_eq!(pool.size(), 2);
-        
+
         // Try to add more (should be ignored)
         pool.put(BytesMut::with_capacity(512));
         assert_eq!(pool.size(), 2);
@@ -440,7 +446,7 @@ mod tests {
     #[test]
     fn test_buffer_pool_max_capacity() {
         let pool = BufferPool::new(10, 1024);
-        
+
         // Try to return a buffer that's too large
         pool.put(BytesMut::with_capacity(2048));
         assert_eq!(pool.size(), 0);
@@ -449,11 +455,11 @@ mod tests {
     #[test]
     fn test_fast_bandwidth_limiter() {
         let limiter = FastBandwidthLimiter::new(1, 1); // 1 Mbps
-        
+
         // Should be able to consume some bytes
         assert!(limiter.consume_up(1024));
         assert!(limiter.consume_down(1024));
-        
+
         // Should eventually run out
         let mut consumed = 0;
         while limiter.consume_up(1024) {
@@ -462,20 +468,20 @@ mod tests {
                 break; // Safety limit
             }
         }
-        
+
         assert!(consumed > 0);
     }
 
     #[test]
     fn test_bandwidth_limiter_refill() {
         let limiter = FastBandwidthLimiter::new(1, 1);
-        
+
         // Consume all tokens
         while limiter.consume_up(1024) {}
-        
+
         // Wait for refill (simulate by updating time)
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        
+
         // Should be able to consume again
         assert!(limiter.consume_up(1024));
     }
@@ -483,17 +489,17 @@ mod tests {
     #[test]
     fn test_connection_pool() {
         let pool = ConnectionPool::new(5);
-        
+
         // Add connections
         pool.put(Arc::new(42));
         pool.put(Arc::new(43));
         assert_eq!(pool.size(), 2);
-        
+
         // Get a connection
         let conn = pool.get(|_| true);
         assert!(conn.is_some());
         assert_eq!(*conn.unwrap(), 42);
-        
+
         // Get another
         let conn = pool.get(|_| true);
         assert!(conn.is_some());
@@ -503,10 +509,10 @@ mod tests {
     #[test]
     fn test_connection_pool_health_check() {
         let pool = ConnectionPool::new(5);
-        
+
         pool.put(Arc::new(42));
         pool.put(Arc::new(43));
-        
+
         // Only accept even numbers
         let conn = pool.get(|n| *n % 2 == 0);
         assert!(conn.is_some());
@@ -516,12 +522,12 @@ mod tests {
     #[test]
     fn test_connection_pool_cleanup() {
         let pool = ConnectionPool::new(5);
-        
+
         pool.put(Arc::new(42));
         pool.put(Arc::new(43));
         pool.put(Arc::new(44));
         assert_eq!(pool.size(), 3);
-        
+
         // Remove odd numbers
         pool.cleanup(|n| *n % 2 == 0);
         assert_eq!(pool.size(), 2);
@@ -530,11 +536,11 @@ mod tests {
     #[test]
     fn test_ttl_cache() {
         let cache = TtlCache::new(Duration::from_secs(1));
-        
+
         // Put a value
         cache.put("key1", 42);
         assert_eq!(cache.size(), 1);
-        
+
         // Get it back
         let value = cache.get(&"key1");
         assert!(value.is_some());
@@ -544,15 +550,15 @@ mod tests {
     #[test]
     fn test_ttl_cache_expiration() {
         let cache = TtlCache::new(Duration::from_millis(100));
-        
+
         cache.put("key1", 42);
-        
+
         // Should be available immediately
         assert!(cache.get(&"key1").is_some());
-        
+
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Should be expired
         assert!(cache.get(&"key1").is_none());
     }
@@ -560,12 +566,12 @@ mod tests {
     #[test]
     fn test_ttl_cache_get_or_insert() {
         let cache = TtlCache::new(Duration::from_secs(1));
-        
+
         // First call should create
         let value = cache.get_or_insert("key1", || 42);
         assert_eq!(*value, 42);
         assert_eq!(cache.size(), 1);
-        
+
         // Second call should return cached
         let value = cache.get_or_insert("key1", || 99);
         assert_eq!(*value, 42); // Should still be 42, not 99
@@ -574,14 +580,14 @@ mod tests {
     #[test]
     fn test_ttl_cache_cleanup() {
         let cache = TtlCache::new(Duration::from_millis(100));
-        
+
         cache.put("key1", 42);
         cache.put("key2", 43);
         assert_eq!(cache.size(), 2);
-        
+
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Cleanup
         cache.cleanup();
         assert_eq!(cache.size(), 0);
@@ -592,7 +598,7 @@ mod tests {
         let t1 = current_time_ms();
         std::thread::sleep(Duration::from_millis(10));
         let t2 = current_time_ms();
-        
+
         assert!(t2 > t1);
         assert!(t2 - t1 >= 10);
     }

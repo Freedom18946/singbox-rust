@@ -10,7 +10,10 @@ fn smoke_405_inproc() {
         Ok(l) => l,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("skipping http_405 smoke test due to sandbox PermissionDenied on bind: {}", e);
+                eprintln!(
+                    "skipping http_405 smoke test due to sandbox PermissionDenied on bind: {}",
+                    e
+                );
                 return;
             } else {
                 panic!("bind: {}", e);

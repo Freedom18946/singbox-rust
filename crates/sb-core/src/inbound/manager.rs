@@ -91,7 +91,9 @@ mod tests {
 
         // Add a handler
         let handler: InboundHandler = Arc::new("test_handler".to_string());
-        manager.add_handler("http".to_string(), handler.clone()).await;
+        manager
+            .add_handler("http".to_string(), handler.clone())
+            .await;
 
         assert!(!manager.is_empty().await);
         assert_eq!(manager.len().await, 1);

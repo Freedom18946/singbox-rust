@@ -27,7 +27,7 @@ pub struct RequestContext {
 }
 
 impl RequestContext {
-    #[must_use] 
+    #[must_use]
     pub fn new(method: String, path: String, headers: HashMap<String, String>) -> Self {
         let request_id = request_id::extract_or_generate(&headers);
         Self {
@@ -58,7 +58,7 @@ pub struct MiddlewareChain {
 }
 
 impl MiddlewareChain {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             middlewares: Vec::new(),

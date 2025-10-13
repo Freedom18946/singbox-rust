@@ -209,20 +209,26 @@ impl HandlerService for HandlerServiceImpl {
     async fn add_inbound(
         &self,
         request: Request<AddInboundRequest>,
-        ) -> Result<Response<AddInboundResponse>, Status> {
+    ) -> Result<Response<AddInboundResponse>, Status> {
         let req = request.into_inner();
 
         // Extract inbound config or return error if not present
-        let inbound_config = req.inbound.ok_or_else(|| {
-            Status::invalid_argument("inbound field is required")
-        })?;
+        let inbound_config = req
+            .inbound
+            .ok_or_else(|| Status::invalid_argument("inbound field is required"))?;
 
         // Log the operation
-        log::info!("V2Ray API: Add inbound request for tag '{}'", inbound_config.tag);
+        log::info!(
+            "V2Ray API: Add inbound request for tag '{}'",
+            inbound_config.tag
+        );
 
         // Create a placeholder handler (in production, this would parse inbound_config and create actual handler)
-        let handler: sb_core::inbound::manager::InboundHandler = Arc::new(inbound_config.tag.clone());
-        self.inbound_manager.add_handler(inbound_config.tag, handler).await;
+        let handler: sb_core::inbound::manager::InboundHandler =
+            Arc::new(inbound_config.tag.clone());
+        self.inbound_manager
+            .add_handler(inbound_config.tag, handler)
+            .await;
 
         Ok(Response::new(AddInboundResponse {}))
     }
@@ -274,16 +280,21 @@ impl HandlerService for HandlerServiceImpl {
         let req = request.into_inner();
 
         // Extract outbound config or return error if not present
-        let outbound_config = req.outbound.ok_or_else(|| {
-            Status::invalid_argument("outbound field is required")
-        })?;
+        let outbound_config = req
+            .outbound
+            .ok_or_else(|| Status::invalid_argument("outbound field is required"))?;
 
-        log::info!("V2Ray API: Add outbound request for tag '{}'", outbound_config.tag);
+        log::info!(
+            "V2Ray API: Add outbound request for tag '{}'",
+            outbound_config.tag
+        );
 
         // Create a placeholder connector (in production, parse outbound_config)
         use sb_core::outbound::DirectConnector;
         let connector = Arc::new(DirectConnector::new());
-        self.outbound_manager.add_connector(outbound_config.tag, connector).await;
+        self.outbound_manager
+            .add_connector(outbound_config.tag, connector)
+            .await;
 
         Ok(Response::new(AddOutboundResponse {}))
     }

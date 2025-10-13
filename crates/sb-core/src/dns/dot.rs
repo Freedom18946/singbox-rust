@@ -66,10 +66,7 @@ fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn parse_answers(
-    mut buf: &[u8],
-    want: u16,
-) -> Result<(Vec<IpAddr>, Option<u32>)> {
+fn parse_answers(mut buf: &[u8], want: u16) -> Result<(Vec<IpAddr>, Option<u32>)> {
     if buf.len() < 12 {
         return Err(anyhow::anyhow!("short dns header"));
     }

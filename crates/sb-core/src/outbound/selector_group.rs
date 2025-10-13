@@ -114,11 +114,7 @@ pub struct SelectorGroup {
 
 impl SelectorGroup {
     /// Create a new manual selector
-    pub fn new_manual(
-        name: String,
-        members: Vec<ProxyMember>,
-        default: Option<String>,
-    ) -> Self {
+    pub fn new_manual(name: String, members: Vec<ProxyMember>, default: Option<String>) -> Self {
         Self {
             name,
             mode: SelectMode::Manual,
@@ -157,11 +153,7 @@ impl SelectorGroup {
     }
 
     /// Create a load balancing selector
-    pub fn new_load_balancer(
-        name: String,
-        members: Vec<ProxyMember>,
-        mode: SelectMode,
-    ) -> Self {
+    pub fn new_load_balancer(name: String, members: Vec<ProxyMember>, mode: SelectMode) -> Self {
         Self {
             name,
             mode,
@@ -333,13 +325,7 @@ impl SelectorGroup {
     pub fn get_members(&self) -> Vec<(String, bool, u64)> {
         self.members
             .iter()
-            .map(|m| {
-                (
-                    m.tag.clone(),
-                    m.health.is_healthy(),
-                    m.health.get_rtt_ms(),
-                )
-            })
+            .map(|m| (m.tag.clone(), m.health.is_healthy(), m.health.get_rtt_ms()))
             .collect()
     }
 }
@@ -464,12 +450,22 @@ async fn health_check(url: &str, timeout: Duration) -> std::io::Result<u64> {
 /// Parse test URL to extract host, port, and scheme
 fn parse_test_url(url: &str) -> std::io::Result<(String, u16, bool)> {
     if let Some(url_without_scheme) = url.strip_prefix("https://") {
-        let parts: Vec<&str> = url_without_scheme.split('/').next().unwrap().split(':').collect();
+        let parts: Vec<&str> = url_without_scheme
+            .split('/')
+            .next()
+            .unwrap()
+            .split(':')
+            .collect();
         let host = parts[0].to_string();
         let port = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(443);
         Ok((host, port, true))
     } else if let Some(url_without_scheme) = url.strip_prefix("http://") {
-        let parts: Vec<&str> = url_without_scheme.split('/').next().unwrap().split(':').collect();
+        let parts: Vec<&str> = url_without_scheme
+            .split('/')
+            .next()
+            .unwrap()
+            .split(':')
+            .collect();
         let host = parts[0].to_string();
         let port = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(80);
         Ok((host, port, false))

@@ -44,9 +44,9 @@ pub struct SelectorConfig {
     pub bias_cold: f64,           // 冷启动偏置
     pub weights: (f64, f64, f64), // (w_rtt, w_err, w_open)
     pub explore: ExploreMode,
-    pub min_dwell: Duration,      // 最小驻留时间
-    pub min_samples: u64,         // 最小样本数
-    pub ema_halflife: Duration,   // EMA halflife for future smoothing
+    pub min_dwell: Duration,    // 最小驻留时间
+    pub min_samples: u64,       // 最小样本数
+    pub ema_halflife: Duration, // EMA halflife for future smoothing
 }
 
 impl Default for SelectorConfig {

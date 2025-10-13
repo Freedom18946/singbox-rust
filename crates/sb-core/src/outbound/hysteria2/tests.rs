@@ -560,9 +560,7 @@ mod handshake_and_auth_tests {
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
-        let connect_request = outbound
-            .create_connect_request("example.com", 443)
-            .unwrap();
+        let connect_request = outbound.create_connect_request("example.com", 443).unwrap();
 
         // Verify connect request structure
         assert!(connect_request.len() > 0);

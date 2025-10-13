@@ -181,7 +181,8 @@ pub fn extract_sni_from_tls_client_hello(data: &[u8]) -> Option<String> {
         return None;
     }
     // ContentType(1)=22 for Handshake
-    if data[0] != 22 { // 0x16
+    if data[0] != 22 {
+        // 0x16
         return None;
     }
     // Record length
@@ -296,15 +297,20 @@ pub fn extract_http_host_from_request(data: &[u8]) -> Option<String> {
     // Skip request line
     lines.next()?;
     for line in lines {
-        if line.is_empty() { break; }
-        if let Some(rest) = line.strip_prefix("Host:")
+        if line.is_empty() {
+            break;
+        }
+        if let Some(rest) = line
+            .strip_prefix("Host:")
             .or_else(|| line.strip_prefix("host:"))
             .or_else(|| line.strip_prefix("HOST:"))
         {
             let host = rest.trim();
             // Strip optional :port
             let host_only = host.split(':').next().unwrap_or(host).trim();
-            if !host_only.is_empty() { return Some(host_only.to_string()); }
+            if !host_only.is_empty() {
+                return Some(host_only.to_string());
+            }
         }
     }
     None
@@ -458,13 +464,19 @@ mod sniff_http_tests {
     #[test]
     fn parse_http_host_simple() {
         let req = b"GET / HTTP/1.1\r\nHost: example.com\r\nUser-Agent: t\r\n\r\n";
-        assert_eq!(extract_http_host_from_request(req), Some("example.com".to_string()));
+        assert_eq!(
+            extract_http_host_from_request(req),
+            Some("example.com".to_string())
+        );
     }
 
     #[test]
     fn parse_http_host_with_port() {
         let req = b"GET /p HTTP/1.1\r\nhost: example.com:8080\r\n\r\n";
-        assert_eq!(extract_http_host_from_request(req), Some("example.com".to_string()));
+        assert_eq!(
+            extract_http_host_from_request(req),
+            Some("example.com".to_string())
+        );
     }
 }
 
@@ -543,7 +555,8 @@ mod tests {
         hs.extend_from_slice(&[0u8; 32]); // Random
         hs.push(0); // Session ID length
         hs.extend_from_slice(&[0x00, 0x02, 0x00, 0x2f]); // Cipher suites
-        hs.push(1); hs.push(0); // Compression methods
+        hs.push(1);
+        hs.push(0); // Compression methods
 
         // Extensions
         let ext_len_pos = hs.len();
@@ -574,7 +587,11 @@ mod tests {
 
         // Fill handshake length
         let hs_body_len = (hs.len() - 4) as u32;
-        hs[1..4].copy_from_slice(&[(hs_body_len >> 16) as u8, (hs_body_len >> 8) as u8, hs_body_len as u8]);
+        hs[1..4].copy_from_slice(&[
+            (hs_body_len >> 16) as u8,
+            (hs_body_len >> 8) as u8,
+            hs_body_len as u8,
+        ]);
 
         // TLS record wrapper
         let mut rec = Vec::new();

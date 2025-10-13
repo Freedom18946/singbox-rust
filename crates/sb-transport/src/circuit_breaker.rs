@@ -451,7 +451,10 @@ mod tests {
         );
 
         assert_eq!(cb.state().await, CircuitState::Closed);
-        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Allow));
+        assert!(matches!(
+            cb.allow_request().await,
+            CircuitBreakerDecision::Allow
+        ));
     }
 
     #[tokio::test]
@@ -478,7 +481,10 @@ mod tests {
         assert_eq!(cb.state().await, CircuitState::Open);
 
         // Requests should be rejected
-        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Reject));
+        assert!(matches!(
+            cb.allow_request().await,
+            CircuitBreakerDecision::Reject
+        ));
     }
 
     #[tokio::test]
@@ -501,12 +507,21 @@ mod tests {
         thread::sleep(Duration::from_millis(60));
 
         // Next request should transition to half-open
-        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Allow));
+        assert!(matches!(
+            cb.allow_request().await,
+            CircuitBreakerDecision::Allow
+        ));
         assert_eq!(cb.state().await, CircuitState::HalfOpen);
 
         // Should allow up to max calls in half-open
-        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Allow));
-        assert!(matches!(cb.allow_request().await, CircuitBreakerDecision::Reject));
+        assert!(matches!(
+            cb.allow_request().await,
+            CircuitBreakerDecision::Allow
+        ));
+        assert!(matches!(
+            cb.allow_request().await,
+            CircuitBreakerDecision::Reject
+        ));
     }
 
     #[tokio::test]

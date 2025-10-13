@@ -105,13 +105,13 @@ fn test_reality_config_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     // Test Rust implementation
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     // Test Go implementation if available
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
@@ -120,7 +120,7 @@ fn test_reality_config_compatibility() {
             println!("Go result: {}", go_success);
             println!("Rust output: {}", rust_output);
             println!("Go output: {}", go_output);
-            
+
             // Both should accept or reject the config consistently
             assert_eq!(
                 rust_success, go_success,
@@ -132,9 +132,13 @@ fn test_reality_config_compatibility() {
     } else {
         println!("GO_SINGBOX_BIN not set, skipping upstream comparison");
     }
-    
+
     // At minimum, Rust implementation should accept valid config
-    assert!(rust_success, "Rust should accept valid REALITY config. Output: {}", rust_output);
+    assert!(
+        rust_success,
+        "Rust should accept valid REALITY config. Output: {}",
+        rust_output
+    );
 }
 
 /// Test Hysteria v2 config compatibility with upstream
@@ -175,12 +179,12 @@ fn test_hysteria2_config_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
         if let Some((go_success, go_output)) = go_result {
@@ -192,8 +196,12 @@ fn test_hysteria2_config_compatibility() {
             );
         }
     }
-    
-    assert!(rust_success, "Rust should accept valid Hysteria2 config. Output: {}", rust_output);
+
+    assert!(
+        rust_success,
+        "Rust should accept valid Hysteria2 config. Output: {}",
+        rust_output
+    );
 }
 
 /// Test SSH config compatibility with upstream
@@ -233,12 +241,12 @@ fn test_ssh_config_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
         if let Some((go_success, go_output)) = go_result {
@@ -250,8 +258,12 @@ fn test_ssh_config_compatibility() {
             );
         }
     }
-    
-    assert!(rust_success, "Rust should accept valid SSH config. Output: {}", rust_output);
+
+    assert!(
+        rust_success,
+        "Rust should accept valid SSH config. Output: {}",
+        rust_output
+    );
 }
 
 /// Test TUIC config compatibility with upstream
@@ -292,12 +304,12 @@ fn test_tuic_config_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
         if let Some((go_success, go_output)) = go_result {
@@ -309,8 +321,12 @@ fn test_tuic_config_compatibility() {
             );
         }
     }
-    
-    assert!(rust_success, "Rust should accept valid TUIC config. Output: {}", rust_output);
+
+    assert!(
+        rust_success,
+        "Rust should accept valid TUIC config. Output: {}",
+        rust_output
+    );
 }
 
 /// Test ECH config compatibility with upstream
@@ -357,12 +373,12 @@ fn test_ech_config_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
         if let Some((go_success, go_output)) = go_result {
@@ -374,8 +390,12 @@ fn test_ech_config_compatibility() {
             );
         }
     }
-    
-    assert!(rust_success, "Rust should accept valid ECH config. Output: {}", rust_output);
+
+    assert!(
+        rust_success,
+        "Rust should accept valid ECH config. Output: {}",
+        rust_output
+    );
 }
 
 /// Test Hysteria v1 config compatibility with upstream
@@ -417,12 +437,12 @@ fn test_hysteria_v1_config_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
         if let Some((go_success, go_output)) = go_result {
@@ -434,8 +454,12 @@ fn test_hysteria_v1_config_compatibility() {
             );
         }
     }
-    
-    assert!(rust_success, "Rust should accept valid Hysteria v1 config. Output: {}", rust_output);
+
+    assert!(
+        rust_success,
+        "Rust should accept valid Hysteria v1 config. Output: {}",
+        rust_output
+    );
 }
 
 /// Test mixed P0 protocols config compatibility
@@ -524,12 +548,12 @@ fn test_mixed_p0_protocols_compatibility() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    
+
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
-    
+
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
         if let Some((go_success, go_output)) = go_result {
@@ -541,6 +565,10 @@ fn test_mixed_p0_protocols_compatibility() {
             );
         }
     }
-    
-    assert!(rust_success, "Rust should accept valid mixed P0 config. Output: {}", rust_output);
+
+    assert!(
+        rust_success,
+        "Rust should accept valid mixed P0 config. Output: {}",
+        rust_output
+    );
 }

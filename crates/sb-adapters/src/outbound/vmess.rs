@@ -4,6 +4,7 @@
 //! VMess is a stateful protocol used by V2Ray with strong encryption and obfuscation.
 
 use crate::outbound::prelude::*;
+use crate::transport_config::TransportConfig;
 use rand::Rng;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -92,8 +93,10 @@ pub struct VmessConfig {
     pub server_addr: SocketAddr,
     /// Authentication settings
     pub auth: VmessAuth,
-    /// Transport settings
+    /// Transport settings (TCP-level options)
     pub transport: VmessTransport,
+    /// Transport layer (TCP/WebSocket/gRPC/HTTPUpgrade)
+    pub transport_layer: TransportConfig,
     /// Connection timeout
     pub timeout: Option<std::time::Duration>,
     /// Enable packet encoding
@@ -101,8 +104,10 @@ pub struct VmessConfig {
     /// Custom headers for obfuscation
     pub headers: HashMap<String, String>,
     /// Multiplex configuration
+    #[cfg(feature = "transport_mux")]
     pub multiplex: Option<sb_transport::multiplex::MultiplexConfig>,
-    /// TLS configuration
+    /// TLS configuration (experimental, requires working TLS transport layer)
+    #[cfg(feature = "transport_tls")]
     pub tls: Option<sb_transport::TlsConfig>,
 }
 
@@ -117,10 +122,13 @@ impl Default for VmessConfig {
                 additional_data: None,
             },
             transport: VmessTransport::default(),
+            transport_layer: TransportConfig::default(),
             timeout: Some(std::time::Duration::from_secs(30)),
             packet_encoding: false,
             headers: HashMap::new(),
+            #[cfg(feature = "transport_mux")]
             multiplex: None,
+            #[cfg(feature = "transport_tls")]
             tls: None,
         }
     }
@@ -147,24 +155,39 @@ pub struct VmessConnector {
     /// Cached authentication data
     #[allow(dead_code)]
     auth_cache: Option<Vec<u8>>,
-    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
+    /// Transport dialer with optional TLS and Multiplex layers
+    #[cfg(feature = "sb-transport")]
+    dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
 }
 
 impl VmessConnector {
     /// Create a new VMess connector with the given configuration
     pub fn new(config: VmessConfig) -> Self {
-        // Create multiplex dialer if configured
-        let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
-            let tcp_dialer = Box::new(sb_transport::TcpDialer) as Box<dyn sb_transport::Dialer>;
-            Some(std::sync::Arc::new(sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer)))
-        } else {
-            None
+        // Create dialer with transport layer, TLS, and multiplex layers
+        #[cfg(feature = "dep:sb-transport")]
+        let dialer = {
+            #[cfg(feature = "transport_tls")]
+            let tls_config = config.tls.as_ref();
+            #[cfg(not(feature = "transport_tls"))]
+            let tls_config = None;
+
+            #[cfg(feature = "transport_mux")]
+            let multiplex_config = config.multiplex.as_ref();
+            #[cfg(not(feature = "transport_mux"))]
+            let multiplex_config = None;
+
+            Some(
+                config
+                    .transport_layer
+                    .create_dialer_with_layers(tls_config, multiplex_config),
+            )
         };
 
         Self {
             config,
             auth_cache: None,
-            multiplex_dialer,
+            #[cfg(feature = "dep:sb-transport")]
+            dialer,
         }
     }
 
@@ -315,61 +338,48 @@ impl VmessConnector {
             .timeout
             .unwrap_or(std::time::Duration::from_secs(30));
 
-        // Use multiplex dialer if configured, otherwise use direct TCP connection
-        let mut boxed_stream: BoxedStream = if let Some(ref mux_dialer) = self.multiplex_dialer {
-            tracing::debug!("Using multiplex dialer for VMess connection");
+        #[cfg(feature = "sb-transport")]
+        {
+            // Use the configured dialer (which already has Transport → TLS → Multiplex layers)
+            if let Some(ref dialer) = self.dialer {
+                tracing::debug!(
+                    "Using transport dialer for VMess connection (transport: {:?})",
+                    self.config.transport_layer.transport_type()
+                );
 
-            // Use multiplex dialer
-            let stream = tokio::time::timeout(
-                timeout,
-                mux_dialer.connect(
-                    &self.config.server_addr.ip().to_string(),
-                    self.config.server_addr.port()
-                ),
-            )
-            .await
-            .map_err(|_| AdapterError::Timeout(timeout))?
-            .map_err(|e| AdapterError::Other(format!("Multiplex dial failed: {}", e)))?;
+                let stream = tokio::time::timeout(
+                    timeout,
+                    dialer.connect(
+                        &self.config.server_addr.ip().to_string(),
+                        self.config.server_addr.port(),
+                    ),
+                )
+                .await
+                .map_err(|_| AdapterError::Timeout(timeout))?
+                .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
 
-            stream
-        } else {
-            // Connect with timeout
-            let tcp_stream = tokio::time::timeout(
-                timeout,
-                tokio::net::TcpStream::connect(self.config.server_addr),
-            )
-            .await
-            .map_err(|_| AdapterError::Timeout(timeout))?
-            .map_err(AdapterError::Io)?;
-
-            // Configure transport options
-            if self.config.transport.tcp_no_delay {
-                if let Err(e) = tcp_stream.set_nodelay(true) {
-                    tracing::warn!("Failed to set TCP_NODELAY: {}", e);
-                }
+                return Ok(stream);
             }
-
-            Box::new(tcp_stream)
-        };
-
-        // Wrap with TLS if configured
-        if let Some(ref tls_config) = self.config.tls {
-            tracing::debug!("Wrapping VMess connection with TLS");
-            let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
-            let server_name = self.config.server_addr.ip().to_string();
-
-            boxed_stream = tokio::time::timeout(
-                timeout,
-                tls_transport.wrap_client(boxed_stream, &server_name)
-            )
-            .await
-            .map_err(|_| AdapterError::Timeout(timeout))?
-            .map_err(|e| AdapterError::Other(format!("TLS handshake failed: {}", e)))?;
-
-            tracing::debug!("VMess TLS handshake successful");
         }
 
-        Ok(boxed_stream)
+        // Fallback to direct TCP connection (for backward compatibility or when sb-transport feature is disabled)
+        tracing::debug!("Using direct TCP connection for VMess");
+        let tcp_stream = tokio::time::timeout(
+            timeout,
+            tokio::net::TcpStream::connect(self.config.server_addr),
+        )
+        .await
+        .map_err(|_| AdapterError::Timeout(timeout))?
+        .map_err(AdapterError::Io)?;
+
+        // Configure transport options
+        if self.config.transport.tcp_no_delay {
+            if let Err(e) = tcp_stream.set_nodelay(true) {
+                tracing::warn!("Failed to set TCP_NODELAY: {}", e);
+            }
+        }
+
+        Ok(Box::new(tcp_stream))
     }
 
     /// Validate configuration

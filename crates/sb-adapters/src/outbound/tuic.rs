@@ -68,9 +68,7 @@ impl TuicConnector {
 
     #[cfg(feature = "adapter-tuic")]
     /// Create a UDP transport for UDP relay
-    pub async fn create_udp_transport(
-        &self,
-    ) -> Result<sb_core::outbound::tuic::TuicUdpTransport> {
+    pub async fn create_udp_transport(&self) -> Result<sb_core::outbound::tuic::TuicUdpTransport> {
         use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
         let core_cfg = TuicConfig {
@@ -89,13 +87,10 @@ impl TuicConnector {
             udp_over_stream: self.cfg.udp_over_stream,
         };
 
-        let core = TuicOutbound::new(core_cfg)
-            .map_err(|e| AdapterError::Other(e.to_string()))?;
+        let core = TuicOutbound::new(core_cfg).map_err(|e| AdapterError::Other(e.to_string()))?;
 
         // Create UDP transport
-        core.create_udp_transport()
-            .await
-            .map_err(AdapterError::Io)
+        core.create_udp_transport().await.map_err(AdapterError::Io)
     }
 }
 
@@ -125,7 +120,8 @@ impl OutboundConnector for TuicConnector {
         {
             if target.kind != TransportKind::Tcp {
                 return Err(AdapterError::Protocol(
-                    "TUIC outbound only supports TCP (UDP support via create_udp_transport)".to_string(),
+                    "TUIC outbound only supports TCP (UDP support via create_udp_transport)"
+                        .to_string(),
                 ));
             }
 
@@ -152,10 +148,7 @@ impl OutboundConnector for TuicConnector {
                 .map_err(|e| AdapterError::Other(e.to_string()))?;
 
             let hp = sb_core::outbound::types::HostPort::new(target.host.clone(), target.port);
-            let quic_stream = core
-                .connect(&hp)
-                .await
-                .map_err(AdapterError::Io)?;
+            let quic_stream = core.connect(&hp).await.map_err(AdapterError::Io)?;
 
             Ok(Box::new(quic_stream) as BoxedStream)
         }
@@ -259,7 +252,7 @@ mod tests {
         let connector = TuicConnector::default();
         let result = connector.start().await;
         assert!(result.is_err());
-        
+
         if let Err(AdapterError::NotImplemented { what }) = result {
             assert!(what.contains("adapter-tuic"));
         } else {
@@ -312,7 +305,7 @@ mod tests {
     fn test_tuic_config_debug() {
         let cfg = TuicAdapterConfig::default();
         let debug_str = format!("{:?}", cfg);
-        
+
         // Should contain key fields
         assert!(debug_str.contains("server"));
         assert!(debug_str.contains("port"));

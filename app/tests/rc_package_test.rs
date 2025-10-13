@@ -338,26 +338,22 @@ fn test_rc_package_integration() {
         .expect("Failed to read RC directory")
         .collect();
 
-    let has_version_file = rc_entries.iter().any(|entry| {
-        match entry {
-            Ok(e) => {
-                let name = e.file_name();
-                let name_str = name.to_string_lossy();
-                name_str.starts_with("version-")
-            }
-            Err(_) => false,
+    let has_version_file = rc_entries.iter().any(|entry| match entry {
+        Ok(e) => {
+            let name = e.file_name();
+            let name_str = name.to_string_lossy();
+            name_str.starts_with("version-")
         }
+        Err(_) => false,
     });
 
-    let has_ci_metadata_file = rc_entries.iter().any(|entry| {
-        match entry {
-            Ok(e) => {
-                let name = e.file_name();
-                let name_str = name.to_string_lossy();
-                name_str.starts_with("ci-metadata-")
-            }
-            Err(_) => false,
+    let has_ci_metadata_file = rc_entries.iter().any(|entry| match entry {
+        Ok(e) => {
+            let name = e.file_name();
+            let name_str = name.to_string_lossy();
+            name_str.starts_with("ci-metadata-")
         }
+        Err(_) => false,
     });
 
     assert!(has_version_file, "RC package should contain version file");

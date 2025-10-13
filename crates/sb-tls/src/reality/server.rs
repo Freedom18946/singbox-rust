@@ -71,10 +71,7 @@ impl RealityAcceptor {
     /// 1. Parse ClientHello and extract auth data
     /// 2. Verify authentication
     /// 3. Either proxy or fallback based on auth result
-    pub async fn accept<S>(
-        &self,
-        stream: S,
-    ) -> RealityResult<RealityConnection>
+    pub async fn accept<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -86,10 +83,7 @@ impl RealityAcceptor {
     }
 
     /// Handle REALITY handshake
-    async fn handle_handshake<S>(
-        &self,
-        mut stream: S,
-    ) -> RealityResult<RealityConnection>
+    async fn handle_handshake<S>(&self, mut stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -154,57 +148,73 @@ impl RealityAcceptor {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        use super::tls_record::{ClientHello, ExtensionType, ContentType};
+        use super::tls_record::{ClientHello, ContentType, ExtensionType};
         use tokio::io::AsyncReadExt;
 
         // Read TLS record header (5 bytes)
         let mut header_buf = [0u8; 5];
-        stream.read_exact(&mut header_buf).await
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read TLS record header: {}", e)))?;
+        stream.read_exact(&mut header_buf).await.map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to read TLS record header: {}", e))
+        })?;
 
         let content_type = ContentType::try_from(header_buf[0])
             .map_err(|e| RealityError::HandshakeFailed(format!("Invalid content type: {}", e)))?;
         let version = u16::from_be_bytes([header_buf[1], header_buf[2]]);
         let length = u16::from_be_bytes([header_buf[3], header_buf[4]]);
 
-        debug!("TLS record: type={:?}, version=0x{:04x}, length={}", content_type, version, length);
+        debug!(
+            "TLS record: type={:?}, version=0x{:04x}, length={}",
+            content_type, version, length
+        );
 
         // Verify this is a handshake record
         if content_type != ContentType::Handshake {
-            return Err(RealityError::HandshakeFailed(
-                format!("Expected Handshake record, got {:?}", content_type)
-            ));
+            return Err(RealityError::HandshakeFailed(format!(
+                "Expected Handshake record, got {:?}",
+                content_type
+            )));
         }
 
         // Read handshake data
         let mut handshake_data = vec![0u8; length as usize];
-        stream.read_exact(&mut handshake_data).await
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read handshake: {}", e)))?;
+        stream.read_exact(&mut handshake_data).await.map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to read handshake: {}", e))
+        })?;
 
         // Parse ClientHello
-        let client_hello = ClientHello::parse(&handshake_data)
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {}", e)))?;
+        let client_hello = ClientHello::parse(&handshake_data).map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {}", e))
+        })?;
 
-        debug!("Parsed ClientHello: version=0x{:04x}, {} extensions",
-            client_hello.version, client_hello.extensions.len());
+        debug!(
+            "Parsed ClientHello: version=0x{:04x}, {} extensions",
+            client_hello.version,
+            client_hello.extensions.len()
+        );
 
         // Extract SNI
-        let sni = client_hello.get_sni()
+        let sni = client_hello
+            .get_sni()
             .ok_or_else(|| RealityError::HandshakeFailed("No SNI in ClientHello".to_string()))?;
 
         debug!("SNI: {}", sni);
 
         // Extract REALITY authentication extension
-        let reality_ext = client_hello.find_extension(ExtensionType::RealityAuth as u16)
+        let reality_ext = client_hello
+            .find_extension(ExtensionType::RealityAuth as u16)
             .ok_or_else(|| RealityError::AuthFailed("No REALITY auth extension".to_string()))?;
 
-        let (client_public_key, short_id, auth_hash) = reality_ext.parse_reality_auth()
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {}", e)))?;
+        let (client_public_key, short_id, auth_hash) =
+            reality_ext.parse_reality_auth().map_err(|e| {
+                RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {}", e))
+            })?;
 
-        debug!("REALITY auth: public_key={}, short_id={}, auth_hash={}",
+        debug!(
+            "REALITY auth: public_key={}, short_id={}, auth_hash={}",
             hex::encode(&client_public_key[..8]),
             hex::encode(&short_id),
-            hex::encode(&auth_hash[..8]));
+            hex::encode(&auth_hash[..8])
+        );
 
         // Combine header and handshake data for replay
         let mut buffered_data = Vec::with_capacity(5 + handshake_data.len());
@@ -230,24 +240,31 @@ impl RealityAcceptor {
 
         // Generate a temporary self-signed certificate
         // In a production implementation, this would be derived from the shared secret
-        let cert = rcgen::generate_simple_self_signed(vec![server_name.to_string()])
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to generate certificate: {}", e)))?;
+        let cert =
+            rcgen::generate_simple_self_signed(vec![server_name.to_string()]).map_err(|e| {
+                RealityError::HandshakeFailed(format!("Failed to generate certificate: {}", e))
+            })?;
 
         let cert_der = CertificateDer::from(cert.cert.der().to_vec());
 
-        let key_der = PrivateKeyDer::try_from(cert.key_pair.serialize_der())
-            .map_err(|_| RealityError::HandshakeFailed("Failed to serialize private key".to_string()))?;
+        let key_der = PrivateKeyDer::try_from(cert.key_pair.serialize_der()).map_err(|_| {
+            RealityError::HandshakeFailed("Failed to serialize private key".to_string())
+        })?;
 
         // Create TLS server config with the temporary certificate
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(vec![cert_der], key_der)
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to create TLS config: {}", e)))?;
+            .map_err(|e| {
+                RealityError::HandshakeFailed(format!("Failed to create TLS config: {}", e))
+            })?;
 
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
 
         // Perform TLS handshake
-        let tls_stream = acceptor.accept(stream).await
+        let tls_stream = acceptor
+            .accept(stream)
+            .await
             .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {}", e)))?;
 
         debug!("REALITY TLS handshake completed successfully");
@@ -259,10 +276,7 @@ impl RealityAcceptor {
     ///
     /// When authentication fails, proxy the connection to the real target
     /// to make it appear as legitimate traffic.
-    async fn fallback_to_target<S>(
-        &self,
-        stream: S,
-    ) -> RealityResult<RealityConnection>
+    async fn fallback_to_target<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -315,11 +329,13 @@ impl RealityConnection {
     ///
     /// - Proxy: return the encrypted stream for application layer
     /// - Fallback: bidirectionally copy traffic between client and target
-    pub async fn handle(self) -> io::Result<Option<crate::TlsIoStream>>
-    {
+    pub async fn handle(self) -> io::Result<Option<crate::TlsIoStream>> {
         match self {
             RealityConnection::Proxy(stream) => Ok(Some(stream)),
-            RealityConnection::Fallback { mut client, mut target } => {
+            RealityConnection::Fallback {
+                mut client,
+                mut target,
+            } => {
                 // Bidirectional copy between client and target
                 debug!("Starting fallback traffic relay");
 

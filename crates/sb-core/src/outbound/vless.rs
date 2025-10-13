@@ -50,7 +50,9 @@ impl VlessOutbound {
     }
 
     #[cfg(feature = "out_vless")]
-    pub(crate) async fn do_handshake_on<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + ?Sized>(
+    pub(crate) async fn do_handshake_on<
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + ?Sized,
+    >(
         &self,
         target: &HostPort,
         stream: &mut S,
@@ -80,8 +82,6 @@ impl VlessOutbound {
 
         Ok(())
     }
-
-    
 
     fn encode_vless_request(&self, target: &HostPort) -> Vec<u8> {
         let mut request = Vec::new();
@@ -146,13 +146,19 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
 
         if want_tls {
             let tls_cfg = sb_transport::tls::webpki_roots_config();
-            let alpn = if want_h2 { Some(vec![b"h2".to_vec()]) } else { None };
+            let alpn = if want_h2 {
+                Some(vec![b"h2".to_vec()])
+            } else {
+                None
+            };
             builder = builder.tls(tls_cfg, None, alpn);
         }
 
         if want_ws {
             let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-            if let Ok(path) = std::env::var("SB_WS_PATH") { ws_cfg.path = path; }
+            if let Ok(path) = std::env::var("SB_WS_PATH") {
+                ws_cfg.path = path;
+            }
             if let Ok(host_header) = std::env::var("SB_WS_HOST") {
                 ws_cfg.headers.push(("Host".to_string(), host_header));
             }
@@ -161,14 +167,20 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
 
         if want_h2 {
             let mut h2_cfg = sb_transport::http2::Http2Config::default();
-            if let Ok(path) = std::env::var("SB_H2_PATH") { h2_cfg.path = path; }
-            if let Ok(host_header) = std::env::var("SB_H2_HOST") { h2_cfg.host = host_header; }
+            if let Ok(path) = std::env::var("SB_H2_PATH") {
+                h2_cfg.path = path;
+            }
+            if let Ok(host_header) = std::env::var("SB_H2_HOST") {
+                h2_cfg.host = host_header;
+            }
             builder = builder.http2(h2_cfg);
         }
 
         if want_hup {
             let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-            if let Ok(path) = std::env::var("SB_HUP_PATH") { hup_cfg.path = path; }
+            if let Ok(path) = std::env::var("SB_HUP_PATH") {
+                hup_cfg.path = path;
+            }
             builder = builder.http_upgrade(hup_cfg);
         }
 
@@ -190,8 +202,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
             .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;
 
         // Perform VLESS handshake over the established stream
-        self
-            .do_handshake_on(&target, &mut *stream)
+        self.do_handshake_on(&target, &mut *stream)
             .await
             .map_err(crate::error::SbError::from)?;
 

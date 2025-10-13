@@ -766,11 +766,7 @@ pub async fn fetch_with_limits_to_cache(
             }
             Err(_) => {
                 inc_timeout();
-                set_last_error_with_host(
-                    SecurityErrorKind::Timeout,
-                    &host,
-                    "timeout on fallback",
-                );
+                set_last_error_with_host(SecurityErrorKind::Timeout, &host, "timeout on fallback");
                 if let Ok(mut br) = breaker::global().lock() {
                     br.mark_failure(&host);
                 }
@@ -1482,7 +1478,8 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
                         .join("\n");
                     let norm = sb_core::router::rules_normalize(&rules_text);
                     let kinds_v = validate_kinds(&kinds).unwrap_or_default();
-                    let kinds_str_refs: Vec<&str> = kinds_v.iter().map(std::string::String::as_str).collect();
+                    let kinds_str_refs: Vec<&str> =
+                        kinds_v.iter().map(std::string::String::as_str).collect();
                     let plan = sb_core::router::patch_plan::build_plan(
                         &norm,
                         &kinds_str_refs,

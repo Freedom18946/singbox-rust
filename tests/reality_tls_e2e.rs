@@ -105,20 +105,18 @@ fn e2e_reality_vless_config_validation() {
 
     // Test Rust implementation
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
-    
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
+
     if result.is_none() {
         panic!("rust check failed to execute");
     }
-    
+
     let (success, output) = result.unwrap();
-    assert!(success, "Config validation should succeed. Output: {}", output);
+    assert!(
+        success,
+        "Config validation should succeed. Output: {}",
+        output
+    );
     assert!(output.contains("OK"), "Output should contain OK message");
 }
 
@@ -166,13 +164,7 @@ fn e2e_reality_invalid_public_key() {
 
     let tmp = write_cfg(cfg);
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     // Config should pass basic structure check (check command doesn't validate REALITY fields deeply)
     // The actual REALITY validation happens at runtime
@@ -224,13 +216,7 @@ fn e2e_reality_invalid_short_id() {
 
     let tmp = write_cfg(&cfg_odd);
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     // Basic structure check should pass
     if let Some((success, _output)) = result {
@@ -278,13 +264,7 @@ fn e2e_reality_missing_server_name() {
 
     let tmp = write_cfg(&cfg);
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     // Basic structure check should pass
     if let Some((success, _output)) = result {
@@ -333,20 +313,18 @@ fn e2e_reality_empty_short_id() {
 
     let tmp = write_cfg(&cfg);
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
-    
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
+
     if result.is_none() {
         panic!("rust check failed to execute");
     }
-    
+
     let (success, output) = result.unwrap();
-    assert!(success, "Empty short_id should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Empty short_id should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test REALITY configuration with maximum short_id length
@@ -390,20 +368,18 @@ fn e2e_reality_max_short_id() {
 
     let tmp = write_cfg(&cfg);
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
-    
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
+
     if result.is_none() {
         panic!("rust check failed to execute");
     }
-    
+
     let (success, output) = result.unwrap();
-    assert!(success, "Max length short_id should be valid. Output: {}", output);
+    assert!(
+        success,
+        "Max length short_id should be valid. Output: {}",
+        output
+    );
 }
 
 /// Test REALITY configuration with ALPN protocols
@@ -448,20 +424,18 @@ fn e2e_reality_with_alpn() {
 
     let tmp = write_cfg(&cfg);
     let rust = workspace_bin("check").to_string_lossy().to_string();
-    let result = run(
-        &rust,
-        &[
-            "--config",
-            tmp.path().to_str().unwrap(),
-        ],
-    );
-    
+    let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
+
     if result.is_none() {
         panic!("rust check failed to execute");
     }
-    
+
     let (success, output) = result.unwrap();
-    assert!(success, "REALITY with ALPN should be valid. Output: {}", output);
+    assert!(
+        success,
+        "REALITY with ALPN should be valid. Output: {}",
+        output
+    );
 }
 
 /// Helper function to generate a test keypair

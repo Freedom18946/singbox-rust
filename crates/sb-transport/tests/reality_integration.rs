@@ -2,8 +2,8 @@
 
 #[cfg(feature = "transport_reality")]
 mod reality_tests {
-    use sb_transport::{RealityDialer, TcpDialer};
     use sb_tls::RealityClientConfig;
+    use sb_transport::{RealityDialer, TcpDialer};
 
     #[test]
     fn test_reality_dialer_creation() {

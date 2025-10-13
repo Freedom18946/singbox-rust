@@ -12,9 +12,9 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 // Import VLESS adapters
-use sb_adapters::outbound::vless::{VlessConfig, VlessConnector, FlowControl, Encryption};
 use sb_adapters::inbound::vless::VlessInboundConfig;
-use sb_adapters::outbound::{OutboundConnector, Target, DialOpts};
+use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
+use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
@@ -140,10 +140,7 @@ async fn test_vless_multiplex_single_stream() {
     let mut response = vec![0u8; test_data.len()];
     stream.read_exact(&mut response).await.unwrap();
 
-    assert_eq!(
-        response, test_data,
-        "Echo response should match sent data"
-    );
+    assert_eq!(response, test_data, "Echo response should match sent data");
 }
 
 #[tokio::test]

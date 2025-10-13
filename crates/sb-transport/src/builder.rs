@@ -82,7 +82,9 @@ impl TransportBuilder {
     #[cfg(feature = "transport_httpupgrade")]
     pub fn http_upgrade(self, config: crate::httpupgrade::HttpUpgradeConfig) -> Self {
         let dialer = crate::httpupgrade::HttpUpgradeDialer::new(config, self.inner);
-        Self { inner: Box::new(dialer) }
+        Self {
+            inner: Box::new(dialer),
+        }
     }
 
     /// Wrap with Multiplex (yamux) layer (requires `transport_mux` feature)
@@ -99,7 +101,9 @@ impl TransportBuilder {
     #[cfg(feature = "transport_grpc")]
     pub fn grpc(self, config: crate::grpc::GrpcConfig) -> Self {
         let dialer = crate::grpc::GrpcDialer::new(config);
-        Self { inner: Box::new(dialer) }
+        Self {
+            inner: Box::new(dialer),
+        }
     }
 
     /// Return the composed dialer

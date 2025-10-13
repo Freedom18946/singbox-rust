@@ -10,8 +10,8 @@
 
 #[cfg(feature = "transport_reality")]
 fn main() {
-    use sb_transport::{RealityDialer, TcpDialer};
     use sb_tls::RealityClientConfig;
+    use sb_transport::{RealityDialer, TcpDialer};
 
     println!("=== REALITY TLS Dialer Example ===\n");
 
@@ -20,8 +20,7 @@ fn main() {
     let config = RealityClientConfig {
         target: "www.apple.com".to_string(),
         server_name: "www.apple.com".to_string(),
-        public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-            .to_string(),
+        public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
         short_id: Some("01ab".to_string()),
         fingerprint: "chrome".to_string(),
         alpn: vec!["h2".to_string(), "http/1.1".to_string()],
@@ -43,7 +42,7 @@ fn main() {
 
     // Example 2: Create REALITY dialer from environment variables
     println!("2. Creating REALITY dialer from environment variables:");
-    
+
     // Set environment variables
     std::env::set_var("SB_REALITY_TARGET", "www.cloudflare.com");
     std::env::set_var(
@@ -57,8 +56,14 @@ fn main() {
         Ok(dialer) => {
             println!("   ✓ REALITY dialer created from environment");
             println!("   - Target: {}", dialer.connector.config().target);
-            println!("   - Server Name: {}", dialer.connector.config().server_name);
-            println!("   - Fingerprint: {}", dialer.connector.config().fingerprint);
+            println!(
+                "   - Server Name: {}",
+                dialer.connector.config().server_name
+            );
+            println!(
+                "   - Fingerprint: {}",
+                dialer.connector.config().fingerprint
+            );
         }
         Err(e) => {
             println!("   ✗ Failed to create dialer: {}", e);
@@ -75,7 +80,7 @@ fn main() {
 
     // Example 3: Configuration validation
     println!("3. Configuration validation:");
-    
+
     let invalid_config = RealityClientConfig {
         target: "".to_string(), // Invalid: empty target
         server_name: "www.example.com".to_string(),

@@ -146,22 +146,23 @@ impl DirectForward {
             }
 
             // Receive packet from client
-            let (n, src_addr) = match timeout(Duration::from_secs(1), socket.recv_from(&mut buf))
-                .await
-            {
-                Ok(Ok(result)) => result,
-                Ok(Err(e)) => {
-                    tracing::warn!(error=%e, "direct inbound UDP: recv error");
-                    continue;
-                }
-                Err(_) => continue, // timeout, check shutdown flag
-            };
+            let (n, src_addr) =
+                match timeout(Duration::from_secs(1), socket.recv_from(&mut buf)).await {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(e)) => {
+                        tracing::warn!(error=%e, "direct inbound UDP: recv error");
+                        continue;
+                    }
+                    Err(_) => continue, // timeout, check shutdown flag
+                };
 
             let packet = &buf[..n];
             tracing::trace!(src=%src_addr, len=n, "direct inbound UDP: received packet");
 
             // Get or create session for this client
-            let upstream_socket = self.get_or_create_udp_session(src_addr, socket.clone()).await?;
+            let upstream_socket = self
+                .get_or_create_udp_session(src_addr, socket.clone())
+                .await?;
 
             // Forward packet to destination
             let dst_addr = format!("{}:{}", self.dst_host, self.dst_port);
