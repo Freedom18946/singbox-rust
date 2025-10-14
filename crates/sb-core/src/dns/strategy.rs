@@ -474,6 +474,7 @@ mod tests {
             self
         }
 
+        #[allow(dead_code)]
         fn set_healthy(mut self, healthy: bool) -> Self {
             self.healthy = healthy;
             self

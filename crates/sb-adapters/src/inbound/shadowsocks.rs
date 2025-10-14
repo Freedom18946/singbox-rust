@@ -26,7 +26,6 @@ use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
@@ -275,7 +274,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
     );
 
     // If multiplex is enabled, wrap the listener
-    if let Some(mux_config) = cfg.multiplex.clone() {
+    if let Some(_mux_config) = cfg.multiplex.clone() {
         info!("shadowsocks: multiplex enabled");
 
         // Note: Multiplex wrapping over non-TCP transports needs special handling
@@ -344,16 +343,6 @@ async fn handle_conn_stream(
     cipher: AeadCipherKind,
     master_key: &[u8],
     cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send),
-    peer: SocketAddr,
-) -> Result<()> {
-    handle_conn_impl(_cfg, cipher, master_key, cli, peer).await
-}
-
-async fn handle_conn(
-    _cfg: &ShadowsocksInboundConfig,
-    cipher: AeadCipherKind,
-    master_key: &[u8],
-    cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
     peer: SocketAddr,
 ) -> Result<()> {
     handle_conn_impl(_cfg, cipher, master_key, cli, peer).await

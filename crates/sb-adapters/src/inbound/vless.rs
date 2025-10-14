@@ -16,7 +16,6 @@ use anyhow::{anyhow, Result};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
@@ -143,14 +142,6 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         }
     }
     Ok(())
-}
-
-async fn handle_conn(
-    cfg: &VlessInboundConfig,
-    cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
-    peer: SocketAddr,
-) -> Result<()> {
-    handle_conn_impl(cfg, cli, peer).await
 }
 
 // Helper function to handle connections from generic streams (for V2Ray transport support)

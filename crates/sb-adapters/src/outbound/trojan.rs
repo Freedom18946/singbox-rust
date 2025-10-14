@@ -101,19 +101,28 @@ pub struct TrojanConfig {
 }
 
 /// Trojan outbound connector
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct TrojanConnector {
     _config: Option<TrojanConfig>,
     /// Transport dialer with optional TLS and Multiplex layers
-    #[cfg(feature = "dep:sb-transport")]
+    #[cfg(feature = "sb-transport")]
     dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
+}
+
+impl std::fmt::Debug for TrojanConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TrojanConnector")
+            .field("_config", &self._config)
+            .field("dialer", &"<dialer>")
+            .finish()
+    }
 }
 
 impl TrojanConnector {
     pub fn new(config: TrojanConfig) -> Self {
         // Create dialer with transport layer and multiplex layers
         // Note: TLS is handled separately for Trojan (mandatory protocol requirement)
-        #[cfg(feature = "dep:sb-transport")]
+        #[cfg(feature = "sb-transport")]
         let dialer = {
             let tls_config = None; // TLS handled separately in dial()
 
@@ -131,7 +140,7 @@ impl TrojanConnector {
 
         Self {
             _config: Some(config),
-            #[cfg(feature = "dep:sb-transport")]
+            #[cfg(feature = "sb-transport")]
             dialer,
         }
     }
@@ -270,7 +279,7 @@ impl TrojanConnector {
             .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
 
         // Create Trojan UDP socket wrapper
-        let trojan_udp = TrojanUdpSocket::new(Arc::new(udp_socket), config.password.clone())?;
+        let trojan_udp = TrojanUdpSocket::new(Arc::new(udp_socket))?;
 
         Ok(Box::new(trojan_udp))
     }
@@ -327,16 +336,17 @@ impl OutboundConnector for TrojanConnector {
                 .parse()
                 .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
 
-            #[cfg(feature = "dep:sb-transport")]
+            #[cfg(feature = "sb-transport")]
             let base_stream = {
                 if let Some(ref dialer) = self.dialer {
-                    tokio::time::timeout(
+                    let stream = tokio::time::timeout(
                         timeout,
                         dialer.connect(&server_addr.ip().to_string(), server_addr.port()),
                     )
                     .await
                     .map_err(|_| AdapterError::Timeout(timeout))?
-                    .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?
+                    .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
+                    crate::traits::from_transport_stream(stream)
                 } else {
                     // Fallback to direct TCP connection
                     let tcp_stream = tokio::time::timeout(
@@ -350,7 +360,7 @@ impl OutboundConnector for TrojanConnector {
                 }
             };
 
-            #[cfg(not(feature = "dep:sb-transport"))]
+            #[cfg(not(feature = "sb-transport"))]
             let base_stream = {
                 let tcp_stream =
                     tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&config.server))
@@ -451,16 +461,14 @@ impl OutboundConnector for TrojanConnector {
 #[derive(Debug)]
 pub struct TrojanUdpSocket {
     socket: Arc<tokio::net::UdpSocket>,
-    password: String,
     target_addr: tokio::sync::Mutex<Option<Target>>,
 }
 
 #[cfg(feature = "adapter-trojan")]
 impl TrojanUdpSocket {
-    pub fn new(socket: Arc<tokio::net::UdpSocket>, password: String) -> Result<Self> {
+    pub fn new(socket: Arc<tokio::net::UdpSocket>) -> Result<Self> {
         Ok(Self {
             socket,
-            password,
             target_addr: tokio::sync::Mutex::new(None),
         })
     }

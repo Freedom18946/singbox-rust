@@ -292,6 +292,118 @@ impl AsyncWrite for GrpcStreamAdapter {
     }
 }
 
+// ============================================================================
+// Server-side gRPC implementation
+// ============================================================================
+
+/// gRPC server configuration
+#[derive(Debug, Clone)]
+pub struct GrpcServerConfig {
+    /// Service name
+    pub service_name: String,
+    /// Method name
+    pub method_name: String,
+}
+
+impl Default for GrpcServerConfig {
+    fn default() -> Self {
+        Self {
+            service_name: "TunnelService".to_string(),
+            method_name: "Tunnel".to_string(),
+        }
+    }
+}
+
+/// gRPC server for accepting inbound connections
+///
+/// This server accepts incoming gRPC bidirectional streaming connections
+/// and converts them to IoStream instances for use with inbound adapters.
+pub struct GrpcServer {
+    config: GrpcServerConfig,
+    stream_rx: std::sync::Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<IoStream>>>,
+    local_addr: std::net::SocketAddr,
+}
+
+impl GrpcServer {
+    /// Bind a gRPC server to the specified address
+    pub async fn bind(
+        bind_addr: std::net::SocketAddr,
+        config: GrpcServerConfig,
+    ) -> std::io::Result<Self> {
+        use tokio::net::TcpListener;
+
+        // Create TCP listener for the gRPC server
+        let tcp_listener = TcpListener::bind(bind_addr).await?;
+        let local_addr = tcp_listener.local_addr()?;
+
+        // Create channel for distributing incoming streams
+        let (stream_tx, stream_rx) = mpsc::unbounded_channel();
+
+        // Clone config for the background task
+        let config_clone = config.clone();
+
+        // Start background task to accept TCP connections and handle gRPC
+        tokio::spawn(async move {
+            loop {
+                match tcp_listener.accept().await {
+                    Ok((tcp_stream, peer_addr)) => {
+                        debug!("Accepted gRPC connection from {}", peer_addr);
+                        let stream_tx = stream_tx.clone();
+                        let config = config_clone.clone();
+
+                        tokio::spawn(async move {
+                            // TODO: Implement proper gRPC server-side handling with tonic server
+                            // For now, this is a placeholder that wraps TCP stream directly
+                            tracing::warn!(
+                                "gRPC server-side handling not yet fully implemented for {} (service: {})",
+                                peer_addr,
+                                config.service_name
+                            );
+
+                            // Placeholder: wrap TCP stream directly for basic functionality
+                            // In production, this should handle gRPC framing and service dispatch
+                            let stream: IoStream = Box::new(tcp_stream);
+                            if stream_tx.send(stream).is_err() {
+                                tracing::warn!("Failed to send stream, listener may be closed");
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to accept gRPC connection: {}", e);
+                        continue;
+                    }
+                }
+            }
+        });
+
+        Ok(Self {
+            config,
+            stream_rx: std::sync::Arc::new(tokio::sync::Mutex::new(stream_rx)),
+            local_addr,
+        })
+    }
+
+    /// Accept a new incoming stream
+    pub async fn accept(&self) -> Result<IoStream, DialError> {
+        let mut stream_rx = self.stream_rx.lock().await;
+
+        stream_rx
+            .recv()
+            .await
+            .ok_or_else(|| DialError::Other("Stream channel closed".to_string()))
+    }
+
+    /// Get the local address this server is bound to
+    pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        Ok(self.local_addr)
+    }
+
+    /// Get the server configuration
+    pub fn config(&self) -> &GrpcServerConfig {
+        &self.config
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -16,7 +16,7 @@ async fn trojan_connector_writes_hello() {
         port: 443,
     };
 
-    let mut cli = c.connect(&target).await.expect("connect");
+    let cli = c.connect(&target).await.expect("connect");
 
     // 读取服务端视角收到的首包
     let mut buf = vec![0u8; 128];

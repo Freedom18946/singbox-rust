@@ -40,7 +40,9 @@ mod t_scaffold {
                 port: socks_port,
                 sniff: false,
                 udp: false,
-                auth: None,
+                basic_auth: None,
+                override_host: None,
+                override_port: None,
             }],
             outbounds: vec![OutboundIR {
                 ty: OutboundType::Direct,
@@ -48,6 +50,7 @@ mod t_scaffold {
                 port: None,
                 udp: None,
                 name: Some("direct".into()),
+                ..Default::default()
             }],
             route: RouteIR::default(),
         };

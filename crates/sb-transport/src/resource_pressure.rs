@@ -308,7 +308,7 @@ pub mod error_analysis {
 mod tests {
     use super::*;
     use std::time::Duration;
-    use tokio::time::{sleep, timeout};
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_pressure_tracker_basic() {

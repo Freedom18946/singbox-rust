@@ -1,7 +1,6 @@
 //! Simple test for DNS bridge functionality
 
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 // Mock implementations for testing
@@ -14,6 +13,7 @@ struct MockDnsAnswer {
 #[async_trait::async_trait]
 trait MockResolver: Send + Sync {
     async fn resolve(&self, domain: &str) -> anyhow::Result<MockDnsAnswer>;
+    #[allow(dead_code)]
     fn name(&self) -> &str;
 }
 

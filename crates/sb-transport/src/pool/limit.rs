@@ -55,13 +55,13 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::dialer::{DialError, FnDialer};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    
 
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn reject_when_queue_times_out() {
+        use crate::dialer::{DialError, FnDialer};
+        use std::sync::atomic::{AtomicUsize, Ordering};
         let ctr = Arc::new(AtomicUsize::new(0));
         let d = FnDialer::new({
             let ctr = ctr.clone();
@@ -83,6 +83,7 @@ mod tests {
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn queued_then_ok() {
+        use crate::dialer::{DialError, FnDialer};
         let d = FnDialer::new(|_h, _p| {
             Box::pin(async {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -98,6 +99,7 @@ mod tests {
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn cancel_releases_queue() {
+        use crate::dialer::{DialError, FnDialer};
         let d = FnDialer::new(|_h, _p| {
             Box::pin(async {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;

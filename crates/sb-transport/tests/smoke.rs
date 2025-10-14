@@ -47,7 +47,7 @@
 #[tokio::test]
 async fn tls_dialer_compiles() {
     // 导入必要的类型和 trait
-    use sb_transport::dialer::{Dialer, TcpDialer};
+    use sb_transport::dialer::TcpDialer;
     use sb_transport::tls::{smoke_empty_roots_config, TlsDialer};
 
     // 创建 TLS 拨号器实例

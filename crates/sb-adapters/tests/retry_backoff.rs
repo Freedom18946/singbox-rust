@@ -6,13 +6,13 @@
 
 use sb_adapters::{
     outbound::socks5::Socks5Connector,
-    traits::{DialOpts, OutboundConnector, ResolveMode, RetryPolicy, Target, TransportKind},
+    traits::{DialOpts, OutboundConnector, ResolveMode, RetryPolicy, Target},
     Result,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 
 /// Mock SOCKS5 server that fails N times before succeeding
 struct FailingMockServer {

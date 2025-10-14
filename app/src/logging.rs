@@ -315,7 +315,7 @@ pub fn flush_logs_sync() {
 mod tests {
     use super::*;
     use serial_test::serial;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    
 
     #[test]
     #[serial]

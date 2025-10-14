@@ -145,6 +145,7 @@ pub struct StressTestConfig {
     pub connection_rate: usize, // connections per second
     pub concurrent_limit: usize,
     pub payload_size: usize,
+    #[allow(dead_code)]
     pub enable_monitoring: bool,
 }
 
@@ -316,6 +317,7 @@ pub async fn monitor_resources(duration: Duration, interval: Duration) -> Resour
 /// Single resource measurement sample
 #[derive(Debug, Clone)]
 pub struct ResourceSample {
+    #[allow(dead_code)]
     pub timestamp: Instant,
     pub open_fds: usize,
     pub memory_kb: usize,

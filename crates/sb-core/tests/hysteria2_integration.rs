@@ -9,15 +9,12 @@
 //! - Compatibility with Go version
 
 #[cfg(feature = "out_hysteria2")]
-use sb_core::outbound::crypto_types::HostPort as CryptoHostPort;
-#[cfg(feature = "out_hysteria2")]
 use sb_core::outbound::hysteria2::{
     BandwidthLimiter, BrutalConfig, CongestionControl, Hysteria2Config, Hysteria2Outbound,
 };
 #[cfg(feature = "out_hysteria2")]
-use sb_core::outbound::types::{HostPort, OutboundTcp};
+use sb_core::outbound::types::OutboundTcp;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
 
 #[cfg(feature = "out_hysteria2")]
 #[tokio::test]

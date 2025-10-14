@@ -4,7 +4,7 @@
 //! to a fixed destination address.
 
 use sb_core::adapter::InboundService;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};

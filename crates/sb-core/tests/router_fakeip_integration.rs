@@ -7,8 +7,6 @@
 //! - Fallback to IP routing when domain rules don't match
 //! - Combined DNS + FakeIP + routing scenarios
 
-use std::net::IpAddr;
-use std::sync::Arc;
 
 use sb_core::dns::fakeip;
 use sb_core::router::RouterHandle;

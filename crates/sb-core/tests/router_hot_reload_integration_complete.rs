@@ -1,7 +1,6 @@
 //! Comprehensive integration test for hot reload functionality
 //! Validates all requirements for Task 16
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -9,7 +8,7 @@ use tokio::fs;
 use tokio::time::sleep;
 
 use sb_core::router::{
-    router_build_index_from_str, HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle,
+    HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle,
 };
 
 #[tokio::test]
@@ -41,7 +40,6 @@ async fn test_hot_reload_complete_functionality() {
 
     // Test event monitoring
     let event_rx = manager.event_receiver();
-    let mut events = Vec::new();
 
     // Spawn event collector
     let events_collector = {
@@ -99,7 +97,7 @@ async fn test_hot_reload_complete_functionality() {
 
     // Stop manager and collect events
     manager.stop().await;
-    events = events_collector.await.unwrap();
+    let events = events_collector.await.unwrap();
 
     // Verify events were generated
     assert!(
@@ -237,7 +235,7 @@ async fn test_hot_reload_rollback_mechanism() {
     let router_handle = Arc::new(RouterHandle::new_mock());
     let mut manager = HotReloadManager::new(config, router_handle.clone());
 
-    let event_rx = manager.event_receiver();
+    let _event_rx = manager.event_receiver();
 
     manager.start().await.unwrap();
     sleep(Duration::from_millis(100)).await;

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 #[derive(ValueEnum, Clone, Debug)]
-enum Net {
+pub enum Net {
     Tcp,
     Udp,
 }

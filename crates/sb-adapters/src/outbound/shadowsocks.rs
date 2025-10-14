@@ -195,7 +195,6 @@ impl ShadowsocksConnector {
                 Arc::new(local_socket),
                 self.cipher_method.clone(),
                 self.key.clone(),
-                server_addr,
             )?;
 
             Ok(Box::new(udp_socket))
@@ -596,7 +595,6 @@ pub struct ShadowsocksUdpSocket {
     socket: Arc<UdpSocket>,
     cipher_method: CipherMethod,
     key: Vec<u8>,
-    server_addr: SocketAddr,
     /// Target address for UDP relay (stored during creation)
     target_addr: tokio::sync::Mutex<Option<Target>>,
 }
@@ -607,13 +605,11 @@ impl ShadowsocksUdpSocket {
         socket: Arc<UdpSocket>,
         cipher_method: CipherMethod,
         key: Vec<u8>,
-        server_addr: SocketAddr,
     ) -> Result<Self> {
         Ok(Self {
             socket,
             cipher_method,
             key,
-            server_addr,
             target_addr: tokio::sync::Mutex::new(None),
         })
     }
@@ -898,7 +894,6 @@ mod tests {
             socket,
             CipherMethod::Aes256Gcm,
             vec![0u8; 32],
-            "127.0.0.1:8388".parse().unwrap(),
         )
         .unwrap();
 
@@ -926,7 +921,6 @@ mod tests {
             socket,
             CipherMethod::Aes256Gcm,
             vec![0u8; 32],
-            "127.0.0.1:8388".parse().unwrap(),
         )
         .unwrap();
 
@@ -954,7 +948,6 @@ mod tests {
             socket,
             CipherMethod::ChaCha20Poly1305,
             vec![0u8; 32],
-            "127.0.0.1:8388".parse().unwrap(),
         )
         .unwrap();
 
@@ -986,7 +979,6 @@ mod tests {
             socket,
             CipherMethod::Aes256Gcm,
             vec![0u8; 32],
-            "127.0.0.1:8388".parse().unwrap(),
         )
         .unwrap();
 

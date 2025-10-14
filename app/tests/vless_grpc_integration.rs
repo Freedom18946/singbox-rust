@@ -29,12 +29,7 @@ async fn test_vless_grpc_config_creation() {
         timeout: Some(30),
         tcp_fast_open: false,
         transport_layer: TransportConfig::Grpc(grpc_config),
-        #[cfg(feature = "transport_mux")]
-        multiplex: None,
-        #[cfg(feature = "tls_reality")]
-        reality: None,
-        #[cfg(feature = "transport_ech")]
-        ech: None,
+        ..Default::default()
     };
 
     assert_eq!(config.server_addr, server_addr);
@@ -62,19 +57,7 @@ async fn test_vless_grpc_with_multiplex() {
             method_name: "Tunnel".to_string(),
             metadata: vec![],
         }),
-        #[cfg(feature = "transport_mux")]
-        multiplex: Some(sb_transport::multiplex::MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
-            max_connections: 4,
-            max_streams: 16,
-            padding: false,
-            brutal: None,
-        }),
-        #[cfg(feature = "tls_reality")]
-        reality: None,
-        #[cfg(feature = "transport_ech")]
-        ech: None,
+        ..Default::default()
     };
 
     let connector = VlessConnector::new(config);
@@ -106,12 +89,7 @@ async fn test_vless_grpc_flow_control_modes() {
                 method_name: "Tunnel".to_string(),
                 metadata: vec![],
             }),
-            #[cfg(feature = "transport_mux")]
-            multiplex: None,
-            #[cfg(feature = "tls_reality")]
-            reality: None,
-            #[cfg(feature = "transport_ech")]
-            ech: None,
+            ..Default::default()
         };
 
         let connector = VlessConnector::new(config);
@@ -134,12 +112,7 @@ async fn test_vless_tcp_vs_grpc() {
         timeout: Some(30),
         tcp_fast_open: false,
         transport_layer: TransportConfig::Tcp,
-        #[cfg(feature = "transport_mux")]
-        multiplex: None,
-        #[cfg(feature = "tls_reality")]
-        reality: None,
-        #[cfg(feature = "transport_ech")]
-        ech: None,
+        ..Default::default()
     };
 
     // gRPC configuration
@@ -156,12 +129,7 @@ async fn test_vless_tcp_vs_grpc() {
             method_name: "Tunnel".to_string(),
             metadata: vec![],
         }),
-        #[cfg(feature = "transport_mux")]
-        multiplex: None,
-        #[cfg(feature = "tls_reality")]
-        reality: None,
-        #[cfg(feature = "transport_ech")]
-        ech: None,
+        ..Default::default()
     };
 
     let tcp_connector = VlessConnector::new(tcp_config);

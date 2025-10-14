@@ -19,6 +19,7 @@ use sb_adapters::outbound::vmess::{
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_adapters::transport_config::TransportConfig;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
 
 /// Helper: Start TCP echo server
@@ -61,11 +62,10 @@ async fn start_vmess_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
 
     let multiplex_config = if multiplex_enabled {
         Some(MultiplexServerConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
-            max_connections: 4,
-            max_streams: 16,
-            padding: false,
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
             brutal: None,
         })
     } else {
@@ -74,15 +74,11 @@ async fn start_vmess_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
 
     let config = VmessInboundConfig {
         listen: addr,
-        users: vec![VmessAuth {
-            uuid: test_uuid,
-            alter_id: 0,
-            security: Security::Auto,
-            additional_data: None,
-        }],
+        uuid: test_uuid,
+        security: "aes-128-gcm".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: multiplex_config,
-        tls: None,
+        transport_layer: None,
     };
 
     tokio::spawn(async move {
@@ -116,11 +112,16 @@ async fn test_vmess_multiplex_single_stream() {
         timeout: Some(Duration::from_secs(10)),
         packet_encoding: false,
         headers: Default::default(),
+        transport_layer: TransportConfig::Tcp,
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
@@ -173,11 +174,16 @@ async fn test_vmess_multiplex_concurrent_streams() {
         timeout: Some(Duration::from_secs(10)),
         packet_encoding: false,
         headers: Default::default(),
+        transport_layer: TransportConfig::Tcp,
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
@@ -250,11 +256,16 @@ async fn test_vmess_multiplex_data_integrity() {
         timeout: Some(Duration::from_secs(10)),
         packet_encoding: false,
         headers: Default::default(),
+        transport_layer: TransportConfig::Tcp,
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
@@ -330,6 +341,7 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
             timeout: Some(Duration::from_secs(10)),
             packet_encoding: false,
             headers: Default::default(),
+            transport_layer: TransportConfig::Tcp,
             multiplex: None, // No multiplex
             tls: None,
         };
@@ -367,11 +379,16 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
             timeout: Some(Duration::from_secs(10)),
             packet_encoding: false,
             headers: Default::default(),
+            transport_layer: TransportConfig::Tcp,
             multiplex: Some(MultiplexConfig {
-                enabled: true,
-                protocol: "yamux".to_string(),
+                max_num_streams: 256,
+                initial_stream_window: 256 * 1024,
+                max_stream_window: 1024 * 1024,
+                enable_keepalive: true,
+                keepalive_interval: 30,
                 max_connections: 4,
-                max_streams: 16,
+                max_streams_per_connection: 16,
+                connection_idle_timeout: 300,
                 padding: false,
                 brutal: None,
             }),
@@ -424,11 +441,16 @@ async fn test_vmess_multiplex_security_levels() {
             timeout: Some(Duration::from_secs(10)),
             packet_encoding: false,
             headers: Default::default(),
+            transport_layer: TransportConfig::Tcp,
             multiplex: Some(MultiplexConfig {
-                enabled: true,
-                protocol: "yamux".to_string(),
+                max_num_streams: 256,
+                initial_stream_window: 256 * 1024,
+                max_stream_window: 1024 * 1024,
+                enable_keepalive: true,
+                keepalive_interval: 30,
                 max_connections: 4,
-                max_streams: 16,
+                max_streams_per_connection: 16,
+                connection_idle_timeout: 300,
                 padding: false,
                 brutal: None,
             }),
@@ -480,11 +502,16 @@ async fn test_vmess_multiplex_alter_id_variations() {
             timeout: Some(Duration::from_secs(10)),
             packet_encoding: false,
             headers: Default::default(),
+            transport_layer: TransportConfig::Tcp,
             multiplex: Some(MultiplexConfig {
-                enabled: true,
-                protocol: "yamux".to_string(),
+                max_num_streams: 256,
+                initial_stream_window: 256 * 1024,
+                max_stream_window: 1024 * 1024,
+                enable_keepalive: true,
+                keepalive_interval: 30,
                 max_connections: 4,
-                max_streams: 16,
+                max_streams_per_connection: 16,
+                connection_idle_timeout: 300,
                 padding: false,
                 brutal: None,
             }),

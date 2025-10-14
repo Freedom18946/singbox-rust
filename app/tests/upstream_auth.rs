@@ -63,8 +63,6 @@ fn start_fake_http_up_with_auth(
                     }
                     // read headers; check Proxy-Authorization present
                     let mut has_auth = false;
-                    let mut pr = 0u8;
-                    let mut blank = 0u8;
                     let mut buf = [0u8; 1];
                     let mut hdr_line = Vec::new();
                     let mut last_cr = false;
@@ -94,7 +92,7 @@ fn start_fake_http_up_with_auth(
                         return;
                     }
                     let _ = s.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n");
-                    let mut up = TcpStream::connect(echo).unwrap();
+                    let up = TcpStream::connect(echo).unwrap();
                     let (mut ra, mut wa) = (s.try_clone().unwrap(), s);
                     let (mut rb, mut wb) = (up.try_clone().unwrap(), up);
                     let t1 = thread::spawn(move || {

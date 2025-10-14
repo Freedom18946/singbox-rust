@@ -8,27 +8,11 @@
 
 use sb_transport::dialer::{Dialer, TcpDialer};
 use std::env;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener};
+use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::time::{sleep, timeout};
-
-/// Create a test server that listens on both IPv4 and IPv6
-fn create_test_servers() -> (u16, TcpListener, TcpListener) {
-    let ipv4_listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind IPv4 listener");
-    let ipv6_listener = TcpListener::bind("[::1]:0").expect("Failed to bind IPv6 listener");
-
-    let port = ipv4_listener.local_addr().unwrap().port();
-
-    // Bind IPv6 to same port
-    drop(ipv6_listener);
-    let ipv6_listener = TcpListener::bind(format!("[::1]:{}", port))
-        .expect("Failed to bind IPv6 listener to same port");
-
-    (port, ipv4_listener, ipv6_listener)
-}
 
 #[tokio::test]
 async fn test_happy_eyeballs_ipv4_only() {

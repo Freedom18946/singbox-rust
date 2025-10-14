@@ -1,8 +1,9 @@
 // app/tests/check_cli.rs
 use assert_cmd::Command as AssertCommand;
-use std::{fs, process::Command};
+use std::fs;
 use tempfile::NamedTempFile;
 
+#[allow(dead_code)]
 fn bin() -> String {
     // Use assert_cmd to find the binary instead of hardcoded path
     "check".to_string()
@@ -15,7 +16,7 @@ inbounds: [ { type: http, listen: "127.0.0.1", port: 18081 } ]
 outbounds: [ { type: direct } ]
 route: { rules: [ { outbound: "direct" } ] }
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), good).unwrap();
 
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
@@ -32,7 +33,7 @@ outbounds: [ { type: socks, server: "127.0.0.1", port: 1080 } ]
 route: { rules: [ { when: { proto: "tcp" }, to: "proxy:up#1" } ] }
 dns: { mode: bad }
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     cmd.args([
@@ -54,7 +55,7 @@ outbounds: [ { type: direct } ]
 route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     cmd.args([
@@ -76,7 +77,7 @@ route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field: "should_fail"
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     cmd.args([
@@ -98,7 +99,7 @@ route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field: "should_fail"
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     cmd.args([
@@ -149,7 +150,7 @@ route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field: "should_fail"
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     let out = cmd
@@ -195,7 +196,7 @@ dns: { mode: system }
 unknown_field_1: "error1"
 unknown_field_2: "error2"
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad_config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     let out = cmd
@@ -256,7 +257,7 @@ outbounds: [ { type: direct } ]
 route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), type_error_config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     let out = cmd
@@ -302,7 +303,7 @@ route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 invalid_field: "test"
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), bad_config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     let out = cmd

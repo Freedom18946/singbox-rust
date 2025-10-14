@@ -573,6 +573,8 @@ pub struct MultiplexListener {
     config: MultiplexServerConfig,
     // Channel for distributing incoming streams
     stream_rx: Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<IoStream>>>,
+    // Keep stream_tx alive to prevent channel from closing
+    #[allow(dead_code)]
     stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
     local_addr: std::net::SocketAddr,
 }
@@ -599,6 +601,11 @@ impl MultiplexListener {
     /// Create a multiplex listener with default configuration
     pub fn with_default_config(tcp_listener: tokio::net::TcpListener) -> Self {
         Self::new(tcp_listener, MultiplexServerConfig::default())
+    }
+
+    /// Get the server configuration
+    pub fn config(&self) -> &MultiplexServerConfig {
+        &self.config
     }
 
     /// Create yamux configuration for server with optional Brutal congestion control

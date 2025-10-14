@@ -187,7 +187,7 @@ fn test_hysteria2_config_compatibility() {
 
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
-        if let Some((go_success, go_output)) = go_result {
+        if let Some((go_success, _go_output)) = go_result {
             println!("Rust result: {}", rust_success);
             println!("Go result: {}", go_success);
             assert_eq!(
@@ -249,7 +249,7 @@ fn test_ssh_config_compatibility() {
 
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
-        if let Some((go_success, go_output)) = go_result {
+        if let Some((go_success, _go_output)) = go_result {
             println!("Rust result: {}", rust_success);
             println!("Go result: {}", go_success);
             assert_eq!(
@@ -312,7 +312,7 @@ fn test_tuic_config_compatibility() {
 
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
-        if let Some((go_success, go_output)) = go_result {
+        if let Some((go_success, _go_output)) = go_result {
             println!("Rust result: {}", rust_success);
             println!("Go result: {}", go_success);
             assert_eq!(
@@ -381,7 +381,7 @@ fn test_ech_config_compatibility() {
 
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
-        if let Some((go_success, go_output)) = go_result {
+        if let Some((go_success, _go_output)) = go_result {
             println!("Rust result: {}", rust_success);
             println!("Go result: {}", go_success);
             assert_eq!(
@@ -445,7 +445,7 @@ fn test_hysteria_v1_config_compatibility() {
 
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
-        if let Some((go_success, go_output)) = go_result {
+        if let Some((go_success, _go_output)) = go_result {
             println!("Rust result: {}", rust_success);
             println!("Go result: {}", go_success);
             assert_eq!(
@@ -556,7 +556,7 @@ fn test_mixed_p0_protocols_compatibility() {
 
     if let Some(go_bin_path) = go_bin() {
         let go_result = run_check(&go_bin_path, tmp.path().to_str().unwrap());
-        if let Some((go_success, go_output)) = go_result {
+        if let Some((go_success, _go_output)) = go_result {
             println!("Rust result: {}", rust_success);
             println!("Go result: {}", go_success);
             assert_eq!(

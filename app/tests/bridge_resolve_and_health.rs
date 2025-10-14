@@ -4,7 +4,6 @@ use sb_core::routing::engine::Engine;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;
-use std::time::Duration;
 
 #[test]
 fn rule_selects_named_outbound() {
@@ -20,7 +19,7 @@ fn rule_selects_named_outbound() {
             }
         }
     };
-    let echo_addr = l.local_addr().unwrap();
+    let _echo_addr = l.local_addr().unwrap();
     thread::spawn(move || {
         for c in l.incoming() {
             if let Ok(mut s) = c {

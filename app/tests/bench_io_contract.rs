@@ -1,9 +1,8 @@
 #![cfg(feature = "dev-cli")]
-use assert_cmd::prelude::*;
 use std::process::Command;
 
 fn bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_app"));
+    let cmd = Command::new(env!("CARGO_BIN_EXE_app"));
     cmd
 }
 

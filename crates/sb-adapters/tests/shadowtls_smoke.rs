@@ -1,7 +1,7 @@
 #![cfg(feature = "adapter-shadowtls")]
 
 use sb_adapters::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
-use sb_adapters::traits::{DialOpts, OutboundConnector, Target, TransportKind};
+use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
 
 #[tokio::test]
 #[ignore]

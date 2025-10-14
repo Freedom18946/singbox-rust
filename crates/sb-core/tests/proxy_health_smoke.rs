@@ -148,7 +148,7 @@ fn test_health_status_thread_safety() {
     });
 
     // Access from main thread
-    let is_up = status.is_up();
+    let _is_up = status.is_up();
 
     handle.join().unwrap();
 

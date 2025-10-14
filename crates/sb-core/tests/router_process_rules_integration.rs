@@ -58,6 +58,7 @@ async fn test_process_path_routing() {
             },
         ];
 
+        let _rules_clone = rules.clone();
         let engine = Engine::build(rules);
         let router = ProcessRouter::new(engine).expect("Failed to create ProcessRouter");
 
@@ -98,10 +99,10 @@ async fn test_process_path_regex_routing() {
             },
         ];
 
+        let _rules_clone = rules.clone();
         let engine = Engine::build(rules);
-        let router = ProcessRouter::new(engine).expect("Failed to create ProcessRouter");
+        let _router = ProcessRouter::new(engine).expect("Failed to create ProcessRouter");
 
-        let eng = router.engine.read().await;
         let matching_ctx = RouteCtx {
             domain: Some("example.com"),
             ip: None,
@@ -114,11 +115,10 @@ async fn test_process_path_regex_routing() {
             auth_user: None,
             query_type: None,
         };
-        let decision = eng.decide(&matching_ctx);
+        let engine_for_decide = Engine::build(rules_clone.clone());
+        let decision = engine_for_decide.decide(&matching_ctx);
         assert!(matches!(decision, Decision::Proxy(Some(ref name)) if name == "regex_proxy"));
-        drop(eng);
 
-        let eng = router.engine.read().await;
         let non_matching_ctx = RouteCtx {
             domain: Some("example.com"),
             ip: None,
@@ -131,7 +131,8 @@ async fn test_process_path_regex_routing() {
             auth_user: None,
             query_type: None,
         };
-        let decision = eng.decide(&non_matching_ctx);
+        let engine_for_decide2 = Engine::build(rules_clone);
+        let decision = engine_for_decide2.decide(&non_matching_ctx);
         assert!(matches!(decision, Decision::Direct));
     }
 }

@@ -1,6 +1,6 @@
 #[cfg(all(feature = "router_cache_explain", feature = "router_cache_lru_demo"))]
 mod explain_cache_tests {
-    use sb_core::router::engine::{decide_http_explain, DecisionExplain};
+    use sb_core::router::engine::decide_http_explain;
 
     #[test]
     fn test_decision_explain_structure() {

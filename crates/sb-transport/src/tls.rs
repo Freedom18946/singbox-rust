@@ -1218,7 +1218,7 @@ impl TlsTransport {
         config: &EchTlsConfig,
     ) -> Result<IoStream, DialError>
     where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
     {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;

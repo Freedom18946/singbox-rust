@@ -140,6 +140,19 @@ adapter-dns = []
 tls_reality = ["dep:sb-tls", "sb-tls/reality"]
 transport_ech = ["dep:sb-tls", "sb-tls/ech"]
 
+# Transport layer features (forward to sb-transport)
+transport_tls = ["dep:sb-transport", "sb-transport/transport_tls"]
+transport_reality = ["dep:sb-transport", "sb-transport/transport_reality"]
+transport_mux = ["dep:sb-transport", "sb-transport/transport_mux"]
+transport_ws = ["dep:sb-transport", "sb-transport/transport_ws"]
+transport_grpc = ["dep:sb-transport", "sb-transport/transport_grpc"]
+transport_httpupgrade = ["dep:sb-transport", "sb-transport/transport_httpupgrade"]
+transport_quic = ["dep:sb-transport", "sb-transport/transport_quic"]
+transport_h2 = ["dep:sb-transport", "sb-transport/transport_h2"]
+
+# Feature alias for sb-transport dependency detection
+sb-transport = ["dep:sb-transport"]
+
 [[bench]]
 name = "adapters_conn"
 harness = false

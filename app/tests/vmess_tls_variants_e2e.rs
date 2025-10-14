@@ -1,3 +1,5 @@
+#![cfg(feature = "vmess_tls_e2e")]
+
 //! E2E test for VMess with TLS variants
 //!
 //! Tests that VMess protocol correctly works with different TLS configurations:

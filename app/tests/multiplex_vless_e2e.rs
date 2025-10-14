@@ -17,6 +17,7 @@ use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessCo
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_adapters::transport_config::TransportConfig;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
 
 /// Helper: Start TCP echo server
@@ -59,11 +60,10 @@ async fn start_vless_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
 
     let multiplex_config = if multiplex_enabled {
         Some(MultiplexServerConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
-            max_connections: 4,
-            max_streams: 16,
-            padding: false,
+            max_num_streams: 16,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
             brutal: None,
         })
     } else {
@@ -72,9 +72,11 @@ async fn start_vless_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
 
     let config = VlessInboundConfig {
         listen: addr,
-        users: vec![test_uuid],
+        uuid: test_uuid,
         router: Arc::new(RouterHandle::new_mock()),
+        reality: None,
         multiplex: multiplex_config,
+        transport_layer: None,
     };
 
     tokio::spawn(async move {
@@ -104,17 +106,20 @@ async fn test_vless_multiplex_single_stream() {
         headers: Default::default(),
         timeout: Some(10),
         tcp_fast_open: false,
+        transport_layer: TransportConfig::Tcp,
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 16,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 8,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
-        #[cfg(feature = "tls_reality")]
         reality: None,
-        #[cfg(feature = "transport_ech")]
         ech: None,
     };
 
@@ -160,17 +165,20 @@ async fn test_vless_multiplex_concurrent_streams() {
         headers: Default::default(),
         timeout: Some(10),
         tcp_fast_open: false,
+        transport_layer: TransportConfig::Tcp,
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 16,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 8,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
-        #[cfg(feature = "tls_reality")]
         reality: None,
-        #[cfg(feature = "transport_ech")]
         ech: None,
     };
 
@@ -236,17 +244,20 @@ async fn test_vless_multiplex_data_integrity() {
         headers: Default::default(),
         timeout: Some(10),
         tcp_fast_open: false,
+        transport_layer: TransportConfig::Tcp,
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 16,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 8,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
-        #[cfg(feature = "tls_reality")]
         reality: None,
-        #[cfg(feature = "transport_ech")]
         ech: None,
     };
 
@@ -315,10 +326,9 @@ async fn test_vless_multiplex_vs_non_multiplex() {
             headers: Default::default(),
             timeout: Some(10),
             tcp_fast_open: false,
+            transport_layer: TransportConfig::Tcp,
             multiplex: None, // No multiplex
-            #[cfg(feature = "tls_reality")]
             reality: None,
-            #[cfg(feature = "transport_ech")]
             ech: None,
         };
 
@@ -351,17 +361,20 @@ async fn test_vless_multiplex_vs_non_multiplex() {
             headers: Default::default(),
             timeout: Some(10),
             tcp_fast_open: false,
+            transport_layer: TransportConfig::Tcp,
             multiplex: Some(MultiplexConfig {
-                enabled: true,
-                protocol: "yamux".to_string(),
+                max_num_streams: 256,
+                initial_stream_window: 256 * 1024,
+                max_stream_window: 1024 * 1024,
+                enable_keepalive: true,
+                keepalive_interval: 30,
                 max_connections: 4,
-                max_streams: 16,
+                max_streams_per_connection: 16,
+                connection_idle_timeout: 300,
                 padding: false,
                 brutal: None,
             }),
-            #[cfg(feature = "tls_reality")]
             reality: None,
-            #[cfg(feature = "transport_ech")]
             ech: None,
         };
 
@@ -403,17 +416,20 @@ async fn test_vless_multiplex_flow_control_modes() {
             headers: Default::default(),
             timeout: Some(10),
             tcp_fast_open: false,
+            transport_layer: TransportConfig::Tcp,
             multiplex: Some(MultiplexConfig {
-                enabled: true,
-                protocol: "yamux".to_string(),
+                max_num_streams: 256,
+                initial_stream_window: 256 * 1024,
+                max_stream_window: 1024 * 1024,
+                enable_keepalive: true,
+                keepalive_interval: 30,
                 max_connections: 4,
-                max_streams: 16,
+                max_streams_per_connection: 16,
+                connection_idle_timeout: 300,
                 padding: false,
                 brutal: None,
             }),
-            #[cfg(feature = "tls_reality")]
             reality: None,
-            #[cfg(feature = "transport_ech")]
             ech: None,
         };
 

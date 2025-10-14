@@ -3,7 +3,7 @@
 use sb_api::{
     clash::ClashApiServer,
     monitoring::{MonitoringSystem, ReportConfig},
-    types::{ApiConfig, Connection, ConnectionMetadata, LogEntry, TrafficStats},
+    types::{ApiConfig, Connection, ConnectionMetadata},
     v2ray::SimpleV2RayApiServer,
 };
 use std::{net::SocketAddr, time::Duration};
@@ -236,7 +236,7 @@ async fn test_clash_api_integration(
     );
 
     // Test that Clash API can receive monitoring updates
-    let mut traffic_rx = state.traffic_tx.subscribe();
+    let _traffic_rx = state.traffic_tx.subscribe();
 
     // Simulate traffic update through monitoring
     monitoring.bridge().update_traffic(5000, 10000).await;

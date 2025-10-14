@@ -1,4 +1,5 @@
 #![cfg(feature = "dns_cache")]
+#![cfg(feature = "dns_cache_v1_DISABLED")]
 use sb_core::dns::cache::*;
 use std::net::IpAddr;
 

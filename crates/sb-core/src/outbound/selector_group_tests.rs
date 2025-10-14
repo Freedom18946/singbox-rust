@@ -15,6 +15,7 @@ mod tests {
     /// Mock connector for testing
     #[derive(Debug)]
     struct MockConnector {
+        #[allow(dead_code)]
         name: String,
         delay_ms: u64,
         fail_count: Arc<AtomicUsize>,
@@ -31,6 +32,7 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)]
         fn with_failures(name: &str, delay_ms: u64, max_fails: usize) -> Self {
             Self {
                 name: name.to_string(),
@@ -117,7 +119,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_urltest_selector_latency_based() {
-        let mut members = vec![
+        let members = vec![
             create_test_member("fast", 10),
             create_test_member("medium", 50),
             create_test_member("slow", 100),
@@ -145,7 +147,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_urltest_skips_unhealthy() {
-        let mut members = vec![
+        let members = vec![
             create_test_member("fast-but-dead", 10),
             create_test_member("healthy", 50),
         ];
@@ -342,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_members_status() {
-        let mut members = vec![
+        let members = vec![
             create_test_member("proxy1", 10),
             create_test_member("proxy2", 20),
         ];

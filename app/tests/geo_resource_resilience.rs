@@ -7,7 +7,6 @@
 use serde_json::Value;
 use std::process::Command;
 use std::str;
-use tempfile::TempDir;
 
 // Helper to get the path to the check binary
 fn check_binary_path() -> String {

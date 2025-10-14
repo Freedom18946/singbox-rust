@@ -126,7 +126,7 @@ fn http_inbound_basic_auth_required() {
         use base64::Engine as _;
         let token = base64::engine::general_purpose::STANDARD.encode("u:p");
         let mut s = std::net::TcpStream::connect(http_addr).unwrap();
-        let mut req = format!(
+        let req = format!(
             "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\nProxy-Authorization: Basic {}\r\n\r\n",
             echo_addr.ip(),
             echo_addr.port(),

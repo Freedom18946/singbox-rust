@@ -127,7 +127,7 @@ mod tests {
         let ee = ExplainEngine { ir, engine };
         let r = ee.explain("example.com:443", false);
         assert_eq!(r.matched_rule.len(), 8);
-        assert!(r.chain.len() >= 0);
+        // chain is a Vec, so it's always valid
         assert!(r.trace.is_none());
         let r2 = ee.explain("example.com:443", true);
         assert!(r2.trace.is_some());

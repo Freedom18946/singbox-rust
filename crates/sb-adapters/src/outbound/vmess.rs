@@ -149,7 +149,7 @@ struct VmessRequestHeader {
 }
 
 /// VMess outbound connector
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VmessConnector {
     config: VmessConfig,
     /// Cached authentication data
@@ -160,11 +160,21 @@ pub struct VmessConnector {
     dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
 }
 
+impl std::fmt::Debug for VmessConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VmessConnector")
+            .field("config", &self.config)
+            .field("auth_cache", &self.auth_cache)
+            .field("dialer", &"<dialer>")
+            .finish()
+    }
+}
+
 impl VmessConnector {
     /// Create a new VMess connector with the given configuration
     pub fn new(config: VmessConfig) -> Self {
         // Create dialer with transport layer, TLS, and multiplex layers
-        #[cfg(feature = "dep:sb-transport")]
+        #[cfg(feature = "sb-transport")]
         let dialer = {
             #[cfg(feature = "transport_tls")]
             let tls_config = config.tls.as_ref();
@@ -186,7 +196,7 @@ impl VmessConnector {
         Self {
             config,
             auth_cache: None,
-            #[cfg(feature = "dep:sb-transport")]
+            #[cfg(feature = "sb-transport")]
             dialer,
         }
     }
@@ -358,7 +368,7 @@ impl VmessConnector {
                 .map_err(|_| AdapterError::Timeout(timeout))?
                 .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
 
-                return Ok(stream);
+                return Ok(crate::traits::from_transport_stream(stream));
             }
         }
 

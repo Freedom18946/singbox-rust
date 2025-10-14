@@ -1,6 +1,5 @@
 //! Integration tests for router hot reload functionality
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -9,7 +8,7 @@ use tokio::time::sleep;
 use tracing::debug;
 
 use sb_core::router::{
-    router_build_index_from_str, HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle,
+    HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle,
 };
 
 #[tokio::test]

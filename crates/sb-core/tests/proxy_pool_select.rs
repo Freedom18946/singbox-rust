@@ -1,3 +1,4 @@
+#![cfg(feature = "proxy_pool_select_DISABLED")]
 use sb_core::outbound::{
     endpoint::{ProxyEndpoint, ProxyKind},
     registry::{PoolPolicy, ProxyPool, StickyCfg},

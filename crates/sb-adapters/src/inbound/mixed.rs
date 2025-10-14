@@ -371,6 +371,7 @@ async fn handle_http(
         listen: cfg.listen,
         router: Arc::clone(&cfg.router),
         outbounds: Arc::clone(&cfg.outbounds),
+        tls: None,
     };
 
     // Forward to HTTP handler - need to access internal handler
@@ -506,7 +507,7 @@ async fn handle_socks5_with_first_byte<S>(
     mut stream: S,
     first_byte: u8,
     peer: SocketAddr,
-    cfg: &MixedInboundConfig,
+    _cfg: &MixedInboundConfig,
 ) -> io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -776,7 +777,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     fn test_protocol_detection_socks5() {

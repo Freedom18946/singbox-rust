@@ -200,6 +200,46 @@ impl GeoIpDb {
         self.index.keys().cloned().collect()
     }
 
+    /// Export all CIDRs for a specific country
+    ///
+    /// # Arguments
+    /// * `country` - Country code to export CIDRs for
+    ///
+    /// # Returns
+    /// * `anyhow::Result<Vec<String>>` - List of CIDRs for the country or error
+    pub fn export_country(&self, country: &str) -> anyhow::Result<Vec<String>> {
+        let target_country = country.to_uppercase();
+        let mut cidrs = Vec::new();
+
+        // Parse the database content to find all CIDRs for the country
+        let content = String::from_utf8_lossy(&self.data);
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() != 2 {
+                continue;
+            }
+
+            let cidr = parts[0].trim();
+            let db_country = parts[1].trim().to_uppercase();
+
+            if db_country == target_country {
+                cidrs.push(cidr.to_string());
+            }
+        }
+
+        if cidrs.is_empty() {
+            anyhow::bail!("No CIDRs found for country: {}", country)
+        } else {
+            Ok(cidrs)
+        }
+    }
+
     /// Get database statistics
     ///
     /// # Returns
@@ -529,6 +569,41 @@ impl GeoSiteDb {
             .unwrap_or(0)
     }
 
+    /// Export all rules for a specific category grouped by type
+    ///
+    /// # Arguments
+    /// * `category` - Category to export rules for
+    ///
+    /// # Returns
+    /// * `anyhow::Result<CategoryRules>` - Grouped rules for the category or error
+    pub fn category_rules(&self, category: &str) -> anyhow::Result<CategoryRules> {
+        let category_lower = category.to_lowercase();
+
+        let rules = self.categories.get(&category_lower)
+            .ok_or_else(|| anyhow::anyhow!("Category not found: {}", category))?;
+
+        let mut domain = Vec::new();
+        let mut domain_suffix = Vec::new();
+        let mut domain_keyword = Vec::new();
+        let mut domain_regex = Vec::new();
+
+        for rule in rules {
+            match rule {
+                DomainRule::Exact(s) => domain.push(s.clone()),
+                DomainRule::Suffix(s) => domain_suffix.push(s.clone()),
+                DomainRule::Keyword(s) => domain_keyword.push(s.clone()),
+                DomainRule::Regex(s) => domain_regex.push(s.clone()),
+            }
+        }
+
+        Ok(CategoryRules {
+            domain,
+            domain_suffix,
+            domain_keyword,
+            domain_regex,
+        })
+    }
+
     /// Get database statistics
     ///
     /// # Returns
@@ -556,6 +631,19 @@ pub struct GeoSiteStats {
     pub database_size: usize,
     /// Number of cached lookups
     pub cache_size: usize,
+}
+
+/// Category rules grouped by type
+#[derive(Debug, Clone)]
+pub struct CategoryRules {
+    /// Exact domain matches
+    pub domain: Vec<String>,
+    /// Domain suffix matches
+    pub domain_suffix: Vec<String>,
+    /// Domain keyword matches
+    pub domain_keyword: Vec<String>,
+    /// Domain regex matches
+    pub domain_regex: Vec<String>,
 }
 
 /// GeoSite database manager for handling multiple database sources

@@ -22,7 +22,7 @@ use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::mpsc;
@@ -43,12 +43,11 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
     info!(
         addr=?cfg.listen,
         actual=?actual,
-        tls=?cfg.tls.transport_type(),
         "shadowtls: TLS server bound"
     );
 
     // Create TLS transport using sb-tls infrastructure
-    let tls_transport = sb_transport::TlsTransport::new(cfg.tls.clone());
+    // Note: TlsTransport is created inside each spawn to avoid clone issues
 
     let mut hb = interval(Duration::from_secs(5));
     loop {
@@ -65,10 +64,11 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
                 };
 
                 let cfg_clone = cfg.clone();
-                let tls_transport_clone = tls_transport.clone();
 
                 tokio::spawn(async move {
-                    match tls_transport_clone.wrap_server(cli).await {
+                    // Create TLS transport inside the spawn to avoid clone issues
+                    let tls_transport = sb_transport::TlsTransport::new(cfg_clone.tls.clone());
+                    match tls_transport.wrap_server(cli).await {
                         Ok(tls_stream) => {
                             if let Err(e) = handle_conn(&cfg_clone, tls_stream, peer).await {
                                 warn!(%peer, error=%e, "shadowtls: session error");

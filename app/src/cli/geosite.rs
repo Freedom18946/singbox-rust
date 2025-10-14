@@ -6,6 +6,9 @@ use serde_json::json;
 use std::io::Read as _;
 use std::path::PathBuf;
 
+// Type alias for compatibility with local code
+type GeoRules = sb_core::router::geo::CategoryRules;
+
 #[derive(Parser, Debug)]
 #[command(name = "geosite")]
 #[command(about = "Geosite tools", long_about = None)]
@@ -312,13 +315,6 @@ fn match_domain(rules: &GeoRules, domain: &str) -> Option<String> {
         }
     }
     None
-}
-
-struct GeoRules {
-    domain: Vec<String>,
-    domain_suffix: Vec<String>,
-    domain_keyword: Vec<String>,
-    domain_regex: Vec<String>,
 }
 
 fn write_ruleset_json(output: &str, category: &str, rules: GeoRules) -> Result<()> {

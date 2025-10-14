@@ -1,57 +1,56 @@
 #![cfg(feature = "dev-cli")]
-use sb_core::net::Address;
-use sb_core::router::RequestMeta;
-use serial_test::serial;
-use singbox_rust::config_loader; // <-- 从库导入模块
-use std::env;
 
-#[tokio::test]
-#[serial] // 避免环境变量串扰
-async fn env_block_suffixes_blocks_example_com() {
-    // 准备：ENV 直接提供 config JSON 与阻断后缀
-    let cfg = r#"
-    {
-      "inbounds":[ {"type":"http","listen":"127.0.0.1","listen_port":28090} ],
-      "route": { "final": "direct", "rules": [] }
+use sb_config::Config;
+use std::fs;
+use tempfile::NamedTempFile;
+
+// 更新后的用例：直接构造配置，验证规则选择逻辑
+
+#[test]
+fn block_suffixes_blocks_example_com() {
+    // 构造包含 Block 出站与规则的最小配置
+    let json = r#"{
+      "schema_version": 2,
+      "inbounds": [],
+      "outbounds": [
+        {"type":"block","name":"block1"},
+        {"type":"direct","name":"direct"}
+      ],
+      "rules": [
+        {"domain_suffix":["example.com"], "outbound":"block1"}
+      ],
+      "default_outbound": "direct"
     }"#;
-    env::set_var("SBR_CONFIG_JSON", cfg);
-    env::set_var("SBR_BLOCK_SUFFIXES", "example.com,.ads");
 
-    let loaded = config_loader::load_from_env_or_default().expect("load");
+    // 写入临时文件并加载
+    let tmp = NamedTempFile::new().expect("tmp");
+    fs::write(tmp.path(), json).expect("write");
+    let cfg = Config::load(tmp.path()).expect("load config");
 
-    // 选择目标 www.example.com，应当命中 BlockOutbound → 立刻 Err("blocked")
-    let meta = RequestMeta {
-        dst: Address::Domain("www.example.com".to_string(), 80),
-        ..Default::default()
-    };
-    let outbound = loaded.router.select(&meta);
-    let err = outbound
-        .connect(meta.dst.clone())
-        .await
-        .expect_err("should be blocked");
-    let msg = err.to_string();
-    assert!(msg.contains("blocked"), "expect blocked error, got: {msg}");
+    // 命中 example.com 后缀 → 选择 block1
+    assert_eq!(cfg.pick_outbound_for_host("www.example.com"), Some("block1"));
+    // 非命中 → 兜底 direct
+    assert_eq!(cfg.pick_outbound_for_host("not-example.test"), None); // pick_outbound_for_host 只看规则；兜底由上层使用 default_outbound
 }
 
-#[tokio::test]
-#[serial]
-async fn env_no_match_falls_back_to_direct() {
-    // 清除阻断后缀，或设置一个不会命中的后缀
-    env::set_var(
-        "SBR_CONFIG_JSON",
-        r#"{"inbounds":[],"route":{"final":"direct","rules":[]}}"#,
-    );
-    env::set_var("SBR_BLOCK_SUFFIXES", "not-this-suffix");
-    let loaded = config_loader::load_from_env_or_default().expect("load");
+#[test]
+fn no_match_falls_back_to_default() {
+    let json = r#"{
+      "schema_version": 2,
+      "inbounds": [],
+      "outbounds": [
+        {"type":"direct","name":"direct"}
+      ],
+      "rules": [
+        {"domain_suffix":["never.match"], "outbound":"direct"}
+      ],
+      "default_outbound": "direct"
+    }"#;
 
-    // 非阻断域名 → 走 direct；连接失败也不应是 "blocked"
-    let meta = RequestMeta {
-        dst: Address::Domain("nonexistent.invalid".to_string(), 80),
-        ..Default::default()
-    };
-    let outbound = loaded.router.select(&meta);
-    let res = outbound.connect(meta.dst.clone()).await;
-    if let Err(e) = res {
-        assert!(!e.to_string().contains("blocked"), "should not be blocked");
-    }
+    let tmp = NamedTempFile::new().expect("tmp");
+    fs::write(tmp.path(), json).expect("write");
+    let cfg = Config::load(tmp.path()).expect("load config");
+
+    // 未命中任何规则时，pick_outbound_for_host 返回 None；默认出站由运行时处理
+    assert_eq!(cfg.pick_outbound_for_host("nonexistent.invalid"), None);
 }

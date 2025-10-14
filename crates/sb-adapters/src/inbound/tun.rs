@@ -1179,12 +1179,12 @@ mod sys_windows {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use sb_core::net::Address;
-    use sb_core::pipeline::{DynOutbound, Outbound};
+    
+    
+    
     // use sb_core::router::RequestMeta; // Using local placeholder
     use serde_json::json;
-    use tokio::net::TcpStream;
+    
 
     /// Create a dummy router handle for testing
     fn create_dummy_router() -> Arc<RouterHandle> {

@@ -1,4 +1,4 @@
-use sb_core::router::{decide_http, router_index_from_env_with_reload};
+use sb_core::router::decide_http;
 use std::fs;
 use std::io::Write;
 use tempfile::tempdir;

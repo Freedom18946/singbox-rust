@@ -1,8 +1,7 @@
-use sb_core::router::{decide_http, router_build_index_from_str};
+use sb_core::router::decide_http;
 use sb_core::router::{router_index_from_env_with_reload, shared_index};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
 use tempfile::tempdir;
 
 #[tokio::test]

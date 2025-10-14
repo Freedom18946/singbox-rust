@@ -13,7 +13,7 @@ use std::net::TcpListener;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::{sleep, timeout};
+use tokio::time::timeout;
 
 #[tokio::test]
 async fn test_retry_policy_env_disabled_by_default() {

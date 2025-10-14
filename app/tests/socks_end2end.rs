@@ -1,4 +1,4 @@
-use sb_config::ir::{ConfigIR, InboundIR, InboundType, RouteIR};
+use sb_config::ir::{ConfigIR, InboundIR, InboundType};
 use sb_core::adapter::InboundService;
 use sb_core::inbound::socks5::Socks5;
 use sb_core::routing::engine::Engine;

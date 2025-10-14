@@ -26,7 +26,6 @@ async fn test_trojan_httpupgrade_config_creation() {
         sni: Some("example.com".to_string()),
         skip_cert_verify: false,
         transport_layer: TransportConfig::HttpUpgrade(httpupgrade_config),
-        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
     };
@@ -53,7 +52,6 @@ async fn test_trojan_httpupgrade_with_multiplex() {
             path: "/trojan-upgrade".to_string(),
             headers: vec![],
         }),
-        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: Some(sb_transport::multiplex::MultiplexConfig::default()),
     };
@@ -80,7 +78,6 @@ async fn test_trojan_httpupgrade_path_variants() {
                 path: path.to_string(),
                 headers: vec![],
             }),
-            #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
         };
@@ -103,7 +100,6 @@ async fn test_trojan_tcp_vs_httpupgrade() {
         sni: Some("example.com".to_string()),
         skip_cert_verify: false,
         transport_layer: TransportConfig::Tcp,
-        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
     };
@@ -120,7 +116,6 @@ async fn test_trojan_tcp_vs_httpupgrade() {
             path: "/upgrade".to_string(),
             headers: vec![],
         }),
-        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
     };

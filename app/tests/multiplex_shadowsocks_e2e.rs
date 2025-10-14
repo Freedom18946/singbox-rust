@@ -18,6 +18,7 @@ use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
 
+#[allow(dead_code)]
 fn is_perm(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::PermissionDenied
 }
@@ -61,11 +62,10 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
 
     let multiplex_config = if multiplex_enabled {
         Some(MultiplexServerConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
-            max_connections: 4,
-            max_streams: 16,
-            padding: false,
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
             brutal: None,
         })
     } else {
@@ -78,6 +78,7 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
         password: "test-password-123".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: multiplex_config,
+        transport_layer: None,
     };
 
     tokio::spawn(async move {
@@ -106,10 +107,14 @@ async fn test_shadowsocks_multiplex_single_stream() {
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
@@ -157,10 +162,14 @@ async fn test_shadowsocks_multiplex_concurrent_streams() {
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
@@ -229,10 +238,14 @@ async fn test_shadowsocks_multiplex_data_integrity() {
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),
@@ -334,10 +347,14 @@ async fn test_shadowsocks_multiplex_vs_non_multiplex() {
             password: "test-password-123".to_string(),
             connect_timeout_sec: Some(10),
             multiplex: Some(MultiplexConfig {
-                enabled: true,
-                protocol: "yamux".to_string(),
+                max_num_streams: 256,
+                initial_stream_window: 256 * 1024,
+                max_stream_window: 1024 * 1024,
+                enable_keepalive: true,
+                keepalive_interval: 30,
                 max_connections: 4,
-                max_streams: 16,
+                max_streams_per_connection: 16,
+                connection_idle_timeout: 300,
                 padding: false,
                 brutal: None,
             }),
@@ -379,10 +396,14 @@ async fn test_shadowsocks_multiplex_sequential_and_concurrent() {
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
         multiplex: Some(MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
+            max_num_streams: 256,
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_keepalive: true,
+            keepalive_interval: 30,
             max_connections: 4,
-            max_streams: 16,
+            max_streams_per_connection: 16,
+            connection_idle_timeout: 300,
             padding: false,
             brutal: None,
         }),

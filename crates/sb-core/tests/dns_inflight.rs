@@ -38,7 +38,7 @@ async fn dns_inflight_global_and_per_host_gate() {
     std::env::set_var("SB_DNS_PER_HOST_INFLIGHT", "1");
     std::env::set_var("SB_DNS_TIMEOUT_MS", "60");
     // 解析器句柄（通过 RouterHandle 内部懒加载）
-    let h = RouterHandle::from_env(); // 只为触发 resolver 静态句柄生命周期
+    let _h = RouterHandle::from_env(); // 只为触发 resolver 静态句柄生命周期
 
     let started = Instant::now();
     let t1 = tokio::spawn(async {

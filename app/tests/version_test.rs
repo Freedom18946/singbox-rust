@@ -105,6 +105,6 @@ fn test_sb_version_features_array() {
 
     // The features array might be empty if SB_FEATURES env var is not set
     // This is expected behavior in development builds
-    let features = json.get("features").unwrap().as_array().unwrap();
-    assert!(features.len() >= 0, "Features should be an array");
+    let _features = json.get("features").unwrap().as_array().unwrap();
+    // Successfully getting as_array() verifies it's an array
 }

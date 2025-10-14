@@ -44,6 +44,7 @@ fn run(bin: &str, args: &[&str]) -> Option<(bool, String)> {
     Some((success, stdout))
 }
 
+#[allow(dead_code)]
 fn go_bin() -> Option<String> {
     std::env::var("GO_SINGBOX_BIN")
         .ok()

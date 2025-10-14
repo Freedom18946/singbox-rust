@@ -117,7 +117,7 @@ async fn test_dns_integration_timeout_handling() {
     std::env::set_var("SB_ROUTER_OVERRIDE", "cidr4:1.2.3.0/24=proxy");
 
     // Create resolver that will timeout
-    let mut mock_resolver = MockDnsResolver::new();
+    let mock_resolver = MockDnsResolver::new();
     // Don't add any responses - will cause timeout
 
     let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));

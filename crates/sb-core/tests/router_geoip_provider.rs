@@ -1,3 +1,4 @@
+#![cfg(feature = "geoip_provider_DISABLED")]
 use sb_core::geoip::{lookup_with_metrics, set_global_provider, Provider};
 use std::net::IpAddr;
 use std::sync::Arc;

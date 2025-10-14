@@ -318,7 +318,6 @@ impl HttpUpgradeListener {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TcpDialer;
 
     #[tokio::test]
     async fn test_httpupgrade_config_default() {

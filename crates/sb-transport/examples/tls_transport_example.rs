@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         key_path: None,
     });
 
-    let transport = TlsTransport::new(standard_config);
+    let _transport = TlsTransport::new(standard_config);
     println!("   ✓ Created Standard TLS transport");
     println!("   - Server name: example.com");
     println!("   - ALPN: h2, http/1.1\n");
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   JSON representation:");
     println!("{}\n", json);
 
-    let deserialized: TlsConfig = serde_json::from_str(&json)?;
+    let _deserialized: TlsConfig = serde_json::from_str(&json)?;
     println!("   ✓ Successfully deserialized configuration\n");
 
     println!("Example completed successfully!");

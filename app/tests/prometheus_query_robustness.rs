@@ -1,6 +1,6 @@
 #![cfg(feature = "dev-cli")]
 // app/tests/prometheus_query_robustness.rs
-use std::{env, fs, process::Command, time::Duration};
+use std::{fs, process::Command};
 use tempfile::TempDir;
 
 /// Test timeout behavior and error classification for Prometheus queries

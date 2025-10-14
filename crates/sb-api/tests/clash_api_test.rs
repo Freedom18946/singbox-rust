@@ -2,7 +2,6 @@
 
 use sb_api::{clash::ClashApiServer, types::ApiConfig};
 use std::net::SocketAddr;
-use tokio_test;
 
 /// Test Clash API server creation and basic functionality
 #[tokio::test]

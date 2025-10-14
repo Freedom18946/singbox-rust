@@ -188,6 +188,10 @@ fn test_router_engine_proxy_name_decisions() {
         port: Some(443),
         process_name: None,
         process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     };
     let decision = engine.decide(&ctx);
     match decision {
@@ -206,6 +210,10 @@ fn test_router_engine_proxy_name_decisions() {
         port: Some(80),
         process_name: None,
         process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     };
     let decision = engine.decide(&ctx);
     match decision {
@@ -224,6 +232,10 @@ fn test_router_engine_proxy_name_decisions() {
         port: Some(443),
         process_name: None,
         process_path: None,
+        inbound_tag: None,
+        outbound_tag: None,
+        auth_user: None,
+        query_type: None,
     };
     let decision = engine.decide(&ctx);
     assert_eq!(decision, Decision::Direct);

@@ -1,7 +1,4 @@
 // use sb_core::geoip::{set_global_provider, Provider};
-use sb_core::router;
-use std::net::IpAddr;
-use std::sync::Arc;
 
 // struct TestGeoProvider;
 // impl Provider for TestGeoProvider {

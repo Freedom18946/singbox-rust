@@ -5,11 +5,6 @@
 //! underlying transports (TCP, WebSocket, gRPC, HTTPUpgrade).
 
 #[cfg(feature = "sb-transport")]
-use sb_transport::Dialer;
-#[cfg(not(feature = "sb-transport"))]
-type Dialer = ();
-
-#[cfg(feature = "sb-transport")]
 use std::sync::Arc;
 
 /// Transport type selection
@@ -200,11 +195,19 @@ impl TransportConfig {
     #[cfg(feature = "sb-transport")]
     pub fn create_dialer_with_tls(
         &self,
-        tls_config: &sb_transport::TlsConfig,
+        _tls_config: &sb_transport::TlsConfig,
     ) -> Box<dyn sb_transport::Dialer> {
         let inner = self.create_dialer();
-        let tls_dialer = sb_transport::TlsDialer::new(tls_config.clone(), inner);
-        Box::new(tls_dialer)
+
+        // TlsDialer expects a concrete inner type, so we pass the Box itself
+        let client_config = sb_transport::webpki_roots_config();
+
+        Box::new(sb_transport::TlsDialer {
+            inner,
+            config: client_config,
+            sni_override: None,
+            alpn: None,
+        })
     }
 
     /// Create a dialer with optional TLS and multiplex
@@ -215,12 +218,22 @@ impl TransportConfig {
         multiplex_config: Option<&sb_transport::multiplex::MultiplexConfig>,
     ) -> Arc<dyn sb_transport::Dialer> {
         // Start with base transport
-        let mut dialer: Box<dyn sb_transport::Dialer> = self.create_dialer();
+        let dialer: Box<dyn sb_transport::Dialer> = self.create_dialer();
 
         // Add TLS layer if configured
-        if let Some(tls_cfg) = tls_config {
-            dialer = Box::new(sb_transport::TlsDialer::new(tls_cfg.clone(), dialer));
-        }
+        let dialer: Box<dyn sb_transport::Dialer> = if let Some(_tls_cfg) = tls_config {
+            // TlsDialer expects a concrete inner type, so we pass the Box itself
+            let client_config = sb_transport::webpki_roots_config();
+
+            Box::new(sb_transport::TlsDialer {
+                inner: dialer,
+                config: client_config,
+                sni_override: None,
+                alpn: None,
+            })
+        } else {
+            dialer
+        };
 
         // Add multiplex layer if configured
         if let Some(mux_cfg) = multiplex_config {
@@ -294,6 +307,8 @@ impl TransportConfig {
                 let tcp_listener = TcpListener::bind(bind_addr).await?;
                 let server_config = sb_transport::httpupgrade::HttpUpgradeServerConfig {
                     path: http_config.path.clone(),
+                    upgrade_protocol: "websocket".to_string(),
+                    require_path_match: false,
                 };
                 let http_listener = sb_transport::httpupgrade::HttpUpgradeListener::new(
                     tcp_listener,
@@ -319,10 +334,49 @@ impl TransportConfig {
 use tokio::net::TcpListener;
 
 /// Trait combining AsyncRead + AsyncWrite for inbound streams
-pub trait InboundStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+pub trait InboundStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
 
 /// Blanket implementation for any type that satisfies the bounds
-impl<T> InboundStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T> InboundStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
+
+/// Wrapper to adapt AsyncReadWrite streams to InboundStream
+struct InboundStreamAdapter {
+    inner: sb_transport::dialer::IoStream,
+}
+
+impl tokio::io::AsyncRead for InboundStreamAdapter {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl tokio::io::AsyncWrite for InboundStreamAdapter {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
 
 /// Inbound listener that abstracts over different transport types
 pub enum InboundListener {
@@ -353,22 +407,29 @@ impl InboundListener {
             #[cfg(feature = "transport_ws")]
             Self::WebSocket(listener) => {
                 use sb_transport::dialer::DialError;
-                listener.accept().await.map_err(|e| match e {
+                let stream = listener.accept().await.map_err(|e| match e {
                     DialError::Io(io_err) => io_err,
                     other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
-                })
+                })?;
+                Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
             }
 
             #[cfg(feature = "transport_grpc")]
-            Self::Grpc(server) => server.accept().await,
+            Self::Grpc(server) => {
+                let stream = server.accept().await.map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                })?;
+                Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
+            }
 
             #[cfg(feature = "transport_httpupgrade")]
             Self::HttpUpgrade(listener) => {
                 use sb_transport::dialer::DialError;
-                listener.accept().await.map_err(|e| match e {
+                let stream = listener.accept().await.map_err(|e| match e {
                     DialError::Io(io_err) => io_err,
                     other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
-                })
+                })?;
+                Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
             }
         }
     }

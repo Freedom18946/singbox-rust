@@ -336,6 +336,10 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 port,
                 process_name: None,
                 process_path: None,
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
             let d = eng.decide(&ctx);
             #[cfg(feature = "metrics")]
@@ -996,6 +1000,10 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                 port,
                 process_name: None,
                 process_path: None,
+                inbound_tag: None,
+                outbound_tag: None,
+                auth_user: None,
+                query_type: None,
             };
             let d = eng.decide(&ctx);
             #[cfg(feature = "metrics")]

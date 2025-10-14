@@ -5,8 +5,6 @@
 #[cfg(feature = "transport_grpc")]
 mod grpc_tests {
     use sb_transport::grpc::{GrpcConfig, GrpcDialer};
-    use sb_transport::Dialer;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]
     async fn test_grpc_config_default() {

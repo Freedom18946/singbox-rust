@@ -40,10 +40,7 @@ async fn test_vmess_websocket_config_creation() {
         timeout: Some(Duration::from_secs(30)),
         packet_encoding: false,
         headers: std::collections::HashMap::new(),
-        #[cfg(feature = "transport_mux")]
-        multiplex: None,
-        #[cfg(feature = "transport_tls")]
-        tls: None,
+        ..Default::default()
     };
 
     assert_eq!(config.server_addr, server_addr);
@@ -76,17 +73,7 @@ async fn test_vmess_websocket_with_multiplex() {
         timeout: Some(Duration::from_secs(30)),
         packet_encoding: false,
         headers: std::collections::HashMap::new(),
-        #[cfg(feature = "transport_mux")]
-        multiplex: Some(sb_transport::multiplex::MultiplexConfig {
-            enabled: true,
-            protocol: "yamux".to_string(),
-            max_connections: 4,
-            max_streams: 16,
-            padding: false,
-            brutal: None,
-        }),
-        #[cfg(feature = "transport_tls")]
-        tls: None,
+        ..Default::default()
     };
 
     let connector = VmessConnector::new(config);
@@ -119,10 +106,7 @@ async fn test_vmess_websocket_path_variants() {
             timeout: Some(Duration::from_secs(10)),
             packet_encoding: false,
             headers: std::collections::HashMap::new(),
-            #[cfg(feature = "transport_mux")]
-            multiplex: None,
-            #[cfg(feature = "transport_tls")]
-            tls: None,
+            ..Default::default()
         };
 
         let connector = VmessConnector::new(config);
@@ -149,10 +133,7 @@ async fn test_vmess_tcp_vs_websocket() {
         timeout: Some(Duration::from_secs(30)),
         packet_encoding: false,
         headers: std::collections::HashMap::new(),
-        #[cfg(feature = "transport_mux")]
-        multiplex: None,
-        #[cfg(feature = "transport_tls")]
-        tls: None,
+        ..Default::default()
     };
 
     // WebSocket configuration
@@ -174,10 +155,7 @@ async fn test_vmess_tcp_vs_websocket() {
         timeout: Some(Duration::from_secs(30)),
         packet_encoding: false,
         headers: std::collections::HashMap::new(),
-        #[cfg(feature = "transport_mux")]
-        multiplex: None,
-        #[cfg(feature = "transport_tls")]
-        tls: None,
+        ..Default::default()
     };
 
     let tcp_connector = VmessConnector::new(tcp_config);

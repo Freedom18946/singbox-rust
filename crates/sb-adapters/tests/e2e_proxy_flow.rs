@@ -121,6 +121,7 @@ async fn start_http_inbound(
         listen: addr,
         router,
         outbounds,
+        tls: None,
     };
 
     tokio::spawn(async move {

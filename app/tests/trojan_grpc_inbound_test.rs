@@ -45,7 +45,6 @@ async fn test_trojan_inbound_with_grpc_transport() {
         cert_path: "/tmp/test-cert.pem".to_string(),
         key_path: "/tmp/test-key.pem".to_string(),
         router,
-        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::Grpc(grpc_config)),
@@ -70,7 +69,6 @@ async fn test_trojan_inbound_tcp_fallback() {
         cert_path: "/tmp/cert.pem".to_string(),
         key_path: "/tmp/key.pem".to_string(),
         router,
-        #[cfg(feature = "tls_reality")]
         reality: None,
         multiplex: None,
         transport_layer: None, // No transport - defaults to TCP

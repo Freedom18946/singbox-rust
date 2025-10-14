@@ -12,7 +12,7 @@ use sb_core::pipeline::Inbound;
 use sb_core::router::Router;
 
 // 复用 app/lib 提供的构建函数
-use singbox_rust::{build_router_from_view, collect_outbounds_from_view};
+use crate::{build_router_from_view, collect_outbounds_from_view};
 
 pub async fn run_go1124(ir: &ConfigIr) -> Result<()> {
     // IR -> 规范化视图（Go1124）

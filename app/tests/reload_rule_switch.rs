@@ -245,7 +245,7 @@ async fn test_complex_rule_modifications() -> anyhow::Result<()> {
         query_route_decision("ads.example.com:80", "complex-rule-token", 19194).await?;
     assert_eq!(blocked_route["outbound"], "block", "Ads should be blocked");
 
-    let https_route =
+    let _https_route =
         query_route_decision("secure.example.com:443", "complex-rule-token", 19194).await?;
     // Note: This might be "proxy1" if port matching works, or "direct" as fallback
 

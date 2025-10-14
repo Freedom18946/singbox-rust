@@ -414,6 +414,7 @@ mod tests {
     use std::time::Duration;
 
     struct MockProvider {
+        #[allow(dead_code)]
         name: String,
         delay: Duration,
         result: Option<GeoInfo>,

@@ -20,14 +20,13 @@ use std::fs::File;
 use std::io::BufReader;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::io::AsyncReadExt;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tokio_rustls::rustls::{self, ServerConfig};
 use tokio_rustls::TlsAcceptor;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
@@ -226,14 +225,6 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
         }
     }
     Ok(())
-}
-
-async fn handle_conn(
-    cfg: &TrojanInboundConfig,
-    tls: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
-    peer: SocketAddr,
-) -> Result<()> {
-    handle_conn_impl(cfg, tls, peer).await
 }
 
 // Helper function to handle connections from generic streams (for V2Ray transport support)

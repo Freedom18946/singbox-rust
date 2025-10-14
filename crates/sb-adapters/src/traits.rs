@@ -1,6 +1,7 @@
 //! Unified traits and interfaces for all adapters
 
 use crate::error::Result;
+use std::any::Any;
 use async_trait::async_trait;
 use rand::Rng;
 use std::{fmt::Debug, fmt::Display, str::FromStr, time::Duration};
@@ -217,10 +218,73 @@ pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Se
 impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
 {}
 
+/// Convert a transport IoStream to BoxedStream
+///
+/// This function converts streams from sb-transport (which use AsyncReadWrite trait)
+/// to sb-adapters BoxedStream (which use AsyncStream trait). Both traits have identical
+/// bounds, so this is a safe conversion via a wrapper struct.
+#[cfg(feature = "sb-transport")]
+pub fn from_transport_stream(stream: sb_transport::dialer::IoStream) -> BoxedStream {
+    Box::new(TransportStreamAdapter { inner: stream })
+}
+
+/// Adapter to convert sb-transport streams to AsyncStream
+#[cfg(feature = "sb-transport")]
+struct TransportStreamAdapter {
+    inner: sb_transport::dialer::IoStream,
+}
+
+#[cfg(feature = "sb-transport")]
+impl tokio::io::AsyncRead for TransportStreamAdapter {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+#[cfg(feature = "sb-transport")]
+impl tokio::io::AsyncWrite for TransportStreamAdapter {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
 /// Lightweight UDP abstraction for outbound datagram connections
 /// Provides optional packet-level interface without breaking existing dial() API
+/// Helper trait to enable downcasting from trait objects
+pub trait DynDowncast: Any {
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any> DynDowncast for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 #[async_trait]
-pub trait OutboundDatagram: Send + Sync + Debug {
+pub trait OutboundDatagram: DynDowncast + Send + Sync + Debug {
     /// Send data to the remote target
     async fn send_to(&self, payload: &[u8]) -> Result<usize>;
 
@@ -231,6 +295,7 @@ pub trait OutboundDatagram: Send + Sync + Debug {
     async fn close(&self) -> Result<()> {
         Ok(())
     }
+
 }
 
 /// Unified outbound connector trait for all adapters

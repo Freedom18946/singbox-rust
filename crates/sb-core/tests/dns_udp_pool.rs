@@ -2,7 +2,6 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use sb_core::dns::udp::build_query;
 use sb_core::dns::ResolverHandle;
 use tokio::net::UdpSocket;
 

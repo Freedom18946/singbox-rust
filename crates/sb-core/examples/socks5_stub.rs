@@ -33,7 +33,7 @@ fn handle(mut s: TcpStream, delay_ms: u64) -> std::io::Result<()> {
     let cmd = buf[1];
 
     // Reply success for any command, but don't do actual forwarding
-    let mut resp = vec![0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0x1F, 0x90]; // 0.0.0.0:8080
+    let resp = vec![0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0x1F, 0x90]; // 0.0.0.0:8080
     if cmd == 0x03
     /* UDP ASSOCIATE */
     {

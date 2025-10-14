@@ -257,7 +257,7 @@ async fn metrics_endpoint_prometheus_format() {
         let mut cursor = Cursor::new(&mut buf);
 
         // Call the metrics handler
-        app::admin_debug::endpoints::metrics::handle("/__metrics", &mut cursor)
+        app::admin_debug::endpoints::metrics::handle(&mut cursor)
             .await
             .unwrap();
         let output = String::from_utf8(buf).unwrap();
@@ -278,7 +278,7 @@ async fn security_metrics_error_ringbuffer() {
         // Generate some errors to populate the ring buffer
         for i in 0..5 {
             app::admin_debug::security_metrics::set_last_error_with_url(
-                app::admin_debug::security_metrics::ErrorKind::Other,
+                app::admin_debug::security_metrics::SecurityErrorKind::Other,
                 &format!("http://example{}.com", i),
                 format!("test error {}", i),
             );
@@ -332,31 +332,21 @@ async fn subs_rate_limiting_concurrency() {
 
         let url = format!("http://127.0.0.1:{}/slow", port);
 
-        // Launch multiple concurrent requests
-        let mut handles = Vec::new();
+        // Launch multiple concurrent requests without spawning tasks to avoid Send bounds
         let start = Instant::now();
-
-        for _ in 0..4 {
-            let url = url.clone();
-            handles.push(tokio::spawn(async move {
-                app::admin_debug::endpoints::subs::fetch_with_limits(&url).await
-            }));
-        }
-
-        // Wait for all handles to complete
-        let mut results = Vec::new();
-        for handle in handles {
-            results.push(handle.await);
-        }
+        let (r1, r2, r3, r4) = tokio::join!(
+            app::admin_debug::endpoints::subs::fetch_with_limits(&url),
+            app::admin_debug::endpoints::subs::fetch_with_limits(&url),
+            app::admin_debug::endpoints::subs::fetch_with_limits(&url),
+            app::admin_debug::endpoints::subs::fetch_with_limits(&url),
+        );
+        let results = vec![r1, r2, r3, r4];
         let elapsed = start.elapsed();
 
         // With concurrency limit of 2, requests should be serialized
         assert!(elapsed > Duration::from_millis(800)); // At least 2 batches of 500ms each
 
-        let successes = results
-            .iter()
-            .filter(|r| r.as_ref().unwrap().is_ok())
-            .count();
+        let successes = results.iter().filter(|r| r.as_ref().is_ok()).count();
         assert!(successes >= 2); // At least some should succeed
     }
 }
@@ -672,7 +662,7 @@ async fn admin_auth_bearer_token() {
         let mut headers = std::collections::HashMap::new();
 
         // Test without auth header - should fail
-        let result1 = app::admin_debug::http::check_auth(&headers, "/__health");
+        let result1 = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(!result1);
 
         // Test with correct Bearer token - should pass
@@ -680,7 +670,7 @@ async fn admin_auth_bearer_token() {
             "authorization".to_string(),
             "Bearer test-secret-token".to_string(),
         );
-        let result2 = app::admin_debug::http::check_auth(&headers, "/__health");
+        let result2 = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(result2);
 
         // Test with incorrect token - should fail
@@ -688,7 +678,7 @@ async fn admin_auth_bearer_token() {
             "authorization".to_string(),
             "Bearer wrong-token".to_string(),
         );
-        let result3 = app::admin_debug::http::check_auth(&headers, "/__health");
+        let result3 = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(!result3);
 
         std::env::remove_var("SB_ADMIN_TOKEN");
@@ -704,7 +694,7 @@ async fn admin_auth_disabled() {
         let headers = std::collections::HashMap::new();
 
         // Even without token, should pass when auth is disabled
-        let result = app::admin_debug::http::check_auth(&headers, "/__health");
+        let result = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(result);
 
         std::env::remove_var("SB_ADMIN_NO_AUTH");

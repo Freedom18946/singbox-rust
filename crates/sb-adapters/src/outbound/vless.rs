@@ -113,19 +113,28 @@ impl Default for VlessConfig {
 }
 
 /// VLESS outbound connector
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct VlessConnector {
     config: VlessConfig,
     /// Transport dialer with optional TLS and Multiplex layers
-    #[cfg(feature = "dep:sb-transport")]
+    #[cfg(feature = "sb-transport")]
     dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
+}
+
+impl std::fmt::Debug for VlessConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VlessConnector")
+            .field("config", &self.config)
+            .field("dialer", &"<dialer>")
+            .finish()
+    }
 }
 
 impl VlessConnector {
     /// Create a new VLESS connector with the given configuration
     pub fn new(config: VlessConfig) -> Self {
         // Create dialer with transport layer, TLS, and multiplex layers
-        #[cfg(feature = "dep:sb-transport")]
+        #[cfg(feature = "sb-transport")]
         let dialer = {
             // Note: TLS is handled separately for VLESS (REALITY/ECH)
             let tls_config = None;
@@ -144,7 +153,7 @@ impl VlessConnector {
 
         Self {
             config,
-            #[cfg(feature = "dep:sb-transport")]
+            #[cfg(feature = "sb-transport")]
             dialer,
         }
     }
@@ -246,7 +255,7 @@ impl VlessConnector {
     async fn create_connection(&self) -> Result<BoxedStream> {
         let timeout = std::time::Duration::from_secs(self.config.timeout.unwrap_or(30));
 
-        #[cfg(feature = "dep:sb-transport")]
+        #[cfg(feature = "sb-transport")]
         {
             // Use the configured dialer (which already has Transport → TLS → Multiplex layers)
             if let Some(ref dialer) = self.dialer {
@@ -266,7 +275,7 @@ impl VlessConnector {
                 .map_err(|_| AdapterError::Timeout(timeout))?
                 .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
 
-                return Ok(stream);
+                return Ok(crate::traits::from_transport_stream(stream));
             }
         }
 
@@ -328,7 +337,7 @@ impl OutboundConnector for VlessConnector {
         tracing::debug!("VLESS dialing target: {:?}", target);
 
         // Create connection to VLESS server
-        let mut stream = self.create_connection().await?;
+        let stream = self.create_connection().await?;
 
         // If REALITY is configured, wrap the stream with REALITY TLS
         #[cfg(feature = "tls_reality")]

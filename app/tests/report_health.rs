@@ -1,10 +1,9 @@
 use assert_cmd::prelude::*;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
 
 fn serve_once(addr: &str) {
     let listener = TcpListener::bind(addr).expect("bind");

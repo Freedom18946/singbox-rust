@@ -86,8 +86,8 @@ async fn start_test_server(config: &mut TestConfig) -> tokio::task::JoinHandle<(
         }
 
         // Create auth and TLS configuration
-        let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
-        let tls_conf: Option<app::admin_debug::http_server::TlsConf> = None;
+        let _auth_conf = app::admin_debug::http_server::AuthConf::from_env();
+        let _tls_conf: Option<app::admin_debug::http_server::TlsConf> = None;
 
         // Start the server using public API
         if let Err(e) = app::admin_debug::http_server::serve_plain(&addr.to_string()).await {

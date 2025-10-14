@@ -73,7 +73,7 @@ impl Default for StandardTlsConnector {
 impl TlsConnector for StandardTlsConnector {
     async fn connect<S>(&self, stream: S, server_name: &str) -> io::Result<crate::TlsIoStream>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     {
         // Apply ALPN if configured
         let config = if let Some(alpn) = &self.alpn_protocols {

@@ -24,11 +24,13 @@ static HTTP_FLAG_SMOKE_405: OnceLock<bool> = OnceLock::new();
 static HTTP_FLAG_DISABLE_STOP: OnceLock<bool> = OnceLock::new();
 #[inline]
 #[cfg(test)]
+#[allow(dead_code)]
 fn http_flag_smoke_405() -> bool {
     *HTTP_FLAG_SMOKE_405.get_or_init(|| std::env::var("SB_HTTP_SMOKE_405").is_ok())
 }
 #[inline]
 #[cfg(test)]
+#[allow(dead_code)]
 fn http_flag_disable_stop() -> bool {
     *HTTP_FLAG_DISABLE_STOP.get_or_init(|| std::env::var("SB_HTTP_DISABLE_STOP").is_ok())
 }
@@ -88,6 +90,7 @@ fn http_disable_stop_enabled() -> bool {
 /// 回滚开关：降级为"只写 + 关"
 /// Note: This is already defined above at line 38, removing duplicate
 #[cfg(test)]
+#[allow(dead_code)]
 fn http_legacy_write_enabled_test() -> bool {
     matches!(
         std::env::var("SB_HTTP_LEGACY_WRITE").ok().as_deref(),
@@ -179,7 +182,7 @@ pub async fn serve_http(
                 let cfg_clone = cfg.clone();
                 tokio::spawn(async move {
                     // Wrap with TLS if configured
-                    let stream: Box<dyn tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> = if let Some(ref tls_config) = cfg_clone.tls {
+                    let stream: sb_transport::dialer::IoStream = if let Some(ref tls_config) = cfg_clone.tls {
                         let tls_transport = sb_transport::TlsTransport::new(tls_config.clone());
                         match tls_transport.wrap_server(cli).await {
                             Ok(tls_stream) => tls_stream,
@@ -213,12 +216,11 @@ pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()
     serve_http(cfg, stop_rx, None).await
 }
 
-async fn handle_client<S>(mut cli: S, _peer: SocketAddr, _cfg: &HttpProxyConfig) -> Result<()>
+async fn handle_client<S>(mut cli: S, peer: SocketAddr, _cfg: &HttpProxyConfig) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
     use tracing::info;
-    let peer = cli.peer_addr().ok();
     info!(?peer, "http: accepted");
     let (method, target) = match read_request_line(&mut cli).await {
         Ok(mt) => mt,
@@ -262,6 +264,10 @@ where
             port: Some(port),
             process_name: None,
             process_path: None,
+            inbound_tag: None,
+            outbound_tag: None,
+            auth_user: None,
+            query_type: None,
         };
         let d = eng.decide(&ctx);
         #[cfg(feature = "metrics")]
@@ -335,11 +341,9 @@ where
 
                 if let Some(reg) = registry::global() {
                     if let Some(_pool) = reg.pools.get(&name) {
-                        let default_peer: std::net::SocketAddr =
-                            std::net::SocketAddr::from(([0, 0, 0, 0], 0));
                         if let Some(ep) = sel.select(
                             &name,
-                            peer.unwrap_or(default_peer),
+                            peer,
                             &format!("{}:{}", host, port),
                             &(),
                         ) {

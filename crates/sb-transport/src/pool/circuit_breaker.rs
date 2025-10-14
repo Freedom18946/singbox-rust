@@ -107,11 +107,6 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dialer::FnDialer;
-    use std::pin::Pin;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::Duration;
-    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_circuit_breaker_allows_successful_requests() {
@@ -139,6 +134,10 @@ mod tests {
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn test_circuit_breaker_opens_on_failures() {
+        use crate::dialer::FnDialer;
+        use std::pin::Pin;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::time::Duration;
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
@@ -187,6 +186,11 @@ mod tests {
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn test_circuit_breaker_half_open_recovery() {
+        use crate::dialer::FnDialer;
+        use std::pin::Pin;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::time::Duration;
+        use tokio::time::sleep;
         let call_count = Arc::new(AtomicU32::new(0));
         let call_count_clone = call_count.clone();
 
@@ -235,6 +239,8 @@ mod tests {
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
     async fn test_timeout_error_classification() {
+        use crate::dialer::FnDialer;
+        use std::pin::Pin;
         let timeout_dialer = FnDialer::new(|_host, _port| {
             Box::pin(async move { Err(DialError::Other("timeout".to_string())) })
                 as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>

@@ -209,6 +209,10 @@ async fn handle_conn(
                     port,
                     process_name: None,
                     process_path: None,
+                    inbound_tag: None,
+                    outbound_tag: None,
+                    auth_user: None,
+                    query_type: None,
                 };
                 let d = eng.decide(&ctx);
                 #[cfg(feature = "metrics")]

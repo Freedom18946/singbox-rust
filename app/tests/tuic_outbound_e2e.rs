@@ -7,7 +7,6 @@
 //! - Authentication scenarios
 //! - Upstream compatibility
 
-use uuid::Uuid;
 
 #[cfg(feature = "sb-core/out_tuic")]
 mod tuic_tests {

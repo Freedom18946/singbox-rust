@@ -73,7 +73,7 @@ impl RealityAcceptor {
     /// 3. Either proxy or fallback based on auth result
     pub async fn accept<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     {
         let handshake_timeout = Duration::from_secs(self.config.handshake_timeout);
 
@@ -85,7 +85,7 @@ impl RealityAcceptor {
     /// Handle REALITY handshake
     async fn handle_handshake<S>(&self, mut stream: S) -> RealityResult<RealityConnection>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     {
         debug!("Handling REALITY handshake");
 
@@ -231,7 +231,7 @@ impl RealityAcceptor {
         server_name: &str,
     ) -> RealityResult<crate::TlsIoStream>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     {
         use rustls::pki_types::{CertificateDer, PrivateKeyDer};
         use std::sync::Arc;

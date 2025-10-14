@@ -40,7 +40,6 @@ pub struct NaiveInboundConfig {
 pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
     info!(
         addr=?cfg.listen,
-        tls=?cfg.tls.transport_type(),
         "naive: HTTP/2 server bound"
     );
 
@@ -55,7 +54,7 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
     // Create TLS transport using sb-tls infrastructure
     // Note: Naive requires HTTP/2 ALPN, which should be configured in TlsConfig
-    let tls_transport = sb_transport::TlsTransport::new(cfg.tls.clone());
+    // Note: TlsTransport is created inside each spawn to avoid clone issues
 
     let cfg = Arc::new(cfg);
 
@@ -74,11 +73,12 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     }
                 };
 
-                let tls_transport_clone = tls_transport.clone();
                 let cfg_clone = cfg.clone();
 
                 tokio::spawn(async move {
-                    match tls_transport_clone.wrap_server(stream).await {
+                    // Create TLS transport inside the spawn to avoid clone issues
+                    let tls_transport = sb_transport::TlsTransport::new(cfg_clone.tls.clone());
+                    match tls_transport.wrap_server(stream).await {
                         Ok(tls_stream) => {
                             if let Err(e) = handle_conn(cfg_clone, tls_stream, peer).await {
                                 debug!(%peer, error=%e, "naive: connection error");
