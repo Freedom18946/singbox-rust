@@ -1,32 +1,267 @@
-# Rust
+# ==============================================================================
+# singbox-rust .gitignore
+# Rust implementation of sing-box with TUN, routing, and cross-platform support
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Rust Build Artifacts
+# ------------------------------------------------------------------------------
+# Target directory for all build artifacts
 /target
 **/target
+
+# Intermediate build artifacts
 *.rlib
 *.rmeta
-Cargo.lock
-debug/
-release/
+*.rdb
+*.pdb
 
-# Byproducts
+# Incremental compilation
+**/*.rs.bk
+
+# Note: Cargo.lock should be committed for binary/application projects
+# If this becomes a library crate, add Cargo.lock to this section
+
+# ------------------------------------------------------------------------------
+# Test & Coverage Artifacts
+# ------------------------------------------------------------------------------
+# Coverage data files
+*.profraw
+*.profdata
+coverage/
+lcov.info
+cobertura.xml
+tarpaulin-report.html
+*.gcda
+*.gcno
+
+# Test outputs
+test-results/
+junit.xml
+
+# Stress test reports are tracked, but runtime data is not
+reports/stress-tests/*.profdata
+reports/stress-tests/*.txt
+reports/stress-tests/latest/
+
+# E2E test artifacts (has its own .gitignore for fine-grained control)
+.e2e/*.sock
+.e2e/*.pid
+.e2e/tmp/
+
+# ------------------------------------------------------------------------------
+# Fuzzing
+# ------------------------------------------------------------------------------
+# Generated corpus and artifacts (seeds may be tracked)
+fuzz/corpus/generated/
+fuzz/artifacts/
+fuzz/target/
+fuzz/*.profraw
+
+# Fuzzing crash files
+crash-*
+leak-*
+timeout-*
+
+# ------------------------------------------------------------------------------
+# Benchmarking
+# ------------------------------------------------------------------------------
+# Criterion output
+target/criterion/
+criterion/
+*.criterion
+
+# Benchmark data files
+bench-*.json
+bench-*.txt
+
+# ------------------------------------------------------------------------------
+# Development & Debug
+# ------------------------------------------------------------------------------
+# Runtime logs and process files
 *.log
+*.log.*
 *.tmp
 *.pid
 *.out
 *.err
 
+# Debug/Release directories (if placed outside target/)
+debug/
+release/
+
+# Distribution artifacts
+dist/
+pkg/
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# ------------------------------------------------------------------------------
+# Operating System
+# ------------------------------------------------------------------------------
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
 
-# IDEs and editors
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ------------------------------------------------------------------------------
+# IDEs and Editors
+# ------------------------------------------------------------------------------
+# Visual Studio Code
 .vscode/
+*.code-workspace
+
+# IntelliJ IDEA / CLion / RustRover
 .idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
 .ropeproject/
+
+# Vim
+*.swp
+*.swo
+*.swn
+*.bak
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+Session.vim
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Visual Studio
+.vs/
+
+# Claude Code
 .claude/
 
-# Development tools and configs
+# ------------------------------------------------------------------------------
+# Development Tools
+# ------------------------------------------------------------------------------
+# Kiro or other custom tooling
 .kiro/
-.e2e/
 
-# Exclude refs and instruction directories
+# Flamegraph outputs
+flamegraph.svg
+perf.data
+perf.data.old
+
+# Valgrind
+vgcore.*
+*.valgrind
+
+# LLDB/GDB
+.gdb_history
+
+# ------------------------------------------------------------------------------
+# Project-Specific
+# ------------------------------------------------------------------------------
+# Reference materials and instructions (internal documentation)
 refs/
 instruction/
+
+# Vendor directory (if using vendored dependencies)
+# Uncomment if needed:
+# vendor/*/
+
+# Local environment files
+.env.local
+.env.*.local
+*.local.json
+*.local.yaml
+
+# TUN device test artifacts
+*.tun
+*.tap
+
+# Temporary routing tables or rule files
+routes.tmp
+rules.tmp
+
+# ------------------------------------------------------------------------------
+# Security & Secrets
+# ------------------------------------------------------------------------------
+# Never commit secrets or credentials
+*.key
+*.pem
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets/
+credentials/
+.secrets
+.credentials
+
+# API keys and tokens
+.env
+.env.*
+!.env.example
+!.env.template
+
+# ------------------------------------------------------------------------------
+# CI/CD Local Artifacts
+# ------------------------------------------------------------------------------
+# Local CI/CD runner artifacts
+.ci-local/
+.github-actions-local/
+
+# Docker build cache
+.docker-cache/
+
+# ------------------------------------------------------------------------------
+# Miscellaneous
+# ------------------------------------------------------------------------------
+# Backup files
+*.backup
+*.bak
+*.orig
+
+# Patch files
+*.patch
+*.diff
+
+# Archive files (unless explicitly needed)
+# *.tar.gz
+# *.zip
+
+# Core dumps
+core
+core.*
+vgcore.*
+
+# SQLite databases (if used for testing)
+*.db
+*.sqlite
+*.sqlite3
+!fixtures/**/*.db
+!fixtures/**/*.sqlite
+
+# Memory dumps
+*.dmp
+*.mdmp

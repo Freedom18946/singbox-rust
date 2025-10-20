@@ -1,3 +1,44 @@
+# ==============================================================================
+# singbox-rust Git Submodules
+# ==============================================================================
+# This file defines external repositories that are tracked as submodules.
+# These are typically used for reference implementations, upstream codebases,
+# or vendored dependencies that need to be kept in sync.
+#
+# Commands:
+#   git submodule update --init --recursive  # Initialize and update all submodules
+#   git submodule update --remote            # Update to latest from remote branch
+#   git submodule foreach git pull origin main  # Pull latest for all submodules
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Upstream sing-box (Go Implementation)
+# ------------------------------------------------------------------------------
+# Purpose: Reference implementation for feature parity validation and testing
+# Usage: Used to ensure Rust implementation maintains compatibility with Go version
+#
+# Notes:
+#   - Tracks the main development branch for latest features
+#   - Full history is kept (not shallow) to track feature evolution
+#   - Update periodically to sync with upstream development
+#
 [submodule "upstream-sing-box"]
 	path = upstream-sing-box
 	url = https://github.com/SagerNet/sing-box
+	branch = main-next
+	# Update strategy: rebase (prefer rebasing local changes on remote updates)
+	update = rebase
+	# Fetch recursively (if upstream has its own submodules)
+	fetchRecurseSubmodules = true
+	# Note: Not using 'shallow = true' to maintain full history for feature tracking
+
+# ------------------------------------------------------------------------------
+# Adding New Submodules
+# ------------------------------------------------------------------------------
+# To add a new submodule:
+#   git submodule add -b <branch> <url> <path>
+#   git commit -m "Add <name> submodule for <purpose>"
+#
+# Example:
+#   git submodule add -b main https://github.com/example/repo vendor/example
+# ==============================================================================
