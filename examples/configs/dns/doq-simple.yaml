@@ -1,0 +1,30 @@
+# DNS-over-QUIC (DoQ) Simple Configuration
+# 
+# This example shows basic DoQ setup (requires feature flag).
+# Usage: cargo run -p app --features 'sb-core/dns_doq' -- run -c examples/configs/dns/doq-simple.yaml
+
+inbounds:
+  - name: mixed-in
+    type: mixed
+    listen: "127.0.0.1:1080"
+
+outbounds:
+  - name: direct
+    type: direct
+
+dns:
+  servers:
+    - tag: adguard-doq
+      address: "quic://dns.adguard.com:853"
+    
+    - tag: nextdns-doq
+      address: "quic://dns.nextdns.io:853"
+  
+  default: adguard-doq
+
+route:
+  default: direct
+
+log:
+  level: info
+

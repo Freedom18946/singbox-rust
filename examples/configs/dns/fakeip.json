@@ -1,0 +1,52 @@
+{
+  "// description": "FakeIP DNS configuration for reduced latency",
+  "// usage": "cargo run -p app --features 'sb-core/fakeip' -- run -c examples/configs/dns/fakeip.json",
+  "// note": "FakeIP provides instant DNS responses with fake IPs",
+
+  "inbounds": [
+    {
+      "type": "tun",
+      "name": "tun-in",
+      "address": ["172.19.0.1/30"],
+      "auto_route": true
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "dns": {
+    "servers": [
+      {
+        "tag": "fakeip",
+        "address": "fakeip"
+      },
+      {
+        "tag": "real",
+        "address": "https://1.1.1.1/dns-query"
+      }
+    ],
+    "rules": [
+      {
+        "when": {
+          "inbound": "tun-in"
+        },
+        "server": "fakeip"
+      }
+    ],
+    "default": "real",
+    "fakeip": {
+      "enabled": true,
+      "inet4_range": "198.18.0.0/15",
+      "inet6_range": "fc00::/18"
+    }
+  },
+
+  "route": {
+    "default": "direct"
+  }
+}

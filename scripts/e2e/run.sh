@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT="${ROOT}/.e2e"
-mkdir -p "$OUT" "$ROOT/target"
+# Create new directory structure
+mkdir -p "$OUT/logs" "$OUT/reports" "$OUT/pids" "$OUT/visualizations" "$OUT/artifacts" "$OUT/soak" "$OUT/archives" "$ROOT/target"
 
 echo "[e2e] Preparing… (GO_SINGBOX_BIN=${GO_SINGBOX_BIN:-})"
 export RUST_BACKTRACE=1
@@ -39,19 +40,19 @@ PY
     R=$(subset "$RS_JSON")
     if [[ -n "$G" && -n "$R" && "$G" == "$R" ]]; then
       COMPAT="ok"
-      printf '%s' "$R" > "$OUT/compat_subset.json"
+      printf '%s' "$R" > "$OUT/reports/compat_subset.json"
     else
       COMPAT="mismatch"
-      printf '%s' "$R" > "$OUT/compat_subset_rust.json"
-      printf '%s' "$G" > "$OUT/compat_subset_go.json"
+      printf '%s' "$R" > "$OUT/reports/compat_subset_rust.json"
+      printf '%s' "$G" > "$OUT/reports/compat_subset_go.json"
     fi
   fi
 fi
 
 # 3) Bench JSON histogram presence (dev-only feature may be missing)
 BENCH="skipped"
-if "${ROOT}/target/debug/${BIN:-singbox-rust}" bench io --url http://example.com --requests 0 --concurrency 1 --json --hist-buckets 1,5,10 >"$OUT/bench.json" 2>/dev/null; then
-  if grep -q '"histogram"' "$OUT/bench.json"; then BENCH="ok"; else BENCH="bad_json"; fi
+if "${ROOT}/target/debug/${BIN:-singbox-rust}" bench io --url http://example.com --requests 0 --concurrency 1 --json --hist-buckets 1,5,10 >"$OUT/reports/bench.json" 2>/dev/null; then
+  if grep -q '"histogram"' "$OUT/reports/bench.json"; then BENCH="ok"; else BENCH="bad_json"; fi
 fi
 
 # 4) Run acceptance test suite A1-A5
@@ -123,7 +124,7 @@ echo "[e2e] Acceptance tests completed: ${ACCEPTANCE_RESULTS[*]}"
 
 # 5) Write summary
 TS=$(date -u +%FT%TZ)
-cat >"$OUT/summary.json" <<JSON
+cat >"$OUT/reports/summary.json" <<JSON
 {
   "ts": "$TS",
   "tests_status": $E2E_STATUS,
@@ -137,4 +138,4 @@ cat >"$OUT/summary.json" <<JSON
 }
 JSON
 
-echo "[e2e] summary: $OUT/summary.json"
+echo "[e2e] summary: $OUT/reports/summary.json"

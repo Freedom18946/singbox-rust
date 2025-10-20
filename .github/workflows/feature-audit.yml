@@ -22,8 +22,8 @@ jobs:
           components: rustfmt,clippy
       - name: Audit features
         run: |
-          chmod +x scripts/audit_features.sh
-          ./scripts/audit_features.sh
+          chmod +x scripts/tools/validation/audit-features.sh
+          ./scripts/tools/validation/audit-features.sh
       - name: Check (CLI only quick sanity)
         run: |
           cargo check -p app --no-default-features --features "admin_debug,subs_http,reqwest"

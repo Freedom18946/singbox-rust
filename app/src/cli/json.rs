@@ -33,7 +33,7 @@ pub fn err(code: u16, error: &str, hint: &str) -> ! {
 #[allow(dead_code)] // Scaffolding helpers for when dev-cli is disabled
 pub fn ok<T: Serialize>(payload: &T) {
     match serde_json::to_string(payload) {
-        Ok(s) => println!("{}", s),
+        Ok(s) => println!("{s}"),
         Err(_) => println!("{{}}"),
     }
 }
@@ -41,6 +41,6 @@ pub fn ok<T: Serialize>(payload: &T) {
 #[cfg(not(feature = "dev-cli"))]
 #[allow(dead_code)] // Scaffolding helper for when dev-cli is disabled
 pub fn err(_code: u16, error: &str, hint: &str) -> ! {
-    eprintln!("error: {} hint: {}", error, hint);
+    eprintln!("error: {error} hint: {hint}");
     std::process::exit(1);
 }

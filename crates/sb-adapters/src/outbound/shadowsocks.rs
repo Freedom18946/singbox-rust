@@ -601,11 +601,7 @@ pub struct ShadowsocksUdpSocket {
 
 #[cfg(feature = "adapter-shadowsocks")]
 impl ShadowsocksUdpSocket {
-    pub fn new(
-        socket: Arc<UdpSocket>,
-        cipher_method: CipherMethod,
-        key: Vec<u8>,
-    ) -> Result<Self> {
+    pub fn new(socket: Arc<UdpSocket>, cipher_method: CipherMethod, key: Vec<u8>) -> Result<Self> {
         Ok(Self {
             socket,
             cipher_method,
@@ -881,21 +877,16 @@ mod tests {
     }
 
     #[cfg(feature = "adapter-shadowsocks")]
-    #[test]
-    fn test_udp_socket_address_encoding_ipv4() {
+    #[tokio::test]
+    async fn test_udp_socket_address_encoding_ipv4() {
         use crate::traits::TransportKind;
 
         let socket = Arc::new(
-            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
-                .unwrap(),
+            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
         );
 
-        let udp_socket = ShadowsocksUdpSocket::new(
-            socket,
-            CipherMethod::Aes256Gcm,
-            vec![0u8; 32],
-        )
-        .unwrap();
+        let udp_socket =
+            ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
 
         let target = Target::new("192.168.1.1", 8080, TransportKind::Udp);
         let encoded = udp_socket.encode_target_address(&target).unwrap();
@@ -908,21 +899,16 @@ mod tests {
     }
 
     #[cfg(feature = "adapter-shadowsocks")]
-    #[test]
-    fn test_udp_socket_address_encoding_domain() {
+    #[tokio::test]
+    async fn test_udp_socket_address_encoding_domain() {
         use crate::traits::TransportKind;
 
         let socket = Arc::new(
-            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
-                .unwrap(),
+            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
         );
 
-        let udp_socket = ShadowsocksUdpSocket::new(
-            socket,
-            CipherMethod::Aes256Gcm,
-            vec![0u8; 32],
-        )
-        .unwrap();
+        let udp_socket =
+            ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
 
         let target = Target::new("example.com", 443, TransportKind::Udp);
         let encoded = udp_socket.encode_target_address(&target).unwrap();
@@ -935,21 +921,17 @@ mod tests {
     }
 
     #[cfg(feature = "adapter-shadowsocks")]
-    #[test]
-    fn test_udp_packet_encryption_decryption() {
+    #[tokio::test]
+    async fn test_udp_packet_encryption_decryption() {
         use crate::traits::TransportKind;
 
         let socket = Arc::new(
-            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
-                .unwrap(),
+            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
         );
 
-        let udp_socket = ShadowsocksUdpSocket::new(
-            socket,
-            CipherMethod::ChaCha20Poly1305,
-            vec![0u8; 32],
-        )
-        .unwrap();
+        let udp_socket =
+            ShadowsocksUdpSocket::new(socket, CipherMethod::ChaCha20Poly1305, vec![0u8; 32])
+                .unwrap();
 
         let target = Target::new("192.168.1.1", 8080, TransportKind::Udp);
         let test_data = b"Hello, World!";
@@ -968,19 +950,14 @@ mod tests {
     }
 
     #[cfg(feature = "adapter-shadowsocks")]
-    #[test]
-    fn test_parse_address_length() {
+    #[tokio::test]
+    async fn test_parse_address_length() {
         let socket = Arc::new(
-            tokio::net::UdpSocket::from_std(std::net::UdpSocket::bind("127.0.0.1:0").unwrap())
-                .unwrap(),
+            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
         );
 
-        let udp_socket = ShadowsocksUdpSocket::new(
-            socket,
-            CipherMethod::Aes256Gcm,
-            vec![0u8; 32],
-        )
-        .unwrap();
+        let udp_socket =
+            ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
 
         // IPv4: ATYP(1) + IP(4) + PORT(2) = 7
         let ipv4_data = vec![0x01, 192, 168, 1, 1, 0x1f, 0x90];

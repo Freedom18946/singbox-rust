@@ -118,8 +118,10 @@ pub async fn connect(host: &str, port: u16) -> std::io::Result<TcpStream> {
 use socket2::{SockRef, TcpKeepalive};
 
 use base64::Engine; // 关键：引入 trait，启用 .encode()
-                    // metrics 通过 telemetry helpers 间接使用，无需直接导入
-                    // 预埋：握手错误维度统计（不改变现有总量计数语义）
+                    // Adapter-level connector trait (for SelectorGroup and generic wrappers)
+use crate::adapter::OutboundConnector as AdapterConnector;
+// metrics 通过 telemetry helpers 间接使用，无需直接导入
+// 预埋：握手错误维度统计（不改变现有总量计数语义）
 #[cfg(feature = "metrics")]
 const _HANDSHAKE_ERR_METRIC_HINT: &str = "sb_outbound_handshake_error_total";
 
@@ -240,6 +242,8 @@ pub enum OutboundImpl {
     WireGuard(wireguard_stub::WireGuardConfig),
     #[cfg(feature = "out_ssh")]
     Ssh(ssh_stub::SshConfig),
+    /// Generic trait-based connector (e.g., SelectorGroup)
+    Connector(Arc<dyn AdapterConnector>),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -298,6 +302,13 @@ impl OutboundRegistryHandle {
                     )),
                     Some(OutboundImpl::Socks5(cfg)) => socks5_connect(&cfg, ep).await,
                     Some(OutboundImpl::HttpProxy(cfg)) => http_connect(&cfg, ep).await,
+                    Some(OutboundImpl::Connector(conn)) => {
+                        let (host, port) = match ep {
+                            Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(h, p) => (h, p),
+                        };
+                        conn.connect(&host, port).await
+                    }
                     #[cfg(feature = "out_trojan")]
                     Some(OutboundImpl::Trojan(cfg)) => trojan_connect(&cfg, ep).await,
                     #[cfg(feature = "out_ss")]
@@ -369,6 +380,15 @@ impl OutboundRegistryHandle {
                     }
                     Some(OutboundImpl::HttpProxy(cfg)) => {
                         let s = http_connect(&cfg, ep).await?;
+                        let boxed: sb_transport::IoStream = Box::new(s);
+                        Ok(boxed)
+                    }
+                    Some(OutboundImpl::Connector(conn)) => {
+                        let (host, port) = match ep {
+                            Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                            Endpoint::Domain(h, p) => (h, p),
+                        };
+                        let s = conn.connect(&host, port).await?;
                         let boxed: sb_transport::IoStream = Box::new(s);
                         Ok(boxed)
                     }
@@ -1061,7 +1081,7 @@ async fn vless_connect(cfg: &vless::VlessConfig, ep: Endpoint) -> io::Result<Tcp
     let outbound = vless::VlessOutbound::new(cfg.clone())
         .map_err(|e| io::Error::other(format!("VLESS setup failed: {}", e)))?;
 
-    outbound.connect(&target).await
+    OutboundTcp::connect(&outbound, &target).await
 }
 
 #[cfg(feature = "out_vmess")]
@@ -1076,7 +1096,7 @@ async fn vmess_connect(cfg: &vmess::VmessConfig, ep: Endpoint) -> io::Result<Tcp
     let outbound = vmess::VmessOutbound::new(cfg.clone())
         .map_err(|e| io::Error::other(format!("VMess setup failed: {}", e)))?;
 
-    outbound.connect(&target).await
+    OutboundTcp::connect(&outbound, &target).await
 }
 
 #[cfg(feature = "out_tuic")]

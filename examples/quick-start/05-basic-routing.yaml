@@ -1,0 +1,58 @@
+# Quick Start Example 5: Basic Routing
+# 
+# This example shows basic routing rules with domain, IP, and port matching.
+# Demonstrates the core routing capabilities of singbox-rust.
+#
+# Usage: cargo run -p app -- run -c examples/quick-start/05-basic-routing.yaml
+
+inbounds:
+  - name: mixed-in
+    type: mixed
+    listen: "127.0.0.1:1080"
+
+outbounds:
+  - name: direct
+    type: direct
+  
+  - name: block
+    type: block
+
+route:
+  rules:
+    # Block ads and tracking domains
+    - when:
+        suffix: 
+          - "ads.example.com"
+          - "tracker.example.com"
+          - "analytics.example.com"
+      to: block
+    
+    # Block private IP ranges from being proxied
+    - when:
+        cidr:
+          - "127.0.0.0/8"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+      to: direct
+    
+    # Direct DNS traffic (UDP port 53)
+    - when:
+        transport: udp
+        port: 53
+      to: direct
+    
+    # Direct connection for specific domains
+    - when:
+        domain: 
+          - "example.com"
+          - "test.local"
+      to: direct
+  
+  # Default: direct connection
+  default: direct
+
+log:
+  level: info
+  timestamp: true
+

@@ -1,3 +1,4 @@
+#![cfg(feature = "long_tests")]
 //! Stress Testing Suite for P0 Protocols
 //!
 //! This test suite provides comprehensive stress testing for all P0 protocols.

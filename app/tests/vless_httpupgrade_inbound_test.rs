@@ -1,3 +1,4 @@
+#![cfg(feature = "tls_reality")]
 //! E2E Integration Tests for VLESS Inbound with HTTPUpgrade Transport
 //!
 //! Test Coverage:

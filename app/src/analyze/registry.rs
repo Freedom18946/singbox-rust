@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, OnceLock};
 
 /// builder 签名：输入 analyze 请求 JSON（或片段），返回补丁 JSON
 pub type BuilderFn = fn(&Value) -> Result<Value>;
@@ -22,16 +22,23 @@ pub type AsyncBuilderFn = fn(&Value) -> Pin<Box<dyn Future<Output = Result<Value
 
 static REGISTRY: OnceLock<Mutex<HashMap<&'static str, BuilderFn>>> = OnceLock::new();
 static ASYNC_REGISTRY: OnceLock<Mutex<HashMap<&'static str, AsyncBuilderFn>>> = OnceLock::new();
+static REGISTERING: AtomicBool = AtomicBool::new(false);
 
 /// # Panics
 /// Panics if the registry mutex is poisoned (only happens if another thread panicked while holding the lock)
 fn ensure_registry() -> &'static Mutex<HashMap<&'static str, BuilderFn>> {
     let m = REGISTRY.get_or_init(|| Mutex::new(HashMap::new()));
-    {
-        // 首次初始化：集中进行注册
+    // 首次初始化：集中进行注册
+    // Avoid deadlock and re-entrancy by using a guard flag and dropping the lock
+    let need_init = {
         let guard = m.lock().expect("registry lock poisoned");
-        if guard.is_empty() {
+        guard.is_empty()
+    };
+    if need_init {
+        // Set registering flag; if another thread is already initializing, skip
+        if !REGISTERING.swap(true, Ordering::SeqCst) {
             crate::analyze::builders::register_all();
+            REGISTERING.store(false, Ordering::SeqCst);
         }
     }
     m

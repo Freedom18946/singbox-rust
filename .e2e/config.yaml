@@ -1,0 +1,11 @@
+log:
+  level: error
+inbounds:
+  - type: socks
+    listen: "127.0.0.1:11080"
+outbounds:
+  - type: direct
+    tag: direct
+route:
+  rules:
+    - outbound: direct

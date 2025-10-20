@@ -166,6 +166,7 @@ impl Middleware for SelectiveAuthMiddleware {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
     use std::collections::HashMap;

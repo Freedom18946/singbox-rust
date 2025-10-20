@@ -87,6 +87,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
         }
         #[cfg(not(feature = "dev-cli"))]
         {
+            let _ = cfg_path;
             eprintln!("CONFIG CHECK: dev-cli feature not enabled");
             std::process::exit(2);
         }
@@ -170,16 +171,13 @@ pub async fn run(args: RunArgs) -> Result<()> {
 
     // 进入引导
     let boot = async {
-        #[allow(unused_variables)]
         let rt = bootstrap::start_from_config(cfg).await?;
 
         // watch: 轮询 mtime，热替换 Router/Outbound
         if do_watch {
-            // Temporarily disabled hot reload functionality
-            eprintln!("Hot reload functionality temporarily disabled");
-            /*
             let cfg_path_clone = cfg_path.clone();
             let import_clone = import_path.clone(); // 此时 import_path 仍可用（上面用的是借用）
+            #[cfg(feature = "router")]
             let rh = rt.router.clone();
             let oh = rt.outbounds.clone();
             tokio::spawn(async move {
@@ -214,13 +212,28 @@ pub async fn run(args: RunArgs) -> Result<()> {
                                     error!(error=%e, "config invalid after reload");
                                     continue;
                                 }
-                                match base.build_registry_and_router() {
-                                    Ok((reg, router)) => {
-                                        rh.replace(router);
+                                // Rebuild registry and router index from IR
+                                match sb_config::present::to_ir(&base) {
+                                    Ok(ir) => {
+                                        let reg = bootstrap::build_outbound_registry_from_ir(&ir);
                                         oh.replace(reg);
-                                        info!("hot-reload applied");
+                                        #[cfg(feature = "router")]
+                                        {
+                                            match bootstrap::build_router_index_from_config(&base) {
+                                                Ok(idx) => {
+                                                    if let Err(e) = rh.replace_index(idx).await {
+                                                        error!(error=%e, "router index replace failed");
+                                                    } else {
+                                                        info!("hot-reload applied");
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    error!(error=%e, "router index build failed on reload")
+                                                }
+                                            }
+                                        }
                                     }
-                                    Err(e) => error!(error=%e, "rebuild on reload failed"),
+                                    Err(e) => error!(error=%e, "to_ir failed on reload"),
                                 }
                             }
                             Err(e) => error!(error=%e, "reload config failed"),
@@ -228,7 +241,6 @@ pub async fn run(args: RunArgs) -> Result<()> {
                     }
                 }
             });
-            */
         }
 
         // 永远等待（让 watch 任务在后台运行）

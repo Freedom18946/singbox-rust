@@ -1,0 +1,65 @@
+{
+  "// description": "Automatic failover with health checks",
+  "// usage": "cargo run -p app --features 'sb-core/urltest' -- run -c examples/configs/advanced/failover.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "urltest",
+      "name": "auto-failover",
+      "outbounds": ["primary", "backup1", "backup2", "direct"],
+      "url": "https://www.google.com/generate_204",
+      "interval": "1m",
+      "tolerance": 50,
+      "interrupt_exist_connections": false
+    },
+    {
+      "type": "shadowsocks",
+      "name": "primary",
+      "server": "primary.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "primary-password"
+    },
+    {
+      "type": "vmess",
+      "name": "backup1",
+      "server": "backup1.example.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+      "tls": {
+        "enabled": true
+      }
+    },
+    {
+      "type": "trojan",
+      "name": "backup2",
+      "server": "backup2.example.com",
+      "port": 443,
+      "password": "backup-password",
+      "tls": {
+        "enabled": true
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "auto-failover"
+  },
+
+  "log": {
+    "level": "info"
+  }
+}

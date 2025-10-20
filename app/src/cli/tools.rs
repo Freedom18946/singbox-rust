@@ -296,8 +296,13 @@ fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
     let t1 = 0.0f64;
     let t2 = read_ts(&packet[32..40]); // server receive time
     let t3 = read_ts(&packet[40..48]); // server transmit time
-                                       // offset ≈ ((t2 - t1) + (t3 - t0)) / 2
-    ((t2 - t1) + (t3 - t0_ntp_seconds)) / 2.0
+    // Normalize all timestamps to the integral seconds of t0 so large base seconds cancel out
+    let base = t0_ntp_seconds.floor();
+    let t0n = t0_ntp_seconds - base;
+    let t2n = t2 - base;
+    let t3n = t3 - base;
+    // offset ≈ ((t2 - t1) + (t3 - t0)) / 2 with t1≈0, using normalized values
+    ((t2n - t1) + (t3n - t0n)) / 2.0
 }
 
 #[cfg(test)]

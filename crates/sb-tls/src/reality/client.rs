@@ -7,6 +7,7 @@ use super::{RealityError, RealityResult};
 use crate::TlsConnector;
 use async_trait::async_trait;
 use std::io;
+use rand::RngCore; // needed for thread_rng().fill_bytes
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -20,7 +21,7 @@ use tracing::{debug, warn};
 ///
 /// ## How it works:
 /// 1. Connects with forged SNI (target domain)
-/// 2. Embeds authentication data in TLS ClientHello
+/// 2. Embeds authentication data in TLS `ClientHello`
 /// 3. Verifies server response (temporary cert vs real cert)
 /// 4. Establishes encrypted tunnel or enters "crawler mode"
 pub struct RealityConnector {
@@ -30,16 +31,15 @@ pub struct RealityConnector {
 
 impl RealityConnector {
     /// Create new REALITY connector
+    ///
+    /// # Errors
+    /// Returns an error if configuration validation or key parsing fails.
     pub fn new(config: RealityClientConfig) -> RealityResult<Self> {
         // Validate configuration
-        config
-            .validate()
-            .map_err(|e| RealityError::InvalidConfig(e))?;
+        config.validate().map_err(RealityError::InvalidConfig)?;
 
         // Parse public key for authentication
-        let _public_key_bytes = config
-            .public_key_bytes()
-            .map_err(|e| RealityError::InvalidConfig(e))?;
+        let _public_key_bytes = config.public_key_bytes().map_err(RealityError::InvalidConfig)?;
 
         // Create client auth (we generate ephemeral private key, only need server's public key)
         let auth = RealityAuth::generate();
@@ -56,6 +56,7 @@ impl RealityConnector {
     }
 
     /// Get configuration
+    #[must_use]
     pub fn config(&self) -> &RealityClientConfig {
         &self.config
     }
@@ -64,7 +65,7 @@ impl RealityConnector {
     ///
     /// This is the core REALITY protocol logic:
     /// 1. Perform X25519 key exchange with server public key
-    /// 2. Build ClientHello with forged SNI and embedded auth data
+    /// 2. Build `ClientHello` with forged SNI and embedded auth data
     /// 3. Use rustls with custom certificate verifier for TLS handshake
     /// 4. Verify server response (temporary cert vs real target cert)
     async fn reality_handshake<S>(&self, stream: S) -> RealityResult<crate::TlsIoStream>
@@ -77,14 +78,13 @@ impl RealityConnector {
         let server_public_key = self
             .config
             .public_key_bytes()
-            .map_err(|e| RealityError::InvalidConfig(e))?;
+            .map_err(RealityError::InvalidConfig)?;
 
         let short_id = self.config.short_id_bytes().unwrap_or_default();
 
         // Generate random session data for this connection
         // This will be used as part of the TLS ClientHello random field
         let mut session_data = [0u8; 32];
-        use rand::RngCore;
         rand::thread_rng().fill_bytes(&mut session_data);
 
         // Perform X25519 key exchange to derive shared secret
@@ -130,16 +130,14 @@ impl RealityConnector {
 
         // Step 4: Perform TLS handshake with forged SNI
         let server_name = rustls_pki_types::ServerName::try_from(self.config.server_name.clone())
-            .map_err(|e| {
-            RealityError::HandshakeFailed(format!("Invalid server name: {:?}", e))
-        })?;
+            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid server name: {e:?}")))?;
 
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
 
         let tls_stream = connector
             .connect(server_name, reality_stream)
             .await
-            .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {}", e)))?;
+            .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {e}")))?;
 
         debug!("REALITY handshake completed successfully");
 
@@ -160,14 +158,14 @@ impl TlsConnector for RealityConnector {
 
         self.reality_handshake(stream)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 }
 
-/// Stream wrapper that intercepts and modifies ClientHello
+/// Stream wrapper that intercepts and modifies `ClientHello`
 ///
 /// This wrapper sits between rustls and the underlying stream, intercepting
-/// the first TLS record (ClientHello) to inject REALITY authentication extension.
+/// the first TLS record (`ClientHello`) to inject REALITY authentication extension.
 struct RealityClientStream<S> {
     inner: S,
     client_public_key: [u8; 32],
@@ -177,7 +175,7 @@ struct RealityClientStream<S> {
 }
 
 impl<S> RealityClientStream<S> {
-    fn new(inner: S, client_public_key: [u8; 32], short_id: Vec<u8>, auth_hash: [u8; 32]) -> Self {
+    const fn new(inner: S, client_public_key: [u8; 32], short_id: Vec<u8>, auth_hash: [u8; 32]) -> Self {
         Self {
             inner,
             client_public_key,
@@ -187,7 +185,7 @@ impl<S> RealityClientStream<S> {
         }
     }
 
-    /// Inject REALITY auth extension into ClientHello
+    /// Inject REALITY auth extension into `ClientHello`
     fn inject_reality_extension(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         // Check if this is a TLS handshake record
         if data.len() < 5 {
@@ -216,10 +214,7 @@ impl<S> RealityClientStream<S> {
 
         // Parse ClientHello
         let mut client_hello = ClientHello::parse(handshake_data).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Failed to parse ClientHello: {}", e),
-            )
+            io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse ClientHello: {e}"))
         })?;
 
         debug!("Intercepted ClientHello, injecting REALITY auth extension");
@@ -230,18 +225,15 @@ impl<S> RealityClientStream<S> {
         client_hello.extensions.push(reality_ext);
 
         // Serialize modified ClientHello
-        let modified_handshake = client_hello.serialize().map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Failed to serialize ClientHello: {}", e),
-            )
-        })?;
+        let modified_handshake = client_hello
+            .serialize()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed to serialize ClientHello: {e}")))?;
 
         // Build new TLS record
         let mut result = Vec::new();
         result.push(ContentType::Handshake as u8);
         result.extend_from_slice(&version.to_be_bytes());
-        result.extend_from_slice(&(modified_handshake.len() as u16).to_be_bytes());
+        result.extend_from_slice(&u16::try_from(modified_handshake.len()).unwrap_or(u16::MAX).to_be_bytes()); // clamp: record length field is u16
         result.extend_from_slice(&modified_handshake);
 
         // Append any remaining data after the first record
@@ -339,6 +331,7 @@ struct RealityVerifier {
 }
 
 impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
+    #[allow(clippy::cognitive_complexity)] // Protocol verification logic is inherently branching; splitting would obscure flow. Revisit post-acceptance.
     fn verify_server_cert(
         &self,
         end_entity: &rustls_pki_types::CertificateDer<'_>,
@@ -366,12 +359,11 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
         );
 
         // Check if the certificate matches the expected server name
-        let server_name_str = match server_name {
-            rustls_pki_types::ServerName::DnsName(name) => name.as_ref(),
-            _ => {
-                warn!("REALITY: Non-DNS server name, accepting certificate");
-                return Ok(rustls::client::danger::ServerCertVerified::assertion());
-            }
+        let server_name_str = if let rustls_pki_types::ServerName::DnsName(name) = server_name {
+            name.as_ref()
+        } else {
+            warn!("REALITY: Non-DNS server name, accepting certificate");
+            return Ok(rustls::client::danger::ServerCertVerified::assertion());
         };
 
         // Verify the server name matches our expected target

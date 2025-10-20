@@ -8,8 +8,15 @@ use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode, Issu
 use app::util;
 use sb_config::compat as cfg_compat;
 use sb_config::validator::v2;
+use crate::cli::output;
+use crate::cli::Format;
 
-/// Main check function - returns exit code (0 = success, 1 = warnings, 2 = errors)
+/// Main check function
+/// 
+/// Exit codes:
+/// - 0: Config is valid (no errors or warnings)
+/// - 1: Config has warnings only (no errors)
+/// - 2: Config has errors (with or without warnings)
 pub fn run(args: CheckArgs) -> Result<i32> {
     // Read and parse config file (support both JSON and YAML)
     let data = fs::read(&args.config).with_context(|| format!("read config {}", &args.config))?;
@@ -149,41 +156,50 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         util::write_atomic(&out, text.as_bytes()).with_context(|| format!("write {out}"))?;
     }
 
-    // Output results
-    match args.format.as_str() {
-        "json" => {
-            println!("{}", serde_json::to_string_pretty(&report)?);
-        }
-        "sarif" => {
-            println!("{}", to_sarif(&report));
+    // Output results (unified)
+    let fmt = match args.format.as_str() {
+        "json" => Format::Json,
+        "sarif" => Format::Sarif,
+        _ => Format::Human,
+    };
+
+    match fmt {
+        Format::Sarif => {
+            let sarif_text = to_sarif(&report);
+            output::emit(
+                Format::Sarif,
+                || {
+                    if ok { "Config validation passed".to_string() } else { format!("{} issues ({} errors, {} warnings)",
+                        issues.len(),
+                        issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count(),
+                        issues.iter().filter(|i| matches!(i.kind, IssueKind::Warning)).count()) }
+                },
+                &serde_json::from_str::<serde_json::Value>(&sarif_text)
+                    .unwrap_or_else(|_| serde_json::json!({})),
+            );
         }
         _ => {
-            // Human-readable format
-            if issues.is_empty() {
-                println!("Config validation passed");
-            } else {
-                for issue in &issues {
-                    let kind_str = match issue.kind {
-                        IssueKind::Error => "ERROR",
-                        IssueKind::Warning => "WARN",
-                    };
-                    if let Some(hint) = &issue.hint {
-                        eprintln!(
-                            "[{}][{:?}] {}: {}  (hint: {})",
-                            kind_str, issue.code, issue.ptr, issue.msg, hint
-                        );
+            output::emit(
+                fmt,
+                || {
+                    if ok {
+                        "Config validation passed".to_string()
                     } else {
-                        eprintln!(
-                            "[{}][{:?}] {}: {}",
-                            kind_str, issue.code, issue.ptr, issue.msg
-                        );
+                        let errs = issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count();
+                        let warns = issues.len().saturating_sub(errs);
+                        format!("Validation failed: {errs} errors, {warns} warnings")
                     }
-                }
-            }
+                },
+                &report,
+            );
         }
     }
 
-    Ok(i32::from(!ok))
+    // Exit code: 0=ok, 1=warnings only (when !strict), 2=errors present
+    let errors = issues.iter().any(|i| matches!(i.kind, IssueKind::Error));
+    let warnings = issues.iter().any(|i| matches!(i.kind, IssueKind::Warning));
+    let code = i32::from(errors) * 2 + i32::from(warnings);
+    Ok(code)
 }
 
 /// Basic config validation
@@ -200,7 +216,7 @@ fn validate_basic_config(
         if api_version.is_none() {
             push_warn(
                 issues,
-                IssueCode::ApiVersionMissing,
+                IssueCode::SchemaMissingField,
                 "/apiVersion",
                 "missing apiVersion",
                 Some("set to 'singbox/v1'"),
@@ -210,7 +226,7 @@ fn validate_basic_config(
         if kind.is_none() {
             push_warn(
                 issues,
-                IssueCode::KindMissing,
+                IssueCode::SchemaMissingField,
                 "/kind",
                 "missing kind",
                 Some("set to 'Configuration'"),
@@ -249,7 +265,7 @@ fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Re
     if !has_match {
         push_warn(
             issues,
-            IssueCode::EmptyRuleMatch,
+            IssueCode::SchemaInvalid,
             &ptr,
             "rule has no match conditions",
             Some("add at least one match condition"),
@@ -260,7 +276,7 @@ fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Re
     if rule.get("outbound").is_none() {
         push_err(
             issues,
-            IssueCode::MissingField,
+            IssueCode::SchemaMissingField,
             &format!("{ptr}/outbound"),
             "rule missing outbound",
             Some("specify an outbound"),
@@ -310,7 +326,7 @@ fn to_sarif(rep: &CheckReport) -> String {
             };
             let rule_id = format!("{:?}", i.code);
 
-            // Create the basic result structure
+            // Create the basic result structure with minimal ptr→region mapping
             let mut result = json!({
                 "ruleId": rule_id,
                 "level": level,
@@ -319,9 +335,10 @@ fn to_sarif(rep: &CheckReport) -> String {
                     "physicalLocation": {
                         "artifactLocation": { "uri": rep.file },
                         "region": {
-                            "message": { "text": i.ptr }
+                            "startLine": 1
                         }
-                    }
+                    },
+                    "message": { "text": format!("ptr: {}", i.ptr) }
                 }]
             });
 
@@ -498,10 +515,10 @@ fn convert_v2_issue(v2_issue: &Value) -> Option<CheckIssue> {
     let code_str = v2_issue.get("code")?.as_str()?;
     let code = match code_str {
         "UnknownField" => IssueCode::UnknownField,
-        "MissingRequired" => IssueCode::MissingField,
+        "MissingRequired" => IssueCode::MissingRequired,
         "TypeMismatch" => IssueCode::TypeMismatch,
-        "Conflict" => IssueCode::MutualExclusive,
-        _ => IssueCode::SchemaViolation,
+        "Conflict" => IssueCode::Conflict,
+        _ => IssueCode::SchemaInvalid,
     };
 
     let ptr = v2_issue.get("ptr")?.as_str()?.to_string();
@@ -713,7 +730,7 @@ mod tests_schema_lock {
                 kind: IssueKind::Warning,
                 ptr: "/route/rules/0".into(),
                 msg: "rule has no match conditions".into(),
-                code: IssueCode::EmptyRuleMatch,
+                code: IssueCode::SchemaInvalid,
                 hint: Some("add at least one match condition".into()),
                 rule_id: None,
                 key: None,

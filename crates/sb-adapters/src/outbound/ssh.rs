@@ -62,6 +62,24 @@ impl SshConnector {
     pub fn new(config: SshAdapterConfig) -> Self {
         #[cfg(feature = "adapter-ssh")]
         {
+            // Skip core creation if config is invalid - validation will happen in start()
+            // This allows creating the connector with invalid config for testing
+            if config.server.is_empty() || config.username.is_empty() {
+                // Create a dummy core that will fail validation in start()
+                let dummy_config = sb_core::outbound::ssh_stub::SshConfig {
+                    server: "invalid".to_string(),
+                    port: 22,
+                    username: "invalid".to_string(),
+                    password: Some("invalid".to_string()),
+                    ..Default::default()
+                };
+                let core = std::sync::Arc::new(
+                    sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config)
+                        .unwrap_or_else(|_| panic!("Failed to create dummy SSH core"))
+                );
+                return Self { config, core };
+            }
+
             // Convert adapter config to core config
             let core_config = sb_core::outbound::ssh_stub::SshConfig {
                 server: config.server.clone(),
@@ -83,9 +101,18 @@ impl SshConnector {
                 Ok(outbound) => std::sync::Arc::new(outbound),
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to create SSH outbound");
-                    // Return a placeholder that will fail on dial
-                    // This is safe because the error will be caught during dial
-                    panic!("SSH configuration error: {}", e);
+                    // Create a dummy core that will fail validation in start()
+                    let dummy_config = sb_core::outbound::ssh_stub::SshConfig {
+                        server: "invalid".to_string(),
+                        port: 22,
+                        username: "invalid".to_string(),
+                        password: Some("invalid".to_string()),
+                        ..Default::default()
+                    };
+                    std::sync::Arc::new(
+                        sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config)
+                            .unwrap_or_else(|_| panic!("Failed to create dummy SSH core"))
+                    )
                 }
             };
 

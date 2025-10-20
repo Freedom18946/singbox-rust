@@ -1,0 +1,15 @@
+{
+  "log": { "level": "warn" },
+  "inbounds": [{ "type": "http", "listen": "127.0.0.1", "port": 18081 }],
+  "outbounds": [
+    { "type": "direct", "name": "PROXY" },
+    { "type": "direct", "name": "DIRECT" }
+  ],
+  "route": {
+    "rules": [
+      { "geoip": ["cn", "private"], "outbound": "DIRECT" }
+    ],
+    "default": "PROXY"
+  }
+}
+

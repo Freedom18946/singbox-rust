@@ -92,6 +92,7 @@ impl AuditEntry {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

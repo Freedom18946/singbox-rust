@@ -127,10 +127,10 @@ async fn handle(
     if method != "CONNECT" || !target.contains(':') {
         cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
             .await?;
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "only CONNECT supported",
-        ));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "only CONNECT supported",
+            ));
     }
 
     // 2) 解析头
@@ -212,7 +212,7 @@ async fn handle(
                 let _ = cli
                     .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
                     .await;
-                return Err(e);
+                return Err(std::io::Error::other(e));
             }
         },
         None => {
@@ -350,7 +350,7 @@ impl InboundService for HttpConnect {
             Err(_) => {
                 // No tokio runtime, create one
                 let runtime = tokio::runtime::Runtime::new()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 runtime.block_on(self.do_serve_async(eng, br))
             }
         }

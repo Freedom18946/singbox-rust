@@ -869,7 +869,7 @@ pub enum TlsConfig {
 }
 
 /// Standard TLS configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StandardTlsConfig {
     /// Server name for SNI (client-side)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -892,17 +892,7 @@ pub struct StandardTlsConfig {
     pub key_path: Option<String>,
 }
 
-impl Default for StandardTlsConfig {
-    fn default() -> Self {
-        Self {
-            server_name: None,
-            alpn: Vec::new(),
-            insecure: false,
-            cert_path: None,
-            key_path: None,
-        }
-    }
-}
+// Default is derived above
 
 /// REALITY TLS configuration
 #[cfg(feature = "transport_reality")]

@@ -1,0 +1,32 @@
+# DNS-over-TLS (DoT) Simple Configuration
+# 
+# This example shows basic DoT setup.
+# Usage: cargo run -p app --features 'sb-core/dns_dot' -- run -c examples/configs/dns/dot-simple.yaml
+
+inbounds:
+  - name: mixed-in
+    type: mixed
+    listen: "127.0.0.1:1080"
+
+outbounds:
+  - name: direct
+    type: direct
+
+dns:
+  servers:
+    - tag: cloudflare-dot
+      address: "tls://1.1.1.1:853"
+      server_name: "cloudflare-dns.com"
+    
+    - tag: quad9-dot
+      address: "tls://9.9.9.9:853"
+      server_name: "dns.quad9.net"
+  
+  default: cloudflare-dot
+
+route:
+  default: direct
+
+log:
+  level: info
+

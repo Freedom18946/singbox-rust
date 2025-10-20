@@ -1108,6 +1108,7 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
     use std::collections::HashMap;

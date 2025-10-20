@@ -7,6 +7,23 @@ edition = "2021"
 ## 默认最小构建：不启用任何可选特性，降低默认噪声
 default = []
 minimal = []
+## 验收构建聚合特性集（便于一次性开启验收所需能力）
+acceptance = [
+    "router",
+    "tools",
+    "schema-v2",
+    "observe",
+    "admin_debug",
+    "auth",
+    "rate_limit",
+    "prom",
+    "preview_route"
+]
+
+# Test-gating features (not included in acceptance)
+long_tests = []
+admin_tests = []
+net_e2e = []
 
 # Dev/auxiliary CLI feature gates
 bench-cli = ["hdrhistogram", "metrics"]
@@ -19,8 +36,9 @@ rate_limit = ["admin_envelope"]
 jwt = ["jsonwebtoken", "rsa", "p256", "pkcs8", "pkcs1"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
-router  = ["sb-core", "sb-core/router"]
+router  = ["sb-core", "sb-core/router", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "out_ss"]
 observe = ["router", "sb-metrics"]
+out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
 ssh = ["sb-core/out_ssh"]
 tools = ["sb-core", "reqwest"]
@@ -40,6 +58,10 @@ dsl_derive = ["sb-core/dsl_derive"]
 pprof = []
 loom = []
 io_local_alpha = ["sb-runtime/io_local_alpha"]
+
+# Minimal stub: enable Prometheus CLI paths under acceptance builds
+prom = []
+tls_reality = []
 
 ## Empty features for check-cfg quieting
 handshake_alpha = ["sb-runtime", "sb-runtime/handshake_alpha"]
@@ -78,27 +100,27 @@ required-features = ["router"]
 [[bin]]
 name = "route"
 path = "src/bin/route.rs"
-required-features = ["router"]
+required-features = ["router","dsl_analyze","dsl_derive"]
 
 [[bin]]
 name = "route-explain"
 path = "src/bin/route-explain.rs"
-required-features = ["router"]
+required-features = ["explain"]
 
 [[bin]]
 name = "sb-explaind"
 path = "src/bin/sb-explaind.rs"
-required-features = ["router"]
+required-features = ["router","explain"]
 
 [[bin]]
 name = "preview"
 path = "src/bin/preview.rs"
-required-features = ["router"]
+required-features = ["preview_route"]
 
 [[bin]]
 name = "dsl"
 path = "src/bin/dsl.rs"
-required-features = ["router"]
+required-features = ["router","dsl_plus"]
 
 [[bin]]
 name = "preflight"
@@ -113,7 +135,7 @@ required-features = ["router"]
 [[bin]]
 name = "coverage-http"
 path = "src/bin/coverage-http.rs"
-required-features = ["router"]
+required-features = ["rule_coverage"]
 
 [[bin]]
 name = "diag"
@@ -149,6 +171,7 @@ path = "src/bin/sb-udp-echo.rs"
 [[bin]]
 name = "sb-rule-coverage"
 path = "src/bin/sb-rule-coverage.rs"
+required-features = ["rule_coverage"]
 
 [[bin]]
 name = "report"
@@ -215,9 +238,11 @@ sb-config   = { path = "../crates/sb-config", package = "sb-config" }
 sb-metrics  = { path = "../crates/sb-metrics", optional = true }
 sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
 sb-runtime  = { path = "../crates/sb-runtime", optional = true }
+sb-adapters = { path = "../crates/sb-adapters", features = ["http","socks","tun","sb-transport","transport_tls","transport_mux","tls_reality","transport_ech"] }
 reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream","json"], optional = true }
 url         = { version = "2", optional = true }
 bytes       = { version = "1", optional = true }
+uuid        = { version = "1" }
 futures-util= { version = "0.3", optional = true }
 walkdir     = "2"
 regex       = "1"
@@ -238,6 +263,8 @@ parking_lot = "0.12"
 atty = "0.2"
 chrono = { workspace = true }
 arc-swap = "1.7"
+# Shared types across workspace (IssueCode, etc.)
+sb-types    = { workspace = true }
 # Benchmarking and metrics dependencies
 hdrhistogram = { version = "7.5", optional = true }
 metrics = { version = "0.24", optional = true }
@@ -269,7 +296,7 @@ criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
-sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan"] }
+sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "tls_reality", "transport_ech", "transport_mux"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 
@@ -293,6 +320,13 @@ path = "../tests/reality_tls_e2e.rs"
 [[test]]
 name = "hysteria_v1_e2e"
 path = "../tests/hysteria_v1_e2e.rs"
+
+[[test]]
+name = "multiplex_vless_e2e"
+path = "tests/multiplex_vless_e2e.rs"
+# This E2E test exercises VLESS + multiplex + REALITY/TLS pipeline and is opt-in.
+# It remains gated behind a non-declared feature to avoid breaking all-features runs.
+required-features = ["net_e2e", "tls_reality", "vless_mux_ready"]
 
 [[bench]]
 name = "bench_p0_protocols"

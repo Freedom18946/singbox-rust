@@ -38,8 +38,11 @@ pub enum OutboundType {
     Socks,
     Block,
     Selector,
+    Shadowsocks,
     Shadowtls,
+    UrlTest,
     Hysteria2,
+    Tuic,
     Vless,
     Vmess,
     Trojan,
@@ -77,9 +80,15 @@ pub struct OutboundIR {
     pub udp: Option<String>, // "passthrough" | "socks5-upstream"
     #[serde(default)]
     pub name: Option<String>, // 命名出站（供选择器/路由引用）
-    /// for selector: list of member outbound names
+    /// for selector/urltest: list of member outbound names
     #[serde(default)]
     pub members: Option<Vec<String>>,
+    /// Optional default member name for selector-like outbounds
+    #[serde(default)]
+    pub default_member: Option<String>,
+    /// Optional method identifier (e.g., shadowsocks cipher)
+    #[serde(default)]
+    pub method: Option<String>,
     /// 上游出站的认证信息（SOCKS/HTTP 均可用）
     #[serde(default)]
     pub credentials: Option<Credentials>,
@@ -95,6 +104,12 @@ pub struct OutboundIR {
     /// Transport nesting (e.g., ["tls","ws"]) for V2Ray-style transports
     #[serde(default)]
     pub transport: Option<Vec<String>>,
+    /// Protocol-specific congestion control (TUIC) or flow (VLESS)
+    #[serde(default)]
+    pub congestion_control: Option<String>,
+    /// TUIC authentication token
+    #[serde(default)]
+    pub token: Option<String>,
     /// Optional WebSocket path and Host header override
     #[serde(default)]
     pub ws_path: Option<String>,
@@ -105,11 +120,59 @@ pub struct OutboundIR {
     pub h2_path: Option<String>,
     #[serde(default)]
     pub h2_host: Option<String>,
+    /// Optional gRPC service name
+    #[serde(default)]
+    pub grpc_service: Option<String>,
+    /// Optional gRPC method name
+    #[serde(default)]
+    pub grpc_method: Option<String>,
+    /// Optional gRPC authority (host override)
+    #[serde(default)]
+    pub grpc_authority: Option<String>,
+    /// Additional gRPC metadata headers
+    #[serde(default)]
+    pub grpc_metadata: Vec<HeaderEntry>,
+    /// Optional HTTP Upgrade path
+    #[serde(default)]
+    pub http_upgrade_path: Option<String>,
+    /// Additional HTTP Upgrade headers
+    #[serde(default)]
+    pub http_upgrade_headers: Vec<HeaderEntry>,
     /// Optional TLS SNI and ALPN list
     #[serde(default)]
     pub tls_sni: Option<String>,
     #[serde(default)]
     pub tls_alpn: Option<String>,
+    /// Explicit ALPN override for transports that do not use tls_alpn (e.g., TUIC)
+    #[serde(default)]
+    pub alpn: Option<String>,
+    /// Whether to skip TLS certificate verification (TUIC)
+    #[serde(default)]
+    pub skip_cert_verify: Option<bool>,
+    /// UDP relay mode for TUIC ("native" | "quic")
+    #[serde(default)]
+    pub udp_relay_mode: Option<String>,
+    /// Whether TUIC should tunnel UDP over stream
+    #[serde(default)]
+    pub udp_over_stream: Option<bool>,
+    /// Optional upload bandwidth limit in Mbps (Hysteria2)
+    #[serde(default)]
+    pub up_mbps: Option<u32>,
+    /// Optional download bandwidth limit in Mbps (Hysteria2)
+    #[serde(default)]
+    pub down_mbps: Option<u32>,
+    /// Optional obfuscation key/mode (Hysteria2)
+    #[serde(default)]
+    pub obfs: Option<String>,
+    /// Optional Salamander fingerprint string (Hysteria2)
+    #[serde(default)]
+    pub salamander: Option<String>,
+    /// Brutal congestion control upload limit (Hysteria2)
+    #[serde(default)]
+    pub brutal_up_mbps: Option<u32>,
+    /// Brutal congestion control download limit (Hysteria2)
+    #[serde(default)]
+    pub brutal_down_mbps: Option<u32>,
     /// REALITY TLS configuration
     #[serde(default)]
     pub reality_enabled: Option<bool>,
@@ -142,6 +205,23 @@ pub struct OutboundIR {
     pub ssh_keepalive_interval: Option<u64>,
     #[serde(default)]
     pub connect_timeout_sec: Option<u32>,
+    /// URLTest probe configuration
+    #[serde(default)]
+    pub test_url: Option<String>,
+    #[serde(default)]
+    pub test_interval_ms: Option<u64>,
+    #[serde(default)]
+    pub test_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub test_tolerance_ms: Option<u64>,
+    #[serde(default)]
+    pub interrupt_exist_connections: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct HeaderEntry {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -223,8 +303,11 @@ impl OutboundIR {
             OutboundType::Socks => "socks",
             OutboundType::Block => "block",
             OutboundType::Selector => "selector",
+            OutboundType::Shadowsocks => "shadowsocks",
+            OutboundType::UrlTest => "urltest",
             OutboundType::Shadowtls => "shadowtls",
             OutboundType::Hysteria2 => "hysteria2",
+            OutboundType::Tuic => "tuic",
             OutboundType::Vless => "vless",
             OutboundType::Vmess => "vmess",
             OutboundType::Trojan => "trojan",
@@ -315,6 +398,103 @@ impl ConfigIR {
         for outbound in &self.outbounds {
             if let Err(e) = outbound.validate_reality() {
                 errors.push(e);
+            }
+            if matches!(outbound.ty, OutboundType::Selector | OutboundType::UrlTest)
+                && outbound
+                    .members
+                    .as_ref()
+                    .map(|members| members.is_empty())
+                    .unwrap_or(true)
+            {
+                errors.push(format!(
+                    "outbound '{}': selector/urltest requires at least one member",
+                    outbound.name.as_deref().unwrap_or("unnamed")
+                ));
+            }
+            if outbound.ty == OutboundType::Shadowsocks {
+                if outbound
+                    .server
+                    .as_ref()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(true)
+                {
+                    errors.push(format!(
+                        "outbound '{}': shadowsocks.server is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+                if outbound.port.is_none() {
+                    errors.push(format!(
+                        "outbound '{}': shadowsocks.port is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+                if outbound
+                    .password
+                    .as_ref()
+                    .map(|p| p.trim().is_empty())
+                    .unwrap_or(true)
+                {
+                    errors.push(format!(
+                        "outbound '{}': shadowsocks.password is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+                let method = outbound.method.as_deref().unwrap_or_default();
+                let method_ok = matches!(
+                    method.to_ascii_lowercase().as_str(),
+                    "aes-256-gcm" | "chacha20-poly1305"
+                );
+                if !method_ok {
+                    errors.push(format!(
+                        "outbound '{}': shadowsocks.method must be aes-256-gcm or chacha20-poly1305",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+            }
+            if outbound.ty == OutboundType::Tuic {
+                if outbound
+                    .server
+                    .as_ref()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(true)
+                {
+                    errors.push(format!(
+                        "outbound '{}': tuic.server is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+                if outbound.port.is_none() {
+                    errors.push(format!(
+                        "outbound '{}': tuic.port is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
+                match outbound.uuid.as_ref() {
+                    Some(uuid) if !uuid.trim().is_empty() => {
+                        if uuid::Uuid::parse_str(uuid).is_err() {
+                            errors.push(format!(
+                                "outbound '{}': tuic.uuid must be a valid UUID string",
+                                outbound.name.as_deref().unwrap_or("unnamed")
+                            ));
+                        }
+                    }
+                    _ => errors.push(format!(
+                        "outbound '{}': tuic.uuid is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    )),
+                }
+                if outbound
+                    .token
+                    .as_ref()
+                    .map(|t| t.trim().is_empty())
+                    .unwrap_or(true)
+                {
+                    errors.push(format!(
+                        "outbound '{}': tuic.token is required",
+                        outbound.name.as_deref().unwrap_or("unnamed")
+                    ));
+                }
             }
         }
 
@@ -478,5 +658,45 @@ mod tests {
         let errors = config.validate().unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("public_key is required"));
+    }
+
+    #[test]
+    fn tuic_validation_reports_missing_fields() {
+        let mut cfg = ConfigIR::default();
+        cfg.outbounds.push(OutboundIR {
+            ty: OutboundType::Tuic,
+            name: Some("tuic-out".to_string()),
+            server: None,
+            port: None,
+            uuid: Some("not-a-uuid".to_string()),
+            token: None,
+            ..Default::default()
+        });
+
+        let result = cfg.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("tuic.server is required")));
+        assert!(errors.iter().any(|e| e.contains("tuic.port is required")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("tuic.uuid must be a valid UUID string")));
+        assert!(errors.iter().any(|e| e.contains("tuic.token is required")));
+    }
+
+    #[test]
+    fn tuic_validation_accepts_complete_configuration() {
+        let mut cfg = ConfigIR::default();
+        cfg.outbounds.push(OutboundIR {
+            ty: OutboundType::Tuic,
+            name: Some("tuic-out".to_string()),
+            server: Some("example.com".to_string()),
+            port: Some(443),
+            uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
+            token: Some("secret-token".to_string()),
+            ..Default::default()
+        });
+
+        assert!(cfg.validate().is_ok());
     }
 }

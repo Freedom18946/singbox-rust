@@ -1,0 +1,49 @@
+# Grafana Datasource Provisioning Configuration for SingBox-Rust
+#
+# This file auto-configures the Prometheus datasource in Grafana.
+# Place this file in /etc/grafana/provisioning/datasources/
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+    editable: true
+
+# Configuration Notes:
+#
+# - name: Datasource name (referenced by dashboards)
+# - type: prometheus
+# - access: proxy = queries go through Grafana backend
+# - url: Prometheus server URL (adjust to your setup)
+# - isDefault: true = default datasource for dashboards
+# - httpMethod: POST recommended for complex queries
+# - timeInterval: Matches Prometheus scrape interval
+# - editable: true = allow editing in UI
+#
+# Usage:
+#   1. Copy this file to /etc/grafana/provisioning/datasources/prometheus.yml
+#   2. Adjust 'url' to match your Prometheus instance
+#   3. Restart Grafana: sudo systemctl restart grafana-server
+#
+# For Docker Compose:
+#   services:
+#     prometheus:
+#       image: prom/prometheus:latest
+#       ports:
+#         - "9090:9090"
+#     grafana:
+#       image: grafana/grafana:latest
+#       volumes:
+#         - ./grafana/provisioning:/etc/grafana/provisioning
+#
+# Alternative URLs:
+#   - Docker Compose: http://prometheus:9090
+#   - Kubernetes: http://prometheus-service.monitoring.svc.cluster.local:9090
+#   - Remote: https://prometheus.example.com

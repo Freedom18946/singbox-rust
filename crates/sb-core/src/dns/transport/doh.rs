@@ -156,6 +156,7 @@ impl DohTransport {
 #[async_trait]
 impl DnsTransport for DohTransport {
     async fn query(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        #[cfg(feature = "metrics")]
         let start_time = std::time::Instant::now();
 
         let result = self.query_adaptive(packet).await;

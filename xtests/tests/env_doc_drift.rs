@@ -2,7 +2,9 @@ use std::{collections::BTreeSet, fs};
 
 #[test]
 fn env_vars_in_docs_match_code_refs() {
-    let md = fs::read_to_string("docs/ENV_VARS.md").expect("ENV_VARS.md");
+    let md = fs::read_to_string("docs/02-cli-reference/environment-variables.md")
+        .or_else(|_| fs::read_to_string("docs/ENV_VARS.md")) // fallback for backward compatibility
+        .expect("environment-variables.md");
     let mut docs = BTreeSet::new();
 
     // Simple pattern matching without regex

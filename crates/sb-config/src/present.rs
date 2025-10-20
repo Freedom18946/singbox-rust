@@ -54,6 +54,92 @@ pub fn to_view(ir: &ConfigIR) -> Value {
             if let Some(password) = &outbound.password {
                 obj.insert("password".into(), Value::from(password.clone()));
             }
+            if let Some(token) = &outbound.token {
+                obj.insert("token".into(), Value::from(token.clone()));
+            }
+            if let Some(cc) = &outbound.congestion_control {
+                obj.insert("congestion_control".into(), Value::from(cc.clone()));
+            }
+            if let Some(alpn) = &outbound.alpn {
+                obj.insert("alpn".into(), Value::from(alpn.clone()));
+            }
+            if let Some(skip) = outbound.skip_cert_verify {
+                obj.insert("skip_cert_verify".into(), Value::from(skip));
+            }
+            if let Some(mode) = &outbound.udp_relay_mode {
+                obj.insert("udp_relay_mode".into(), Value::from(mode.clone()));
+            }
+            if let Some(udp_stream) = outbound.udp_over_stream {
+                obj.insert("udp_over_stream".into(), Value::from(udp_stream));
+            }
+            if let Some(service) = &outbound.grpc_service {
+                obj.insert("grpc_service".into(), Value::from(service.clone()));
+            }
+            if let Some(method) = &outbound.grpc_method {
+                obj.insert("grpc_method".into(), Value::from(method.clone()));
+            }
+            if let Some(authority) = &outbound.grpc_authority {
+                obj.insert("grpc_authority".into(), Value::from(authority.clone()));
+            }
+            if !outbound.grpc_metadata.is_empty() {
+                obj.insert(
+                    "grpc_metadata".into(),
+                    Value::Array(
+                        outbound
+                            .grpc_metadata
+                            .iter()
+                            .map(|h| {
+                                let mut map = Map::new();
+                                map.insert("name".into(), Value::from(h.name.clone()));
+                                map.insert("value".into(), Value::from(h.value.clone()));
+                                Value::Object(map)
+                            })
+                            .collect(),
+                    ),
+                );
+            }
+            if let Some(path) = &outbound.http_upgrade_path {
+                obj.insert("http_upgrade_path".into(), Value::from(path.clone()));
+            }
+            if !outbound.http_upgrade_headers.is_empty() {
+                obj.insert(
+                    "http_upgrade_headers".into(),
+                    Value::Array(
+                        outbound
+                            .http_upgrade_headers
+                            .iter()
+                            .map(|h| {
+                                let mut map = Map::new();
+                                map.insert("name".into(), Value::from(h.name.clone()));
+                                map.insert("value".into(), Value::from(h.value.clone()));
+                                Value::Object(map)
+                            })
+                            .collect(),
+                    ),
+                );
+            }
+            if let Some(up) = outbound.up_mbps {
+                obj.insert("up_mbps".into(), Value::from(up));
+            }
+            if let Some(down) = outbound.down_mbps {
+                obj.insert("down_mbps".into(), Value::from(down));
+            }
+            if let Some(obfs) = &outbound.obfs {
+                obj.insert("obfs".into(), Value::from(obfs.clone()));
+            }
+            if let Some(salamander) = &outbound.salamander {
+                obj.insert("salamander".into(), Value::from(salamander.clone()));
+            }
+            if outbound.brutal_up_mbps.is_some() || outbound.brutal_down_mbps.is_some() {
+                let mut brutal = Map::new();
+                if let Some(up) = outbound.brutal_up_mbps {
+                    brutal.insert("up_mbps".into(), Value::from(up));
+                }
+                if let Some(down) = outbound.brutal_down_mbps {
+                    brutal.insert("down_mbps".into(), Value::from(down));
+                }
+                obj.insert("brutal".into(), Value::Object(brutal));
+            }
             if let Some(credentials) = &outbound.credentials {
                 let mut cred = Map::new();
                 if let Some(u) = &credentials.username {
@@ -64,14 +150,47 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                 }
                 obj.insert("credentials".into(), Value::Object(cred));
             }
+            if let Some(members) = &outbound.members {
+                obj.insert("outbounds".into(), Value::from(members.clone()));
+            }
+            if let Some(default_member) = &outbound.default_member {
+                obj.insert("default".into(), Value::from(default_member.clone()));
+            }
+            if let Some(method) = &outbound.method {
+                obj.insert("method".into(), Value::from(method.clone()));
+            }
+            if let Some(transport) = &outbound.transport {
+                obj.insert(
+                    "transport".into(),
+                    Value::Array(transport.iter().map(|s| Value::from(s.clone())).collect()),
+                );
+            }
+            if let Some(url) = &outbound.test_url {
+                obj.insert("url".into(), Value::from(url.clone()));
+            }
+            if let Some(interval_ms) = outbound.test_interval_ms {
+                obj.insert("interval_ms".into(), Value::from(interval_ms));
+            }
+            if let Some(timeout_ms) = outbound.test_timeout_ms {
+                obj.insert("timeout_ms".into(), Value::from(timeout_ms));
+            }
+            if let Some(tolerance_ms) = outbound.test_tolerance_ms {
+                obj.insert("tolerance_ms".into(), Value::from(tolerance_ms));
+            }
+            if let Some(interrupt) = outbound.interrupt_exist_connections {
+                obj.insert("interrupt_exist_connections".into(), Value::from(interrupt));
+            }
             let ty = match outbound.ty {
                 crate::ir::OutboundType::Direct => "direct",
                 crate::ir::OutboundType::Http => "http",
                 crate::ir::OutboundType::Socks => "socks",
                 crate::ir::OutboundType::Block => "block",
                 crate::ir::OutboundType::Selector => "selector",
+                crate::ir::OutboundType::Shadowsocks => "shadowsocks",
+                crate::ir::OutboundType::UrlTest => "urltest",
                 crate::ir::OutboundType::Shadowtls => "shadowtls",
                 crate::ir::OutboundType::Hysteria2 => "hysteria2",
+                crate::ir::OutboundType::Tuic => "tuic",
                 crate::ir::OutboundType::Vless => "vless",
                 crate::ir::OutboundType::Vmess => "vmess",
                 crate::ir::OutboundType::Trojan => "trojan",

@@ -1,0 +1,40 @@
+{
+  "// description": "Trojan inbound server with TLS",
+  "// usage": "cargo run -p app --features 'sb-core/in_trojan' -- run -c examples/configs/inbounds/trojan.json",
+  "// note": "Requires valid TLS certificate and key",
+
+  "inbounds": [
+    {
+      "type": "trojan",
+      "name": "trojan-in",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "users": [
+        {
+          "password": "your-secure-password-here"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "certificate_path": "/path/to/cert.pem",
+        "key_path": "/path/to/key.pem",
+        "alpn": ["h2", "http/1.1"]
+      },
+      "fallback": {
+        "server": "example.com",
+        "port": 80
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "direct"
+  }
+}

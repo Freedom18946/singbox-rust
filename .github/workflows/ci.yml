@@ -199,7 +199,7 @@ jobs:
           cargo clippy -p sb-config --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
           cargo clippy -p sb-runtime --lib -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
       - name: Guard no unwrap/expect/panic in production code
-        run: bash scripts/guard_no_unwrap.sh --baseline
+        run: bash scripts/tools/validation/guard-no-unwrap.sh --baseline
       - name: Cargo deny check (vulnerabilities, yanked, licenses)
         run: cargo deny check
       - name: Public API baseline check (sb-core)

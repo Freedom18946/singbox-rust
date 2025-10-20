@@ -179,7 +179,7 @@ jobs:
     - name: Generate SBOM
       run: |
         # Run the SBOM generation script
-        ./scripts/sbom.sh
+        ./scripts/tools/sbom.sh
 
         # Verify SBOM was generated
         if [ -f sbom.json ]; then

@@ -838,6 +838,7 @@ mod sys_macos {
     }
 
     #[cfg(feature = "tun")]
+    #[allow(clippy::type_complexity)] // Return tuple is explicit and used in parsing pipeline
     fn parse_ipv4(pkt: &[u8]) -> Option<(L4, Option<IpAddr>, Option<u16>, Option<Vec<u8>>)> {
         if pkt.len() < 20 {
             return None;
@@ -882,6 +883,7 @@ mod sys_macos {
     }
 
     #[cfg(feature = "tun")]
+    #[allow(clippy::type_complexity)] // Return tuple is explicit and used in parsing pipeline
     fn parse_ipv6(pkt: &[u8]) -> Option<(L4, Option<IpAddr>, Option<u16>, Option<Vec<u8>>)> {
         if pkt.len() < 40 {
             return None;
@@ -1179,12 +1181,9 @@ mod sys_windows {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    
-    
+
     // use sb_core::router::RequestMeta; // Using local placeholder
     use serde_json::json;
-    
 
     /// Create a dummy router handle for testing
     fn create_dummy_router() -> Arc<RouterHandle> {

@@ -25,7 +25,7 @@ impl<T> FallbackStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 /// - Falls back to target website (auth failure)
 ///
 /// ## How it works:
-/// 1. Receives TLS ClientHello with embedded auth data
+/// 1. Receives TLS `ClientHello` with embedded auth data
 /// 2. Verifies authentication using shared secret
 /// 3. If valid: issues temporary certificate and proxies traffic
 /// 4. If invalid: proxies to real target website (disguise)
@@ -36,16 +36,17 @@ pub struct RealityAcceptor {
 
 impl RealityAcceptor {
     /// Create new REALITY acceptor
+    ///
+    /// # Errors
+    /// Returns an error if configuration validation or key parsing fails.
     pub fn new(config: RealityServerConfig) -> RealityResult<Self> {
         // Validate configuration
-        config
-            .validate()
-            .map_err(|e| RealityError::InvalidConfig(e))?;
+        config.validate().map_err(RealityError::InvalidConfig)?;
 
         // Parse private key for authentication
         let private_key_bytes = config
             .private_key_bytes()
-            .map_err(|e| RealityError::InvalidConfig(e))?;
+            .map_err(RealityError::InvalidConfig)?;
 
         let auth = RealityAuth::from_private_key(private_key_bytes);
 
@@ -61,6 +62,7 @@ impl RealityAcceptor {
     }
 
     /// Get configuration
+    #[must_use]
     pub fn config(&self) -> &RealityServerConfig {
         &self.config
     }
@@ -68,9 +70,11 @@ impl RealityAcceptor {
     /// Accept and handle REALITY connection
     ///
     /// This is the core server-side REALITY logic:
-    /// 1. Parse ClientHello and extract auth data
+    /// 1. Parse `ClientHello` and extract auth data
     /// 2. Verify authentication
     /// 3. Either proxy or fallback based on auth result
+    /// # Errors
+    /// Returns an error if the handshake times out or validation fails.
     pub async fn accept<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
@@ -83,6 +87,7 @@ impl RealityAcceptor {
     }
 
     /// Handle REALITY handshake
+    #[allow(clippy::cognitive_complexity)] // Handshake flow has necessary branching; refactor would risk protocol regressions. Revisit post-acceptance.
     async fn handle_handshake<S>(&self, mut stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
@@ -138,9 +143,10 @@ impl RealityAcceptor {
         Ok(RealityConnection::Proxy(tls_stream))
     }
 
-    /// Parse ClientHello and buffer the data for replay
+    /// Parse `ClientHello` and buffer the data for replay
     ///
-    /// Returns: (client_public_key, short_id, auth_hash, sni, buffered_data)
+    /// Returns: (`client_public_key`, `short_id`, `auth_hash`, sni, `buffered_data`)
+    #[allow(clippy::cognitive_complexity)] // Parsing and validation sequence is linear but branching by spec; splitting reduces readability. Revisit later.
     async fn parse_and_buffer_client_hello<S>(
         &self,
         stream: &mut S,
@@ -153,12 +159,10 @@ impl RealityAcceptor {
 
         // Read TLS record header (5 bytes)
         let mut header_buf = [0u8; 5];
-        stream.read_exact(&mut header_buf).await.map_err(|e| {
-            RealityError::HandshakeFailed(format!("Failed to read TLS record header: {}", e))
-        })?;
+        stream.read_exact(&mut header_buf).await.map_err(|e| RealityError::HandshakeFailed(format!("Failed to read TLS record header: {e}")))?;
 
         let content_type = ContentType::try_from(header_buf[0])
-            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid content type: {}", e)))?;
+            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid content type: {e}")))?;
         let version = u16::from_be_bytes([header_buf[1], header_buf[2]]);
         let length = u16::from_be_bytes([header_buf[3], header_buf[4]]);
 
@@ -170,21 +174,20 @@ impl RealityAcceptor {
         // Verify this is a handshake record
         if content_type != ContentType::Handshake {
             return Err(RealityError::HandshakeFailed(format!(
-                "Expected Handshake record, got {:?}",
-                content_type
+                "Expected Handshake record, got {content_type:?}"
             )));
         }
 
         // Read handshake data
         let mut handshake_data = vec![0u8; length as usize];
-        stream.read_exact(&mut handshake_data).await.map_err(|e| {
-            RealityError::HandshakeFailed(format!("Failed to read handshake: {}", e))
-        })?;
+        stream
+            .read_exact(&mut handshake_data)
+            .await
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read handshake: {e}")))?;
 
         // Parse ClientHello
-        let client_hello = ClientHello::parse(&handshake_data).map_err(|e| {
-            RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {}", e))
-        })?;
+        let client_hello = ClientHello::parse(&handshake_data)
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {e}")))?;
 
         debug!(
             "Parsed ClientHello: version=0x{:04x}, {} extensions",
@@ -204,10 +207,9 @@ impl RealityAcceptor {
             .find_extension(ExtensionType::RealityAuth as u16)
             .ok_or_else(|| RealityError::AuthFailed("No REALITY auth extension".to_string()))?;
 
-        let (client_public_key, short_id, auth_hash) =
-            reality_ext.parse_reality_auth().map_err(|e| {
-                RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {}", e))
-            })?;
+        let (client_public_key, short_id, auth_hash) = reality_ext
+            .parse_reality_auth()
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {e}")))?;
 
         debug!(
             "REALITY auth: public_key={}, short_id={}, auth_hash={}",
@@ -240,10 +242,8 @@ impl RealityAcceptor {
 
         // Generate a temporary self-signed certificate
         // In a production implementation, this would be derived from the shared secret
-        let cert =
-            rcgen::generate_simple_self_signed(vec![server_name.to_string()]).map_err(|e| {
-                RealityError::HandshakeFailed(format!("Failed to generate certificate: {}", e))
-            })?;
+        let cert = rcgen::generate_simple_self_signed(vec![server_name.to_string()])
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to generate certificate: {e}")))?;
 
         let cert_der = CertificateDer::from(cert.cert.der().to_vec());
 
@@ -255,9 +255,7 @@ impl RealityAcceptor {
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(vec![cert_der], key_der)
-            .map_err(|e| {
-                RealityError::HandshakeFailed(format!("Failed to create TLS config: {}", e))
-            })?;
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to create TLS config: {e}")))?;
 
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
 
@@ -265,7 +263,7 @@ impl RealityAcceptor {
         let tls_stream = acceptor
             .accept(stream)
             .await
-            .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {}", e)))?;
+            .map_err(|e| RealityError::HandshakeFailed(format!("TLS handshake failed: {e}")))?;
 
         debug!("REALITY TLS handshake completed successfully");
 
@@ -291,7 +289,7 @@ impl RealityAcceptor {
         // Connect to real target
         let target_stream = TcpStream::connect(&self.config.target)
             .await
-            .map_err(|e| RealityError::TargetFailed(format!("failed to connect: {}", e)))?;
+            .map_err(|e| RealityError::TargetFailed(format!("failed to connect: {e}")))?;
 
         info!("Fallback connection established to {}", self.config.target);
 
@@ -316,23 +314,22 @@ pub enum RealityConnection {
 
 impl RealityConnection {
     /// Check if this is a proxy connection
-    pub fn is_proxy(&self) -> bool {
-        matches!(self, RealityConnection::Proxy(_))
-    }
+    pub const fn is_proxy(&self) -> bool { matches!(self, Self::Proxy(_)) }
 
     /// Check if this is a fallback connection
-    pub fn is_fallback(&self) -> bool {
-        matches!(self, RealityConnection::Fallback { .. })
-    }
+    pub const fn is_fallback(&self) -> bool { matches!(self, Self::Fallback { .. }) }
 
     /// Handle the connection based on type
     ///
     /// - Proxy: return the encrypted stream for application layer
     /// - Fallback: bidirectionally copy traffic between client and target
+    ///
+    /// # Errors
+    /// Returns an error if relaying data between client and target fails.
     pub async fn handle(self) -> io::Result<Option<crate::TlsIoStream>> {
         match self {
-            RealityConnection::Proxy(stream) => Ok(Some(stream)),
-            RealityConnection::Fallback {
+            Self::Proxy(stream) => Ok(Some(stream)),
+            Self::Fallback {
                 mut client,
                 mut target,
             } => {
@@ -366,7 +363,7 @@ struct ReplayStream<S> {
 }
 
 impl<S> ReplayStream<S> {
-    fn new(inner: S, buffer: Vec<u8>) -> Self {
+    const fn new(inner: S, buffer: Vec<u8>) -> Self {
         Self {
             inner,
             buffer,

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-setup
       - name: Run preflight
-        run: scripts/preflight.sh
+        run: scripts/tools/preflight.sh
       - name: Upload preflight artifacts
         uses: actions/upload-artifact@v4
         with:

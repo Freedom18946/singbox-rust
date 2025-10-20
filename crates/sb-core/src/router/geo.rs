@@ -579,7 +579,9 @@ impl GeoSiteDb {
     pub fn category_rules(&self, category: &str) -> anyhow::Result<CategoryRules> {
         let category_lower = category.to_lowercase();
 
-        let rules = self.categories.get(&category_lower)
+        let rules = self
+            .categories
+            .get(&category_lower)
             .ok_or_else(|| anyhow::anyhow!("Category not found: {}", category))?;
 
         let mut domain = Vec::new();

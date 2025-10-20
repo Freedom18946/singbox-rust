@@ -5,13 +5,61 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use serde::{Deserialize, Serialize};
+use serde::{ser::Serializer, Deserialize, Serialize};
+
+// Helper to strip nulls from JSON values recursively
+fn strip_nulls(mut v: serde_json::Value) -> serde_json::Value {
+    match &mut v {
+        serde_json::Value::Object(map) => {
+            let keys: Vec<String> = map
+                .iter()
+                .filter(|(_, val)| val.is_null())
+                .map(|(k, _)| k.clone())
+                .collect();
+            for k in keys {
+                map.remove(&k);
+            }
+            let keys_all: Vec<String> = map.keys().cloned().collect();
+            for k in keys_all {
+                if let Some(val) = map.remove(&k) {
+                    map.insert(k, strip_nulls(val));
+                }
+            }
+            serde_json::Value::Object(map.clone())
+        }
+        serde_json::Value::Array(arr) => {
+            let new = arr.drain(..).map(strip_nulls).collect();
+            serde_json::Value::Array(new)
+        }
+        _ => v,
+    }
+}
+
+fn serialize_data_skip_none<T, S>(data: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize,
+    S: Serializer,
+{
+    match data {
+        None => serializer.serialize_none(),
+        Some(value) => {
+            let json = serde_json::to_value(value).map_err(serde::ser::Error::custom)?;
+            let filtered = strip_nulls(json);
+            serializer.serialize_some(&filtered)
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[serde(bound(
+    serialize = "T: serde::Serialize",
+    deserialize = "T: serde::de::DeserializeOwned"
+))]
 pub struct ResponseEnvelope<T> {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_data_skip_none")]
     pub data: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorBody>,

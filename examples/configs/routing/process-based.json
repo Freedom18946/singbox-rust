@@ -1,0 +1,62 @@
+{
+  "// description": "Process-based routing (requires platform support)",
+  "// usage": "cargo run -p app -- run -c examples/configs/routing/process-based.json",
+  "// platforms": "macOS (native), Windows (native), Linux (limited)",
+
+  "inbounds": [
+    {
+      "type": "tun",
+      "name": "tun-in",
+      "address": ["172.19.0.1/30"],
+      "auto_route": true
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy",
+      "server": "your-server.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "your-password"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "// comment": "Direct connection for specific apps",
+        "when": {
+          "process_name": ["Terminal", "iTerm", "ssh"]
+        },
+        "to": "direct"
+      },
+      {
+        "// comment": "Proxy for browsers",
+        "when": {
+          "process_name": ["Chrome", "Firefox", "Safari"]
+        },
+        "to": "proxy"
+      },
+      {
+        "// comment": "Block ads in specific apps",
+        "when": {
+          "process_path": ["/Applications/Ads.app"],
+          "domain_suffix": [".ads"]
+        },
+        "to": "block"
+      }
+    ],
+    "default": "direct",
+    "auto_detect_interface": true
+  }
+}

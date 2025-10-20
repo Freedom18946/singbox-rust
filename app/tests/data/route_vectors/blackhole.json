@@ -1,0 +1,15 @@
+{
+  "log": { "level": "warn" },
+  "inbounds": [{ "type": "http", "listen": "127.0.0.1", "port": 18081 }],
+  "outbounds": [
+    { "type": "block", "name": "BLOCK" },
+    { "type": "direct", "name": "DIRECT" }
+  ],
+  "route": {
+    "rules": [
+      { "domain": ["ads.example.com"], "outbound": "BLOCK" }
+    ],
+    "default": "DIRECT"
+  }
+}
+

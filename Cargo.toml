@@ -8,6 +8,7 @@ members = [
   "crates/sb-config",
   "crates/sb-metrics",
   "crates/sb-security",
+  "crates/sb-test-utils",
   "crates/sb-types",
   "crates/sb-proto",
   "crates/sb-runtime",
@@ -15,8 +16,10 @@ members = [
   "crates/sb-transport",
   "crates/sb-subscribe",
   "crates/sb-api",
-  "xtask"
-, "crates/sb-tls"]
+  "crates/sb-tls",
+  "xtask",
+  "xtests",
+]
 exclude = [
   "crates/sb-adapters/fuzz"
 ]

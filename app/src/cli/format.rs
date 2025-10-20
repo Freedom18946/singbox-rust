@@ -4,6 +4,8 @@
 //! - `-w/--write` to write in-place; otherwise prints to stdout
 
 use anyhow::{Context, Result};
+use crate::cli::output;
+use crate::cli::Format as OutFormat;
 use clap::{ArgAction, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,7 +30,7 @@ pub struct FormatArgs {
     pub help_json: bool,
 }
 
-pub async fn run(args: FormatArgs) -> Result<()> {
+pub fn run(args: FormatArgs) -> Result<()> {
     if args.help_json {
         crate::cli::help::print_help_json::<FormatArgs>();
     }
@@ -106,13 +108,14 @@ fn format_one(path: &Path, write: bool, multi: bool) -> Result<()> {
     } else {
         // Print absolute path prefix when multiple inputs
         if multi {
-            if let Ok(abs) = path.canonicalize() {
-                println!("{}", abs.display());
+            let head = if let Ok(abs) = path.canonicalize() {
+                abs.display().to_string()
             } else {
-                println!("{}", path.display());
-            }
+                path.display().to_string()
+            };
+            output::emit(OutFormat::Human, || head, &serde_json::json!({"path": path.display().to_string()}));
         }
-        println!("{}\n", formatted);
+        output::emit(OutFormat::Human, || format!("{formatted}\n"), &serde_json::json!({"formatted": val}));
     }
     Ok(())
 }

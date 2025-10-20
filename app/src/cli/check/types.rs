@@ -8,42 +8,16 @@ pub enum IssueKind {
     Warning,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum IssueCode {
-    SchemaViolation,
-    MissingField,
-    InvalidType,
-    InvalidPort,
-    InvalidEnum,
-    MutualExclusive,
-    RefMissing,
-    RefUnreadable,
-    RefTooLarge,
-    CrossRefMissing, // route.to -> proxy:<pool> not found
-    UnknownField,    // deny-unknown
-    TypeMismatch,    // Wrong data type for field
-    OutOfRange,      // Value outside acceptable range
-    DuplicateName,
-    PortConflict,
-    BadCIDR,
-    BadDomain,
-    ApiVersionMissing,
-    KindMissing,
-    ApiVersionUnknown,
-    UnreachableRule, // 规则不可达
-    ShadowedBy,      // 规则被前规则遮蔽
-    EmptyRuleMatch,
-    RedundantRule,
-    ConflictingRule,
-    ConfigRisk,
-}
+// Use the shared, stable IssueCode from sb-types to enforce cross-crate consistency
+pub use sb_types::IssueCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckIssue {
+    #[serde(rename = "level")]
     pub kind: IssueKind,
     /// RFC6901 JSON Pointer
     pub ptr: String,
+    #[serde(rename = "message")]
     pub msg: String,
     pub code: IssueCode,
     #[serde(skip_serializing_if = "Option::is_none")]

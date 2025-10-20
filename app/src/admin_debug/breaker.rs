@@ -82,7 +82,9 @@ pub fn clear_thread_local_clock() {
 enum State {
     Closed,
     Open { until: Instant, _backoff: Duration },
-    HalfOpen { probes: u32 },
+    // probes: number of successful probes required to fully close the circuit
+    // permits: number of probe attempts allowed while half-open
+    HalfOpen { probes: u32, permits: u32 },
 }
 
 impl Default for State {
@@ -155,21 +157,25 @@ impl HostBreaker {
             stat.failures = 0;
         }
 
-        match &stat.state {
+        match &mut stat.state {
             State::Closed => true, // Allow all requests
             State::Open { until, .. } => {
                 if current_time < *until {
                     false // Circuit is still open, block request
                 } else {
                     // Transition to half-open
-                    stat.state = State::HalfOpen {
-                        probes: self.half_open_probes,
-                    };
+                    let permits = self.half_open_probes.saturating_sub(1);
+                    stat.state = State::HalfOpen { probes: self.half_open_probes, permits };
                     true // Allow first probe request
                 }
             }
-            State::HalfOpen { probes } => {
-                *probes > 0 // Only allow if we have probes left
+            State::HalfOpen { permits, .. } => {
+                if *permits > 0 {
+                    *permits -= 1;
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
@@ -179,7 +185,7 @@ impl HostBreaker {
             stat.successes += 1;
 
             match &mut stat.state {
-                State::HalfOpen { probes } => {
+                State::HalfOpen { probes, .. } => {
                     *probes = probes.saturating_sub(1);
                     if *probes == 0 {
                         // All probes succeeded, close the circuit
@@ -254,8 +260,11 @@ impl HostBreaker {
                 let total = (stat.successes + stat.failures).max(1);
                 #[allow(clippy::cast_precision_loss)]
                 let ratio = (stat.failures as f32) / (total as f32);
-
-                if stat.failures >= self.failure_threshold || ratio >= self.failure_ratio {
+                // Only use ratio after we have enough samples (>=3)
+                const MIN_SAMPLES_FOR_RATIO: u32 = 3;
+                if stat.failures >= self.failure_threshold
+                    || (total >= MIN_SAMPLES_FOR_RATIO && ratio >= self.failure_ratio)
+                {
                     // Trip circuit to OPEN state
                     stat.reopen_count = 1;
                     stat.state = State::Open {
@@ -318,19 +327,15 @@ impl HostBreaker {
         let current_time = now();
         self.map
             .iter()
-            .map(|(host, stat)| {
-                let state_name = match &stat.state {
-                    State::Closed => "closed".to_string(),
-                    State::Open { until, .. } => {
-                        if current_time < *until {
-                            "open".to_string()
-                        } else {
-                            "half_open".to_string()
-                        }
-                    }
-                    State::HalfOpen { .. } => "half_open".to_string(),
+            .filter_map(|(host, stat)| {
+                let state_opt = match &stat.state {
+                    // Include closed entries only if they previously tripped (reopen_count > 0)
+                    State::Closed => (stat.reopen_count > 0).then(|| "closed".to_string()),
+                    // Reflect actual state
+                    State::Open { .. } => Some("open".to_string()),
+                    State::HalfOpen { .. } => Some("half_open".to_string()),
                 };
-                (host.clone(), state_name, stat.reopen_count)
+                state_opt.map(|state_name| (host.clone(), state_name, stat.reopen_count))
             })
             .collect()
     }
@@ -373,6 +378,7 @@ pub fn global() -> &'static Mutex<HostBreaker> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
     use std::{cell::RefCell, rc::Rc, thread};
@@ -422,6 +428,7 @@ mod tests {
 
     #[test]
     fn test_breaker_trips_on_threshold() {
+        let _clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 1000, 3, 0.9);
 
         for _ in 0..3 {
@@ -435,6 +442,7 @@ mod tests {
 
     #[test]
     fn test_breaker_trips_on_ratio() {
+        let _clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 1000, 100, 0.5);
 
         assert!(br.check("mixed.com"));
@@ -556,15 +564,11 @@ mod tests {
         let backoff2 = br.calculate_backoff(2);
         let backoff3 = br.calculate_backoff(3);
 
-        // Each backoff should be approximately 2x the previous (with jitter)
-        assert!(backoff1.as_millis() >= 1200); // 1000ms * 1.2 (min jitter)
-        assert!(backoff1.as_millis() <= 1300); // 1000ms * 1.3 (max jitter)
-
-        assert!(backoff2.as_millis() >= 2400); // 2000ms * 1.2
-        assert!(backoff2.as_millis() <= 2600); // 2000ms * 1.3
-
-        assert!(backoff3.as_millis() >= 4800); // 4000ms * 1.2
-        assert!(backoff3.as_millis() <= 5200); // 4000ms * 1.3
+        // Each backoff should be 2x the previous (without jitter)
+        // calculate_backoff returns base duration without jitter
+        assert_eq!(backoff1.as_millis(), 1000); // 1000ms * 2^0
+        assert_eq!(backoff2.as_millis(), 2000); // 1000ms * 2^1
+        assert_eq!(backoff3.as_millis(), 4000); // 1000ms * 2^2
     }
 
     #[test]

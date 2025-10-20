@@ -1,0 +1,64 @@
+{
+  "// description": "Selector outbound for manual proxy switching",
+  "// usage": "cargo run -p app --features 'sb-core/selector' -- run -c examples/configs/outbounds/selector.json",
+  "// control": "Use admin API to switch between outbounds",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "selector",
+      "name": "proxy",
+      "outbounds": ["ss-out", "vmess-out", "direct"],
+      "default": "ss-out"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "ss-out",
+      "server": "ss.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password1"
+    },
+    {
+      "type": "vmess",
+      "name": "vmess-out",
+      "server": "vmess.example.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "suffix": [".cn"]
+        },
+        "to": "direct"
+      },
+      {
+        "when": {
+          "suffix": [".ads", "tracker."]
+        },
+        "to": "block"
+      }
+    ],
+    "default": "proxy"
+  }
+}

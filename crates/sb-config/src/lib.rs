@@ -118,7 +118,7 @@ pub enum Outbound {
     Direct { name: String },
     #[serde(rename = "block")]
     Block { name: String },
-    #[serde(rename = "socks5")]
+    #[serde(rename = "socks5", alias = "socks")]
     Socks5 {
         name: String,
         server: String,
@@ -213,6 +213,26 @@ pub enum Outbound {
         #[serde(default)]
         tls_alpn: Option<String>,
     },
+    #[serde(rename = "tuic")]
+    Tuic {
+        name: String,
+        server: String,
+        port: u16,
+        uuid: String,
+        token: String,
+        #[serde(default)]
+        password: Option<String>,
+        #[serde(default)]
+        congestion_control: Option<String>,
+        #[serde(default)]
+        alpn: Option<String>,
+        #[serde(default)]
+        skip_cert_verify: Option<bool>,
+        #[serde(default)]
+        udp_relay_mode: Option<String>,
+        #[serde(default)]
+        udp_over_stream: Option<bool>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -239,12 +259,28 @@ pub struct Rule {
     pub outbound: String,
 }
 
+fn rule_from_ir(ir_rule: &crate::ir::RuleIR) -> Option<Rule> {
+    let outbound = ir_rule.outbound.clone()?;
+    Some(Rule {
+        domain_suffix: ir_rule.domain.clone(),
+        ip_cidr: ir_rule.ipcidr.clone(),
+        port: ir_rule.port.clone(),
+        transport: ir_rule.network.first().cloned(),
+        outbound,
+    })
+}
+
 impl Config {
     pub(crate) fn from_value(doc: Value) -> Result<Self> {
-        let mut cfg: Config =
-            serde_json::from_value(doc.clone()).map_err(|e| anyhow!("deserialize config: {e}"))?;
+        let mut cfg: Config = serde_json::from_value(doc.clone()).unwrap_or_default();
         cfg.raw = doc;
         cfg.ir = crate::validator::v2::to_ir_v1(&cfg.raw);
+        if cfg.raw.get("route").is_some() && !cfg.ir.route.rules.is_empty() {
+            cfg.rules = cfg.ir.route.rules.iter().filter_map(rule_from_ir).collect();
+        }
+        if cfg.default_outbound.is_none() && cfg.ir.route.default.is_some() {
+            cfg.default_outbound = cfg.ir.route.default.clone();
+        }
         Ok(cfg)
     }
 
@@ -300,30 +336,42 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        use crate::ir::OutboundType;
         // 1) 出站名称唯一
         let mut names = HashSet::new();
-        for ob in &self.outbounds {
-            let name = match ob {
-                Outbound::Direct { name }
-                | Outbound::Block { name }
-                | Outbound::Socks5 { name, .. }
-                | Outbound::Http { name, .. }
-                | Outbound::Vless { name, .. }
-                | Outbound::Vmess { name, .. }
-                | Outbound::Trojan { name, .. } => name,
-            };
-            if !names.insert(name) {
-                return Err(anyhow!("duplicate outbound name: {}", name));
+        for ob in &self.ir.outbounds {
+            if let Some(name) = &ob.name {
+                if !names.insert(name.clone()) {
+                    return Err(anyhow!("duplicate outbound name: {}", name));
+                }
+            }
+        }
+        // 2) Selector/URLTest 成员必须指向已存在的出站
+        for ob in &self.ir.outbounds {
+            if matches!(ob.ty, OutboundType::Selector | OutboundType::UrlTest) {
+                if let Some(members) = &ob.members {
+                    for member in members {
+                        if !names.contains(member) {
+                            return Err(anyhow!(
+                                "outbound '{}': member '{}' not found",
+                                ob.name.as_deref().unwrap_or("unnamed"),
+                                member
+                            ));
+                        }
+                    }
+                }
             }
         }
         // 2) 规则指向存在
-        for r in &self.rules {
-            if !names.contains(&r.outbound) {
-                return Err(anyhow!("rule outbound not found: {}", r.outbound));
+        for r in &self.ir.route.rules {
+            if let Some(outbound) = &r.outbound {
+                if !names.contains(outbound) {
+                    return Err(anyhow!("rule outbound not found: {}", outbound));
+                }
             }
         }
         // 3) default_outbound（若存在）必须存在于 outbounds
-        if let Some(def) = &self.default_outbound {
+        if let Some(def) = &self.ir.route.default {
             if !names.contains(def) {
                 return Err(anyhow!("default_outbound not found in outbounds: {}", def));
             }

@@ -1,4 +1,4 @@
-#![cfg(feature = "dns_doq")]
+// cfg is already applied at module inclusion site
 use crate::dns::transport::DnsTransport;
 use anyhow::Result;
 use std::net::{IpAddr, SocketAddr};

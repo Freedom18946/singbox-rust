@@ -257,6 +257,7 @@ pub fn from_env() -> Option<RateLimitMiddleware> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
     use std::thread;

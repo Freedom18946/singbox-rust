@@ -118,7 +118,7 @@ pub struct ScenarioFile {
     /// 递归包含其他场景文件（相对当前文件路径）
     #[serde(default)]
     pub include: Vec<PathBuf>,
-    /// 新增：按 glob 引入子场景（只允许 examples/scenarios/ 前缀）
+    /// 新增：按 glob 引入子场景（只允许 examples/code-examples/testing/scenarios/ 前缀）
     #[serde(default)]
     pub include_glob: Vec<String>,
     /// 变量表（仅用于 String/Path 类字段展开）
@@ -229,11 +229,13 @@ fn load_and_resolve<P: AsRef<Path>>(
         let sub = load_and_resolve(&inc, abspath.parent().unwrap_or(base), stack)?;
         merged_steps.extend(sub.steps);
     }
-    // resolve include_glob (仅允许 examples/scenarios/ 开头，避免越界)
+    // resolve include_glob (仅允许 examples/code-examples/testing/scenarios/ 开头，避免越界)
     for pat in sc.include_glob.drain(..) {
-        if !(pat.starts_with("./examples/scenarios/") || pat.starts_with("examples/scenarios/")) {
+        if !(pat.starts_with("./examples/code-examples/testing/scenarios/")
+            || pat.starts_with("examples/code-examples/testing/scenarios/"))
+        {
             return Err(anyhow!(
-                "include_glob must be under examples/scenarios/: {}",
+                "include_glob must be under examples/code-examples/testing/scenarios/: {}",
                 pat
             ));
         }

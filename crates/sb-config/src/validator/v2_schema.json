@@ -15,6 +15,7 @@
       "name":{"type":"string"},
       "type":{"enum":["socks","http","tun","mixed","direct","hysteria","hysteria2","tuic"]},
       "listen":{"type":"string","minLength":1},
+      "port":{"type":"integer","minimum":1,"maximum":65535},
       "udp":{"type":"boolean"},
       "network":{"type":"string","enum":["tcp","udp"]},
       "sniff":{"type":"boolean"},

@@ -6,11 +6,11 @@
 //! - 连接复用和池化
 //! - 超时和重试机制
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+// imports for read/write are used within function scope where needed
 
 use super::DnsTransport;
 
@@ -24,7 +24,7 @@ pub struct DotTransport {
     timeout: Duration,
     /// TLS 配置
     #[cfg(feature = "tls")]
-    tls_config: Arc<rustls::ClientConfig>,
+    tls_config: std::sync::Arc<rustls::ClientConfig>,
 }
 
 impl DotTransport {
@@ -50,7 +50,7 @@ impl DotTransport {
             // 启用 ALPN 协议协商
             config.alpn_protocols = vec![b"dot".to_vec()];
 
-            Arc::new(config)
+            std::sync::Arc::new(config)
         };
 
         Ok(Self {
@@ -72,6 +72,7 @@ impl DotTransport {
     async fn establish_tls_connection(
         &self,
     ) -> Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+        use anyhow::Context as _;
         use tokio_rustls::TlsConnector;
 
         // 建立 TCP 连接
@@ -97,6 +98,8 @@ impl DotTransport {
 
     #[cfg(feature = "tls")]
     async fn send_query_tls(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        use anyhow::Context as _;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut stream = self.establish_tls_connection().await?;
 
         // DoT 使用 TCP 长度前缀格式

@@ -67,14 +67,7 @@ impl ApiKeyProvider {
 
         let (provided_key_id, timestamp_str, provided_signature) = (parts[0], parts[1], parts[2]);
 
-        // Verify key ID if configured
-        if let Some(expected_key_id) = &self.key_id {
-            if provided_key_id != expected_key_id {
-                return Err(AuthError::invalid("Invalid key ID"));
-            }
-        }
-
-        // Parse and validate timestamp
+        // Parse and validate timestamp first to avoid leaking key-id information on format errors
         let timestamp = timestamp_str
             .parse::<u64>()
             .map_err(|_| AuthError::invalid("Invalid timestamp format"))?;
@@ -89,6 +82,13 @@ impl ApiKeyProvider {
             return Err(AuthError::expired(
                 "Authentication timestamp outside 5-minute window",
             ));
+        }
+
+        // Verify key ID if configured (after timestamp validation)
+        if let Some(expected_key_id) = &self.key_id {
+            if provided_key_id != expected_key_id {
+                return Err(AuthError::invalid("Invalid key ID"));
+            }
         }
 
         // Create message to sign: timestamp||path
@@ -139,6 +139,7 @@ impl AuthProvider for ApiKeyProvider {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

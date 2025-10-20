@@ -78,7 +78,10 @@ impl ExplainEngine {
     pub fn explain(&self, dest: &str, with_trace: bool) -> ExplainResult {
         // 解析 host:port
         let (host, port) = if let Some((h, p)) = dest.rsplit_once(':') {
-            (h.to_string(), p.parse::<u16>().unwrap_or(0))
+            let parsed_port = p
+                .parse::<u16>()
+                .unwrap_or(0);
+            (h.to_string(), parsed_port)
         } else {
             (dest.to_string(), 0)
         };

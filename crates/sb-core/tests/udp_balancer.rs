@@ -31,8 +31,7 @@ async fn balancer_direct_ok() -> anyhow::Result<()> {
     Ok(())
 }
 
-mod support_socks5_mock;
-use support_socks5_mock::start_mock_socks5;
+use sb_test_utils::socks5::start_mock_socks5;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn balancer_socks5_ok() -> anyhow::Result<()> {

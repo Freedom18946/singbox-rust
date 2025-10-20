@@ -8,48 +8,9 @@
 //!
 //! Requirements: 10.2
 
-use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-use tempfile::NamedTempFile;
+mod common;
 
-/// Locate a workspace binary by name
-fn workspace_bin(name: &str) -> PathBuf {
-    let env_key = format!("CARGO_BIN_EXE_{}", name.replace('-', "_"));
-    if let Ok(path) = std::env::var(&env_key) {
-        return PathBuf::from(path);
-    }
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop(); // Go to workspace root
-    path.push("target");
-    let profile = std::env::var("CARGO_PROFILE")
-        .ok()
-        .or_else(|| std::env::var("PROFILE").ok())
-        .unwrap_or_else(|| "debug".into());
-    path.push(profile);
-    path.push(name);
-    if cfg!(windows) {
-        path.set_extension("exe");
-    }
-    path
-}
-
-fn write_cfg(content: &str) -> NamedTempFile {
-    let f = NamedTempFile::new().expect("tmp");
-    fs::write(f.path(), content.as_bytes()).expect("write cfg");
-    f
-}
-
-fn run_check(cfg_path: &str) -> Option<(bool, String)> {
-    let bin = workspace_bin("check").to_string_lossy().to_string();
-    let out = Command::new(bin)
-        .args(&["--config", cfg_path])
-        .output()
-        .ok()?;
-    let success = out.status.success();
-    let stdout = String::from_utf8(out.stdout).ok()?;
-    Some((success, stdout))
-}
+use common::workspace::{run_check, write_temp_config, workspace_bin};
 
 /// Test domain-based routing with REALITY TLS
 ///
@@ -102,7 +63,7 @@ fn test_domain_routing_with_reality() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -157,7 +118,7 @@ fn test_ip_routing_with_hysteria2() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -211,7 +172,7 @@ fn test_port_routing_with_ssh() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -261,7 +222,7 @@ fn test_process_routing_with_tuic() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -362,7 +323,7 @@ fn test_combined_routing_with_mixed_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -414,7 +375,7 @@ fn test_domain_keyword_routing_with_hysteria_v1() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -475,7 +436,7 @@ fn test_geoip_routing_with_ech() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -542,7 +503,7 @@ fn test_geosite_routing_with_p0_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -602,7 +563,7 @@ fn test_invert_rule_with_p0_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -665,7 +626,7 @@ fn test_protocol_routing_with_p0_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -719,7 +680,7 @@ fn test_source_ip_routing_with_p0_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");

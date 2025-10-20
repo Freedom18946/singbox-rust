@@ -1,3 +1,4 @@
+#![cfg(feature = "net_e2e")]
 //! VLESS + gRPC Transport Integration Test
 //!
 //! This test validates that VLESS outbound adapter correctly integrates with gRPC transport.

@@ -1,3 +1,4 @@
+#![cfg(feature = "net_e2e")]
 //! TUIC E2E tests
 //!
 //! Comprehensive end-to-end tests for TUIC protocol including:
@@ -6,7 +7,6 @@
 //! - UDP over stream mode
 //! - Authentication scenarios
 //! - Upstream compatibility
-
 
 #[cfg(feature = "sb-core/out_tuic")]
 mod tuic_tests {

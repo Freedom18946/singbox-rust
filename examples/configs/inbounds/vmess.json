@@ -1,0 +1,37 @@
+{
+  "// description": "VMess inbound server with WebSocket transport",
+  "// usage": "cargo run -p app --features 'sb-core/in_vmess,sb-core/v2ray_transport' -- run -c examples/configs/inbounds/vmess.json",
+
+  "inbounds": [
+    {
+      "type": "vmess",
+      "name": "vmess-in",
+      "listen": "0.0.0.0",
+      "port": 10086,
+      "users": [
+        {
+          "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+          "alterId": 0
+        }
+      ],
+      "transport": {
+        "type": "ws",
+        "path": "/vmess",
+        "headers": {
+          "Host": "example.com"
+        }
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "direct"
+  }
+}

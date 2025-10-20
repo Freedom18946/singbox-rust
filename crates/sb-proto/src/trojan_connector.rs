@@ -30,7 +30,7 @@ impl<D: Dialer + Send + Sync + 'static> crate::connector::OutboundConnector for 
             .dialer
             .connect(&target.host, target.port)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let hello = TrojanHello {
             password: self.password.clone(),
             host: target.host.clone(),

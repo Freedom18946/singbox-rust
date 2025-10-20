@@ -1,3 +1,5 @@
+#![cfg(feature = "net_e2e")]
+#![cfg(feature = "tls_reality")]
 //! E2E test for VLESS with Multiplex integration
 //!
 //! Tests that VLESS protocol correctly works with yamux-based multiplexing,
@@ -15,9 +17,9 @@ use uuid::Uuid;
 use sb_adapters::inbound::vless::VlessInboundConfig;
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
+use sb_adapters::transport_config::TransportConfig;
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
-use sb_adapters::transport_config::TransportConfig;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
 
 /// Helper: Start TCP echo server

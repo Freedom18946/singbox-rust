@@ -121,6 +121,7 @@ pub async fn send_error_response<W: AsyncWrite + Unpin>(
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

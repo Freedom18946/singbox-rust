@@ -339,17 +339,16 @@ impl MultiplexDialer {
             if pool.len() >= self.config.max_connections {
                 // Try to find a connection with available capacity
                 for (existing_key, mux_conn) in pool.iter() {
-                    if existing_key.starts_with(&format!("{}:", host)) {
-                        if mux_conn.is_healthy().await
-                            && mux_conn.get_stream_count() < self.config.max_streams_per_connection
-                        {
-                            debug!(
-                                "Max connections reached, reusing existing connection: {}",
-                                existing_key
-                            );
-                            mux_conn.update_last_used().await;
-                            return Ok(mux_conn.clone());
-                        }
+                    if existing_key.starts_with(&format!("{}:", host))
+                        && mux_conn.is_healthy().await
+                        && mux_conn.get_stream_count() < self.config.max_streams_per_connection
+                    {
+                        debug!(
+                            "Max connections reached, reusing existing connection: {}",
+                            existing_key
+                        );
+                        mux_conn.update_last_used().await;
+                        return Ok(mux_conn.clone());
                     }
                 }
 
@@ -512,8 +511,8 @@ impl tokio::io::AsyncWrite for StreamWrapper {
     }
 }
 
-/// yamux Stream already implements AsyncRead + AsyncWrite + Unpin + Send,
-/// so it can be used directly as IoStream
+// yamux Stream already implements AsyncRead + AsyncWrite + Unpin + Send,
+// so it can be used directly as IoStream
 
 /// Multiplex server configuration
 #[derive(Debug, Clone)]

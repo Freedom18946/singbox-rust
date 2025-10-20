@@ -7,9 +7,7 @@ use tempfile::TempDir;
 use tokio::fs;
 use tokio::time::sleep;
 
-use sb_core::router::{
-    HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle,
-};
+use sb_core::router::{HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle};
 
 #[tokio::test]
 async fn test_hot_reload_complete_functionality() {

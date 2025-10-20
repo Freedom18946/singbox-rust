@@ -1,0 +1,10 @@
+# Ignore all runtime-generated content
+stress-tests/**/*.log
+stress-tests/**/*.txt
+stress-tests/**/*.gz
+stress-tests/**/*.zip
+
+# Keep documentation
+!README.md
+!stress-tests/README.md
+!stress-tests/.gitignore

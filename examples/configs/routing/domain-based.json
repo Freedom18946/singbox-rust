@@ -1,0 +1,71 @@
+{
+  "// description": "Domain-based routing rules",
+  "// usage": "cargo run -p app -- run -c examples/configs/routing/domain-based.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy",
+      "server": "your-server.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "your-password"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "// comment": "Block ads and trackers",
+        "when": {
+          "domain_suffix": [
+            "ads.example.com",
+            "tracker.example.com",
+            "analytics.example.com"
+          ]
+        },
+        "to": "block"
+      },
+      {
+        "// comment": "Direct connection for local domains",
+        "when": {
+          "domain": ["localhost", "local"],
+          "domain_suffix": [".local", ".lan"]
+        },
+        "to": "direct"
+      },
+      {
+        "// comment": "Proxy specific streaming services",
+        "when": {
+          "domain_suffix": ["netflix.com", "hulu.com", "disneyplus.com"]
+        },
+        "to": "proxy"
+      },
+      {
+        "// comment": "Direct for Chinese domains",
+        "when": {
+          "domain_suffix": [".cn", ".中国"]
+        },
+        "to": "direct"
+      }
+    ],
+    "default": "proxy"
+  }
+}

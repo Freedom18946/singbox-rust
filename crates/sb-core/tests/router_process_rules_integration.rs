@@ -99,7 +99,7 @@ async fn test_process_path_regex_routing() {
             },
         ];
 
-        let _rules_clone = rules.clone();
+        let rules_clone = rules.clone();
         let engine = Engine::build(rules);
         let _router = ProcessRouter::new(engine).expect("Failed to create ProcessRouter");
 

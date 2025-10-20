@@ -10,40 +10,12 @@
 //! Note: These tests require upstream sing-box binary to be available.
 //! Set GO_SINGBOX_BIN environment variable to the path of sing-box binary.
 
-use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-use tempfile::NamedTempFile;
+mod common;
 
-/// Locate a workspace binary by name
-fn workspace_bin(name: &str) -> PathBuf {
-    let env_key = format!("CARGO_BIN_EXE_{}", name.replace('-', "_"));
-    if let Ok(path) = std::env::var(&env_key) {
-        return PathBuf::from(path);
-    }
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop(); // Go to workspace root
-    path.push("target");
-    let profile = std::env::var("CARGO_PROFILE")
-        .ok()
-        .or_else(|| std::env::var("PROFILE").ok())
-        .unwrap_or_else(|| "debug".into());
-    path.push(profile);
-    path.push(name);
-    if cfg!(windows) {
-        path.set_extension("exe");
-    }
-    path
-}
-
-fn write_cfg(content: &str) -> NamedTempFile {
-    let f = NamedTempFile::new().expect("tmp");
-    fs::write(f.path(), content.as_bytes()).expect("write cfg");
-    f
-}
+use common::workspace::{write_temp_config, workspace_bin};
 
 fn run_check(bin: &str, cfg_path: &str) -> Option<(bool, String)> {
-    let out = Command::new(bin)
+    let out = std::process::Command::new(bin)
         .args(&["--config", cfg_path])
         .output()
         .ok()?;
@@ -104,7 +76,7 @@ fn test_reality_config_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     // Test Rust implementation
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
@@ -178,7 +150,7 @@ fn test_hysteria2_config_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
@@ -240,7 +212,7 @@ fn test_ssh_config_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
@@ -303,7 +275,7 @@ fn test_tuic_config_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
@@ -372,7 +344,7 @@ fn test_ech_config_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
@@ -436,7 +408,7 @@ fn test_hysteria_v1_config_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
@@ -547,7 +519,7 @@ fn test_mixed_p0_protocols_compatibility() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
 
     let rust_bin = workspace_bin("check").to_string_lossy().to_string();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());

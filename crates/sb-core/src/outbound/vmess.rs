@@ -38,6 +38,45 @@ pub struct VmessConfig {
     pub id: uuid::Uuid,
     pub security: String, // "aes-128-gcm" or "chacha20-poly1305"
     pub alter_id: u8,     // Legacy compatibility, should be 0 for AEAD
+    // Transport layering from IR (optional)
+    pub transport: Option<Vec<String>>, // e.g., ["tls","ws"], ["tls","h2"]
+    pub ws_path: Option<String>,
+    pub ws_host: Option<String>,
+    pub h2_path: Option<String>,
+    pub h2_host: Option<String>,
+    pub tls_sni: Option<String>,
+    pub tls_alpn: Option<Vec<String>>,
+    pub grpc_service: Option<String>,
+    pub grpc_method: Option<String>,
+    pub grpc_authority: Option<String>,
+    pub grpc_metadata: Vec<(String, String)>,
+    pub http_upgrade_path: Option<String>,
+    pub http_upgrade_headers: Vec<(String, String)>,
+}
+
+impl Default for VmessConfig {
+    fn default() -> Self {
+        Self {
+            server: String::new(),
+            port: 0,
+            id: uuid::Uuid::nil(),
+            security: "aes-128-gcm".to_string(),
+            alter_id: 0,
+            transport: None,
+            ws_path: None,
+            ws_host: None,
+            h2_path: None,
+            h2_host: None,
+            tls_sni: None,
+            tls_alpn: None,
+            grpc_service: None,
+            grpc_method: None,
+            grpc_authority: None,
+            grpc_metadata: Vec::new(),
+            http_upgrade_path: None,
+            http_upgrade_headers: Vec::new(),
+        }
+    }
 }
 
 #[cfg(feature = "out_vmess")]
@@ -404,35 +443,48 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
         };
 
         // Determine transport chain from environment variable
-        let t = std::env::var("SB_VMESS_TRANSPORT").unwrap_or_default();
-        let want_tls = t.contains("tls");
-        let want_ws = t.contains("ws");
-        let want_h2 = t.contains("h2");
+        let transports = self.config.transport.clone().unwrap_or_else(|| {
+            let t = std::env::var("SB_VMESS_TRANSPORT").unwrap_or_default();
+            t.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        });
+        let has = |k: &str| transports.iter().any(|x| x.eq_ignore_ascii_case(k));
+        let want_tls = self.config.tls_sni.is_some() || has("tls");
+        let want_ws = has("ws");
+        let want_h2 = has("h2");
+        let want_hup = has("httpupgrade") || has("http_upgrade");
+        let want_mux = has("mux") || has("multiplex");
+        let want_grpc = has("grpc");
 
         let mut builder = TransportBuilder::tcp();
 
         if want_tls {
-            // Prefer production config (webpki roots). For real deployments this
-            // should be replaced with system roots configuration.
             let tls_cfg = sb_transport::tls::webpki_roots_config();
-            // Optional SNI override via SB_TLS_SNI is handled in TlsDialer::from_env,
-            // but TransportBuilder::tls requires explicit params; pass None to use host.
-            // For HTTP/2 we also set ALPN h2
-            let alpn = if want_h2 {
+            let alpn = if let Some(ref alpn_list) = self.config.tls_alpn {
+                Some(alpn_list.iter().map(|s| s.as_bytes().to_vec()).collect())
+            } else if want_h2 {
                 Some(vec![b"h2".to_vec()])
             } else {
                 None
             };
-            builder = builder.tls(tls_cfg, None, alpn);
+            let sni = self.config.tls_sni.clone();
+            builder = builder.tls(tls_cfg, sni, alpn);
         }
 
         if want_ws {
             let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-            if let Ok(path) = std::env::var("SB_WS_PATH") {
+            if let Some(ref p) = self.config.ws_path {
+                ws_cfg.path = p.clone();
+            } else if let Ok(path) = std::env::var("SB_WS_PATH") {
                 ws_cfg.path = path;
             }
-            // Optional Host header masquerading
-            if let Ok(host_header) = std::env::var("SB_WS_HOST") {
+            if let Some(ref host_header) = self.config.ws_host {
+                ws_cfg
+                    .headers
+                    .push(("Host".to_string(), host_header.clone()));
+            } else if let Ok(host_header) = std::env::var("SB_WS_HOST") {
                 ws_cfg.headers.push(("Host".to_string(), host_header));
             }
             builder = builder.websocket(ws_cfg);
@@ -440,13 +492,53 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
 
         if want_h2 {
             let mut h2_cfg = sb_transport::http2::Http2Config::default();
-            if let Ok(path) = std::env::var("SB_H2_PATH") {
+            if let Some(ref p) = self.config.h2_path {
+                h2_cfg.path = p.clone();
+            } else if let Ok(path) = std::env::var("SB_H2_PATH") {
                 h2_cfg.path = path;
             }
-            if let Ok(host_header) = std::env::var("SB_H2_HOST") {
+            if let Some(ref host_header) = self.config.h2_host {
+                h2_cfg.host = host_header.clone();
+            } else if let Ok(host_header) = std::env::var("SB_H2_HOST") {
                 h2_cfg.host = host_header;
             }
             builder = builder.http2(h2_cfg);
+        }
+
+        if want_hup {
+            let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+            if let Some(ref path) = self.config.http_upgrade_path {
+                hup_cfg.path = path.clone();
+            } else if let Ok(path) = std::env::var("SB_HUP_PATH") {
+                hup_cfg.path = path;
+            }
+            if !self.config.http_upgrade_headers.is_empty() {
+                hup_cfg.headers = self.config.http_upgrade_headers.clone();
+            }
+            builder = builder.http_upgrade(hup_cfg);
+        }
+
+        if want_mux {
+            let cfg = sb_transport::multiplex::MultiplexConfig::default();
+            builder = builder.multiplex(cfg);
+        }
+
+        if want_grpc {
+            let mut cfg = sb_transport::grpc::GrpcConfig::default();
+            if let Some(ref service) = self.config.grpc_service {
+                cfg.service_name = service.clone();
+            }
+            if let Some(ref method) = self.config.grpc_method {
+                cfg.method_name = method.clone();
+            }
+            if let Some(ref authority) = self.config.grpc_authority {
+                cfg.server_name = Some(authority.clone());
+            }
+            if !self.config.grpc_metadata.is_empty() {
+                cfg.metadata = self.config.grpc_metadata.clone();
+            }
+            cfg.enable_tls = want_tls;
+            builder = builder.grpc(cfg);
         }
 
         let dialer = builder.build();

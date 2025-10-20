@@ -1,0 +1,41 @@
+{
+  "// description": "Shadowsocks outbound client example",
+  "// usage": "cargo run -p app --features 'sb-core/out_shadowsocks' -- run -c examples/configs/outbounds/shadowsocks.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "name": "ss-out",
+      "server": "your-server.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "your-secure-password-here",
+      "udp": true
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "cidr": ["10.0.0.0/8", "192.168.0.0/16"]
+        },
+        "to": "direct"
+      }
+    ],
+    "default": "ss-out"
+  }
+}

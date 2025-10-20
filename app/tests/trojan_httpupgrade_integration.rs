@@ -1,3 +1,4 @@
+#![cfg(feature = "tls_reality")]
 //! Trojan + HTTPUpgrade Transport Integration Test
 //!
 //! This test validates that Trojan outbound adapter correctly integrates with HTTPUpgrade transport.

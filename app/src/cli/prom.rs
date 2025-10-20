@@ -77,7 +77,7 @@ impl fmt::Display for HistFormat {
     }
 }
 
-pub async fn main(a: PromArgs) -> Result<()> {
+pub fn main(a: PromArgs) -> Result<()> {
     match a.cmd {
         PromCmd::Scrape {
             url,
@@ -86,14 +86,17 @@ pub async fn main(a: PromArgs) -> Result<()> {
             labels,
             jsonl,
             json,
-        } => scrape(url, filter, select, labels, jsonl, json).await,
+        } => {
+            // We are already in a Tokio runtime (app main), so we can block_on safely.
+            tokio::runtime::Handle::current().block_on(scrape(url, filter, select, labels, jsonl, json))
+        }
         PromCmd::Hist {
             url,
             metrics,
             labels,
             group_by,
             format,
-        } => hist(metrics, url, labels, group_by, format).await,
+        } => tokio::runtime::Handle::current().block_on(hist(metrics, url, labels, group_by, format)),
     }
 }
 
@@ -142,6 +145,7 @@ pub(crate) fn labels_match(all: &BTreeMap<String, String>, sel: &BTreeMap<String
         .all(|(k, want)| all.get(k).is_some_and(|v| v == want))
 }
 
+#[allow(clippy::unused_async)]
 async fn scrape(
     url: String,
     filter: Option<String>,
@@ -221,6 +225,7 @@ async fn scrape(
     Ok(())
 }
 
+#[allow(clippy::unused_async)]
 async fn hist(
     metrics: Vec<String>,
     url: String,
@@ -403,6 +408,7 @@ async fn hist(
     Ok(())
 }
 
+#[allow(clippy::unused_async)]
 async fn http_get_text(_url: &str) -> Result<String> {
     #[cfg(feature = "reqwest")]
     {

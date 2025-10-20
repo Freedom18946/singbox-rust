@@ -1,3 +1,4 @@
+#![cfg(feature = "net_e2e")]
 //! E2E test for VMess with Multiplex integration
 //!
 //! Tests that VMess protocol correctly works with yamux-based multiplexing,
@@ -17,9 +18,9 @@ use sb_adapters::outbound::vmess::{
     Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
 };
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
+use sb_adapters::transport_config::TransportConfig;
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
-use sb_adapters::transport_config::TransportConfig;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
 
 /// Helper: Start TCP echo server

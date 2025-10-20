@@ -1,3 +1,4 @@
+#![cfg(feature = "admin_tests")]
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::admin::http::spawn_admin;

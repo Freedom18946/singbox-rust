@@ -146,7 +146,12 @@ async fn reload_config(path: &Path) -> Result<()> {
     let selectors: Vec<_> = config_ir
         .outbounds
         .iter()
-        .filter(|o| o.ty == sb_config::ir::OutboundType::Selector)
+        .filter(|o| {
+            matches!(
+                o.ty,
+                sb_config::ir::OutboundType::Selector | sb_config::ir::OutboundType::UrlTest
+            )
+        })
         .collect();
     if !selectors.is_empty() {
         tracing::debug!(

@@ -1,0 +1,14 @@
+{
+  "log": { "level": "warn" },
+  "inbounds": [{ "type": "http", "listen": "127.0.0.1", "port": 18081 }],
+  "outbounds": [
+    { "type": "direct", "name": "DIRECT" }
+  ],
+  "route": {
+    "rules": [
+      { "domain": ["localhost", "127.0.0.1"], "outbound": "DIRECT" }
+    ],
+    "default": "DIRECT"
+  }
+}
+

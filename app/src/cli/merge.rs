@@ -25,7 +25,7 @@ pub struct MergeArgs {
     pub help_json: bool,
 }
 
-pub async fn run(args: MergeArgs) -> Result<()> {
+pub fn run(args: MergeArgs) -> Result<()> {
     if args.help_json {
         crate::cli::help::print_help_json::<MergeArgs>();
     }
@@ -105,7 +105,7 @@ fn collect_inputs(files: &[PathBuf], dirs: &[PathBuf]) -> Result<Vec<PathBuf>> {
         }
         let mut dir_files: Vec<PathBuf> = fs::read_dir(d)
             .with_context(|| format!("read_dir: {}", d.display()))?
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .map(|e| e.path())
             .filter(|p| p.is_file())
             .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
@@ -175,23 +175,21 @@ fn inline_path_resources(v: &mut serde_json::Value) {
                 }
             }
             // ECH nested object
-            if let Some(ech) = map.get_mut("ech") {
-                if let V::Object(ech_map) = ech {
-                    if let Some(V::String(path)) = ech_map.get("key_path") {
-                        if let Some(lines) = read_path_lines(path) {
-                            ech_map.insert(
-                                "key".to_string(),
-                                V::Array(lines.into_iter().map(V::String).collect()),
-                            );
-                        }
+            if let Some(V::Object(ech_map)) = map.get_mut("ech") {
+                if let Some(V::String(path)) = ech_map.get("key_path") {
+                    if let Some(lines) = read_path_lines(path) {
+                        ech_map.insert(
+                            "key".to_string(),
+                            V::Array(lines.into_iter().map(V::String).collect()),
+                        );
                     }
-                    if let Some(V::String(path)) = ech_map.get("config_path") {
-                        if let Some(lines) = read_path_lines(path) {
-                            ech_map.insert(
-                                "config".to_string(),
-                                V::Array(lines.into_iter().map(V::String).collect()),
-                            );
-                        }
+                }
+                if let Some(V::String(path)) = ech_map.get("config_path") {
+                    if let Some(lines) = read_path_lines(path) {
+                        ech_map.insert(
+                            "config".to_string(),
+                            V::Array(lines.into_iter().map(V::String).collect()),
+                        );
                     }
                 }
             }

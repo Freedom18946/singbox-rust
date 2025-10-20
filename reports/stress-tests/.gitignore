@@ -1,0 +1,14 @@
+# Ignore all log files
+*.log
+*.txt
+
+# Ignore compressed logs
+*.gz
+*.zip
+*.tar.gz
+
+# Keep README
+!README.md
+
+# Keep .gitkeep if present
+!.gitkeep

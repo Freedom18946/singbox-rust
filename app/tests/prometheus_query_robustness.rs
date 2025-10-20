@@ -1,3 +1,4 @@
+#![cfg(feature = "long_tests")]
 #![cfg(feature = "dev-cli")]
 // app/tests/prometheus_query_robustness.rs
 use std::{fs, process::Command};

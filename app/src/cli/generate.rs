@@ -31,7 +31,7 @@ pub enum GenerateCommands {
     /// Generate VAPID (WebPush) P-256 keypair
     #[cfg(feature = "jwt")]
     VapidKeypair,
-    /// Generate WireGuard X25519 keypair
+    /// Generate `WireGuard` X25519 keypair
     WireguardKeypair,
 }
 
@@ -143,7 +143,7 @@ fn generate_vapid_keypair() -> Result<()> {
     Ok(())
 }
 
-/// Generate WireGuard X25519 keypair (base64 like `wg genkey`/`wg pubkey`)
+/// Generate `WireGuard` X25519 keypair (base64 like `wg genkey`/`wg pubkey`)
 fn generate_wireguard_keypair() -> Result<()> {
     use rand::rngs::OsRng;
     use x25519_dalek::{PublicKey, StaticSecret};

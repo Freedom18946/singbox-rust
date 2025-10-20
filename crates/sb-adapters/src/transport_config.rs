@@ -334,16 +334,25 @@ impl TransportConfig {
 use tokio::net::TcpListener;
 
 /// Trait combining AsyncRead + AsyncWrite for inbound streams
-pub trait InboundStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
+pub trait InboundStream:
+    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
+{
+}
 
 /// Blanket implementation for any type that satisfies the bounds
-impl<T> InboundStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync {}
+impl<T> InboundStream for T where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
+{
+}
 
 /// Wrapper to adapt AsyncReadWrite streams to InboundStream
+#[cfg(feature = "sb-transport")]
+#[allow(dead_code)] // Adapter is constructed under specific feature/test paths
 struct InboundStreamAdapter {
     inner: sb_transport::dialer::IoStream,
 }
 
+#[cfg(feature = "sb-transport")]
 impl tokio::io::AsyncRead for InboundStreamAdapter {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -354,6 +363,7 @@ impl tokio::io::AsyncRead for InboundStreamAdapter {
     }
 }
 
+#[cfg(feature = "sb-transport")]
 impl tokio::io::AsyncWrite for InboundStreamAdapter {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
@@ -409,16 +419,17 @@ impl InboundListener {
                 use sb_transport::dialer::DialError;
                 let stream = listener.accept().await.map_err(|e| match e {
                     DialError::Io(io_err) => io_err,
-                    other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+                    other => std::io::Error::other(other.to_string()),
                 })?;
                 Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
             }
 
             #[cfg(feature = "transport_grpc")]
             Self::Grpc(server) => {
-                let stream = server.accept().await.map_err(|e| {
-                    std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-                })?;
+                let stream = server
+                    .accept()
+                    .await
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
                 Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
             }
 
@@ -427,7 +438,7 @@ impl InboundListener {
                 use sb_transport::dialer::DialError;
                 let stream = listener.accept().await.map_err(|e| match e {
                     DialError::Io(io_err) => io_err,
-                    other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+                    other => std::io::Error::other(other.to_string()),
                 })?;
                 Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
             }

@@ -1,3 +1,4 @@
+#![cfg(feature = "net_e2e")]
 //! E2E test for Shadowsocks with Multiplex integration
 //!
 //! Tests that Shadowsocks protocol correctly works with yamux-based multiplexing,

@@ -84,12 +84,19 @@ loom = { version = "0.7", optional = true }
 
 [dev-dependencies]
 # Test dependencies
+sb-test-utils = { path = "../sb-test-utils" }
 tempfile = "3"
 tokio = { version = "1.47", features = ["full", "test-util"] }
 
 [features]
-# 基线：不默认开启任何可选功能，便于上层精确组合
-default = []
+# 默认开启 DNS 相关功能，开箱即用（udp/doh/dot/doq + rustls）
+default = [
+    "dns_udp",
+    "dns_doh",
+    "dns_dot",
+    "dns_doq",
+    "tls_rustls",
+]
 
 # 历史/代码中出现过的功能位（按字母序归并；全部先落空数组，行为不变）
 adapter            = []

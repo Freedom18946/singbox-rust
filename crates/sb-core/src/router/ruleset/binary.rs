@@ -37,7 +37,7 @@ pub fn parse_binary(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
     }
 
     // Validate magic number
-    if &data[0..3] != &SRS_MAGIC {
+    if data[0..3] != SRS_MAGIC {
         return Err(SbError::Config {
             code: crate::error::IssueCode::InvalidType,
             ptr: "/rule_set/binary/magic".to_string(),
@@ -173,10 +173,9 @@ fn parse_binary_rule(cursor: &mut Cursor<Vec<u8>>) -> SbResult<Rule> {
 
     match rule_type {
         0 => {
-            let mut rule = DefaultRule::default();
-
-            // Read invert flag
-            rule.invert = read_u8(cursor)? != 0;
+            // Initialize rule with invert in the initializer to avoid field reassign
+            let invert_flag = read_u8(cursor)? != 0;
+            let mut rule = DefaultRule { invert: invert_flag, ..Default::default() };
 
             // Read rule items count
             let item_count = read_varint(cursor)?;
@@ -360,8 +359,7 @@ fn parse_json_rule(value: &serde_json::Value, index: usize) -> SbResult<Rule> {
     }
 
     // Default rule
-    let mut rule = DefaultRule::default();
-    rule.invert = obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false);
+    let mut rule = DefaultRule { invert: obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false), ..Default::default() };
 
     // Parse domain rules
     if let Some(domains) = obj.get("domain").and_then(|v| v.as_array()) {

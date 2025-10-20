@@ -23,7 +23,7 @@ jobs:
       - name: Run preflight checks
         id: preflight
         run: |
-          bash scripts/preflight.sh
+          bash scripts/tools/preflight.sh
           echo "digest=$(sha256sum target/preflight-report.json | cut -d' ' -f1)" >> $GITHUB_OUTPUT
           echo "signature=$(sha256sum target/preflight-report.json | cut -d' ' -f1)" >> $GITHUB_OUTPUT
           echo "rust-version=$(cargo version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" >> $GITHUB_OUTPUT

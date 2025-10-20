@@ -1,6 +1,227 @@
-use crate::ir::{ConfigIR, Credentials};
+use crate::ir::{ConfigIR, Credentials, HeaderEntry};
 use sb_types::IssueCode;
 use serde_json::{json, Value};
+
+const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
+const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
+const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 5_000;
+const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
+
+fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
+    value.and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect()
+    })
+}
+
+fn parse_seconds_field_to_millis(value: Option<&Value>) -> Option<u64> {
+    match value {
+        Some(Value::Number(num)) => num.as_u64().map(|secs| secs.saturating_mul(1_000)),
+        Some(Value::String(s)) => humantime::parse_duration(s)
+            .ok()
+            .map(|d| d.as_millis() as u64),
+        _ => None,
+    }
+}
+
+fn parse_millis_field(value: Option<&Value>) -> Option<u64> {
+    match value {
+        Some(Value::Number(num)) => num.as_u64(),
+        Some(Value::String(s)) => humantime::parse_duration(s)
+            .ok()
+            .map(|d| d.as_millis() as u64),
+        _ => None,
+    }
+}
+
+fn parse_u32_field(value: Option<&Value>) -> Option<u32> {
+    match value {
+        Some(Value::Number(num)) => num.as_u64().and_then(|v| u32::try_from(v).ok()),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let mut lowered = trimmed.to_ascii_lowercase();
+            for suffix in ["mbps", "m", "bps"] {
+                if lowered.ends_with(suffix) {
+                    let len = lowered.len().saturating_sub(suffix.len());
+                    lowered = lowered[..len].trim().to_string();
+                    break;
+                }
+            }
+            let digits: String = lowered.chars().filter(|c| c.is_ascii_digit()).collect();
+            let target = if digits.is_empty() {
+                lowered.replace('_', "")
+            } else {
+                digits
+            };
+            if target.is_empty() {
+                None
+            } else {
+                target.parse::<u32>().ok()
+            }
+        }
+        _ => None,
+    }
+}
+
+fn push_transport_token(tokens: &mut Vec<String>, token: &str) {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let normalized = trimmed.to_ascii_lowercase();
+    if !tokens
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&normalized))
+    {
+        tokens.push(normalized);
+    }
+}
+
+fn push_header_entry(target: &mut Vec<HeaderEntry>, name: &str, value: &str) {
+    if name.trim().is_empty() {
+        return;
+    }
+    target.push(HeaderEntry {
+        name: name.trim().to_string(),
+        value: value.to_string(),
+    });
+}
+
+fn parse_header_entries(value: &Value, target: &mut Vec<HeaderEntry>) {
+    match value {
+        Value::Object(map) => {
+            for (k, v) in map {
+                if let Some(val) = v.as_str() {
+                    push_header_entry(target, k, val);
+                }
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                match item {
+                    Value::Object(obj) => {
+                        let name = obj
+                            .get("name")
+                            .or_else(|| obj.get("key"))
+                            .and_then(|v| v.as_str());
+                        let value = obj
+                            .get("value")
+                            .or_else(|| obj.get("val"))
+                            .and_then(|v| v.as_str());
+                        if let (Some(name), Some(value)) = (name, value) {
+                            push_header_entry(target, name, value);
+                        }
+                    }
+                    Value::Array(pair) => {
+                        if pair.len() == 2 {
+                            if let (Some(name), Some(value)) = (
+                                pair.first().and_then(|v| v.as_str()),
+                                pair.get(1).and_then(|v| v.as_str()),
+                            ) {
+                                push_header_entry(target, name, value);
+                            }
+                        }
+                    }
+                    Value::String(s) => {
+                        if let Some((name, value)) = s.split_once('=') {
+                            push_header_entry(target, name, value);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_transport_object(
+    obj: &serde_json::Map<String, Value>,
+    ob: &mut crate::ir::OutboundIR,
+    tokens: &mut Vec<String>,
+) {
+    if let Some(ty) = obj.get("type").and_then(|v| v.as_str()) {
+        push_transport_token(tokens, ty);
+        match ty.trim().to_ascii_lowercase().as_str() {
+            "ws" => {
+                if ob.ws_path.is_none() {
+                    ob.ws_path = obj
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.ws_host.is_none() {
+                    if let Some(headers) = obj.get("headers").and_then(|v| v.as_object()) {
+                        for (k, v) in headers {
+                            if k.eq_ignore_ascii_case("host") {
+                                if let Some(host) = v.as_str() {
+                                    ob.ws_host = Some(host.to_string());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "h2" => {
+                if ob.h2_path.is_none() {
+                    ob.h2_path = obj
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.h2_host.is_none() {
+                    ob.h2_host = obj
+                        .get("host")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+            }
+            "grpc" => {
+                if ob.grpc_service.is_none() {
+                    ob.grpc_service = obj
+                        .get("service_name")
+                        .or_else(|| obj.get("service"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.grpc_method.is_none() {
+                    ob.grpc_method = obj
+                        .get("method_name")
+                        .or_else(|| obj.get("method"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.grpc_authority.is_none() {
+                    ob.grpc_authority = obj
+                        .get("authority")
+                        .or_else(|| obj.get("host"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if let Some(meta_val) = obj.get("metadata") {
+                    parse_header_entries(meta_val, &mut ob.grpc_metadata);
+                }
+            }
+            "httpupgrade" | "http_upgrade" => {
+                if ob.http_upgrade_path.is_none() {
+                    ob.http_upgrade_path = obj
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if let Some(headers_val) = obj.get("headers") {
+                    parse_header_entries(headers_val, &mut ob.http_upgrade_headers);
+                }
+            }
+            _ => {}
+        }
+    }
+}
 
 fn resolve_cred(c: &mut Credentials) {
     if let Some(key) = &c.username_env {
@@ -127,8 +348,12 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             if let Some(map) = ib.as_object() {
                 for k in map.keys() {
                     match k.as_str() {
-                        "name" | "type" | "listen" | "udp" | "sniff" | "auth"
-                        | "interface_name" | "inet4_address" | "inet6_address" | "auto_route" => {}
+                        "name" | "type" | "listen" | "port" | "udp" | "network" | "sniff" 
+                        | "override_address" | "override_host" | "override_port"
+                        | "interface_name" | "inet4_address" | "inet6_address" | "auto_route" 
+                        | "auth" | "users" | "cert" | "key" 
+                        | "congestion_control" | "salamander" | "obfs" 
+                        | "up_mbps" | "down_mbps" => {}
                         _ => {
                             let kind = if allow_unknown { "warning" } else { "error" };
                             issues.push(emit_issue(
@@ -137,7 +362,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                                 &format!("/inbounds/{}/{}", i, k),
                                 "unknown field",
                                 "remove it",
-                            ));
+                                ));
                         }
                     }
                 }
@@ -232,8 +457,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "http" => crate::ir::OutboundType::Http,
                 "socks" => crate::ir::OutboundType::Socks,
                 "block" => crate::ir::OutboundType::Block,
+                "selector" => crate::ir::OutboundType::Selector,
+                "urltest" => crate::ir::OutboundType::UrlTest,
+                "shadowsocks" => crate::ir::OutboundType::Shadowsocks,
                 "shadowtls" => crate::ir::OutboundType::Shadowtls,
                 "hysteria2" => crate::ir::OutboundType::Hysteria2,
+                "tuic" => crate::ir::OutboundType::Tuic,
                 "vless" => crate::ir::OutboundType::Vless,
                 "vmess" => crate::ir::OutboundType::Vmess,
                 "trojan" => crate::ir::OutboundType::Trojan,
@@ -252,11 +481,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("name")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                members: o.get("members").and_then(|v| v.as_array()).map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                        .collect()
-                }),
+                members: None,
+                default_member: None,
+                method: None,
                 credentials: o.get("credentials").map(|c| Credentials {
                     username: c
                         .get("username")
@@ -291,11 +518,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("packet_encoding")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                transport: o.get("transport").and_then(|v| v.as_array()).map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                        .collect()
-                }),
+                transport: None,
                 ws_path: o
                     .get("ws_path")
                     .and_then(|v| v.as_str())
@@ -312,6 +535,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("h2_host")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                grpc_service: None,
+                grpc_method: None,
+                grpc_authority: None,
+                grpc_metadata: Vec::new(),
+                http_upgrade_path: None,
+                http_upgrade_headers: Vec::new(),
                 tls_sni: o
                     .get("tls_sni")
                     .and_then(|v| v.as_str())
@@ -328,6 +557,42 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("password")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                token: o
+                    .get("token")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                congestion_control: o
+                    .get("congestion_control")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                alpn: o
+                    .get("alpn")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                skip_cert_verify: o.get("skip_cert_verify").and_then(|v| v.as_bool()),
+                udp_relay_mode: o
+                    .get("udp_relay_mode")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                udp_over_stream: o.get("udp_over_stream").and_then(|v| v.as_bool()),
+                up_mbps: parse_u32_field(o.get("up_mbps")),
+                down_mbps: parse_u32_field(o.get("down_mbps")),
+                obfs: o
+                    .get("obfs")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                salamander: o
+                    .get("salamander")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                brutal_up_mbps: o
+                    .get("brutal")
+                    .and_then(|v| v.as_object())
+                    .and_then(|b| parse_u32_field(b.get("up_mbps"))),
+                brutal_down_mbps: o
+                    .get("brutal")
+                    .and_then(|v| v.as_object())
+                    .and_then(|b| parse_u32_field(b.get("down_mbps"))),
                 ssh_private_key: None,
                 ssh_private_key_path: None,
                 ssh_private_key_passphrase: None,
@@ -337,7 +602,87 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 ssh_compression: None,
                 ssh_keepalive_interval: None,
                 connect_timeout_sec: None,
+                test_url: None,
+                test_interval_ms: None,
+                test_timeout_ms: None,
+                test_tolerance_ms: None,
+                interrupt_exist_connections: None,
             };
+
+            if let Some(transport_val) = o.get("transport") {
+                let mut tokens: Vec<String> = Vec::new();
+                match transport_val {
+                    Value::Array(arr) => {
+                        for item in arr {
+                            match item {
+                                Value::String(s) => {
+                                    for part in s.split(',') {
+                                        push_transport_token(&mut tokens, part);
+                                    }
+                                }
+                                Value::Object(obj) => {
+                                    parse_transport_object(obj, &mut ob, &mut tokens);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    Value::String(s) => {
+                        for part in s.split(',') {
+                            push_transport_token(&mut tokens, part);
+                        }
+                    }
+                    Value::Object(obj) => {
+                        parse_transport_object(obj, &mut ob, &mut tokens);
+                    }
+                    _ => {}
+                }
+                if !tokens.is_empty() {
+                    ob.transport = Some(tokens);
+                }
+            }
+
+            ob.members = extract_string_list(o.get("members"));
+            if ob.members.is_none() {
+                ob.members = extract_string_list(o.get("outbounds"));
+            }
+            ob.default_member = o
+                .get("default")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            ob.interrupt_exist_connections = o
+                .get("interrupt_exist_connections")
+                .and_then(|v| v.as_bool());
+            ob.method = o
+                .get("method")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            if matches!(ob.ty, crate::ir::OutboundType::UrlTest) {
+                ob.test_url = Some(
+                    o.get("url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(DEFAULT_URLTEST_URL)
+                        .to_string(),
+                );
+                ob.test_interval_ms = parse_seconds_field_to_millis(o.get("interval"))
+                    .or_else(|| o.get("interval_ms").and_then(|v| v.as_u64()))
+                    .or(Some(DEFAULT_URLTEST_INTERVAL_MS));
+                ob.test_timeout_ms = parse_seconds_field_to_millis(o.get("timeout"))
+                    .or_else(|| o.get("timeout_ms").and_then(|v| v.as_u64()))
+                    .or(Some(DEFAULT_URLTEST_TIMEOUT_MS));
+                ob.test_tolerance_ms = parse_millis_field(o.get("tolerance"))
+                    .or_else(|| o.get("tolerance_ms").and_then(|v| v.as_u64()))
+                    .or(Some(DEFAULT_URLTEST_TOLERANCE_MS));
+            }
+
+            if matches!(
+                ob.ty,
+                crate::ir::OutboundType::Selector | crate::ir::OutboundType::UrlTest
+            ) && ob.members.is_none()
+            {
+                ob.members = Some(Vec::new());
+            }
 
             // Fallback: allow top-level username/password for ssh/http/socks
             if ob.credentials.is_none() {
@@ -435,6 +780,18 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
                 }
+                if ob.alpn.is_none() {
+                    ob.alpn = tls
+                        .get("alpn")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.skip_cert_verify.is_none() {
+                    ob.skip_cert_verify = tls
+                        .get("skip_cert_verify")
+                        .and_then(|v| v.as_bool())
+                        .or_else(|| tls.get("allow_insecure").and_then(|v| v.as_bool()));
+                }
 
                 // Parse REALITY configuration
                 if let Some(reality) = tls.get("reality").and_then(|v| v.as_object()) {
@@ -473,6 +830,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     };
                 }
                 arrs!("domain", r.domain);
+                arrs!("domain_suffix", r.domain);
                 arrs!("geosite", r.geosite);
                 arrs!("geoip", r.geoip);
                 arrs!("ipcidr", r.ipcidr);
@@ -491,7 +849,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 arrs!("not_process", r.not_process);
                 arrs!("not_network", r.not_network);
                 arrs!("not_protocol", r.not_protocol);
-                r.outbound = route
+                r.outbound = rr
                     .get("outbound")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
@@ -502,6 +860,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             .get("default")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        if ir.route.default.is_none() {
+            ir.route.default = route
+                .get("final")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        }
     }
     normalize_credentials(&mut ir);
     ir
@@ -553,6 +917,194 @@ mod tests {
 
         // Validate the parsed config
         assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_parse_tuic_outbound_fields() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "tuic",
+                "name": "tuic-out",
+                "server": "tuic.example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "token": "secret-token",
+                "password": "optional-pass",
+                "congestion_control": "bbr",
+                "udp_relay_mode": "quic",
+                "udp_over_stream": true,
+                "skip_cert_verify": true,
+                "tls": {
+                    "alpn": "h3",
+                    "skip_cert_verify": true
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+
+        let outbound = &ir.outbounds[0];
+        assert_eq!(outbound.ty, crate::ir::OutboundType::Tuic);
+        assert_eq!(outbound.name.as_deref(), Some("tuic-out"));
+        assert_eq!(outbound.token.as_deref(), Some("secret-token"));
+        assert_eq!(outbound.password.as_deref(), Some("optional-pass"));
+        assert_eq!(outbound.congestion_control.as_deref(), Some("bbr"));
+        assert_eq!(outbound.udp_relay_mode.as_deref(), Some("quic"));
+        assert_eq!(outbound.udp_over_stream, Some(true));
+        assert_eq!(outbound.skip_cert_verify, Some(true));
+        assert_eq!(outbound.alpn.as_deref(), Some("h3"));
+        assert_eq!(outbound.tls_alpn.as_deref(), Some("h3"));
+    }
+
+    #[test]
+    fn test_parse_hysteria2_bandwidth_fields() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "hysteria2",
+                "name": "hy2",
+                "server": "hy2.example.com",
+                "port": 443,
+                "password": "secret",
+                "up_mbps": 150,
+                "down_mbps": "200Mbps",
+                "obfs": "obfs-key",
+                "salamander": "fingerprint",
+                "brutal": {
+                    "up_mbps": "300",
+                    "down_mbps": "400Mbps"
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        assert_eq!(outbound.ty, crate::ir::OutboundType::Hysteria2);
+        assert_eq!(outbound.up_mbps, Some(150));
+        assert_eq!(outbound.down_mbps, Some(200));
+        assert_eq!(outbound.obfs.as_deref(), Some("obfs-key"));
+        assert_eq!(outbound.salamander.as_deref(), Some("fingerprint"));
+        assert_eq!(outbound.brutal_up_mbps, Some(300));
+        assert_eq!(outbound.brutal_down_mbps, Some(400));
+    }
+
+    #[test]
+    fn test_parse_transport_object_ws() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "name": "ws-out",
+                "server": "example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "transport": {
+                    "type": "ws",
+                    "path": "/ws",
+                    "headers": {
+                        "Host": "example.com"
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        let transport = outbound.transport.as_ref().expect("transport");
+        assert_eq!(transport.len(), 1);
+        assert_eq!(transport[0], "ws");
+        assert_eq!(outbound.ws_path.as_deref(), Some("/ws"));
+        assert_eq!(outbound.ws_host.as_deref(), Some("example.com"));
+    }
+
+    #[test]
+    fn test_parse_transport_object_grpc() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vmess",
+                "name": "grpc-out",
+                "server": "grpc.example.com",
+                "port": 443,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "transport": {
+                    "type": "grpc",
+                    "service_name": "TunnelService",
+                    "method_name": "Tunnel",
+                    "authority": "grpc.example.com",
+                    "metadata": {
+                        "auth": "token",
+                        "foo": "bar"
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        let transport = outbound
+            .transport
+            .as_ref()
+            .expect("transport tokens present");
+        assert_eq!(transport, &vec!["grpc".to_string()]);
+        assert_eq!(outbound.grpc_service.as_deref(), Some("TunnelService"));
+        assert_eq!(outbound.grpc_method.as_deref(), Some("Tunnel"));
+        assert_eq!(outbound.grpc_authority.as_deref(), Some("grpc.example.com"));
+        let mut metadata: Vec<(String, String)> = outbound
+            .grpc_metadata
+            .iter()
+            .map(|h| (h.name.clone(), h.value.clone()))
+            .collect();
+        metadata.sort();
+        assert_eq!(metadata.len(), 2);
+        assert!(metadata.contains(&("auth".to_string(), "token".to_string())));
+        assert!(metadata.contains(&("foo".to_string(), "bar".to_string())));
+    }
+
+    #[test]
+    fn test_parse_transport_object_http_upgrade() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vless",
+                "name": "hup-out",
+                "server": "upgrade.example.com",
+                "port": 80,
+                "uuid": "12345678-1234-1234-1234-123456789abc",
+                "transport": {
+                    "type": "httpupgrade",
+                    "path": "/upgrade",
+                    "headers": {
+                        "User-Agent": "singbox",
+                        "Authorization": "Bearer token"
+                    }
+                }
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        let transport = outbound
+            .transport
+            .as_ref()
+            .expect("transport tokens present");
+        assert_eq!(transport, &vec!["httpupgrade".to_string()]);
+        assert_eq!(outbound.http_upgrade_path.as_deref(), Some("/upgrade"));
+        let mut headers: Vec<(String, String)> = outbound
+            .http_upgrade_headers
+            .iter()
+            .map(|h| (h.name.clone(), h.value.clone()))
+            .collect();
+        headers.sort();
+        assert_eq!(headers.len(), 2);
+        assert!(headers.contains(&("User-Agent".to_string(), "singbox".to_string())));
+        assert!(headers.contains(&("Authorization".to_string(), "Bearer token".to_string())));
     }
 
     #[test]
@@ -661,5 +1213,84 @@ mod tests {
 
         // Should pass validation when REALITY is not enabled
         assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
+    fn test_selector_and_urltest_parsing() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [
+                { "type": "direct", "name": "direct-1" },
+                { "type": "direct", "name": "direct-2" },
+                {
+                    "type": "selector",
+                    "name": "manual",
+                    "outbounds": ["direct-1", "direct-2"],
+                    "default": "direct-1"
+                },
+                {
+                    "type": "urltest",
+                    "name": "auto",
+                    "outbounds": ["direct-1"],
+                    "interval": "5s",
+                    "timeout": 2,
+                    "tolerance": "75ms"
+                }
+            ]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 4);
+
+        let manual = ir
+            .outbounds
+            .iter()
+            .find(|o| o.name.as_deref() == Some("manual"))
+            .expect("manual selector present");
+        assert_eq!(manual.ty, crate::ir::OutboundType::Selector);
+        assert_eq!(
+            manual.members.as_ref().expect("members"),
+            &vec!["direct-1".to_string(), "direct-2".to_string()]
+        );
+        assert_eq!(manual.default_member.as_deref(), Some("direct-1"));
+
+        let auto = ir
+            .outbounds
+            .iter()
+            .find(|o| o.name.as_deref() == Some("auto"))
+            .expect("urltest selector present");
+        assert_eq!(auto.ty, crate::ir::OutboundType::UrlTest);
+        assert_eq!(
+            auto.members.as_ref().expect("members"),
+            &vec!["direct-1".to_string()]
+        );
+        assert_eq!(auto.test_interval_ms, Some(5_000));
+        assert_eq!(auto.test_timeout_ms, Some(2_000));
+        assert_eq!(auto.test_tolerance_ms, Some(75));
+        assert_eq!(auto.test_url.as_deref(), Some(DEFAULT_URLTEST_URL));
+    }
+
+    #[test]
+    fn test_shadowsocks_parsing() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "shadowsocks",
+                "name": "ss-out",
+                "server": "1.2.3.4",
+                "port": 8388,
+                "password": "secret",
+                "method": "aes-256-gcm"
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let ss = &ir.outbounds[0];
+        assert_eq!(ss.ty, crate::ir::OutboundType::Shadowsocks);
+        assert_eq!(ss.server.as_deref(), Some("1.2.3.4"));
+        assert_eq!(ss.port, Some(8388));
+        assert_eq!(ss.password.as_deref(), Some("secret"));
+        assert_eq!(ss.method.as_deref(), Some("aes-256-gcm"));
     }
 }

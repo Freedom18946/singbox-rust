@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(feature = "prefetch")]
         cli::Commands::Prefetch(a) => cli::prefetch::main(a),
         cli::Commands::Auth(a) => cli::auth::main(a),
-        cli::Commands::Prom(a) => cli::prom::main(a).await,
+        cli::Commands::Prom(a) => cli::prom::main(a),
         #[cfg(feature = "bench-cli")]
         cli::Commands::Bench(a) => cli::bench::main(a).await,
         cli::Commands::GenCompletions(a) => {
@@ -62,11 +62,11 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         cli::Commands::Merge(a) => {
-            cli::merge::run(a).await?;
+            cli::merge::run(a)?;
             Ok(())
         }
         cli::Commands::Format(a) => {
-            cli::format::run(a).await?;
+            cli::format::run(a)?;
             Ok(())
         }
         #[cfg(feature = "router")]

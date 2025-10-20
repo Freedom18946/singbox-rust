@@ -777,7 +777,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    
 
     #[test]
     fn test_protocol_detection_socks5() {

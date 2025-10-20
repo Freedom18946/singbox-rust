@@ -32,7 +32,7 @@ impl RouterConnector {
         outbound
             .connect_ex(p)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(|e| std::io::Error::other(e))
     }
 }
 
@@ -58,7 +58,7 @@ impl Connector for RouterConnector {
         outbound
             .connect(dest)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(|e| io::Error::other(e))
     }
 
     /// 优先走新接口：使用 ConnectParams 里的 user/transport/target

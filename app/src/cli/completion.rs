@@ -27,8 +27,8 @@ pub enum Shell {
 #[derive(ClapArgs, Debug)]
 pub struct CompletionArgs {
     /// 目标 shell
-    #[arg(long, value_enum)]
-    pub shell: Shell,
+    #[arg(long, value_enum, required_unless_present = "all")]
+    pub shell: Option<Shell>,
     /// 输出目录（默认 stdout）
     #[arg(long)]
     pub dir: Option<std::path::PathBuf>,
@@ -58,8 +58,8 @@ pub fn main(a: CompletionArgs) -> Result<()> {
             write_file!(shells::PowerShell, "powershell")?;
             write_file!(shells::Elvish, "elvish")?;
             eprintln!("# completions written to {}", dir.display());
-        } else {
-            match a.shell {
+        } else if let Some(shell) = a.shell {
+            match shell {
                 Shell::Bash => {
                     write_file!(shells::Bash, "bash")?;
                 }
@@ -77,14 +77,16 @@ pub fn main(a: CompletionArgs) -> Result<()> {
                 }
             }
         }
-    } else {
-        match a.shell {
+    } else if let Some(shell) = a.shell {
+        match shell {
             Shell::Bash => generate(shells::Bash, &mut cmd, &bin, &mut io::stdout()),
             Shell::Zsh => generate(shells::Zsh, &mut cmd, &bin, &mut io::stdout()),
             Shell::Fish => generate(shells::Fish, &mut cmd, &bin, &mut io::stdout()),
             Shell::PowerShell => generate(shells::PowerShell, &mut cmd, &bin, &mut io::stdout()),
             Shell::Elvish => generate(shells::Elvish, &mut cmd, &bin, &mut io::stdout()),
         }
+    } else {
+        return Err(anyhow::anyhow!("Either --shell or --all must be specified"));
     }
     // 追加安装提示
     print_install_hints(&a);

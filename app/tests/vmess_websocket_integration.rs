@@ -1,3 +1,4 @@
+#![cfg(feature = "net_e2e")]
 //! VMess + WebSocket Transport Integration Test
 //!
 //! This test validates that VMess outbound adapter correctly integrates with WebSocket transport.

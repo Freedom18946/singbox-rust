@@ -1,33 +1,17 @@
-use std::io::{Read, Write};
+#![cfg(feature = "admin_tests")]
+
+// Use common module from same directory
+mod common;
+
 use std::net::TcpListener;
 use std::thread;
 use std::time::Duration;
 
+use common::http::{get, post_json};
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::admin::http::spawn_admin;
 use sb_core::routing::engine::Engine;
-
-fn get(host: &str, path: &str) -> String {
-    let mut s = std::net::TcpStream::connect(host).unwrap();
-    let req = format!("GET {} HTTP/1.1\r\nHost: {}\r\n\r\n", path, host);
-    s.write_all(req.as_bytes()).unwrap();
-    let mut buf = Vec::new();
-    s.read_to_end(&mut buf).unwrap();
-    String::from_utf8_lossy(&buf).to_string()
-}
-
-fn post_json(host: &str, path: &str, body: &str) -> String {
-    let mut s = std::net::TcpStream::connect(host).unwrap();
-    let req = format!(
-        "POST {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-        path, host, body.as_bytes().len(), body
-    );
-    s.write_all(req.as_bytes()).unwrap();
-    let mut buf = Vec::new();
-    s.read_to_end(&mut buf).unwrap();
-    String::from_utf8_lossy(&buf).to_string()
-}
 
 #[test]
 fn admin_health_and_explain() {

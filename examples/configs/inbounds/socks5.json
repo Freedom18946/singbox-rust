@@ -1,0 +1,30 @@
+{
+  "// description": "SOCKS5 inbound with authentication example",
+  "// usage": "cargo run -p app -- run -c examples/configs/inbounds/socks5.json",
+  "// test": "curl -x socks5://user:pass@127.0.0.1:1080 https://example.com",
+
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks5-in",
+      "listen": "127.0.0.1",
+      "port": 1080,
+      "udp": true,
+      "auth": {
+        "username": "user",
+        "password": "pass"
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "direct"
+  }
+}

@@ -1,0 +1,38 @@
+# Quick Start Example 4: Mixed Inbound (SOCKS5 + HTTP)
+# 
+# This example demonstrates the mixed inbound that accepts both
+# SOCKS5 and HTTP proxy protocols on a single port.
+#
+# Usage: cargo run -p app -- run -c examples/quick-start/04-mixed-inbound.yaml
+#
+# Test SOCKS5: curl -x socks5://127.0.0.1:1080 https://example.com
+# Test HTTP:   curl -x http://127.0.0.1:1080 https://example.com
+
+inbounds:
+  - name: mixed-in
+    type: mixed
+    listen: "127.0.0.1:1080"
+
+outbounds:
+  - name: direct
+    type: direct
+  - name: block
+    type: block
+
+route:
+  rules:
+    # Block ads and trackers
+    - when:
+        suffix: [".ads", "tracker."]
+      to: block
+    
+    # Direct connection for local networks
+    - when:
+        cidr: ["10.0.0.0/8", "192.168.0.0/16"]
+      to: direct
+  
+  default: direct
+
+log:
+  level: info
+

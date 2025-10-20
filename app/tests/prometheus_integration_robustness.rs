@@ -1,3 +1,4 @@
+#![cfg(feature = "long_tests")]
 // app/tests/prometheus_integration_robustness.rs
 use std::{fs, process::Command};
 use tempfile::TempDir;

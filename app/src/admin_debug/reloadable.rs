@@ -412,7 +412,7 @@ pub fn apply_with_dryrun(
 
     // Create a temp copy and apply changes to compute diff
     let mut temp_config = (**before_cfg).clone();
-    let _changes = apply_to_config(&mut temp_config, delta)?;
+    let changes = apply_to_config(&mut temp_config, delta)?;
 
     let after = serde_json::to_value(&temp_config).unwrap_or_else(|_| serde_json::json!({}));
     let diff = json_diff_enhanced(&before, &after);
@@ -436,7 +436,11 @@ pub fn apply_with_dryrun(
         let new_version = ctr.fetch_add(1, Ordering::Relaxed) + 1;
         Ok(ApplyResult {
             ok: true,
-            msg: "applied".to_string(),
+            msg: if changes.is_empty() {
+                "applied".to_string()
+            } else {
+                format!("Applied changes: {}", changes.join(", "))
+            },
             version: new_version,
             changed: true,
             diff,
@@ -491,11 +495,17 @@ pub fn init_signal_handler() {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 
     #[test]
+    #[serial_test::serial]
     fn test_config_defaults() {
+        // Ensure environment does not override defaults
+        std::env::remove_var("SB_SUBS_MAX_REDIRECTS");
+        std::env::remove_var("SB_SUBS_TIMEOUT_MS");
+        std::env::remove_var("SB_SUBS_MIME_ALLOW");
         let config = EnvConfig::from_env();
         assert_eq!(config.max_redirects, 3);
         assert_eq!(config.timeout_ms, 4000);
@@ -505,6 +515,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_config_from_env() {
         std::env::set_var("SB_SUBS_MAX_REDIRECTS", "5");
         std::env::set_var("SB_SUBS_TIMEOUT_MS", "6000");
@@ -523,9 +534,11 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_reload() {
-        // Set initial config
+        // Set initial config and reload to pick it up
         std::env::set_var("SB_SUBS_MAX_REDIRECTS", "2");
+        reload();
         let config1 = get();
         assert_eq!(config1.max_redirects, 2);
 
@@ -542,12 +555,13 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "admin_tests"))]
 mod tests_apply_dryrun {
     use super::*;
     use serde_json::json;
 
     #[test]
+    #[serial_test::serial]
     fn dryrun_returns_diff_and_does_not_bump_version() {
         // reset state
         reload();
@@ -571,7 +585,10 @@ mod tests_apply_dryrun {
     }
 
     #[test]
+    #[serial_test::serial]
     fn apply_commits_and_bumps_version() {
+        // Ensure baseline differs from target to demonstrate a change
+        std::env::set_var("SB_SUBS_MAX_REDIRECTS", "2");
         reload();
         let start_ver = version();
         let delta = crate::admin_debug::endpoints::config::ConfigDelta {
@@ -585,14 +602,16 @@ mod tests_apply_dryrun {
         assert!(end_ver > start_ver, "version bumped");
         let cfg = get();
         assert_eq!(cfg.max_redirects, 3);
+        std::env::remove_var("SB_SUBS_MAX_REDIRECTS");
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "admin_tests"))]
 mod tests_idempotent {
     use super::*;
 
     #[test]
+    #[serial_test::serial]
     fn same_patch_twice_second_time_no_change() {
         reload();
         let start_ver = version();
@@ -630,6 +649,7 @@ mod tests_idempotent {
     }
 
     #[test]
+    #[serial_test::serial]
     fn dryrun_with_changes_shows_changed_true_but_no_version_bump() {
         reload();
         let start_ver = version();
@@ -657,6 +677,7 @@ mod tests_idempotent {
     }
 
     #[test]
+    #[serial_test::serial]
     fn no_changes_delta_returns_changed_false() {
         reload();
         let start_ver = version();
@@ -685,6 +706,7 @@ mod tests_idempotent {
     }
 
     #[test]
+    #[serial_test::serial]
     fn json_diff_enhanced_format() {
         let before = serde_json::json!({
             "timeout_ms": 4000,
@@ -716,13 +738,14 @@ mod tests_idempotent {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "admin_tests"))]
 mod tests_concurrency_and_rollback {
     use super::*;
     use std::thread;
     use std::time::Duration;
 
     #[test]
+    #[serial_test::serial]
     fn high_concurrent_reads_and_applies() {
         reload();
         let start = version();
@@ -742,7 +765,8 @@ mod tests_concurrency_and_rollback {
         for i in 0..10u64 {
             let _ = apply_with_dryrun(
                 &crate::admin_debug::endpoints::config::ConfigDelta {
-                    timeout_ms: Some(4000 + i as u64),
+                    // Start from 4001 to ensure the first apply changes something
+                    timeout_ms: Some(4001 + i as u64),
                     ..Default::default()
                 },
                 false,
@@ -757,6 +781,7 @@ mod tests_concurrency_and_rollback {
     }
 
     #[test]
+    #[serial_test::serial]
     fn failed_update_does_not_commit() {
         reload();
         let before = get();

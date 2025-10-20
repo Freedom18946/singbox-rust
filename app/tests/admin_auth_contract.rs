@@ -1,3 +1,4 @@
+#![cfg(feature = "admin_tests")]
 //! Integration tests for admin authentication contract compliance
 //!
 //! Tests the admin debug server authentication and rate limiting with

@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/rust-setup
       - name: Run e2e compatibility (non-blocking)
-        run: scripts/e2e-run.sh || true
+        run: scripts/e2e/run.sh || true
       - name: Upload .e2e artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -42,8 +42,8 @@ jobs:
         env:
           GO_SINGBOX_BIN: "/dev/null"  # Placeholder - would be set to real Go binary path
         run: |
-          chmod +x scripts/e2e-diff.sh
-          scripts/e2e-diff.sh || echo "Diff completed with differences - this is expected during development"
+          chmod +x scripts/e2e/diff.sh
+          scripts/e2e/diff.sh || echo "Diff completed with differences - this is expected during development"
       - name: Upload diff artifacts
         if: always()
         uses: actions/upload-artifact@v4

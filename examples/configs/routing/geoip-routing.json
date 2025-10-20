@@ -1,0 +1,65 @@
+{
+  "// description": "GeoIP-based routing example",
+  "// usage": "cargo run -p app -- run -c examples/configs/routing/geoip-routing.json",
+  "// note": "Requires geoip.db file. Generate with: cargo run -p app -- geoip --download",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy",
+      "server": "your-server.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "your-password"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "geoip": ["cn", "private"]
+        },
+        "to": "direct"
+      },
+      {
+        "when": {
+          "geosite": ["category-ads-all"]
+        },
+        "to": "block"
+      }
+    ],
+    "default": "proxy",
+    "rule_set": [
+      {
+        "tag": "geoip",
+        "type": "local",
+        "format": "binary",
+        "path": "geoip.db"
+      },
+      {
+        "tag": "geosite",
+        "type": "local",
+        "format": "binary",
+        "path": "geosite.db"
+      }
+    ]
+  }
+}

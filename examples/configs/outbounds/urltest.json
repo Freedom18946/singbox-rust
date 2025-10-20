@@ -1,0 +1,56 @@
+{
+  "// description": "URLTest outbound for automatic failover based on health checks",
+  "// usage": "cargo run -p app --features 'sb-core/urltest' -- run -c examples/configs/outbounds/urltest.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "urltest",
+      "name": "auto",
+      "outbounds": ["proxy1", "proxy2", "proxy3"],
+      "url": "https://www.google.com/generate_204",
+      "interval": "5m",
+      "tolerance": 150
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy1",
+      "server": "server1.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password1"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy2",
+      "server": "server2.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password2"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy3",
+      "server": "server3.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password3"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "auto"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "log": { "level": "warn" },
+  "inbounds": [{ "type": "http", "listen": "127.0.0.1", "port": 18081 }],
+  "outbounds": [
+    { "type": "direct", "name": "proxy1" },
+    { "type": "direct", "name": "proxy2" },
+    { "type": "selector", "name": "SELECT", "outbounds": ["proxy1", "proxy2"] },
+    { "type": "direct", "name": "DIRECT" }
+  ],
+  "route": {
+    "rules": [
+      { "domain_suffix": [".example.com"], "outbound": "SELECT" }
+    ],
+    "default": "DIRECT"
+  }
+}
+

@@ -313,8 +313,7 @@ impl AsyncRead for Http2StreamAdapter {
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("HTTP/2 recv error: {}", e),
             ))),
             Poll::Ready(None) => {
@@ -341,16 +340,14 @@ impl AsyncWrite for Http2StreamAdapter {
                 let data = Bytes::copy_from_slice(&buf[..to_send]);
 
                 self.send_stream.send_data(data, false).map_err(|e| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    std::io::Error::other(
                         format!("HTTP/2 send error: {}", e),
                     )
                 })?;
 
                 Poll::Ready(Ok(to_send))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("HTTP/2 capacity error: {}", e),
             ))),
             Poll::Ready(None) => Poll::Ready(Err(std::io::Error::new(
@@ -371,8 +368,7 @@ impl AsyncWrite for Http2StreamAdapter {
         self.send_stream
             .send_data(Bytes::new(), true)
             .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                std::io::Error::other(
                     format!("HTTP/2 shutdown error: {}", e),
                 )
             })?;

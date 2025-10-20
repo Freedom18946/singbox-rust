@@ -1,16 +1,120 @@
 [package]
-name = "fuzz"
+name = "singbox-fuzz"
 version = "0.1.0"
 edition = "2021"
+description = "Comprehensive fuzz testing suite for singbox-rust"
+authors = ["singbox-rust team"]
+license = "MIT"
 
 [package.metadata]
 cargo-fuzz = true
 
+# Core fuzzing dependencies
 [dependencies]
 libfuzzer-sys = "0.4"
-sb-core = { path = "../crates/sb-core", features=["fuzzing"], default-features = false }
+arbitrary = { version = "1.3", features = ["derive"], optional = true }
+proptest = { version = "1.0", optional = true }
+
+# singbox-rust crates
+sb-core = { path = "../crates/sb-core", features = [
+    "fuzzing",
+], default-features = false }
 sb-api = { path = "../crates/sb-api", default-features = false }
 sb-adapters = { path = "../crates/sb-adapters", default-features = false }
+sb-config = { path = "../crates/sb-config", default-features = false }
+sb-tls = { path = "../crates/sb-tls", default-features = false, optional = true }
+sb-transport = { path = "../crates/sb-transport", default-features = false, optional = true }
+
+# Additional testing utilities
+quickcheck = { version = "1.0", optional = true }
+rand = { version = "0.8", features = ["small_rng"] }
+hex = "0.4"
+base64 = "0.21"
+
+[features]
+default = ["basic"]
+basic = []
+advanced = ["arbitrary", "proptest", "quickcheck"]
+tls-protocols = ["sb-tls"]
+transport-protocols = ["sb-transport"]
+all-protocols = ["tls-protocols", "transport-protocols"]
+
+# Fuzz targets configuration
+[[bin]]
+name = "fuzz_config"
+path = "targets/core/fuzz_config.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_dns_message"
+path = "targets/core/fuzz_dns_message.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_vmess"
+path = "targets/protocols/fuzz_vmess.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_vless"
+path = "targets/protocols/fuzz_vless.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_trojan"
+path = "targets/protocols/fuzz_trojan.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_shadowsocks"
+path = "targets/protocols/fuzz_shadowsocks.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_hysteria"
+path = "targets/protocols/fuzz_hysteria.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_tuic"
+path = "targets/protocols/fuzz_tuic.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_socks5"
+path = "targets/protocols/fuzz_socks5.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_http_connect"
+path = "targets/protocols/fuzz_http_connect.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_tun_packet"
+path = "targets/network/fuzz_tun_packet.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_mixed_protocol"
+path = "targets/network/fuzz_mixed_protocol.rs"
+required-features = ["basic"]
+
+[[bin]]
+name = "fuzz_v2ray_api"
+path = "targets/api/fuzz_v2ray_api.rs"
+required-features = ["basic"]
+
+# Advanced structured fuzz targets
+[[bin]]
+name = "fuzz_vmess_structured"
+path = "targets/protocols/fuzz_vmess_structured.rs"
+required-features = ["advanced"]
+
+[[bin]]
+name = "fuzz_config_structured"
+path = "targets/core/fuzz_config_structured.rs"
+required-features = ["advanced"]
 
 [workspace]
 members = ["."]

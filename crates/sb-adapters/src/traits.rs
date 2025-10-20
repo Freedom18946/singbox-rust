@@ -1,9 +1,9 @@
 //! Unified traits and interfaces for all adapters
 
 use crate::error::Result;
-use std::any::Any;
 use async_trait::async_trait;
 use rand::Rng;
+use std::any::Any;
 use std::{fmt::Debug, fmt::Display, str::FromStr, time::Duration};
 
 /// Retry policy for connection attempts
@@ -295,7 +295,6 @@ pub trait OutboundDatagram: DynDowncast + Send + Sync + Debug {
     async fn close(&self) -> Result<()> {
         Ok(())
     }
-
 }
 
 /// Unified outbound connector trait for all adapters

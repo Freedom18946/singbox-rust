@@ -1,0 +1,45 @@
+{
+  "// description": "VMess outbound with WebSocket + TLS transport",
+  "// usage": "cargo run -p app --features 'sb-core/out_vmess,sb-core/v2ray_transport' -- run -c examples/configs/outbounds/vmess-ws-tls.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "vmess",
+      "name": "vmess-out",
+      "server": "your-server.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+      "alterId": 0,
+      "security": "auto",
+      "transport": {
+        "type": "ws",
+        "path": "/vmess",
+        "headers": {
+          "Host": "your-server.com"
+        }
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "your-server.com",
+        "alpn": ["h2", "http/1.1"]
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "vmess-out"
+  }
+}

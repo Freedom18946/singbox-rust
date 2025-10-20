@@ -1,9 +1,46 @@
+# Cargo configuration for singbox-rust
+# This file provides workspace-wide build settings and compiler flags
+
 [build]
+# Compiler optimization flags
 rustflags = [
-  "-C","target-cpu=native",
-  "--cfg","reqwest_unstable",
+  # Performance: Optimize for the host CPU architecture
+  # Note: This makes binaries non-portable across different CPU models
+  # For portable builds, use RUSTFLAGS="" or remove this flag
+  "-C", "target-cpu=native",
+  
+  # Enable reqwest unstable features (required for HTTP/2 benchmarks)
+  "--cfg", "reqwest_unstable",
+  
+  # Declare known features to prevent "unexpected cfg" warnings
+  # Keep this list synchronized with actual feature flags used in the project
   "--check-cfg=cfg(feature, values(\"minimal\",\"observe\",\"subs_http\",\"subs_clash\",\"subs_singbox\",\"sbcore_rules_tool\",\"rules_capture\",\"sbcore_analyze_json\",\"proto_trojan_dry\",\"proto_ss2022_min\",\"route_sandbox\",\"router\",\"bench\",\"strict_warnings\",\"metrics\",\"admin_debug\",\"explain\",\"rule_coverage\",\"panic_log\",\"hardening\",\"chaos\",\"socks\",\"redir\",\"tun\",\"http\",\"schema-v2\",\"tls-rustls\",\"config_schema\"))"
 ]
 
+# Documentation build settings
 [doc]
+# Treat documentation warnings as errors to maintain high doc quality
 rustdocflags = ["-D", "warnings"]
+
+# Target-specific configurations
+# Note: Rust 1.90+ uses lld by default on x86_64-unknown-linux-gnu
+# For other platforms (macOS, Windows), we manually enable rust-lld for faster linking
+
+# macOS Apple Silicon - Use rust-lld for 30-50% faster linking
+# rust-lld is bundled with Rust toolchain, no extra installation needed
+[target.aarch64-apple-darwin]
+linker = "rust-lld"
+
+# macOS Intel - Use rust-lld for 30-50% faster linking
+#[target.x86_64-apple-darwin]
+#linker = "rust-lld"
+
+# Windows MSVC - Use rust-lld for faster linking (optional)
+# [target.x86_64-pc-windows-msvc]
+# linker = "rust-lld"
+
+# Build cache settings (optional, uncomment to enable)
+# [build]
+# incremental = true        # Enable incremental compilation (default: true in dev)
+# pipelining = true         # Enable build pipelining (experimental)
+

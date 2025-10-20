@@ -90,8 +90,8 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
                 DnsBackend::Doh => doh_resolve(&host, port, timeout).await,
                 DnsBackend::Doq => doq_resolve(&host, port, timeout).await,
                 DnsBackend::Auto => {
-                    // Safety: Auto backend is handled separately at line 101-102, never passed to this closure
-                    unreachable!("DnsBackend::Auto is handled at the outer level")
+                    // Auto backend is handled at the outer level; returning an error avoids panicking in release builds
+                    anyhow::bail!("internal: DnsBackend::Auto is not valid for runner")
                 }
             }
         }
@@ -737,4 +737,39 @@ where
         cache.put(ck, answer);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_invalid_domain_label_too_long() {
+        // Domain labels > 63 chars should fail in DNS protocol
+        let long_label = "a".repeat(64);
+        let host = format!("{}.example.com", long_label);
+        
+        // Should fail (either protocol validation or resolution failure)
+        let result = resolve_all(&host, 443).await;
+        assert!(result.is_err() || result.as_ref().is_ok_and(|v| v.is_empty()), 
+                "should reject or fail to resolve domain with label > 63 chars");
+    }
+
+    #[tokio::test]
+    async fn test_system_resolve_invalid_host() {
+        // Resolve an invalid/non-existent domain
+        let result = system_resolve("invalid-domain-that-should-not-exist-12345.local", 443).await;
+        
+        // Should fail (either no addresses or IO error)
+        assert!(result.is_err() || result.unwrap().is_empty(), 
+                "invalid domain should fail or return empty");
+    }
+
+    #[test]
+    fn test_timeout_from_env_fallback() {
+        // If env var is not set or invalid, should use default 1500ms
+        std::env::remove_var("SB_DNS_TIMEOUT_MS");
+        let timeout = timeout_from_env();
+        assert_eq!(timeout, 1500, "should use default timeout when env not set");
+    }
 }

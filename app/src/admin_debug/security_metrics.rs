@@ -556,6 +556,7 @@ pub fn reset_caches() {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

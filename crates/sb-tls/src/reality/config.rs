@@ -30,6 +30,9 @@ pub struct RealityClientConfig {
 
 impl RealityClientConfig {
     /// Validate configuration
+    ///
+    /// # Errors
+    /// Returns an error if fields are invalid or malformed.
     pub fn validate(&self) -> Result<(), String> {
         // Validate target domain
         if self.target.is_empty() {
@@ -42,16 +45,12 @@ impl RealityClientConfig {
         }
 
         // Validate short_id if present
-        if let Some(ref short_id) = self.short_id {
-            if !short_id.is_empty() {
-                if !is_valid_hex(short_id) {
-                    return Err("short_id must be hex characters".to_string());
-                }
-                if short_id.len() > 16 || short_id.len() % 2 != 0 {
-                    return Err(
-                        "short_id must be 0-16 hex chars (length multiple of 2)".to_string()
-                    );
-                }
+        if let Some(ref short_id) = self.short_id && !short_id.is_empty() {
+            if !is_valid_hex(short_id) {
+                return Err("short_id must be hex characters".to_string());
+            }
+            if short_id.len() > 16 || short_id.len() % 2 != 0 {
+                return Err("short_id must be 0-16 hex chars (length multiple of 2)".to_string());
             }
         }
 
@@ -59,14 +58,17 @@ impl RealityClientConfig {
     }
 
     /// Get short ID as bytes
+    #[must_use]
     pub fn short_id_bytes(&self) -> Option<Vec<u8>> {
         self.short_id.as_ref().and_then(|s| hex::decode(s).ok())
     }
 
     /// Get public key as bytes
+    /// # Errors
+    /// Returns an error when the public key is not valid hex or wrong length.
     pub fn public_key_bytes(&self) -> Result<[u8; 32], String> {
         let bytes =
-            hex::decode(&self.public_key).map_err(|e| format!("invalid public key hex: {}", e))?;
+            hex::decode(&self.public_key).map_err(|e| format!("invalid public key hex: {e}"))?;
 
         bytes
             .try_into()
@@ -102,6 +104,9 @@ pub struct RealityServerConfig {
 
 impl RealityServerConfig {
     /// Validate configuration
+    ///
+    /// # Errors
+    /// Returns an error if fields are invalid or malformed.
     pub fn validate(&self) -> Result<(), String> {
         // Validate target
         if self.target.is_empty() {
@@ -120,11 +125,9 @@ impl RealityServerConfig {
 
         // Validate short IDs
         for short_id in &self.short_ids {
-            if !is_valid_hex(short_id) {
-                return Err(format!("invalid short_id hex: {}", short_id));
-            }
+            if !is_valid_hex(short_id) { return Err(format!("invalid short_id hex: {short_id}")); }
             if short_id.len() > 16 || short_id.len() % 2 != 0 {
-                return Err(format!("short_id must be 0-16 hex chars: {}", short_id));
+                return Err(format!("short_id must be 0-16 hex chars: {short_id}"));
             }
         }
 
@@ -132,9 +135,11 @@ impl RealityServerConfig {
     }
 
     /// Get private key as bytes
+    /// # Errors
+    /// Returns an error when the private key is not valid hex or wrong length.
     pub fn private_key_bytes(&self) -> Result<[u8; 32], String> {
         let bytes = hex::decode(&self.private_key)
-            .map_err(|e| format!("invalid private key hex: {}", e))?;
+            .map_err(|e| format!("invalid private key hex: {e}"))?;
 
         bytes
             .try_into()
@@ -142,6 +147,7 @@ impl RealityServerConfig {
     }
 
     /// Get short IDs as bytes
+    #[must_use]
     pub fn short_ids_bytes(&self) -> Vec<Vec<u8>> {
         self.short_ids
             .iter()
@@ -150,6 +156,7 @@ impl RealityServerConfig {
     }
 
     /// Check if a short ID is accepted
+    #[must_use]
     pub fn accepts_short_id(&self, short_id: &[u8]) -> bool {
         if self.short_ids.is_empty() {
             return true; // Accept all if no restrictions
@@ -175,11 +182,11 @@ fn default_fingerprint() -> String {
     "chrome".to_string()
 }
 
-fn default_handshake_timeout() -> u64 {
+const fn default_handshake_timeout() -> u64 {
     5 // 5 seconds
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 

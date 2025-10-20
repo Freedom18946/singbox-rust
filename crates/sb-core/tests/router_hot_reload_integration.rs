@@ -7,9 +7,7 @@ use tokio::fs;
 use tokio::time::sleep;
 use tracing::debug;
 
-use sb_core::router::{
-    HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle,
-};
+use sb_core::router::{HotReloadConfig, HotReloadEvent, HotReloadManager, RouterHandle};
 
 #[tokio::test]
 async fn test_hot_reload_basic_functionality() {

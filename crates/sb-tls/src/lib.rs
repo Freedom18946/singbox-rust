@@ -20,13 +20,13 @@ use async_trait::async_trait;
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-/// Combined AsyncRead + AsyncWrite trait
+/// Combined `AsyncRead` + `AsyncWrite` trait
 ///
 /// This trait is automatically implemented for any type that implements
-/// AsyncRead + AsyncWrite + Unpin + Send.
+/// `AsyncRead` + `AsyncWrite` + `Unpin` + `Send`.
 pub trait TlsStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
 
-/// Blanket implementation for TlsStream
+/// Blanket implementation for `TlsStream`
 impl<T> TlsStream for T where T: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
 
 /// TLS stream type alias

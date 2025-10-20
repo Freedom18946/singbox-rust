@@ -1,0 +1,119 @@
+{
+  "// description": "Transparent proxy with TUN device (全局代理)",
+  "// usage": "sudo cargo run -p app --features 'sb-core/in_tun' -- run -c examples/configs/advanced/transparent-proxy.json",
+  "// platforms": "macOS, Linux",
+
+  "inbounds": [
+    {
+      "type": "tun",
+      "name": "tun-in",
+      "interface_name": "utun",
+      "mtu": 9000,
+      "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system",
+      "sniff": true,
+      "sniff_override_destination": true
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "selector",
+      "name": "proxy",
+      "outbounds": ["auto", "ss-out", "vmess-out", "direct"],
+      "default": "auto"
+    },
+    {
+      "type": "urltest",
+      "name": "auto",
+      "outbounds": ["ss-out", "vmess-out"],
+      "url": "https://www.google.com/generate_204",
+      "interval": "5m",
+      "tolerance": 100
+    },
+    {
+      "type": "shadowsocks",
+      "name": "ss-out",
+      "server": "ss.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password1"
+    },
+    {
+      "type": "vmess",
+      "name": "vmess-out",
+      "server": "vmess.example.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+
+  "dns": {
+    "servers": [
+      {
+        "tag": "proxy-dns",
+        "address": "https://1.1.1.1/dns-query",
+        "detour": "proxy"
+      },
+      {
+        "tag": "local-dns",
+        "address": "223.5.5.5",
+        "detour": "direct"
+      },
+      {
+        "tag": "block-dns",
+        "address": "rcode://success"
+      }
+    ],
+    "rules": [
+      {
+        "when": {
+          "geosite": ["category-ads-all"]
+        },
+        "server": "block-dns"
+      },
+      {
+        "when": {
+          "geosite": ["cn"]
+        },
+        "server": "local-dns"
+      }
+    ],
+    "default": "proxy-dns"
+  },
+
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "geosite": ["category-ads-all"]
+        },
+        "to": "block"
+      },
+      {
+        "when": {
+          "geoip": ["cn", "private"]
+        },
+        "to": "direct"
+      },
+      {
+        "when": {
+          "geosite": ["cn"]
+        },
+        "to": "direct"
+      }
+    ],
+    "default": "proxy",
+    "auto_detect_interface": true
+  }
+}

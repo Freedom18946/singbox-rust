@@ -28,7 +28,10 @@ fn block_suffixes_blocks_example_com() {
     let cfg = Config::load(tmp.path()).expect("load config");
 
     // 命中 example.com 后缀 → 选择 block1
-    assert_eq!(cfg.pick_outbound_for_host("www.example.com"), Some("block1"));
+    assert_eq!(
+        cfg.pick_outbound_for_host("www.example.com"),
+        Some("block1")
+    );
     // 非命中 → 兜底 direct
     assert_eq!(cfg.pick_outbound_for_host("not-example.test"), None); // pick_outbound_for_host 只看规则；兜底由上层使用 default_outbound
 }

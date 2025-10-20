@@ -12,6 +12,7 @@ pub struct RealityAuth {
 
 impl RealityAuth {
     /// Create new auth from private key bytes
+    #[must_use]
     pub fn from_private_key(private_key: [u8; 32]) -> Self {
         let secret = StaticSecret::from(private_key);
         let public_key = PublicKey::from(&secret);
@@ -20,6 +21,7 @@ impl RealityAuth {
     }
 
     /// Generate new random keypair
+    #[must_use]
     pub fn generate() -> Self {
         let secret = StaticSecret::random_from_rng(OsRng);
         let public_key = PublicKey::from(&secret);
@@ -28,16 +30,19 @@ impl RealityAuth {
     }
 
     /// Get public key bytes
+    #[must_use]
     pub fn public_key_bytes(&self) -> [u8; 32] {
         *self.public_key.as_bytes()
     }
 
     /// Get private key bytes
+    #[must_use]
     pub fn private_key_bytes(&self) -> [u8; 32] {
         self.secret.to_bytes()
     }
 
     /// Perform ECDH key exchange with peer public key
+    #[must_use]
     pub fn derive_shared_secret(&self, peer_public_key: &[u8; 32]) -> [u8; 32] {
         let peer_key = PublicKey::from(*peer_public_key);
         let shared = self.secret.diffie_hellman(&peer_key);
@@ -48,6 +53,7 @@ impl RealityAuth {
     ///
     /// This creates a deterministic hash from the shared secret and other parameters
     /// for authentication verification.
+    #[must_use]
     pub fn compute_auth_hash(
         &self,
         peer_public_key: &[u8; 32],
@@ -57,7 +63,7 @@ impl RealityAuth {
         let shared_secret = self.derive_shared_secret(peer_public_key);
 
         let mut hasher = Sha256::new();
-        hasher.update(&shared_secret);
+        hasher.update(shared_secret);
         hasher.update(short_id);
         hasher.update(session_data);
 
@@ -66,6 +72,7 @@ impl RealityAuth {
     }
 
     /// Verify authentication hash
+    #[must_use]
     pub fn verify_auth_hash(
         &self,
         peer_public_key: &[u8; 32],
@@ -79,6 +86,7 @@ impl RealityAuth {
 }
 
 /// Generate a new keypair and return as hex strings
+#[must_use]
 pub fn generate_keypair() -> (String, String) {
     let auth = RealityAuth::generate();
     let private_key = hex::encode(auth.private_key_bytes());

@@ -1,7 +1,0 @@
-// 验收矩阵门槛文档
-// 必须项（Linux）:
-// pprof.enabled == true
-// soak.passed == true
-// release_matrix.sha256_lines >= 3
-// 非 Linux 平台：pprof.enabled 可为 false，但须提供 /debug/pprof/status 说明
-// release_matrix.sha256_lines >= 2

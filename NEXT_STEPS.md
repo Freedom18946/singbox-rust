@@ -1,29 +1,64 @@
 Parity Roadmap (vs sing-box `dev-next`)
 
-Last audited: 2025-10-12 22:10 UTC
+Last audited: 2025-10-14 23:30 UTC
 
 ## Current Snapshot
-- **CLI entrypoint**: `app/src/main.rs` exposes only `check`, `auth`, `prom`, `run`, `route`, `version`; other parity commands live under `app/src/bin/*` as standalone executables.
-- **Config surface**: `crates/sb-config/src/model.rs` + `crates/sb-config/src/inbound.rs` / `outbound.rs` recognise only HTTP/SOCKS/TUN inbounds and direct/block or limited V2Ray outbounds; top-level `log`, `dns`, `ntp`, `certificate`, `services`, and `experimental` sections are absent.
-- **Protocol adapters**: Many adapters exist under `crates/sb-adapters/src/inbound` and `crates/sb-adapters/src/outbound`, but are unreachable because the loader (`app/src/config_loader.rs`) drops their configuration.
-- **Geo / Rule-set tooling**: CLI binaries (`app/src/bin/geoip.rs`, `geosite.rs`, `ruleset.rs`) operate on loose files; there is no bundled dataset or compile/decompile parity.
-- **Stubs**: WireGuard outbound (`crates/sb-core/src/outbound/wireguard_stub.rs`) returns `Unsupported`; AnyTLS/Tor have no implementation.
+- CLI: Unified dispatcher exists in `app/src/main.rs` with `check/merge/format/generate/geoip/geosite/ruleset/run/tools/version` behind features.
+- Config IR: V2 schema, migration, and IR are solid (`crates/sb-config/src/ir/*`), but top-level `ntp/certificate/endpoints/services/experimental` are not fully consumed by runtime.
+- Runtime bridging: `run` now starts HTTP/SOCKS/TUN inbounds from IR, installs router index, and supports hot reload for router index and outbound registry (inbounds not hot-reloaded). Bridges minimal DNS pool from `dns.servers` via env.
+- Protocol adapters: Broad implementations exist under `crates/sb-adapters` and `crates/sb-core/outbound`, but many are gated or only env-driven (e.g., VMess/VLESS transport chain), not yet wired from config.
+- DNS: DoH/DoT/DoQ/FakeIP capabilities exist in sb-core; enabling is env-driven, not via `dns` config block.
+- Rule-set/Geo: Tooling present; datasets are not packaged or auto-updated; compile/decompile/upgrade flows need finishing touches.
+- Stubs/intentional gaps: WireGuard outbound is a stub; AnyTLS/Tor unimplemented; uTLS not targeted.
 
-## Immediate Priorities (P0)
-1. **Unify CLI** – Make a single `singbox` binary dispatch every upstream subcommand by embedding the existing bin logic (touch `app/src/main.rs`, `app/src/cli/mod.rs`, and move `app/src/bin/*` modules under the dispatcher).
-2. **Full configuration schema** – Extend `sb-config` to parse upstream sections (`log`, `dns`, `ntp`, `certificate`, `endpoints`, `services`, `experimental`) and map the richer inbound/outbound variants into IR (`crates/sb-config/src/ir/mod.rs`) so `app/src/config_loader.rs` can instantiate adapters.
-3. **Activate major protocol adapters** – Wire Shadowsocks/ShadowTLS/Trojan/VLESS/VMess/TUIC/Hysteria (inbound & outbound) through the expanded config, ensuring transport and multiplex options surface (`crates/sb-adapters/src/inbound`, `crates/sb-adapters/src/outbound`).
-4. **Tooling parity** – Finish rule-set compile/decompile/upgrade flows and package GeoIP/Geosite databases with update hooks (`app/src/bin/ruleset.rs`, `app/src/bin/geoip.rs`, `app/src/bin/geosite.rs`, `crates/sb-core/src/router/ruleset`).
-5. **Replace protocol stubs** – Implement WireGuard/Tor/AnyTLS outbounds (or document scope) and add conformance tests (`crates/sb-core/src/outbound/wireguard_stub.rs` and new modules).
+## Strategy (3 Phases)
+- Phase 1 — Minimal viable run path (P0):
+  - DONE (initial): Bridge IR → runtime: instantiate HTTP/SOCKS/TUN inbounds; direct/block/http/socks outbounds; build Router from IR; enable hot reload (file watcher) for rules.
+  - DONE (initial): DNS minimal config path: consume `dns.servers` for upstream pool selection; keep env as override.
+  - Next: expand protocol outbounds and config-driven options; inbounds hot reload (optional).
+- Phase 2 — Protocol activation (P0):
+  - Wire VLESS/VMess/Trojan/Shadowsocks/TUIC/Hysteria2 outbounds from IR, including transport chain (TLS/WS/H2/HTTPUpgrade/gRPC) and multiplex.
+  - Expose selector/urltest via config; integrate health checks; reduce env knobs.
+  - Add sniffing pipeline → router conditions (HTTP Host, TLS SNI, QUIC ALPN).
+- Phase 3 — Parity completion (P1):
+  - Top-level services (`ntp`, later `derp/resolved/ssm-api`) and `certificate/endpoints/experimental` wiring.
+  - Rule-set compile/decompile/upgrade flow parity; package GeoIP/Geosite with update hooks.
+  - ECH/REALITY end-to-end verification and config UX polish; document non-goals (uTLS, Tor if out-of-scope).
 
-## Near-term P1 Follow-ups
-- Harden `check` command with schema-backed diagnostics and migration helpers (`app/src/bin/check.rs`).
-- Introduce service support (DERP, resolved, ssm-api) once config scaffolding is ready (`crates/sb-core/src/service`, new).
-- Provide packaging scripts for distributing geo databases and rule-sets alongside release artefacts (`scripts/`, CI).
-- Add end-to-end tests comparing Rust CLI outputs with upstream binaries across representative configs (`tests/`).
+## Workstreams and Tasks
+- WS1: Runtime Bridging (P0)
+  - Build Router from `ConfigIR` and replace index live (`app/src/config_loader.rs`).
+  - Map `ir::InboundIR`/`OutboundIR` → sb-adapters factories; start listeners and registries.
+  - Re-enable hot reload; atomic swap of router and outbound registries.
+- WS2: DNS Integration (P0)
+  - Parse `dns` block into IR; create backend pool and strategy; wire into resolver; env overrides remain.
+  - Metrics and error surfaces aligned with sb-core DNS modules.
+- WS3: P0 Protocols (P0)
+  - Implement config-driven builders for VLESS/VMess/Trojan/Shadowsocks/TUIC/Hysteria2.
+  - Transport chain selection from IR (`tls/ws/h2/httpupgrade/grpc/multiplex`).
+  - Selector wiring: DONE (manual selector via core `selector`), URLTest pending.
+- WS4: Sniffing and Routing (P1)
+  - Surface sniffed fields to router; add `alpn`/`protocol` matches; ensure performance safe defaults.
+- WS5: Tooling & Data (P1)
+  - Rule-set compile/decompile/upgrade; golden tests.
+  - GeoIP/Geosite packaging and updater (scripts + release artifacts).
+- WS6: Services & Certs (P1)
+  - Enable `ntp` service from config; stage `derp/resolved/ssm-api` scaffolding.
+  - `certificate` loading/reference; document secure defaults.
+- WS7: Security/Hardening (cross-cutting)
+  - Secrets redaction; zeroize sensitive material; consistent error mapping; rate limits.
 
-## Verification Plan
-- Extend `sb-config` unit tests to cover each new schema block and protocol permutation.
-- Build integration fixtures that run `app` vs upstream `sing-box` for every inbound/outbound combination and compare exit codes/outputs.
-- Exercise GeoIP/Geosite/Rule-set commands on sample datasets to confirm identical CLI behaviour.
-- Gate releases on `cargo test --workspace --all-features` plus a parity smoke script invoking the unified CLI.
+## Milestones and Acceptance
+- M1 (P0): `app run -c minimal.yaml` starts HTTP/SOCKS inbound, routes via direct/block/http/socks, router rules active; hot reload for rules; basic DNS block applied.
+- M2 (P0): Config drives VLESS/VMess/Trojan/Shadowsocks/TUIC/Hysteria2 with transport chain; selector/urltest usable; health metrics; env knobs optional.
+- M3 (P1): Sniff → route conditions wired; rule-set compile/upgrade parity; packaged GeoIP/Geosite; `ntp` service enabled from config.
+
+## Risks & Mitigations
+- Adapter duplication between sb-core and sb-adapters → converge via single builder path per protocol.
+- Feature gating complexity → curated default feature set for release profiles; CI matrix to guard drift.
+- DNS/doq platform nuances → keep graceful fallbacks; explicit errors with actionable hints.
+
+## Verification
+- Unit: expand `sb-config` and adapter builders coverage per protocol/transport.
+- Integration: fixtures that run `app` vs upstream `sing-box` to compare exit codes/logs for config acceptance.
+- E2E: smoke flows for each P0 protocol; router rule explain/preview parity; DNS pool strategies.

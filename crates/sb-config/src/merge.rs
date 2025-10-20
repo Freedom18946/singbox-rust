@@ -40,7 +40,8 @@ fn merge_typed(mut base: Config, sub: Config) -> Config {
             | Outbound::Http { name, .. }
             | Outbound::Vless { name, .. }
             | Outbound::Vmess { name, .. }
-            | Outbound::Trojan { name, .. } => {
+            | Outbound::Trojan { name, .. }
+            | Outbound::Tuic { name, .. } => {
                 out_map.insert(name.clone(), o);
             }
         }
@@ -54,7 +55,8 @@ fn merge_typed(mut base: Config, sub: Config) -> Config {
             | Outbound::Http { name, .. }
             | Outbound::Vless { name, .. }
             | Outbound::Vmess { name, .. }
-            | Outbound::Trojan { name, .. } => {
+            | Outbound::Trojan { name, .. }
+            | Outbound::Tuic { name, .. } => {
                 out_map.insert(name.clone(), o);
             }
         }

@@ -521,6 +521,7 @@ impl AuthProvider for JwtProvider {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

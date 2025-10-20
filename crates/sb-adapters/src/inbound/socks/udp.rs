@@ -981,7 +981,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         };
         let mut use_proxy = false;
         let mut proxy_pool: Option<String> = None;
-        let mut decision_label = "direct".to_string();
+        let mut _decision_label = "direct".to_string();
 
         // 规则引擎：UDP 硬裁决（Reject -> 丢弃）
         if let Some(eng) = rules_global::global() {
@@ -1019,16 +1019,15 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                 RDecision::Proxy(name) => {
                     use_proxy = true;
                     proxy_pool = name;
-                    decision_label = "proxy".to_string();
+                    _decision_label = "proxy".to_string();
                 }
                 RDecision::Direct => {
-                    decision_label = "direct".to_string();
+                    _decision_label = "direct".to_string();
                 }
             }
         } else {
             let decision = RouterHandle::from_env().decide_udp_async(&host_str).await;
-            let _ = decision_label; // Mark as used
-            decision_label = decision.to_string();
+            _decision_label = decision.to_string();
             if decision.eq_ignore_ascii_case("reject") {
                 #[cfg(feature = "metrics")]
                 counter!("socks_udp_error_total", "class"=>"reject").increment(1);
@@ -1057,7 +1056,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         // ========================================================================
 
         #[cfg(feature = "metrics")]
-        metrics::counter!("router_decide_total", "proto" => "udp", "decision" => decision_label.clone()).increment(1);
+        metrics::counter!("router_decide_total", "proto" => "udp", "decision" => _decision_label.clone()).increment(1);
 
         let body = &buf[header_len..n];
 

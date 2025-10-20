@@ -337,10 +337,35 @@ impl OutboundConnector for VlessConnector {
         tracing::debug!("VLESS dialing target: {:?}", target);
 
         // Create connection to VLESS server
+        #[cfg(not(any(feature = "tls_reality", feature = "transport_ech")))]
+        let mut stream = self.create_connection().await?;
+        #[cfg(any(feature = "tls_reality", feature = "transport_ech"))]
         let stream = self.create_connection().await?;
 
         // If REALITY is configured, wrap the stream with REALITY TLS
-        #[cfg(feature = "tls_reality")]
+        #[cfg(all(feature = "tls_reality", not(feature = "transport_ech")))]
+        let mut stream: BoxedStream = if let Some(ref reality_cfg) = self.config.reality {
+            tracing::debug!("VLESS using REALITY TLS");
+
+            // Create REALITY connector
+            let reality_connector = RealityConnector::new(reality_cfg.clone()).map_err(|e| {
+                AdapterError::Other(format!("Failed to create REALITY connector: {}", e))
+            })?;
+
+            // Perform REALITY handshake
+            let server_name = &reality_cfg.server_name;
+            let tls_stream = reality_connector
+                .connect(stream, server_name)
+                .await
+                .map_err(|e| AdapterError::Other(format!("REALITY handshake failed: {}", e)))?;
+
+            // Wrap the TLS stream in a BoxedStream adapter
+            Box::new(TlsStreamAdapter { inner: tls_stream })
+        } else {
+            stream
+        };
+
+        #[cfg(all(feature = "tls_reality", feature = "transport_ech"))]
         let stream: BoxedStream = if let Some(ref reality_cfg) = self.config.reality {
             tracing::debug!("VLESS using REALITY TLS");
 

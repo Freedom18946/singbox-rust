@@ -1,0 +1,7 @@
+{
+  "schema_version": 2,
+  "inbounds": [],
+  "outbounds": [{ "type": "direct", "unused_field": true }]
+}
+
+

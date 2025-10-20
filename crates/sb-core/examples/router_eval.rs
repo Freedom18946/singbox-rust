@@ -3,7 +3,7 @@ use std::{env, fs};
 fn main() {
     let path = env::args()
         .nth(1)
-        .unwrap_or_else(|| "examples/router.rules".into());
+        .unwrap_or_else(|| "examples/rules/basic-router.rules".into());
     let txt = fs::read_to_string(&path).expect("read rules");
     let rs = parse_rules(&txt);
     let eng = Engine::build(rs);

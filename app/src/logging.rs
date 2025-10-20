@@ -111,6 +111,7 @@ pub fn init_logging() -> Result<()> {
             let fmt_layer = fmt::layer()
                 .json()
                 .with_target(true)
+                .with_writer(std::io::stderr)
                 .with_filter(env_filter);
 
             let sampling_layer = config.sampling.as_ref().map(|_| SamplingLayer);
@@ -128,6 +129,7 @@ pub fn init_logging() -> Result<()> {
             let fmt_layer = fmt::layer()
                 .compact()
                 .with_target(true)
+                .with_writer(std::io::stderr)
                 .with_filter(env_filter);
 
             let sampling_layer = config.sampling.as_ref().map(|_| SamplingLayer);
@@ -315,7 +317,6 @@ pub fn flush_logs_sync() {
 mod tests {
     use super::*;
     use serial_test::serial;
-    
 
     #[test]
     #[serial]

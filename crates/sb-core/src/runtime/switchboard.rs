@@ -382,6 +382,13 @@ impl SwitchboardBuilder {
                 ));
             }
 
+            OutboundType::Selector | OutboundType::UrlTest | OutboundType::Shadowsocks => {
+                return Err(AdapterError::UnsupportedProtocol(
+                    "Selector/urltest/shadowsocks outbounds are handled via runtime registry"
+                        .to_string(),
+                ));
+            }
+
             _ => {
                 return Err(AdapterError::UnsupportedProtocol(format!(
                     "Outbound type {:?} not supported or feature not enabled",
@@ -503,6 +510,7 @@ impl VmessConnector {
 }
 
 #[cfg(feature = "v2ray_transport")]
+#[allow(dead_code)]
 struct IoWrapper(sb_transport::IoStream);
 
 #[cfg(feature = "v2ray_transport")]
@@ -783,6 +791,7 @@ impl OutboundConnector for VlessConnector {
             uuid: id,
             flow: None,
             encryption: Some("none".into()),
+            ..Default::default()
         };
         let outbound =
             VlessOutbound::new(cfg).map_err(|_| AdapterError::InvalidConfig("vless config"))?;
@@ -886,6 +895,7 @@ impl OutboundConnector for VmessConnector {
             id,
             security: "aes-128-gcm".to_string(),
             alter_id: 0,
+            ..Default::default()
         };
         let outbound =
             VmessOutbound::new(vm_cfg).map_err(|_| AdapterError::InvalidConfig("vmess config"))?;

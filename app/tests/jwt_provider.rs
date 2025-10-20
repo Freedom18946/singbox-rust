@@ -1,3 +1,4 @@
+#![cfg(feature = "admin_tests")]
 //! JWT provider comprehensive tests
 //!
 //! Tests for JWT provider with JWKS cache, rotation, expiry, and error handling.

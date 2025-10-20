@@ -44,6 +44,16 @@ impl std::fmt::Debug for ProxyMember {
     }
 }
 
+impl ProxyMember {
+    pub fn new(tag: impl Into<String>, connector: Arc<dyn OutboundConnector>) -> Self {
+        Self {
+            tag: tag.into(),
+            connector,
+            health: Arc::new(ProxyHealth::default()),
+        }
+    }
+}
+
 /// Health status for a proxy
 #[derive(Debug)]
 pub struct ProxyHealth {

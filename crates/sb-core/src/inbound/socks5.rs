@@ -169,7 +169,7 @@ async fn handle_conn(
                 let _ = cli
                     .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                     .await;
-                return Err(e);
+                return Err(std::io::Error::other(e));
             }
         },
         None => {
@@ -283,7 +283,7 @@ impl InboundService for Socks5 {
             Err(_) => {
                 // No tokio runtime, create one
                 let runtime = tokio::runtime::Runtime::new()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 runtime.block_on(self.do_serve_async(eng, br))
             }
         }

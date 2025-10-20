@@ -1,7 +1,7 @@
 # sing-box Parity Matrix
 
-Baseline: SagerNet/sing-box `dev-next` (GitHub, 2025-10-12)  
-Last audited: 2025-10-12 22:10 UTC
+Baseline: SagerNet/sing-box `dev-next` (GitHub, 2025-10-14)
+Last audited: 2025-10-14 23:30 UTC
 
 Status legend
 - ✅ Supported: behaviour matches upstream for the documented surface
@@ -12,16 +12,16 @@ Status legend
 
 | Feature | Upstream reference | Status | Notes |
 | --- | --- | --- | --- |
-| Unified `sing-box` dispatcher | `cmd/sing-box/cmd.go` | ✗ Missing | `app/src/main.rs` wires only `check` / `auth` / `prom` / `run` / `route` / `version`; the rest of the commands live as standalone binaries under `app/src/bin/*` and are not exposed as subcommands. |
+| Unified `sing-box` dispatcher | `cmd/sing-box/cmd.go` | ◐ Partial | Unified dispatcher exists at `app/src/main.rs`; subcommands (`check/merge/format/generate/geoip/geosite/ruleset/run/tools/version`) are wired behind features. Runtime `run` remains limited by config→runtime bridging. |
 | `check` | `cmd/sing-box/cmd_check.go` | ◐ Partial | `app/src/bin/check.rs` validates only basic HTTP/SOCKS/TUN shapes; no schema enforcement for DNS, services, or advanced adapters. |
-| `format` | `cmd/sing-box/cmd_format.go` | ◐ Partial | Implemented as a separate binary in `app/src/bin/format.rs`; lacks integration with the main CLI and only handles JSON (no upstream directory recursion defaults). |
-| `merge` | `cmd/sing-box/cmd_merge.go` | ◐ Partial | `app/src/bin/merge.rs` covers basic merge but omits upstream conflict diagnostics and recursive directory loading. |
+| `format` | `cmd/sing-box/cmd_format.go` | ◐ Partial | Implemented at `app/src/cli/format.rs`; JSON/YAML support present; directory recursion and some defaults differ from upstream. |
+| `merge` | `cmd/sing-box/cmd_merge.go` | ◐ Partial | `app/src/cli/merge.rs` covers basic merge; missing upstream-grade conflict diagnostics and recursive directory loading. |
 | `generate` (reality/ech/tls/wireguard/vapid) | `cmd/sing-box/cmd_generate*.go` | ✅ Supported | Implemented inside the main CLI (`app/src/cli/generate.rs`) with parity subcommands. |
-| `geoip` | `cmd/sing-box/cmd_geoip*.go` | ◐ Partial | Provided as standalone CLI (`app/src/bin/geoip.rs`); requires manual DB paths and does not bundle sing-geoip data. |
-| `geosite` | `cmd/sing-box/cmd_geosite*.go` | ◐ Partial | `app/src/bin/geosite.rs` supports list/lookup/export against text DBs only; no binary DB or auto-update. |
-| `rule-set` | `cmd/sing-box/cmd_rule_set*.go` | ◐ Partial | `app/src/bin/ruleset.rs` exposes inspect/format but omit compile/decompile/upgrade flow implemented upstream. |
-| `tools` (`connect`, `fetch`, `synctime`, `fetch-http3`) | `cmd/sing-box/cmd_tools*.go` | ◐ Partial | `app/src/bin/tools.rs` implements TCP connect/fetch/synctime; HTTP/3 path is gated and QUIC tooling differs from upstream. |
-| `run` | `cmd/sing-box/cmd_run.go` | ◐ Partial | Entry exists via `app/src/main.rs:24`, yet the loader (`app/src/config_loader.rs`) only understands HTTP/SOCKS/TUN inbounds and a subset of outbounds. |
+| `geoip` | `cmd/sing-box/cmd_geoip*.go` | ◐ Partial | `app/src/cli/geoip.rs` supports list/lookup/export; manual DB paths; dataset not bundled; no auto-update. |
+| `geosite` | `cmd/sing-box/cmd_geosite*.go` | ◐ Partial | `app/src/cli/geosite.rs` works with text DB; no binary DB or updater. |
+| `rule-set` | `cmd/sing-box/cmd_rule_set*.go` | ◐ Partial | `app/src/cli/ruleset.rs` has validate/info/format; compile/decompile/upgrade parity incomplete. |
+| `tools` (`connect`, `fetch`, `synctime`, `fetch-http3`) | `cmd/sing-box/cmd_tools*.go` | ◐ Partial | `app/src/cli/tools.rs` implements connect/fetch/synctime; HTTP/3 feature-gated; QUIC tooling differs. |
+| `run` | `cmd/sing-box/cmd_run.go` | ◐ Partial | Entry exists; config→runtime bridge incomplete: inbounds/router/outbounds not fully instantiated; hot reload disabled. |
 | `version` | `cmd/sing-box/cmd_version.go` | ✅ Supported | `app/src/cli/version.rs` prints semantic version plus JSON format flag. |
 
 ## Configuration Coverage
@@ -30,39 +30,39 @@ Status legend
 
 | Section | Upstream doc | Status | Notes |
 | --- | --- | --- | --- |
-| `log` | `docs/configuration/log/index.md` | ✗ Missing | No serializer in `crates/sb-config`; settings are ignored during load. |
-| `dns` | `docs/configuration/dns/index.md` | ✗ Missing | DNS block absent from `crates/sb-config`; runtime cannot configure resolvers. |
-| `ntp` | `docs/configuration/ntp/index.md` | ✗ Missing | NTP service is not modelled or started. |
-| `certificate` | `docs/configuration/certificate/index.md` | ✗ Missing | No certificate loader or reference counting. |
-| `endpoints` | `docs/configuration/endpoint/index.md` | ✗ Missing | Endpoint arrays unsupported; `sb-config` lacks data structures. |
-| `inbounds` | `docs/configuration/inbound/index.md` | ◐ Partial | Only HTTP/SOCKS/TUN (and simplified direct) are recognised by `crates/sb-config/src/model.rs`. |
-| `outbounds` | `docs/configuration/outbound/index.md` | ◐ Partial | `crates/sb-config/src/model.rs` exposes only direct/block; richer definitions in `crates/sb-config/src/outbound.rs` are not invoked by the loader. |
-| `route` | `docs/configuration/route/index.md` | ◐ Partial | IR supports geoip/geosite/port (`crates/sb-config/src/ir/mod.rs`), but CLI lacks rule-set tooling and schema validation. |
-| `services` | `docs/configuration/service/index.md` | ✗ Missing | DERP/resolved/ssm-api definitions are not present. |
-| `experimental` | `docs/configuration/experimental/index.md` | ✗ Missing | No bridge for experimental options. |
+| `log` | `docs/configuration/log/index.md` | ✗ Missing | Not consumed by runtime; no serializer hook. |
+| `dns` | `docs/configuration/dns/index.md` | ◐ Partial | Schema present (tests/golden); not converted to IR or wired to runtime resolver; env still controls backends. |
+| `ntp` | `docs/configuration/ntp/index.md` | ◐ Partial | Fields present in tests; runtime service feature-gated and not started from config. |
+| `certificate` | `docs/configuration/certificate/index.md` | ✗ Missing | No certificate loader or reference counting in runtime. |
+| `endpoints` | `docs/configuration/endpoint/index.md` | ✗ Missing | Endpoint arrays unsupported in runtime. |
+| `inbounds` | `docs/configuration/inbound/index.md` | ◐ Partial | IR supports HTTP/SOCKS/TUN/Direct; runtime start-up path disabled; advanced inbounds not exposed. |
+| `outbounds` | `docs/configuration/outbound/index.md` | ◐ Partial | IR parses major protocols; builders not invoked to create adapters; many transport options env-driven. |
+| `route` | `docs/configuration/route/index.md` | ◐ Partial | IR rich; runtime does not install router index from IR by default; hot-reload disabled. |
+| `services` | `docs/configuration/service/index.md` | ✗ Missing | DERP/resolved/ssm-api not implemented. |
+| `experimental` | `docs/configuration/experimental/index.md` | ✗ Missing | No runtime bridge. |
 
 ### Inbound protocols
 
 | Protocol | Upstream doc | Status | Notes |
 | --- | --- | --- | --- |
-| `http` | `docs/configuration/inbound/http.md` | ◐ Partial | Adapter available (`crates/sb-adapters/src/inbound/http.rs`), yet config exposes only minimal listen/auth fields (`crates/sb-config/src/model.rs`). |
-| `socks` | `docs/configuration/inbound/socks.md` | ◐ Partial | TCP logic present (`crates/sb-adapters/src/inbound/socks/tcp.rs`); UDP assist and advanced auth are not surfaced. |
-| `tun` | `docs/configuration/inbound/tun.md` | ◐ Partial | Multiple platform variants exist, but config allows only optional name. |
-| `direct` | `docs/configuration/inbound/direct.md` | ◐ Partial | Forwarder implemented (`crates/sb-core/src/inbound/direct.rs`) yet unreachable via current config/CLI. |
-| `redirect` / `tproxy` | `docs/configuration/inbound/redirect.md` / `.../tproxy.md` | ✗ Missing | Linux adapters exist but no IR/CLI glue to instantiate them. |
-| `shadowsocks`, `shadowtls`, `trojan`, `vless`, `vmess`, `naive`, `hysteria`, `hysteria2`, `tuic`, `anytls` | respective docs | ✗ Missing | Core adapters under `crates/sb-adapters/src/inbound/` are not exposed through configuration or runtime selection; V2Ray transport options remain inaccessible. |
+| `http` | `docs/configuration/inbound/http.md` | ◐ Partial | Adapter exists; runtime start disabled; advanced fields not surfaced. |
+| `socks` | `docs/configuration/inbound/socks.md` | ◐ Partial | TCP/UDP support present; runtime start disabled; auth variants limited in config. |
+| `tun` | `docs/configuration/inbound/tun.md` | ◐ Partial | Started from config (phase-1 skeleton). No L3/L4 forwarding yet. |
+| `direct` | `docs/configuration/inbound/direct.md` | ◐ Partial | Started from config (TCP+UDP forwarder); basic timeouts; no auth. |
+| `redirect` / `tproxy` | `docs/configuration/inbound/redirect.md` / `.../tproxy.md` | ◐ Partial | Adapters implemented; missing IR/runtime glue. |
+| `shadowsocks`, `shadowtls`, `trojan`, `vless`, `vmess`, `naive`, `hysteria`, `hysteria2`, `tuic`, `anytls` | respective docs | ◐ Partial | Implementations exist in `sb-adapters`; lacking config→runtime wiring and advanced options exposure. |
 
 ### Outbound protocols
 
 | Protocol | Upstream doc | Status | Notes |
 | --- | --- | --- | --- |
-| `direct` / `block` | `docs/configuration/outbound/direct.md` / `.../block.md` | ◐ Partial | Supported via `crates/sb-config/src/model.rs`, but advanced dialing controls are absent. |
-| `http` / `socks` | `docs/configuration/outbound/http.md` / `.../socks.md` | ◐ Partial | Parsing exists (`crates/sb-config/src/outbound.rs`), yet TLS/transport settings are not forwarded to adapters. |
-| `vmess` / `vless` | `docs/configuration/outbound/vmess.md` / `.../vless.md` | ◐ Partial | Structs defined in `crates/sb-config/src/outbound.rs`; runtime multiplex/transport wiring is incomplete. |
-| `tuic` | `docs/configuration/outbound/tuic.md` | ◐ Partial | Config struct present, but runtime omits zero-RTT/UDP relay parity. |
-| `shadowsocks`, `shadowtls`, `trojan`, `hysteria`, `hysteria2`, `ssh` | respective docs | ✗ Missing | Either no config types or adapters remain stubs; e.g., WireGuard uses `Unsupported` stub (`crates/sb-core/src/outbound/wireguard_stub.rs`). |
-| `anytls`, `tor`, `urltest`, `wireguard` | respective docs | ✗ Missing | No usable implementation or only placeholder scaffolding. |
-| `selector` / `urltest` | `docs/configuration/outbound/selector.md` / `.../urltest.md` | ◐ Partial | `crates/sb-core/src/outbound/selector_group.rs` exists, but requires manual wiring and lacks health-check integration. |
+| `direct` / `block` | `docs/configuration/outbound/direct.md` / `.../block.md` | ◐ Partial | Implemented; IR present; runtime builder path incomplete; advanced dial controls limited. |
+| `http` / `socks` | `docs/configuration/outbound/http.md` / `.../socks.md` | ◐ Partial | Parsing exists; TLS/transport settings not fully forwarded; env toggles used for transport. |
+| `vmess` / `vless` | `docs/configuration/outbound/vmess.md` / `.../vless.md` | ◐ Partial | Outbound code exists; multiplex/transport configuration not driven from IR yet. |
+| `tuic` | `docs/configuration/outbound/tuic.md` | ◐ Partial | Outbound present; some features (0-RTT/UDP relay options) need parity checks. |
+| `shadowsocks`, `shadowtls`, `trojan`, `hysteria`, `hysteria2`, `ssh` | respective docs | ◐ Partial | Implementations exist; config-driven builders incomplete; SSH is limited; WireGuard remains stub. |
+| `anytls`, `tor`, `wireguard` | respective docs | ✗ Missing | No usable implementation or only placeholder (WireGuard stub). |
+| `selector` / `urltest` | `docs/configuration/outbound/selector.md` / `.../urltest.md` | ◐ Partial | Selector (manual) wired from config using core selector; URLTest pending. |
 
 ## Services
 
@@ -82,14 +82,22 @@ Status legend
 
 ## Runtime Observations
 
-- WireGuard outbound remains a stub returning `Unsupported` (`crates/sb-core/src/outbound/wireguard_stub.rs:41`).
-- The config loader discards advanced sections (`app/src/config_loader.rs`) so adapters beyond HTTP/SOCKS/TUN cannot be instantiated.
+- `run` path now starts HTTP/SOCKS/TUN inbounds from IR, installs router index; hot reload updates router index and outbound registry (inbounds not hot-reloaded).
+- DNS pool minimally consumed from `dns.servers` (env still overrides via `SB_DNS_*`).
+- V2Ray transport chain (TLS/WS/H2/HTTPUpgrade/gRPC) for VMess/VLESS uses env toggles; not IR-driven.
+- WireGuard outbound remains a stub (`crates/sb-core/src/outbound/wireguard_stub.rs`).
 - No automation for packaging GeoIP/Geosite or rule-set assets; builds rely on external files.
 
 ## Summary of Priority Gaps
 
-1. Deliver a unified CLI that mirrors upstream subcommand behaviour (`app/src/main.rs`, `app/src/bin/*`).
-2. Expand `sb-config` to parse the full configuration schema and map to adapters (inbounds, outbounds, services, experimental).
-3. Expose and complete high-traffic protocol adapters (shadowsocks/trojan/vless/vmess) currently blocked by configuration gaps.
-4. Finish GeoIP/Geosite/Rule-set tooling, including data distribution and compile/decompile support.
-5. Replace protocol stubs (WireGuard, AnyTLS, Tor) with working implementations or document intentional exclusions.
+1. Bridge `ConfigIR` → runtime: start inbounds/router/outbounds; enable hot reload; wire selector/urltest and health checks.
+2. Consume `dns` block: backend pool/strategy from config, env as override; unify resolver metrics/errors.
+3. Drive P0 protocol outbounds from IR with transport/multiplex options (VMess/VLESS/Trojan/Shadowsocks/TUIC/Hysteria2).
+4. Add sniff→route conditions; ensure performance and correctness at scale.
+5. Finish rule-set compile/decompile/upgrade and package GeoIP/Geosite datasets with updater.
+6. Address stubs or document exclusions (WireGuard, AnyTLS, Tor); add conformance tests.
+
+## Planned Milestones
+- M1: Minimal run path from config (HTTP/SOCKS/TUN + direct/block/http/socks) with router and hot reload.
+- M2: P0 protocol activation with transport/multiplex and selector/urltest; DNS config integration.
+- M3: Sniffing-based routing, tooling parity (rule-set/geo), `ntp` service from config; publish packaging scripts.

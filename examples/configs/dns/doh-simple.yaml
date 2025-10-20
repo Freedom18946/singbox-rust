@@ -1,0 +1,35 @@
+# DNS-over-HTTPS (DoH) Simple Configuration
+# 
+# This example shows basic DoH setup with Cloudflare DNS.
+# Usage: cargo run -p app --features 'sb-core/dns_doh' -- run -c examples/configs/dns/doh-simple.yaml
+
+inbounds:
+  - name: mixed-in
+    type: mixed
+    listen: "127.0.0.1:1080"
+
+outbounds:
+  - name: direct
+    type: direct
+
+dns:
+  servers:
+    - tag: cloudflare
+      address: "https://1.1.1.1/dns-query"
+    
+    - tag: google
+      address: "https://8.8.8.8/dns-query"
+  
+  rules:
+    - when:
+        domain: ["example.com"]
+      server: cloudflare
+  
+  default: cloudflare
+
+route:
+  default: direct
+
+log:
+  level: info
+

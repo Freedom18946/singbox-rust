@@ -32,12 +32,12 @@ where
     let usage = cmd.render_usage().to_string();
     let help = cmd.render_long_help().to_string();
 
-    let about = cmd.get_about().map(|styled| styled.to_string());
-    let long_about = cmd.get_long_about().map(|styled| styled.to_string());
-    let version = cmd.get_version().map(|styled| styled.to_string());
-    let long_version = cmd.get_long_version().map(|styled| styled.to_string());
-    let before_help = cmd.get_before_help().map(|styled| styled.to_string());
-    let after_help = cmd.get_after_help().map(|styled| styled.to_string());
+    let about = cmd.get_about().map(std::string::ToString::to_string);
+    let long_about = cmd.get_long_about().map(std::string::ToString::to_string);
+    let version = cmd.get_version().map(std::string::ToString::to_string);
+    let long_version = cmd.get_long_version().map(std::string::ToString::to_string);
+    let before_help = cmd.get_before_help().map(std::string::ToString::to_string);
+    let after_help = cmd.get_after_help().map(std::string::ToString::to_string);
 
     #[derive(Serialize)]
     struct HelpPayload {
@@ -55,8 +55,8 @@ where
 
     let command_name = cmd
         .get_display_name()
-        .map(|styled| styled.to_string())
-        .or_else(|| cmd.get_bin_name().map(|s| s.to_string()))
+        .map(std::string::ToString::to_string)
+        .or_else(|| cmd.get_bin_name().map(std::string::ToString::to_string))
         .unwrap_or_else(|| cmd.get_name().to_string());
 
     let payload = HelpPayload {
@@ -77,7 +77,7 @@ where
 
     println!(
         "{}",
-        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".into())
+        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
     );
 
     // Exit early to mimic standard Clap `--help` behaviour.

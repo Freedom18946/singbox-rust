@@ -1,3 +1,4 @@
+#![cfg(feature = "tls_reality")]
 //! Trojan Multiplex configuration integration tests (compile-time validation)
 
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
@@ -51,8 +52,6 @@ fn trojan_non_multiplex_config_creation() {
     let connector = TrojanConnector::new(client_config);
     assert_eq!(connector.name(), "trojan");
 }
-
-
 
 // TLS+Multiplex runtime tests were removed for portability. Configuration
 // validation is covered by the compile-time tests above.

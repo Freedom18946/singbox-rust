@@ -192,10 +192,8 @@ impl RuleMatcher {
         }
 
         // Port matching
-        if !rule.port.is_empty() {
-            if !rule.port.contains(&ctx.destination_port) {
-                return false;
-            }
+        if !rule.port.is_empty() && !rule.port.contains(&ctx.destination_port) {
+            return false;
         }
 
         // Port range matching

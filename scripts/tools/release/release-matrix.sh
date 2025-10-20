@@ -49,7 +49,7 @@ for t in "${WANT[@]}"; do build_one "$t" || true; done
 
 # 2) 生成 manifest（sha256 sum）
 find dist -maxdepth 1 -type f -name 'singbox-rust-*.tar.gz' -print0 \
- | xargs -0 sha256sum 2>/dev/null | tee .e2e/release.sha256 > dist/manifest.txt || true
+ | xargs -0 sha256sum 2>/dev/null | tee .e2e/artifacts/release.sha256 > dist/manifest.txt || true
 
 # 3) 降级方案：如果没有任何 release 包，用 debug 构建
 if [ ! -s dist/manifest.txt ] && [ -f target/debug/singbox-rust ]; then
@@ -76,7 +76,7 @@ if [ ! -s dist/manifest.txt ] && [ -f target/debug/singbox-rust ]; then
   tar -C dist -czf "dist/singbox-rust-minimal-$HOST.tar.gz" "singbox-rust-minimal-$HOST"
   
   # 生成 manifest
-  find dist -maxdepth 1 -name "singbox-rust-*-$HOST.tar.gz" -exec sha256sum {} \; | tee .e2e/release.sha256 > dist/manifest.txt
+  find dist -maxdepth 1 -name "singbox-rust-*-$HOST.tar.gz" -exec sha256sum {} \; | tee .e2e/artifacts/release.sha256 > dist/manifest.txt
 fi
 
 echo "[rel-matrix] manifest lines: $(wc -l < dist/manifest.txt 2>/dev/null || echo 0)"

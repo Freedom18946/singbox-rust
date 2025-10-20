@@ -5,5 +5,5 @@ async fn main() -> anyhow::Result<()> {
     use clap::Parser;
 
     let args = app::cli::format::FormatArgs::parse();
-    app::cli::format::run(args).await
+    app::cli::format::run(args)
 }

@@ -7,48 +7,9 @@
 //!
 //! Requirements: 10.1
 
-use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-use tempfile::NamedTempFile;
+mod common;
 
-/// Locate a workspace binary by name
-fn workspace_bin(name: &str) -> PathBuf {
-    let env_key = format!("CARGO_BIN_EXE_{}", name.replace('-', "_"));
-    if let Ok(path) = std::env::var(&env_key) {
-        return PathBuf::from(path);
-    }
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop(); // Go to workspace root
-    path.push("target");
-    let profile = std::env::var("CARGO_PROFILE")
-        .ok()
-        .or_else(|| std::env::var("PROFILE").ok())
-        .unwrap_or_else(|| "debug".into());
-    path.push(profile);
-    path.push(name);
-    if cfg!(windows) {
-        path.set_extension("exe");
-    }
-    path
-}
-
-fn write_cfg(content: &str) -> NamedTempFile {
-    let f = NamedTempFile::new().expect("tmp");
-    fs::write(f.path(), content.as_bytes()).expect("write cfg");
-    f
-}
-
-fn run_check(cfg_path: &str) -> Option<(bool, String)> {
-    let bin = workspace_bin("check").to_string_lossy().to_string();
-    let out = Command::new(bin)
-        .args(&["--config", cfg_path])
-        .output()
-        .ok()?;
-    let success = out.status.success();
-    let stdout = String::from_utf8(out.stdout).ok()?;
-    Some((success, stdout))
-}
+use common::workspace::{run_check, write_temp_config};
 
 /// Test REALITY TLS with URLTest selector
 ///
@@ -117,7 +78,7 @@ fn test_reality_with_urltest_selector() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -179,7 +140,7 @@ fn test_hysteria2_with_fallback_selector() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -239,7 +200,7 @@ fn test_ssh_with_manual_selector() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -302,7 +263,7 @@ fn test_tuic_with_urltest_selector() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -390,7 +351,7 @@ fn test_mixed_p0_protocols_in_urltest() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -453,7 +414,7 @@ fn test_hysteria_v1_with_selector() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -527,7 +488,7 @@ fn test_ech_with_selector() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -619,7 +580,7 @@ fn test_nested_selectors_with_p0_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");
@@ -692,7 +653,7 @@ fn test_health_check_config_with_p0_protocols() {
         }
     }"#;
 
-    let tmp = write_cfg(cfg);
+    let tmp = write_temp_config(cfg);
     let result = run_check(tmp.path().to_str().unwrap());
 
     assert!(result.is_some(), "Check command should execute");

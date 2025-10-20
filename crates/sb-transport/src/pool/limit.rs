@@ -55,7 +55,6 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
 
 #[cfg(test)]
 mod tests {
-    
 
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]

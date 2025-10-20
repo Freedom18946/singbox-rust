@@ -1,0 +1,51 @@
+# E2E Test Artifacts - Ignore all generated files but keep structure
+# Only README.md, config.yaml, and this .gitignore are tracked in git
+
+# Generated logs
+logs/**
+!logs/.gitkeep
+
+# Test reports (JSON outputs)
+reports/**
+!reports/.gitkeep
+
+# Process ID files
+pids/**
+!pids/.gitkeep
+
+# Visualization outputs
+visualizations/**
+!visualizations/.gitkeep
+
+# Build artifacts and checksums
+artifacts/**
+!artifacts/.gitkeep
+
+# Soak test results
+soak/**
+!soak/.gitkeep
+
+# Archives
+archives/**
+!archives/.gitkeep
+
+# Temporary files
+*.tmp
+*.pid.tmp
+*.log.tmp
+
+# Specific generated files that might appear in root
+*.json
+!config.yaml
+*.svg
+*.dot
+*.sha256
+*.sha1
+*.pid
+*.log
+
+# Keep configuration and documentation
+!README.md
+!config.yaml
+!.gitignore
+

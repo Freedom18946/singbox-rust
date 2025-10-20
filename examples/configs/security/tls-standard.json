@@ -1,0 +1,46 @@
+{
+  "// description": "Standard TLS configuration example",
+  "// usage": "cargo run -p app -- run -c examples/configs/security/tls-standard.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "vmess",
+      "name": "vmess-tls",
+      "server": "your-server.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+      "tls": {
+        "enabled": true,
+        "server_name": "your-server.com",
+        "alpn": ["h2", "http/1.1"],
+        "min_version": "1.2",
+        "max_version": "1.3",
+        "cipher_suites": [
+          "TLS_AES_128_GCM_SHA256",
+          "TLS_AES_256_GCM_SHA384",
+          "TLS_CHACHA20_POLY1305_SHA256"
+        ],
+        "insecure": false,
+        "certificate_path": "/path/to/client-cert.pem",
+        "certificate_key_path": "/path/to/client-key.pem"
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "vmess-tls"
+  }
+}

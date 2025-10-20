@@ -1,0 +1,40 @@
+# Grafana Dashboard Provisioning Configuration for SingBox-Rust
+#
+# This file tells Grafana where to find pre-configured dashboards.
+# Place this file in /etc/grafana/provisioning/dashboards/
+
+apiVersion: 1
+
+providers:
+  - name: 'singbox-rust'
+    orgId: 1
+    folder: 'SingBox-Rust'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/singbox-rust
+      foldersFromFilesStructure: false
+
+# Configuration Notes:
+#
+# - name: Provider name (appears in Grafana UI)
+# - orgId: Organization ID (default: 1)
+# - folder: Dashboard folder in Grafana UI
+# - type: Always 'file' for JSON dashboards
+# - disableDeletion: false = allow deletion from UI
+# - updateIntervalSeconds: How often to check for changes
+# - allowUiUpdates: true = allow editing in UI
+# - path: Directory containing dashboard JSON files
+#
+# Usage:
+#   1. Copy this file to /etc/grafana/provisioning/dashboards/singbox-rust.yml
+#   2. Create dashboard directory: sudo mkdir -p /var/lib/grafana/dashboards/singbox-rust
+#   3. Copy dashboards: sudo cp grafana/dashboards/*.json /var/lib/grafana/dashboards/singbox-rust/
+#   4. Restart Grafana: sudo systemctl restart grafana-server
+#
+# For Docker:
+#   volumes:
+#     - ./grafana/provisioning:/etc/grafana/provisioning
+#     - ./grafana/dashboards:/var/lib/grafana/dashboards/singbox-rust

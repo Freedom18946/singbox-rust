@@ -1,3 +1,4 @@
+#![cfg(feature = "admin_tests")]
 //! Test admin observe endpoints with feature gating
 
 #[cfg(feature = "observe")]

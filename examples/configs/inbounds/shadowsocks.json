@@ -1,0 +1,32 @@
+{
+  "// description": "Shadowsocks inbound server example",
+  "// usage": "cargo run -p app --features 'sb-core/in_shadowsocks' -- run -c examples/configs/inbounds/shadowsocks.json",
+
+  "inbounds": [
+    {
+      "type": "shadowsocks",
+      "name": "ss-in",
+      "listen": "0.0.0.0",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "your-secure-password-here",
+      "udp": true,
+      "network": "tcp,udp"
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "direct"
+  },
+
+  "log": {
+    "level": "info"
+  }
+}

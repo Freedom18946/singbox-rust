@@ -1,0 +1,43 @@
+{
+  "// description": "REALITY TLS complete configuration",
+  "// usage": "cargo run -p app --features 'sb-core/reality' -- run -c examples/configs/security/reality-complete.json",
+  "// generate_keys": "sing-box generate reality-keypair",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "vless",
+      "name": "vless-reality",
+      "server": "your-server.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+      "flow": "xtls-rprx-vision",
+      "reality": {
+        "enabled": true,
+        "public_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "short_id": "0123456789abcdef",
+        "server_name": "www.microsoft.com"
+      }
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "default": "vless-reality"
+  },
+
+  "log": {
+    "level": "debug"
+  }
+}

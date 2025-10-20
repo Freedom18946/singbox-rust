@@ -36,8 +36,11 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
         OutboundType::Socks => "socks",
         OutboundType::Block => "block",
         OutboundType::Selector => "selector",
+        OutboundType::Shadowsocks => "shadowsocks",
+        OutboundType::UrlTest => "urltest",
         OutboundType::Shadowtls => "shadowtls",
         OutboundType::Hysteria2 => "hysteria2",
+        OutboundType::Tuic => "tuic",
         OutboundType::Vless => "vless",
         OutboundType::Vmess => "vmess",
         OutboundType::Trojan => "trojan",
@@ -52,6 +55,14 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             server: ob.server.clone(),
             port: ob.port,
             credentials: ob.credentials.clone(),
+            uuid: ob.uuid.clone(),
+            token: ob.token.clone(),
+            password: ob.password.clone(),
+            congestion_control: ob.congestion_control.clone(),
+            alpn: ob.alpn.clone().or_else(|| ob.tls_alpn.clone()),
+            skip_cert_verify: ob.skip_cert_verify,
+            udp_relay_mode: ob.udp_relay_mode.clone(),
+            udp_over_stream: ob.udp_over_stream,
             ssh_private_key: ob
                 .ssh_private_key
                 .clone()
@@ -134,7 +145,7 @@ fn try_scaffold_inbound(_p: &InboundParam, _br: &Bridge) -> Option<Arc<dyn Inbou
 fn try_scaffold_outbound(p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>> {
     if p.kind == "direct" {
         use crate::outbound::direct_simple::Direct;
-        return Some(Arc::new(Direct::default()));
+        return Some(Arc::new(Direct));
     } else if p.kind == "socks" {
         use crate::outbound::socks_upstream::SocksUp;
         let (u, pw) = p

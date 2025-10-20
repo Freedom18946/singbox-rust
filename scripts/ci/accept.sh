@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")"/../.. && pwd)"
-cd "$ROOT"; mkdir -p .e2e target .e2e/pids
+cd "$ROOT"; mkdir -p .e2e/logs .e2e/reports .e2e/pids .e2e/visualizations .e2e/artifacts target
 J='{}'
 FEATS=${FEATS:-"explain,selector_p3,metrics,pprof,panic_log,hardening,chaos,config_guard,tools"}
 echo "[accept] build: $FEATS"
@@ -16,7 +16,7 @@ trap cleanup EXIT
 
 echo "[accept] spin udp-echo"
 ECHO_ADDR="${ECHO_ADDR:-127.0.0.1:19000}" \
-  target/debug/sb-udp-echo >.e2e/echo.log 2>&1 & echo $! > .e2e/pids/echo.pid
+  target/debug/sb-udp-echo >.e2e/logs/echo.log 2>&1 & echo $! > .e2e/pids/echo.pid
 sleep 1
 
 echo "[accept] generate minimal config"
@@ -36,12 +36,12 @@ Y
 
 echo "[accept] spin singbox-rust"
 SB_METRICS_ADDR=127.0.0.1:9090 \
-target/debug/singbox-rust run --config .e2e/config.yaml >.e2e/sb.log 2>&1 & echo $! > .e2e/pids/sb.pid
+target/debug/singbox-rust run --config .e2e/config.yaml >.e2e/logs/sb.log 2>&1 & echo $! > .e2e/pids/sb.pid
 sleep 2
 
 echo "[accept] spin sb-explaind"
 SB_PPROF=1 SB_TRACE_ID=1 SB_DEBUG_ADDR=127.0.0.1:18089 \
-target/debug/sb-explaind >.e2e/explain.log 2>&1 & echo $! > .e2e/pids/ex.pid
+target/debug/sb-explaind >.e2e/logs/explain.log 2>&1 & echo $! > .e2e/pids/ex.pid
 sleep 2
 
 echo "[accept] health check services"
@@ -55,25 +55,25 @@ for i in {1..10}; do
 done
 
 echo "[accept] pprof"
-if curl -fsS 'http://127.0.0.1:18089/debug/pprof?sec=1' -o .e2e/flame.svg 2>/dev/null; then
-  sz=$(wc -c < .e2e/flame.svg | tr -d ' ')
+if curl -fsS 'http://127.0.0.1:18089/debug/pprof?sec=1' -o .e2e/visualizations/flame.svg 2>/dev/null; then
+  sz=$(wc -c < .e2e/visualizations/flame.svg | tr -d ' ')
   if [ "$sz" -gt 100 ]; then  # 最小尺寸保护
-    J=$(jq '.pprof.enabled=true|.pprof.flame_svg=".e2e/flame.svg"|.pprof.bytes=$s' --argjson s "$sz" <<<"$J")
+    J=$(jq '.pprof.enabled=true|.pprof.flame_svg=".e2e/visualizations/flame.svg"|.pprof.bytes=$s' --argjson s "$sz" <<<"$J")
   else
-    J=$(jq '.pprof.enabled=false|.pprof.flame_svg=".e2e/flame.svg"|.pprof.bytes=$s' --argjson s "$sz" <<<"$J")
+    J=$(jq '.pprof.enabled=false|.pprof.flame_svg=".e2e/visualizations/flame.svg"|.pprof.bytes=$s' --argjson s "$sz" <<<"$J")
   fi
 else
   echo "pprof endpoint failed, checking status"
-  curl -fsS 'http://127.0.0.1:18089/debug/pprof/status' -o .e2e/pprof_status.json 2>/dev/null || echo '{}' > .e2e/pprof_status.json
-  echo "<svg></svg>" > .e2e/flame.svg
-  J=$(jq '.pprof.enabled=false|.pprof.flame_svg=".e2e/flame.svg"|.pprof.bytes=0' <<<"$J")
+  curl -fsS 'http://127.0.0.1:18089/debug/pprof/status' -o .e2e/reports/pprof_status.json 2>/dev/null || echo '{}' > .e2e/reports/pprof_status.json
+  echo "<svg></svg>" > .e2e/visualizations/flame.svg
+  J=$(jq '.pprof.enabled=false|.pprof.flame_svg=".e2e/visualizations/flame.svg"|.pprof.bytes=0' <<<"$J")
 fi
 
 echo "[accept] explain snapshot"
-curl -fsS 'http://127.0.0.1:18089/debug/explain/snapshot' -o .e2e/snap.json
-dig=$(jq -r '.digest' .e2e/snap.json)
+curl -fsS 'http://127.0.0.1:18089/debug/explain/snapshot' -o .e2e/reports/snap.json
+dig=$(jq -r '.digest' .e2e/reports/snap.json)
 J=$(jq --arg d "$dig" '.explain_snapshot.digest=$d' <<<"$J")
-J=$(jq --slurpfile S .e2e/snap.json '.explain_snapshot.counts=$S[0].counts' <<<"$J")
+J=$(jq --slurpfile S .e2e/reports/snap.json '.explain_snapshot.counts=$S[0].counts' <<<"$J")
 
 echo "[accept] drive udp traffic"
 for i in $(seq 1 10); do

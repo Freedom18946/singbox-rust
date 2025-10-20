@@ -50,6 +50,7 @@ pub enum RuleSetFormat {
 
 /// Rule type in Rule-Set
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)] // DefaultRule carries many fields by design for fast access; boxing would add indirection.
 pub enum Rule {
     /// Default rule
     Default(DefaultRule),
@@ -350,6 +351,7 @@ impl IpPrefixTree {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)] // Recursive helper; parameter only used in recursion is intentional.
     fn matches_bits(&self, node: &IpNode, bits: u128, remaining_bits: u8) -> bool {
         if node.is_terminal {
             return true;

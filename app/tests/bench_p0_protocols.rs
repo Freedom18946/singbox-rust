@@ -1,3 +1,4 @@
+#![cfg(feature = "long_tests")]
 //! P0 Protocol Performance Benchmarks
 //!
 //! This test file runs comprehensive performance benchmarks for all P0 protocols:

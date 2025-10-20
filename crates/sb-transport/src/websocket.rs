@@ -149,7 +149,7 @@ impl Dialer for WebSocketDialer {
             use rand::RngCore;
             rand::thread_rng().fill_bytes(&mut random_bytes);
             use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(&random_bytes)
+            base64::engine::general_purpose::STANDARD.encode(random_bytes)
         };
 
         headers.insert(
@@ -324,8 +324,7 @@ where
                     }
                 }
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket error: {}", e),
             ))),
             Poll::Ready(None) => {
@@ -354,13 +353,11 @@ where
         match self.inner.poll_ready_unpin(cx) {
             Poll::Ready(Ok(())) => match self.inner.start_send_unpin(msg) {
                 Ok(()) => Poll::Ready(Ok(buf.len())),
-                Err(e) => Poll::Ready(Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(e) => Poll::Ready(Err(std::io::Error::other(
                     format!("WebSocket send error: {}", e),
                 ))),
             },
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket error: {}", e),
             ))),
             Poll::Pending => Poll::Pending,
@@ -370,8 +367,7 @@ where
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.inner.poll_flush_unpin(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket flush error: {}", e),
             ))),
             Poll::Pending => Poll::Pending,
@@ -381,8 +377,7 @@ where
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.inner.poll_close_unpin(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket close error: {}", e),
             ))),
             Poll::Pending => Poll::Pending,

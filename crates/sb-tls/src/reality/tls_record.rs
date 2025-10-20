@@ -1,8 +1,8 @@
 //! TLS record layer utilities for REALITY protocol
 //!
 //! This module provides low-level TLS record manipulation required for REALITY:
-//! - ClientHello parsing and modification
-//! - ServerHello parsing
+//! - `ClientHello` parsing and modification
+//! - `ServerHello` parsing
 //! - TLS extension handling
 //!
 //! REALITY requires embedding custom data in TLS extensions, which standard
@@ -26,13 +26,13 @@ impl TryFrom<u8> for ContentType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            20 => Ok(ContentType::ChangeCipherSpec),
-            21 => Ok(ContentType::Alert),
-            22 => Ok(ContentType::Handshake),
-            23 => Ok(ContentType::ApplicationData),
+            20 => Ok(Self::ChangeCipherSpec),
+            21 => Ok(Self::Alert),
+            22 => Ok(Self::Handshake),
+            23 => Ok(Self::ApplicationData),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid content type: {}", value),
+                format!("Invalid content type: {value}"),
             )),
         }
     }
@@ -58,18 +58,18 @@ impl TryFrom<u8> for HandshakeType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            1 => Ok(HandshakeType::ClientHello),
-            2 => Ok(HandshakeType::ServerHello),
-            11 => Ok(HandshakeType::Certificate),
-            12 => Ok(HandshakeType::ServerKeyExchange),
-            13 => Ok(HandshakeType::CertificateRequest),
-            14 => Ok(HandshakeType::ServerHelloDone),
-            15 => Ok(HandshakeType::CertificateVerify),
-            16 => Ok(HandshakeType::ClientKeyExchange),
-            20 => Ok(HandshakeType::Finished),
+            1 => Ok(Self::ClientHello),
+            2 => Ok(Self::ServerHello),
+            11 => Ok(Self::Certificate),
+            12 => Ok(Self::ServerKeyExchange),
+            13 => Ok(Self::CertificateRequest),
+            14 => Ok(Self::ServerHelloDone),
+            15 => Ok(Self::CertificateVerify),
+            16 => Ok(Self::ClientKeyExchange),
+            20 => Ok(Self::Finished),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid handshake type: {}", value),
+                format!("Invalid handshake type: {value}"),
             )),
         }
     }
@@ -91,7 +91,7 @@ pub enum ExtensionType {
 
 impl From<ExtensionType> for u16 {
     fn from(value: ExtensionType) -> Self {
-        value as u16
+        value as Self
     }
 }
 
@@ -105,6 +105,9 @@ pub struct TlsRecordHeader {
 
 impl TlsRecordHeader {
     /// Read TLS record header from stream
+    ///
+    /// # Errors
+    /// Returns an error if reading from the stream fails or data is invalid.
     pub async fn read_from<R: AsyncRead + Unpin>(stream: &mut R) -> io::Result<Self> {
         let content_type = ContentType::try_from(stream.read_u8().await?)?;
         let version = stream.read_u16().await?;
@@ -118,6 +121,9 @@ impl TlsRecordHeader {
     }
 
     /// Write TLS record header to stream
+    ///
+    /// # Errors
+    /// Returns an error if writing to the stream fails.
     pub async fn write_to<W: AsyncWrite + Unpin>(&self, stream: &mut W) -> io::Result<()> {
         stream.write_u8(self.content_type as u8).await?;
         stream.write_u16(self.version).await?;
@@ -126,7 +132,7 @@ impl TlsRecordHeader {
     }
 }
 
-/// TLS ClientHello message
+/// TLS `ClientHello` message
 #[derive(Debug, Clone)]
 pub struct ClientHello {
     pub version: u16,
@@ -138,7 +144,10 @@ pub struct ClientHello {
 }
 
 impl ClientHello {
-    /// Parse ClientHello from bytes
+    /// Parse `ClientHello` from bytes
+    ///
+    /// # Errors
+    /// Returns an error if the buffer is malformed or truncated.
     pub fn parse(data: &[u8]) -> io::Result<Self> {
         let mut cursor = Cursor::new(data);
 
@@ -181,7 +190,7 @@ impl ClientHello {
         // Extensions
         let extensions = if cursor.position() < data.len() as u64 {
             let extensions_len = read_u16(&mut cursor)? as usize;
-            let extensions_start = cursor.position() as usize;
+            let extensions_start = usize::try_from(cursor.position()).unwrap_or(0);
             let extensions_data = &data[extensions_start..extensions_start + extensions_len];
             Self::parse_extensions(extensions_data)?
         } else {
@@ -218,7 +227,10 @@ impl ClientHello {
         Ok(extensions)
     }
 
-    /// Serialize ClientHello to bytes
+    /// Serialize `ClientHello` to bytes
+    ///
+    /// # Errors
+    /// Returns an error if writing into the buffer fails.
     pub fn serialize(&self) -> io::Result<Vec<u8>> {
         let mut buffer = Vec::new();
 
@@ -229,28 +241,28 @@ impl ClientHello {
         Write::write_all(&mut buffer, &self.random)?;
 
         // Write session ID
-        write_u8(&mut buffer, self.session_id.len() as u8)?;
+        write_u8(&mut buffer, u8::try_from(self.session_id.len()).unwrap_or(u8::MAX))?;
         Write::write_all(&mut buffer, &self.session_id)?;
 
         // Write cipher suites
-        write_u16(&mut buffer, (self.cipher_suites.len() * 2) as u16)?;
+        write_u16(&mut buffer, u16::try_from(self.cipher_suites.len() * 2).unwrap_or(u16::MAX))?;
         for suite in &self.cipher_suites {
             write_u16(&mut buffer, *suite)?;
         }
 
         // Write compression methods
-        write_u8(&mut buffer, self.compression_methods.len() as u8)?;
+        write_u8(&mut buffer, u8::try_from(self.compression_methods.len()).unwrap_or(u8::MAX))?;
         Write::write_all(&mut buffer, &self.compression_methods)?;
 
         // Write extensions
         let extensions_data = self.serialize_extensions()?;
-        write_u16(&mut buffer, extensions_data.len() as u16)?;
+        write_u16(&mut buffer, u16::try_from(extensions_data.len()).unwrap_or(u16::MAX))?;
         Write::write_all(&mut buffer, &extensions_data)?;
 
         // Prepend handshake header
         let mut result = Vec::new();
         write_u8(&mut result, HandshakeType::ClientHello as u8)?;
-        write_u24(&mut result, buffer.len() as u32)?;
+        write_u24(&mut result, u32::try_from(buffer.len()).unwrap_or(u32::MAX))?;
         Write::write_all(&mut result, &buffer)?;
 
         Ok(result)
@@ -262,7 +274,7 @@ impl ClientHello {
 
         for ext in &self.extensions {
             write_u16(&mut buffer, ext.extension_type)?;
-            write_u16(&mut buffer, ext.data.len() as u16)?;
+            write_u16(&mut buffer, u16::try_from(ext.data.len()).unwrap_or(u16::MAX))?;
             Write::write_all(&mut buffer, &ext.data)?;
         }
 
@@ -270,6 +282,7 @@ impl ClientHello {
     }
 
     /// Find extension by type
+    #[must_use]
     pub fn find_extension(&self, ext_type: u16) -> Option<&TlsExtension> {
         self.extensions
             .iter()
@@ -289,6 +302,7 @@ impl ClientHello {
     }
 
     /// Extract SNI (Server Name Indication) from extensions
+    #[must_use]
     pub fn get_sni(&self) -> Option<String> {
         let sni_ext = self.find_extension(ExtensionType::ServerName as u16)?;
 
@@ -329,9 +343,10 @@ impl TlsExtension {
     ///
     /// Format:
     /// - 32 bytes: client public key
-    /// - 2 bytes: short_id length
-    /// - N bytes: short_id
-    /// - 32 bytes: auth_hash
+    /// - 2 bytes: `short_id` length
+    /// - N bytes: `short_id`
+    /// - 32 bytes: `auth_hash`
+    #[must_use]
     pub fn reality_auth(
         client_public_key: &[u8; 32],
         short_id: &[u8],
@@ -339,7 +354,7 @@ impl TlsExtension {
     ) -> Self {
         let mut data = Vec::new();
         data.extend_from_slice(client_public_key);
-        data.extend_from_slice(&(short_id.len() as u16).to_be_bytes());
+        data.extend_from_slice(&u16::try_from(short_id.len()).unwrap_or(u16::MAX).to_be_bytes());
         data.extend_from_slice(short_id);
         data.extend_from_slice(auth_hash);
 
@@ -351,7 +366,10 @@ impl TlsExtension {
 
     /// Parse REALITY authentication extension
     ///
-    /// Returns: (client_public_key, short_id, auth_hash)
+    /// Returns: (`client_public_key`, `short_id`, `auth_hash`)
+    ///
+    /// # Errors
+    /// Returns an error if the extension type or buffer layout is invalid.
     pub fn parse_reality_auth(&self) -> io::Result<([u8; 32], Vec<u8>, [u8; 32])> {
         if self.extension_type != ExtensionType::RealityAuth as u16 {
             return Err(io::Error::new(

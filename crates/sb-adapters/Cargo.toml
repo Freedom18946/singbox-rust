@@ -44,7 +44,7 @@ metrics = { version = "0.23", optional = true }
 clap = { version = "4", optional = true, features = ["derive"] }
 
 # 工作区内依赖（按你的仓库结构）
-sb-core = { path = "../sb-core", features = ["router", "scaffold"] }
+sb-core = { path = "../sb-core", features = ["router", "scaffold", "v2ray_transport"] }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
 sb-metrics = { path = "../sb-metrics", optional = true }
@@ -158,6 +158,7 @@ name = "adapters_conn"
 harness = false
 
 [dev-dependencies]
+sb-test-utils = { path = "../sb-test-utils" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 serial_test = "2"
 proptest = "1.4"

@@ -401,7 +401,7 @@ pub fn extract_alpn_from_tls_client_hello(data: &[u8]) -> Option<String> {
                 break;
             }
             // Read first ALPN protocol
-            if alpn_off + 1 <= ext_off + ext_len {
+            if alpn_off < ext_off + ext_len {
                 let proto_len = data[alpn_off] as usize;
                 alpn_off += 1;
                 if alpn_off + proto_len <= ext_off + ext_len {

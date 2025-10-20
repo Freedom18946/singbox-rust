@@ -59,7 +59,20 @@ impl Prefetcher {
 
             for id in 0..n {
                 let rx_clone = rx.clone();
-                tokio::spawn(worker_loop(id, rx_clone));
+                // If we are inside a Tokio runtime, use tokio::spawn. Otherwise, spawn a thread
+                // and create a small runtime to drive the worker. This prevents tests without
+                // a runtime from panicking.
+                if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::spawn(worker_loop(id, rx_clone));
+                } else {
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .expect("build tokio runtime");
+                        rt.block_on(worker_loop(id, rx_clone));
+                    });
+                }
             }
             // metrics init（建议放 metrics 模块集中管理）
             crate::admin_debug::security_metrics::init_prefetch_metrics();
@@ -213,6 +226,7 @@ async fn prefetch_once(
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

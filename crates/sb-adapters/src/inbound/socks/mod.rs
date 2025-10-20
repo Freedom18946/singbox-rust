@@ -27,10 +27,12 @@ use sb_core::outbound::{
 };
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
+use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sb_core::router::{RouteCtx, RouterHandle, Transport};
+use sb_transport::IoStream;
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
 // 本文件只用到了 inbound_parse，其他两个会在具体错误路径里再接入
@@ -262,14 +264,59 @@ async fn handle_conn(
 
             let opts = ConnectOpts::default();
 
+            // Fast path: if router decided a named outbound, try OutboundRegistry first
+            if let RDecision::Proxy(Some(name)) = &decision {
+                let out_ep = match &endpoint {
+                    Endpoint::Domain(h, p) => OutEndpoint::Domain(h.clone(), *p),
+                    Endpoint::Ip(sa) => OutEndpoint::Ip(*sa),
+                };
+                if let Ok(mut s) = cfg
+                    .outbounds
+                    .connect_io(&OutRouteTarget::Named(name.clone()), out_ep)
+                    .await
+                {
+                    // Success: reply and start piping
+                    reply(cli, 0x00, None).await?;
+
+                    fn dur_from_env(key: &str) -> Option<std::time::Duration> {
+                        std::env::var(key)
+                            .ok()
+                            .and_then(|v| v.parse::<u64>().ok())
+                            .and_then(|ms| {
+                                if ms > 0 {
+                                    Some(std::time::Duration::from_millis(ms))
+                                } else {
+                                    None
+                                }
+                            })
+                    }
+                    let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
+                    let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+                    let (_up, _down) = sb_core::net::metered::copy_bidirectional_streaming_ctl(
+                        cli,
+                        &mut s,
+                        "socks",
+                        std::time::Duration::from_secs(1),
+                        rt,
+                        wt,
+                        None,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+            }
+
             // 与上游建立连接（根据决策与默认代理）
-            let mut srv = match decision {
+            let mut srv: IoStream = match decision {
                 RDecision::Direct => match &endpoint {
                     Endpoint::Domain(host, port) => {
-                        direct_connect_hostport(host, *port, &opts).await?
+                        let s = direct_connect_hostport(host, *port, &opts).await?;
+                        Box::new(s)
                     }
                     Endpoint::Ip(sa) => {
-                        direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?
+                        let s =
+                            direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
+                        Box::new(s)
                     }
                 },
                 RDecision::Proxy(pool_name) => {
@@ -301,46 +348,46 @@ async fn handle_conn(
                                     match ep.kind {
                                         sb_core::outbound::endpoint::ProxyKind::Http => {
                                             match &endpoint {
-                                                Endpoint::Domain(host, port) => {
+                                                Endpoint::Domain(host, port) => Box::new(
                                                     http_proxy_connect_through_proxy(
                                                         &ep.addr.to_string(),
                                                         host,
                                                         *port,
                                                         &opts,
                                                     )
-                                                    .await?
-                                                }
-                                                Endpoint::Ip(sa) => {
+                                                    .await?,
+                                                ),
+                                                Endpoint::Ip(sa) => Box::new(
                                                     http_proxy_connect_through_proxy(
                                                         &ep.addr.to_string(),
                                                         &sa.ip().to_string(),
                                                         sa.port(),
                                                         &opts,
                                                     )
-                                                    .await?
-                                                }
+                                                    .await?,
+                                                ),
                                             }
                                         }
                                         sb_core::outbound::endpoint::ProxyKind::Socks5 => {
                                             match &endpoint {
-                                                Endpoint::Domain(host, port) => {
+                                                Endpoint::Domain(host, port) => Box::new(
                                                     socks5_connect_through_socks5(
                                                         &ep.addr.to_string(),
                                                         host,
                                                         *port,
                                                         &opts,
                                                     )
-                                                    .await?
-                                                }
-                                                Endpoint::Ip(sa) => {
+                                                    .await?,
+                                                ),
+                                                Endpoint::Ip(sa) => Box::new(
                                                     socks5_connect_through_socks5(
                                                         &ep.addr.to_string(),
                                                         &sa.ip().to_string(),
                                                         sa.port(),
                                                         &opts,
                                                     )
-                                                    .await?
-                                                }
+                                                    .await?,
+                                                ),
                                             }
                                         }
                                     }
@@ -351,18 +398,18 @@ async fn handle_conn(
                                             #[cfg(feature = "metrics")]
                                             metrics::counter!("router_route_fallback_total", "from" => "proxy", "to" => "direct", "reason" => "pool_empty").increment(1);
                                             match &endpoint {
-                                                Endpoint::Domain(host, port) => {
+                                                Endpoint::Domain(host, port) => Box::new(
                                                     direct_connect_hostport(host, *port, &opts)
-                                                        .await?
-                                                }
-                                                Endpoint::Ip(sa) => {
+                                                        .await?,
+                                                ),
+                                                Endpoint::Ip(sa) => Box::new(
                                                     direct_connect_hostport(
                                                         &sa.ip().to_string(),
                                                         sa.port(),
                                                         &opts,
                                                     )
-                                                    .await?
-                                                }
+                                                    .await?,
+                                                ),
                                             }
                                         }
                                         false => {
@@ -375,49 +422,49 @@ async fn handle_conn(
                                 // Pool not found - fallback to default proxy
                                 match proxy {
                                     ProxyChoice::Direct => match &endpoint {
-                                        Endpoint::Domain(host, port) => {
-                                            direct_connect_hostport(host, *port, &opts).await?
-                                        }
-                                        Endpoint::Ip(sa) => {
+                                        Endpoint::Domain(host, port) => Box::new(
+                                            direct_connect_hostport(host, *port, &opts).await?,
+                                        ),
+                                        Endpoint::Ip(sa) => Box::new(
                                             direct_connect_hostport(
                                                 &sa.ip().to_string(),
                                                 sa.port(),
                                                 &opts,
                                             )
-                                            .await?
-                                        }
+                                            .await?,
+                                        ),
                                     },
                                     ProxyChoice::Http(addr) => match &endpoint {
-                                        Endpoint::Domain(host, port) => {
+                                        Endpoint::Domain(host, port) => Box::new(
                                             http_proxy_connect_through_proxy(
                                                 addr, host, *port, &opts,
                                             )
-                                            .await?
-                                        }
-                                        Endpoint::Ip(sa) => {
+                                            .await?,
+                                        ),
+                                        Endpoint::Ip(sa) => Box::new(
                                             http_proxy_connect_through_proxy(
                                                 addr,
                                                 &sa.ip().to_string(),
                                                 sa.port(),
                                                 &opts,
                                             )
-                                            .await?
-                                        }
+                                            .await?,
+                                        ),
                                     },
                                     ProxyChoice::Socks5(addr) => match &endpoint {
-                                        Endpoint::Domain(host, port) => {
+                                        Endpoint::Domain(host, port) => Box::new(
                                             socks5_connect_through_socks5(addr, host, *port, &opts)
-                                                .await?
-                                        }
-                                        Endpoint::Ip(sa) => {
+                                                .await?,
+                                        ),
+                                        Endpoint::Ip(sa) => Box::new(
                                             socks5_connect_through_socks5(
                                                 addr,
                                                 &sa.ip().to_string(),
                                                 sa.port(),
                                                 &opts,
                                             )
-                                            .await?
-                                        }
+                                            .await?,
+                                        ),
                                     },
                                 }
                             }
@@ -426,45 +473,54 @@ async fn handle_conn(
                             match proxy {
                                 ProxyChoice::Direct => match &endpoint {
                                     Endpoint::Domain(host, port) => {
-                                        direct_connect_hostport(host, *port, &opts).await?
+                                        let s = direct_connect_hostport(host, *port, &opts).await?;
+                                        Box::new(s)
                                     }
                                     Endpoint::Ip(sa) => {
-                                        direct_connect_hostport(
+                                        let s = direct_connect_hostport(
                                             &sa.ip().to_string(),
                                             sa.port(),
                                             &opts,
                                         )
-                                        .await?
+                                        .await?;
+                                        Box::new(s)
                                     }
                                 },
                                 ProxyChoice::Http(addr) => match &endpoint {
                                     Endpoint::Domain(host, port) => {
-                                        http_proxy_connect_through_proxy(addr, host, *port, &opts)
-                                            .await?
+                                        let s = http_proxy_connect_through_proxy(
+                                            addr, host, *port, &opts,
+                                        )
+                                        .await?;
+                                        Box::new(s)
                                     }
                                     Endpoint::Ip(sa) => {
-                                        http_proxy_connect_through_proxy(
+                                        let s = http_proxy_connect_through_proxy(
                                             addr,
                                             &sa.ip().to_string(),
                                             sa.port(),
                                             &opts,
                                         )
-                                        .await?
+                                        .await?;
+                                        Box::new(s)
                                     }
                                 },
                                 ProxyChoice::Socks5(addr) => match &endpoint {
                                     Endpoint::Domain(host, port) => {
-                                        socks5_connect_through_socks5(addr, host, *port, &opts)
-                                            .await?
+                                        let s =
+                                            socks5_connect_through_socks5(addr, host, *port, &opts)
+                                                .await?;
+                                        Box::new(s)
                                     }
                                     Endpoint::Ip(sa) => {
-                                        socks5_connect_through_socks5(
+                                        let s = socks5_connect_through_socks5(
                                             addr,
                                             &sa.ip().to_string(),
                                             sa.port(),
                                             &opts,
                                         )
-                                        .await?
+                                        .await?;
+                                        Box::new(s)
                                     }
                                 },
                             }
@@ -474,40 +530,52 @@ async fn handle_conn(
                         match proxy {
                             ProxyChoice::Direct => match &endpoint {
                                 Endpoint::Domain(host, port) => {
-                                    direct_connect_hostport(host, *port, &opts).await?
+                                    let s = direct_connect_hostport(host, *port, &opts).await?;
+                                    Box::new(s)
                                 }
                                 Endpoint::Ip(sa) => {
-                                    direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts)
-                                        .await?
+                                    let s = direct_connect_hostport(
+                                        &sa.ip().to_string(),
+                                        sa.port(),
+                                        &opts,
+                                    )
+                                    .await?;
+                                    Box::new(s)
                                 }
                             },
                             ProxyChoice::Http(addr) => match &endpoint {
                                 Endpoint::Domain(host, port) => {
-                                    http_proxy_connect_through_proxy(addr, host, *port, &opts)
-                                        .await?
+                                    let s =
+                                        http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                            .await?;
+                                    Box::new(s)
                                 }
                                 Endpoint::Ip(sa) => {
-                                    http_proxy_connect_through_proxy(
+                                    let s = http_proxy_connect_through_proxy(
                                         addr,
                                         &sa.ip().to_string(),
                                         sa.port(),
                                         &opts,
                                     )
-                                    .await?
+                                    .await?;
+                                    Box::new(s)
                                 }
                             },
                             ProxyChoice::Socks5(addr) => match &endpoint {
                                 Endpoint::Domain(host, port) => {
-                                    socks5_connect_through_socks5(addr, host, *port, &opts).await?
+                                    let s = socks5_connect_through_socks5(addr, host, *port, &opts)
+                                        .await?;
+                                    Box::new(s)
                                 }
                                 Endpoint::Ip(sa) => {
-                                    socks5_connect_through_socks5(
+                                    let s = socks5_connect_through_socks5(
                                         addr,
                                         &sa.ip().to_string(),
                                         sa.port(),
                                         &opts,
                                     )
-                                    .await?
+                                    .await?;
+                                    Box::new(s)
                                 }
                             },
                         }

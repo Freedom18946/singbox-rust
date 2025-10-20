@@ -36,3 +36,49 @@ impl<I: Inbound> Pipeline<I> {
         self.inbound.serve().await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    struct MockInbound {
+        should_fail: bool,
+    }
+
+    #[async_trait]
+    impl Inbound for MockInbound {
+        async fn serve(&self) -> anyhow::Result<()> {
+            if self.should_fail {
+                anyhow::bail!("inbound serve failed: test error");
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_success() {
+        let inbound = MockInbound { should_fail: false };
+        let pipeline = Pipeline::new(inbound);
+        
+        let result = pipeline.run().await;
+        assert!(result.is_ok(), "pipeline should succeed with successful inbound");
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_failure_propagation() {
+        let inbound = MockInbound { should_fail: true };
+        let pipeline = Pipeline::new(inbound);
+        
+        let result = pipeline.run().await;
+        assert!(result.is_err(), "pipeline should propagate inbound errors");
+        
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(
+                msg.contains("inbound serve failed"),
+                "error should mention inbound failure: {}", msg
+            );
+        }
+    }
+}

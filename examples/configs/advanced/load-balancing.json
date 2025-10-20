@@ -1,0 +1,62 @@
+{
+  "// description": "Load balancing across multiple proxy servers",
+  "// usage": "cargo run -p app --features 'sb-core/loadbalance' -- run -c examples/configs/advanced/load-balancing.json",
+
+  "inbounds": [
+    {
+      "type": "mixed",
+      "name": "mixed-in",
+      "listen": "127.0.0.1",
+      "port": 1080
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "loadbalance",
+      "name": "lb",
+      "outbounds": ["proxy1", "proxy2", "proxy3"],
+      "strategy": "round_robin"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy1",
+      "server": "server1.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password1"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy2",
+      "server": "server2.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password2"
+    },
+    {
+      "type": "shadowsocks",
+      "name": "proxy3",
+      "server": "server3.example.com",
+      "port": 8388,
+      "method": "aes-256-gcm",
+      "password": "password3"
+    },
+    {
+      "type": "direct",
+      "name": "direct"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "cidr": ["10.0.0.0/8", "192.168.0.0/16"]
+        },
+        "to": "direct"
+      }
+    ],
+    "default": "lb"
+  }
+}

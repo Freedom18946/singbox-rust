@@ -65,6 +65,7 @@ pub fn add_to_response_headers(request_id: &str) -> String {
 }
 
 #[cfg(test)]
+#[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
 

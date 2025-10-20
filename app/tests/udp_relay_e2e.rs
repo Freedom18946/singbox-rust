@@ -1,3 +1,5 @@
+#![cfg(feature = "net_e2e")]
+#![cfg(feature = "tls_reality")]
 //! E2E test for UDP relay support
 //!
 //! Tests that Shadowsocks, Trojan, and VLESS protocols correctly support UDP relay,
@@ -16,8 +18,8 @@ use sb_adapters::inbound::vless::VlessInboundConfig;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
 use sb_adapters::traits::{Target, TransportKind};
-use sb_core::router::engine::RouterHandle;
 use sb_adapters::transport_config::TransportConfig;
+use sb_core::router::engine::RouterHandle;
 
 /// Helper: Start UDP echo server
 async fn start_udp_echo_server() -> SocketAddr {
@@ -67,7 +69,6 @@ async fn start_shadowsocks_server() -> (SocketAddr, mpsc::Sender<()>) {
     tokio::time::sleep(Duration::from_millis(200)).await;
     (addr, stop_tx)
 }
-
 
 /// Helper: Start VLESS server
 async fn start_vless_server() -> (SocketAddr, Uuid, mpsc::Sender<()>) {

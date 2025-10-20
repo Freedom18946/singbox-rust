@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# Main entry point for singbox-rust scripts
+# Usage: ./scripts/run <command> [args...]
+#
+# Commands:
+#   test [category]   Run tests (acceptance|bench|stress|fuzz|all)
+#   e2e [test]        Run E2E tests
+#   ci [task]         Run CI tasks
+#   tools <tool>      Run development tool
+#   list              List all available scripts
+#   help              Show this help message
+#
+# Examples:
+#   ./scripts/run test acceptance
+#   ./scripts/run e2e dns/backends
+#   ./scripts/run ci tasks/admin-http
+#   ./scripts/run list
+#
+# Exit codes:
+#   0 - Success
+#   1 - Error
+#   2 - Invalid arguments
+
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPTS_DIR="${PROJECT_ROOT}/scripts"
+
+show_help() {
+    sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \?//'
+    exit 0
+}
+
+list_scripts() {
+    echo "Available scripts by category:"
+    echo ""
+
+    echo "=== CI Tasks (scripts/ci/) ==="
+    find "${SCRIPTS_DIR}/ci" -name "*.sh" -type f | sed 's|.*/ci/||' | sort
+    echo ""
+
+    echo "=== E2E Tests (scripts/e2e/) ==="
+    find "${SCRIPTS_DIR}/e2e" -name "*.sh" -type f | sed 's|.*/e2e/||' | sort
+    echo ""
+
+    echo "=== Tests (scripts/test/) ==="
+    echo "  acceptance/  - Formal acceptance tests (A1-A5)"
+    echo "  bench/       - Performance benchmarks"
+    echo "  stress/      - Stress and load tests"
+    echo "  fuzz/        - Fuzz testing"
+    find "${SCRIPTS_DIR}/test" -name "*.sh" -type f | sed 's|.*/test/||' | sort
+    echo ""
+
+    echo "=== Tools (scripts/tools/) ==="
+    echo "  release/     - Release preparation"
+    echo "  validation/  - Code validation"
+    echo "  explain/     - Router explain utilities"
+    find "${SCRIPTS_DIR}/tools" -name "*.sh" -o -name "*.py" -type f | sed 's|.*/tools/||' | sort
+    echo ""
+
+    echo "=== Libraries (scripts/lib/) ==="
+    find "${SCRIPTS_DIR}/lib" -name "*.sh" -type f | sed 's|.*/lib/||' | sort
+    echo ""
+}
+
+run_test() {
+    local category="${1:-all}"
+
+    case "$category" in
+        acceptance|accept)
+            echo "Running acceptance tests..."
+            for test in "${SCRIPTS_DIR}"/test/acceptance/*.sh; do
+                [ -f "$test" ] && "$test" || echo "FAILED: $test"
+            done
+            ;;
+        bench|benchmark)
+            echo "Running benchmarks..."
+            "${SCRIPTS_DIR}/test/bench/run.sh"
+            ;;
+        stress)
+            echo "Running stress tests..."
+            "${SCRIPTS_DIR}/test/stress/run.sh"
+            ;;
+        fuzz)
+            echo "Running fuzz tests..."
+            "${SCRIPTS_DIR}/test/fuzz/smoke.sh"
+            ;;
+        all)
+            echo "Running all tests..."
+            run_test acceptance
+            run_test bench
+            run_test stress
+            ;;
+        *)
+            echo "Unknown test category: $category"
+            echo "Available: acceptance, bench, stress, fuzz, all"
+            exit 2
+            ;;
+    esac
+}
+
+run_e2e() {
+    local test="${1:-}"
+
+    if [ -z "$test" ]; then
+        echo "Running all E2E tests..."
+        "${SCRIPTS_DIR}/e2e/run.sh"
+    elif [ -f "${SCRIPTS_DIR}/e2e/${test}" ]; then
+        "${SCRIPTS_DIR}/e2e/${test}"
+    elif [ -f "${SCRIPTS_DIR}/e2e/${test}.sh" ]; then
+        "${SCRIPTS_DIR}/e2e/${test}.sh"
+    else
+        echo "E2E test not found: $test"
+        echo "Available tests:"
+        find "${SCRIPTS_DIR}/e2e" -name "*.sh" -type f | sed 's|.*/e2e/||' | sed 's|\.sh$||'
+        exit 2
+    fi
+}
+
+run_ci() {
+    local task="${1:-}"
+
+    if [ -z "$task" ]; then
+        echo "Running local CI..."
+        "${SCRIPTS_DIR}/ci/local.sh"
+    elif [ -f "${SCRIPTS_DIR}/ci/${task}" ]; then
+        "${SCRIPTS_DIR}/ci/${task}"
+    elif [ -f "${SCRIPTS_DIR}/ci/${task}.sh" ]; then
+        "${SCRIPTS_DIR}/ci/${task}.sh"
+    else
+        echo "CI task not found: $task"
+        echo "Available tasks:"
+        find "${SCRIPTS_DIR}/ci" -name "*.sh" -type f | sed 's|.*/ci/||' | sed 's|\.sh$||'
+        exit 2
+    fi
+}
+
+run_tool() {
+    local tool="${1:-}"
+
+    if [ -z "$tool" ]; then
+        echo "Available tools:"
+        find "${SCRIPTS_DIR}/tools" -type f \( -name "*.sh" -o -name "*.py" \) | sed 's|.*/tools/||'
+        exit 2
+    fi
+
+    if [ -f "${SCRIPTS_DIR}/tools/${tool}" ]; then
+        shift
+        "${SCRIPTS_DIR}/tools/${tool}" "$@"
+    elif [ -f "${SCRIPTS_DIR}/tools/${tool}.sh" ]; then
+        shift
+        "${SCRIPTS_DIR}/tools/${tool}.sh" "$@"
+    else
+        echo "Tool not found: $tool"
+        echo "Available tools:"
+        find "${SCRIPTS_DIR}/tools" -type f \( -name "*.sh" -o -name "*.py" \) | sed 's|.*/tools/||'
+        exit 2
+    fi
+}
+
+# Main command dispatcher
+case "${1:-help}" in
+    test|tests)
+        shift
+        run_test "$@"
+        ;;
+    e2e)
+        shift
+        run_e2e "$@"
+        ;;
+    ci)
+        shift
+        run_ci "$@"
+        ;;
+    tool|tools)
+        shift
+        run_tool "$@"
+        ;;
+    list|ls)
+        list_scripts
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run './scripts/run help' for usage"
+        exit 2
+        ;;
+esac

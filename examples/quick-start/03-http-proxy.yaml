@@ -1,0 +1,26 @@
+# Quick Start Example 3: HTTP Proxy
+# 
+# This example shows a simple HTTP proxy setup.
+# Usage: cargo run -p app -- run -c examples/quick-start/03-http-proxy.yaml
+#
+# Test: curl -x http://127.0.0.1:8080 https://example.com
+
+inbounds:
+  - name: http-in
+    type: http
+    listen: "127.0.0.1:8080"
+
+outbounds:
+  - name: direct
+    type: direct
+
+route:
+  rules:
+    - when:
+        suffix: ".cn"
+      to: direct
+  default: direct
+
+log:
+  level: info
+

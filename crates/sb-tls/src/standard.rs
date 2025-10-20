@@ -24,6 +24,9 @@ pub struct StandardTlsConnector {
 
 impl StandardTlsConnector {
     /// Create a new standard TLS connector with default configuration
+    ///
+    /// # Errors
+    /// Returns an error if the TLS client configuration cannot be constructed.
     pub fn new() -> TlsResult<Self> {
         let root_store = RootCertStore::empty();
 
@@ -42,6 +45,7 @@ impl StandardTlsConnector {
     }
 
     /// Create connector with custom root certificates
+    #[must_use]
     pub fn with_root_store(root_store: RootCertStore) -> Self {
         let config = ClientConfig::builder()
             .with_root_certificates(root_store)
@@ -54,6 +58,7 @@ impl StandardTlsConnector {
     }
 
     /// Set ALPN protocols
+    #[must_use]
     pub fn with_alpn(mut self, alpn: Vec<Vec<u8>>) -> Self {
         self.alpn_protocols = Some(alpn);
         self
@@ -76,24 +81,22 @@ impl TlsConnector for StandardTlsConnector {
         S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     {
         // Apply ALPN if configured
-        let config = if let Some(alpn) = &self.alpn_protocols {
+        let config = self.alpn_protocols.as_ref().map_or_else(|| self.config.clone(), |alpn| {
             let mut c = (*self.config).clone();
-            c.alpn_protocols = alpn.clone();
+            c.alpn_protocols.clone_from(alpn);
             Arc::new(c)
-        } else {
-            self.config.clone()
-        };
+        });
 
         // Parse server name
         let server_name = ServerName::try_from(server_name.to_string())
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+            .map_err(io::Error::other)?;
 
         // Connect
         let connector = RustlsConnector::from(config);
         let tls_stream = connector
             .connect(server_name, stream)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         Ok(Box::new(tls_stream))
     }

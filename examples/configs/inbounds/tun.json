@@ -1,0 +1,52 @@
+{
+  "// description": "TUN inbound for transparent proxy (requires root/admin)",
+  "// usage": "sudo cargo run -p app --features 'sb-core/in_tun' -- run -c examples/configs/inbounds/tun.json",
+  "// platforms": "macOS, Linux",
+
+  "inbounds": [
+    {
+      "type": "tun",
+      "name": "tun-in",
+      "interface_name": "utun",
+      "mtu": 9000,
+      "address": ["172.19.0.1/30"],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+
+  "route": {
+    "rules": [
+      {
+        "when": {
+          "cidr": ["10.0.0.0/8", "192.168.0.0/16"]
+        },
+        "to": "direct"
+      }
+    ],
+    "default": "direct",
+    "auto_detect_interface": true
+  },
+
+  "dns": {
+    "servers": [
+      {
+        "tag": "google",
+        "address": "8.8.8.8"
+      }
+    ],
+    "default": "google"
+  }
+}
