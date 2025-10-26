@@ -92,6 +92,10 @@ pub mod circuit_breaker;
 /// 提供文件描述符和内存压力检测与回退策略
 pub mod resource_pressure;
 
+// Local metrics helpers to avoid depending on sb-core for registry utilities
+#[cfg(feature = "metrics")]
+mod metrics_ext;
+
 /// 传输链构建器
 /// 提供用于组合 TCP -> TLS -> WebSocket/HTTP2 等层的便捷构建器
 pub mod builder;

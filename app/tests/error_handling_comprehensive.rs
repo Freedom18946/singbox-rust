@@ -3,6 +3,11 @@
 //! Ensures that all error conditions are handled gracefully and
 //! return appropriate error codes to clients.
 
+#![allow(
+    clippy::assertions_on_constants,
+    clippy::useless_vec,
+    clippy::const_is_empty
+)]
 use std::io::{Error, ErrorKind};
 use std::time::Duration;
 

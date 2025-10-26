@@ -21,26 +21,11 @@ use async_trait::async_trait;
 pub struct FailpointDialer<D: Dialer> {
     /// The underlying dialer to wrap
     pub inner: D,
-    /// Failpoint prefix for this dialer instance
-    pub failpoint_prefix: String,
 }
 
 impl<D: Dialer> FailpointDialer<D> {
     /// Create a new failpoint dialer with default prefix
-    pub fn new(inner: D) -> Self {
-        Self {
-            inner,
-            failpoint_prefix: "transport.dialer".to_string(),
-        }
-    }
-
-    /// Create a new failpoint dialer with custom prefix
-    pub fn with_prefix(inner: D, prefix: String) -> Self {
-        Self {
-            inner,
-            failpoint_prefix: prefix,
-        }
-    }
+    pub fn new(inner: D) -> Self { Self { inner } }
 }
 
 #[async_trait]
@@ -49,16 +34,14 @@ impl<D: Dialer + Send + Sync> Dialer for FailpointDialer<D> {
         #[cfg(feature = "failpoints")]
         {
             // Failpoint: fail before starting connection
-            let _connect_start_fp = format!("{}.connect_start", self.failpoint_prefix);
-            fail::fail_point!(&connect_start_fp, |_| {
-                return Err(DialError::Generic("failpoint: connect_start".to_string()));
+            fail::fail_point!("transport.dialer.connect_start", |_| {
+                return Err(DialError::Other("failpoint: connect_start".to_string()));
             });
 
-            // Failpoint: simulate DNS failure
+            // Failpoint: simulate DNS failure (only applies to hostname, not IP literal)
             if host.chars().any(|c| c.is_alphabetic()) {
-                let _dns_failure_fp = format!("{}.dns_failure", self.failpoint_prefix);
-                fail::fail_point!(&dns_failure_fp, |_| {
-                    return Err(DialError::Generic(format!(
+                fail::fail_point!("transport.dialer.dns_failure", |_| {
+                    return Err(DialError::Other(format!(
                         "failpoint: DNS failure for {}",
                         host
                     )));
@@ -69,9 +52,8 @@ impl<D: Dialer + Send + Sync> Dialer for FailpointDialer<D> {
             let result = self.inner.connect(host, port).await;
 
             // Failpoint: simulate timeout after connection attempt
-            let _timeout_fp = format!("{}.connect_timeout", self.failpoint_prefix);
-            fail::fail_point!(&timeout_fp, |_| {
-                return Err(DialError::Timeout);
+            fail::fail_point!("transport.dialer.connect_timeout", |_| {
+                return Err(DialError::Other("timeout".to_string()));
             });
 
             result

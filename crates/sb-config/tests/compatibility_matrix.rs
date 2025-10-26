@@ -203,7 +203,7 @@ fn test_v2_variants_pass_validation() {
 }
 
 #[test]
-fn test_unknown_fields_generate_warnings_with_allow_unknown() {
+fn test_unknown_fields_generate_warnings_with_allow_unknown() -> anyhow::Result<()> {
     let mut config = json!({
         "inbounds": [],
         "outbounds": [{"name": "direct", "type": "direct"}],
@@ -261,21 +261,26 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() {
 
     for warning in &unknown_field_warnings {
         eprintln!("DEBUG warning: {:?}", warning);
-        assert!(
-            warning["msg"].as_str().unwrap().contains("unknown field"),
-            "Warning should mention unknown field: {:?}",
-            warning
-        );
+        if let Some(msg) = warning["msg"].as_str() {
+            assert!(
+                msg.contains("unknown field"),
+                "Warning should mention unknown field: {:?}",
+                warning
+            );
+        } else {
+            panic!("warning msg not a string: {:?}", warning);
+        }
         assert!(
             warning.get("ptr").is_some(),
             "Warning should include pointer information: {:?}",
             warning
         );
     }
+    Ok(())
 }
 
 #[test]
-fn test_compatibility_matrix_summary() {
+fn test_compatibility_matrix_summary() -> anyhow::Result<()> {
     // This test provides the summary data required by the spec
     let v1_pass = 3; // From test_v1_variants_pass_migration
     let v2_pass = 3; // From test_v2_variants_pass_validation
@@ -290,7 +295,7 @@ fn test_compatibility_matrix_summary() {
 
     println!(
         "Compatibility Matrix: {}",
-        serde_json::to_string_pretty(&matrix).unwrap()
+        serde_json::to_string_pretty(&matrix)?
     );
 
     // Assertions for the spec requirements
@@ -300,4 +305,5 @@ fn test_compatibility_matrix_summary() {
         warnings <= 3,
         "Should have <= 3 warnings for unknown fields"
     );
+    Ok(())
 }

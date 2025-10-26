@@ -1,3 +1,4 @@
+#![allow(clippy::while_let_loop, clippy::field_reassign_with_default)]
 use sb_core::adapter::InboundService;
 use std::net::TcpListener;
 use std::thread;

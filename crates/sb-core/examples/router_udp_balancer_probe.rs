@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() / 2);
     let b = s.as_bytes();
-    if b.len() % 2 != 0 {
+    if !b.len().is_multiple_of(2) {
         return None;
     }
     for i in (0..b.len()).step_by(2) {

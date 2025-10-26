@@ -72,8 +72,7 @@ impl DnsResolver {
 
         if all_ips.is_empty() {
             return Err(anyhow::Error::from(SbError::dns(format!(
-                "No DNS records for domain: {}",
-                domain
+                "No DNS records for domain: {domain}"
             ))));
         }
 
@@ -143,8 +142,7 @@ impl DnsResolver {
 
                     // Map to structured SbError for callers
                     let mapped = SbError::dns(format!(
-                        "upstream={} query {:?} for {} failed: {}",
-                        upstream_name, record_type, domain, e
+                        "upstream={upstream_name} query {record_type:?} for {domain} failed: {e}"
                     ));
                     last_error = Some(anyhow::Error::from(mapped));
                 }
@@ -167,8 +165,7 @@ impl Resolver for DnsResolver {
         if crate::dns::fakeip::enabled() {
             let use_v6 = std::env::var("SB_DNS_FAKEIP_V6")
                 .ok()
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false);
+                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
             let ip = if use_v6 {
                 crate::dns::fakeip::allocate_v6(domain)
             } else {
@@ -197,7 +194,7 @@ impl Resolver for DnsResolver {
 
         let result = tokio::select! {
             res = self.resolve_both_records(domain) => res,
-            _ = tokio::time::sleep(timeout_dur) => {
+            () = tokio::time::sleep(timeout_dur) => {
                 Err(anyhow::Error::from(SbError::timeout("dns_resolve", timeout_ms)))
             }
         };

@@ -6,6 +6,7 @@
 //! 3. Configuration with sb-tls ECH
 //! 4. RouteCtx field validation (new fields added)
 
+#![allow(unexpected_cfgs)]
 #[cfg(feature = "adapter-shadowtls")]
 mod shadowtls_tests {
     use sb_adapters::inbound::shadowtls::ShadowTlsInboundConfig;

@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-socks")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! E2E tests for retry functionality and backoff behavior
 //!
 //! This module tests the retry mechanisms in adapters to ensure

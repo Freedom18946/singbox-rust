@@ -18,7 +18,9 @@ pub mod prelude {
     pub use std::time::Duration;
 }
 
+/// Block outbound adapter - rejects all connection attempts
 pub mod block;
+/// Direct outbound adapter - connects directly to target
 pub mod direct;
 
 // Helper functions for tracing

@@ -1,22 +1,24 @@
-//! Outbound 配置模型
+//! Outbound configuration model.
+
 use serde::{Deserialize, Serialize};
 
+/// Outbound proxy configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum Outbound {
-    /// 直连
+    /// Direct connection (no proxy).
     Direct(DirectConfig),
-    /// 上游 HTTP 代理（CONNECT）
+    /// Upstream HTTP proxy (CONNECT method).
     Http(HttpProxyConfig),
-    /// 上游 SOCKS5
+    /// Upstream SOCKS5 proxy.
     Socks5(Socks5Config),
-    /// VMess 协议
+    /// VMess protocol.
     Vmess(VmessConfig),
-    /// VLESS 协议
+    /// VLESS protocol.
     Vless(VlessConfig),
-    /// TUIC 协议
+    /// TUIC protocol.
     Tuic(TuicConfig),
-    /// 手动选择器
+    /// Manual selector (user choice).
     Selector(SelectorConfig),
     /// 自动选择器（基于延迟）
     #[serde(rename = "urltest")]

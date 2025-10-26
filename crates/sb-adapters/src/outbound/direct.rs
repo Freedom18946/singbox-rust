@@ -8,6 +8,7 @@ use tokio::{net::TcpStream, time::timeout};
 pub struct DirectOutbound;
 
 impl DirectOutbound {
+    /// Create a new direct outbound instance
     #[inline]
     pub fn new() -> Self {
         Self

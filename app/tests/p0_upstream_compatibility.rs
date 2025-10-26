@@ -16,7 +16,7 @@ use common::workspace::{write_temp_config, workspace_bin};
 
 fn run_check(bin: &str, cfg_path: &str) -> Option<(bool, String)> {
     let out = std::process::Command::new(bin)
-        .args(&["--config", cfg_path])
+        .args(["--config", cfg_path])
         .output()
         .ok()?;
     let success = out.status.success();

@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 //! E2E Integration Tests for TUIC with UDP Relay Support
 //!
 //! Test Coverage (Sprint 19 Phase 1.3):

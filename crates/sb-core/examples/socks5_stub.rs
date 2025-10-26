@@ -65,16 +65,11 @@ fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind(&listen)?;
     eprintln!("stub listening on {} delay_ms={}", listen, delay_ms);
 
-    for conn in listener.incoming() {
-        match conn {
-            Ok(s) => {
-                let d = delay_ms;
-                thread::spawn(move || {
-                    let _ = handle(s, d);
-                });
-            }
-            Err(_) => {}
-        }
+    for s in listener.incoming().flatten() {
+        let d = delay_ms;
+        thread::spawn(move || {
+            let _ = handle(s, d);
+        });
     }
     Ok(())
 }

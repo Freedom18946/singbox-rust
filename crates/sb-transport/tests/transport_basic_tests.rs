@@ -44,8 +44,12 @@ mod websocket_tests {
 mod http2_tests {
     #[test]
     fn test_http2_config_validation() {
-        // HTTP/2 module exists and compiles
-        assert!(true, "HTTP/2 module compiles successfully");
+        use sb_transport::http2::Http2Config;
+        // Validate default config fields to avoid constant assertions
+        let cfg = Http2Config::default();
+        assert_eq!(cfg.path, "/");
+        assert!(cfg.enable_pooling);
+        assert_eq!(cfg.max_concurrent_streams, 100);
     }
 }
 
@@ -53,8 +57,10 @@ mod http2_tests {
 mod tls_tests {
     #[test]
     fn test_tls_config_validation() {
-        // TLS module exists and compiles
-        assert!(true, "TLS module compiles successfully");
+        // Creating a client config should succeed
+        let cfg = sb_transport::tls::webpki_roots_config();
+        // Ensure ALPN list is initialized (may be empty by default)
+        assert!(cfg.alpn_protocols.is_empty());
     }
 }
 
@@ -62,14 +68,16 @@ mod tls_tests {
 mod transport_basic_tests {
     #[test]
     fn test_dialer_trait_exists() {
-        // Dialer trait exists and compiles
-        assert!(true, "Dialer trait compiles successfully");
+        // Create a boxed dialer via the builder to exercise trait object path
+        let d = sb_transport::TransportBuilder::tcp().build();
+        // Ensure the object is created; drop immediately
+        let _ = d;
     }
 
     #[test]
     fn test_transport_modules_available() {
-        // Core transport modules compile
-        assert!(true, "Transport modules compile successfully");
+        // Verify the TcpDialer type is available and implements Debug name
+        let _tcp = sb_transport::TcpDialer;
     }
 }
 
@@ -77,8 +85,9 @@ mod transport_basic_tests {
 mod multiplex_tests {
     #[test]
     fn test_multiplex_module_exists() {
-        // Multiplex module compiles
-        assert!(true, "Multiplex module compiles successfully");
+        // Validate default config
+        let cfg = sb_transport::multiplex::MultiplexConfig::default();
+        assert!(cfg.max_num_streams >= 1);
     }
 }
 
@@ -86,8 +95,8 @@ mod multiplex_tests {
 mod grpc_tests {
     #[test]
     fn test_grpc_module_exists() {
-        // gRPC module compiles
-        assert!(true, "gRPC module compiles successfully");
+        let cfg = sb_transport::grpc::GrpcConfig::default();
+        assert_eq!(cfg.service_name, "TunnelService");
     }
 }
 
@@ -95,7 +104,7 @@ mod grpc_tests {
 mod httpupgrade_tests {
     #[test]
     fn test_httpupgrade_module_exists() {
-        // HTTPUpgrade module compiles
-        assert!(true, "HTTPUpgrade module compiles successfully");
+        let cfg = sb_transport::httpupgrade::HttpUpgradeServerConfig::default();
+        assert_eq!(cfg.upgrade_protocol, "websocket");
     }
 }

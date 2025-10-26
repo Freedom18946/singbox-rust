@@ -74,7 +74,7 @@ impl UdpNatMap {
             });
     }
 
-    /// Guarded upsert with capacity check from env SB_UDP_NAT_MAX (default 65536).
+    /// Guarded upsert with capacity check from env `SB_UDP_NAT_MAX` (default 65536).
     /// Returns true if inserted or updated; false if rejected due to capacity.
     pub async fn upsert_guarded(&self, k: UdpNatKey, upstream: Arc<UdpSocket>) -> bool {
         let max = std::env::var("SB_UDP_NAT_MAX")

@@ -1,3 +1,4 @@
+#![allow(clippy::unused_async)]
 //! Geosite tooling subcommand (parity with sing-box `geosite`)
 
 use anyhow::{Context, Result};
@@ -73,7 +74,7 @@ async fn geosite_list(path: &PathBuf) -> Result<()> {
             .collect();
         entries.sort_by_key(|(_, n)| *n);
         for (cat, n) in entries {
-            println!("{} ({})", cat, n);
+            println!("{cat} ({n})");
         }
         return Ok(());
     }
@@ -87,7 +88,7 @@ async fn geosite_list(path: &PathBuf) -> Result<()> {
         .collect();
     entries.sort_by_key(|(_, n)| *n);
     for (cat, n) in entries {
-        println!("{} ({})", cat, n);
+    println!("{cat} ({n})");
     }
     Ok(())
 }
@@ -104,12 +105,12 @@ async fn geosite_lookup(path: &PathBuf, category: Option<String>, domain: String
             if let Some(rule) = bin.first_match(&cat, &domain)? {
                 use sb_core::router::geo::DomainRule;
                 let desc = match rule {
-                    DomainRule::Exact(_) => format!("domain={}", domain),
-                    DomainRule::Suffix(s) => format!("domain_suffix={}", s),
-                    DomainRule::Keyword(k) => format!("domain_keyword={}", k),
-                    DomainRule::Regex(r) => format!("domain_regex={}", r),
+                    DomainRule::Exact(_) => format!("domain={domain}"),
+                    DomainRule::Suffix(s) => format!("domain_suffix={s}"),
+                    DomainRule::Keyword(k) => format!("domain_keyword={k}"),
+                    DomainRule::Regex(r) => format!("domain_regex={r}"),
                 };
-                println!("Match code ({}) {}", cat, desc);
+                println!("Match code ({cat}) {desc}");
             }
         }
         return Ok(());
@@ -127,12 +128,12 @@ async fn geosite_lookup(path: &PathBuf, category: Option<String>, domain: String
         if let Some(rule) = first_match_rule_from_file(path, &cat, &domain)? {
             use sb_core::router::geo::DomainRule;
             let desc = match rule {
-                DomainRule::Exact(_) => format!("domain={}", domain),
-                DomainRule::Suffix(s) => format!("domain_suffix={}", s),
-                DomainRule::Keyword(k) => format!("domain_keyword={}", k),
-                DomainRule::Regex(r) => format!("domain_regex={}", r),
+                DomainRule::Exact(_) => format!("domain={domain}"),
+                DomainRule::Suffix(s) => format!("domain_suffix={s}"),
+                DomainRule::Keyword(k) => format!("domain_keyword={k}"),
+                DomainRule::Regex(r) => format!("domain_regex={r}"),
             };
-            println!("Match code ({}) {}", cat, desc);
+            println!("Match code ({cat}) {desc}");
         }
     }
     Ok(())
@@ -170,14 +171,13 @@ fn first_match_rule_from_file(
             }
             "suffix" => {
                 let pat = pattern.trim_start_matches('.');
-                if domain.eq_ignore_ascii_case(pat)
+                if (domain.eq_ignore_ascii_case(pat)
                     || domain
                         .to_lowercase()
-                        .ends_with(&format!(".{}", pat.to_lowercase()))
+                        .ends_with(&format!(".{}", pat.to_lowercase())))
+                    && best.is_none()
                 {
-                    if best.is_none() {
-                        best = Some(DomainRule::Suffix(pattern.to_string()));
-                    }
+                    best = Some(DomainRule::Suffix(pattern.to_string()));
                 }
             }
             "keyword" => {
@@ -193,10 +193,8 @@ fn first_match_rule_from_file(
             }
             "regex" => {
                 // Treat regex as substring test for now
-                if domain.to_lowercase().contains(&pattern.to_lowercase()) {
-                    if best.is_none() {
-                        best = Some(DomainRule::Regex(pattern.to_string()));
-                    }
+                if domain.to_lowercase().contains(&pattern.to_lowercase()) && best.is_none() {
+                    best = Some(DomainRule::Regex(pattern.to_string()));
                 }
             }
             _ => {}
@@ -261,8 +259,8 @@ async fn geosite_matcher(path: &PathBuf, category: &str) -> Result<()> {
                 continue;
             }
             match match_domain(&rules, &line) {
-                Some(desc) => println!("{}\t{}", line, desc),
-                None => println!("{}\t(no match)", line),
+                Some(desc) => println!("{line}\t{desc}"),
+                None => println!("{line}\t(no match)"),
             }
         }
         return Ok(());
@@ -281,8 +279,8 @@ async fn geosite_matcher(path: &PathBuf, category: &str) -> Result<()> {
             continue;
         }
         match match_domain(&rules, &line) {
-            Some(desc) => println!("{}\t{}", line, desc),
-            None => println!("{}\t(no match)", line),
+            Some(desc) => println!("{line}\t{desc}"),
+            None => println!("{line}\t(no match)"),
         }
     }
     Ok(())
@@ -291,7 +289,7 @@ async fn geosite_matcher(path: &PathBuf, category: &str) -> Result<()> {
 fn match_domain(rules: &GeoRules, domain: &str) -> Option<String> {
     for d in &rules.domain {
         if domain.eq_ignore_ascii_case(d) {
-            return Some(format!("domain={}", d));
+            return Some(format!("domain={d}"));
         }
     }
     for s in &rules.domain_suffix {
@@ -301,17 +299,17 @@ fn match_domain(rules: &GeoRules, domain: &str) -> Option<String> {
                 .to_lowercase()
                 .ends_with(&format!(".{}", pat.to_lowercase()))
         {
-            return Some(format!("domain_suffix={}", s));
+            return Some(format!("domain_suffix={s}"));
         }
     }
     for k in &rules.domain_keyword {
         if domain.to_lowercase().contains(&k.to_lowercase()) {
-            return Some(format!("domain_keyword={}", k));
+            return Some(format!("domain_keyword={k}"));
         }
     }
     for r in &rules.domain_regex {
         if domain.to_lowercase().contains(&r.to_lowercase()) {
-            return Some(format!("domain_regex={}", r));
+            return Some(format!("domain_regex={r}"));
         }
     }
     None
@@ -365,7 +363,7 @@ impl GeositeBin {
         f.read_to_end(&mut data).context("read geosite db")?;
         let mut cur = 0usize;
         // version
-        if data.len() < 1 {
+        if data.is_empty() {
             anyhow::bail!("invalid geosite db: short");
         }
         let version = data[0];

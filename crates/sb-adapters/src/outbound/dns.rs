@@ -60,7 +60,7 @@ pub struct DnsConfig {
 impl Default for DnsConfig {
     fn default() -> Self {
         Self {
-            server: "8.8.8.8".parse().unwrap(),
+            server: IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)),
             port: None,
             transport: DnsTransport::Udp,
             timeout: Duration::from_secs(5),
@@ -376,8 +376,7 @@ impl tokio::io::AsyncWrite for DoqStreamWrapper {
                     return std::task::Poll::Ready(Ok(()));
                 }
                 Err(e) => {
-                    return std::task::Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    return std::task::Poll::Ready(Err(std::io::Error::other(
                         format!("DoQ query failed: {}", e),
                     )));
                 }
@@ -465,8 +464,7 @@ impl tokio::io::AsyncWrite for DohStreamWrapper {
                     return std::task::Poll::Ready(Ok(()));
                 }
                 Err(e) => {
-                    return std::task::Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    return std::task::Poll::Ready(Err(std::io::Error::other(
                         format!("DoH query failed: {}", e),
                     )));
                 }

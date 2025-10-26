@@ -28,7 +28,7 @@ pub enum GenerateCommands {
         #[arg(long = "days", default_value_t = 365u32)]
         days: u32,
     },
-    /// Generate VAPID (WebPush) P-256 keypair
+    /// Generate VAPID (`WebPush`) P-256 keypair
     #[cfg(feature = "jwt")]
     VapidKeypair,
     /// Generate `WireGuard` X25519 keypair

@@ -7,7 +7,7 @@ use tempfile::tempdir;
 fn test_run_rc_script_execution() {
     // Test that the run-rc script can be executed
     let output = Command::new("bash")
-        .args(&["scripts/run-rc"])
+        .args(["scripts/run-rc"])
         .output()
         .expect("Failed to execute run-rc script");
 
@@ -33,7 +33,7 @@ fn test_run_rc_script_execution() {
 fn test_rc_verify_script_help() {
     // Test that the rc-verify script shows help
     let output = Command::new("bash")
-        .args(&["scripts/rc-verify", "--help"])
+        .args(["scripts/rc-verify", "--help"])
         .output()
         .expect("Failed to execute rc-verify script");
 
@@ -304,7 +304,7 @@ fn test_rc_package_integration() {
 
     if !sb_version_exists {
         let build_output = Command::new("cargo")
-            .args(&["build", "--bin", "sb-version"])
+        .args(["build", "--bin", "sb-version"])
             .output()
             .expect("Failed to build sb-version");
 
@@ -316,7 +316,7 @@ fn test_rc_package_integration() {
 
     // Run the RC script
     let output = Command::new("bash")
-        .args(&["scripts/run-rc"])
+        .args(["scripts/run-rc"])
         .output()
         .expect("Failed to execute run-rc script");
 

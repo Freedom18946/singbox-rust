@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-shadowtls")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use sb_adapters::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
 use sb_adapters::traits::{DialOpts, OutboundConnector, Target};

@@ -72,8 +72,7 @@ pub async fn udp_associate(stream: &mut TcpStream, bind: SocketAddr) -> anyhow::
             let port = u16::from_be_bytes(p);
             let enable = std::env::var("SB_SOCKS_UDP_RESOLVE_BND")
                 .ok()
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false);
+                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
             if enable {
                 if let Ok(mut it) = tokio::net::lookup_host(format!("{dom}:{port}")).await {
                     if let Some(sa) = it.next() {

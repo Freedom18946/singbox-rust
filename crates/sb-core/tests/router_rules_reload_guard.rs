@@ -7,8 +7,7 @@ fn require_default_guard() {
     let e = router_build_index_from_str(txt, 1024).unwrap_err();
     match e {
         BuildError::Invalid(InvalidReason::MissingDefault) => {}
-        _ => assert!(
-            false,
+        _ => panic!(
             "Expected MissingDefault error when default rule is required"
         ),
     }

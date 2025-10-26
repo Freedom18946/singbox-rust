@@ -186,7 +186,7 @@ fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchRes
 
 /// Parse cipher suites
 fn parse_cipher_suites(data: &[u8]) -> EchResult<Vec<HpkeCipherSuite>> {
-    if data.len() % 6 != 0 {
+    if !data.len().is_multiple_of(6) {
         return Err(EchError::ParseFailed(format!(
             "Invalid cipher suites length: {} (must be multiple of 6)",
             data.len()
@@ -277,6 +277,7 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 

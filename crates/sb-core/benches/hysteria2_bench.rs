@@ -2,17 +2,17 @@
 //!
 //! Benchmarks for Hysteria2 protocol implementation to ensure
 //! performance requirements are met and identify optimization opportunities.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(not(feature = "bench"), allow(dead_code, unused_imports))]
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 use sb_core::outbound::hysteria2::{
     BandwidthLimiter, BrutalConfig, Hysteria2Config, Hysteria2Outbound,
 };
-#[cfg(feature = "out_hysteria2")]
-use std::time::Duration;
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_auth_hash_generation(c: &mut Criterion) {
     let config = Hysteria2Config {
         server: "127.0.0.1".to_string(),
@@ -36,7 +36,7 @@ fn bench_auth_hash_generation(c: &mut Criterion) {
     });
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_auth_hash_with_salamander(c: &mut Criterion) {
     let config = Hysteria2Config {
         server: "127.0.0.1".to_string(),
@@ -60,7 +60,7 @@ fn bench_auth_hash_with_salamander(c: &mut Criterion) {
     });
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_obfuscation(c: &mut Criterion) {
     let config = Hysteria2Config {
         server: "127.0.0.1".to_string(),
@@ -92,7 +92,7 @@ fn bench_obfuscation(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_bandwidth_limiter(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -103,15 +103,14 @@ fn bench_bandwidth_limiter(c: &mut Criterion) {
         let limiter = BandwidthLimiter::new(Some(*mbps), Some(*mbps));
 
         group.bench_with_input(BenchmarkId::new("consume_tokens", mbps), mbps, |b, _| {
-            b.to_async(&rt)
-                .iter(|| async { black_box(limiter.consume_up(1024).await) })
+            b.iter(|| rt.block_on(async { black_box(limiter.consume_up(1024).await) }))
         });
     }
 
     group.finish();
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_config_creation(c: &mut Criterion) {
     c.bench_function("config_creation_basic", |b| {
         b.iter(|| {
@@ -155,7 +154,7 @@ fn bench_config_creation(c: &mut Criterion) {
     });
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_outbound_creation(c: &mut Criterion) {
     let config = Hysteria2Config {
         server: "127.0.0.1".to_string(),
@@ -177,7 +176,7 @@ fn bench_outbound_creation(c: &mut Criterion) {
     });
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_congestion_control_variants(c: &mut Criterion) {
     let mut group = c.benchmark_group("congestion_control_creation");
 
@@ -219,18 +218,22 @@ fn bench_congestion_control_variants(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_bandwidth_limiter_refill(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let limiter = BandwidthLimiter::new(Some(100), Some(200));
 
     c.bench_function("bandwidth_limiter_refill", |b| {
-        b.to_async(&rt)
-            .iter(|| async { black_box(limiter.refill_tokens().await) })
+        b.iter(|| {
+            rt.block_on(async {
+                limiter.refill_tokens().await;
+                black_box(())
+            })
+        })
     });
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 fn bench_protocol_packet_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("protocol_packets");
 
@@ -273,7 +276,7 @@ fn bench_protocol_packet_creation(c: &mut Criterion) {
     group.finish();
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 criterion_group!(
     benches,
     bench_auth_hash_generation,
@@ -287,10 +290,10 @@ criterion_group!(
     bench_protocol_packet_creation
 );
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "bench", feature = "out_hysteria2"))]
 criterion_main!(benches);
 
-#[cfg(not(feature = "out_hysteria2"))]
+#[cfg(not(all(feature = "bench", feature = "out_hysteria2")))]
 fn main() {
-    println!("Hysteria2 benchmarks require the 'out_hysteria2' feature to be enabled");
+    println!("Hysteria2 benchmarks disabled; enable with --features bench,sb-core/out_hysteria2");
 }

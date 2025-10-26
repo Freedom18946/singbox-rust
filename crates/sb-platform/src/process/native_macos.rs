@@ -21,9 +21,17 @@
 use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
 use libproc::libproc::proc_pid::pidpath;
 
+/// macOS native process matcher using libproc
+///
+/// Uses `pidpath()` native API for 10-100x faster process info retrieval.
+#[derive(Default)]
 pub struct NativeMacOsProcessMatcher;
 
 impl NativeMacOsProcessMatcher {
+    /// Create a new native macOS process matcher
+    ///
+    /// # Errors
+    /// Returns error if initialization fails (currently infallible)
     pub fn new() -> Result<Self, ProcessMatchError> {
         Ok(Self)
     }
@@ -45,17 +53,22 @@ impl NativeMacOsProcessMatcher {
         // Run blocking libproc calls in a blocking task
         tokio::task::spawn_blocking(move || Self::get_process_info_blocking(pid))
             .await
-            .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {}", e)))?
+            .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {e}")))?
     }
 
     /// Blocking implementation of get_process_info using libproc
     fn get_process_info_blocking(pid: u32) -> Result<ProcessInfo, ProcessMatchError> {
+        // Convert u32 PID to i32 for libproc API (safely handle overflow)
+        let pid_i32 = i32::try_from(pid)
+            .map_err(|_| ProcessMatchError::SystemError("PID exceeds i32::MAX".into()))?;
+
         // Get process path using proc_pidpath (native syscall)
-        let path = pidpath(pid as i32).map_err(|e| {
-            if e.contains("Operation not permitted") {
+        let path = pidpath(pid_i32).map_err(|e| {
+            let err_msg = format!("{e:?}");
+            if err_msg.contains("Operation not permitted") || err_msg.contains("EPERM") {
                 ProcessMatchError::PermissionDenied
             } else {
-                ProcessMatchError::SystemError(format!("pidpath failed: {}", e))
+                ProcessMatchError::SystemError(format!("pidpath failed: {err_msg}"))
             }
         })?;
 
@@ -90,7 +103,9 @@ impl NativeMacOsProcessMatcher {
             .args(["-n", "-P", protocol_flag, &addr_spec])
             .output()
             .await
-            .map_err(|e| ProcessMatchError::SystemError(format!("lsof failed: {}", e)))?;
+            .map_err(|e| {
+                ProcessMatchError::SystemError(format!("lsof failed (install via brew?): {e}"))
+            })?;
 
         if !output.status.success() {
             return Err(ProcessMatchError::ProcessNotFound);
@@ -98,12 +113,15 @@ impl NativeMacOsProcessMatcher {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        // Parse lsof output to find PID
+        // Parse lsof output to find PID (format: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME)
         for line in stdout.lines().skip(1) {
             // Skip header
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            if fields.len() >= 2 {
-                if let Ok(pid) = fields[1].parse::<u32>() {
+            let mut fields = line.split_whitespace();
+            // Skip COMMAND (field 0)
+            fields.next();
+            // Get PID (field 1)
+            if let Some(pid_str) = fields.next() {
+                if let Ok(pid) = pid_str.parse::<u32>() {
                     return Ok(pid);
                 }
             }
@@ -124,42 +142,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_current_process_info() {
-        let matcher = NativeMacOsProcessMatcher::new().unwrap();
+    async fn test_get_current_process_info() -> Result<(), Box<dyn std::error::Error>> {
+        let matcher = NativeMacOsProcessMatcher::new()?;
         let current_pid = std::process::id();
 
-        let result = matcher.get_process_info(current_pid).await;
-        assert!(
-            result.is_ok(),
-            "Should be able to get info for current process"
-        );
-
-        let info = result.unwrap();
-        assert_eq!(info.pid, current_pid);
-        assert!(!info.name.is_empty());
-        assert!(!info.path.is_empty());
+        let info = matcher.get_process_info(current_pid).await?;
+        assert_eq!(info.pid, current_pid, "PID should match");
+        assert!(!info.name.is_empty(), "Name should not be empty");
+        assert!(!info.path.is_empty(), "Path should not be empty");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_system_process_info() {
+    async fn test_get_system_process_info() -> Result<(), Box<dyn std::error::Error>> {
         // Try to get info for init process (PID 1)
-        let matcher = NativeMacOsProcessMatcher::new().unwrap();
+        let matcher = NativeMacOsProcessMatcher::new()?;
 
         let result = matcher.get_process_info(1).await;
         // This may fail due to permissions, which is fine
         if let Ok(info) = result {
-            assert_eq!(info.pid, 1);
-            assert!(!info.name.is_empty());
+            assert_eq!(info.pid, 1, "PID should be 1");
+            assert!(!info.name.is_empty(), "Name should not be empty");
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_invalid_pid() {
-        let matcher = NativeMacOsProcessMatcher::new().unwrap();
+    async fn test_invalid_pid() -> Result<(), Box<dyn std::error::Error>> {
+        let matcher = NativeMacOsProcessMatcher::new()?;
 
         // Try to get info for a PID that definitely doesn't exist
         let result = matcher.get_process_info(u32::MAX).await;
         assert!(result.is_err(), "Should fail for invalid PID");
+        Ok(())
     }
 
     /// Performance benchmark: Compare native API vs command-line tools
@@ -170,7 +185,8 @@ mod tests {
     ///
     /// Expected improvement: 10-100x faster
     #[tokio::test]
-    #[ignore] // Run manually with: cargo test bench_native_vs_cmdline -- --ignored
+    #[ignore = "Run manually with: cargo test bench_native_vs_cmdline -- --ignored"]
+    #[allow(clippy::unwrap_used)] // Benchmark code, unwrap is acceptable
     async fn bench_native_vs_cmdline() {
         use std::time::Instant;
 

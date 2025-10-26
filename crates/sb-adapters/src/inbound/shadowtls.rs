@@ -187,17 +187,17 @@ where
                             }
                         }
                     } else {
-                        fallback_connect(&proxy, &host, port, &opts).await?
+                        fallback_connect(proxy, &host, port, &opts).await?
                     }
                 } else {
-                    fallback_connect(&proxy, &host, port, &opts).await?
+                    fallback_connect(proxy, &host, port, &opts).await?
                 }
             } else {
-                fallback_connect(&proxy, &host, port, &opts).await?
+                fallback_connect(proxy, &host, port, &opts).await?
             }
         }
-        RDecision::Proxy(None) => fallback_connect(&proxy, &host, port, &opts).await?,
-        RDecision::Reject => unreachable!(),
+        RDecision::Proxy(None) => fallback_connect(proxy, &host, port, &opts).await?,
+        RDecision::Reject => return Err(anyhow!("shadowtls: rejected by rules")),
     };
 
     // Bidirectional relay

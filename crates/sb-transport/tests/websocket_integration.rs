@@ -1,3 +1,4 @@
+#![cfg(feature = "transport_ws")]
 //! WebSocket server/client integration tests
 
 use sb_transport::websocket::{

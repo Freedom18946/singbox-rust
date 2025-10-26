@@ -48,16 +48,20 @@ pub enum JwtAlgorithm {
 impl JwtAlgorithm {
     /// Parse algorithm from string
     pub fn from_str(s: &str) -> Result<Self, AuthError> {
-        match s.to_uppercase().as_str() {
-            "RS256" => Ok(Self::RS256),
-            "ES256" => Ok(Self::ES256),
-            "HS256" => Ok(Self::HS256),
-            "NONE" | "NULL" | "" => Err(AuthError::invalid(
+        if s.eq_ignore_ascii_case("RS256") {
+            Ok(Self::RS256)
+        } else if s.eq_ignore_ascii_case("ES256") {
+            Ok(Self::ES256)
+        } else if s.eq_ignore_ascii_case("HS256") {
+            Ok(Self::HS256)
+        } else if s.is_empty() || s.eq_ignore_ascii_case("NONE") || s.eq_ignore_ascii_case("NULL") {
+            Err(AuthError::invalid(
                 "Algorithm 'none' is not allowed for security reasons",
-            )),
-            other => Err(AuthError::invalid(format!(
-                "Unsupported JWT algorithm: {other}"
-            ))),
+            ))
+        } else {
+            Err(AuthError::invalid(format!(
+                "Unsupported JWT algorithm: {s}"
+            )))
         }
     }
 
@@ -396,12 +400,9 @@ impl JwtProvider {
                     false, // not compressed
                 );
 
-                let public_key_option = p256::PublicKey::from_encoded_point(&point);
-                let public_key = if public_key_option.is_some().into() {
-                    public_key_option.unwrap()
-                } else {
-                    return Err(AuthError::internal("Invalid EC key"));
-                };
+                // Avoid ambiguous CtOption -> Option conversion by parsing from SEC1 bytes
+                let public_key = p256::PublicKey::from_sec1_bytes(point.as_bytes())
+                    .map_err(|_| AuthError::internal("Invalid EC key"))?;
 
                 let pem = public_key
                     .to_public_key_pem(pkcs8::LineEnding::LF)

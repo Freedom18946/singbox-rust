@@ -1,6 +1,6 @@
-//! Very small DNS stub + cache (default OFF; enable via env DNS_STUB=1).
+//! Very small DNS stub + cache (default OFF; enable via env `DNS_STUB=1`).
 //! - 使用系统解析（getaddrinfo）作为唯一上游；失败时不阻塞主链，按需返回 None。
-//! - 提供 TTL 缓存；TTL 由 init_global(ttl_secs) 指定。
+//! - 提供 TTL 缓存；TTL 由 `init_global(ttl_secs)` 指定。
 //! - 后续可挂 DoT/DoH 实现，保持接口不变。
 use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -40,7 +40,7 @@ impl DnsCache {
             }
         }
         // 2) 系统解析
-        let q = format!("{}:{}", host, port);
+        let q = format!("{host}:{port}");
         match q.to_socket_addrs() {
             Ok(it) => {
                 let mut acc = Vec::new();

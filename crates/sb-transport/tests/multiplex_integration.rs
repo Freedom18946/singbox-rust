@@ -1,3 +1,4 @@
+#![cfg(feature = "transport_mux")]
 //! Multiplex (yamux) server/client integration tests
 
 use sb_transport::dialer::Dialer;

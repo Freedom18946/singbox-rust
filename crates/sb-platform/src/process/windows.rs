@@ -1,16 +1,37 @@
 //! Windows-specific process matching implementation
 //!
-//! Uses Windows API to identify processes and their network connections.
+//! Uses Windows command-line tools (netstat, tasklist, wmic) as fallback.
+//!
+//! ## Performance Note
+//! This fallback implementation is **significantly slower** than native APIs.
+//! Enable `native-process-match` feature for 20-50x better performance.
 
 use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
 
+/// Windows process matcher using command-line tools
+///
+/// # Performance
+/// This uses external tools (netstat, tasklist, wmic) which are slow.
+/// Consider enabling `native-process-match` for native `GetExtended{Tcp,Udp}Table` APIs.
+#[derive(Default)]
 pub struct WindowsProcessMatcher;
 
 impl WindowsProcessMatcher {
+    /// Create a new Windows process matcher
+    ///
+    /// # Errors
+    /// Returns error if initialization fails (currently infallible)
     pub fn new() -> Result<Self, ProcessMatchError> {
         Ok(Self)
     }
 
+    /// Find process ID by connection information
+    ///
+    /// # Performance
+    /// Uses `netstat` which is slow. Enable `native-process-match` for better performance.
+    ///
+    /// # Errors
+    /// Returns error if connection not found or `netstat` fails
     pub async fn find_process_id(&self, conn: &ConnectionInfo) -> Result<u32, ProcessMatchError> {
         // On Windows, we would use GetExtendedTcpTable or GetExtendedUdpTable
         // This is a simplified implementation
@@ -18,6 +39,10 @@ impl WindowsProcessMatcher {
         self.find_process_with_netstat(conn).await
     }
 
+    /// Get process information by PID
+    ///
+    /// # Errors
+    /// Returns error if process not found or permission denied
     pub async fn get_process_info(&self, pid: u32) -> Result<ProcessInfo, ProcessMatchError> {
         // Use Windows API to get process information
         // This is a simplified implementation using external tools
@@ -38,10 +63,12 @@ impl WindowsProcessMatcher {
         };
 
         let output = Command::new("netstat")
-            .args(&["-ano", protocol_flag])
+            .args(["-ano", protocol_flag])
             .output()
             .await
-            .map_err(|e| ProcessMatchError::SystemError(format!("netstat failed: {}", e)))?;
+            .map_err(|e| {
+                ProcessMatchError::SystemError(format!("netstat failed (not installed?): {e}"))
+            })?;
 
         if !output.status.success() {
             return Err(ProcessMatchError::ProcessNotFound);
@@ -71,10 +98,12 @@ impl WindowsProcessMatcher {
 
         // Use tasklist to get process information
         let output = Command::new("tasklist")
-            .args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .output()
             .await
-            .map_err(|e| ProcessMatchError::SystemError(format!("tasklist failed: {}", e)))?;
+            .map_err(|e| {
+                ProcessMatchError::SystemError(format!("tasklist failed: {e}"))
+            })?;
 
         if !output.status.success() {
             return Err(ProcessMatchError::ProcessNotFound);
@@ -107,17 +136,17 @@ impl WindowsProcessMatcher {
         use tokio::process::Command;
 
         let output = Command::new("wmic")
-            .args(&[
+            .args([
                 "process",
                 "where",
-                &format!("ProcessId={}", pid),
+                &format!("ProcessId={pid}"),
                 "get",
                 "ExecutablePath",
                 "/format:value",
             ])
             .output()
             .await
-            .map_err(|e| ProcessMatchError::SystemError(format!("wmic failed: {}", e)))?;
+            .map_err(|e| ProcessMatchError::SystemError(format!("wmic failed: {e}")))?;
 
         if !output.status.success() {
             return Err(ProcessMatchError::ProcessNotFound);
@@ -127,8 +156,8 @@ impl WindowsProcessMatcher {
 
         // Parse wmic output
         for line in stdout.lines() {
-            if line.starts_with("ExecutablePath=") {
-                let path = line.strip_prefix("ExecutablePath=").unwrap_or("").trim();
+            if let Some(path_str) = line.strip_prefix("ExecutablePath=") {
+                let path = path_str.trim();
                 if !path.is_empty() {
                     return Ok(path.to_string());
                 }
@@ -140,7 +169,8 @@ impl WindowsProcessMatcher {
 }
 
 // Note: In a production implementation, you would use proper Windows API bindings
-// such as the winapi crate for better performance and reliability
+// via the `native-process-match` feature. See `native_windows.rs` for the
+// high-performance implementation using `GetExtendedTcpTable`/`GetExtendedUdpTable`.
 
 #[cfg(test)]
 mod tests {

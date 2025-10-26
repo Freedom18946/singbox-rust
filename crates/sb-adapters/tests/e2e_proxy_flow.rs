@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! End-to-end integration tests for proxy flow
 //!
 //! Tests the complete flow: Inbound → Router → Outbound

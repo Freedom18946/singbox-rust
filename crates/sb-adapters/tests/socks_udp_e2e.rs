@@ -1,4 +1,5 @@
 #![cfg(feature = "socks")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 // SOCKS5 UDP 端到端集成测试
 // 由于解析函数是私有的，这里主要测试服务启动和基本功能
 

@@ -13,12 +13,10 @@ fn http_portset_first_wins_and_valid() {
     // 80、443、8443 都应命中 proxy
     for p in [80u16, 443u16, 8443u16] {
         let t = format!("no.match:{}", p);
-        match decide_http(&t) {
-            decision => assert_eq!(decision.target, "proxy"),
-        }
+        let decision = decide_http(&t);
+        assert_eq!(decision.target, "proxy");
     }
     // 81 不在集合 -> default
-    match decide_http("no.match:81") {
-        decision => assert_eq!(decision.target, "direct"),
-    }
+    let decision = decide_http("no.match:81");
+    assert_eq!(decision.target, "direct");
 }

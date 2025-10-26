@@ -52,7 +52,7 @@ impl UdpProcessor {
         }
     }
 
-    /// Create with env overrides: SB_UDP_TTL_MS, SB_UDP_GC_MS (ms), SB_UDP_NAT_MAX
+    /// Create with env overrides: `SB_UDP_TTL_MS`, `SB_UDP_GC_MS` (ms), `SB_UDP_NAT_MAX`
     pub fn from_env() -> (Self, Duration) {
         let ttl_ms = std::env::var("SB_UDP_TTL_MS")
             .ok()

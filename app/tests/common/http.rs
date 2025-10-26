@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! HTTP client helpers for testing
 
 use std::io::{Read, Write};

@@ -1,4 +1,5 @@
-//! GeoIP tooling subcommand (parity with sing-box `geoip`)
+#![allow(clippy::doc_markdown, clippy::uninlined_format_args, clippy::unused_async)]
+//! `GeoIP` tooling subcommand (parity with sing-box `geoip`)
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 #[command(name = "geoip")]
 #[command(about = "GeoIP tools", long_about = None)]
 pub struct GeoipArgs {
-    /// GeoIP database file (text or MMDB)
+    /// `GeoIP` database file (text or MMDB)
     #[arg(short = 'f', long = "file", default_value = "geoip.db")]
     pub file: PathBuf,
 
@@ -22,7 +23,7 @@ pub struct GeoipArgs {
 pub enum GeoipCmd {
     /// List country codes available in the database
     List,
-    /// Lookup if an IP is contained in the GeoIP database
+    /// Lookup if an IP is contained in the `GeoIP` database
     Lookup { address: String },
     /// Export a country as rule-set JSON
     Export {
@@ -48,7 +49,7 @@ async fn geoip_list(path: &PathBuf) -> Result<()> {
         let mut langs = reader.metadata.languages.clone();
         langs.sort();
         for l in langs {
-            println!("{}", l);
+            println!("{l}");
         }
         return Ok(());
     }
@@ -59,7 +60,7 @@ async fn geoip_list(path: &PathBuf) -> Result<()> {
     let mut countries = db.available_countries();
     countries.sort();
     for c in countries {
-        println!("{}", c);
+        println!("{c}");
     }
     Ok(())
 }
@@ -155,10 +156,10 @@ async fn geoip_export(path: &PathBuf, country: &str, output: &str) -> Result<()>
         // Iterate both IPv4 and IPv6 spaces
         for net_str in ["0.0.0.0/0", "::/0"] {
             let net: ipnetwork::IpNetwork = net_str.parse().unwrap();
-            let mut iter = reader
+            let iter = reader
                 .within::<String>(net)
                 .map_err(|e| anyhow::anyhow!("mmdb within failed: {}", e))?;
-            while let Some(next) = iter.next() {
+            for next in iter {
                 let item = next.map_err(|e| anyhow::anyhow!("mmdb iter error: {}", e))?;
                 if item.info.to_lowercase() == target {
                     cidrs.push(item.ip_net.to_string());

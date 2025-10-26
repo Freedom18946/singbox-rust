@@ -28,8 +28,7 @@ impl EnhancedUdpTransport {
         let timeout = std::env::var("SB_DNS_TIMEOUT_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(Duration::from_millis(2000));
+            .map_or(Duration::from_millis(2000), Duration::from_millis);
 
         let retries = std::env::var("SB_DNS_RETRIES")
             .ok()
@@ -49,7 +48,7 @@ impl EnhancedUdpTransport {
     }
 
     /// Check if DNS is enabled via environment
-    pub fn is_enabled(&self) -> bool {
+    pub const fn is_enabled(&self) -> bool {
         self.enabled
     }
 
@@ -95,18 +94,18 @@ impl EnhancedUdpTransport {
     async fn query_server(&self, server: SocketAddr, packet: &[u8]) -> Result<Vec<u8>> {
         let socket = UdpSocket::bind("0.0.0.0:0")
             .await
-            .map_err(|e| anyhow!("Failed to bind UDP socket: {}", e))?;
+            .map_err(|e| anyhow!("Failed to bind UDP socket: {e}"))?;
 
         socket
             .connect(server)
             .await
-            .map_err(|e| anyhow!("Failed to connect to DNS server {}: {}", server, e))?;
+            .map_err(|e| anyhow!("Failed to connect to DNS server {server}: {e}"))?;
 
         // Send query
         socket
             .send(packet)
             .await
-            .map_err(|e| anyhow!("Failed to send DNS query to {}: {}", server, e))?;
+            .map_err(|e| anyhow!("Failed to send DNS query to {server}: {e}"))?;
 
         // Receive response with timeout
         let mut response_buf = vec![0u8; 512]; // Standard DNS UDP message size
@@ -114,7 +113,7 @@ impl EnhancedUdpTransport {
         let response_len = tokio::time::timeout(self.timeout, socket.recv(&mut response_buf))
             .await
             .map_err(|_| anyhow!("DNS query timeout after {:?}", self.timeout))?
-            .map_err(|e| anyhow!("Failed to receive DNS response: {}", e))?;
+            .map_err(|e| anyhow!("Failed to receive DNS response: {e}"))?;
 
         response_buf.truncate(response_len);
         Ok(response_buf)
@@ -166,9 +165,7 @@ impl DnsTransport for EnhancedUdpTransport {
                                 server,
                                 attempt,
                                 last_error
-                                    .as_ref()
-                                    .map(|e| e.to_string())
-                                    .unwrap_or_else(|| "unknown".into())
+                                    .as_ref().map_or_else(|| "unknown".into(), std::string::ToString::to_string)
                             );
 
                             // Brief delay before retry
@@ -179,9 +176,7 @@ impl DnsTransport for EnhancedUdpTransport {
                                 self.retries,
                                 server,
                                 last_error
-                                    .as_ref()
-                                    .map(|e| e.to_string())
-                                    .unwrap_or_else(|| "unknown".into())
+                                    .as_ref().map_or_else(|| "unknown".into(), std::string::ToString::to_string)
                             );
                         }
                     }

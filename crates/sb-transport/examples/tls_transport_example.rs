@@ -3,8 +3,15 @@
 //! This example shows how to use the unified TlsTransport interface
 //! to wrap streams with different TLS variants (Standard, REALITY, ECH).
 
+#[cfg(all(feature = "transport_tls", feature = "serde"))]
 use sb_transport::{StandardTlsConfig, TlsConfig, TlsTransport};
 
+#[cfg(not(all(feature = "transport_tls", feature = "serde")))]
+fn main() {
+    eprintln!("This example requires --features transport_tls,serde");
+}
+
+#[cfg(all(feature = "transport_tls", feature = "serde"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing

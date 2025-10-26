@@ -1,4 +1,5 @@
 #![cfg(feature = "e2e")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

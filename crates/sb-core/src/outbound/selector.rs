@@ -1,8 +1,8 @@
 //! Selector outbound: choose one member outbound by score (RTT/err/decay).
 //! - Inputs: members = [(name, connector)]
 //! - Policy: EMA RTT with failures as penalties; jitter; cold start guard.
-//! - Metrics: proxy_select_total{outbound,member} counter,
-//!   proxy_select_score{outbound,member} gauge (current score snapshot).
+//! - Metrics: `proxy_select_total{outbound,member`} counter,
+//!   `proxy_select_score{outbound,member`} gauge (current score snapshot).
 use super::endpoint::ProxyEndpoint;
 use crate::adapter::OutboundConnector;
 use std::collections::HashMap;
@@ -62,13 +62,13 @@ impl Selector {
         use std::time::{SystemTime, UNIX_EPOCH};
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_else(|_| std::time::Duration::from_millis(0))
-            .as_millis()
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
     }
 
     fn score_of(stat: &Stat) -> f64 {
         // 以 RTT_ema + penalty*fail + jitter 作为选择打分（越小越好）
-        stat.ema_rtt_ms + stat.fail_ratio * 1.0 /*timeslot*/ * 400.0
+        (stat.fail_ratio * 1.0).mul_add(400.0, stat.ema_rtt_ms)
     }
 
     fn choose(&self) -> usize {
@@ -112,17 +112,17 @@ impl Selector {
         s.ema_rtt_ms = if s.last_update_ms == 0 {
             x
         } else {
-            (1.0 - self.alpha) * s.ema_rtt_ms + self.alpha * x
+            (1.0 - self.alpha).mul_add(s.ema_rtt_ms, self.alpha * x)
         };
         // 简化失败率：最近一次窗口内若失败则向上拉高，若成功则衰减
         s.fail_ratio = if ok {
             (s.fail_ratio * 0.6).max(0.0)
         } else {
-            (s.fail_ratio * 0.5 + 0.5).min(1.0)
+            s.fail_ratio.mul_add(0.5, 0.5).min(1.0)
         };
         s.last_update_ms = Self::now_ms();
         if !ok {
-            s.cb_open_until_ms = s.last_update_ms + self.cb_open_ms as u128;
+            s.cb_open_until_ms = s.last_update_ms + u128::from(self.cb_open_ms);
         }
         // 指标：固定标签集，仅 outbound（成员维度避免标签爆炸）
         sb_metrics::set_proxy_select_score(self.name.as_str(), Self::score_of(s));
@@ -137,13 +137,12 @@ impl Selector {
         dur_ms: u64,
         success: bool,
     ) {
-        // Map pool endpoint index to member if possible; fallback to index
+        // Map pool endpoint index to member if possible; fallback to index string
         let member_name = self
             .members
             .get(endpoint_index)
-            .map(|m| m.name.as_str())
-            .unwrap_or("idx");
-        let dur = dur_ms as u128;
+            .map_or("unknown", |m| m.name.as_str());
+        let dur = u128::from(dur_ms);
         self.on_result(member_name, dur, success);
         // Lightweight logs to aid debugging
         if success {
@@ -206,7 +205,9 @@ impl crate::adapter::OutboundConnector for Selector {
             }
             Err(e) => {
                 self.on_result(&mem.name, t0.elapsed().as_millis(), false);
-                Err(last_err.unwrap_or(e))
+                Err(last_err.unwrap_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!("all members failed, last: {e}"))
+                }))
             }
         }
     }
@@ -239,7 +240,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
             let c = self.count.fetch_add(1, Ordering::SeqCst);
             if c < self.fail_n {
-                Err(io::Error::new(io::ErrorKind::Other, "fail"))
+                Err(io::Error::other("fail"))
             } else {
                 // 本地 loopback 打洞不可行；返回错误模拟，但对于选择逻辑已足够
                 Err(io::Error::new(io::ErrorKind::ConnectionRefused, "stub"))
@@ -290,7 +291,7 @@ pub struct EndpointHealth {
 }
 
 impl HealthView {
-    pub fn new(pool_name: String) -> Self {
+    pub const fn new(pool_name: String) -> Self {
         Self {
             pool_name,
             endpoints: Vec::new(),
@@ -344,7 +345,7 @@ impl PoolSelector {
     // Compatibility constructor for existing code
     pub fn new_with_capacity(capacity: usize, _ttl: Duration) -> Self {
         Self {
-            name: format!("pool_{}", capacity),
+            name: format!("pool_{capacity}"),
             pools: HashMap::with_capacity(capacity),
             default_pool: "default".to_string(),
         }
@@ -411,8 +412,7 @@ impl PoolSelector {
     /// Check if a pool exists and has healthy endpoints
     pub fn has_healthy_endpoints(&self, pool_name: &str) -> bool {
         self.get_pool(pool_name)
-            .map(|pool| pool.endpoints.iter().any(|ep| ep.is_healthy))
-            .unwrap_or(false)
+            .is_some_and(|pool| pool.endpoints.iter().any(|ep| ep.is_healthy))
     }
 
     /// Get list of all pool names

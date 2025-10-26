@@ -387,7 +387,7 @@ impl CircuitBreaker {
     fn update_metrics(&self, _state: CircuitState) {
         #[cfg(feature = "metrics")]
         {
-            use sb_core::metrics::registry_ext::get_or_register_gauge_vec_f64;
+            use crate::metrics_ext::get_or_register_gauge_vec_f64;
             let gauge = get_or_register_gauge_vec_f64(
                 "circuit_state",
                 "Circuit breaker state",
@@ -436,7 +436,6 @@ pub enum CircuitBreakerDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
 
     #[tokio::test]
     async fn test_circuit_breaker_closed_state() {
@@ -504,7 +503,7 @@ mod tests {
         assert_eq!(cb.state().await, CircuitState::Open);
 
         // Wait for timeout
-        thread::sleep(Duration::from_millis(60));
+        tokio::time::sleep(Duration::from_millis(60)).await;
 
         // Next request should transition to half-open
         assert!(matches!(
@@ -538,7 +537,7 @@ mod tests {
 
         // Force to half-open via failure then timeout
         cb.record_result(false, false).await;
-        thread::sleep(Duration::from_millis(60));
+        tokio::time::sleep(Duration::from_millis(60)).await;
         cb.allow_request().await; // Transition to half-open
 
         assert_eq!(cb.state().await, CircuitState::HalfOpen);
@@ -562,7 +561,7 @@ mod tests {
 
         // Force to half-open
         cb.record_result(false, false).await;
-        thread::sleep(Duration::from_millis(60));
+        tokio::time::sleep(Duration::from_millis(60)).await;
         cb.allow_request().await;
 
         assert_eq!(cb.state().await, CircuitState::HalfOpen);
@@ -572,8 +571,8 @@ mod tests {
         assert_eq!(cb.state().await, CircuitState::Open);
     }
 
-    #[test]
-    fn test_sliding_window_cleanup() {
+    #[tokio::test]
+    async fn test_sliding_window_cleanup() {
         let mut window = SlidingWindow::new(Duration::from_millis(100));
 
         // Add some failures
@@ -582,7 +581,7 @@ mod tests {
         assert_eq!(window.failure_count(), 2);
 
         // Wait for window to expire
-        thread::sleep(Duration::from_millis(120));
+        tokio::time::sleep(Duration::from_millis(120)).await;
 
         // Should be cleaned up
         assert_eq!(window.failure_count(), 0);

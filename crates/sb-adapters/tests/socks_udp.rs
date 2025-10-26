@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-socks")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! E2E tests for SOCKS5 UDP ASSOCIATE functionality
 //!
 //! This module tests SOCKS5 UDP support with mock servers to verify

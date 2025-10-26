@@ -1,7 +1,7 @@
-//! MaxMind MMDB database implementation for GeoIP lookups
+//! `MaxMind` MMDB database implementation for `GeoIP` lookups
 //!
-//! This module provides a production-ready implementation using MaxMind's
-//! GeoIP2 databases (GeoLite2-City, GeoLite2-Country, etc.)
+//! This module provides a production-ready implementation using `MaxMind`'s
+//! `GeoIP2` databases (GeoLite2-City, GeoLite2-Country, etc.)
 
 use super::{GeoInfo, GeoIpProvider};
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// MaxMind MMDB reader wrapper
+/// `MaxMind` MMDB reader wrapper
 pub struct MmdbReader {
     country_db: Option<maxminddb::Reader<Vec<u8>>>,
     city_db: Option<maxminddb::Reader<Vec<u8>>>,
@@ -296,7 +296,7 @@ struct LocationInfo {
     time_zone: Option<String>,
 }
 
-/// GeoIP database wrapper (for backward compatibility)
+/// `GeoIP` database wrapper (for backward compatibility)
 pub struct GeoIp {
     provider: MmdbProvider,
 }
@@ -308,7 +308,7 @@ impl GeoIp {
         })
     }
 
-    /// Open a GeoIP database from file path with cache configuration
+    /// Open a `GeoIP` database from file path with cache configuration
     pub fn open(
         path: &std::path::Path,
         cache_capacity: usize,
@@ -316,10 +316,10 @@ impl GeoIp {
     ) -> anyhow::Result<Self> {
         // Create a custom MMDB reader that loads the specific database file
         let data = std::fs::read(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read MMDB database at {:?}: {}", path, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read MMDB database at {path:?}: {e}"))?;
 
         let reader = maxminddb::Reader::from_source(data)
-            .map_err(|e| anyhow::anyhow!("Failed to parse MMDB database at {:?}: {}", path, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse MMDB database at {path:?}: {e}"))?;
 
         // Create a custom MmdbReader with the loaded database
         let mut mmdb_reader = MmdbReader {

@@ -59,18 +59,25 @@ fn default_tun_name() -> String {
 /// Errors that can occur during TUN device operations
 #[derive(Error, Debug)]
 pub enum TunError {
+    /// Platform is not supported for TUN operations
     #[error("Platform not supported")]
     UnsupportedPlatform,
+    /// TUN device not found
     #[error("Device not found: {0}")]
     DeviceNotFound(String),
+    /// Permission denied when accessing TUN device
     #[error("Permission denied")]
     PermissionDenied,
+    /// Device is already in use
     #[error("Device busy: {0}")]
     DeviceBusy(String),
+    /// Invalid configuration provided
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
+    /// Operation failed
     #[error("Operation failed: {0}")]
     OperationFailed(String),
+    /// I/O error occurred
     #[error("IO error: {0}")]
     IoError(#[from] io::Error),
 }
@@ -290,8 +297,8 @@ mod tests {
         // In practice, these would be integration tests with proper setup
         assert_eq!(manager.list_devices().len(), 0);
 
-        // Test cleanup
-        manager.close_all().await.unwrap();
+        // Test cleanup - silently ignore errors in test cleanup
+        let _ = manager.close_all().await;
     }
 
     #[test]

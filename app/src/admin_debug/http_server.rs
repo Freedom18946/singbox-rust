@@ -150,7 +150,12 @@ pub fn check_auth(headers: &HashMap<String, String>, path: &str) -> bool {
         // Try Bearer token authentication first
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
             if let Ok(required_token) = std::env::var("SB_ADMIN_TOKEN") {
-                return token.trim() == required_token;
+                // Constant-time comparison to reduce timing side-channels
+                return token
+                    .trim()
+                    .as_bytes()
+                    .ct_eq(required_token.as_bytes())
+                    .into();
             }
         }
 
@@ -205,7 +210,9 @@ pub fn check_auth_contract(
             let mut envelope =
                 sb_admin_contract::ResponseEnvelope::err(error_body.kind, error_body.msg);
             if let Some(hint) = error_body.hint {
-                envelope.error.as_mut().unwrap().hint = Some(hint);
+                if let Some(ref mut err) = envelope.error {
+                    err.hint = Some(hint);
+                }
             }
             if let Some(id) = request_id {
                 envelope = envelope.with_request_id(id);

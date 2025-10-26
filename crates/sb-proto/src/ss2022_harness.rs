@@ -1,144 +1,163 @@
-//! R123: SS2022 最小连通 harness（结构对齐 Trojan）
+//! Shadowsocks 2022 minimal connection harness for testing.
+//!
+//! Provides [`connect_env`] for basic connectivity testing without full protocol implementation.
+//! Optionally supports TLS-first connections via feature gate.
+
 use sb_transport::{Dialer, TcpDialer};
 use std::time::Instant;
+use thiserror::Error;
 
 #[cfg(feature = "proto_ss2022_tls_first")]
 use sb_transport::tls::{smoke_empty_roots_config, TlsDialer};
 
+/// Errors that can occur during SS2022 harness operations.
+#[derive(Debug, Error)]
+pub enum HarnessError {
+    /// Connection timeout.
+    #[error("connection timeout")]
+    Timeout,
+    /// Transport-level error.
+    #[error("transport error: {0}")]
+    Transport(String),
+    /// Feature not enabled.
+    #[error("feature not enabled: {0}")]
+    FeatureDisabled(&'static str),
+}
+
+/// Report of a connection attempt.
+#[derive(Debug, Clone)]
 pub struct ConnectReport {
+    /// Whether the connection succeeded.
     pub ok: bool,
+    /// Connection path taken ("tcp" or "tls").
     pub path: &'static str,
+    /// Time elapsed in milliseconds.
     pub elapsed_ms: u64,
 }
 
+/// Attempts a minimal connection to test SS2022 connectivity.
+///
+/// # Parameters
+/// - `host`: Target hostname or IP
+/// - `port`: Target port
+/// - `timeout_ms`: Connection timeout in milliseconds (clamped to 10-60000)
+/// - `tls`: Whether to use TLS (requires `proto_ss2022_tls_first` feature)
+///
+/// # Errors
+/// Returns `HarnessError` on timeout, transport failure, or feature unavailability.
 pub async fn connect_env(
     host: &str,
     port: u16,
     timeout_ms: u64,
     tls: bool,
-) -> Result<ConnectReport, String> {
+) -> Result<ConnectReport, HarnessError> {
     let start = Instant::now();
-    // 这里只做最小 dial；真实握手后续扩展
+    let timeout_duration = std::time::Duration::from_millis(timeout_ms.clamp(10, 60_000));
+
     if tls {
         #[cfg(feature = "proto_ss2022_tls_first")]
         {
             let config = smoke_empty_roots_config();
             let tls_dialer = TlsDialer::from_env(TcpDialer, config);
-            let _io = tokio::time::timeout(
-                std::time::Duration::from_millis(timeout_ms),
-                tls_dialer.connect(host, port),
-            )
-            .await
-            .map_err(|_| "timeout".to_string())?
-            .map_err(|e| e.to_string())?;
+            tokio::time::timeout(timeout_duration, tls_dialer.connect(host, port))
+                .await
+                .map_err(|_| HarnessError::Timeout)?
+                .map_err(|e| HarnessError::Transport(e.to_string()))?;
+
             Ok(ConnectReport {
                 ok: true,
                 path: "tls",
-                elapsed_ms: start.elapsed().as_millis() as u64,
+                elapsed_ms: start.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
             })
         }
         #[cfg(not(feature = "proto_ss2022_tls_first"))]
         {
-            Err("tls not implemented".into())
+            Err(HarnessError::FeatureDisabled("proto_ss2022_tls_first"))
         }
     } else {
         let dialer = TcpDialer;
-        let _io = tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            dialer.connect(host, port),
-        )
-        .await
-        .map_err(|_| "timeout".to_string())?
-        .map_err(|e| e.to_string())?;
+        tokio::time::timeout(timeout_duration, dialer.connect(host, port))
+            .await
+            .map_err(|_| HarnessError::Timeout)?
+            .map_err(|e| HarnessError::Transport(e.to_string()))?;
+
         Ok(ConnectReport {
             ok: true,
             path: "tcp",
-            elapsed_ms: start.elapsed().as_millis() as u64,
+            elapsed_ms: start.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         })
     }
 }
 
-/// R133: SS2022 TLS first packet builder (read-only preview)
+/// Builds a TLS ClientHello first packet (placeholder for testing).
+///
+/// # Security Warning
+/// This is a MOCK implementation for testing byte shapes only. Does NOT perform real TLS handshake.
 #[cfg(feature = "proto_ss2022_tls_first")]
+#[must_use]
 pub fn build_tls_first_packet(payload: &[u8], sni: Option<&str>) -> Vec<u8> {
-    // 模拟 TLS Client Hello 第一包构造
-    // 这是一个 read-only 预览实现，不进行实际网络连接
     let mut packet = Vec::new();
 
-    // TLS Record Header (5 bytes)
+    // TLS Record Header
     packet.push(0x16); // Content Type: Handshake
     packet.extend_from_slice(&[0x03, 0x03]); // Version: TLS 1.2
 
-    // 计算 Client Hello 长度（占位，稍后填充）
     let length_pos = packet.len();
     packet.extend_from_slice(&[0x00, 0x00]); // Length placeholder
 
     let hello_start = packet.len();
 
     // Client Hello
-    packet.push(0x01); // Handshake Type: Client Hello
+    packet.push(0x01); // Handshake Type
 
-    // Client Hello 长度占位
     let hello_length_pos = packet.len();
-    packet.extend_from_slice(&[0x00, 0x00, 0x00]); // Length placeholder
+    packet.extend_from_slice(&[0x00, 0x00, 0x00]);
 
     let hello_content_start = packet.len();
 
     // Version
     packet.extend_from_slice(&[0x03, 0x03]); // TLS 1.2
 
-    // Random (32 bytes) - 使用 blake3 哈希 payload 作为伪随机
+    // Random (32 bytes) - hash payload for pseudo-random
     let mut hasher = blake3::Hasher::new();
     hasher.update(payload);
     let hash = hasher.finalize();
     packet.extend_from_slice(&hash.as_bytes()[..32]);
 
-    // Session ID Length
-    packet.push(0x00); // No session ID
-
-    // Cipher Suites Length
-    packet.extend_from_slice(&[0x00, 0x04]); // 2 cipher suites
+    // Session ID
+    packet.push(0x00);
 
     // Cipher Suites
+    packet.extend_from_slice(&[0x00, 0x04]);
     packet.extend_from_slice(&[0x13, 0x01]); // TLS_AES_128_GCM_SHA256
     packet.extend_from_slice(&[0x13, 0x02]); // TLS_AES_256_GCM_SHA384
 
-    // Compression Methods Length
+    // Compression
     packet.push(0x01);
+    packet.push(0x00);
 
-    // Compression Methods
-    packet.push(0x00); // No compression
-
-    // Extensions Length (占位)
+    // Extensions
     let ext_length_pos = packet.len();
     packet.extend_from_slice(&[0x00, 0x00]);
     let ext_start = packet.len();
 
-    // SNI Extension (if provided)
     if let Some(sni_name) = sni {
-        // Server Name Indication Extension
-        packet.extend_from_slice(&[0x00, 0x00]); // Extension Type: server_name
+        packet.extend_from_slice(&[0x00, 0x00]); // SNI extension type
 
         let sni_ext_length_pos = packet.len();
-        packet.extend_from_slice(&[0x00, 0x00]); // Extension Length placeholder
+        packet.extend_from_slice(&[0x00, 0x00]);
         let sni_ext_start = packet.len();
 
-        // Server Name List Length
         let sni_list_length_pos = packet.len();
         packet.extend_from_slice(&[0x00, 0x00]);
         let sni_list_start = packet.len();
 
-        // Server Name Type
-        packet.push(0x00); // host_name
+        packet.push(0x00); // host_name type
 
-        // Server Name Length
         let name_bytes = sni_name.as_bytes();
         packet.extend_from_slice(&[0x00, name_bytes.len() as u8]);
-
-        // Server Name
         packet.extend_from_slice(name_bytes);
 
-        // 填充长度字段
         let sni_list_length = packet.len() - sni_list_start;
         packet[sni_list_length_pos..sni_list_length_pos + 2]
             .copy_from_slice(&(sni_list_length as u16).to_be_bytes());
@@ -148,39 +167,39 @@ pub fn build_tls_first_packet(payload: &[u8], sni: Option<&str>) -> Vec<u8> {
             .copy_from_slice(&(sni_ext_length as u16).to_be_bytes());
     }
 
-    // 填充扩展总长度
     let ext_total_length = packet.len() - ext_start;
     packet[ext_length_pos..ext_length_pos + 2]
         .copy_from_slice(&(ext_total_length as u16).to_be_bytes());
 
-    // 填充 Client Hello 长度
     let hello_content_length = packet.len() - hello_content_start;
-    let hello_content_bytes = (hello_content_length as u32).to_be_bytes();
-    packet[hello_length_pos..hello_length_pos + 3].copy_from_slice(&hello_content_bytes[1..]);
+    let hello_bytes = (hello_content_length as u32).to_be_bytes();
+    packet[hello_length_pos..hello_length_pos + 3].copy_from_slice(&hello_bytes[1..]);
 
-    // 填充 TLS Record 长度
     let record_length = packet.len() - hello_start;
     packet[length_pos..length_pos + 2].copy_from_slice(&(record_length as u16).to_be_bytes());
 
     packet
 }
 
+/// Generates a hex dump preview of a TLS first packet for debugging.
 #[cfg(feature = "proto_ss2022_tls_first")]
+#[must_use]
 pub fn preview_tls_first_packet(payload: &[u8]) -> String {
     use std::fmt::Write;
     let packet = build_tls_first_packet(payload, Some("example.com"));
     let mut hex_output = String::new();
+
     for (i, byte) in packet.iter().enumerate() {
         if i % 16 == 0 {
             if i > 0 {
-                writeln!(&mut hex_output).unwrap();
+                let _ = writeln!(&mut hex_output);
             }
-            write!(&mut hex_output, "{:04x}: ", i).unwrap();
+            let _ = write!(&mut hex_output, "{:04x}: ", i);
         }
-        write!(&mut hex_output, "{:02x} ", byte).unwrap();
+        let _ = write!(&mut hex_output, "{:02x} ", byte);
     }
     if !packet.is_empty() {
-        writeln!(&mut hex_output).unwrap();
+        let _ = writeln!(&mut hex_output);
     }
     hex_output
 }

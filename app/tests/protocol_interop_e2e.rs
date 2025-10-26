@@ -1,3 +1,4 @@
+#![allow(clippy::assertions_on_constants)]
 //! End-to-end protocol interoperability tests
 //!
 //! Tests that verify different protocol combinations work correctly together.

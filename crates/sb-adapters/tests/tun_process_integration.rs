@@ -1,4 +1,5 @@
 #![cfg(all(target_os = "macos", feature = "tun_macos"))]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
 

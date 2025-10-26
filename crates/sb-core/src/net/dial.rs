@@ -1,4 +1,4 @@
-//! Unified dialing helpers: DNS → SocketAddr list → connect with per-attempt timeout & fallback.
+//! Unified dialing helpers: DNS → `SocketAddr` list → connect with per-attempt timeout & fallback.
 use crate::dns::resolve::{resolve_all_compat as resolve_all, resolve_socketaddr};
 use crate::util::env::{env_bool, env_duration_ms};
 use std::io;
@@ -26,13 +26,13 @@ pub async fn dial_all(host: &str, port: u16, per_attempt: Duration) -> io::Resul
                 last_err = Some(io::Error::new(
                     e.kind(),
                     format!("connect {sa} failed: {e}"),
-                ))
+                ));
             }
             Err(_) => {
                 last_err = Some(io::Error::new(
                     io::ErrorKind::TimedOut,
                     format!("connect {sa} timed out"),
-                ))
+                ));
             }
         }
     }
@@ -52,20 +52,20 @@ where
                 last_err = Some(io::Error::new(
                     e.kind(),
                     format!("connect {sa} failed: {e}"),
-                ))
+                ));
             }
             Err(_) => {
                 last_err = Some(io::Error::new(
                     io::ErrorKind::TimedOut,
                     format!("connect {sa} timed out"),
-                ))
+                ));
             }
         }
     }
     Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address to dial")))
 }
 
-/// 统一读取"每次拨号超时"（毫秒）。默认 4000ms。测试/排障可通过 SB_DIAL_TIMEOUT_MS 调整。
+/// 统一读取"每次拨号超时"（毫秒）。默认 4000ms。测试/排障可通过 `SB_DIAL_TIMEOUT_MS` 调整。
 pub fn per_attempt_timeout() -> Duration {
     env_duration_ms("SB_DIAL_TIMEOUT_MS", 4000)
 }

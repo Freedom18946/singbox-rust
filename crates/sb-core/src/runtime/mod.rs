@@ -64,7 +64,7 @@ impl<'a> Runtime<'a> {
 }
 
 #[cfg(not(feature = "router"))]
-impl<'a> Runtime<'a> {
+impl Runtime<'_> {
     pub fn new(_engine: (), bridge: Bridge, switchboard: switchboard::OutboundSwitchboard) -> Self {
         Self {
             _phantom: std::marker::PhantomData,
@@ -111,17 +111,17 @@ impl<'a> Runtime<'a> {
     pub fn engine(&self) -> Result<(), anyhow::Error> {
         anyhow::bail!("app built without `router` feature")
     }
-    pub fn bridge(&self) -> &Arc<Bridge> {
+    pub const fn bridge(&self) -> &Arc<Bridge> {
         &self.bridge
     }
 
     /// Get switchboard reference for outbound connector access
-    pub fn switchboard(&self) -> &Arc<switchboard::OutboundSwitchboard> {
+    pub const fn switchboard(&self) -> &Arc<switchboard::OutboundSwitchboard> {
         &self.switchboard
     }
 
     /// Get supervisor reference for hot reload operations
-    pub fn supervisor(&self) -> Option<&Arc<supervisor::Supervisor>> {
+    pub const fn supervisor(&self) -> Option<&Arc<supervisor::Supervisor>> {
         self.supervisor.as_ref()
     }
 

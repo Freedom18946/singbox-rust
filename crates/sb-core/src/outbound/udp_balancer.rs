@@ -77,8 +77,7 @@ pub async fn send_balanced(
     // Only apply when router decides proxy and mode=socks5
     let mode_socks5 = std::env::var("SB_UDP_PROXY_MODE")
         .ok()
-        .map(|v| v.eq_ignore_ascii_case("socks5"))
-        .unwrap_or(false);
+        .is_some_and(|v| v.eq_ignore_ascii_case("socks5"));
     if decision != "proxy" || !mode_socks5 {
         return send_direct(payload, &dst_sa).await;
     }
@@ -86,11 +85,27 @@ pub async fn send_balanced(
     let pool_str = std::env::var("SB_UDP_SOCKS5_POOL").unwrap_or_default();
     let addrs: Vec<SocketAddr> = pool_str
         .split(',')
-        .map(|s| s.trim())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
         .filter_map(|s| s.parse::<SocketAddr>().ok())
         .collect();
-    let (upstream, algo_str, mode) = if !addrs.is_empty() {
+    let (upstream, algo_str, mode) = if addrs.is_empty() {
+        // single
+        let single = std::env::var("SB_UDP_SOCKS5_ADDR")
+            .or_else(|_| std::env::var("SB_UDP_PROXY_ADDR"))
+            .ok()
+            .and_then(|s| s.parse::<SocketAddr>().ok());
+        match single {
+            Some(a) => (a, "single".to_string(), "single"),
+            None => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"no_upstream")
+                    .increment(1);
+                // Fallback direct to not break userspace
+                return send_direct(payload, &dst_sa).await;
+            }
+        }
+    } else {
         let algo = std::env::var("SB_UDP_BALANCER_STRATEGY").unwrap_or_else(|_| "rr".to_string());
         let n = addrs.len();
         // 首先过滤 Down 的 upstream；若全部 Down → 降级：仍按 rr 选择其中一个
@@ -106,10 +121,10 @@ pub async fn send_balanced(
         } else {
             up_idxs
         };
-        let mode = if pick_from.len() != n {
-            "degraded"
-        } else {
+        let mode = if pick_from.len() == n {
             "pool"
+        } else {
+            "degraded"
         };
         let idx_rel = match algo.as_str() {
             "random" => {
@@ -129,22 +144,6 @@ pub async fn send_balanced(
         };
         let idx = pick_from[idx_rel];
         (addrs[idx], algo, mode)
-    } else {
-        // single
-        let single = std::env::var("SB_UDP_SOCKS5_ADDR")
-            .or_else(|_| std::env::var("SB_UDP_PROXY_ADDR"))
-            .ok()
-            .and_then(|s| s.parse::<SocketAddr>().ok());
-        match single {
-            Some(a) => (a, "single".to_string(), "single"),
-            None => {
-                #[cfg(feature = "metrics")]
-                metrics::counter!("outbound_error_total", "kind"=>"udp", "class"=>"no_upstream")
-                    .increment(1);
-                // Fallback direct to not break userspace
-                return send_direct(payload, &dst_sa).await;
-            }
-        }
     };
     let algo_label: &'static str = match algo_str.as_str() {
         "rr" => "rr",
@@ -234,4 +233,4 @@ fn balancer_select_metric(algo: &'static str, mode: &'static str) {
     metrics::counter!("balancer_select_total", "algo"=>algo, "mode"=>mode).increment(1);
 }
 #[cfg(not(feature = "metrics"))]
-fn balancer_select_metric(_: &'static str, _: &'static str) {}
+const fn balancer_select_metric(_: &'static str, _: &'static str) {}

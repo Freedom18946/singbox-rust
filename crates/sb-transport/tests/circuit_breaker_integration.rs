@@ -6,8 +6,8 @@
 //! - Timeout vs non-timeout error handling
 //! - Metrics collection
 
-// TODO: Fix API mismatches in this test
-#![cfg(feature = "circuit_breaker_DISABLED")]
+// This test is intentionally disabled pending API convergence.
+#![cfg(feature = "disabled_tests")]
 
 use sb_transport::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 use sb_transport::dialer::{DialError, Dialer, FnDialer, IoStream};

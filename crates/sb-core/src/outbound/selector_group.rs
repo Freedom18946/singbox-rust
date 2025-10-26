@@ -1,8 +1,8 @@
-//! Modern proxy selector implementation supporting manual and URLTest modes
+//! Modern proxy selector implementation supporting manual and `URLTest` modes
 //!
 //! Provides:
-//! - ManualSelector: user-controlled static proxy selection
-//! - URLTestSelector: automatic selection based on latency testing
+//! - `ManualSelector`: user-controlled static proxy selection
+//! - `URLTestSelector`: automatic selection based on latency testing
 //! - Load balancing strategies: round-robin, least-connections, random
 //! - Health checking with configurable test URL and interval
 //! - Graceful degradation when proxies fail
@@ -19,7 +19,7 @@ use tokio::sync::RwLock;
 pub enum SelectMode {
     /// Manual selection (user picks specific proxy)
     Manual,
-    /// Auto selection based on URLTest (lowest latency)
+    /// Auto selection based on `URLTest` (lowest latency)
     UrlTest,
     /// Load balancing modes
     RoundRobin,
@@ -139,7 +139,7 @@ impl SelectorGroup {
         }
     }
 
-    /// Create a new URLTest selector
+    /// Create a new `URLTest` selector
     pub fn new_urltest(
         name: String,
         members: Vec<ProxyMember>,
@@ -226,7 +226,7 @@ impl SelectorGroup {
         }
     }
 
-    /// Select by lowest latency (URLTest mode)
+    /// Select by lowest latency (`URLTest` mode)
     fn select_by_latency(&self) -> Option<&ProxyMember> {
         let healthy: Vec<_> = self
             .members
@@ -282,7 +282,7 @@ impl SelectorGroup {
         self.members.get(idx)
     }
 
-    /// Start background health checking (for URLTest mode)
+    /// Start background health checking (for `URLTest` mode)
     pub fn start_health_check(self: Arc<Self>) {
         if self.mode != SelectMode::UrlTest {
             return;
@@ -415,8 +415,7 @@ async fn health_check(url: &str, timeout: Duration) -> std::io::Result<u64> {
         let mut stream = TcpStream::connect((host.as_str(), port)).await?;
 
         let request = format!(
-            "HEAD {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-            url, host
+            "HEAD {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
         );
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

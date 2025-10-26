@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 fn decode_hex(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() / 2);
     let bytes = s.as_bytes();
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return None;
     }
     for i in (0..bytes.len()).step_by(2) {

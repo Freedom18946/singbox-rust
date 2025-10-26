@@ -42,17 +42,11 @@ impl Default for Hysteria2AdapterConfig {
 
 /// Hysteria2 outbound connector
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct Hysteria2Connector {
     cfg: Hysteria2AdapterConfig,
 }
 
-impl Default for Hysteria2Connector {
-    fn default() -> Self {
-        Self {
-            cfg: Hysteria2AdapterConfig::default(),
-        }
-    }
-}
 
 impl Hysteria2Connector {
     pub fn new(cfg: Hysteria2AdapterConfig) -> Self {

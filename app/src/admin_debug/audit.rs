@@ -96,8 +96,17 @@ impl AuditEntry {
 mod tests {
     use super::*;
 
+    fn clear_log_for_tests() {
+        let log = get_log();
+        if let Ok(mut queue) = log.lock() {
+            queue.clear();
+        }
+    }
+
     #[test]
+    #[serial_test::serial]
     fn test_audit_log_basic() {
+        clear_log_for_tests();
         let entry = create_entry(
             "admin",
             "config.update",
@@ -116,7 +125,9 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_audit_log_capacity() {
+        clear_log_for_tests();
         for i in 0..150 {
             let entry = create_entry(
                 "user",
@@ -133,7 +144,9 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_recent_limit() {
+        clear_log_for_tests();
         for i in 0..20 {
             let entry = create_entry(
                 "user",

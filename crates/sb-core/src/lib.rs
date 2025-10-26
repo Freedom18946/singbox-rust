@@ -1,6 +1,6 @@
-//! Core protocol implementations and routing engine for SingBox
+//! Core protocol implementations and routing engine for `SingBox`
 //!
-//! This is the heart of SingBox, providing:
+//! This is the heart of `SingBox`, providing:
 //!
 //! ## Protocol Support
 //!
@@ -14,7 +14,7 @@
 //! - Direct connection
 //! - HTTP proxy
 //! - SOCKS5
-//! - VMess
+//! - `VMess`
 //! - VLESS
 //! - Hysteria2
 //! - TUIC
@@ -25,9 +25,9 @@
 //!
 //! ## Routing & Traffic Management
 //!
-//! - Rule-based routing engine (domain, IP, GeoIP, process-based)
+//! - Rule-based routing engine (domain, IP, `GeoIP`, process-based)
 //! - [`dns`]: DNS resolution with DoH/DoT support
-//! - [`geoip`]: GeoIP database integration
+//! - [`geoip`]: `GeoIP` database integration
 //! - [`session`]: Connection session tracking
 //!
 //! ## Runtime & Health

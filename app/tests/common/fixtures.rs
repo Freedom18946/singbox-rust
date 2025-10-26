@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Test fixture loading utilities
 
 use std::path::{Path, PathBuf};

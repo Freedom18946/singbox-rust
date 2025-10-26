@@ -17,7 +17,7 @@ fn parse_default_proxy_env_http() {
     let choice = parse_proxy_from_env();
     match choice {
         ProxyChoice::Http(s) => assert!(s.contains("3128")),
-        _ => assert!(false, "Expected HTTP proxy choice"),
+        _ => panic!("Expected HTTP proxy choice"),
     }
 }
 
@@ -29,7 +29,7 @@ fn parse_default_proxy_env_socks5() {
     let choice = parse_proxy_from_env();
     match choice {
         ProxyChoice::Socks5(s) => assert!(s.contains("1080")),
-        _ => assert!(false, "Expected SOCKS5 proxy choice"),
+        _ => panic!("Expected SOCKS5 proxy choice"),
     }
 }
 
@@ -41,6 +41,6 @@ fn parse_default_proxy_env_kind_addr() {
     let choice = parse_proxy_from_env();
     match choice {
         ProxyChoice::Http(s) => assert!(s.contains("8080")),
-        _ => assert!(false, "Expected HTTP proxy choice from kind/addr"),
+        _ => panic!("Expected HTTP proxy choice from kind/addr"),
     }
 }

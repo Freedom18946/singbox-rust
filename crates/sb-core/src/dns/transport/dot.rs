@@ -1,4 +1,4 @@
-//! DNS-over-TLS (DoT) 传输实现
+//! DNS-over-TLS (`DoT`) 传输实现
 //!
 //! 提供基于 TLS 的安全 DNS 传输，支持：
 //! - TLS 1.3 加密连接
@@ -14,7 +14,7 @@ use async_trait::async_trait;
 
 use super::DnsTransport;
 
-/// DoT 传输实现
+/// `DoT` 传输实现
 pub struct DotTransport {
     /// 服务器地址
     server: SocketAddr,
@@ -28,7 +28,7 @@ pub struct DotTransport {
 }
 
 impl DotTransport {
-    /// 创建新的 DoT 传输
+    /// 创建新的 `DoT` 传输
     pub fn new(server: SocketAddr, server_name: String) -> Result<Self> {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOT_TIMEOUT_MS")
@@ -63,7 +63,7 @@ impl DotTransport {
     }
 
     /// 设置超时时间
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }

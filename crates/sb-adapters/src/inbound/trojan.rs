@@ -374,7 +374,7 @@ async fn handle_conn_impl(
                 socks5_connect_through_socks5(addr, host, port, &opts).await?
             }
         },
-        RDecision::Reject => unreachable!(),
+        RDecision::Reject => return Err(anyhow!("trojan: rejected by rules")),
     };
 
     // Relay

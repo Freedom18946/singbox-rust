@@ -20,6 +20,9 @@ fn test_replay_decode_strict_mode() -> Result<()> {
     let temp_dir = env::temp_dir();
     let log_path = temp_dir.join("replay_strict.jsonl");
 
+    // Clean up any existing file from previous runs
+    let _ = fs::remove_file(&log_path);
+
     // Create a session log with valid frames
     let logger = SessionLog::new(&log_path);
     logger.log_frame(&Frame::new(FrameDir::Tx, b"hello world"))?;
@@ -45,6 +48,9 @@ fn test_replay_with_loopback_session() -> Result<()> {
     let trojan = Trojan::new("example.com".to_string(), 443);
     let temp_dir = env::temp_dir();
     let log_path = temp_dir.join("replay_loopback.jsonl");
+
+    // Clean up any existing file from previous runs
+    let _ = fs::remove_file(&log_path);
 
     // Generate a real session using run_once
     let _metrics = run_once(&trojan, 42, Some(&log_path))?;

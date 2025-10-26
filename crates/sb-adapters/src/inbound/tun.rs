@@ -435,11 +435,7 @@ impl TunInbound {
                                 {
                                     match (l4, dst_ip, dst_port) {
                                         (L4::Tcp, Some(ip), Some(port)) => {
-                                            let addr = Address::SocketAddress(
-                                                format!("{}:{}", ip, port)
-                                                    .parse()
-                                                    .expect("valid socket"),
-                                            );
+                                            let addr = Address::SocketAddress(std::net::SocketAddr::new(ip, port));
                                             let params = ConnectParams {
                                                 address: addr,
                                                 inbound_tag: Some(self.cfg.name.clone()),
@@ -514,11 +510,7 @@ impl TunInbound {
                                     {
                                         match (l4, dst_ip, dst_port) {
                                             (L4::Tcp, Some(ip), Some(port)) => {
-                                                let addr = Address::SocketAddress(
-                                                    format!("{}:{}", ip, port)
-                                                        .parse()
-                                                        .expect("valid socket"),
-                                                );
+                                                let addr = Address::SocketAddress(std::net::SocketAddr::new(ip, port));
                                                 let params = ConnectParams {
                                                     address: addr,
                                                     inbound_tag: Some(self.cfg.name.clone()),
@@ -635,6 +627,7 @@ impl TunInbound {
 // Platform stubs
 // -------------------
 #[cfg(target_os = "macos")]
+#[allow(unreachable_pub)]
 mod sys_macos {
     // libc not available, using stub
     use std::io;
@@ -686,7 +679,8 @@ mod sys_macos {
     unsafe fn open_utun(_name_hint: &str) -> io::Result<RawFd> {
         // 参考: utun via PF_SYSTEM/SYSPROTO_CONTROL
         // 1) socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL)
-        let fd = libc::socket(libc::PF_SYSTEM, libc::SOCK_DGRAM, libc::SYSPROTO_CONTROL);
+        // SAFETY: Calling libc::socket with valid arguments
+        let fd = unsafe { libc::socket(libc::PF_SYSTEM, libc::SOCK_DGRAM, libc::SYSPROTO_CONTROL) };
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -709,10 +703,12 @@ mod sys_macos {
             }
         }
         const CTLIOCGINFO: libc::c_ulong = 0xC0644E03; // _IOWR('N', 3, struct ctl_info)
-        let r = libc::ioctl(fd, CTLIOCGINFO, &mut info);
+        // SAFETY: Calling libc::ioctl with valid fd and properly initialized info struct
+        let r = unsafe { libc::ioctl(fd, CTLIOCGINFO, &mut info) };
         if r < 0 {
             let e = io::Error::last_os_error();
-            libc::close(fd);
+            // SAFETY: Closing previously opened fd
+            unsafe { libc::close(fd); }
             return Err(e);
         }
         // 3) connect 到 kernel control
@@ -735,14 +731,18 @@ mod sys_macos {
             sc_unit: 0, // 0: 让内核分配 utunN
             sc_reserved: [0; 5],
         };
-        let r = libc::connect(
-            fd,
-            &addr as *const _ as *const libc::sockaddr,
-            std::mem::size_of::<SockaddrCtl>() as u32,
-        );
+        // SAFETY: Calling libc::connect with valid fd and properly initialized sockaddr
+        let r = unsafe {
+            libc::connect(
+                fd,
+                &addr as *const _ as *const libc::sockaddr,
+                std::mem::size_of::<SockaddrCtl>() as u32,
+            )
+        };
         if r < 0 {
             let e = io::Error::last_os_error();
-            libc::close(fd);
+            // SAFETY: Closing previously opened fd
+            unsafe { libc::close(fd); }
             return Err(e);
         }
         Ok(fd)
@@ -1180,6 +1180,7 @@ mod sys_windows {
 // -------------------
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     // use sb_core::router::RequestMeta; // Using local placeholder

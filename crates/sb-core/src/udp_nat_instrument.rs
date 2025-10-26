@@ -12,11 +12,11 @@ pub enum EvictReason {
 }
 impl EvictReason {
     #[allow(dead_code)] // Reserved for future use in eviction reason tracking
-    fn as_str(&self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         match self {
-            EvictReason::Lru => "lru",
-            EvictReason::Ttl => "ttl",
-            EvictReason::Pressure => "pressure",
+            Self::Lru => "lru",
+            Self::Ttl => "ttl",
+            Self::Pressure => "pressure",
         }
     }
 }
@@ -29,12 +29,12 @@ pub enum UpstreamFail {
     Other,
 }
 impl UpstreamFail {
-    fn as_str(&self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         match self {
-            UpstreamFail::Timeout => "timeout",
-            UpstreamFail::Icmp => "icmp",
-            UpstreamFail::Refused => "refused",
-            UpstreamFail::Other => "other",
+            Self::Timeout => "timeout",
+            Self::Icmp => "icmp",
+            Self::Refused => "refused",
+            Self::Other => "other",
         }
     }
 }

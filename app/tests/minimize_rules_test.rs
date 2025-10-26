@@ -37,7 +37,7 @@ outbound:
 
     // Run minimize-rules command
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--bin",
             "singbox-rust",
@@ -117,7 +117,7 @@ outbound:
 
     // Run minimize-rules command
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--bin",
             "singbox-rust",
@@ -206,7 +206,7 @@ outbound:
 
         // Run minimize-rules command
         let output = Command::new("cargo")
-            .args(&[
+            .args([
                 "run",
                 "--bin",
                 "singbox-rust",

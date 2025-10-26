@@ -36,7 +36,7 @@ impl TcpTransport {
     }
 
     /// 设置超时时间
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
@@ -83,8 +83,7 @@ impl TcpTransport {
         }
         if response_length > 65535 {
             return Err(anyhow::anyhow!(
-                "DNS response too large: {} bytes",
-                response_length
+                "DNS response too large: {response_length} bytes"
             ));
         }
 

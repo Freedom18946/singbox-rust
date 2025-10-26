@@ -182,7 +182,7 @@ impl ShadowsocksConnector {
             // Create local UDP socket
             let local_socket = UdpSocket::bind("0.0.0.0:0")
                 .await
-                .map_err(|e| AdapterError::Io(e))?;
+                .map_err(AdapterError::Io)?;
 
             // Connect to server for easier packet routing
             local_socket
@@ -817,6 +817,7 @@ impl OutboundDatagram for ShadowsocksUdpSocket {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     #[test]

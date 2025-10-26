@@ -8,7 +8,7 @@
 //! - Session management
 
 #[cfg(test)]
-mod tests {
+mod v1_test_suite {
     use crate::outbound::hysteria::v1::{
         HysteriaV1Config, HysteriaV1Outbound, HysteriaV1ServerConfig, UdpSessionManager,
     };

@@ -6,7 +6,6 @@
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use quinn::{Connection, Endpoint, RecvStream, SendStream};
-use rustls_pemfile;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -61,15 +60,43 @@ pub struct HysteriaV1Outbound {
     connection_pool: Arc<Mutex<Option<Connection>>>,
 }
 
+/// Helper: Encode target address into BytesMut buffer
+fn encode_target_address(buffer: &mut BytesMut, target: &HostPort) -> io::Result<()> {
+    if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                buffer.put_u8(0x01); // IPv4
+                buffer.put_slice(&v4.octets());
+            }
+            std::net::IpAddr::V6(v6) => {
+                buffer.put_u8(0x04); // IPv6
+                buffer.put_slice(&v6.octets());
+            }
+        }
+    } else {
+        buffer.put_u8(0x03); // Domain
+        let domain_bytes = target.host.as_bytes();
+        if domain_bytes.len() > 255 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Domain name too long",
+            ));
+        }
+        buffer.put_u8(domain_bytes.len() as u8);
+        buffer.put_slice(domain_bytes);
+    }
+    buffer.put_u16(target.port);
+    Ok(())
+}
+
 impl HysteriaV1Outbound {
     pub fn new(config: HysteriaV1Config) -> anyhow::Result<Self> {
-        // Build QUIC configuration
-        let mut alpn = config.alpn.clone();
-        if alpn.is_empty() {
-            alpn.push("hysteria".to_string());
-        }
-
-        let alpn_bytes: Vec<Vec<u8>> = alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
+        // Build QUIC configuration with default ALPN if needed
+        let alpn_bytes: Vec<Vec<u8>> = if config.alpn.is_empty() {
+            vec![b"hysteria".to_vec()]
+        } else {
+            config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect()
+        };
 
         let quic_config = QuicConfig::new(config.server.clone(), config.port)
             .with_alpn(alpn_bytes)
@@ -85,10 +112,8 @@ impl HysteriaV1Outbound {
     /// Get or create a QUIC connection
     async fn get_connection(&self) -> io::Result<Connection> {
         // Check if we have a healthy connection
-        if let Some(conn) = {
-            let pool = self.connection_pool.lock().await;
-            pool.as_ref().cloned()
-        } {
+        let existing_conn = self.connection_pool.lock().await.clone();
+        if let Some(conn) = existing_conn {
             if conn.close_reason().is_none() {
                 return Ok(conn);
             }
@@ -193,36 +218,10 @@ impl HysteriaV1Outbound {
 
         // Build connect request
         let mut request = BytesMut::new();
-
-        // Command: TCP connect
-        request.put_u8(0x01);
+        request.put_u8(0x01); // Command: TCP connect
 
         // Encode target address
-        if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
-            match ip {
-                std::net::IpAddr::V4(v4) => {
-                    request.put_u8(0x01); // IPv4
-                    request.put_slice(&v4.octets());
-                }
-                std::net::IpAddr::V6(v6) => {
-                    request.put_u8(0x04); // IPv6
-                    request.put_slice(&v6.octets());
-                }
-            }
-        } else {
-            request.put_u8(0x03); // Domain
-            let domain_bytes = target.host.as_bytes();
-            if domain_bytes.len() > 255 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Domain name too long",
-                ));
-            }
-            request.put_u8(domain_bytes.len() as u8);
-            request.put_slice(domain_bytes);
-        }
-
-        request.put_u16(target.port);
+        encode_target_address(&mut request, target)?;
 
         // Send connect request
         send_stream
@@ -277,7 +276,7 @@ impl AsyncWrite for HysteriaV1Stream {
     ) -> std::task::Poll<io::Result<usize>> {
         std::pin::Pin::new(&mut self.send)
             .poll_write(cx, buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 
     fn poll_flush(
@@ -286,7 +285,7 @@ impl AsyncWrite for HysteriaV1Stream {
     ) -> std::task::Poll<io::Result<()>> {
         std::pin::Pin::new(&mut self.send)
             .poll_flush(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 
     fn poll_shutdown(
@@ -295,7 +294,7 @@ impl AsyncWrite for HysteriaV1Stream {
     ) -> std::task::Poll<io::Result<()>> {
         std::pin::Pin::new(&mut self.send)
             .poll_shutdown(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 }
 
@@ -317,21 +316,22 @@ impl HysteriaV1Inbound {
     /// Start the Hysteria v1 server
     pub async fn start(&self) -> io::Result<()> {
         use quinn::ServerConfig;
+        use rustls_pemfile;
         use std::sync::Arc;
 
+        // Helper: Read file with context
+        let read_file = |path: &str, file_type: &str| {
+            std::fs::read(path).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Failed to read {}: {}", file_type, e),
+                )
+            })
+        };
+
         // Load TLS certificate and key
-        let cert_chain = std::fs::read(&self.config.cert_path).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Failed to read cert: {}", e),
-            )
-        })?;
-        let key = std::fs::read(&self.config.key_path).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("Failed to read key: {}", e),
-            )
-        })?;
+        let cert_chain = read_file(&self.config.cert_path, "cert")?;
+        let key = read_file(&self.config.key_path, "key")?;
 
         // Parse certificate and key
         let cert_chain = rustls_pemfile::certs(&mut &cert_chain[..])
@@ -370,9 +370,9 @@ impl HysteriaV1Inbound {
         // Configure transport
         let mut transport_config = quinn::TransportConfig::default();
         if let Some(recv_window) = self.config.recv_window_conn {
-            let streams =
-                quinn::VarInt::from_u64(recv_window).unwrap_or(quinn::VarInt::from_u32(100));
-            transport_config.max_concurrent_bidi_streams(streams);
+            if let Ok(streams) = quinn::VarInt::from_u64(recv_window) {
+                transport_config.max_concurrent_bidi_streams(streams);
+            }
         }
         server_config.transport_config(Arc::new(transport_config));
 
@@ -389,13 +389,12 @@ impl HysteriaV1Inbound {
 
     /// Accept incoming connections
     pub async fn accept(&self) -> io::Result<(HysteriaV1Stream, SocketAddr)> {
-        let endpoint = {
-            let ep_lock = self.endpoint.lock().await;
-            ep_lock
-                .as_ref()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Server not started"))?
-                .clone()
-        };
+        let endpoint = self
+            .endpoint
+            .lock()
+            .await
+            .clone()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Server not started"))?;
 
         // Accept QUIC connection
         let connecting = endpoint
@@ -548,6 +547,7 @@ pub struct HysteriaV1ServerConfig {
 }
 
 /// UDP session for Hysteria v1
+#[derive(Clone, Debug)]
 pub struct UdpSession {
     pub session_id: u32,
     pub client_addr: SocketAddr,
@@ -596,17 +596,6 @@ impl UdpSessionManager {
         let mut sessions = self.sessions.lock().await;
         let now = std::time::Instant::now();
         sessions.retain(|_, session| now.duration_since(session.last_activity) < self.timeout);
-    }
-}
-
-impl Clone for UdpSession {
-    fn clone(&self) -> Self {
-        Self {
-            session_id: self.session_id,
-            client_addr: self.client_addr,
-            target_addr: self.target_addr,
-            last_activity: self.last_activity,
-        }
     }
 }
 

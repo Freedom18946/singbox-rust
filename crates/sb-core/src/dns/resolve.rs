@@ -127,6 +127,7 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
 }
 
 #[cfg(any(test, feature = "dev-cli"))]
+#[allow(dead_code)]
 fn label(b: DnsBackend) -> &'static str {
     match b {
         DnsBackend::System => "system",
@@ -399,7 +400,7 @@ pub async fn resolve_socketaddr(host: &str, port: u16) -> std::io::Result<Socket
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no addresses found"))
 }
 
-/// Backward compatibility: resolve_all but return io::Result
+/// Backward compatibility: `resolve_all` but return `io::Result`
 pub async fn resolve_all_compat(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
     resolve_all(host, port).await.map_err(std::io::Error::other)
 }

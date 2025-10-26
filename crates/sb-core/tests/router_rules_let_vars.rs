@@ -20,6 +20,6 @@ default:direct
     let e = router_build_index_from_str(txt, 1024).unwrap_err();
     match e {
         BuildError::Invalid(InvalidReason::BadVarName) => {}
-        _ => assert!(false, "Expected BadVarName error for invalid variable name"),
+        _ => panic!("Expected BadVarName error for invalid variable name"),
     }
 }

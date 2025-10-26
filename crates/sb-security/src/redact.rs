@@ -8,7 +8,7 @@ use std::fmt;
 /// Redacts an authentication token for safe logging
 ///
 /// Shows only the first 4 and last 4 characters, with the middle replaced by asterisks.
-/// For tokens shorter than 12 characters, shows only the first 2 characters.
+/// For tokens shorter than 12 characters, shows only the first 2 or 4 characters.
 ///
 /// # Examples
 /// ```
@@ -23,22 +23,35 @@ pub fn redact_token(token: &str) -> String {
         return "********".to_string();
     }
 
-    if token.len() <= 8 {
+    let len = token.len();
+
+    if len <= 8 {
         // For very short tokens, show only first 2 chars
-        let prefix = token.chars().take(2).collect::<String>();
-        format!("{}******", prefix)
-    } else if token.len() <= 12 {
+        let prefix = &token[..token.char_indices().nth(2).map_or(len, |(idx, _)| idx)];
+        format!("{prefix}******")
+    } else if len <= 12 {
         // For short tokens, show first 4 chars
-        let prefix = token.chars().take(4).collect::<String>();
-        format!("{}****", prefix)
+        let prefix = &token[..token.char_indices().nth(4).map_or(len, |(idx, _)| idx)];
+        format!("{prefix}****")
     } else {
         // For longer tokens, show first 4 and last 4 chars
-        let chars: Vec<char> = token.chars().collect();
-        let prefix: String = chars.iter().take(4).collect();
-        let suffix: String = chars.iter().rev().take(4).rev().collect();
-        let middle_len = chars.len() - 8;
-        let asterisks = "*".repeat(std::cmp::min(middle_len, 8)); // Cap at 8 asterisks
-        format!("{}{}{}", prefix, asterisks, suffix)
+        // Use byte slicing for ASCII-heavy tokens (common case optimization)
+        if token.is_ascii() {
+            let prefix = &token[..4];
+            let suffix = &token[len - 4..];
+            let middle_len = len - 8;
+            let asterisks = "*".repeat(middle_len.min(8)); // Cap at 8 asterisks
+            format!("{prefix}{asterisks}{suffix}")
+        } else {
+            // Handle Unicode properly
+            let chars: Vec<char> = token.chars().collect();
+            let char_count = chars.len();
+            let prefix: String = chars.iter().take(4).collect();
+            let suffix: String = chars.iter().skip(char_count - 4).collect();
+            let middle_len = char_count - 8;
+            let asterisks = "*".repeat(middle_len.min(8)); // Cap at 8 asterisks
+            format!("{prefix}{asterisks}{suffix}")
+        }
     }
 }
 
@@ -97,16 +110,20 @@ pub fn redact_credential(credential: &str) -> String {
         return "****".to_string();
     }
 
-    if credential.len() <= 4 {
-        "*".repeat(credential.len())
-    } else if credential.len() <= 8 {
-        let prefix = credential.chars().take(2).collect::<String>();
-        let asterisks = "*".repeat(credential.len() - 2);
-        format!("{}{}", prefix, asterisks)
+    let len = credential.len();
+
+    if len <= 4 {
+        "*".repeat(len)
+    } else if len <= 8 {
+        let prefix_end = credential.char_indices().nth(2).map_or(len, |(idx, _)| idx);
+        let prefix = &credential[..prefix_end];
+        let asterisks = "*".repeat(len - prefix.len());
+        format!("{prefix}{asterisks}")
     } else {
-        let prefix = credential.chars().take(2).collect::<String>();
-        let asterisks = "*".repeat(std::cmp::min(credential.len() - 2, 10)); // Cap at 10 asterisks
-        format!("{}{}", prefix, asterisks)
+        let prefix_end = credential.char_indices().nth(2).map_or(len, |(idx, _)| idx);
+        let prefix = &credential[..prefix_end];
+        let asterisks = "*".repeat((len - prefix.len()).min(10)); // Cap at 10 asterisks
+        format!("{prefix}{asterisks}")
     }
 }
 

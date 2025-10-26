@@ -1,7 +1,7 @@
 //! Periodic health checks for named outbounds.
 //! - 环境变量启用：HEALTH=1
-//! - 目标：HEALTH_TARGET（默认 "1.1.1.1:80"）
-//! - 间隔：HEALTH_INTERVAL_MS（默认 2000ms）
+//! - `目标：HEALTH_TARGET（默认` "1.1.1.1:80"）
+//! - `间隔：HEALTH_INTERVAL_MS（默认` 2000ms）
 use crate::adapter::Bridge;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -30,7 +30,7 @@ pub fn spawn_health_task(bridge: Arc<Bridge>) -> tokio::task::JoinHandle<()> {
     let iv = interval();
     tokio::spawn(async move {
         loop {
-            for (name, _kind, conn) in bridge.outbounds.iter() {
+            for (name, _kind, conn) in &bridge.outbounds {
                 let t0 = Instant::now();
                 let ok = conn.connect(&host, port).await.is_ok();
                 let up = if ok { 1.0 } else { 0.0 };

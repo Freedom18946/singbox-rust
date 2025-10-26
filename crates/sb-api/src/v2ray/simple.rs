@@ -115,7 +115,7 @@ impl SimpleV2RayApiServer {
         let stats_clone = Arc::clone(&self.stats);
         let broadcast_clone = self.stats_broadcast.clone();
 
-        tokio::spawn(async move {
+        let _bg = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
             let mut counter = 0;
 
@@ -337,7 +337,7 @@ mod tests {
         };
 
         let response = server.query_stats(request).await.unwrap();
-        assert!(response.stats.len() >= 1);
+        assert!(!response.stats.is_empty());
         assert!(response.stats.iter().all(|s| s.name.contains("inbound")));
     }
 
@@ -361,9 +361,9 @@ mod tests {
             name: "  ".to_string(),
             reset: false,
         };
-        match server.get_stats(bad).await.err().expect("must error") {
+        match server.get_stats(bad).await.expect_err("must error") {
             crate::error::ApiError::InvalidField { field, .. } => assert_eq!(field, "name"),
-            e => assert!(false, "unexpected error: {e}"),
+            e => panic!("unexpected error: {e}"),
         }
 
         // Pattern containing control char should yield Parse
@@ -371,15 +371,15 @@ mod tests {
             pattern: "\u{0001}".to_string(),
             reset: false,
         };
-        match server.query_stats(badq).await.err().expect("must error") {
+        match server.query_stats(badq).await.expect_err("must error") {
             crate::error::ApiError::Parse { .. } => {}
-            e => assert!(false, "unexpected error: {e}"),
+            e => panic!("unexpected error: {e}"),
         }
 
         // Unsupported version
-        match server.negotiate_version("v42").err().expect("must error") {
+        match server.negotiate_version("v42").expect_err("must error") {
             crate::error::ApiError::UnsupportedVersion { version } => assert_eq!(version, "v42"),
-            e => assert!(false, "unexpected error: {e}"),
+            e => panic!("unexpected error: {e}"),
         }
     }
 

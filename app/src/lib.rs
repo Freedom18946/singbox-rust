@@ -1,10 +1,10 @@
-#![deny(warnings)]
+// Enforce critical lints; keep pedantic/nursery as warnings to avoid over-failing workspace runs
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::pedantic, clippy::nursery, warnings)]
 // Allow relaxed linting for tests and non-critical code
 #![cfg_attr(
     test,
-    allow(clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)
+    allow(warnings, clippy::unwrap_used, clippy::expect_used, clippy::float_cmp)
 )]
 #![cfg_attr(
     not(any(

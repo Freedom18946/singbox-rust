@@ -1,6 +1,6 @@
 //! Inbound manager for handling multiple inbound handlers
 //!
-//! This module provides the InboundManager that holds and manages
+//! This module provides the `InboundManager` that holds and manages
 //! different inbound handler instances.
 
 use std::collections::HashMap;

@@ -1,4 +1,4 @@
-//! DNS-over-HTTPS (DoH) 传输实现
+//! DNS-over-HTTPS (`DoH`) 传输实现
 //!
 //! 提供基于 HTTPS 的安全 DNS 传输，支持：
 //! - HTTP/2 和 HTTP/1.1
@@ -13,9 +13,9 @@ use async_trait::async_trait;
 
 use super::DnsTransport;
 
-/// DoH 传输实现
+/// `DoH` 传输实现
 pub struct DohTransport {
-    /// DoH 服务器 URL
+    /// `DoH` 服务器 URL
     url: String,
     /// HTTP 客户端
     client: Arc<reqwest::Client>,
@@ -24,7 +24,7 @@ pub struct DohTransport {
 }
 
 impl DohTransport {
-    /// 创建新的 DoH 传输
+    /// 创建新的 `DoH` 传输
     pub fn new(url: String) -> Result<Self> {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOH_TIMEOUT_MS")
@@ -51,12 +51,12 @@ impl DohTransport {
     }
 
     /// 设置超时时间
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    /// 使用 POST 方法发送 DoH 查询
+    /// 使用 POST 方法发送 `DoH` 查询
     async fn query_post(&self, packet: &[u8]) -> Result<Vec<u8>> {
         let response = self
             .client
@@ -85,8 +85,7 @@ impl DohTransport {
                 .starts_with("application/dns-message")
             {
                 return Err(anyhow::anyhow!(
-                    "DoH server returned unexpected content type: {:?}",
-                    content_type
+                    "DoH server returned unexpected content type: {content_type:?}"
                 ));
             }
         }
@@ -99,7 +98,7 @@ impl DohTransport {
         Ok(response_body.to_vec())
     }
 
-    /// 使用 GET 方法发送 DoH 查询（base64url 编码）
+    /// 使用 GET 方法发送 `DoH` 查询（base64url 编码）
     async fn query_get(&self, packet: &[u8]) -> Result<Vec<u8>> {
         use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
@@ -194,7 +193,7 @@ impl std::fmt::Debug for DohTransport {
     }
 }
 
-/// DoH 服务器配置
+/// `DoH` 服务器配置
 #[derive(Debug, Clone)]
 pub struct DohConfig {
     /// 服务器 URL
@@ -219,17 +218,17 @@ impl Default for DohConfig {
 }
 
 impl DohConfig {
-    /// 从配置创建 DoH 传输
+    /// 从配置创建 `DoH` 传输
     pub fn build(self) -> Result<DohTransport> {
         Ok(DohTransport::new(self.url)?.with_timeout(self.timeout))
     }
 }
 
-/// 常用的 DoH 服务器配置
+/// 常用的 `DoH` 服务器配置
 pub struct DohServers;
 
 impl DohServers {
-    /// Cloudflare DoH
+    /// Cloudflare `DoH`
     pub fn cloudflare() -> DohConfig {
         DohConfig {
             url: "https://cloudflare-dns.com/dns-query".to_string(),
@@ -237,7 +236,7 @@ impl DohServers {
         }
     }
 
-    /// Google DoH
+    /// Google `DoH`
     pub fn google() -> DohConfig {
         DohConfig {
             url: "https://dns.google/dns-query".to_string(),
@@ -245,7 +244,7 @@ impl DohServers {
         }
     }
 
-    /// Quad9 DoH
+    /// Quad9 `DoH`
     pub fn quad9() -> DohConfig {
         DohConfig {
             url: "https://dns.quad9.net/dns-query".to_string(),
@@ -253,7 +252,7 @@ impl DohServers {
         }
     }
 
-    /// AdGuard DoH
+    /// `AdGuard` `DoH`
     pub fn adguard() -> DohConfig {
         DohConfig {
             url: "https://dns.adguard.com/dns-query".to_string(),

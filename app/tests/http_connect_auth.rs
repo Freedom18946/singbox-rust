@@ -1,3 +1,4 @@
+#![allow(clippy::manual_flatten)]
 use sb_config::ir::{
     ConfigIR, Credentials, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR,
 };

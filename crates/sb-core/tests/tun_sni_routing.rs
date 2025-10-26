@@ -81,14 +81,16 @@ fn sni_drives_routing_decision() {
     assert_eq!(got, sni);
 
     // Build routing rules: domain suffix example.com -> proxy
-    let mut cfg = ConfigIR::default();
-    cfg.route = RouteIR {
-        rules: vec![RuleIR {
-            domain: vec!["example.com".into()],
-            outbound: Some("proxy".into()),
-            ..Default::default()
-        }],
-        default: Some("direct".into()),
+    let cfg = ConfigIR {
+        route: RouteIR {
+            rules: vec![RuleIR {
+                domain: vec!["example.com".into()],
+                outbound: Some("proxy".into()),
+                ..Default::default()
+            }],
+            default: Some("direct".into()),
+        },
+        ..Default::default()
     };
 
     let eng = Engine::new(&cfg);

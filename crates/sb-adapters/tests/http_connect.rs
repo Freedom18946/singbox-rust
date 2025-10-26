@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-http")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! HTTP CONNECT E2E tests with mock servers
 //!
 //! These tests create mock HTTP CONNECT proxy servers to verify that the connector

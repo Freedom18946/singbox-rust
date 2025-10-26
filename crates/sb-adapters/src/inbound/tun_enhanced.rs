@@ -17,7 +17,7 @@ use tokio::time::timeout;
 
 use sb_core::outbound::OutboundConnector;
 use sb_core::types::{ConnCtx, Endpoint, Host, Network};
-use sb_core::{UdpNat, UdpFlowKey};
+use sb_core::net::udp_nat_core::{UdpNat, UdpFlowKey};
 use sb_platform::tun::{AsyncTunDevice, TunConfig, TunError};
 
 /// Enhanced TUN configuration with packet forwarding capabilities
@@ -81,6 +81,7 @@ pub struct EnhancedTunInbound {
     config: EnhancedTunConfig,
     outbound: Arc<dyn OutboundConnector>,
     router: Option<Arc<sb_core::router::RouterHandle>>,
+    #[allow(dead_code)]
     device: Option<AsyncTunDevice>,
 
     // Connection tracking
@@ -88,6 +89,7 @@ pub struct EnhancedTunInbound {
     udp_nat: Arc<Mutex<UdpNat>>,
 
     // Statistics
+    #[allow(dead_code)] // Reserved for future connection ID tracking
     connection_id: AtomicU64,
     stats: TunStats,
 
@@ -128,11 +130,16 @@ impl Clone for TunStats {
 /// Handle for tracking active TCP connections
 #[derive(Debug)]
 struct TcpConnectionHandle {
+    #[allow(dead_code)] // Reserved for connection tracking
     id: u64,
+    #[allow(dead_code)] // Reserved for connection tracking
     src: SocketAddr,
+    #[allow(dead_code)] // Reserved for connection tracking
     dst: Endpoint,
     created_at: Instant,
+    #[allow(dead_code)] // Reserved for metrics
     bytes_sent: Arc<AtomicU64>,
+    #[allow(dead_code)] // Reserved for metrics
     bytes_received: Arc<AtomicU64>,
     shutdown_tx: mpsc::Sender<()>,
 }
@@ -199,14 +206,13 @@ impl EnhancedTunInbound {
             table: None,
         };
 
-        self.device = Some(AsyncTunDevice::new(&tun_config)?);
+        let device = AsyncTunDevice::new(&tun_config)?;
 
         // Setup shutdown channel
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
         self.shutdown_tx = Some(shutdown_tx);
 
         // Start packet processing loop
-        let device = self.device.take().unwrap();
         let config = self.config.clone();
         let outbound = Arc::clone(&self.outbound);
         let tcp_connections = Arc::clone(&self.tcp_connections);
@@ -467,43 +473,9 @@ impl EnhancedTunInbound {
         // Create connection context
         let ctx = ConnCtx::new(connection_id, Network::Tcp, src_addr, dst_endpoint.clone());
 
-        // Use router if available, otherwise use default outbound
-        let selected_outbound = if let Some(ref router) = self.router {
-            // Query router for outbound selection
-            use sb_core::router::engine::{RouteCtx, Transport};
-            let route_ctx = RouteCtx {
-                network: Transport::Tcp,
-                src: src_addr.ip(),
-                dst: dst_endpoint.clone(),
-                process: None,
-                uid: None,
-            };
-
-            // Select outbound via router
-            match router.select_ctx_and_record(route_ctx) {
-                Some(selected) => {
-                    log::debug!(
-                        "Router selected outbound '{}' for TCP connection {} -> {}",
-                        selected.outbound_tag,
-                        src_addr,
-                        dst_endpoint
-                    );
-                    // In production, lookup the actual outbound from OutboundManager
-                    // For now, fall back to default outbound
-                    Arc::clone(&self.outbound)
-                }
-                None => {
-                    log::debug!(
-                        "No route found for TCP connection {} -> {}, using default",
-                        src_addr,
-                        dst_endpoint
-                    );
-                    Arc::clone(&self.outbound)
-                }
-            }
-        } else {
-            Arc::clone(&self.outbound)
-        };
+        // Use the provided outbound connector
+        // TODO: Router-based outbound selection can be added later when needed
+        let selected_outbound = Arc::clone(outbound);
 
         // Connect to outbound
         let outbound_stream = match timeout(
@@ -824,6 +796,7 @@ pub struct TunStatistics {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use sb_core::outbound::DirectConnector;
     use std::sync::Arc;

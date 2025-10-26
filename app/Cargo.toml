@@ -331,3 +331,20 @@ required-features = ["net_e2e", "tls_reality", "vless_mux_ready"]
 [[bench]]
 name = "bench_p0_protocols"
 harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "connect"
+required-features = ["bench"]
+
+[[bench]]
+name = "dns_cache"
+required-features = ["bench"]
+
+[[bench]]
+name = "performance_baseline"
+required-features = ["bench"]
+
+[[bench]]
+name = "selector_score"
+required-features = ["bench"]

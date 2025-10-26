@@ -833,7 +833,7 @@ mod tests {
                 // Check suffix present
                 assert!(r.domain_suffix.iter().any(|s| s == "rust-lang.org"));
                 // Check port and network
-                assert!(r.port.iter().any(|p| *p == 443));
+                assert!(r.port.contains(&443));
                 assert!(r.network.iter().any(|n| n == "tcp"));
             }
             _ => panic!("expected default rule"),

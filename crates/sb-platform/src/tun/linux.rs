@@ -80,7 +80,7 @@ impl LinuxTun {
     /// Set the MTU of the interface
     fn set_mtu(&self, mtu: u32) -> Result<(), TunError> {
         let output = std::process::Command::new("ip")
-            .args(&["link", "set", &self.name, "mtu", &mtu.to_string()])
+            .args(["link", "set", &self.name, "mtu", &mtu.to_string()])
             .output()
             .map_err(|e| TunError::OperationFailed(format!("Failed to set MTU: {}", e)))?;
 
@@ -98,7 +98,7 @@ impl LinuxTun {
     /// Set IPv4 address for the interface
     fn set_ipv4_address(&self, addr: std::net::IpAddr) -> Result<(), TunError> {
         let output = std::process::Command::new("ip")
-            .args(&["addr", "add", &format!("{}/24", addr), "dev", &self.name])
+            .args(["addr", "add", &format!("{}/24", addr), "dev", &self.name])
             .output()
             .map_err(|e| TunError::OperationFailed(format!("Failed to set IPv4 address: {}", e)))?;
 
@@ -116,7 +116,7 @@ impl LinuxTun {
     /// Set IPv6 address for the interface
     fn set_ipv6_address(&self, addr: std::net::IpAddr) -> Result<(), TunError> {
         let output = std::process::Command::new("ip")
-            .args(&["addr", "add", &format!("{}/64", addr), "dev", &self.name])
+            .args(["addr", "add", &format!("{}/64", addr), "dev", &self.name])
             .output()
             .map_err(|e| TunError::OperationFailed(format!("Failed to set IPv6 address: {}", e)))?;
 
@@ -134,7 +134,7 @@ impl LinuxTun {
     /// Bring the interface up
     fn bring_up(&self) -> Result<(), TunError> {
         let output = std::process::Command::new("ip")
-            .args(&["link", "set", &self.name, "up"])
+            .args(["link", "set", &self.name, "up"])
             .output()
             .map_err(|e| {
                 TunError::OperationFailed(format!("Failed to bring interface up: {}", e))
@@ -154,7 +154,7 @@ impl LinuxTun {
     /// Bring the interface down
     fn bring_down(&self) -> Result<(), TunError> {
         let output = std::process::Command::new("ip")
-            .args(&["link", "set", &self.name, "down"])
+            .args(["link", "set", &self.name, "down"])
             .output()
             .map_err(|e| {
                 TunError::OperationFailed(format!("Failed to bring interface down: {}", e))
@@ -313,9 +313,10 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
+    #[allow(clippy::expect_used)] // Test code, expect is acceptable
     fn test_ifr_data_creation() {
         let ifr = IfrData::new("test-tun");
-        let name = ifr.get_name().unwrap();
+        let name = ifr.get_name().expect("should have valid name");
         assert_eq!(name, "test-tun");
     }
 

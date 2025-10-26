@@ -16,3 +16,5 @@ fn bench_dns_cache(c: &mut Criterion) {
 
 criterion_group!(benches, bench_dns_cache);
 criterion_main!(benches);
+#[cfg(not(feature = "bench"))]
+fn main() {}

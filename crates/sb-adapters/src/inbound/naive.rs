@@ -150,7 +150,7 @@ async fn handle_stream(
         let response = http::Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .body(())
-            .unwrap();
+            .map_err(|e| anyhow!("Failed to build response: {}", e))?;
         let _ = respond.send_response(response, true);
         return Err(anyhow!("Method not allowed: {}", request.method()));
     }
@@ -168,7 +168,7 @@ async fn handle_stream(
                 let response = http::Response::builder()
                     .status(StatusCode::PROXY_AUTHENTICATION_REQUIRED)
                     .body(())
-                    .unwrap();
+                    .map_err(|e| anyhow!("Failed to build response: {}", e))?;
                 let _ = respond.send_response(response, true);
                 return Err(anyhow!("Invalid authentication scheme"));
             }
@@ -192,7 +192,7 @@ async fn handle_stream(
                 let response = http::Response::builder()
                     .status(StatusCode::PROXY_AUTHENTICATION_REQUIRED)
                     .body(())
-                    .unwrap();
+                    .map_err(|e| anyhow!("Failed to build response: {}", e))?;
                 let _ = respond.send_response(response, true);
                 return Err(anyhow!("Authentication failed"));
             }
@@ -227,7 +227,7 @@ async fn handle_stream(
     let response = http::Response::builder()
         .status(StatusCode::OK)
         .body(())
-        .unwrap();
+        .map_err(|e| anyhow!("Failed to build response: {}", e))?;
 
     let send_stream = respond
         .send_response(response, false)
@@ -244,18 +244,13 @@ async fn handle_stream(
 
 /// Parse CONNECT target (host:port)
 fn parse_target(target: &str) -> Result<(String, u16)> {
-    let parts: Vec<&str> = target.rsplitn(2, ':').collect();
-    if parts.len() != 2 {
-        return Err(anyhow!("Invalid target format: {}", target));
-    }
-
-    let port = parts[0]
+    let (host, port_str) = target
+        .rsplit_once(':')
+        .ok_or_else(|| anyhow!("Invalid target format: {}", target))?;
+    let port = port_str
         .parse::<u16>()
-        .map_err(|_| anyhow!("Invalid port: {}", parts[0]))?;
-
-    let host = parts[1].to_string();
-
-    Ok((host, port))
+        .map_err(|_| anyhow!("Invalid port: {}", port_str))?;
+    Ok((host.to_string(), port))
 }
 
 /// Relay data between HTTP/2 stream and TCP stream
@@ -316,6 +311,7 @@ async fn relay_h2_tcp(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     #[test]

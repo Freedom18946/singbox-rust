@@ -7,7 +7,7 @@ use std::time::Duration;
 ///
 /// Behavior:
 /// - Builds a DNS wire-format query for `host`/`qtype`
-/// - Uses DoH transport with adaptive GET/POST selection
+/// - Uses `DoH` transport with adaptive GET/POST selection
 /// - Honors provided `timeout_ms`
 /// - Parses wire-format response and returns (IPs, optional TTL)
 pub async fn query_doh_once(

@@ -1,11 +1,12 @@
 //! Minimal blocking Admin HTTP server (opt-in).
+//!
 //! Endpoints:
 //!   GET  /healthz                      → 200 JSON {ok,pid,fingerprint}
 //!   GET  /outbounds                    → 200 JSON [{name,kind}]
 //!   POST /explain {"dest","network","protocol"} → 200 JSON {dest,outbound}
 //!   POST /reload  {"config": `obj`|null, "path": `string`|null} → 200 JSON {event,ok,changed,fingerprint,t}
 //! Security:
-//!   - Loopback-only by default (10/172/192/127/::1 accepted).
+//!   - Loopback-only by default (`10/172/192/127/::1` accepted).
 //!   - If ADMIN_TOKEN/--admin-token is set, require header `X-Admin-Token: <token>`.
 use serde_json;
 use std::collections::HashMap;
@@ -277,7 +278,7 @@ fn write_json(s: &mut TcpStream, code: u16, body: &str) -> std::io::Result<()> {
 fn json_err(kind: &str, detail: &str) -> String {
     match serde_json::to_string(&serde_json::json!({"error":kind, "detail":detail})) {
         Ok(s) => s,
-        Err(_) => format!("{{\"error\":\"{}\",\"detail\":\"{}\"}}", kind, detail),
+        Err(_) => format!("{{\"error\":\"{kind}\",\"detail\":\"{detail}\"}}"),
     }
 }
 
@@ -309,20 +310,17 @@ fn handle(
     let peer_opt = cli.peer_addr().ok();
     if let Some(peer) = peer_opt {
         // concurrency limiter
-        match inc_concurrency(peer.ip(), &lim) {
-            Ok(_g) => {
-                // rate limit check
-                if !rate_check(peer.ip(), &lim) {
-                    let body = json_err("rate_limited", "too many requests");
-                    let _ = write_json(&mut cli, 429, &body);
-                    return Ok(());
-                }
-            }
-            Err(_) => {
-                let body = json_err("too_many_connections", "per-ip concurrency exceeded");
+        if let Ok(_g) = inc_concurrency(peer.ip(), &lim) {
+            // rate limit check
+            if !rate_check(peer.ip(), &lim) {
+                let body = json_err("rate_limited", "too many requests");
                 let _ = write_json(&mut cli, 429, &body);
                 return Ok(());
             }
+        } else {
+            let body = json_err("too_many_connections", "per-ip concurrency exceeded");
+            let _ = write_json(&mut cli, 429, &body);
+            return Ok(());
         }
         if !is_loopback_or_private(&peer) && admin_token.is_none() {
             let body = json_err("forbidden", "token required for non-local access");
@@ -429,59 +427,50 @@ fn handle_reload(
         .as_millis() as u64;
 
     // Check if supervisor is available
-    let supervisor = match supervisor {
-        Some(s) => s,
-        None => {
-            let error_obj = serde_json::json!({
-                "event": "reload",
-                "ok": false,
-                "error": {
-                    "code": "internal",
-                    "message": "supervisor not available"
-                },
-                "fingerprint": env!("CARGO_PKG_VERSION"),
-                "t": now
-            });
-            let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
-            return write_json(cli, 500, &body);
-        }
+    let supervisor = if let Some(s) = supervisor { s } else {
+        let error_obj = serde_json::json!({
+            "event": "reload",
+            "ok": false,
+            "error": {
+                "code": "internal",
+                "message": "supervisor not available"
+            },
+            "fingerprint": env!("CARGO_PKG_VERSION"),
+            "t": now
+        });
+        let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+        return write_json(cli, 500, &body);
     };
 
     // Parse request body
-    let body = match read_body(cli, headers) {
-        Ok(b) => b,
-        Err(_) => {
-            let error_obj = serde_json::json!({
-                "event": "reload",
-                "ok": false,
-                "error": {
-                    "code": "bad_request",
-                    "message": "failed to read request body"
-                },
-                "fingerprint": env!("CARGO_PKG_VERSION"),
-                "t": now
-            });
-            let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
-            return write_json(cli, 400, &body);
-        }
+    let body = if let Ok(b) = read_body(cli, headers) { b } else {
+        let error_obj = serde_json::json!({
+            "event": "reload",
+            "ok": false,
+            "error": {
+                "code": "bad_request",
+                "message": "failed to read request body"
+            },
+            "fingerprint": env!("CARGO_PKG_VERSION"),
+            "t": now
+        });
+        let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+        return write_json(cli, 400, &body);
     };
 
-    let request: serde_json::Value = match serde_json::from_slice(&body) {
-        Ok(v) => v,
-        Err(_) => {
-            let error_obj = serde_json::json!({
-                "event": "reload",
-                "ok": false,
-                "error": {
-                    "code": "bad_request",
-                    "message": "invalid JSON"
-                },
-                "fingerprint": env!("CARGO_PKG_VERSION"),
-                "t": now
-            });
-            let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
-            return write_json(cli, 400, &body);
-        }
+    let request: serde_json::Value = if let Ok(v) = serde_json::from_slice(&body) { v } else {
+        let error_obj = serde_json::json!({
+            "event": "reload",
+            "ok": false,
+            "error": {
+                "code": "bad_request",
+                "message": "invalid JSON"
+            },
+            "fingerprint": env!("CARGO_PKG_VERSION"),
+            "t": now
+        });
+        let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+        return write_json(cli, 400, &body);
     };
 
     // Extract config or path
@@ -561,22 +550,19 @@ fn handle_reload(
         return write_json(cli, 400, &body);
     };
 
-    let ir = match new_ir {
-        Some(ir) => ir,
-        None => {
-            let error_obj = serde_json::json!({
-                "event": "reload",
-                "ok": false,
-                "error": {
-                    "code": "bad_request",
-                    "message": "no valid configuration provided"
-                },
-                "fingerprint": env!("CARGO_PKG_VERSION"),
-                "t": now
-            });
-            let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
-            return write_json(cli, 400, &body);
-        }
+    let ir = if let Some(ir) = new_ir { ir } else {
+        let error_obj = serde_json::json!({
+            "event": "reload",
+            "ok": false,
+            "error": {
+                "code": "bad_request",
+                "message": "no valid configuration provided"
+            },
+            "fingerprint": env!("CARGO_PKG_VERSION"),
+            "t": now
+        });
+        let body = serde_json::to_string(&error_obj).unwrap_or_else(|_| "{}".into());
+        return write_json(cli, 400, &body);
     };
 
     // 执行真正的 reload：用 tokio 运行时句柄在同步线程里阻塞执行
@@ -642,9 +628,7 @@ pub fn spawn_admin(
     let l = TcpListener::bind(listen)?;
     let addr = l
         .local_addr()
-        .ok()
-        .map(|a| a.to_string())
-        .unwrap_or_else(|| listen.to_string());
+        .ok().map_or_else(|| listen.to_string(), |a| a.to_string());
     crate::log::log(
         crate::log::Level::Info,
         "admin http listening",
@@ -671,7 +655,7 @@ pub fn spawn_admin(
                     crate::log::log(
                         crate::log::Level::Warn,
                         "admin accept failed",
-                        &[("err", &format!("{}", e))],
+                        &[("err", &format!("{e}"))],
                     );
                 }
             }

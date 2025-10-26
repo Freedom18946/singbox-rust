@@ -1,3 +1,4 @@
+#![allow(clippy::while_let_loop)]
 use sb_core::adapter::InboundService;
 use std::net::{SocketAddr, TcpListener};
 use std::thread;

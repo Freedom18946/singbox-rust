@@ -3,6 +3,7 @@
 //! This test locks the JSON schema for the check command output.
 //! Any field additions, deletions, or type changes will cause this test to fail.
 //! This ensures API stability for CLI consumers.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{json, Value};
 
@@ -175,7 +176,7 @@ fn test_check_error_report_with_unknown_field() {
 #[test]
 fn test_check_issue_codes_contract() {
     // Test various issue codes to ensure they're preserved
-    let known_issue_codes = vec![
+    const KNOWN_ISSUE_CODES: &[&str] = &[ 
         "SCHEMA_VIOLATION",
         "MISSING_FIELD", 
         "INVALID_TYPE",
@@ -205,7 +206,7 @@ fn test_check_issue_codes_contract() {
     ];
 
     // Test that all known codes can be used in issues
-    for code in known_issue_codes {
+    for &code in KNOWN_ISSUE_CODES {
         let issue = json!({
             "kind": "warning",
             "ptr": "/test",
@@ -235,13 +236,9 @@ fn test_check_report_field_count_stability() {
     let obj = core_report.as_object().unwrap();
     
     // Core fields that must always be present
-    let required_fields = vec!["ok", "file", "issues", "summary"];
-    for field in required_fields {
-        assert!(obj.contains_key(field), "Required field '{}' missing", field);
+    for field in ["ok", "file", "issues", "summary"].iter() {
+        assert!(obj.contains_key(*field), "Required field '{}' missing", field);
     }
-
-    // Optional fields that may be present
-    let optional_fields = vec!["fingerprint", "canonical"];
     
     // Count only core vs optional fields to track schema evolution
     let core_field_count = obj.keys().filter(|k| {

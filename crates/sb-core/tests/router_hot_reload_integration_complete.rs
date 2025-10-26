@@ -136,7 +136,7 @@ async fn test_hot_reload_complete_functionality() {
 #[tokio::test]
 async fn test_hot_reload_rule_validation() {
     // Test validation of various rule types
-    let valid_rules = vec![
+    let valid_rules = [
         "exact:example.com=direct",
         "suffix:google.com=proxy",
         "cidr4:192.168.1.0/24=direct",

@@ -77,7 +77,8 @@ impl<T> AsyncReadWrite for T where
 // - 统一处理不同底层实现的网络连接（TCP、TLS、内存管道等）
 // - 在编译时擦除具体类型，提供灵活的接口
 // - 支持动态分发，便于在不同传输类型之间切换
-pub type IoStream = Box<dyn AsyncReadWrite>;
+/// Boxed, thread-safe byte stream with a static lifetime
+pub type IoStream = Box<dyn AsyncReadWrite + 'static>;
 
 /// 异步网络拨号器 trait
 ///
@@ -178,7 +179,7 @@ impl Dialer for TcpDialer {
         );
 
         // DNS 解析获取所有地址
-        let addrs: Vec<SocketAddr> = match lookup_host(format!("{}:{}", host, port)).await {
+        let addrs: Vec<SocketAddr> = match lookup_host((host, port)).await {
             Ok(addrs) => addrs.collect(),
             Err(e) => return Err(DialError::from(e)),
         };

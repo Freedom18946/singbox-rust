@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 /// 直连上游
 pub async fn connect_direct(authority: &str) -> anyhow::Result<TcpStream> {
     let (host, port) = split_authority(authority);
-    let addr = format!("{}:{}", host, port);
+    let addr = format!("{host}:{port}");
     let s = TcpStream::connect(addr).await?;
     #[cfg(feature = "metrics")]
     metrics::counter!("outbound_connect_total", "kind"=>"tcp", "mode"=>"direct", "result"=>"ok")
@@ -22,8 +22,7 @@ pub async fn connect_via_http_proxy(authority: &str) -> anyhow::Result<TcpStream
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(8000);
     let req = format!(
-        "CONNECT {} HTTP/1.1\r\nHost: {}\r\nProxy-Connection: Keep-Alive\r\n\r\n",
-        authority, authority
+        "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: Keep-Alive\r\n\r\n"
     );
     let mut s = tokio::time::timeout(
         Duration::from_millis(timeout_ms),
@@ -44,14 +43,14 @@ pub async fn connect_via_http_proxy(authority: &str) -> anyhow::Result<TcpStream
             "code"=>code.to_string()   // 传 String，别取引用
         )
         .increment(1);
-        return Err(anyhow::anyhow!("proxy connect failed: {}", code));
+        return Err(anyhow::anyhow!("proxy connect failed: {code}"));
     }
     #[cfg(feature="metrics")]
     metrics::counter!("outbound_connect_total", "kind"=>"tcp", "mode"=>"http_proxy", "result"=>"ok").increment(1);
     Ok(s)
 }
 
-/// 选择：当 router 决策为 "proxy" 且设置了 SB_TCP_PROXY_MODE=http 时走代理，否则直连。
+/// 选择：当 router 决策为 "proxy" 且设置了 `SB_TCP_PROXY_MODE=http` 时走代理，否则直连。
 pub async fn connect_auto(authority: &str, decision: &str) -> anyhow::Result<TcpStream> {
     let mode = std::env::var("SB_TCP_PROXY_MODE").unwrap_or_default();
     if decision == "proxy" && mode.eq_ignore_ascii_case("http") {

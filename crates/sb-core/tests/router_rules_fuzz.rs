@@ -31,5 +31,5 @@ proptest! {
 #[test]
 fn disabled_fuzz_test() {
     // This test is disabled due to missing proptest dependency
-    assert!(true);
+    // Intentionally left blank
 }

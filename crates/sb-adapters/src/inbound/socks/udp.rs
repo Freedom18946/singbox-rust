@@ -867,10 +867,9 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         .clone();
 
     // 后台周期清理（behind env）：仅当开启 TTL 时
-    if ttl.is_some() {
+    if let Some(period) = ttl {
         let map_gc = map.clone();
         tokio::spawn(async move {
-            let period = ttl.unwrap();
             loop {
                 tokio::time::sleep(std::cmp::min(period, std::time::Duration::from_secs(1))).await;
                 // 有 TTL：按 TTL 清理

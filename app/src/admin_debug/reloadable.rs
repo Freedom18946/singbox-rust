@@ -416,7 +416,7 @@ pub fn apply_with_dryrun(
 
     let after = serde_json::to_value(&temp_config).unwrap_or_else(|_| serde_json::json!({}));
     let diff = json_diff_enhanced(&before, &after);
-    let changed = !diff_is_empty(&diff);
+    let has_changed = !diff_is_empty(&diff);
 
     let current_version = ctr.load(Ordering::Relaxed);
 
@@ -425,10 +425,10 @@ pub fn apply_with_dryrun(
             ok: false,
             msg: "dryrun".to_string(),
             version: current_version,
-            changed,
+            changed: has_changed,
             diff,
         })
-    } else if changed {
+    } else if has_changed {
         // Compute new config and commit atomically
         let mut new_cfg = (**before_cfg).clone();
         let _ = apply_to_config(&mut new_cfg, delta)?;

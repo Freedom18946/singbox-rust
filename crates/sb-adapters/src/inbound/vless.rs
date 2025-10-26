@@ -257,19 +257,19 @@ async fn handle_conn_impl(
                             }
                         }
                     } else {
-                        fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                        fallback_connect(proxy, &target_host, target_port, &opts).await?
                     }
                 } else {
-                    fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                    fallback_connect(proxy, &target_host, target_port, &opts).await?
                 }
             } else {
-                fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                fallback_connect(proxy, &target_host, target_port, &opts).await?
             }
         }
         RDecision::Proxy(None) => {
-            fallback_connect(&proxy, &target_host, target_port, &opts).await?
+            fallback_connect(proxy, &target_host, target_port, &opts).await?
         }
-        RDecision::Reject => unreachable!(),
+        RDecision::Reject => return Err(anyhow!("vless: rejected by rules")),
     };
 
     // Step 9: Bidirectional relay (plain)

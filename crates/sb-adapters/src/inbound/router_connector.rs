@@ -1,89 +1,68 @@
-
 use std::io;
 use std::net::ToSocketAddrs;
-use std::sync::Arc;
 
-use async_trait::async_trait;
 use sb_core::net::Address;
-use sb_core::router::{RequestMeta, Router, Transport};
-use tokio::net::TcpStream;
-use sb_core::session::ConnectParams;
-use crate::inbound::http::{Connector, AUTH_USER};
+
+// TODO: Define Connector trait or import it from the correct location
+// TODO: Define AUTH_USER if needed for task-local user context
+// Note: The following imports are commented out until needed:
+// use std::sync::Arc;
+// use async_trait::async_trait;
+// use sb_core::session::{ConnectParams, Transport};
+// use tokio::net::TcpStream;
 
 /// A connector that uses the router to select an outbound and establish a connection.
 #[derive(Clone)]
 pub struct RouterConnector {
-    pub router: Arc<dyn Router>,
+    // TODO: Router integration can be added later when the Router trait is defined
+    // pub router: Arc<dyn Router>,
+}
+
+impl Default for RouterConnector {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RouterConnector {
+    /// Create a new RouterConnector
+    #[allow(dead_code)]
+    pub const fn new() -> Self {
+        Self {}
+    }
+
+    // NOTE: This implementation is currently incomplete and needs:
+    // 1. A Connector trait definition
+    // 2. Router trait or RouterHandle integration
+    // 3. AUTH_USER task-local setup if needed
+    //
+    // The following methods are commented out until these dependencies are available:
+
+    /*
     /// 新增：带完整会话上下文的拨号（不改 Connector trait，避免连锁修改）
     pub async fn connect_with(&self, p: &ConnectParams) -> std::io::Result<TcpStream> {
-        // 组装 Router 元信息
-        let meta = RequestMeta {
-            dst: p.target.clone(),
-            transport: p.transport,
-            inbound_tag: None,
-            user: p.user.clone().map(Into::into),
-            sniff_host: p.sniff_host.clone(),
-        };
-        let outbound = self.router.select(&meta);
-        // 让出站优先吃到 ConnectParams；未实现 connect_ex 的出站会走默认回退
-        outbound
-            .connect_ex(p)
-            .await
-            .map_err(|e| std::io::Error::other(e))
+        // TODO: Implement router-based connection
+        todo!("Router-based connection not yet implemented")
     }
+    */
 }
 
+/*
 #[async_trait]
 impl Connector for RouterConnector {
     async fn connect(&self, target: &str) -> io::Result<TcpStream> {
-        // 1. Parse target string to sb_core::net::Address
-        let dest = parse_target(target)?;
-
-        // 2. Construct metadata for the router
-        // 从 task-local 尝试读取用户名，并写入 Router 元数据
-        let user: Option<String> = AUTH_USER.try_with(|u| u.clone()).ok().flatten();
-        let meta = RequestMeta {
-            dst: dest.clone(),
-            transport: Transport::Tcp,
-            inbound_tag: None,
-            user: user.map(Into::into),
-            sniff_host: None,
-        };
-
-        // 3. Select an outbound and connect
-        let outbound = self.router.select(&meta);
-        outbound
-            .connect(dest)
-            .await
-            .map_err(|e| io::Error::other(e))
+        // TODO: Implement Connector trait
+        todo!("Connector trait not yet implemented")
     }
 
-    /// 优先走新接口：使用 ConnectParams 里的 user/transport/target
     async fn connect_ex(&self, p: &ConnectParams) -> io::Result<TcpStream> {
-        // 优先取 params.user；若为空，再尝试 task-local 保持兼容
-        let user = if p.user.is_some() {
-            p.user.clone()
-        } else {
-            AUTH_USER.try_with(|u| u.clone()).ok().flatten()
-        };
-        let meta = RequestMeta {
-            dst: p.target.clone(),
-            transport: p.transport,
-            inbound_tag: None,
-            user: user.map(Into::into),
-            sniff_host: p.sniff_host.clone(),
-        };
-        let outbound = self.router.select(&meta);
-        outbound
-            .connect(p.target.clone())
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        // TODO: Implement Connector trait
+        todo!("Connector trait not yet implemented")
     }
 }
+*/
 
+#[allow(dead_code)]
 fn parse_target(target: &str) -> io::Result<Address> {
     // Try to parse as a socket address first (e.g., "1.2.3.4:80" or "[::1]:80")
     if let Ok(mut addrs) = target.to_socket_addrs() {

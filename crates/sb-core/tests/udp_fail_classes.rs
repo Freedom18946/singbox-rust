@@ -95,7 +95,7 @@ async fn test_timeout_failure_classification() {
         SbError::Timeout { .. } => {
             // Successfully classified as timeout error
         }
-        _ => assert!(false, "Expected timeout error classification"),
+        _ => panic!("Expected timeout error classification"),
     }
 
     resume();
@@ -111,7 +111,7 @@ async fn test_io_failure_classification() {
         SbError::Io(_) => {
             // Successfully classified as IO error
         }
-        _ => assert!(false, "Expected IO error classification"),
+        _ => panic!("Expected IO error classification"),
     }
 }
 
@@ -125,7 +125,7 @@ async fn test_decode_failure_classification() {
         SbError::Parse { .. } => {
             // Successfully classified as parse/decode error
         }
-        _ => assert!(false, "Expected parse/decode error classification"),
+        _ => panic!("Expected parse/decode error classification"),
     }
 }
 
@@ -139,7 +139,7 @@ async fn test_no_route_failure_classification() {
         SbError::Network { .. } => {
             // Successfully classified as network/no route error
         }
-        _ => assert!(false, "Expected network/no route error classification"),
+        _ => panic!("Expected network/no route error classification"),
     }
 }
 
@@ -153,7 +153,7 @@ async fn test_canceled_failure_classification() {
         SbError::Canceled { .. } => {
             // Successfully classified as canceled error
         }
-        _ => assert!(false, "Expected canceled error classification"),
+        _ => panic!("Expected canceled error classification"),
     }
 }
 

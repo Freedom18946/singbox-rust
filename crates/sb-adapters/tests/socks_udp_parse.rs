@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 // 这个测试文件基于当前 SOCKS UDP 模块的实际结构
 // 由于解析函数是私有的，这里主要测试公共接口
 

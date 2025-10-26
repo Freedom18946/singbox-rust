@@ -56,7 +56,8 @@ fn main() {
                 "error": r.error.as_ref().map(|e| e.code.as_str()),
                 "class": r.error.as_ref().map(|e| e.class),
             });
-            println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+            let out = serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
+            println!("{}", out);
         }
         Cmd::Tls {
             addr,
@@ -80,7 +81,8 @@ fn main() {
                 "class": r.error.as_ref().map(|e| e.class),
                 "alpn": r.negotiated_alpn,
             });
-            println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+            let out = serde_json::to_string_pretty(&obj).unwrap_or_else(|_| obj.to_string());
+            println!("{}", out);
         }
     }
 }

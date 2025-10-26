@@ -14,7 +14,7 @@ mod observe_tests {
 
         // Start the admin server on a random port
         let mut child = Command::new("cargo")
-            .args(&[
+            .args([
                 "run",
                 "--bin",
                 "singbox-rust",
@@ -147,7 +147,7 @@ mod observe_tests {
 
         // Start the admin server without certain features
         let mut child = Command::new("cargo")
-            .args(&[
+            .args([
                 "run",
                 "--bin",
                 "singbox-rust",

@@ -1,5 +1,5 @@
 //! A tiny HTTP exporter for Prometheus, with failure classification & noise reduction.
-//! 通过环境变量 PROM_LISTEN=127.0.0.1:19090 或 CLI flag 启动.
+//! 通过环境变量 `PROM_LISTEN=127.0.0.1:19090` 或 CLI flag 启动.
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -23,7 +23,7 @@ fn handle_conn(mut s: TcpStream) -> std::io::Result<()> {
 }
 
 fn classify_err(e: &std::io::Error) -> &'static str {
-    use std::io::ErrorKind::*;
+    use std::io::ErrorKind::{AddrInUse, AddrNotAvailable, PermissionDenied, ConnectionRefused, ConnectionAborted, ConnectionReset, NotConnected, TimedOut, WouldBlock, Interrupted, BrokenPipe};
     match e.kind() {
         AddrInUse | AddrNotAvailable | PermissionDenied => "bind",
         ConnectionRefused | ConnectionAborted | ConnectionReset | NotConnected => "conn",

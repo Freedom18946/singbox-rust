@@ -12,9 +12,9 @@ use sb_api::{
 use std::net::SocketAddr;
 
 /// Helper function to create a test API server
-fn create_test_server() -> ClashApiServer {
+fn create_test_server() -> anyhow::Result<ClashApiServer> {
     let config = ApiConfig {
-        listen_addr: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
+        listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
         enable_cors: true,
         cors_origins: None,
         auth_token: None,
@@ -24,7 +24,7 @@ fn create_test_server() -> ClashApiServer {
         log_buffer_size: 100,
     };
 
-    ClashApiServer::new(config).unwrap()
+    Ok(ClashApiServer::new(config)?)
 }
 
 // ============================================================================
@@ -33,8 +33,8 @@ fn create_test_server() -> ClashApiServer {
 
 /// Test Clash API server creation with default config
 #[test]
-fn test_server_creation_default() {
-    let server = create_test_server();
+fn test_server_creation_default() -> anyhow::Result<()> {
+    let server = create_test_server()?;
     let state = server.state();
 
     assert!(state.config.enable_cors);
@@ -42,13 +42,14 @@ fn test_server_creation_default() {
     assert!(state.config.enable_logs_ws);
     assert_eq!(state.config.traffic_broadcast_interval_ms, 1000);
     assert_eq!(state.config.log_buffer_size, 100);
+    Ok(())
 }
 
 /// Test Clash API server with CORS configuration
 #[test]
-fn test_server_cors_config() {
+fn test_server_cors_config() -> anyhow::Result<()> {
     let config = ApiConfig {
-        listen_addr: "127.0.0.1:9090".parse::<SocketAddr>().unwrap(),
+        listen_addr: SocketAddr::from(([127, 0, 0, 1], 9090)),
         enable_cors: true,
         cors_origins: Some(vec!["http://localhost:3000".to_string()]),
         auth_token: Some("test_token_123".to_string()),
@@ -57,8 +58,7 @@ fn test_server_cors_config() {
         traffic_broadcast_interval_ms: 500,
         log_buffer_size: 50,
     };
-
-    let server = ClashApiServer::new(config).unwrap();
+    let server = ClashApiServer::new(config)?;
     let state = server.state();
 
     assert_eq!(state.config.listen_addr.port(), 9090);
@@ -69,12 +69,13 @@ fn test_server_cors_config() {
     assert_eq!(state.config.auth_token.as_ref().unwrap(), "test_token_123");
     assert!(!state.config.enable_traffic_ws);
     assert!(!state.config.enable_logs_ws);
+    Ok(())
 }
 
 /// Test traffic statistics broadcasting
 #[test]
-fn test_traffic_broadcast_no_subscribers() {
-    let server = create_test_server();
+fn test_traffic_broadcast_no_subscribers() -> anyhow::Result<()> {
+    let server = create_test_server()?;
 
     let traffic_stats = TrafficStats {
         up: 1024,
@@ -87,12 +88,13 @@ fn test_traffic_broadcast_no_subscribers() {
     // Should fail because there are no subscribers
     let result = server.broadcast_traffic(traffic_stats);
     assert!(result.is_err());
+    Ok(())
 }
 
 /// Test log entry broadcasting
 #[test]
-fn test_log_broadcast_no_subscribers() {
-    let server = create_test_server();
+fn test_log_broadcast_no_subscribers() -> anyhow::Result<()> {
+    let server = create_test_server()?;
 
     let log_entry = LogEntry {
         r#type: "info".to_string(),
@@ -105,13 +107,14 @@ fn test_log_broadcast_no_subscribers() {
     // Should fail because there are no subscribers
     let result = server.broadcast_log(log_entry);
     assert!(result.is_err());
+    Ok(())
 }
 
 /// Test API configuration with multiple CORS origins
 #[test]
-fn test_multiple_cors_origins() {
+fn test_multiple_cors_origins() -> anyhow::Result<()> {
     let config = ApiConfig {
-        listen_addr: "0.0.0.0:9090".parse::<SocketAddr>().unwrap(),
+        listen_addr: SocketAddr::from(([0, 0, 0, 0], 9090)),
         enable_cors: true,
         cors_origins: Some(vec![
             "http://localhost:3000".to_string(),
@@ -124,21 +127,21 @@ fn test_multiple_cors_origins() {
         traffic_broadcast_interval_ms: 1000,
         log_buffer_size: 1000,
     };
-
-    let server = ClashApiServer::new(config).unwrap();
+    let server = ClashApiServer::new(config)?;
     let state = server.state();
 
     assert_eq!(state.config.listen_addr.port(), 9090);
     assert_eq!(state.config.cors_origins.as_ref().unwrap().len(), 3);
     assert_eq!(state.config.traffic_broadcast_interval_ms, 1000);
     assert_eq!(state.config.log_buffer_size, 1000);
+    Ok(())
 }
 
 /// Test edge cases for configuration values
 #[test]
-fn test_config_edge_cases() {
+fn test_config_edge_cases() -> anyhow::Result<()> {
     let config = ApiConfig {
-        listen_addr: "127.0.0.1:65535".parse::<SocketAddr>().unwrap(),
+        listen_addr: SocketAddr::from(([127, 0, 0, 1], 65535)),
         enable_cors: false,
         cors_origins: None,
         auth_token: None,
@@ -147,8 +150,7 @@ fn test_config_edge_cases() {
         traffic_broadcast_interval_ms: 100, // Very fast interval
         log_buffer_size: 1,                 // Very small buffer
     };
-
-    let server = ClashApiServer::new(config).unwrap();
+    let server = ClashApiServer::new(config)?;
     let state = server.state();
 
     assert_eq!(state.config.listen_addr.port(), 65535);
@@ -157,12 +159,13 @@ fn test_config_edge_cases() {
     assert!(!state.config.enable_cors);
     assert!(!state.config.enable_traffic_ws);
     assert!(!state.config.enable_logs_ws);
+    Ok(())
 }
 
 /// Test API state with no optional components
 #[test]
-fn test_api_state_minimal() {
-    let server = create_test_server();
+fn test_api_state_minimal() -> anyhow::Result<()> {
+    let server = create_test_server()?;
     let state = server.state();
 
     // All optional components should be None
@@ -172,11 +175,12 @@ fn test_api_state_minimal() {
     assert!(state.connection_manager.is_none());
     assert!(state.dns_resolver.is_none());
     assert!(state.provider_manager.is_none());
+    Ok(())
 }
 
 /// Test various listen address formats
 #[test]
-fn test_listen_address_formats() {
+fn test_listen_address_formats() -> anyhow::Result<()> {
     let test_cases = vec![
         ("127.0.0.1:0", 0),
         ("0.0.0.0:9090", 9090),
@@ -186,7 +190,7 @@ fn test_listen_address_formats() {
 
     for (addr, expected_port) in test_cases {
         let config = ApiConfig {
-            listen_addr: addr.parse::<SocketAddr>().unwrap(),
+            listen_addr: addr.parse::<SocketAddr>()?,
             enable_cors: false,
             cors_origins: None,
             auth_token: None,
@@ -196,19 +200,20 @@ fn test_listen_address_formats() {
             log_buffer_size: 100,
         };
 
-        let server = ClashApiServer::new(config).unwrap();
+        let server = ClashApiServer::new(config)?;
         let state = server.state();
 
         assert_eq!(state.config.listen_addr.port(), expected_port);
     }
+    Ok(())
 }
 
 /// Test server creation with monitoring system
 #[test]
-fn test_server_with_monitoring() {
+fn test_server_with_monitoring() -> anyhow::Result<()> {
     // This test verifies the API exists but can't test fully without a real monitoring system
     let config = ApiConfig {
-        listen_addr: "127.0.0.1:0".parse::<SocketAddr>().unwrap(),
+        listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
         enable_cors: true,
         cors_origins: None,
         auth_token: None,
@@ -220,7 +225,8 @@ fn test_server_with_monitoring() {
 
     // Can't test with_monitoring without a real MonitoringSystemHandle
     // Just verify the config is valid
-    let _server = ClashApiServer::new(config).unwrap();
+    let _server = ClashApiServer::new(config)?;
+    Ok(())
 }
 
 // ============================================================================
@@ -229,7 +235,7 @@ fn test_server_with_monitoring() {
 
 /// Test TrafficStats serialization
 #[test]
-fn test_traffic_stats_serialization() {
+fn test_traffic_stats_serialization() -> anyhow::Result<()> {
     let traffic = TrafficStats {
         up: 1024,
         down: 2048,
@@ -238,19 +244,20 @@ fn test_traffic_stats_serialization() {
         timestamp: 1640995200000,
     };
 
-    let json = serde_json::to_string(&traffic).unwrap();
-    let deserialized: TrafficStats = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&traffic)?;
+    let deserialized: TrafficStats = serde_json::from_str(&json)?;
 
     assert_eq!(traffic.up, deserialized.up);
     assert_eq!(traffic.down, deserialized.down);
     assert_eq!(traffic.up_speed, deserialized.up_speed);
     assert_eq!(traffic.down_speed, deserialized.down_speed);
     assert_eq!(traffic.timestamp, deserialized.timestamp);
+    Ok(())
 }
 
 /// Test LogEntry serialization
 #[test]
-fn test_log_entry_serialization() {
+fn test_log_entry_serialization() -> anyhow::Result<()> {
     let log = LogEntry {
         r#type: "error".to_string(),
         payload: "Test error message".to_string(),
@@ -259,19 +266,20 @@ fn test_log_entry_serialization() {
         connection_id: Some("conn-123".to_string()),
     };
 
-    let json = serde_json::to_string(&log).unwrap();
-    let deserialized: LogEntry = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&log)?;
+    let deserialized: LogEntry = serde_json::from_str(&json)?;
 
     assert_eq!(log.r#type, deserialized.r#type);
     assert_eq!(log.payload, deserialized.payload);
     assert_eq!(log.timestamp, deserialized.timestamp);
     assert_eq!(log.source, deserialized.source);
     assert_eq!(log.connection_id, deserialized.connection_id);
+    Ok(())
 }
 
 /// Test LogEntry without connection_id
 #[test]
-fn test_log_entry_no_connection_id() {
+fn test_log_entry_no_connection_id() -> anyhow::Result<()> {
     let log = LogEntry {
         r#type: "warning".to_string(),
         payload: "Warning message".to_string(),
@@ -280,12 +288,13 @@ fn test_log_entry_no_connection_id() {
         connection_id: None,
     };
 
-    let json = serde_json::to_string(&log).unwrap();
-    let deserialized: LogEntry = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&log)?;
+    let deserialized: LogEntry = serde_json::from_str(&json)?;
 
     assert_eq!(log.r#type, deserialized.r#type);
     assert_eq!(log.payload, deserialized.payload);
     assert!(deserialized.connection_id.is_none());
+    Ok(())
 }
 
 // ============================================================================
@@ -294,8 +303,8 @@ fn test_log_entry_no_connection_id() {
 
 /// Test broadcast channel capacity
 #[test]
-fn test_broadcast_channel_behavior() {
-    let server = create_test_server();
+fn test_broadcast_channel_behavior() -> anyhow::Result<()> {
+    let server = create_test_server()?;
 
     // Create multiple traffic stats
     for i in 0..5 {
@@ -311,12 +320,13 @@ fn test_broadcast_channel_behavior() {
         let result = server.broadcast_traffic(traffic_stats);
         assert!(result.is_err());
     }
+    Ok(())
 }
 
 /// Test log broadcast with different log types
 #[test]
-fn test_log_broadcast_different_types() {
-    let server = create_test_server();
+fn test_log_broadcast_different_types() -> anyhow::Result<()> {
+    let server = create_test_server()?;
 
     let log_types = vec!["info", "warning", "error", "debug"];
 
@@ -333,6 +343,7 @@ fn test_log_broadcast_different_types() {
         let result = server.broadcast_log(log_entry);
         assert!(result.is_err());
     }
+    Ok(())
 }
 
 // ============================================================================

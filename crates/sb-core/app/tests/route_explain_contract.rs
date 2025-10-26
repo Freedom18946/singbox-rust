@@ -3,6 +3,7 @@
 //! This test locks the JSON schema for the route explain command output.
 //! Any field additions, deletions, or type changes will cause this test to fail.
 //! This ensures API stability for CLI consumers.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{json, Value};
 
@@ -160,7 +161,7 @@ fn test_route_explain_chain_variations() {
 #[test]
 fn test_route_explain_outbound_types() {
     // Test various outbound types that should be supported
-    let outbound_types = vec![
+    const OUTBOUND_TYPES: &[&str] = &[ 
         "direct",
         "block", 
         "proxy-us",
@@ -171,7 +172,7 @@ fn test_route_explain_outbound_types() {
         "custom-outbound-123"
     ];
 
-    for outbound in outbound_types {
+    for &outbound in OUTBOUND_TYPES {
         let explain_result = json!({
             "dest": "test.example.com:443",
             "matched_rule": "test-rule",
@@ -189,7 +190,7 @@ fn test_route_explain_outbound_types() {
 #[test]
 fn test_route_explain_dest_formats() {
     // Test various destination formats
-    let dest_formats = vec![
+    const DEST_FORMATS: &[&str] = &[
         // Domain with port
         "example.com:443",
         "api.service.com:8080",
@@ -209,7 +210,7 @@ fn test_route_explain_dest_formats() {
         "8.8.8.8"
     ];
 
-    for dest in dest_formats {
+    for &dest in DEST_FORMATS {
         let explain_result = json!({
             "dest": dest,
             "matched_rule": "test-rule",
@@ -253,7 +254,7 @@ fn test_route_explain_field_order_stability() {
 #[test]
 fn test_route_explain_no_extra_fields() {
     // Test that the contract prevents unexpected field additions
-    let core_fields = vec!["dest", "matched_rule", "chain", "outbound", "rule_id", "reason"];
+    const CORE_FIELDS: &[&str] = &["dest", "matched_rule", "chain", "outbound", "rule_id", "reason"];
     
     let explain_result = json!({
         "dest": "test.com:80",
@@ -267,9 +268,9 @@ fn test_route_explain_no_extra_fields() {
     let obj = explain_result.as_object().unwrap();
     
     // Verify exactly the core fields exist
-    assert_eq!(obj.len(), core_fields.len(), "Should have exactly {} core fields", core_fields.len());
+    assert_eq!(obj.len(), CORE_FIELDS.len(), "Should have exactly {} core fields", CORE_FIELDS.len());
     
-    for field in core_fields {
+    for &field in CORE_FIELDS {
         assert!(obj.contains_key(field), "Missing required field: {}", field);
     }
 }

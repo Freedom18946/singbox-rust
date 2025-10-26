@@ -1,47 +1,65 @@
+//! Trojan dry-run packet builder for testing (no actual network I/O).
+//!
+//! Provides functions to build Trojan handshake packets and generate test reports
+//! without performing real connections. Useful for admin dry-run scenarios.
+
 #[cfg(feature = "proto_trojan_dry")]
 #[allow(clippy::module_inception)]
 pub mod trojan_dry {
     use serde::{Deserialize, Serialize};
 
-    // 简单的 hex 编码实现
+    /// Encodes bytes to hexadecimal string.
     fn hex_encode(data: &[u8]) -> String {
-        data.iter().map(|b| format!("{:02x}", b)).collect()
+        data.iter().map(|b| format!("{b:02x}")).collect()
     }
 
+    /// Report structure for dry-run connection attempts.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct DryrunReport {
+        /// Length of generated packet in bytes.
         pub bytes_len: usize,
+        /// Metadata about the connection attempt.
         pub meta: ConnectMeta,
     }
 
+    /// Metadata for a dry-run connection.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ConnectMeta {
-        pub kind: String,     // "hello" | "tls_first"
-        pub hashes: bool,     // false (占位)
-        pub ordered: bool,    // false (占位)
-        pub normalized: bool, // false (占位)
+        /// Connection kind ("hello" or "tls_first").
+        pub kind: String,
+        /// Whether password hashing is enabled (placeholder).
+        pub hashes: bool,
+        /// Whether ordering is preserved (placeholder).
+        pub ordered: bool,
+        /// Whether normalization is applied (placeholder).
+        pub normalized: bool,
     }
 
-    /// 构建 Trojan hello 字节序列
-    /// 格式：hex(sha224(password)) + CRLF + SOCKS5-like target + CRLF + data
+    /// Builds a Trojan hello packet.
+    ///
+    /// # Packet Format (Placeholder)
+    /// ```text
+    /// hex(blake3(password)[..28]) CRLF
+    /// SOCKS5-address CRLF
+    /// ```
+    ///
+    /// # Security Warning
+    /// Uses blake3 to simulate sha224 for testing. Not cryptographically equivalent to real Trojan.
+    #[must_use]
     pub fn build_hello(password: &str, host: &str, port: u16) -> Vec<u8> {
-        use blake3::Hasher;
-
-        // 使用 blake3 模拟 sha224 (占位实现)
-        let mut hasher = Hasher::new();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(password.as_bytes());
         let hash = hasher.finalize();
-        let hash_hex = hex_encode(&hash.as_bytes()[..28]); // 取前28字节模拟sha224
+        let hash_hex = hex_encode(&hash.as_bytes()[..28]); // Simulate sha224
 
         let mut result = Vec::new();
 
-        // 1. 密码哈希
+        // Password hash
         result.extend_from_slice(hash_hex.as_bytes());
         result.extend_from_slice(b"\r\n");
 
-        // 2. 目标地址 (简化的 SOCKS5 格式)
-        // ATYP(1) + ADDR + PORT(2)
-        result.push(0x03); // Domain name
+        // Target address (SOCKS5-like format)
+        result.push(0x03); // Domain name type
         result.push(host.len() as u8);
         result.extend_from_slice(host.as_bytes());
         result.extend_from_slice(&port.to_be_bytes());
@@ -50,7 +68,8 @@ pub mod trojan_dry {
         result
     }
 
-    /// 生成连接报告
+    /// Generates a dry-run report for a packet.
+    #[must_use]
     pub fn report_shape(bytes_len: usize, with_tls: bool) -> DryrunReport {
         DryrunReport {
             bytes_len,
@@ -67,14 +86,13 @@ pub mod trojan_dry {
         }
     }
 
-    /// 构建带 TLS 的首包（占位）
+    /// Builds a TLS-first Trojan packet (placeholder).
+    ///
+    /// Appends a TLS marker to the standard hello packet for testing.
+    #[must_use]
     pub fn build_tls_first(password: &str, host: &str, port: u16) -> Vec<u8> {
         let mut hello = build_hello(password, host, port);
-
-        // 添加占位 TLS ClientHello 标识
-        let tls_marker = b"TLS_CLIENT_HELLO_PLACEHOLDER";
-        hello.extend_from_slice(tls_marker);
-
+        hello.extend_from_slice(b"TLS_CLIENT_HELLO_PLACEHOLDER");
         hello
     }
 }

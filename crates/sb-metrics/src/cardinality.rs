@@ -19,14 +19,15 @@
 //! let monitor = CardinalityMonitor::new(10000); // Warn at 10k time series
 //!
 //! // Record label usage
-//! monitor.record_label_usage("http_requests_total", vec!["GET".to_string(), "/api".to_string()]);
-//! monitor.record_label_usage("http_requests_total", vec!["POST".to_string(), "/api".to_string()]);
+//! monitor.record_label_usage("http_requests_total", &["GET".to_string(), "/api".to_string()]);
+//! monitor.record_label_usage("http_requests_total", &["POST".to_string(), "/api".to_string()]);
 //!
 //! // Check cardinality
 //! let cardinality = monitor.get_cardinality("http_requests_total");
 //! println!("http_requests_total has {} unique time series", cardinality);
 //! ```
 
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, Mutex};
@@ -35,10 +36,11 @@ use tracing::warn;
 /// Monitors label cardinality for Prometheus metrics
 ///
 /// Tracks unique label combinations per metric to detect potential
-/// label explosion issues.
+/// label explosion issues. Uses SHA-256 hashing to store label
+/// combinations efficiently.
 pub struct CardinalityMonitor {
-    /// Map of metric name → set of unique label combinations
-    metrics: Mutex<HashMap<String, HashSet<Vec<String>>>>,
+    /// Map of metric name → set of unique label combination hashes
+    metrics: Mutex<HashMap<String, HashSet<[u8; 32]>>>,
     /// Total number of unique time series across all metrics
     total_series: AtomicUsize,
     /// Threshold for warning about high cardinality
@@ -75,15 +77,18 @@ impl CardinalityMonitor {
     ///
     /// # Arguments
     /// * `metric_name` - Name of the metric (e.g., `"http_requests_total"`)
-    /// * `labels` - Vector of label values in order (e.g., `["GET", "/api", "200"]`)
+    /// * `labels` - Slice of label values in order (e.g., `&["GET", "/api", "200"]`)
     ///
     /// # Example
     /// ```
     /// # use sb_metrics::cardinality::CardinalityMonitor;
     /// let monitor = CardinalityMonitor::new(1000);
-    /// monitor.record_label_usage("http_requests_total", vec!["GET".to_string(), "/api".to_string()]);
+    /// monitor.record_label_usage("http_requests_total", &["GET".to_string(), "/api".to_string()]);
     /// ```
     pub fn record_label_usage(&self, metric_name: &str, labels: &[String]) {
+        // Compute hash of label combination for efficient storage
+        let label_hash = Self::hash_labels(labels);
+
         // Acquire lock on metrics map
         let Ok(mut metrics) = self.metrics.lock() else {
             // If mutex is poisoned, skip monitoring (non-critical path)
@@ -91,45 +96,61 @@ impl CardinalityMonitor {
         };
 
         // Get or create the label set for this metric
-        let label_set = metrics
-            .entry(metric_name.to_string())
-            .or_insert_with(HashSet::new);
+        let label_set = metrics.entry(metric_name.to_string()).or_default();
 
-        // Try to insert the label combination
-        if label_set.insert(labels.to_vec()) {
+        // Try to insert the label combination hash
+        if label_set.insert(label_hash) {
             // New unique combination - increment total series count
             let total = self.total_series.fetch_add(1, Ordering::Relaxed) + 1;
 
-            // Check if we exceeded the warning threshold
-            if total > self.warning_threshold {
-                // Only warn once globally
-                if total == self.warning_threshold + 1 {
-                    warn!(
-                        total_series = total,
-                        threshold = self.warning_threshold,
-                        "High cardinality detected across all metrics"
-                    );
-                }
-            }
+            // Check global threshold
+            self.check_global_threshold(total);
 
-            // Also check per-metric cardinality
+            // Check per-metric threshold
             let metric_cardinality = label_set.len();
-            if metric_cardinality > self.warning_threshold / 10 {
-                // Warn if single metric has >10% of total threshold
-                // Only warn once per metric
-                let Ok(mut warned) = self.warned_metrics.lock() else {
-                    return;
-                };
+            self.check_metric_threshold(metric_name, metric_cardinality, labels);
+        }
+    }
 
-                if warned.insert(metric_name.to_string()) {
-                    warn!(
-                        metric = metric_name,
-                        cardinality = metric_cardinality,
-                        threshold = self.warning_threshold / 10,
-                        labels = ?labels,
-                        "High cardinality detected for single metric"
-                    );
-                }
+    /// Compute SHA-256 hash of label combination
+    fn hash_labels(labels: &[String]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        for label in labels {
+            hasher.update(label.as_bytes());
+            hasher.update(b"\0"); // Delimiter to avoid collision
+        }
+        hasher.finalize().into()
+    }
+
+    /// Check if global cardinality threshold is exceeded
+    fn check_global_threshold(&self, total: usize) {
+        if total > self.warning_threshold && total == self.warning_threshold + 1 {
+            // Only warn once globally
+            warn!(
+                total_series = total,
+                threshold = self.warning_threshold,
+                "High cardinality detected across all metrics"
+            );
+        }
+    }
+
+    /// Check if per-metric cardinality threshold is exceeded
+    fn check_metric_threshold(&self, metric_name: &str, cardinality: usize, labels: &[String]) {
+        let per_metric_threshold = self.warning_threshold / 10;
+        if cardinality > per_metric_threshold {
+            // Warn if single metric has >10% of total threshold
+            let Ok(mut warned) = self.warned_metrics.lock() else {
+                return;
+            };
+
+            if warned.insert(metric_name.to_string()) {
+                warn!(
+                    metric = metric_name,
+                    cardinality,
+                    threshold = per_metric_threshold,
+                    labels = ?labels,
+                    "High cardinality detected for single metric"
+                );
             }
         }
     }
@@ -146,8 +167,8 @@ impl CardinalityMonitor {
     /// ```
     /// # use sb_metrics::cardinality::CardinalityMonitor;
     /// let monitor = CardinalityMonitor::new(1000);
-    /// monitor.record_label_usage("http_requests_total", vec!["GET".to_string()]);
-    /// monitor.record_label_usage("http_requests_total", vec!["POST".to_string()]);
+    /// monitor.record_label_usage("http_requests_total", &["GET".to_string()]);
+    /// monitor.record_label_usage("http_requests_total", &["POST".to_string()]);
     /// assert_eq!(monitor.get_cardinality("http_requests_total"), 2);
     /// ```
     #[must_use]
@@ -165,8 +186,8 @@ impl CardinalityMonitor {
     /// ```
     /// # use sb_metrics::cardinality::CardinalityMonitor;
     /// let monitor = CardinalityMonitor::new(1000);
-    /// monitor.record_label_usage("http_total", vec!["GET".to_string()]);
-    /// monitor.record_label_usage("db_total", vec!["SELECT".to_string()]);
+    /// monitor.record_label_usage("http_total", &["GET".to_string()]);
+    /// monitor.record_label_usage("db_total", &["SELECT".to_string()]);
     /// assert_eq!(monitor.get_total_series(), 2);
     /// ```
     #[must_use]
@@ -183,9 +204,9 @@ impl CardinalityMonitor {
     /// ```
     /// # use sb_metrics::cardinality::CardinalityMonitor;
     /// let monitor = CardinalityMonitor::new(1000);
-    /// monitor.record_label_usage("http_total", vec!["GET".to_string()]);
-    /// monitor.record_label_usage("http_total", vec!["POST".to_string()]);
-    /// monitor.record_label_usage("db_total", vec!["SELECT".to_string()]);
+    /// monitor.record_label_usage("http_total", &["GET".to_string()]);
+    /// monitor.record_label_usage("http_total", &["POST".to_string()]);
+    /// monitor.record_label_usage("db_total", &["SELECT".to_string()]);
     ///
     /// let summary = monitor.get_cardinality_summary();
     /// assert_eq!(summary.get("http_total"), Some(&2));
@@ -240,17 +261,17 @@ mod tests {
     fn test_record_label_usage() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("test_metric", &vec!["value1".to_string()]);
+        monitor.record_label_usage("test_metric", &["value1".to_string()]);
         assert_eq!(monitor.get_cardinality("test_metric"), 1);
         assert_eq!(monitor.get_total_series(), 1);
 
         // Same labels - should not increase cardinality
-        monitor.record_label_usage("test_metric", &vec!["value1".to_string()]);
+        monitor.record_label_usage("test_metric", &["value1".to_string()]);
         assert_eq!(monitor.get_cardinality("test_metric"), 1);
         assert_eq!(monitor.get_total_series(), 1);
 
         // Different labels - should increase cardinality
-        monitor.record_label_usage("test_metric", &vec!["value2".to_string()]);
+        monitor.record_label_usage("test_metric", &["value2".to_string()]);
         assert_eq!(monitor.get_cardinality("test_metric"), 2);
         assert_eq!(monitor.get_total_series(), 2);
     }
@@ -259,9 +280,9 @@ mod tests {
     fn test_multiple_metrics() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("metric1", &vec!["a".to_string()]);
-        monitor.record_label_usage("metric1", &vec!["b".to_string()]);
-        monitor.record_label_usage("metric2", &vec!["x".to_string()]);
+        monitor.record_label_usage("metric1", &["a".to_string()]);
+        monitor.record_label_usage("metric1", &["b".to_string()]);
+        monitor.record_label_usage("metric2", &["x".to_string()]);
 
         assert_eq!(monitor.get_cardinality("metric1"), 2);
         assert_eq!(monitor.get_cardinality("metric2"), 1);
@@ -272,9 +293,9 @@ mod tests {
     fn test_cardinality_summary() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("metric1", &vec!["a".to_string()]);
-        monitor.record_label_usage("metric1", &vec!["b".to_string()]);
-        monitor.record_label_usage("metric2", &vec!["x".to_string()]);
+        monitor.record_label_usage("metric1", &["a".to_string()]);
+        monitor.record_label_usage("metric1", &["b".to_string()]);
+        monitor.record_label_usage("metric2", &["x".to_string()]);
 
         let summary = monitor.get_cardinality_summary();
         assert_eq!(summary.get("metric1"), Some(&2));
@@ -285,7 +306,7 @@ mod tests {
     fn test_reset() {
         let monitor = CardinalityMonitor::new(1000);
 
-        monitor.record_label_usage("test", &vec!["a".to_string()]);
+        monitor.record_label_usage("test", &["a".to_string()]);
         assert_eq!(monitor.get_total_series(), 1);
 
         monitor.reset();
@@ -299,7 +320,7 @@ mod tests {
 
         // Add 6 unique combinations (exceeds threshold of 5)
         for i in 0..6 {
-            monitor.record_label_usage("test", &vec![format!("value{}", i)]);
+            monitor.record_label_usage("test", &[format!("value{i}")]);
         }
 
         assert_eq!(monitor.get_total_series(), 6);
@@ -312,15 +333,15 @@ mod tests {
 
         monitor.record_label_usage(
             "http_requests",
-            &vec!["GET".to_string(), "/api".to_string(), "200".to_string()],
+            &["GET".to_string(), "/api".to_string(), "200".to_string()],
         );
         monitor.record_label_usage(
             "http_requests",
-            &vec!["GET".to_string(), "/api".to_string(), "404".to_string()],
+            &["GET".to_string(), "/api".to_string(), "404".to_string()],
         );
         monitor.record_label_usage(
             "http_requests",
-            &vec!["POST".to_string(), "/api".to_string(), "200".to_string()],
+            &["POST".to_string(), "/api".to_string(), "200".to_string()],
         );
 
         assert_eq!(monitor.get_cardinality("http_requests"), 3);

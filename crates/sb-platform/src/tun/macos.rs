@@ -386,10 +386,10 @@ mod tests {
 
     #[test]
     fn test_parse_utun_unit() {
-        assert_eq!(MacOsTun::parse_utun_unit("utun0").unwrap(), 1);
-        assert_eq!(MacOsTun::parse_utun_unit("utun8").unwrap(), 9);
-        assert_eq!(MacOsTun::parse_utun_unit("utun").unwrap(), 0);
-        assert_eq!(MacOsTun::parse_utun_unit("").unwrap(), 0);
+        assert_eq!(MacOsTun::parse_utun_unit("utun0").ok(), Some(1));
+        assert_eq!(MacOsTun::parse_utun_unit("utun8").ok(), Some(9));
+        assert_eq!(MacOsTun::parse_utun_unit("utun").ok(), Some(0));
+        assert_eq!(MacOsTun::parse_utun_unit("").ok(), Some(0));
 
         assert!(MacOsTun::parse_utun_unit("invalid").is_err());
         assert!(MacOsTun::parse_utun_unit("utunX").is_err());
@@ -409,6 +409,7 @@ mod tests {
 
     // Note: These tests require special privileges on macOS
     #[cfg(feature = "integration_tests")]
+    #[allow(clippy::panic)] // Integration tests may panic on unexpected errors
     mod integration_tests {
         use super::*;
         use std::net::{IpAddr, Ipv4Addr};
@@ -439,7 +440,9 @@ mod tests {
                 Err(TunError::PermissionDenied) => {
                     println!("Skipping test: requires special privileges");
                 }
-                Err(e) => panic!("Unexpected error: {:?}", e),
+                Err(e) => {
+                    panic!("Test failed with unexpected error: {e:?}");
+                }
             }
         }
     }

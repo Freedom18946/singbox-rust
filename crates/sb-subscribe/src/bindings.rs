@@ -5,10 +5,27 @@ use crate::model::Profile;
 
 #[cfg(feature = "subs_bindings_dry")]
 use std::time::Instant;
+
+/// Default target for connectivity tests
+#[cfg(feature = "subs_bindings_dry")]
+const DEFAULT_TEST_TARGET: &str = "www.google.com";
+
+/// DNS timeout threshold in milliseconds
+#[cfg(feature = "subs_bindings_dry")]
+const DNS_TIMEOUT_MS: u128 = 5000;
+
+/// Simulated DNS delay for encrypted proxies in milliseconds
+#[cfg(feature = "subs_bindings_dry")]
+const DNS_DELAY_ENCRYPTED_MS: u64 = 10;
+
+/// Simulated DNS delay for direct connections in milliseconds
+#[cfg(feature = "subs_bindings_dry")]
+const DNS_DELAY_DIRECT_MS: u64 = 5;
+
 pub fn bindings_minijson(p: &Profile) -> String {
     use sb_core::router::minijson::{obj, Val};
     // 输出形如：{"outbounds":[{"name":"a","kind":"trojan"},...]}
-    let mut items = Vec::new();
+    let mut items = Vec::with_capacity(p.outbounds.len());
     for o in &p.outbounds {
         let k = o.kind.to_lowercase();
         let rec = obj([("name", Val::Str(&o.name)), ("kind", Val::Str(&k))]);
@@ -17,33 +34,56 @@ pub fn bindings_minijson(p: &Profile) -> String {
     format!("{{\"outbounds\":[{}]}}", items.join(","))
 }
 
+/// Test result for a single outbound
+#[cfg(feature = "subs_bindings_dry")]
+struct TestResult {
+    kind_lower: String,
+    status: &'static str,
+    elapsed_ms: u64,
+    error_msg: Option<String>,
+}
+
+#[cfg(feature = "subs_bindings_dry")]
+impl TestResult {
+    async fn from_outbound(kind: &str, name: &str, test_target: &str) -> Self {
+        let start = Instant::now();
+        let result = dry_connect_single(kind, name, test_target).await;
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        let (status, error_msg) = match result {
+            Ok(()) => ("ok", None),
+            Err(e) => ("error", Some(e)),
+        };
+
+        Self {
+            kind_lower: kind.to_lowercase(),
+            status,
+            elapsed_ms,
+            error_msg,
+        }
+    }
+}
+
 /// R134: 干运行连接测试（仅解析+DNS，无实际连接）
 #[cfg(feature = "subs_bindings_dry")]
 pub async fn dry_connect_test(p: &Profile, target: Option<&str>) -> String {
     use sb_core::router::minijson::{obj, Val};
-    let mut results = Vec::new();
+    let mut results = Vec::with_capacity(p.outbounds.len());
 
-    let test_target = target.unwrap_or("www.google.com");
+    let test_target = target.unwrap_or(DEFAULT_TEST_TARGET);
 
     for outbound in &p.outbounds {
-        let start = Instant::now();
-        let result = dry_connect_single(&outbound.kind, &outbound.name, test_target).await;
-        let elapsed_ms = start.elapsed().as_millis() as u64;
-
-        let status = if result.is_ok() { "ok" } else { "error" };
-        let error_msg = if let Err(ref e) = result {
-            e.as_str()
-        } else {
-            ""
-        };
+        let test_result = TestResult::from_outbound(&outbound.kind, &outbound.name, test_target).await;
+        let elapsed_str = test_result.elapsed_ms.to_string();
+        let error_str = test_result.error_msg.as_deref().unwrap_or("");
 
         let item = obj([
             ("name", Val::Str(&outbound.name)),
-            ("kind", Val::Str(&outbound.kind.to_lowercase())),
+            ("kind", Val::Str(&test_result.kind_lower)),
             ("target", Val::Str(test_target)),
-            ("status", Val::Str(status)),
-            ("elapsed_ms", Val::Str(&elapsed_ms.to_string())),
-            ("error", Val::Str(error_msg)),
+            ("status", Val::Str(test_result.status)),
+            ("elapsed_ms", Val::Str(&elapsed_str)),
+            ("error", Val::Str(error_str)),
         ]);
         results.push(item);
     }
@@ -65,10 +105,10 @@ async fn dry_connect_single(kind: &str, _name: &str, target: &str) -> Result<(),
             }
 
             // 模拟 DNS 解析延迟
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(DNS_DELAY_ENCRYPTED_MS)).await;
 
             let dns_elapsed = dns_start.elapsed().as_millis();
-            if dns_elapsed > 5000 {
+            if dns_elapsed > DNS_TIMEOUT_MS {
                 return Err("dns timeout".to_string());
             }
 
@@ -80,7 +120,7 @@ async fn dry_connect_single(kind: &str, _name: &str, target: &str) -> Result<(),
                 Ok(())
             } else {
                 // 模拟轻量级检查
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(DNS_DELAY_DIRECT_MS)).await;
                 Ok(())
             }
         }
@@ -88,7 +128,7 @@ async fn dry_connect_single(kind: &str, _name: &str, target: &str) -> Result<(),
             // 阻断类型，直接返回成功（逻辑上的阻断）
             Ok(())
         }
-        _ => Err(format!("unsupported outbound kind: {}", kind)),
+        _ => Err(format!("unsupported outbound kind: {kind}")),
     }
 }
 
@@ -100,44 +140,34 @@ pub async fn bindings_enhanced_minijson(
     target: Option<&str>,
 ) -> String {
     use sb_core::router::minijson::{obj, Val};
-    let mut items = Vec::new();
+    let mut items = Vec::with_capacity(p.outbounds.len());
 
-    let test_target = target.unwrap_or("www.google.com");
+    let test_target = target.unwrap_or(DEFAULT_TEST_TARGET);
 
     for outbound in &p.outbounds {
         let kind_lower = outbound.kind.to_lowercase();
 
         if test_connect {
-            let start = Instant::now();
-            let result = dry_connect_single(&outbound.kind, &outbound.name, test_target).await;
-            let elapsed_ms = start.elapsed().as_millis() as u64;
+            let test_result = TestResult::from_outbound(&outbound.kind, &outbound.name, test_target).await;
+            let elapsed_str = test_result.elapsed_ms.to_string();
 
-            let status = if result.is_ok() { "ok" } else { "error" };
-            let error_msg = if let Err(ref e) = result {
-                e.as_str()
+            let item = if let Some(err) = &test_result.error_msg {
+                obj([
+                    ("name", Val::Str(&outbound.name)),
+                    ("kind", Val::Str(&kind_lower)),
+                    ("test_status", Val::Str(test_result.status)),
+                    ("test_elapsed_ms", Val::Str(&elapsed_str)),
+                    ("test_error", Val::Str(err)),
+                ])
             } else {
-                ""
+                obj([
+                    ("name", Val::Str(&outbound.name)),
+                    ("kind", Val::Str(&kind_lower)),
+                    ("test_status", Val::Str(test_result.status)),
+                    ("test_elapsed_ms", Val::Str(&elapsed_str)),
+                ])
             };
-            let elapsed_str = elapsed_ms.to_string();
-
-            if error_msg.is_empty() {
-                let item = obj([
-                    ("name", Val::Str(&outbound.name)),
-                    ("kind", Val::Str(&kind_lower)),
-                    ("test_status", Val::Str(status)),
-                    ("test_elapsed_ms", Val::Str(&elapsed_str)),
-                ]);
-                items.push(item);
-            } else {
-                let item = obj([
-                    ("name", Val::Str(&outbound.name)),
-                    ("kind", Val::Str(&kind_lower)),
-                    ("test_status", Val::Str(status)),
-                    ("test_elapsed_ms", Val::Str(&elapsed_str)),
-                    ("test_error", Val::Str(error_msg)),
-                ]);
-                items.push(item);
-            }
+            items.push(item);
         } else {
             let item = obj([
                 ("name", Val::Str(&outbound.name)),

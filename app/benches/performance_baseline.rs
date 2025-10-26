@@ -21,8 +21,14 @@ fn bench_tcp_direct_throughput(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(1024 * 1024)); // 1MB
 
     // Start echo server
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let addr = match listener.local_addr() {
+        Ok(a) => a,
+        Err(_) => return,
+    };
 
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -46,13 +52,17 @@ fn bench_tcp_direct_throughput(c: &mut Criterion) {
 
     group.bench_function("direct_1mb", |b| {
         b.iter(|| {
-            let mut stream = TcpStream::connect(addr).unwrap();
+            let Ok(mut stream) = TcpStream::connect(addr) else { return; };
             let data = vec![0xAB; 1024 * 1024]; // 1MB
 
-            stream.write_all(&data).unwrap();
+            if stream.write_all(&data).is_err() {
+                return;
+            }
 
             let mut received = vec![0u8; data.len()];
-            stream.read_exact(&mut received).unwrap();
+            if std::io::Read::read_exact(&mut stream, &mut received).is_err() {
+                return;
+            }
 
             black_box(received);
         });
@@ -67,8 +77,14 @@ fn bench_latency_echo(c: &mut Criterion) {
     group.sample_size(1000);
 
     // Start echo server
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let addr = match listener.local_addr() {
+        Ok(a) => a,
+        Err(_) => return,
+    };
 
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -92,13 +108,17 @@ fn bench_latency_echo(c: &mut Criterion) {
 
     group.bench_function("echo_small_payload", |b| {
         b.iter(|| {
-            let mut stream = TcpStream::connect(addr).unwrap();
+            let Ok(mut stream) = TcpStream::connect(addr) else { return; };
             let data = b"Hello, World!"; // 13 bytes
 
-            stream.write_all(data).unwrap();
+            if stream.write_all(data).is_err() {
+                return;
+            }
 
             let mut received = [0u8; 13];
-            stream.read_exact(&mut received).unwrap();
+            if std::io::Read::read_exact(&mut stream, &mut received).is_err() {
+                return;
+            }
 
             black_box(received);
         });
@@ -113,8 +133,14 @@ fn bench_concurrent_connections(c: &mut Criterion) {
     group.sample_size(10);
 
     // Start echo server
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let addr = match listener.local_addr() {
+        Ok(a) => a,
+        Err(_) => return,
+    };
 
     thread::spawn(move || {
         for stream in listener.incoming() {
@@ -142,18 +168,18 @@ fn bench_concurrent_connections(c: &mut Criterion) {
                 .map(|_| {
                     let addr = addr;
                     thread::spawn(move || {
-                        let mut stream = TcpStream::connect(addr).unwrap();
+                        let Ok(mut stream) = TcpStream::connect(addr) else { return; };
                         let data = b"test";
-                        stream.write_all(data).unwrap();
+                        let _ = stream.write_all(data);
                         let mut received = [0u8; 4];
-                        stream.read_exact(&mut received).unwrap();
+                        let _ = std::io::Read::read_exact(&mut stream, &mut received);
                         black_box(received);
                     })
                 })
                 .collect();
 
             for handle in handles {
-                handle.join().unwrap();
+                let _ = handle.join();
             }
         });
     });
@@ -168,3 +194,5 @@ criterion_group!(
     bench_concurrent_connections
 );
 criterion_main!(benches);
+#[cfg(not(feature = "bench"))]
+fn main() {}

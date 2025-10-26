@@ -1,3 +1,13 @@
+//! Error types for singbox-rust core.
+//!
+//! This module provides two error systems:
+//! - [`Error`]: Legacy error type for backward compatibility
+//! - [`SbError`]: Modern structured error system (Schema v2) with detailed classification
+//!
+//! ## Error Reporting
+//! [`ErrorReport`] provides aggregated error collection with fingerprinting for
+//! configuration validation and diagnostics.
+
 use std::{error::Error as StdError, fmt, io, time::Duration};
 use thiserror::Error;
 
@@ -7,7 +17,7 @@ use serde::Serialize;
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub type SbResult<T> = std::result::Result<T, SbError>;
 
-/// Legacy error type for backward compatibility
+/// Legacy error type for backward compatibility.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("io: {0}")]
@@ -94,7 +104,7 @@ pub enum SbError {
 pub use sb_types::IssueCode;
 
 /// Error classification for network and protocol errors
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorClass {
     Connection,
     Protocol,
@@ -125,37 +135,37 @@ pub struct Issue {
 impl fmt::Display for SbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SbError::Io(e) => write!(f, "io: {}", e),
-            SbError::Dns { message } => write!(f, "DNS error: {}", message),
-            SbError::Parse { message } => write!(f, "Parse error: {}", message),
-            SbError::Config {
+            Self::Io(e) => write!(f, "io: {e}"),
+            Self::Dns { message } => write!(f, "DNS error: {message}"),
+            Self::Parse { message } => write!(f, "Parse error: {message}"),
+            Self::Config {
                 code,
                 ptr,
                 msg,
                 hint,
             } => {
-                write!(f, "Config error [{:?}] at {}: {}", code, ptr, msg)?;
+                write!(f, "Config error [{code:?}] at {ptr}: {msg}")?;
                 if let Some(h) = hint {
-                    write!(f, " (hint: {})", h)?;
+                    write!(f, " (hint: {h})")?;
                 }
                 Ok(())
             }
-            SbError::Network { class, msg } => {
-                write!(f, "Network error [{:?}]: {}", class, msg)
+            Self::Network { class, msg } => {
+                write!(f, "Network error [{class:?}]: {msg}")
             }
-            SbError::Timeout {
+            Self::Timeout {
                 operation,
                 timeout_ms,
             } => {
-                write!(f, "Timeout in {} after {}ms", operation, timeout_ms)
+                write!(f, "Timeout in {operation} after {timeout_ms}ms")
             }
-            SbError::Capacity { what, limit } => {
-                write!(f, "Capacity exceeded for {}: limit {}", what, limit)
+            Self::Capacity { what, limit } => {
+                write!(f, "Capacity exceeded for {what}: limit {limit}")
             }
-            SbError::Addr { message } => write!(f, "Address error: {}", message),
-            SbError::Canceled { operation } => write!(f, "Canceled: {}", operation),
-            SbError::Poison { message } => write!(f, "Poison error: {}", message),
-            SbError::Other { message, .. } => write!(f, "Other error: {}", message),
+            Self::Addr { message } => write!(f, "Address error: {message}"),
+            Self::Canceled { operation } => write!(f, "Canceled: {operation}"),
+            Self::Poison { message } => write!(f, "Poison error: {message}"),
+            Self::Other { message, .. } => write!(f, "Other error: {message}"),
         }
     }
 }
@@ -163,8 +173,8 @@ impl fmt::Display for SbError {
 impl std::error::Error for SbError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            SbError::Io(e) => Some(e),
-            SbError::Other {
+            Self::Io(e) => Some(e),
+            Self::Other {
                 source: Some(src), ..
             } => Some(src.as_ref()),
             _ => None,
@@ -174,7 +184,7 @@ impl std::error::Error for SbError {
 
 impl SbError {
     /// Create an I/O error wrapper
-    pub fn io(e: io::Error) -> Self {
+    pub const fn io(e: io::Error) -> Self {
         Self::Io(e)
     }
     /// Create a parse error
@@ -222,32 +232,32 @@ impl SbError {
         }
     }
     /// Stable error kind for matching in tests and callers
-    pub fn kind(&self) -> &'static str {
+    pub const fn kind(&self) -> &'static str {
         match self {
-            SbError::Io(_) => "Io",
-            SbError::Dns { .. } => "Dns",
-            SbError::Parse { .. } => "Parse",
-            SbError::Config { .. } => "Config",
-            SbError::Network { .. } => "Network",
-            SbError::Timeout { .. } => "Timeout",
-            SbError::Capacity { .. } => "Capacity",
-            SbError::Addr { .. } => "Addr",
-            SbError::Canceled { .. } => "Canceled",
-            SbError::Poison { .. } => "Poison",
-            SbError::Other { .. } => "Other",
+            Self::Io(_) => "Io",
+            Self::Dns { .. } => "Dns",
+            Self::Parse { .. } => "Parse",
+            Self::Config { .. } => "Config",
+            Self::Network { .. } => "Network",
+            Self::Timeout { .. } => "Timeout",
+            Self::Capacity { .. } => "Capacity",
+            Self::Addr { .. } => "Addr",
+            Self::Canceled { .. } => "Canceled",
+            Self::Poison { .. } => "Poison",
+            Self::Other { .. } => "Other",
         }
     }
 }
 
 impl From<io::Error> for SbError {
     fn from(e: io::Error) -> Self {
-        SbError::Io(e)
+        Self::Io(e)
     }
 }
 
 impl From<anyhow::Error> for SbError {
     fn from(e: anyhow::Error) -> Self {
-        SbError::Other {
+        Self::Other {
             message: e.to_string(),
             source: Some(e.into()),
         }
@@ -312,7 +322,7 @@ impl From<Issue> for SbError {
             _ => IssueCode::UnknownField,
         };
 
-        SbError::Config {
+        Self::Config {
             code,
             ptr: issue.ptr,
             msg: issue.msg,
@@ -324,24 +334,24 @@ impl From<Issue> for SbError {
 impl From<SbError> for Issue {
     fn from(error: SbError) -> Self {
         match error {
-            SbError::Io(e) => Issue {
+            SbError::Io(e) => Self {
                 kind: "io".to_string(),
                 code: format!("{:?}", e.kind()),
-                ptr: "".to_string(),
+                ptr: String::new(),
                 msg: e.to_string(),
                 hint: None,
             },
-            SbError::Dns { message } => Issue {
+            SbError::Dns { message } => Self {
                 kind: "dns".to_string(),
                 code: "Dns".to_string(),
-                ptr: "".to_string(),
+                ptr: String::new(),
                 msg: message,
                 hint: None,
             },
-            SbError::Parse { message } => Issue {
+            SbError::Parse { message } => Self {
                 kind: "parse".to_string(),
                 code: "Parse".to_string(),
-                ptr: "".to_string(),
+                ptr: String::new(),
                 msg: message,
                 hint: None,
             },
@@ -350,62 +360,62 @@ impl From<SbError> for Issue {
                 ptr,
                 msg,
                 hint,
-            } => Issue {
+            } => Self {
                 kind: "config".to_string(),
-                code: format!("{:?}", code),
+                code: format!("{code:?}"),
                 ptr,
                 msg,
                 hint,
             },
-            SbError::Network { class, msg } => Issue {
+            SbError::Network { class, msg } => Self {
                 kind: "network".to_string(),
-                code: format!("{:?}", class),
-                ptr: "".to_string(),
+                code: format!("{class:?}"),
+                ptr: String::new(),
                 msg,
                 hint: None,
             },
             SbError::Timeout {
                 operation,
                 timeout_ms,
-            } => Issue {
+            } => Self {
                 kind: "timeout".to_string(),
                 code: "Timeout".to_string(),
-                ptr: "".to_string(),
-                msg: format!("Timeout in {} after {}ms", operation, timeout_ms),
+                ptr: String::new(),
+                msg: format!("Timeout in {operation} after {timeout_ms}ms"),
                 hint: None,
             },
-            SbError::Capacity { what, limit } => Issue {
+            SbError::Capacity { what, limit } => Self {
                 kind: "capacity".to_string(),
                 code: "CapacityExceeded".to_string(),
-                ptr: "".to_string(),
-                msg: format!("Capacity exceeded for {}: limit {}", what, limit),
+                ptr: String::new(),
+                msg: format!("Capacity exceeded for {what}: limit {limit}"),
                 hint: None,
             },
-            SbError::Addr { message } => Issue {
+            SbError::Addr { message } => Self {
                 kind: "addr".to_string(),
                 code: "Addr".to_string(),
-                ptr: "".to_string(),
+                ptr: String::new(),
                 msg: message,
                 hint: None,
             },
-            SbError::Canceled { operation } => Issue {
+            SbError::Canceled { operation } => Self {
                 kind: "canceled".to_string(),
                 code: "Canceled".to_string(),
-                ptr: "".to_string(),
-                msg: format!("Operation canceled: {}", operation),
+                ptr: String::new(),
+                msg: format!("Operation canceled: {operation}"),
                 hint: None,
             },
-            SbError::Poison { message } => Issue {
+            SbError::Poison { message } => Self {
                 kind: "poison".to_string(),
                 code: "Poison".to_string(),
-                ptr: "".to_string(),
+                ptr: String::new(),
                 msg: message,
                 hint: None,
             },
-            SbError::Other { message, .. } => Issue {
+            SbError::Other { message, .. } => Self {
                 kind: "other".to_string(),
                 code: "Other".to_string(),
-                ptr: "".to_string(),
+                ptr: String::new(),
                 msg: message,
                 hint: None,
             },

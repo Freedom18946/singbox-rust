@@ -460,6 +460,7 @@ impl rustls::client::danger::ServerCertVerifier for RealityVerifier {
 //    - This prevents detection by censors
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::manual_string_new)]
 mod tests {
     use super::*;
 

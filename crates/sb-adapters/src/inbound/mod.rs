@@ -1,3 +1,8 @@
+//! Inbound adapters (server-side protocol implementations).
+//!
+//! This module provides server-side implementations for various proxy protocols,
+//! including HTTP, SOCKS, TUN, Shadowsocks, VMess, VLESS, Trojan, and more.
+
 #[cfg(feature = "http")]
 pub mod http;
 
@@ -48,3 +53,10 @@ pub mod hysteria;
 
 #[cfg(feature = "adapter-hysteria2")]
 pub mod hysteria2;
+
+/// Router connector module for TUN devices.
+#[cfg(feature = "tun")]
+pub mod router_connector;
+
+#[cfg(feature = "tun")]
+pub mod tun_enhanced;

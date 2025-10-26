@@ -24,7 +24,7 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn new(name: String, rtype: u16, class: u16, ttl: u32, data: Vec<u8>) -> Self {
+    pub const fn new(name: String, rtype: u16, class: u16, ttl: u32, data: Vec<u8>) -> Self {
         Self {
             name,
             rtype,
@@ -133,10 +133,10 @@ pub fn parse_min_ttl(pkt: &[u8]) -> Option<u64> {
             None => ttl,
         });
     }
-    min_ttl.map(|v| v as u64)
+    min_ttl.map(u64::from)
 }
 
-/// 读取 DNS 名称（支持压缩），返回 (name, new_off)
+/// 读取 DNS 名称（支持压缩），返回 (name, `new_off`)
 fn read_name(pkt: &[u8], off: usize, depth: usize) -> Result<(String, usize), ()> {
     if depth > 8 {
         return Err(());

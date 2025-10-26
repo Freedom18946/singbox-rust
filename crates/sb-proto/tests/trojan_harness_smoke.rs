@@ -12,5 +12,5 @@ async fn harness_tcp_timeout_is_bounded() {
         },
     );
     let _ = r.await; // 不断言网络结果，只验证函数可返回
-    assert!(true);
+    // Test passes if we reach here without hanging
 }

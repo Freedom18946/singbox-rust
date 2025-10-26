@@ -186,13 +186,17 @@ pub struct DnsResolver {
 
 impl DnsResolver {
     /// Create a new DNS resolver
+    ///
+    /// # Panics
+    /// This function will panic if hardcoded DNS server addresses are invalid (should never happen).
+    #[allow(clippy::expect_used)]
     pub fn new() -> Self {
         Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
             fake_ip_mappings: Arc::new(RwLock::new(HashMap::new())),
             dns_servers: vec![
-                "8.8.8.8:53".parse().expect("Valid DNS server"),
-                "1.1.1.1:53".parse().expect("Valid DNS server"),
+                "8.8.8.8:53".parse().expect("hardcoded DNS server must be valid"),
+                "1.1.1.1:53".parse().expect("hardcoded DNS server must be valid"),
             ],
         }
     }
@@ -200,8 +204,9 @@ impl DnsResolver {
     /// Flush DNS cache
     pub async fn flush_dns_cache(&self) -> ApiResult<()> {
         let mut cache = self.cache.write().await;
+        let cleared = cache.len();
         cache.clear();
-        log::info!("DNS cache flushed, {} entries cleared", cache.len());
+        log::info!("DNS cache flushed, {} entries cleared", cleared);
         Ok(())
     }
 

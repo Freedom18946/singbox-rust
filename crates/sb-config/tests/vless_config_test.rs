@@ -3,7 +3,7 @@
 use sb_config::Outbound;
 
 #[test]
-fn test_vless_config_parsing() {
+fn test_vless_config_parsing() -> anyhow::Result<()> {
     let json_config = r#"
     {
         "type": "vless",
@@ -18,7 +18,7 @@ fn test_vless_config_parsing() {
     }
     "#;
 
-    let outbound: Outbound = serde_json::from_str(json_config).unwrap();
+    let outbound: Outbound = serde_json::from_str(json_config)?;
 
     match outbound {
         Outbound::Vless {
@@ -41,12 +41,13 @@ fn test_vless_config_parsing() {
             assert_eq!(packet_encoding, Some("xudp".to_string()));
             assert_eq!(connect_timeout_sec, Some(30));
         }
-        _ => assert!(false, "Expected VLESS outbound"),
+        _ => panic!("Expected VLESS outbound"),
     }
+    Ok(())
 }
 
 #[test]
-fn test_vless_config_minimal() {
+fn test_vless_config_minimal() -> anyhow::Result<()> {
     let json_config = r#"
     {
         "type": "vless",
@@ -57,7 +58,7 @@ fn test_vless_config_minimal() {
     }
     "#;
 
-    let outbound: Outbound = serde_json::from_str(json_config).unwrap();
+    let outbound: Outbound = serde_json::from_str(json_config)?;
 
     match outbound {
         Outbound::Vless {
@@ -80,12 +81,13 @@ fn test_vless_config_minimal() {
             assert_eq!(packet_encoding, None);
             assert_eq!(connect_timeout_sec, None);
         }
-        _ => assert!(false, "Expected VLESS outbound"),
+        _ => panic!("Expected VLESS outbound"),
     }
+    Ok(())
 }
 
 #[test]
-fn test_vless_config_with_udp() {
+fn test_vless_config_with_udp() -> anyhow::Result<()> {
     let json_config = r#"
     {
         "type": "vless",
@@ -98,7 +100,7 @@ fn test_vless_config_with_udp() {
     }
     "#;
 
-    let outbound: Outbound = serde_json::from_str(json_config).unwrap();
+    let outbound: Outbound = serde_json::from_str(json_config)?;
 
     match outbound {
         Outbound::Vless {
@@ -121,8 +123,9 @@ fn test_vless_config_with_udp() {
             assert_eq!(packet_encoding, Some("packetaddr".to_string()));
             assert_eq!(connect_timeout_sec, None);
         }
-        _ => assert!(false, "Expected VLESS outbound"),
+        _ => panic!("Expected VLESS outbound"),
     }
+    Ok(())
 }
 
 #[test]
@@ -141,7 +144,7 @@ fn test_vless_config_invalid_json() {
 }
 
 #[test]
-fn test_vless_config_serialization_roundtrip() {
+fn test_vless_config_serialization_roundtrip() -> anyhow::Result<()> {
     let outbound = Outbound::Vless {
         name: "vless-test".to_string(),
         server: "example.com".to_string(),
@@ -161,10 +164,10 @@ fn test_vless_config_serialization_roundtrip() {
     };
 
     // Serialize to JSON
-    let json = serde_json::to_string(&outbound).unwrap();
+    let json = serde_json::to_string(&outbound)?;
 
     // Deserialize back
-    let deserialized: Outbound = serde_json::from_str(&json).unwrap();
+    let deserialized: Outbound = serde_json::from_str(&json)?;
 
     // Verify it matches
     match (&outbound, &deserialized) {
@@ -201,6 +204,7 @@ fn test_vless_config_serialization_roundtrip() {
             assert_eq!(pe1, pe2);
             assert_eq!(ct1, ct2);
         }
-        _ => assert!(false, "Expected VLESS outbound after deserialization"),
+        _ => panic!("Expected VLESS outbound after deserialization"),
     }
+    Ok(())
 }

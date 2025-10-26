@@ -29,7 +29,7 @@ impl Default for ConnectParams {
     fn default() -> Self {
         Self {
             // target 由调用侧必填
-            target: Address::Domain("".into(), 0),
+            target: Address::Domain(String::new(), 0),
             inbound: None,
             user: None,
             sniff_host: None,

@@ -17,7 +17,7 @@ pub struct HostPort {
 }
 
 impl HostPort {
-    pub fn new(host: String, port: u16) -> Self {
+    pub const fn new(host: String, port: u16) -> Self {
         Self { host, port }
     }
 }
@@ -115,14 +115,14 @@ pub struct TcpConnectRequest {
 }
 
 impl TcpConnectRequest {
-    pub fn new(target: TargetAddr) -> Self {
+    pub const fn new(target: TargetAddr) -> Self {
         Self {
             target,
             timeout_ms: None,
         }
     }
 
-    pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
+    pub const fn with_timeout(mut self, timeout_ms: u64) -> Self {
         self.timeout_ms = Some(timeout_ms);
         self
     }
@@ -136,7 +136,7 @@ pub struct UdpBindRequest {
 }
 
 impl UdpBindRequest {
-    pub fn new(bind: SocketAddr) -> Self {
+    pub const fn new(bind: SocketAddr) -> Self {
         Self { bind, target: None }
     }
 

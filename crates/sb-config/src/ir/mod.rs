@@ -1,95 +1,134 @@
 //! Strongly-typed intermediate representation (IR) for config and routing rules.
-//! - v1/v2 均转换到 IR，再由路由/适配层消费
-//! - 字段命名向 Go 对齐；新增字段仅扩展，不改变默认行为
+//!
+//! Both V1 and V2 formats are converted to IR, which is then consumed by routing
+//! and adapter layers. Field naming aligns with Go sing-box; new fields extend
+//! without changing default behavior.
+
 use serde::{Deserialize, Serialize};
 
 pub mod diff;
 
+/// Authentication credentials with optional environment variable support.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
+    /// Username (literal value).
     #[serde(default)]
     pub username: Option<String>,
+    /// Password (literal value).
     #[serde(default)]
     pub password: Option<String>,
-    /// if present, read username from this env var (takes precedence over `username`)
+    /// Read username from this environment variable (takes precedence over `username`).
     #[serde(default)]
     pub username_env: Option<String>,
-    /// if present, read password from this env var (takes precedence over `password`)
+    /// Read password from this environment variable (takes precedence over `password`).
     #[serde(default)]
     pub password_env: Option<String>,
 }
 
+/// Inbound proxy type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InboundType {
-    /// HTTP CONNECT proxy
+    /// SOCKS5 proxy.
     Socks,
+    /// HTTP CONNECT proxy.
     Http,
+    /// TUN device inbound.
     Tun,
-    /// Direct TCP/UDP forwarder (override destination)
+    /// Direct TCP/UDP forwarder with optional destination override.
     Direct,
 }
+
+/// Outbound proxy type.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum OutboundType {
+    /// Direct connection (no proxy).
     #[default]
     Direct,
+    /// HTTP proxy.
     Http,
+    /// SOCKS5 proxy.
     Socks,
+    /// Block connection.
     Block,
+    /// Manual selector (user-selected proxy).
     Selector,
+    /// Shadowsocks proxy.
     Shadowsocks,
+    /// ShadowTLS proxy.
     Shadowtls,
+    /// Automatic selector based on URL test latency.
     UrlTest,
+    /// Hysteria2 protocol.
     Hysteria2,
+    /// TUIC protocol.
     Tuic,
+    /// VLESS protocol.
     Vless,
+    /// VMess protocol.
     Vmess,
+    /// Trojan protocol.
     Trojan,
+    /// SSH tunnel.
     Ssh,
 }
 
+/// Inbound listener configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InboundIR {
+    /// Inbound type.
     pub ty: InboundType,
+    /// Listen address (IP or hostname).
     pub listen: String,
+    /// Listen port.
     pub port: u16,
+    /// Enable traffic sniffing.
     #[serde(default)]
     pub sniff: bool,
+    /// Enable UDP support.
     #[serde(default)]
     pub udp: bool,
-    /// HTTP 入站的 Basic 认证（可选）
+    /// Basic authentication for HTTP inbound (optional).
     #[serde(default)]
     pub basic_auth: Option<Credentials>,
-    /// For direct inbound: override destination host (required for production use)
+    /// Override destination host (for direct inbound).
     #[serde(default)]
     pub override_host: Option<String>,
-    /// For direct inbound: override destination port
+    /// Override destination port (for direct inbound).
     #[serde(default)]
     pub override_port: Option<u16>,
 }
 
+/// Outbound proxy configuration.
+///
+/// Supports multiple protocols (HTTP, SOCKS, Shadowsocks, VLESS, etc.)
+/// with protocol-specific fields marked as optional.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct OutboundIR {
     pub ty: OutboundType,
+    /// Server address (IP or hostname).
     #[serde(default)]
     pub server: Option<String>,
+    /// Server port.
     #[serde(default)]
     pub port: Option<u16>,
+    /// UDP mode: `"passthrough"` or `"socks5-upstream"`.
     #[serde(default)]
-    pub udp: Option<String>, // "passthrough" | "socks5-upstream"
+    pub udp: Option<String>,
+    /// Named outbound (for selector/router references).
     #[serde(default)]
-    pub name: Option<String>, // 命名出站（供选择器/路由引用）
-    /// for selector/urltest: list of member outbound names
+    pub name: Option<String>,
+    /// Member outbound names (for selector/urltest).
     #[serde(default)]
     pub members: Option<Vec<String>>,
-    /// Optional default member name for selector-like outbounds
+    /// Default member name for selector-like outbounds.
     #[serde(default)]
     pub default_member: Option<String>,
-    /// Optional method identifier (e.g., shadowsocks cipher)
+    /// Method identifier (e.g., Shadowsocks cipher).
     #[serde(default)]
     pub method: Option<String>,
-    /// 上游出站的认证信息（SOCKS/HTTP 均可用）
+    /// Authentication credentials for upstream proxies (SOCKS/HTTP).
     #[serde(default)]
     pub credentials: Option<Credentials>,
     /// VLESS-specific fields
@@ -173,7 +212,7 @@ pub struct OutboundIR {
     /// Brutal congestion control download limit (Hysteria2)
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
-    /// REALITY TLS configuration
+    /// REALITY TLS configuration.
     #[serde(default)]
     pub reality_enabled: Option<bool>,
     #[serde(default)]
@@ -182,13 +221,14 @@ pub struct OutboundIR {
     pub reality_short_id: Option<String>,
     #[serde(default)]
     pub reality_server_name: Option<String>,
-    /// Trojan-specific fields
+    /// Trojan password.
     #[serde(default)]
     pub password: Option<String>,
 
-    // SSH-specific fields (optional)
+    // SSH-specific fields
+    /// SSH private key content or file path (when `ssh_private_key_path` is not used).
     #[serde(default)]
-    pub ssh_private_key: Option<String>, // PEM content or file path (when _path not used)
+    pub ssh_private_key: Option<String>,
     #[serde(default)]
     pub ssh_private_key_path: Option<String>,
     #[serde(default)]
@@ -218,84 +258,118 @@ pub struct OutboundIR {
     pub interrupt_exist_connections: Option<bool>,
 }
 
+/// HTTP header entry (for gRPC metadata or HTTP Upgrade headers).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct HeaderEntry {
+    /// Header name.
     pub name: String,
+    /// Header value.
     pub value: String,
 }
 
+/// Routing rule intermediate representation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct RuleIR {
-    // 正向维度
+    // Positive match conditions
+    /// Domain exact match list.
     #[serde(default)]
     pub domain: Vec<String>,
+    /// Geosite category list.
     #[serde(default)]
     pub geosite: Vec<String>,
+    /// GeoIP country code list.
     #[serde(default)]
     pub geoip: Vec<String>,
+    /// IP CIDR list.
     #[serde(default)]
     pub ipcidr: Vec<String>,
+    /// Port or port range (e.g., `"80"`, `"80-90"`).
     #[serde(default)]
-    pub port: Vec<String>, // "80" | "80-90"
+    pub port: Vec<String>,
+    /// Process name list.
     #[serde(default)]
     pub process: Vec<String>,
+    /// Network type: `"tcp"` or `"udp"`.
     #[serde(default)]
-    pub network: Vec<String>, // "tcp" | "udp"
+    pub network: Vec<String>,
+    /// Protocol list: `"http"`, `"socks"`, etc.
     #[serde(default)]
-    pub protocol: Vec<String>, // "http" | "socks"
-    /// Sniffed ALPN protocols (e.g., "h2", "http/1.1", "h3")
+    pub protocol: Vec<String>,
+    /// Sniffed ALPN protocols (e.g., `"h2"`, `"http/1.1"`, `"h3"`).
     #[serde(default)]
     pub alpn: Vec<String>,
+    /// Source address list.
     #[serde(default)]
     pub source: Vec<String>,
+    /// Destination address list.
     #[serde(default)]
     pub dest: Vec<String>,
+    /// User-Agent pattern list.
     #[serde(default)]
     pub user_agent: Vec<String>,
-    // 否定维度
+
+    // Negative match conditions (exclusions)
+    /// Exclude domains.
     #[serde(default)]
     pub not_domain: Vec<String>,
+    /// Exclude geosite categories.
     #[serde(default)]
     pub not_geosite: Vec<String>,
+    /// Exclude GeoIP countries.
     #[serde(default)]
     pub not_geoip: Vec<String>,
+    /// Exclude IP CIDRs.
     #[serde(default)]
     pub not_ipcidr: Vec<String>,
+    /// Exclude ports.
     #[serde(default)]
     pub not_port: Vec<String>,
+    /// Exclude processes.
     #[serde(default)]
     pub not_process: Vec<String>,
+    /// Exclude networks.
     #[serde(default)]
     pub not_network: Vec<String>,
+    /// Exclude protocols.
     #[serde(default)]
     pub not_protocol: Vec<String>,
-    /// Exclude connections whose sniffed ALPN is in this list
+    /// Exclude ALPN protocols.
     #[serde(default)]
     pub not_alpn: Vec<String>,
-    // 目的出站
+
+    /// Target outbound name.
     #[serde(default)]
     pub outbound: Option<String>,
 }
 
+/// Routing table configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct RouteIR {
+    /// Routing rules (evaluated in order).
     #[serde(default)]
     pub rules: Vec<RuleIR>,
+    /// Default outbound name (fallback).
     #[serde(default)]
-    pub default: Option<String>, // 默认出站
+    pub default: Option<String>,
 }
 
+/// Complete configuration intermediate representation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ConfigIR {
+    /// Inbound listeners.
     #[serde(default)]
     pub inbounds: Vec<InboundIR>,
+    /// Outbound proxies.
     #[serde(default)]
     pub outbounds: Vec<OutboundIR>,
+    /// Routing configuration.
     #[serde(default)]
     pub route: RouteIR,
 }
 
 impl OutboundIR {
+    /// Return the string representation of the outbound type.
+    #[must_use]
     pub fn ty_str(&self) -> &'static str {
         match self.ty {
             OutboundType::Direct => "direct",
@@ -315,22 +389,25 @@ impl OutboundIR {
         }
     }
 
-    /// Validate REALITY configuration if enabled
+    /// Validate REALITY configuration if enabled.
+    ///
+    /// # Errors
+    /// Returns an error if REALITY is enabled but required fields are missing or malformed.
     pub fn validate_reality(&self) -> Result<(), String> {
         // Only validate if REALITY is explicitly enabled
         if let Some(true) = self.reality_enabled {
+            let outbound_name = self.name.as_deref().unwrap_or("unnamed");
+
             // Validate public_key (must be 64 hex chars for X25519)
             if let Some(ref public_key) = self.reality_public_key {
                 if !is_valid_hex(public_key) || public_key.len() != 64 {
                     return Err(format!(
-                        "outbound '{}': reality.public_key must be 64 hex characters (X25519 public key)",
-                        self.name.as_deref().unwrap_or("unnamed")
+                        "outbound '{outbound_name}': reality.public_key must be 64 hex characters (X25519 public key)"
                     ));
                 }
             } else {
                 return Err(format!(
-                    "outbound '{}': reality.public_key is required when reality is enabled",
-                    self.name.as_deref().unwrap_or("unnamed")
+                    "outbound '{outbound_name}': reality.public_key is required when reality is enabled"
                 ));
             }
 
@@ -339,30 +416,25 @@ impl OutboundIR {
                 if !short_id.is_empty() {
                     if !is_valid_hex(short_id) {
                         return Err(format!(
-                            "outbound '{}': reality.short_id must be hex characters",
-                            self.name.as_deref().unwrap_or("unnamed")
+                            "outbound '{outbound_name}': reality.short_id must be hex characters"
                         ));
                     }
                     if short_id.len() > 16 || short_id.len() % 2 != 0 {
                         return Err(format!(
-                            "outbound '{}': reality.short_id must be 0-16 hex chars (length multiple of 2)",
-                            self.name.as_deref().unwrap_or("unnamed")
+                            "outbound '{outbound_name}': reality.short_id must be 0-16 hex chars (length multiple of 2)"
                         ));
                     }
                 }
             }
 
             // Validate server_name is present
-            if self.reality_server_name.is_none()
-                || self
-                    .reality_server_name
-                    .as_ref()
-                    .map(|s| s.is_empty())
-                    .unwrap_or(true)
+            if self
+                .reality_server_name
+                .as_ref()
+                .is_none_or(String::is_empty)
             {
                 return Err(format!(
-                    "outbound '{}': reality.server_name is required when reality is enabled",
-                    self.name.as_deref().unwrap_or("unnamed")
+                    "outbound '{outbound_name}': reality.server_name is required when reality is enabled"
                 ));
             }
         }
@@ -371,12 +443,16 @@ impl OutboundIR {
     }
 }
 
-/// Helper function to validate hex strings
+/// Helper function to validate hex strings.
 fn is_valid_hex(s: &str) -> bool {
     s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 impl ConfigIR {
+    /// Check if any routing rule uses negation conditions.
+    ///
+    /// This is used to determine if the router needs to support negation logic.
+    #[must_use]
     pub fn has_any_negation(&self) -> bool {
         self.route.rules.iter().any(|r| {
             !r.not_domain.is_empty()
@@ -387,114 +463,42 @@ impl ConfigIR {
                 || !r.not_process.is_empty()
                 || !r.not_network.is_empty()
                 || !r.not_protocol.is_empty()
+                || !r.not_alpn.is_empty()
         })
     }
 
-    /// Validate all outbound configurations including REALITY
+    /// Validate all outbound configurations.
+    ///
+    /// # Errors
+    /// Returns a list of validation errors if any outbound configuration is invalid.
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
         // Validate REALITY configuration for all outbounds
         for outbound in &self.outbounds {
+            let outbound_name = outbound.name.as_deref().unwrap_or("unnamed");
+
             if let Err(e) = outbound.validate_reality() {
                 errors.push(e);
             }
+
+            // Validate selector/urltest members
             if matches!(outbound.ty, OutboundType::Selector | OutboundType::UrlTest)
-                && outbound
-                    .members
-                    .as_ref()
-                    .map(|members| members.is_empty())
-                    .unwrap_or(true)
+                && outbound.members.as_ref().is_none_or(Vec::is_empty)
             {
                 errors.push(format!(
-                    "outbound '{}': selector/urltest requires at least one member",
-                    outbound.name.as_deref().unwrap_or("unnamed")
+                    "outbound '{outbound_name}': selector/urltest requires at least one member"
                 ));
             }
+
+            // Validate Shadowsocks configuration
             if outbound.ty == OutboundType::Shadowsocks {
-                if outbound
-                    .server
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    errors.push(format!(
-                        "outbound '{}': shadowsocks.server is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
-                if outbound.port.is_none() {
-                    errors.push(format!(
-                        "outbound '{}': shadowsocks.port is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
-                if outbound
-                    .password
-                    .as_ref()
-                    .map(|p| p.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    errors.push(format!(
-                        "outbound '{}': shadowsocks.password is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
-                let method = outbound.method.as_deref().unwrap_or_default();
-                let method_ok = matches!(
-                    method.to_ascii_lowercase().as_str(),
-                    "aes-256-gcm" | "chacha20-poly1305"
-                );
-                if !method_ok {
-                    errors.push(format!(
-                        "outbound '{}': shadowsocks.method must be aes-256-gcm or chacha20-poly1305",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
+                Self::validate_shadowsocks(outbound, &mut errors);
             }
+
+            // Validate TUIC configuration
             if outbound.ty == OutboundType::Tuic {
-                if outbound
-                    .server
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    errors.push(format!(
-                        "outbound '{}': tuic.server is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
-                if outbound.port.is_none() {
-                    errors.push(format!(
-                        "outbound '{}': tuic.port is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
-                match outbound.uuid.as_ref() {
-                    Some(uuid) if !uuid.trim().is_empty() => {
-                        if uuid::Uuid::parse_str(uuid).is_err() {
-                            errors.push(format!(
-                                "outbound '{}': tuic.uuid must be a valid UUID string",
-                                outbound.name.as_deref().unwrap_or("unnamed")
-                            ));
-                        }
-                    }
-                    _ => errors.push(format!(
-                        "outbound '{}': tuic.uuid is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    )),
-                }
-                if outbound
-                    .token
-                    .as_ref()
-                    .map(|t| t.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    errors.push(format!(
-                        "outbound '{}': tuic.token is required",
-                        outbound.name.as_deref().unwrap_or("unnamed")
-                    ));
-                }
+                Self::validate_tuic(outbound, &mut errors);
             }
         }
 
@@ -502,6 +506,59 @@ impl ConfigIR {
             Ok(())
         } else {
             Err(errors)
+        }
+    }
+
+    /// Validate Shadowsocks outbound configuration.
+    fn validate_shadowsocks(outbound: &OutboundIR, errors: &mut Vec<String>) {
+        let name = outbound.name.as_deref().unwrap_or("unnamed");
+
+        if outbound.server.as_ref().is_none_or(|s| s.trim().is_empty()) {
+            errors.push(format!("outbound '{name}': shadowsocks.server is required"));
+        }
+        if outbound.port.is_none() {
+            errors.push(format!("outbound '{name}': shadowsocks.port is required"));
+        }
+        if outbound.password.as_ref().is_none_or(|p| p.trim().is_empty()) {
+            errors.push(format!("outbound '{name}': shadowsocks.password is required"));
+        }
+
+        let method = outbound.method.as_deref().unwrap_or_default();
+        let method_ok = matches!(
+            method.to_ascii_lowercase().as_str(),
+            "aes-256-gcm" | "chacha20-poly1305"
+        );
+        if !method_ok {
+            errors.push(format!(
+                "outbound '{name}': shadowsocks.method must be aes-256-gcm or chacha20-poly1305"
+            ));
+        }
+    }
+
+    /// Validate TUIC outbound configuration.
+    fn validate_tuic(outbound: &OutboundIR, errors: &mut Vec<String>) {
+        let name = outbound.name.as_deref().unwrap_or("unnamed");
+
+        if outbound.server.as_ref().is_none_or(|s| s.trim().is_empty()) {
+            errors.push(format!("outbound '{name}': tuic.server is required"));
+        }
+        if outbound.port.is_none() {
+            errors.push(format!("outbound '{name}': tuic.port is required"));
+        }
+
+        match outbound.uuid.as_ref() {
+            Some(uuid) if !uuid.trim().is_empty() => {
+                if uuid::Uuid::parse_str(uuid).is_err() {
+                    errors.push(format!(
+                        "outbound '{name}': tuic.uuid must be a valid UUID string"
+                    ));
+                }
+            }
+            _ => errors.push(format!("outbound '{name}': tuic.uuid is required")),
+        }
+
+        if outbound.token.as_ref().is_none_or(|t| t.trim().is_empty()) {
+            errors.push(format!("outbound '{name}': tuic.token is required"));
         }
     }
 }

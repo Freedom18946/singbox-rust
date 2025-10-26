@@ -81,13 +81,13 @@ pub fn parse_answers(buf: &[u8], expect_qtype: u16) -> Result<(Vec<IpAddr>, Opti
         if atype == 1 && expect_qtype == 1 && rdlen == 4 {
             let ip = IpAddr::from([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
             ips.push(ip);
-            min_ttl = Some(min_ttl.map(|x| x.min(ttl)).unwrap_or(ttl));
+            min_ttl = Some(min_ttl.map_or(ttl, |x| x.min(ttl)));
         } else if atype == 28 && expect_qtype == 28 && rdlen == 16 {
             let mut b = [0u8; 16];
             b.copy_from_slice(&buf[i..i + 16]);
             let ip = IpAddr::from(b);
             ips.push(ip);
-            min_ttl = Some(min_ttl.map(|x| x.min(ttl)).unwrap_or(ttl));
+            min_ttl = Some(min_ttl.map_or(ttl, |x| x.min(ttl)));
         }
         i += rdlen;
     }

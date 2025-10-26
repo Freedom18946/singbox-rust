@@ -231,7 +231,7 @@ fn cmd_bench() -> Result<()> {
 
     // 检查是否是 nightly
     let output = Command::new("rustc")
-        .args(&["--version"])
+        .args(["--version"])
         .output()
         .context("无法运行 rustc --version")?;
     let version = String::from_utf8_lossy(&output.stdout);
@@ -259,7 +259,7 @@ fn cmd_schema(args: Vec<String>) -> Result<()> {
 
     // 读取内置 schema（从 sb-config crate）
     let schema = include_str!("../../crates/sb-config/src/validator/v2_schema.json");
-    let bytes = schema.as_bytes().len();
+    let bytes = schema.len();
     let lines = schema.lines().count();
 
     println!(r#"{{"schema_bytes":{},"schema_lines":{}}}"#, bytes, lines);
@@ -349,10 +349,12 @@ fn cmd_metrics_check(args: Vec<String>) -> Result<()> {
 // CI 命令
 // ============================================================================
 
+type CiStep = (&'static str, fn() -> Result<()>);
+
 fn cmd_ci() -> Result<()> {
     section("完整 CI 流程");
 
-    let steps: &[(&str, fn() -> Result<()>)] = &[
+    let steps: &[CiStep] = &[
         ("格式检查", cmd_fmt),
         ("Clippy", cmd_clippy),
         ("特性检查", cmd_check_all),

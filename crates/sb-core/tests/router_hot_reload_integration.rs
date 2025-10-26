@@ -181,23 +181,21 @@ async fn test_hot_reload_event_monitoring() {
 
     while start.elapsed() < timeout && events_received < 1 {
         if let Ok(mut rx) = event_rx.try_write() {
-            if let Ok(event) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-                if let Some(event) = event {
-                    match event {
-                        HotReloadEvent::FileChanged { .. } => {
-                            events_received += 1;
-                            debug!("Received FileChanged event");
-                        }
-                        HotReloadEvent::Applied { .. } => {
-                            events_received += 1;
-                            debug!("Received Applied event");
-                        }
-                        HotReloadEvent::ValidationSucceeded { .. } => {
-                            debug!("Received ValidationSucceeded event");
-                        }
-                        _ => {
-                            debug!("Received other event: {:?}", event);
-                        }
+            if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+                match event {
+                    HotReloadEvent::FileChanged { .. } => {
+                        events_received += 1;
+                        debug!("Received FileChanged event");
+                    }
+                    HotReloadEvent::Applied { .. } => {
+                        events_received += 1;
+                        debug!("Received Applied event");
+                    }
+                    HotReloadEvent::ValidationSucceeded { .. } => {
+                        debug!("Received ValidationSucceeded event");
+                    }
+                    _ => {
+                        debug!("Received other event: {:?}", event);
                     }
                 }
             }

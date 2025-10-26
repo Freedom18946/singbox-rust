@@ -1,4 +1,5 @@
-#![cfg(feature = "proxy_pool_select_DISABLED")]
+// Permanently disabled with an always-false cfg (no unknown features)
+#![cfg(not(any(feature = "router", not(feature = "router"))))]
 use sb_core::outbound::{
     endpoint::{ProxyEndpoint, ProxyKind},
     registry::{PoolPolicy, ProxyPool, StickyCfg},

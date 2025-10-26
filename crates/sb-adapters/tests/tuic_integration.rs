@@ -1,4 +1,6 @@
-#![cfg(feature = "tuic_DISABLED")]
+#![cfg(feature = "tuic")]
+#![cfg(disabled_test_temporarily)] // DISABLED: TUIC integration tests need update
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! TUIC protocol integration tests
 //!
 //! These tests verify TUIC protocol implementation including:

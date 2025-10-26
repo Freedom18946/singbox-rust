@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! E2E test for TLS SNI and ALPN sniffing in routing decisions
 //!
 //! This test validates that the routing engine correctly uses sniffed TLS SNI

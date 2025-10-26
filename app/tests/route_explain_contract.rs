@@ -1,3 +1,5 @@
+#![cfg(feature = "router")]
+#![allow(unused_imports, dead_code)]
 use assert_cmd::Command;
 use serde_json::Value;
 use std::fs;

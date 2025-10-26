@@ -282,7 +282,7 @@ mod tests {
                 assert_eq!(sa.ip(), std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)));
                 assert_eq!(sa.port(), 8080);
             }
-            _ => assert!(false, "Expected IP address in parsed target"),
+            _ => panic!("Expected IP address in parsed target"),
         }
         assert_eq!(consumed, 7);
     }
@@ -302,7 +302,7 @@ mod tests {
                 assert_eq!(domain, "example.com");
                 assert_eq!(port, 443);
             }
-            _ => assert!(false, "Expected domain address in parsed target"),
+            _ => panic!("Expected domain address in parsed target"),
         }
         assert_eq!(consumed, 15);
     }
@@ -324,7 +324,7 @@ mod tests {
                 );
                 assert_eq!(sa.port(), 80);
             }
-            _ => assert!(false, "Expected IPv6 address in parsed target"),
+            _ => panic!("Expected IPv6 address in parsed target"),
         }
         assert_eq!(consumed, 19);
     }

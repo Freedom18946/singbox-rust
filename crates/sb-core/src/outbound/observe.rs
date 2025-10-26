@@ -26,8 +26,8 @@ where
     ret
 }
 
-/// Pool selector version of with_observation that accepts immutable reference
-/// Since static PoolSelector cannot be mutated, this version just logs the observation
+/// Pool selector version of `with_observation` that accepts immutable reference
+/// Since static `PoolSelector` cannot be mutated, this version just logs the observation
 pub async fn with_pool_observation<T, E, F, Fut>(
     _selector: &PoolSelector,
     pool_name: &str,

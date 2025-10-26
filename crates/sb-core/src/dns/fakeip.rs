@@ -63,8 +63,7 @@ fn state() -> &'static Mutex<State> {
 pub fn enabled() -> bool {
     std::env::var("SB_DNS_FAKEIP_ENABLE")
         .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
 }
 
 pub fn allocate_v4(domain: &str) -> IpAddr {
@@ -74,7 +73,7 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
     }
     // Compute next IP within CIDR
     let base_u32 = u32::from(st.v4_base);
-    let host_bits = 32 - st.v4_mask as u32;
+    let host_bits = 32 - u32::from(st.v4_mask);
     let max_hosts = (1u128 << host_bits) as u32;
     let offset = (st.next % max_hosts).max(1); // avoid network address
     st.next = st.next.wrapping_add(1);
@@ -92,7 +91,7 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
     }
     // Compute next IPv6 within prefix
     let base_u128 = u128::from(st.v6_base);
-    let host_bits = 128 - st.v6_mask as u32;
+    let host_bits = 128 - u32::from(st.v6_mask);
     let max_hosts = if host_bits >= 128 {
         u128::MAX
     } else {
@@ -117,7 +116,7 @@ fn mask_v4(ip: Ipv4Addr, mask: u8) -> Ipv4Addr {
     let m = if mask == 0 {
         0
     } else {
-        u32::MAX << (32 - mask as u32)
+        u32::MAX << (32 - u32::from(mask))
     };
     Ipv4Addr::from(ipn & m)
 }
@@ -127,7 +126,7 @@ fn mask_v6(ip: Ipv6Addr, mask: u8) -> Ipv6Addr {
     let m: u128 = if mask == 0 {
         0
     } else {
-        u128::MAX << (128 - mask as u32)
+        u128::MAX << (128 - u32::from(mask))
     };
     Ipv6Addr::from(ipn & m)
 }

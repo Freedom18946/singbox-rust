@@ -3,6 +3,7 @@
 //! This test locks the JSON schema for the version command output.
 //! Any field additions, deletions, or type changes will cause this test to fail.
 //! This ensures API stability for CLI consumers.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -76,7 +77,7 @@ fn test_version_json_field_order_stability() {
 #[test]
 fn test_version_features_array_contract() {
     // Test that features array maintains expected structure
-    let known_features = vec![
+    const KNOWN_FEATURES: &[&str] = &[
         "router", "metrics", "admin_debug", "bench-cli",
         "dev-cli", "manpage", "reqwest", "subs_http"
     ];
@@ -87,11 +88,11 @@ fn test_version_features_array_contract() {
         "version": "0.1.0",
         "commit": "abcd1234",
         "date": "2024-01-01T00:00:00Z",
-        "features": known_features
+        "features": KNOWN_FEATURES
     });
 
     let features = version_info["features"].as_array().unwrap();
-    assert!(features.len() > 0, "Should have at least some features in test");
+    assert!(!features.is_empty(), "Should have at least some features in test");
 
     // All features should be strings
     for feature in features {
@@ -113,11 +114,11 @@ fn test_version_json_no_extra_fields() {
     version_map.insert("features".to_string(), json!([]));
 
     // This represents the expected schema
-    let expected_fields: Vec<&str> = vec!["name", "version", "commit", "date", "features"];
+    const EXPECTED_FIELDS: &[&str] = &["name", "version", "commit", "date", "features"];
 
     // Verify exactly these fields exist
-    assert_eq!(version_map.len(), expected_fields.len());
-    for field in expected_fields {
+    assert_eq!(version_map.len(), EXPECTED_FIELDS.len());
+    for &field in EXPECTED_FIELDS {
         assert!(version_map.contains_key(field), "Missing required field: {}", field);
     }
 

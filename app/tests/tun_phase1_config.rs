@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)]
 #![cfg(all(feature = "dev-cli", feature = "tun_phase1_DISABLED"))]
 use anyhow::Result;
 use sb_config::inbound::InboundDef;

@@ -4,23 +4,33 @@
 
 use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
 use std::collections::HashMap;
-use std::fs;
 use std::net::SocketAddr;
 use std::path::Path;
 use tokio::fs as async_fs;
 
+/// Linux process matcher using /proc filesystem
+///
+/// Identifies processes by matching network connections through socket inodes.
+/// Maintains an internal cache to optimize repeated lookups.
+#[derive(Default)]
 pub struct LinuxProcessMatcher {
-    // Cache for inode to PID mapping
+    /// Cache for inode to PID mapping
     inode_cache: std::sync::Mutex<HashMap<u64, u32>>,
 }
 
 impl LinuxProcessMatcher {
+    /// Create a new Linux process matcher
+    ///
+    /// # Errors
+    /// Returns error if initialization fails (currently infallible on Linux)
     pub fn new() -> Result<Self, ProcessMatchError> {
-        Ok(Self {
-            inode_cache: std::sync::Mutex::new(HashMap::new()),
-        })
+        Ok(Self::default())
     }
 
+    /// Find the process ID owning a network connection
+    ///
+    /// # Errors
+    /// Returns error if connection not found or process cannot be identified
     pub async fn find_process_id(&self, conn: &ConnectionInfo) -> Result<u32, ProcessMatchError> {
         // Find the socket inode for this connection
         let inode = self.find_socket_inode(conn).await?;
@@ -29,6 +39,10 @@ impl LinuxProcessMatcher {
         self.find_process_by_inode(inode).await
     }
 
+    /// Get detailed process information for a given PID
+    ///
+    /// # Errors
+    /// Returns error if process not found or permission denied
     pub async fn get_process_info(&self, pid: u32) -> Result<ProcessInfo, ProcessMatchError> {
         let comm_path = format!("/proc/{}/comm", pid);
         let exe_path = format!("/proc/{}/exe", pid);
@@ -44,11 +58,14 @@ impl LinuxProcessMatcher {
             Ok(path_buf) => path_buf.to_string_lossy().to_string(),
             Err(_) => {
                 // Fallback to cmdline if exe is not available
-                let cmdline_path = format!("/proc/{}/cmdline", pid);
+                let cmdline_path = format!("/proc/{pid}/cmdline");
                 match async_fs::read_to_string(&cmdline_path).await {
                     Ok(content) => {
                         // cmdline is null-separated, take the first part
-                        content.split('\0').next().unwrap_or(&name).to_string()
+                        content
+                            .split('\0')
+                            .next()
+                            .map_or_else(|| name.clone(), ToString::to_string)
                     }
                     Err(_) => name.clone(),
                 }
@@ -66,23 +83,27 @@ impl LinuxProcessMatcher {
 
         let content = async_fs::read_to_string(proc_net_path)
             .await
-            .map_err(|e| ProcessMatchError::IoError(e))?;
+            .map_err(ProcessMatchError::IoError)?;
 
         // Parse /proc/net/tcp or /proc/net/udp
         for line in content.lines().skip(1) {
             // Skip header
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            if fields.len() < 10 {
-                continue;
-            }
+            let mut fields = line.split_whitespace();
 
-            // Parse local address (field 1) and remote address (field 2)
-            let local_addr = parse_proc_net_addr(fields[1])?;
-            let remote_addr = parse_proc_net_addr(fields[2])?;
+            // Skip index field (field 0)
+            fields.next();
+
+            let Some(local_str) = fields.next() else { continue };
+            let Some(remote_str) = fields.next() else { continue };
+
+            // Parse local and remote addresses
+            let local_addr = parse_proc_net_addr(local_str)?;
+            let remote_addr = parse_proc_net_addr(remote_str)?;
 
             if local_addr == conn.local_addr && remote_addr == conn.remote_addr {
-                // Found the connection, extract inode (field 9)
-                let inode: u64 = fields[9]
+                // Skip fields 3-8 to get to inode (field 9)
+                let Some(inode_str) = fields.nth(6) else { continue };
+                let inode = inode_str
                     .parse()
                     .map_err(|_| ProcessMatchError::SystemError("Invalid inode".to_string()))?;
                 return Ok(inode);
@@ -104,12 +125,12 @@ impl LinuxProcessMatcher {
         let proc_dir = Path::new("/proc");
         let mut entries = async_fs::read_dir(proc_dir)
             .await
-            .map_err(|e| ProcessMatchError::IoError(e))?;
+            .map_err(ProcessMatchError::IoError)?;
 
         while let Some(entry) = entries
             .next_entry()
             .await
-            .map_err(|e| ProcessMatchError::IoError(e))?
+            .map_err(ProcessMatchError::IoError)?
         {
             let file_name = entry.file_name();
             let pid_str = file_name.to_string_lossy();
@@ -147,7 +168,7 @@ impl LinuxProcessMatcher {
         while let Some(entry) = entries
             .next_entry()
             .await
-            .map_err(|e| ProcessMatchError::IoError(e))?
+            .map_err(ProcessMatchError::IoError)?
         {
             if let Ok(link_target) = async_fs::read_link(entry.path()).await {
                 let link_str = link_target.to_string_lossy();
@@ -172,25 +193,16 @@ impl LinuxProcessMatcher {
     }
 }
 
-impl Default for LinuxProcessMatcher {
-    fn default() -> Self {
-        Self {
-            inode_cache: std::sync::Mutex::new(HashMap::new()),
-        }
-    }
-}
-
+/// Parse socket address from /proc/net/{tcp,udp} format
+///
+/// Format: "HEXIP:HEXPORT" (e.g., "0100007F:1F90" for 127.0.0.1:8080)
+/// IPv4 addresses are little-endian, IPv6 addresses are in network byte order per 4-byte groups
 fn parse_proc_net_addr(addr_str: &str) -> Result<SocketAddr, ProcessMatchError> {
-    let parts: Vec<&str> = addr_str.split(':').collect();
-    if parts.len() != 2 {
+    let Some((ip_hex, port_hex)) = addr_str.split_once(':') else {
         return Err(ProcessMatchError::SystemError(
             "Invalid address format".to_string(),
         ));
-    }
-
-    // Parse hex IP address (little-endian for IPv4)
-    let ip_hex = parts[0];
-    let port_hex = parts[1];
+    };
 
     let port = u16::from_str_radix(port_hex, 16)
         .map_err(|_| ProcessMatchError::SystemError("Invalid port".to_string()))?;
@@ -206,12 +218,15 @@ fn parse_proc_net_addr(addr_str: &str) -> Result<SocketAddr, ProcessMatchError> 
 
         Ok(SocketAddr::new(ip.into(), port))
     } else if ip_hex.len() == 32 {
-        // IPv6 address
+        // IPv6 address: stored as 4 little-endian 32-bit words in /proc/net/tcp6
         let mut ip_bytes = [0u8; 16];
-        for i in 0..16 {
-            let byte_hex = &ip_hex[i * 2..i * 2 + 2];
-            ip_bytes[i] = u8::from_str_radix(byte_hex, 16)
+        for (i, chunk) in ip_hex.as_bytes().chunks_exact(8).enumerate() {
+            let word_hex = std::str::from_utf8(chunk)
                 .map_err(|_| ProcessMatchError::SystemError("Invalid IPv6 address".to_string()))?;
+            let word = u32::from_str_radix(word_hex, 16)
+                .map_err(|_| ProcessMatchError::SystemError("Invalid IPv6 address".to_string()))?;
+            let word_bytes = word.to_le_bytes();
+            ip_bytes[i * 4..(i + 1) * 4].copy_from_slice(&word_bytes);
         }
 
         let ip = std::net::Ipv6Addr::from(ip_bytes);

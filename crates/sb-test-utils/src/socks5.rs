@@ -37,10 +37,11 @@ use tokio::net::{TcpListener, UdpSocket};
 ///
 /// ```rust,no_run
 /// # use sb_test_utils::socks5::start_mock_socks5;
-/// # tokio_test::block_on(async {
+/// # #[tokio::main]
+/// # async fn main() {
 /// let (tcp_addr, udp_addr) = start_mock_socks5().await.unwrap();
 /// println!("SOCKS5 TCP: {}, UDP: {}", tcp_addr, udp_addr);
-/// # });
+/// # }
 /// ```
 ///
 /// # Protocol Details

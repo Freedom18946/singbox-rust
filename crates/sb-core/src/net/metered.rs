@@ -141,7 +141,7 @@ where
                 // 读超时/取消
                 if let Some(ref tok) = cancel {
                     tokio::select! {
-                        _ = tok.cancelled() => {
+                        () = tok.cancelled() => {
                             return Err(io::Error::new(io::ErrorKind::Interrupted, "canceled"));
                         }
                         res = async {
@@ -171,16 +171,15 @@ where
             {
                 if let Some(ref tok) = cancel {
                     tokio::select! {
-                        _ = tok.cancelled() => {
+                        () = tok.cancelled() => {
                             return Err(io::Error::new(io::ErrorKind::Interrupted, "canceled"));
                         }
                         res = async {
                             if let Some(to) = write_timeout {
                                 tokio::time::timeout(to, w.write_all(&buf[..n])).await
                                     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))?
-                                    .map(|_| ())
                             } else {
-                                w.write_all(&buf[..n]).await.map(|_| ())
+                                w.write_all(&buf[..n]).await
                             }
                         } => {
                             res?;
@@ -189,7 +188,7 @@ where
                 } else if let Some(to) = write_timeout {
                     tokio::time::timeout(to, w.write_all(&buf[..n]))
                         .await
-                        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))??
+                        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "write timeout"))??;
                 } else {
                     w.write_all(&buf[..n]).await?;
                 }
@@ -295,7 +294,7 @@ impl<T: AsyncRead + Unpin> AsyncRead for MeteredStream<T> {
         let _ = self.label;
         let pre = buf.filled().len();
         let p = Pin::new(&mut self.inner).poll_read(cx, buf);
-        if let Poll::Ready(Ok(())) = &p {
+        if matches!(&p, Poll::Ready(Ok(()))) {
             let _n = buf.filled().len().saturating_sub(pre);
             #[cfg(feature = "metrics")]
             {
@@ -334,7 +333,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for MeteredStream<T> {
     }
 }
 
-/// 便捷包装（保持旧签名）：未启用 metrics 时零开销透传。
+/// 便捷包��（保持旧签名）：未启用 metrics 时零开销透传。
 pub fn wrap_stream<T>(label: &'static str, io: T) -> MeteredStream<T> {
     MeteredStream::new(io, label)
 }

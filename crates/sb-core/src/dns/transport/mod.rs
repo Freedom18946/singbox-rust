@@ -42,7 +42,7 @@ pub type DotClient = DotTransport;
 pub struct DhcpResolver;
 
 impl DhcpResolver {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -60,7 +60,7 @@ impl super::Resolver for DhcpResolver {
         anyhow::bail!("DHCP DNS resolver not implemented yet")
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "dhcp"
     }
 }

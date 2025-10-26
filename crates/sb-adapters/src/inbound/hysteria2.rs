@@ -30,7 +30,7 @@ pub struct Hysteria2UserConfig {
 impl Default for Hysteria2InboundConfig {
     fn default() -> Self {
         Self {
-            listen: "0.0.0.0:443".parse().expect("valid address"),
+            listen: std::net::SocketAddr::from(([0, 0, 0, 0], 443)),
             users: vec![Hysteria2UserConfig {
                 password: "password".to_string(),
             }],

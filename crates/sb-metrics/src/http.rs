@@ -1,13 +1,59 @@
 //! HTTP 侧指标（入站/上游代理共用）。不绑定具体实现，供 app / inbound / outbound 自由调用。
-//! 设计原则：
-//! - 低耦合：调用方只负责把事件打点进来，不依赖具体 HTTP 栈。
+//!
+//! ## 设计原则
+//! - 低耦合：调用��只负责把事件打点进来，不依赖具体 HTTP 栈。
 //! - 标签控制：核心使用无标签 Counter/Gauge；少量场景用 `*_vec`，避免高基数炸表。
+//!
+//! ## 使用示例
+//! ```rust
+//! use sb_metrics::http::{HTTP_CONN_TOTAL, HTTP_INFLIGHT, inc_method, inc_status, start_req_timer};
+//!
+//! // 记录新连接
+//! HTTP_CONN_TOTAL.inc();
+//! HTTP_INFLIGHT.inc();
+//!
+//! // 记录请求方法和状态
+//! inc_method("GET");
+//! inc_status(200);
+//!
+//! // 自动计时请求耗时
+//! {
+//!     let _timer = start_req_timer();
+//!     // ... 处理请求 ...
+//! } // Drop 时自动上报耗时
+//! ```
 use prometheus::{
     opts, register_histogram, register_int_counter, register_int_counter_vec, register_int_gauge,
     Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge,
 };
 use std::sync::LazyLock;
 use std::time::Instant;
+
+// =============================
+// Constants
+// =============================
+
+/// Standard HTTP methods tracked separately
+const TRACKED_HTTP_METHODS: &[&str] = &[
+    "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH",
+];
+
+/// Fallback label for unrecognized HTTP methods
+const METHOD_OTHER: &str = "OTHER";
+
+/// Status code class labels
+const STATUS_2XX: &str = "2xx";
+const STATUS_3XX: &str = "3xx";
+const STATUS_4XX: &str = "4xx";
+const STATUS_5XX: &str = "5xx";
+const STATUS_OTHER: &str = "other";
+
+/// Export failure classification labels
+const EXPORT_FAIL_ENCODE: &str = "encode_error";
+const EXPORT_FAIL_TIMEOUT: &str = "timeout";
+const EXPORT_FAIL_BUSY: &str = "busy";
+const EXPORT_FAIL_NET: &str = "net_error";
+const EXPORT_FAIL_OTHER: &str = "other";
 
 // =============================
 // 入站 HTTP（代理）面指标
@@ -142,23 +188,22 @@ pub static HTTP_REQ_DURATION_MS: LazyLock<Histogram> = LazyLock::new(|| {
 
 /// 便捷：方法自增（未知方法会被聚合到 "OTHER"）
 pub fn inc_method(method: &str) {
-    let m = match method {
-        "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH" => {
-            method
-        }
-        _ => "OTHER",
+    let normalized = if TRACKED_HTTP_METHODS.contains(&method) {
+        method
+    } else {
+        METHOD_OTHER
     };
-    HTTP_METHOD_TOTAL.with_label_values(&[m]).inc();
+    HTTP_METHOD_TOTAL.with_label_values(&[normalized]).inc();
 }
 
 /// 便捷：按 2xx/3xx/4xx/5xx 聚合状态码
 pub fn inc_status(status: u16) {
     let class = match status {
-        200..=299 => "2xx",
-        300..=399 => "3xx",
-        400..=499 => "4xx",
-        500..=599 => "5xx",
-        _ => "other",
+        200..=299 => STATUS_2XX,
+        300..=399 => STATUS_3XX,
+        400..=499 => STATUS_4XX,
+        500..=599 => STATUS_5XX,
+        _ => STATUS_OTHER,
     };
     HTTP_STATUS_CLASS_TOTAL.with_label_values(&[class]).inc();
 }
@@ -211,8 +256,8 @@ pub static METRICS_EXPORT_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(||
 /// Record a metrics export failure with classification
 pub fn record_export_failure(class: &str) {
     let normalized_class = match class {
-        "encode_error" | "timeout" | "busy" | "net_error" => class,
-        _ => "other",
+        EXPORT_FAIL_ENCODE | EXPORT_FAIL_TIMEOUT | EXPORT_FAIL_BUSY | EXPORT_FAIL_NET => class,
+        _ => EXPORT_FAIL_OTHER,
     };
     METRICS_EXPORT_FAIL_TOTAL
         .with_label_values(&[normalized_class])
@@ -221,21 +266,21 @@ pub fn record_export_failure(class: &str) {
 
 /// Convenience functions for common export failure scenarios
 pub fn record_encode_error() {
-    record_export_failure("encode_error");
+    record_export_failure(EXPORT_FAIL_ENCODE);
 }
 
 pub fn record_timeout_error() {
-    record_export_failure("timeout");
+    record_export_failure(EXPORT_FAIL_TIMEOUT);
 }
 
 pub fn record_busy_error() {
-    record_export_failure("busy");
+    record_export_failure(EXPORT_FAIL_BUSY);
 }
 
 pub fn record_net_error() {
-    record_export_failure("net_error");
+    record_export_failure(EXPORT_FAIL_NET);
 }
 
 pub fn record_other_export_error() {
-    record_export_failure("other");
+    record_export_failure(EXPORT_FAIL_OTHER);
 }

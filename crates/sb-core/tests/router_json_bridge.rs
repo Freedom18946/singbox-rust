@@ -159,5 +159,5 @@ fn json_bridge_rule_aliases() {
 fn json_bridge_feature_disabled() {
     // When json feature is disabled, this test ensures the code still compiles
     // but json_bridge functionality is not available
-    assert!(true, "JSON bridge feature disabled - test passes");
+    // Intentionally left blank; feature is disabled
 }

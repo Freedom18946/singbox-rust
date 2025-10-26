@@ -1014,9 +1014,12 @@ mod tests {
         let ir = to_ir_v1(&json);
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        let transport = outbound.transport.as_ref().expect("transport");
-        assert_eq!(transport.len(), 1);
-        assert_eq!(transport[0], "ws");
+        if let Some(transport) = outbound.transport.as_ref() {
+            assert_eq!(transport.len(), 1);
+            assert_eq!(transport[0], "ws");
+        } else {
+            panic!("expected transport tokens");
+        }
         assert_eq!(outbound.ws_path.as_deref(), Some("/ws"));
         assert_eq!(outbound.ws_host.as_deref(), Some("example.com"));
     }
@@ -1047,11 +1050,11 @@ mod tests {
         let ir = to_ir_v1(&json);
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        let transport = outbound
-            .transport
-            .as_ref()
-            .expect("transport tokens present");
-        assert_eq!(transport, &vec!["grpc".to_string()]);
+        if let Some(transport) = outbound.transport.as_ref() {
+            assert_eq!(transport, &vec!["grpc".to_string()]);
+        } else {
+            panic!("expected transport tokens");
+        }
         assert_eq!(outbound.grpc_service.as_deref(), Some("TunnelService"));
         assert_eq!(outbound.grpc_method.as_deref(), Some("Tunnel"));
         assert_eq!(outbound.grpc_authority.as_deref(), Some("grpc.example.com"));
@@ -1090,11 +1093,11 @@ mod tests {
         let ir = to_ir_v1(&json);
         assert_eq!(ir.outbounds.len(), 1);
         let outbound = &ir.outbounds[0];
-        let transport = outbound
-            .transport
-            .as_ref()
-            .expect("transport tokens present");
-        assert_eq!(transport, &vec!["httpupgrade".to_string()]);
+        if let Some(transport) = outbound.transport.as_ref() {
+            assert_eq!(transport, &vec!["httpupgrade".to_string()]);
+        } else {
+            panic!("expected transport tokens");
+        }
         assert_eq!(outbound.http_upgrade_path.as_deref(), Some("/upgrade"));
         let mut headers: Vec<(String, String)> = outbound
             .http_upgrade_headers
@@ -1216,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn test_selector_and_urltest_parsing() {
+    fn test_selector_and_urltest_parsing() -> anyhow::Result<()> {
         let json = serde_json::json!({
             "schema_version": 2,
             "outbounds": [
@@ -1242,32 +1245,48 @@ mod tests {
         let ir = to_ir_v1(&json);
         assert_eq!(ir.outbounds.len(), 4);
 
-        let manual = ir
+        let manual = match ir
             .outbounds
             .iter()
             .find(|o| o.name.as_deref() == Some("manual"))
-            .expect("manual selector present");
+        {
+            Some(v) => v,
+            None => {
+                panic!("manual selector not found");
+            }
+        };
         assert_eq!(manual.ty, crate::ir::OutboundType::Selector);
-        assert_eq!(
-            manual.members.as_ref().expect("members"),
-            &vec!["direct-1".to_string(), "direct-2".to_string()]
-        );
+        if let Some(members) = manual.members.as_ref() {
+            assert_eq!(
+                members,
+                &vec!["direct-1".to_string(), "direct-2".to_string()]
+            );
+        } else {
+            panic!("manual selector members missing");
+        }
         assert_eq!(manual.default_member.as_deref(), Some("direct-1"));
 
-        let auto = ir
+        let auto = match ir
             .outbounds
             .iter()
             .find(|o| o.name.as_deref() == Some("auto"))
-            .expect("urltest selector present");
+        {
+            Some(v) => v,
+            None => {
+                panic!("urltest selector not found");
+            }
+        };
         assert_eq!(auto.ty, crate::ir::OutboundType::UrlTest);
-        assert_eq!(
-            auto.members.as_ref().expect("members"),
-            &vec!["direct-1".to_string()]
-        );
+        if let Some(members) = auto.members.as_ref() {
+            assert_eq!(members, &vec!["direct-1".to_string()]);
+        } else {
+            panic!("urltest selector members missing");
+        }
         assert_eq!(auto.test_interval_ms, Some(5_000));
         assert_eq!(auto.test_timeout_ms, Some(2_000));
         assert_eq!(auto.test_tolerance_ms, Some(75));
         assert_eq!(auto.test_url.as_deref(), Some(DEFAULT_URLTEST_URL));
+        Ok(())
     }
 
     #[test]

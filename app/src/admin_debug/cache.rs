@@ -205,42 +205,32 @@ impl Lru {
             .map(|(k, _)| k.clone());
 
         if let Some(key) = oldest_key {
-            if let Some((entry, access_time)) = self.map.remove(&key) {
-                let size = entry.body_len();
+            if let Some((TierEntry::Mem(cache_entry), access_time)) = self.map.remove(&key) {
+                let size = cache_entry.body.len();
 
-                match entry {
-                    TierEntry::Mem(_) => {
-                        // Try to move to disk if disk backing is enabled (only for larger entries)
-                        if let Some(base_path) = &self.disk_backing {
-                            if size > 4096 {
-                                if let TierEntry::Mem(cache_entry) = entry {
-                                    if matches!(self.write_to_disk(&key, &cache_entry), Ok(())) {
-                                        let disk_entry = TierEntry::Disk {
-                                            path: disk_path_inner(base_path, &key),
-                                            etag: cache_entry.etag,
-                                            len: size,
-                                            content_type: cache_entry.content_type,
-                                            timestamp: cache_entry.timestamp,
-                                        };
-                                        // Entry moved to disk but stays in cache - no byte count change needed
-                                        // Preserve original access timestamp for proper LRU ordering
-                                        self.map.insert(key, (disk_entry, access_time));
-                                        // This doesn't count as an eviction since entry stays accessible
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-
-                        // If we reach here, entry was not moved to disk - it's being fully evicted
-                        self.cur_bytes = self.cur_bytes.saturating_sub(size);
-                        self.evict_count_mem += 1;
-                    }
-                    TierEntry::Disk { .. } => {
-                        // Should not happen due to filtering; reinsert and return
-                        self.map.insert(key, (entry, access_time));
+                // Try to move to disk if disk backing is enabled (only for larger entries)
+                if let Some(base_path) = &self.disk_backing {
+                    if size > 4096
+                        && matches!(self.write_to_disk(&key, &cache_entry), Ok(()))
+                    {
+                        let disk_entry = TierEntry::Disk {
+                            path: disk_path_inner(base_path, &key),
+                            etag: cache_entry.etag,
+                            len: size,
+                            content_type: cache_entry.content_type,
+                            timestamp: cache_entry.timestamp,
+                        };
+                        // Entry moved to disk but stays in cache - no byte count change needed
+                        // Preserve original access timestamp for proper LRU ordering
+                        self.map.insert(key, (disk_entry, access_time));
+                        // This doesn't count as an eviction since entry stays accessible
+                        return;
                     }
                 }
+
+                // If we reach here, entry was not moved to disk - it's being fully evicted
+                self.cur_bytes = self.cur_bytes.saturating_sub(size);
+                self.evict_count_mem += 1;
             }
         }
     }
@@ -259,13 +249,11 @@ impl Lru {
             .min_by_key(|(_, (_, ts))| *ts)
             .map(|(k, _)| k.clone());
         if let Some(key) = oldest_key {
-            if let Some((entry, _)) = self.map.remove(&key) {
-                if let TierEntry::Disk { path, len, .. } = entry {
-                    let size = len;
-                    self.cur_bytes = self.cur_bytes.saturating_sub(size);
-                    self.evict_count_disk += 1;
-                    let _ = std::fs::remove_file(&path);
-                }
+            if let Some((TierEntry::Disk { path, len, .. }, _)) = self.map.remove(&key) {
+                let size = len;
+                self.cur_bytes = self.cur_bytes.saturating_sub(size);
+                self.evict_count_disk += 1;
+                let _ = std::fs::remove_file(&path);
             }
         }
     }

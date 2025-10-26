@@ -1,17 +1,33 @@
-//! R73: Trojan 最小出站 Connector（可注入 Dialer；默认关闭，不联网测试用）
-//! 行为：connect() → 仅拨号并写入 TrojanHello 首包；不做后续代理逻辑
-use crate::connector::{ProtoError, Target};
+//! Minimal Trojan outbound connector with injectable dialer.
+//!
+//! This module provides a [`TrojanConnector`] that establishes connections and writes
+//! the Trojan hello packet. It's primarily designed for testing with injectable dialers.
+//!
+//! # Behavior
+//! - Dials the target using the injected `Dialer`
+//! - Writes the [`TrojanHello`] first packet
+//! - Does not implement full proxy logic (minimal implementation)
+
+use crate::connector::{IoStream, OutboundConnector, ProtoError, Target};
 use crate::trojan_min::TrojanHello;
 use async_trait::async_trait;
 use sb_transport::dialer::Dialer;
 
+/// Trojan connector with injectable dialer for testing.
+///
+/// This connector writes the Trojan handshake packet but doesn't implement
+/// full bidirectional proxying.
 #[derive(Debug, Clone)]
 pub struct TrojanConnector<D: Dialer + Send + Sync + 'static> {
+    /// Injected dialer for establishing connections.
     pub dialer: D,
+    /// Password for Trojan authentication.
     pub password: String,
 }
 
 impl<D: Dialer + Send + Sync + 'static> TrojanConnector<D> {
+    /// Creates a new Trojan connector with the specified dialer and password.
+    #[must_use]
     pub fn new(dialer: D, password: impl Into<String>) -> Self {
         Self {
             dialer,
@@ -21,26 +37,28 @@ impl<D: Dialer + Send + Sync + 'static> TrojanConnector<D> {
 }
 
 #[async_trait]
-impl<D: Dialer + Send + Sync + 'static> crate::connector::OutboundConnector for TrojanConnector<D> {
+impl<D: Dialer + Send + Sync + 'static> OutboundConnector for TrojanConnector<D> {
     async fn connect(
         &self,
         target: &Target,
-    ) -> Result<Box<dyn crate::connector::IoStream>, ProtoError> {
-        let mut s = self
+    ) -> Result<Box<dyn IoStream>, ProtoError> {
+        let mut stream = self
             .dialer
-            .connect(&target.host, target.port)
+            .connect(target.host(), target.port())
             .await
             .map_err(|e| std::io::Error::other(e.to_string()))?;
+
         let hello = TrojanHello {
             password: self.password.clone(),
-            host: target.host.clone(),
-            port: target.port,
+            host: target.host().to_string(),
+            port: target.port(),
         };
         let buf = hello.to_bytes();
-        // 写首包
-        tokio::io::AsyncWriteExt::write_all(&mut s, &buf).await?;
-        // 刷新
-        tokio::io::AsyncWriteExt::flush(&mut s).await?;
-        Ok(Box::new(s))
+
+        // Write hello packet
+        tokio::io::AsyncWriteExt::write_all(&mut stream, &buf).await?;
+        tokio::io::AsyncWriteExt::flush(&mut stream).await?;
+
+        Ok(Box::new(stream))
     }
 }

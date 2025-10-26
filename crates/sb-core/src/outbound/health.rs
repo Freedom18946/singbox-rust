@@ -103,7 +103,7 @@ pub async fn spawn_if_enabled() {
                     let _ = one_check_ep("default", &ep).await;
                 }
                 // Check pool endpoints
-                for (_name, pool) in reg.pools.iter() {
+                for pool in reg.pools.values() {
                     for (i, ep) in pool.endpoints.iter().enumerate() {
                         let key = format!("{}#{}", pool.name, i);
                         let _ = one_check_ep(&key, ep).await;
@@ -125,7 +125,7 @@ async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> 
     *st.last_check.lock() = Some(Instant::now());
 
     match check_result {
-        Ok(_) => {
+        Ok(()) => {
             st.up.store(true, Ordering::Relaxed);
             *st.consecutive_fail.lock() = 0;
             *st.last_rtt_ms.lock() = Some(t0.elapsed().as_millis() as u64);
@@ -182,7 +182,7 @@ async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
     });
 
     match check_result {
-        Ok(_) => {
+        Ok(()) => {
             ent.up.store(true, Ordering::Relaxed);
             *ent.consecutive_fail.lock() = 0;
             *ent.opened_at.lock() = None;
@@ -289,8 +289,7 @@ async fn check_socks5(ep: ProxyEndpoint) -> anyhow::Result<()> {
 fn enabled() -> bool {
     std::env::var("SB_PROXY_HEALTH_ENABLE")
         .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
 }
 
 fn interval_ms() -> u64 {
@@ -307,7 +306,7 @@ fn timeout_ms() -> u64 {
         .unwrap_or(800)
 }
 
-fn label(k: ProxyKind) -> &'static str {
+const fn label(k: ProxyKind) -> &'static str {
     match k {
         ProxyKind::Http => "http",
         ProxyKind::Socks5 => "socks5",

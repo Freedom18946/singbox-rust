@@ -100,7 +100,6 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
         RDecision::Direct => direct_connect_hostport(&host, port, &opts).await?,
         RDecision::Proxy(Some(name)) => {
             // Resolve named pool from registry; fallback to default proxy choice
-            let peer_default: SocketAddr = SocketAddr::from((IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0));
             let sel = PoolSelector::new("redirect".into(), "default".into());
             if let Some(reg) = registry::global() {
                 if let Some(pool) = reg.pools.get(&name) {
@@ -173,7 +172,7 @@ async fn handle_conn(mut cli: TcpStream, peer: SocketAddr) -> Result<()> {
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
-        RDecision::Reject => unreachable!(),
+        RDecision::Reject => return Err(anyhow!("redirect: rejected by rules")),
     };
 
     // Bidirectional copy

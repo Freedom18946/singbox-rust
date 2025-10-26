@@ -14,7 +14,7 @@ fn now_ms() -> u128 {
         .unwrap_or(0)
 }
 
-/// 打一行结构化访问日志（JSON），只有 SB_ACCESS_LOG=1 时生效。
+/// 打一行结构化访问日志（JSON），只有 `SB_ACCESS_LOG=1` 时生效。
 // - `event`：事件名，如 "http_connect_ok"、"socks_udp_forward"
 // - `kv`：若干键值对（自动转义），常见键：proto, client, target, decision, code, bytes
 pub fn log(event: &str, kv: &[(&str, String)]) {

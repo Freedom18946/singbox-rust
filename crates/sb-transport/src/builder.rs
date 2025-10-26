@@ -30,11 +30,13 @@ pub struct TransportBuilder {
 
 impl TransportBuilder {
     /// Start a builder from an existing dialer
+    #[must_use]
     pub fn with_inner(inner: Box<dyn Dialer>) -> Self {
         Self { inner }
     }
 
     /// Start a builder from a TCP dialer
+    #[must_use]
     pub fn tcp() -> Self {
         Self {
             inner: Box::new(crate::dialer::TcpDialer),
@@ -43,6 +45,7 @@ impl TransportBuilder {
 
     /// Wrap with TLS layer (requires `transport_tls` feature)
     #[cfg(feature = "transport_tls")]
+    #[must_use]
     pub fn tls(
         self,
         config: std::sync::Arc<rustls::ClientConfig>,
@@ -62,6 +65,7 @@ impl TransportBuilder {
 
     /// Wrap with WebSocket layer (requires `transport_ws` feature)
     #[cfg(feature = "transport_ws")]
+    #[must_use]
     pub fn websocket(self, config: crate::websocket::WebSocketConfig) -> Self {
         let dialer = crate::websocket::WebSocketDialer::new(config, self.inner);
         Self {
@@ -71,6 +75,7 @@ impl TransportBuilder {
 
     /// Wrap with HTTP/2 layer (requires `transport_h2` feature)
     #[cfg(feature = "transport_h2")]
+    #[must_use]
     pub fn http2(self, config: crate::http2::Http2Config) -> Self {
         let dialer = crate::http2::Http2Dialer::new(config, self.inner);
         Self {
@@ -80,6 +85,7 @@ impl TransportBuilder {
 
     /// Wrap with HTTPUpgrade layer (requires `transport_httpupgrade` feature)
     #[cfg(feature = "transport_httpupgrade")]
+    #[must_use]
     pub fn http_upgrade(self, config: crate::httpupgrade::HttpUpgradeConfig) -> Self {
         let dialer = crate::httpupgrade::HttpUpgradeDialer::new(config, self.inner);
         Self {
@@ -89,6 +95,7 @@ impl TransportBuilder {
 
     /// Wrap with Multiplex (yamux) layer (requires `transport_mux` feature)
     #[cfg(feature = "transport_mux")]
+    #[must_use]
     pub fn multiplex(self, config: crate::multiplex::MultiplexConfig) -> Self {
         let dialer = crate::multiplex::MultiplexDialer::new(config, self.inner);
         Self {
@@ -99,6 +106,7 @@ impl TransportBuilder {
     /// Switch to gRPC transport (requires `transport_grpc` feature)
     /// Note: gRPC establishes its own HTTP/2 channel; previous layers are ignored.
     #[cfg(feature = "transport_grpc")]
+    #[must_use]
     pub fn grpc(self, config: crate::grpc::GrpcConfig) -> Self {
         let dialer = crate::grpc::GrpcDialer::new(config);
         Self {
@@ -107,6 +115,7 @@ impl TransportBuilder {
     }
 
     /// Return the composed dialer
+    #[must_use]
     pub fn build(self) -> Box<dyn Dialer> {
         self.inner
     }

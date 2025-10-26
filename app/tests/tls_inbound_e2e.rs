@@ -1,3 +1,4 @@
+#![allow(clippy::assertions_on_constants)]
 //! E2E tests for TLS inbound integration
 //!
 //! Tests TLS support for HTTP, Mixed, and Shadowtls inbounds with:

@@ -17,7 +17,7 @@ mod tls_helper {
 
     /// No-op certificate verifier for testing (INSECURE - skips all verification)
     #[derive(Debug)]
-    pub struct NoVerifier;
+    pub(super) struct NoVerifier;
 
     impl ServerCertVerifier for NoVerifier {
         fn verify_server_cert(
@@ -167,7 +167,7 @@ impl TrojanConnector {
         } else {
             // Use webpki-roots for certificate verification
             let root_store = tokio_rustls::rustls::RootCertStore {
-                roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
             };
             ClientConfig::builder()
                 .with_root_certificates(root_store)
@@ -242,7 +242,7 @@ impl TrojanConnector {
         let mut hasher = Sha224::new();
         hasher.update(config.password.as_bytes());
         let password_hash = hasher.finalize();
-        request.extend_from_slice(&hex::encode(password_hash).as_bytes());
+        request.extend_from_slice(hex::encode(password_hash).as_bytes());
         request.extend_from_slice(b"\r\n");
 
         // Command: UDP ASSOCIATE (0x03)
@@ -417,7 +417,7 @@ impl OutboundConnector for TrojanConnector {
             let mut hasher = Sha224::new();
             hasher.update(config.password.as_bytes());
             let password_hash = hasher.finalize();
-            request.extend_from_slice(&hex::encode(password_hash).as_bytes());
+            request.extend_from_slice(hex::encode(password_hash).as_bytes());
             request.extend_from_slice(b"\r\n");
 
             // Command: CONNECT (0x01)

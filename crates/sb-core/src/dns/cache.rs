@@ -38,7 +38,7 @@ pub enum Rcode {
 }
 
 impl Rcode {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::NoError => "NOERROR",
             Self::FormErr => "FORMERR",
@@ -68,7 +68,7 @@ pub enum QType {
 }
 
 impl QType {
-    pub fn from_u16(value: u16) -> Self {
+    pub const fn from_u16(value: u16) -> Self {
         match value {
             1 => Self::A,
             28 => Self::AAAA,
@@ -77,7 +77,7 @@ impl QType {
         }
     }
 
-    pub fn to_u16(&self) -> u16 {
+    pub const fn to_u16(&self) -> u16 {
         match self {
             Self::A => 1,
             Self::AAAA => 28,

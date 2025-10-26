@@ -24,10 +24,11 @@ fn parse_vmess_with_transport_ws_tls() {
     assert_eq!(ir.outbounds.len(), 1);
     let ob = &ir.outbounds[0];
     assert_eq!(ob.ty, sb_config::ir::OutboundType::Vmess);
-    assert_eq!(
-        ob.transport.as_ref().unwrap(),
-        &vec!["tls".to_string(), "ws".to_string()]
-    );
+    if let Some(tokens) = ob.transport.as_ref() {
+        assert_eq!(tokens, &vec!["tls".to_string(), "ws".to_string()]);
+    } else {
+        panic!("expected transport tokens");
+    }
     assert_eq!(ob.ws_path.as_deref(), Some("/ws"));
     assert_eq!(ob.ws_host.as_deref(), Some("cdn.example.com"));
     assert_eq!(ob.tls_sni.as_deref(), Some("cdn.example.com"));
@@ -56,10 +57,11 @@ fn parse_vless_with_transport_h2_tls() {
     assert_eq!(ir.outbounds.len(), 1);
     let ob = &ir.outbounds[0];
     assert_eq!(ob.ty, sb_config::ir::OutboundType::Vless);
-    assert_eq!(
-        ob.transport.as_ref().unwrap(),
-        &vec!["tls".to_string(), "h2".to_string()]
-    );
+    if let Some(tokens) = ob.transport.as_ref() {
+        assert_eq!(tokens, &vec!["tls".to_string(), "h2".to_string()]);
+    } else {
+        panic!("expected transport tokens");
+    }
     assert_eq!(ob.h2_path.as_deref(), Some("/t"));
     assert_eq!(ob.h2_host.as_deref(), Some("h2.example.com"));
     assert_eq!(ob.tls_sni.as_deref(), Some("h2.example.com"));

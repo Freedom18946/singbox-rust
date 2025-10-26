@@ -34,7 +34,7 @@ mod tests {
 
         // Generate self-signed certificate using openssl
         let output = Command::new("openssl")
-            .args(&[
+            .args([
                 "req",
                 "-x509",
                 "-newkey",

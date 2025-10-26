@@ -1,4 +1,4 @@
-//! DNS-over-QUIC (DoQ) transport implementation (RFC 9250)
+//! DNS-over-QUIC (`DoQ`) transport implementation (RFC 9250)
 //!
 //! Simplified client implementation using QUIC bidirectional streams:
 //! - One query per stream, 2-byte length prefix framing (same as TCP/DoT)
@@ -48,7 +48,7 @@ impl DoqTransport {
         ));
 
         // Set default client config once during construction
-        endpoint.set_default_client_config(client_cfg.clone());
+        endpoint.set_default_client_config(client_cfg);
 
         Ok(Self {
             server,

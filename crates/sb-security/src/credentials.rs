@@ -306,7 +306,7 @@ mod tests {
 
         let expected = "a".repeat(100);
         let provided_first_wrong = format!("b{}", "a".repeat(99));
-        let provided_last_wrong = format!("{}", "a".repeat(99)) + "b";
+        let provided_last_wrong = "a".repeat(99) + "b";
         let provided_all_wrong = "b".repeat(100);
 
         // All should return false

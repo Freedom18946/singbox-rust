@@ -27,7 +27,7 @@ pub struct UdpFlowKey {
 
 impl UdpFlowKey {
     /// Create a new UDP flow key
-    pub fn new(src: SocketAddr, dst: SocketAddr, session_id: u64) -> Self {
+    pub const fn new(src: SocketAddr, dst: SocketAddr, session_id: u64) -> Self {
         Self {
             src,
             dst,
@@ -90,7 +90,7 @@ impl UdpSession {
     }
 
     /// Get total bytes transferred
-    pub fn total_bytes(&self) -> u64 {
+    pub const fn total_bytes(&self) -> u64 {
         self.tx_bytes.saturating_add(self.rx_bytes)
     }
 }
@@ -297,7 +297,7 @@ impl UdpNat {
         loop {
             // Use infallible constructor to avoid parse().unwrap()
             let addr = SocketAddr::new(
-                std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
                 self.next_port,
             );
 
@@ -334,12 +334,12 @@ impl UdpNat {
     }
 
     /// Get maximum session count
-    pub fn max_sessions(&self) -> usize {
+    pub const fn max_sessions(&self) -> usize {
         self.max_sessions
     }
 
     /// Get session TTL
-    pub fn session_ttl(&self) -> Duration {
+    pub const fn session_ttl(&self) -> Duration {
         self.session_ttl
     }
 

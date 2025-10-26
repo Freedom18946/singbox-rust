@@ -6,10 +6,19 @@
 //!
 //! Run with: cargo run --example websocket_server_example --all-features
 
+#[cfg(feature = "transport_ws")]
 use sb_transport::websocket::{WebSocketListener, WebSocketServerConfig};
+#[cfg(feature = "transport_ws")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(feature = "transport_ws")]
 use tokio::net::TcpListener;
 
+#[cfg(not(feature = "transport_ws"))]
+fn main() {
+    eprintln!("This example requires --features transport_ws");
+}
+
+#[cfg(feature = "transport_ws")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing

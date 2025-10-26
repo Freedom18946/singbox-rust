@@ -10,7 +10,7 @@ pub struct HostPort {
 }
 
 impl HostPort {
-    pub fn new(host: String, port: u16) -> Self {
+    pub const fn new(host: String, port: u16) -> Self {
         Self { host, port }
     }
 
@@ -87,10 +87,10 @@ pub enum OutboundKind {
 impl std::fmt::Display for OutboundKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutboundKind::Direct => write!(f, "direct"),
-            OutboundKind::Block => write!(f, "block"),
-            OutboundKind::Socks => write!(f, "socks"),
-            OutboundKind::Http => write!(f, "http"),
+            Self::Direct => write!(f, "direct"),
+            Self::Block => write!(f, "block"),
+            Self::Socks => write!(f, "socks"),
+            Self::Http => write!(f, "http"),
             #[cfg(feature = "out_trojan")]
             OutboundKind::Trojan => write!(f, "trojan"),
             #[cfg(feature = "out_ss")]

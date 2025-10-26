@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-http")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! E2E tests for HTTP CONNECT over TLS functionality
 //!
 //! This module tests HTTPS proxy support with mock TLS servers.

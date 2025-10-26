@@ -1,6 +1,5 @@
 #![cfg(feature = "adapter-http")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-// unused import removed
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -20,13 +19,18 @@ async fn main() -> anyhow::Result<()> {
         Err(_) => sb_core::outbound::tcp::connect_direct(&authority).await?,
     };
     // 发一行 TLS ClientHello 前的探测（可选），这里只展示 CONNECT 已经 200 成功
-    let req = format!(
-        "GET / HTTP/1.1\r\nHost: {}\r\n\r\n",
-        authority.split(':').next().unwrap_or(&authority)
-    );
-    let _ = stream.write_all(req.as_bytes()).await; // 很多站会 400；我们只想看到通路是否 OK
-    let mut buf = vec![0u8; 512];
-    let _ = stream.read(&mut buf).await?;
-    println!("ok: read {} bytes", buf.len());
+    let host = authority
+        .split_once(':')
+        .map(|(h, _)| h)
+        .unwrap_or_else(|| authority.as_str());
+    let req = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", host);
+    // 很多站会 400；我们只想看到通路是否 OK
+    if let Err(e) = stream.write_all(req.as_bytes()).await {
+        eprintln!("write failed: {}", e);
+        return Ok(());
+    }
+    let mut buf = [0u8; 512];
+    let n = stream.read(&mut buf).await?;
+    println!("ok: read {} bytes", n);
     Ok(())
 }

@@ -32,5 +32,5 @@ fn geoip_lookup_counters_and_results() {
 #[test]
 fn disabled_geoip_test() {
     // This test is disabled due to GeoIP API changes
-    assert!(true);
+    // Intentionally left blank
 }

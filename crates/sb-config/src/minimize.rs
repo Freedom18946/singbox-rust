@@ -1,42 +1,45 @@
-//! Rule minimization (dedup/fold) with negation guard.
-//! - 当存在任一 not_* 维度时，仅执行 normalize（由上层打印 MINIMIZE_SKIPPED）
+//! Rule minimization (deduplication and folding) with negation guard.
+//!
+//! When any `not_*` condition is present, only normalization is performed
+//! (parent layer prints `MINIMIZE_SKIPPED`).
+
 use crate::ir::ConfigIR;
 use crate::normalize::normalize_config;
 
+/// Deduplicate domain list (assumes already normalized/sorted).
 fn fold_domains(v: &mut Vec<String>) {
-    // 输入已规范化排序；去重即可
     v.dedup();
 }
 
+/// Fold CIDR ranges: deduplicate, sort, merge overlapping networks.
 fn fold_cidrs(v: &mut Vec<String>) {
-    // 实现真实 CIDR 合并：去重、排序、合并重叠的网络
     if v.is_empty() {
         return;
     }
 
-    // 去重
+    // Deduplicate
     v.sort();
     v.dedup();
 
-    // 解析CIDR并进行基本的合并
+    // Parse CIDRs and perform basic merging
     let mut parsed_cidrs = Vec::new();
     for cidr_str in v.iter() {
         if let Ok(parsed) = parse_cidr(cidr_str) {
             parsed_cidrs.push(parsed);
         } else {
-            // 保留无法解析的字符串（可能是特殊格式）
+            // Keep unparseable strings (may be special formats)
             continue;
         }
     }
 
-    // 按网络地址排序
+    // Sort by network address
     parsed_cidrs.sort_by(|a, b| {
         a.network_addr
             .cmp(&b.network_addr)
             .then_with(|| a.prefix_len.cmp(&b.prefix_len))
     });
 
-    // 简单的重叠检测和移除（更精确的合并需要复杂算法）
+    // Simple overlap detection and removal (precise merging requires complex algorithms)
     let mut merged = Vec::new();
     for cidr in parsed_cidrs {
         let mut should_add = true;
@@ -51,7 +54,7 @@ fn fold_cidrs(v: &mut Vec<String>) {
         }
     }
 
-    // 将合并后的结果转换回字符串
+    // Convert merged results back to strings
     *v = merged.into_iter().map(|c| c.to_string()).collect();
 }
 
@@ -138,7 +141,12 @@ fn is_cidr_contained(inner: &ParsedCidr, outer: &ParsedCidr) -> bool {
 
             let inner_bits = u32::from(inner_ip);
             let outer_bits = u32::from(outer_ip);
-            let mask = !((1u32 << (32 - outer.prefix_len)) - 1);
+            // 当前缀为 0 时，掩码应为 0；否则左移安全（小于 32）
+            let mask = if outer.prefix_len == 0 {
+                0u32
+            } else {
+                u32::MAX << (32 - outer.prefix_len)
+            };
 
             (inner_bits & mask) == (outer_bits & mask)
         }
@@ -149,7 +157,11 @@ fn is_cidr_contained(inner: &ParsedCidr, outer: &ParsedCidr) -> bool {
 
             let inner_bits = u128::from(inner_ip);
             let outer_bits = u128::from(outer_ip);
-            let mask = !((1u128 << (128 - outer.prefix_len)) - 1);
+            let mask = if outer.prefix_len == 0 {
+                0u128
+            } else {
+                u128::MAX << (128 - outer.prefix_len)
+            };
 
             (inner_bits & mask) == (outer_bits & mask)
         }
@@ -190,10 +202,7 @@ mod tests {
             ..Default::default()
         });
         let act = minimize_config(&mut cfg);
-        match act {
-            MinimizeAction::SkippedByNegation => {}
-            _ => assert!(false, "test should have skipped by negation"),
-        }
+        assert!(matches!(act, MinimizeAction::SkippedByNegation));
         assert_eq!(cfg.route.rules[0].domain, vec!["a.com"]); // 仍完成规范化
     }
 }

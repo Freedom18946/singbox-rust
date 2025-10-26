@@ -14,19 +14,26 @@
 //! - MSDN: <https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedudptable>
 
 use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
-use std::mem;
 use windows::Win32::Foundation::NO_ERROR;
 use windows::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID,
     MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
 };
 use windows::Win32::Networking::WinSock::AF_INET;
-use windows::Win32::System::ProcessStatus::{K32GetModuleFileNameExW, K32GetProcessImageFileNameW};
+use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
+/// Windows native process matcher
+///
+/// Uses `GetExtendedTcpTable`/`GetExtendedUdpTable` for 20-50x faster queries.
+#[derive(Default)]
 pub struct NativeWindowsProcessMatcher;
 
 impl NativeWindowsProcessMatcher {
+    /// Create a new native Windows process matcher
+    ///
+    /// # Errors
+    /// Returns error if initialization fails (currently infallible)
     pub fn new() -> Result<Self, ProcessMatchError> {
         Ok(Self)
     }
@@ -43,7 +50,7 @@ impl NativeWindowsProcessMatcher {
     pub async fn get_process_info(&self, pid: u32) -> Result<ProcessInfo, ProcessMatchError> {
         tokio::task::spawn_blocking(move || Self::get_process_info_blocking(pid))
             .await
-            .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {}", e)))?
+            .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {e}")))?
     }
 
     /// Find TCP process using GetExtendedTcpTable
@@ -52,6 +59,7 @@ impl NativeWindowsProcessMatcher {
         let remote_port = conn.remote_addr.port();
 
         tokio::task::spawn_blocking(move || {
+            // SAFETY: Windows API calls with proper error handling
             unsafe {
                 let mut size: u32 = 0;
 
@@ -67,8 +75,7 @@ impl NativeWindowsProcessMatcher {
                 .ok()
                 .map_err(|e| {
                     ProcessMatchError::SystemError(format!(
-                        "GetExtendedTcpTable size query failed: {:?}",
-                        e
+                        "GetExtendedTcpTable size query failed: {e:?}",
                     ))
                 })?;
 
@@ -86,7 +93,7 @@ impl NativeWindowsProcessMatcher {
                 )
                 .ok()
                 .map_err(|e| {
-                    ProcessMatchError::SystemError(format!("GetExtendedTcpTable failed: {:?}", e))
+                    ProcessMatchError::SystemError(format!("GetExtendedTcpTable failed: {e:?}"))
                 })?;
 
                 // Parse the table
@@ -108,7 +115,7 @@ impl NativeWindowsProcessMatcher {
             }
         })
         .await
-        .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {}", e)))?
+        .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {e}")))?
     }
 
     /// Find UDP process using GetExtendedUdpTable
@@ -116,6 +123,7 @@ impl NativeWindowsProcessMatcher {
         let local_port = conn.local_addr.port();
 
         tokio::task::spawn_blocking(move || {
+            // SAFETY: Windows API calls with proper error handling
             unsafe {
                 let mut size: u32 = 0;
 
@@ -131,8 +139,7 @@ impl NativeWindowsProcessMatcher {
                 .ok()
                 .map_err(|e| {
                     ProcessMatchError::SystemError(format!(
-                        "GetExtendedUdpTable size query failed: {:?}",
-                        e
+                        "GetExtendedUdpTable size query failed: {e:?}",
                     ))
                 })?;
 
@@ -150,7 +157,7 @@ impl NativeWindowsProcessMatcher {
                 )
                 .ok()
                 .map_err(|e| {
-                    ProcessMatchError::SystemError(format!("GetExtendedUdpTable failed: {:?}", e))
+                    ProcessMatchError::SystemError(format!("GetExtendedUdpTable failed: {e:?}"))
                 })?;
 
                 // Parse the table
@@ -171,11 +178,12 @@ impl NativeWindowsProcessMatcher {
             }
         })
         .await
-        .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {}", e)))?
+        .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {e}")))?
     }
 
     /// Get process information by PID (blocking)
     fn get_process_info_blocking(pid: u32) -> Result<ProcessInfo, ProcessMatchError> {
+        // SAFETY: Windows API calls with proper error handling
         unsafe {
             // Open process handle
             let process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
@@ -184,7 +192,7 @@ impl NativeWindowsProcessMatcher {
                         // ERROR_ACCESS_DENIED
                         ProcessMatchError::PermissionDenied
                     } else {
-                        ProcessMatchError::SystemError(format!("OpenProcess failed: {:?}", e))
+                        ProcessMatchError::SystemError(format!("OpenProcess failed: {e:?}"))
                     }
                 })?;
 
@@ -224,17 +232,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_process_info() {
-        let matcher = NativeWindowsProcessMatcher::new().unwrap();
+    async fn test_get_process_info() -> Result<(), Box<dyn std::error::Error>> {
+        let matcher = NativeWindowsProcessMatcher::new()?;
 
         // Get info for current process
         let current_pid = std::process::id();
-        let result = matcher.get_process_info(current_pid).await;
-
-        assert!(result.is_ok());
-        let process_info = result.unwrap();
-        assert_eq!(process_info.pid, current_pid);
-        assert!(!process_info.name.is_empty());
-        assert!(!process_info.path.is_empty());
+        let process_info = matcher.get_process_info(current_pid).await?;
+        assert_eq!(process_info.pid, current_pid, "PID should match");
+        assert!(!process_info.name.is_empty(), "Name should not be empty");
+        assert!(!process_info.path.is_empty(), "Path should not be empty");
+        Ok(())
     }
 }

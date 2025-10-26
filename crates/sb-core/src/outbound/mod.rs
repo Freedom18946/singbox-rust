@@ -202,11 +202,11 @@ pub enum RouteTarget {
 }
 
 impl RouteTarget {
-    pub fn direct() -> Self {
-        RouteTarget::Kind(OutboundKind::Direct)
+    pub const fn direct() -> Self {
+        Self::Kind(OutboundKind::Direct)
     }
-    pub fn block() -> Self {
-        RouteTarget::Kind(OutboundKind::Block)
+    pub const fn block() -> Self {
+        Self::Kind(OutboundKind::Block)
     }
 }
 
@@ -242,7 +242,7 @@ pub enum OutboundImpl {
     WireGuard(wireguard_stub::WireGuardConfig),
     #[cfg(feature = "out_ssh")]
     Ssh(ssh_stub::SshConfig),
-    /// Generic trait-based connector (e.g., SelectorGroup)
+    /// Generic trait-based connector (e.g., `SelectorGroup`)
     Connector(Arc<dyn AdapterConnector>),
 }
 
@@ -251,7 +251,7 @@ pub struct OutboundRegistry {
     map: HashMap<String, OutboundImpl>,
 }
 impl OutboundRegistry {
-    pub fn new(map: HashMap<String, OutboundImpl>) -> Self {
+    pub const fn new(map: HashMap<String, OutboundImpl>) -> Self {
         Self { map }
     }
     pub fn get(&self, name: &str) -> Option<&OutboundImpl> {
@@ -560,8 +560,8 @@ impl OutboundRegistryHandle {
         Ok(Box::new(tcp))
     }
 
-    /// Preferred connection helper (fallback when v2ray_transport is disabled):
-    /// returns a plain TcpStream.
+    /// Preferred connection helper (fallback when `v2ray_transport` is disabled):
+    /// returns a plain `TcpStream`.
     #[cfg(not(feature = "v2ray_transport"))]
     pub async fn connect_preferred(
         &self,
@@ -640,7 +640,7 @@ async fn direct_connect(ep: Endpoint) -> io::Result<TcpStream> {
     let addr = match ep {
         Endpoint::Ip(sa) => sa,
         Endpoint::Domain(host, port) => {
-            let query = format!("{}:{}", host, port);
+            let query = format!("{host}:{port}");
             let mut it = lookup_host(query).await?;
             if let Some(sa) = it.next() {
                 sa
@@ -855,25 +855,25 @@ async fn http_connect(cfg: &HttpProxyConfig, ep: Endpoint) -> io::Result<TcpStre
     };
 
     match timeout(HANDSHAKE_TIMEOUT, async {
-        use Endpoint::*;
+        use Endpoint::{Ip, Domain};
         let host_port = match ep {
             Ip(sa) => format!(
                 "{}:{}",
                 match sa.ip() {
                     IpAddr::V4(v4) => v4.to_string(),
-                    IpAddr::V6(v6) => format!("[{}]", v6),
+                    IpAddr::V6(v6) => format!("[{v6}]"),
                 },
                 sa.port()
             ),
-            Domain(host, port) => format!("{}:{}", host, port),
+            Domain(host, port) => format!("{host}:{port}"),
         };
 
-        let mut req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", host_port, host_port);
+        let mut req = format!("CONNECT {host_port} HTTP/1.1\r\nHost: {host_port}\r\n");
         if let Some(user) = &cfg.username {
             let pass = cfg.password.as_deref().unwrap_or("");
-            let raw = format!("{}:{}", user, pass);
+            let raw = format!("{user}:{pass}");
             let auth = base64::engine::general_purpose::STANDARD.encode(raw.as_bytes());
-            req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", auth));
+            req.push_str(&format!("Proxy-Authorization: Basic {auth}\r\n"));
         }
         req.push_str("\r\n");
         s.write_all(req.as_bytes()).await?;

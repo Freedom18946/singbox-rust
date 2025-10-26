@@ -15,7 +15,8 @@ pub struct EchKeypair {
 
 impl EchKeypair {
     /// Create a new ECH keypair from raw bytes
-    pub fn new(private_key: Vec<u8>, public_key: Vec<u8>) -> Self {
+    #[must_use]
+    pub const fn new(private_key: Vec<u8>, public_key: Vec<u8>) -> Self {
         Self {
             private_key,
             public_key,
@@ -23,17 +24,20 @@ impl EchKeypair {
     }
 
     /// Create from base64-encoded strings (sing-box format)
+    ///
+    /// # Errors
+    /// Returns error if base64 decoding fails or key lengths are invalid
     pub fn from_base64(private_b64: &str, public_b64: &str) -> Result<Self, super::EchError> {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD;
 
         let private_key = b64
             .decode(private_b64)
-            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid private key: {}", e)))?;
+            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid private key: {e}")))?;
 
         let public_key = b64
             .decode(public_b64)
-            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid public key: {}", e)))?;
+            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid public key: {e}")))?;
 
         // Validate key lengths (X25519 keys are 32 bytes)
         if private_key.len() != 32 {
@@ -57,12 +61,14 @@ impl EchKeypair {
     }
 
     /// Get private key as base64 string
+    #[must_use]
     pub fn private_key_base64(&self) -> String {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD.encode(&self.private_key)
     }
 
     /// Get public key as base64 string
+    #[must_use]
     pub fn public_key_base64(&self) -> String {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD.encode(&self.public_key)
@@ -70,7 +76,7 @@ impl EchKeypair {
 }
 
 /// ECH client configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EchClientConfig {
     /// Enable ECH
     #[serde(default)]
@@ -94,27 +100,18 @@ pub struct EchClientConfig {
     pub dynamic_record_sizing_disabled: Option<bool>,
 }
 
-impl Default for EchClientConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            config: None,
-            config_list: None,
-            pq_signature_schemes_enabled: false,
-            dynamic_record_sizing_disabled: None,
-        }
-    }
-}
-
 impl EchClientConfig {
     /// Create a new ECH client config
+    ///
+    /// # Errors
+    /// Returns error if base64 decoding fails
     pub fn new(config_base64: String) -> Result<Self, super::EchError> {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD;
 
         let config_list = b64
             .decode(&config_base64)
-            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid config: {}", e)))?;
+            .map_err(|e| super::EchError::InvalidConfig(format!("Invalid config: {e}")))?;
 
         Ok(Self {
             enabled: true,
@@ -126,6 +123,9 @@ impl EchClientConfig {
     }
 
     /// Validate the configuration
+    ///
+    /// # Errors
+    /// Returns error if config is invalid
     pub fn validate(&self) -> Result<(), super::EchError> {
         if !self.enabled {
             return Ok(());
@@ -146,13 +146,14 @@ impl EchClientConfig {
     }
 
     /// Get the ECH config list bytes
+    #[must_use]
     pub fn get_config_list(&self) -> Option<&[u8]> {
         self.config_list.as_deref()
     }
 }
 
 /// ECH server configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EchServerConfig {
     /// Enable ECH
     #[serde(default)]
@@ -167,18 +168,11 @@ pub struct EchServerConfig {
     pub config: Option<String>,
 }
 
-impl Default for EchServerConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            keypair: None,
-            config: None,
-        }
-    }
-}
-
 impl EchServerConfig {
     /// Validate the configuration
+    ///
+    /// # Errors
+    /// Returns error if config is invalid
     pub fn validate(&self) -> Result<(), super::EchError> {
         if !self.enabled {
             return Ok(());
@@ -195,6 +189,7 @@ impl EchServerConfig {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 

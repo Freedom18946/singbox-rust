@@ -1,4 +1,4 @@
-//! Back-compat re-exports for IssueCode.
+//! Back-compat re-exports for `IssueCode`.
 pub use sb_types::IssueCode;
 
 // 若 sb-core 内部需要补充"分类映射"工具，可以继续在这里实现：

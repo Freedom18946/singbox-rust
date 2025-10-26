@@ -1,4 +1,4 @@
-//! Map io/tls errors to IssueCode classes for stable surface.
+//! Map io/tls errors to `IssueCode` classes for stable surface.
 use crate::error_map::IssueCode;
 
 #[derive(Debug, Clone)]
@@ -8,7 +8,7 @@ pub struct NetClass {
 }
 
 pub fn classify_io(e: &std::io::Error) -> NetClass {
-    use std::io::ErrorKind::*;
+    use std::io::ErrorKind::{TimedOut, ConnectionRefused};
     match e.kind() {
         TimedOut => NetClass {
             code: IssueCode::UpstreamTimeout,
@@ -26,8 +26,8 @@ pub fn classify_io(e: &std::io::Error) -> NetClass {
     }
 }
 
-pub fn classify_tls(err: &rustls::Error) -> NetClass {
-    use rustls::Error::*;
+pub const fn classify_tls(err: &rustls::Error) -> NetClass {
+    use rustls::Error::InvalidCertificate;
     match err {
         InvalidCertificate(_) => NetClass {
             code: IssueCode::TlsCertInvalid,

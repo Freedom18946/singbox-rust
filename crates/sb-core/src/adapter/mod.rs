@@ -1,38 +1,65 @@
 //! Adapter traits and factory interfaces.
-//! sb-adapter 提供真实实现；sb-core 仅定义接口与桥接。
+//!
+//! This module defines the core abstraction layer between configuration and runtime:
+//! - [`InboundService`]: Trait for inbound protocol handlers (socks5, http, tun, etc.)
+//! - [`OutboundConnector`]: Trait for outbound connection providers
+//! - [`Bridge`]: Runtime container managing all inbound/outbound instances
+//!
+//! sb-adapters provides concrete implementations; sb-core defines interfaces and bridging logic.
+
 use sb_config::ir::Credentials;
 use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
 
-/// 入站服务（如 socks/http/tun）统一接口
+/// Helper to parse socket address from listen and port
+#[allow(dead_code)]
+fn parse_socket_addr(listen: &str, port: u16) -> anyhow::Result<std::net::SocketAddr> {
+    format!("{listen}:{port}")
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid inbound address: {e}"))
+}
+
+/// Helper to create a direct connector fallback
+fn direct_connector_fallback() -> Arc<dyn OutboundConnector> {
+    use crate::outbound::direct_connector::DirectConnector;
+    Arc::new(DirectConnector::new())
+}
+
+/// Inbound service trait for protocol handlers (socks5/http/tun).
+///
+/// Implementers provide a blocking `serve()` method that internally spawns worker threads.
 pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
-    /// 阻塞运行（内部自行 spawn 工作线程）
+    /// Blocking entry point to run the service (spawns internal workers).
     fn serve(&self) -> std::io::Result<()>;
 }
 
-/// 出站连接器（如 direct/socks-upstream/http）
+/// Outbound connector trait for establishing TCP connections to targets.
+///
+/// Implementers handle protocol-specific handshakes (e.g., SOCKS5 upstream, HTTP CONNECT).
 #[async_trait::async_trait]
 pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
-    /// 建立到目标的 TCP 连接（异步）
+    /// Establish a TCP connection to the specified host and port.
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
 }
 
-/// 入站构造参数（来自 IR）
+/// Inbound construction parameters (derived from IR).
 #[derive(Clone, Debug)]
 pub struct InboundParam {
-    pub kind: String, // "socks" | "http" | "tun" | ...
+    /// Protocol kind: "socks", "http", "tun", etc.
+    pub kind: String,
     pub listen: String,
     pub port: u16,
     pub basic_auth: Option<Credentials>,
     pub sniff: bool,
 }
 
-/// 出站构造参数（来自 IR）
+/// Outbound construction parameters (derived from IR).
 #[derive(Clone, Debug)]
 pub struct OutboundParam {
-    pub kind: String, // "direct" | "socks" | "http" | "block" | named
+    /// Protocol kind: "direct", "socks", "http", "block", named protocols
+    pub kind: String,
     pub name: Option<String>,
     pub server: Option<String>,
     pub port: Option<u16>,
@@ -45,30 +72,36 @@ pub struct OutboundParam {
     pub skip_cert_verify: Option<bool>,
     pub udp_relay_mode: Option<String>,
     pub udp_over_stream: Option<bool>,
-    // SSH extras (optional)
+    // SSH-specific options
     pub ssh_private_key: Option<String>,
     pub ssh_private_key_passphrase: Option<String>,
     pub ssh_host_key_verification: Option<bool>,
     pub ssh_known_hosts_path: Option<String>,
 }
 
-/// 工厂接口（由 sb-adapter 实现；桥接层会优先尝试调用）
+/// Factory interface for creating inbound services (implemented by sb-adapters).
 pub trait InboundFactory: Send + Sync {
     fn create(&self, p: &InboundParam) -> Option<Arc<dyn InboundService>>;
 }
+
+/// Factory interface for creating outbound connectors (implemented by sb-adapters).
 pub trait OutboundFactory: Send + Sync {
     fn create(&self, p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>>;
 }
 
-/// 运行时桥接入口：先尝试 adapter，再回退脚手架
-#[derive(Clone, Debug)] // 允许在多线程/装配处克隆
+/// Runtime bridge: manages inbound services and outbound connectors.
+///
+/// The bridge is assembled from IR configuration and serves as the central registry
+/// for all protocol handlers. It supports adapter-first fallback to scaffold implementations.
+#[derive(Clone, Debug)]
 pub struct Bridge {
     pub inbounds: Vec<Arc<dyn InboundService>>,
-    /// (name, kind, connector)
+    /// (name, kind, connector) tuples
     pub outbounds: Vec<(String, String, Arc<dyn OutboundConnector>)>,
 }
 
 impl Bridge {
+    /// Creates a new empty bridge.
     pub fn new() -> Self {
         Self {
             inbounds: vec![],
@@ -88,23 +121,16 @@ impl Bridge {
                     sb_config::ir::InboundType::Socks => {
                         // Create SOCKS5 inbound service
                         use crate::inbound::socks5::Socks5;
-                        use std::net::SocketAddr;
 
-                        let addr: SocketAddr = format!("{}:{}", inbound.listen, inbound.port)
-                            .parse()
-                            .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
-
+                        let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
                         Arc::new(Socks5::new(addr.ip().to_string(), addr.port()))
                             as Arc<dyn InboundService>
                     }
                     sb_config::ir::InboundType::Http => {
                         // Create HTTP CONNECT inbound service (optionally with Basic auth)
                         use crate::inbound::http::{HttpConfig, HttpInboundService};
-                        use std::net::SocketAddr;
 
-                        let addr: SocketAddr = format!("{}:{}", inbound.listen, inbound.port)
-                            .parse()
-                            .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
+                        let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
 
                         let mut cfg = HttpConfig::default();
                         if let Some(creds) = &inbound.basic_auth {
@@ -136,10 +162,8 @@ impl Bridge {
                     }
                     sb_config::ir::InboundType::Direct => {
                         use crate::inbound::direct::DirectForward;
-                        use std::net::SocketAddr;
-                        let addr: SocketAddr = format!("{}:{}", inbound.listen, inbound.port)
-                            .parse()
-                            .map_err(|e| anyhow::anyhow!("Invalid inbound address: {}", e))?;
+
+                        let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
                         let host = inbound.override_host.clone().ok_or_else(|| {
                             anyhow::anyhow!(
                                 "direct inbound requires override_address/override_host"
@@ -180,13 +204,12 @@ impl Bridge {
             let name = outbound
                 .name
                 .clone()
-                .unwrap_or_else(|| format!("outbound_{}", outbound.ty_str()));
+                .unwrap_or(format!("outbound_{}", outbound.ty_str()));
             let kind = outbound.ty_str().to_string();
 
             let connector = match outbound.ty {
                 sb_config::ir::OutboundType::Direct => {
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Block => {
                     #[cfg(feature = "scaffold")]
@@ -204,14 +227,12 @@ impl Bridge {
                 sb_config::ir::OutboundType::Http => {
                     // HTTP proxy connector would be implemented here
                     // For now, fall back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Socks => {
                     // SOCKS5 proxy connector would be implemented here
                     // For now, fall back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Vless => {
                     #[cfg(feature = "out_vless")]
@@ -252,26 +273,21 @@ impl Bridge {
                 sb_config::ir::OutboundType::Selector => {
                     // Selector outbound would be implemented here
                     // For now, fall back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Shadowsocks => {
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::UrlTest => {
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Shadowtls => {
                     // Adapter-provided in sb-adapters; core bridge falls back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Hysteria2 => {
                     // Adapter-provided in sb-adapters; core bridge falls back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Tuic => {
                     #[cfg(feature = "out_tuic")]
@@ -336,18 +352,15 @@ impl Bridge {
                 }
                 sb_config::ir::OutboundType::Vmess => {
                     // VMess connector not wired in adapter bridge yet; fall back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Trojan => {
                     // Trojan connector not wired in adapter bridge; fall back to direct
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
                 sb_config::ir::OutboundType::Ssh => {
                     // Fallback to direct in this adapter path
-                    use crate::outbound::direct_connector::DirectConnector;
-                    Arc::new(DirectConnector::new()) as Arc<dyn OutboundConnector>
+                    direct_connector_fallback()
                 }
             };
 
@@ -356,36 +369,45 @@ impl Bridge {
 
         Ok(bridge)
     }
+    /// Registers an inbound service.
     pub fn add_inbound(&mut self, ib: Arc<dyn InboundService>) {
         self.inbounds.push(ib);
     }
+
+    /// Registers an outbound connector with name and kind.
     pub fn add_outbound(&mut self, name: String, kind: String, ob: Arc<dyn OutboundConnector>) {
         self.outbounds.push((name, kind, ob));
     }
+
+    /// Finds an outbound connector by name.
+    ///
+    /// Returns `None` if no outbound with the given name exists.
     pub fn find_outbound(&self, name: &str) -> Option<Arc<dyn OutboundConnector>> {
-        for (n, _k, ob) in &self.outbounds {
-            if n == name {
-                return Some(ob.clone());
-            }
-        }
-        None
+        self.outbounds
+            .iter()
+            .find_map(|(n, _k, ob)| (n == name).then(|| Arc::clone(ob)))
     }
-    /// 用于兜底：找第一个 kind == "direct" 的出站
+
+    /// Finds the first outbound connector with kind "direct" as a fallback.
+    ///
+    /// This is used when no specific outbound is found and a safe default is needed.
     pub fn find_direct_fallback(&self) -> Option<Arc<dyn OutboundConnector>> {
-        for (_n, k, ob) in &self.outbounds {
-            if k == "direct" {
-                return Some(ob.clone());
-            }
-        }
-        None
+        self.outbounds
+            .iter()
+            .find_map(|(_n, k, ob)| (k == "direct").then(|| Arc::clone(ob)))
     }
-    /// 供健康探测/可视化：拿到当前出站（name,kind）
+
+    /// Returns a snapshot of all outbound (name, kind) pairs.
+    ///
+    /// Useful for health checks and visualization.
     pub fn outbounds_snapshot(&self) -> Vec<(String, String)> {
         self.outbounds
             .iter()
             .map(|(n, k, _)| (n.clone(), k.clone()))
             .collect()
     }
+
+    /// Alias for `find_outbound` - finds an outbound connector by name.
     pub fn get_member(&self, name: &str) -> Option<Arc<dyn OutboundConnector>> {
         self.find_outbound(name)
     }

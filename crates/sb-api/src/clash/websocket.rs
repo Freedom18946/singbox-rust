@@ -12,6 +12,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, time::interval};
+use std::collections::VecDeque;
 
 /// Handle traffic WebSocket connections
 pub async fn traffic_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>) -> Response {
@@ -239,7 +240,7 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
     let mut heartbeat = interval(Duration::from_secs(30));
     let mut error_count = 0;
     const MAX_ERRORS: usize = 5;
-    let mut message_buffer: Vec<String> = Vec::new();
+    let mut message_buffer: VecDeque<String> = VecDeque::with_capacity(100);
     const BUFFER_SIZE: usize = 100;
 
     // Mock log generation for demonstration
@@ -267,7 +268,9 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
                                     "get_recent_logs" => {
                                         // Send recent buffered logs
                                         for buffered_log in &message_buffer {
-                                            let _ = sender.send(axum::extract::ws::Message::Text(buffered_log.clone())).await;
+                                            let _ = sender
+                                                .send(axum::extract::ws::Message::Text(buffered_log.clone()))
+                                                .await;
                                         }
                                     }
                                     _ => {
@@ -321,12 +324,8 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
 
                 let log_msg = WebSocketMessage::Log(mock_log);
                 if let Ok(log_text) = serde_json::to_string(&log_msg) {
-                    message_buffer.push(log_text.clone());
-
-                    // Keep buffer size under control
-                    if message_buffer.len() > BUFFER_SIZE {
-                        message_buffer.remove(0);
-                    }
+                    if message_buffer.len() == BUFFER_SIZE { message_buffer.pop_front(); }
+                    message_buffer.push_back(log_text.clone());
 
                     if sender.send(axum::extract::ws::Message::Text(log_text)).await.is_err() {
                         error_count += 1;
@@ -340,12 +339,8 @@ async fn handle_logs_websocket(socket: WebSocket, state: ApiState) {
                     Ok(log_entry) => {
                         let log_msg = WebSocketMessage::Log(log_entry);
                         if let Ok(log_text) = serde_json::to_string(&log_msg) {
-                            message_buffer.push(log_text.clone());
-
-                            // Keep buffer size under control
-                            if message_buffer.len() > BUFFER_SIZE {
-                                message_buffer.remove(0);
-                            }
+                            if message_buffer.len() == BUFFER_SIZE { message_buffer.pop_front(); }
+                            message_buffer.push_back(log_text.clone());
 
                             if sender.send(axum::extract::ws::Message::Text(log_text)).await.is_err() {
                                 error_count += 1;

@@ -74,21 +74,23 @@ static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
 
 // （删除未使用的 inbound_parse）
 // 只有在 feature=metrics 下才会真正生效，默认构建不受影响
-#[cfg(feature = "metrics")]
-use metrics;
 
 /// NOTE(mainline): 默认关闭，验收/排障时可通过环境变量临时开启。
 fn http_smoke_405_enabled() -> bool {
-    matches!(
-        std::env::var("SB_HTTP_SMOKE_405").ok().as_deref(),
-        Some("1" | "true" | "TRUE")
-    )
+    *HTTP_FLAG_SMOKE_405.get_or_init(|| {
+        matches!(
+            std::env::var("SB_HTTP_SMOKE_405").ok().as_deref(),
+            Some("1" | "true" | "TRUE")
+        )
+    })
 }
 fn http_disable_stop_enabled() -> bool {
-    matches!(
-        std::env::var("SB_HTTP_DISABLE_STOP").ok().as_deref(),
-        Some("1" | "true" | "TRUE")
-    )
+    *HTTP_FLAG_DISABLE_STOP.get_or_init(|| {
+        matches!(
+            std::env::var("SB_HTTP_DISABLE_STOP").ok().as_deref(),
+            Some("1" | "true" | "TRUE")
+        )
+    })
 }
 /// 回滚开关：降级为"只写 + 关"
 /// Note: This is already defined above at line 38, removing duplicate
@@ -106,21 +108,35 @@ fn should_short_circuit_405() -> bool {
     http_smoke_405_enabled()
 }
 
+/// Read an optional duration (milliseconds) from environment once per process.
+#[inline]
+fn opt_duration_ms_from_env(key: &str) -> Option<std::time::Duration> {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .and_then(|ms| (ms > 0).then(|| std::time::Duration::from_millis(ms)))
+}
+
 #[deprecated(since = "0.1.0", note = "reserved for future header size limits")]
 const MAX_HEADER: usize = 8 * 1024;
 #[deprecated(since = "0.1.0", note = "reserved for future timeout configuration")]
 #[allow(dead_code)] // Reserved for timeout enforcement
 const READ_HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// HTTP proxy configuration
 #[derive(Clone, Debug)]
 pub struct HttpProxyConfig {
+    /// Listen address
     pub listen: SocketAddr,
+    /// Router handle
     pub router: Arc<router::RouterHandle>,
+    /// Outbound registry handle
     pub outbounds: Arc<OutboundRegistryHandle>,
+    /// Optional TLS configuration
     pub tls: Option<sb_transport::TlsConfig>,
 }
 
-/// ready_tx：可选的就绪信号；当 socket 绑定完成后发送。
+/// Ready signal notifier - sends when socket binding completes
 pub async fn serve_http(
     cfg: HttpProxyConfig,
     mut stop_rx: mpsc::Receiver<()>,
@@ -140,7 +156,8 @@ pub async fn serve_http(
     tokio::spawn(async move {
         loop {
             hb.tick().await;
-            tracing::info!("http: accept-loop heartbeat");
+            // Avoid log spam in production; visible at debug level when needed.
+            tracing::debug!("http: accept-loop heartbeat");
         }
     });
 
@@ -208,13 +225,17 @@ pub async fn serve_http(
     Ok(())
 }
 
-// 兼容旧别名
+/// Compatibility alias - run HTTP proxy without ready signal
 pub async fn run_http(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     serve_http(cfg, stop_rx, None).await
 }
+
+/// Compatibility alias - serve HTTP proxy
 pub async fn serve(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     serve_http(cfg, stop_rx, None).await
 }
+
+/// Compatibility alias - run HTTP proxy
 pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     serve_http(cfg, stop_rx, None).await
 }
@@ -483,8 +504,8 @@ where
             }
         }
         RDecision::Reject => {
-            // Safety: RDecision::Reject is handled earlier at line 263-268 with early return
-            unreachable!("RDecision::Reject filtered out earlier")
+            // Should be filtered earlier; return explicit error to avoid panic paths.
+            return Err(anyhow!("unexpected reject decision in http inbound"));
         }
     };
     // 应答 200，然后做隧道转发
@@ -493,20 +514,8 @@ where
     cli.flush().await?;
 
     // 隧道转发（计量 copy；label=http），统一读/写超时（来自环境变量，可选）
-    fn dur_from_env(key: &str) -> Option<std::time::Duration> {
-        std::env::var(key)
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .and_then(|ms| {
-                if ms > 0 {
-                    Some(std::time::Duration::from_millis(ms))
-                } else {
-                    None
-                }
-            })
-    }
-    let rt = dur_from_env("SB_TCP_READ_TIMEOUT_MS");
-    let wt = dur_from_env("SB_TCP_WRITE_TIMEOUT_MS");
+    let rt = opt_duration_ms_from_env("SB_TCP_READ_TIMEOUT_MS");
+    let wt = opt_duration_ms_from_env("SB_TCP_WRITE_TIMEOUT_MS");
     let _ = sb_core::net::metered::copy_bidirectional_streaming_ctl(
         &mut cli,
         &mut upstream,

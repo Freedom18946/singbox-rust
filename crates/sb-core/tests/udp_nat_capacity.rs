@@ -63,7 +63,7 @@ async fn test_capacity_eviction_lru_ordering() {
     ];
 
     let mut mapped_addrs = Vec::new();
-    for (_i, (src, dst)) in sessions.iter().enumerate() {
+    for (src, dst) in &sessions {
         let mapped = nat.create_mapping(*src, *dst).unwrap();
         mapped_addrs.push(mapped);
         advance(Duration::from_secs(1)).await; // 1 second gap between each

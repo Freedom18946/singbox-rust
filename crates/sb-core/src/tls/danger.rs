@@ -23,7 +23,7 @@ impl Default for NoVerify {
 }
 
 impl NoVerify {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -86,7 +86,7 @@ pub struct PinVerify {
 }
 
 impl PinVerify {
-    pub fn new(pins: Vec<[u8; 32]>) -> Self {
+    pub const fn new(pins: Vec<[u8; 32]>) -> Self {
         Self { pins }
     }
 

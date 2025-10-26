@@ -14,6 +14,7 @@ use sb_core::outbound::hysteria2::{
 };
 #[cfg(feature = "out_hysteria2")]
 use sb_core::outbound::types::OutboundTcp;
+#[cfg(feature = "out_hysteria2")]
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "out_hysteria2")]
@@ -77,8 +78,7 @@ async fn test_hysteria2_congestion_control_mechanisms() {
             (CongestionControl::Bbr, CongestionControl::Bbr) => (),
             (CongestionControl::Cubic, CongestionControl::Cubic) => (),
             (CongestionControl::NewReno, CongestionControl::NewReno) => (),
-            _ => assert!(
-                false,
+            _ => panic!(
                 "Congestion control mismatch for {}: expected {:?}, got {:?}",
                 name, expected, outbound.congestion_control
             ),
@@ -117,7 +117,7 @@ async fn test_hysteria2_brutal_congestion_control() {
             assert_eq!(config.up_mbps, 50);
             assert_eq!(config.down_mbps, 100);
         }
-        _ => assert!(false, "Expected Brutal congestion control configuration"),
+        _ => panic!("Expected Brutal congestion control configuration"),
     }
 }
 

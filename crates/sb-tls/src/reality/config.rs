@@ -191,6 +191,7 @@ const fn default_true() -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::manual_string_new)]
 mod tests {
     use super::*;
 

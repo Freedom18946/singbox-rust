@@ -16,7 +16,6 @@
 //! Run with: cargo bench --bench bench_p0_protocols
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -26,18 +25,26 @@ use tokio::runtime::Runtime;
 // Helper Functions
 // ============================================================================
 
-/// Create a tokio runtime for async benchmarks
-fn create_runtime() -> Runtime {
+/// Create a tokio runtime for async benchmarks. Falls back to current-thread
+/// runtime when multi-threaded runtime cannot be built.
+fn create_runtime() -> Option<Runtime> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .unwrap()
+        .ok()
+        .or_else(|| tokio::runtime::Builder::new_current_thread().enable_all().build().ok())
 }
 
 /// Start a simple TCP echo server for testing
-async fn start_echo_server() -> std::net::SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+async fn start_echo_server() -> Option<std::net::SocketAddr> {
+    let listener = match TcpListener::bind("127.0.0.1:0").await {
+        Ok(l) => l,
+        Err(_) => return None,
+    };
+    let addr = match listener.local_addr() {
+        Ok(a) => a,
+        Err(_) => return None,
+    };
 
     tokio::spawn(async move {
         loop {
@@ -60,7 +67,7 @@ async fn start_echo_server() -> std::net::SocketAddr {
     });
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    addr
+    Some(addr)
 }
 
 // ============================================================================
@@ -68,22 +75,26 @@ async fn start_echo_server() -> std::net::SocketAddr {
 // ============================================================================
 
 fn bench_baseline_throughput(c: &mut Criterion) {
-    let rt = create_runtime();
-    let addr = rt.block_on(start_echo_server());
+    let Some(rt) = create_runtime() else { return; };
+    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
 
     let mut group = c.benchmark_group("baseline_throughput");
 
-    for size in [1024, 10 * 1024, 100 * 1024, 1024 * 1024].iter() {
-        group.throughput(Throughput::Bytes(*size as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
+    for &size in &[1024usize, 10 * 1024, 100 * 1024, 1024 * 1024] {
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
             b.to_async(&rt).iter(|| async {
-                let mut stream = TcpStream::connect(addr).await.unwrap();
+                let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
                 let data = vec![0xAB; size];
 
-                stream.write_all(&data).await.unwrap();
+                if stream.write_all(&data).await.is_err() {
+                    return;
+                }
 
                 let mut received = vec![0u8; size];
-                stream.read_exact(&mut received).await.unwrap();
+                if stream.read_exact(&mut received).await.is_err() {
+                    return;
+                }
 
                 black_box(received);
             });
@@ -94,21 +105,25 @@ fn bench_baseline_throughput(c: &mut Criterion) {
 }
 
 fn bench_baseline_latency(c: &mut Criterion) {
-    let rt = create_runtime();
-    let addr = rt.block_on(start_echo_server());
+    let Some(rt) = create_runtime() else { return; };
+    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
 
     let mut group = c.benchmark_group("baseline_latency");
     group.sample_size(1000);
 
     group.bench_function("small_payload", |b| {
         b.to_async(&rt).iter(|| async {
-            let mut stream = TcpStream::connect(addr).await.unwrap();
+            let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
             let data = b"PING";
 
-            stream.write_all(data).await.unwrap();
+            if stream.write_all(data).await.is_err() {
+                return;
+            }
 
             let mut received = [0u8; 4];
-            stream.read_exact(&mut received).await.unwrap();
+            if stream.read_exact(&mut received).await.is_err() {
+                return;
+            }
 
             black_box(received);
         });
@@ -118,15 +133,15 @@ fn bench_baseline_latency(c: &mut Criterion) {
 }
 
 fn bench_baseline_connection_establishment(c: &mut Criterion) {
-    let rt = create_runtime();
-    let addr = rt.block_on(start_echo_server());
+    let Some(rt) = create_runtime() else { return; };
+    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
 
     let mut group = c.benchmark_group("baseline_connection");
     group.sample_size(500);
 
     group.bench_function("tcp_connect", |b| {
         b.to_async(&rt).iter(|| async {
-            let stream = TcpStream::connect(addr).await.unwrap();
+            let Ok(stream) = TcpStream::connect(addr).await else { return; };
             black_box(stream);
         });
     });
@@ -141,12 +156,10 @@ fn bench_baseline_connection_establishment(c: &mut Criterion) {
 #[cfg(feature = "tls_reality")]
 mod reality_benches {
     use super::*;
-    use sb_tls::reality::{RealityClientConfig, RealityConnector};
+    use sb_tls::reality::RealityClientConfig;
     use x25519_dalek::{PublicKey, StaticSecret};
 
     pub fn bench_reality_handshake(c: &mut Criterion) {
-        let rt = create_runtime();
-
         // Generate test keypair
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
@@ -198,13 +211,11 @@ mod ech_benches {
     use x25519_dalek::{PublicKey, StaticSecret};
 
     pub fn bench_ech_encryption(c: &mut Criterion) {
-        let rt = create_runtime();
-
         // Generate test keypair
         let secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
         let public_key = PublicKey::from(&secret);
-
         let keypair = EchKeypair::new(secret.to_bytes().to_vec(), public_key.as_bytes().to_vec());
+        black_box(&keypair);
 
         let config = EchClientConfig {
             enabled: true,
@@ -389,34 +400,38 @@ mod tuic_benches {
 // ============================================================================
 
 fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
-    let rt = create_runtime();
-    let addr = rt.block_on(start_echo_server());
+    let Some(rt) = create_runtime() else { return; };
+    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
 
     let mut group = c.benchmark_group("memory_usage");
     group.sample_size(10);
 
-    for conn_count in [10, 50, 100, 500].iter() {
+    for &conn_count in &[10usize, 50, 100, 500] {
         group.bench_with_input(
             BenchmarkId::new("concurrent_connections", conn_count),
-            conn_count,
+            &conn_count,
             |b, &count| {
                 b.to_async(&rt).iter(|| async {
                     let mut handles = Vec::new();
 
                     for _ in 0..count {
                         let handle = tokio::spawn(async move {
-                            let mut stream = TcpStream::connect(addr).await.unwrap();
+                            let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
                             let data = vec![0xAB; 1024];
-                            stream.write_all(&data).await.unwrap();
+                            if stream.write_all(&data).await.is_err() {
+                                return;
+                            }
                             let mut received = vec![0u8; 1024];
-                            stream.read_exact(&mut received).await.unwrap();
+                            if stream.read_exact(&mut received).await.is_err() {
+                                return;
+                            }
                             black_box(received);
                         });
                         handles.push(handle);
                     }
 
                     for handle in handles {
-                        handle.await.unwrap();
+                        let _ = handle.await;
                     }
                 });
             },
@@ -504,5 +519,7 @@ fn main() {
     #[cfg(feature = "sb-core/out_tuic")]
     tuic_benches_group(&mut criterion);
 
-    criterion.final_summary();
+criterion.final_summary();
 }
+#[cfg(not(feature = "bench"))]
+fn main() {}

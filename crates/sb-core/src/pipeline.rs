@@ -15,7 +15,7 @@ pub trait Outbound: Send + Sync {
     /// 发起到目标地址的 TCP 连接（旧接口，保留兼容）
     async fn connect(&self, dst: Address) -> io::Result<TcpStream>;
 
-    /// 2.3d：扩展连接接口（带入 inbound/user/transport/sniff_host/超时/截止等上下文）
+    /// 2.3d：扩展连接接口（带入 `inbound/user/transport/sniff_host/超时/截止等上下文`）
     /// 默认回退到旧的 `connect(&Address)`
     async fn connect_ex(&self, params: &ConnectParams) -> io::Result<TcpStream> {
         self.connect(params.target.clone()).await
@@ -29,7 +29,7 @@ pub struct Pipeline<I: Inbound> {
 }
 
 impl<I: Inbound> Pipeline<I> {
-    pub fn new(inbound: I) -> Self {
+    pub const fn new(inbound: I) -> Self {
         Self { inbound }
     }
     pub async fn run(self) -> anyhow::Result<()> {
@@ -40,7 +40,6 @@ impl<I: Inbound> Pipeline<I> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io;
 
     struct MockInbound {
         should_fail: bool,

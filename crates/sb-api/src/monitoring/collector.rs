@@ -59,7 +59,7 @@ impl TrafficCollector {
         let update_interval = self.update_interval;
         let bytes_transferred = self.bytes_transferred.clone();
 
-        tokio::spawn(async move {
+        let _bg = tokio::spawn(async move {
             let mut interval_timer = interval(update_interval);
             let mut last_up = 0u64;
             let mut last_down = 0u64;
@@ -212,7 +212,7 @@ impl ConnectionCollector {
         let is_running = self.is_running.clone();
         let update_interval = self.update_interval;
 
-        tokio::spawn(async move {
+        let _bg = tokio::spawn(async move {
             let mut interval_timer = interval(update_interval);
 
             while is_running.load(Ordering::Relaxed) {

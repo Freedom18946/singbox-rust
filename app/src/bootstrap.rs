@@ -124,7 +124,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
             }
             sb_config::ir::OutboundType::Socks => {
                 if let (Some(host), Some(port)) = (&ob.server, ob.port) {
-                    if let Ok(addr) = resolve_host_port(&host, port) {
+                    if let Ok(addr) = resolve_host_port(host, port) {
                         let cfg = Socks5Config {
                             proxy_addr: addr,
                             username: ob.credentials.as_ref().and_then(|c| c.username.clone()),
@@ -136,7 +136,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
             }
             sb_config::ir::OutboundType::Http => {
                 if let (Some(host), Some(port)) = (&ob.server, ob.port) {
-                    if let Ok(addr) = resolve_host_port(&host, port) {
+                    if let Ok(addr) = resolve_host_port(host, port) {
                         let cfg = HttpProxyConfig {
                             proxy_addr: addr,
                             username: ob.credentials.as_ref().and_then(|c| c.username.clone()),
@@ -157,7 +157,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         let alpn_list = ob
                             .tls_alpn
                             .as_ref()
-                            .or_else(|| ob.alpn.as_ref())
+                            .or(ob.alpn.as_ref())
                             .map(|raw| parse_alpn_tokens(raw));
                         let brutal_cfg = match (ob.brutal_up_mbps, ob.brutal_down_mbps) {
                             (Some(up), Some(down)) => Some(BrutalConfig {
@@ -214,7 +214,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                         token: token.clone(),
                                         password: ob.password.clone(),
                                         congestion_control: ob.congestion_control.clone(),
-                                        alpn: ob.alpn.clone().or_else(|| ob.tls_alpn.clone()),
+                                        alpn: ob.alpn.clone().or(ob.tls_alpn.clone()),
                                         skip_cert_verify: ob.skip_cert_verify.unwrap_or(false),
                                         udp_relay_mode: relay_mode,
                                         udp_over_stream: ob.udp_over_stream.unwrap_or(false),
@@ -298,7 +298,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                             let tls_alpn = ob
                                 .tls_alpn
                                 .as_ref()
-                                .or_else(|| ob.alpn.as_ref())
+                                .or(ob.alpn.as_ref())
                                 .map(|raw| parse_alpn_tokens(raw));
                             let cfg = sb_core::outbound::vless::VlessConfig {
                                 server: server.clone(),
@@ -335,7 +335,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                             let tls_alpn = ob
                                 .tls_alpn
                                 .as_ref()
-                                .or_else(|| ob.alpn.as_ref())
+                                .or(ob.alpn.as_ref())
                                 .map(|raw| parse_alpn_tokens(raw));
                             let cfg = sb_core::outbound::vmess::VmessConfig {
                                 server: server.clone(),
@@ -375,7 +375,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                             password.clone(),
                             sni,
                         );
-                        if let Some(raw) = ob.tls_alpn.as_ref().or_else(|| ob.alpn.as_ref()) {
+                        if let Some(raw) = ob.tls_alpn.as_ref().or(ob.alpn.as_ref()) {
                             let tokens = parse_alpn_tokens(raw);
                             if !tokens.is_empty() {
                                 cfg = cfg.with_alpn(tokens);
@@ -754,6 +754,7 @@ fn parse_udp_bind_from_env() -> Option<SocketAddr> {
 }
 
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
+#[allow(clippy::unused_async)]
 async fn start_inbounds_from_ir(
     inbounds: &[sb_config::ir::InboundIR],
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
@@ -975,67 +976,13 @@ fn parse_pool_json(
     Ok(map)
 }
 
-/// Apply DNS configuration from config.raw() via env for sb-core DNS resolver
+/// Apply DNS configuration from `config.raw()` via env for sb-core DNS resolver
 fn apply_dns_from_config(cfg: &Config) {
     use serde_json::Value;
     let raw = cfg.raw();
     let mut pool_tokens: Vec<String> = Vec::new();
 
-    fn push_dedup(v: &mut Vec<String>, s: String) {
-        if !v.iter().any(|x| x.eq_ignore_ascii_case(&s)) {
-            v.push(s);
-        }
-    }
-
-    // Convert a single server value to SB_DNS_POOL token
-    fn server_to_token(v: &Value) -> Option<String> {
-        match v {
-            Value::String(s) => normalize_addr(s),
-            Value::Object(m) => m
-                .get("address")
-                .and_then(|vv| vv.as_str())
-                .and_then(normalize_addr),
-            _ => None,
-        }
-    }
-
-    // Normalize to supported tokens: system | udp:host:port | tcp:host:port | doh:https://... | dot:host:port | doq:host:port[@sni]
-    fn normalize_addr(addr: &str) -> Option<String> {
-        let a = addr.trim();
-        if a.is_empty() {
-            return None;
-        }
-        // Pass through when already tokenized
-        for pref in ["system", "udp:", "tcp:", "doh:", "dot:", "doq:"] {
-            if a.eq_ignore_ascii_case("system") || a.starts_with(pref) {
-                return Some(a.to_string());
-            }
-        }
-        // URL schemes
-        if a.starts_with("https://") {
-            return Some(format!("doh:{}", a));
-        }
-        if a.starts_with("udp://") {
-            return Some(format!("udp:{}", a.trim_start_matches("udp://")));
-        }
-        if a.starts_with("tcp://") {
-            return Some(format!("tcp:{}", a.trim_start_matches("tcp://")));
-        }
-        if a.starts_with("dot://") {
-            return Some(format!("dot:{}", a.trim_start_matches("dot://")));
-        }
-        if a.starts_with("doq://") {
-            return Some(format!("doq:{}", a.trim_start_matches("doq://")));
-        }
-        // host:port -> default to UDP
-        if a.contains(':') {
-            return Some(format!("udp:{}", a));
-        }
-        // Fallback
-        Some("system".to_string())
-    }
-
-    if let Some(dns) = raw.get("dns").and_then(|v| v.as_object()) {
+    if let Some(dns) = raw.get("dns").and_then(Value::as_object) {
         if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
             for sv in servers {
                 if let Some(tok) = server_to_token(sv) {
@@ -1045,25 +992,25 @@ fn apply_dns_from_config(cfg: &Config) {
         }
 
         // Optional strategy: race | sequential
-        if let Some(strategy) = dns.get("strategy").and_then(|v| v.as_str()) {
+        if let Some(strategy) = dns.get("strategy").and_then(Value::as_str) {
             std::env::set_var("SB_DNS_POOL_STRATEGY", strategy);
         }
         // Optional race window (ms)
-        if let Some(win_ms) = dns.get("race_window_ms").and_then(|v| v.as_u64()) {
+        if let Some(win_ms) = dns.get("race_window_ms").and_then(Value::as_u64) {
             std::env::set_var("SB_DNS_RACE_WINDOW_MS", win_ms.to_string());
         }
         // Optional default timeout (ms)
-        if let Some(timeout_ms) = dns.get("timeout_ms").and_then(|v| v.as_u64()) {
+        if let Some(timeout_ms) = dns.get("timeout_ms").and_then(Value::as_u64) {
             std::env::set_var("SB_DNS_TIMEOUT_MS", timeout_ms.to_string());
         }
         // Optional IPv6 enable
-        if let Some(ipv6) = dns.get("ipv6").and_then(|v| v.as_bool()) {
+        if let Some(ipv6) = dns.get("ipv6").and_then(Value::as_bool) {
             if ipv6 {
                 std::env::set_var("SB_DNS_IPV6", "1");
             }
         }
         // Optional HE order: A_FIRST | AAAA_FIRST
-        if let Some(he) = dns.get("he_order").and_then(|v| v.as_str()) {
+        if let Some(he) = dns.get("he_order").and_then(Value::as_str) {
             std::env::set_var("SB_DNS_HE_ORDER", he);
         }
     }
@@ -1077,6 +1024,61 @@ fn apply_dns_from_config(cfg: &Config) {
     std::env::set_var("SB_DNS_ENABLE", "1");
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var("SB_DNS_POOL", pool_tokens.join(","));
+}
+
+// Helper: dedup push ignoring ASCII case
+fn push_dedup(v: &mut Vec<String>, s: String) {
+    if !v.iter().any(|x| x.eq_ignore_ascii_case(&s)) {
+        v.push(s);
+    }
+}
+
+// Convert a single server value to SB_DNS_POOL token
+fn server_to_token(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => normalize_addr(s),
+        serde_json::Value::Object(m) => m
+            .get("address")
+            .and_then(serde_json::Value::as_str)
+            .and_then(normalize_addr),
+        _ => None,
+    }
+}
+
+// Normalize to supported tokens: system | udp:host:port | tcp:host:port | doh:https://... | dot:host:port | doq:host:port[@sni]
+fn normalize_addr(addr: &str) -> Option<String> {
+    let a = addr.trim();
+    if a.is_empty() {
+        return None;
+    }
+    // Pass through when already tokenized
+    for pref in ["system", "udp:", "tcp:", "doh:", "dot:", "doq:"] {
+        if a.eq_ignore_ascii_case("system") || a.starts_with(pref) {
+            return Some(a.to_string());
+        }
+    }
+    // URL schemes
+    if a.starts_with("https://") {
+        return Some(format!("doh:{a}"));
+    }
+    if a.starts_with("udp://") {
+        return Some(format!("udp:{}", a.trim_start_matches("udp://")));
+    }
+    if a.starts_with("tcp://") {
+        return Some(format!("tcp:{}", a.trim_start_matches("tcp://")));
+    }
+    if a.starts_with("dot://") {
+        return Some(format!("dot:{}", a.trim_start_matches("dot://")));
+    }
+    if a.starts_with("doq://") {
+        return Some(format!("doq:{}", a.trim_start_matches("doq://")));
+    }
+    // host:port -> default to UDP
+    if a.contains(':') {
+        return Some(format!("udp:{a}"));
+    }
+    // Fallback
+    Some("system".to_string())
 }
 
 #[cfg(all(test, feature = "router"))]

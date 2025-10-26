@@ -13,7 +13,6 @@
 
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use rustls_pemfile;
 use std::sync::Arc;
 
 #[cfg(feature = "transport_reality")]

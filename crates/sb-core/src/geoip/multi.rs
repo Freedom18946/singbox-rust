@@ -1,14 +1,14 @@
-//! Multi-provider GeoIP implementation
+//! Multi-provider `GeoIP` implementation
 //!
-//! This module provides a multiplexing GeoIP provider that can aggregate
-//! results from multiple GeoIP sources and provide fallback mechanisms.
+//! This module provides a multiplexing `GeoIP` provider that can aggregate
+//! results from multiple `GeoIP` sources and provide fallback mechanisms.
 
 use super::{GeoInfo, GeoIpProvider};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Multi-provider GeoIP multiplexer
+/// Multi-provider `GeoIP` multiplexer
 pub struct GeoMux {
     providers: Vec<ProviderWithConfig>,
     strategy: LookupStrategy,
@@ -48,9 +48,9 @@ pub enum LookupStrategy {
 }
 
 impl GeoMux {
-    /// Create a GeoMux from environment configuration
+    /// Create a `GeoMux` from environment configuration
     pub fn from_env() -> anyhow::Result<Self> {
-        let mut mux = GeoMux::new(LookupStrategy::FirstSuccess);
+        let mut mux = Self::new(LookupStrategy::FirstSuccess);
 
         // Add MMDB provider if available
         if let Ok(mmdb_provider) = super::mmdb::MmdbProvider::new() {
@@ -74,7 +74,7 @@ impl GeoMux {
         }
         None
     }
-    /// Create a new GeoMux instance
+    /// Create a new `GeoMux` instance
     pub fn new(strategy: LookupStrategy) -> Self {
         // SAFETY: 5000 is a non-zero constant; fallback to 1 on theoretical failure
         let cap = std::num::NonZeroUsize::new(5000)
@@ -158,42 +158,39 @@ impl GeoMux {
 
         let _duration = start.elapsed();
 
-        match result {
-            Some(info) => {
-                // Reset failure count on success
-                provider
-                    .failure_count
-                    .store(0, std::sync::atomic::Ordering::Relaxed);
-                if let Ok(mut g) = provider.last_success.lock() {
-                    *g = Some(std::time::Instant::now());
-                }
-
-                #[cfg(feature = "metrics")]
-                {
-                    crate::metrics::geoip::geoip_provider_success(
-                        &provider.name,
-                        _duration.as_secs_f64(),
-                    );
-                }
-
-                Some(info)
+        if let Some(info) = result {
+            // Reset failure count on success
+            provider
+                .failure_count
+                .store(0, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut g) = provider.last_success.lock() {
+                *g = Some(std::time::Instant::now());
             }
-            None => {
-                // Increment failure count
-                provider
-                    .failure_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-                #[cfg(feature = "metrics")]
-                {
-                    crate::metrics::geoip::geoip_provider_failure(
-                        &provider.name,
-                        _duration.as_secs_f64(),
-                    );
-                }
-
-                None
+            #[cfg(feature = "metrics")]
+            {
+                crate::metrics::geoip::geoip_provider_success(
+                    &provider.name,
+                    _duration.as_secs_f64(),
+                );
             }
+
+            Some(info)
+        } else {
+            // Increment failure count
+            provider
+                .failure_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            #[cfg(feature = "metrics")]
+            {
+                crate::metrics::geoip::geoip_provider_failure(
+                    &provider.name,
+                    _duration.as_secs_f64(),
+                );
+            }
+
+            None
         }
     }
 
@@ -374,7 +371,7 @@ pub struct ProviderStats {
     pub last_success: Option<std::time::Instant>,
 }
 
-/// Builder for GeoMux
+/// Builder for `GeoMux`
 pub struct GeoMuxBuilder {
     strategy: LookupStrategy,
     providers: Vec<(Arc<dyn GeoIpProvider>, String, u8, Duration)>,

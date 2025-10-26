@@ -3,7 +3,7 @@
 //! 提供 hosts 文件解析和域名解析功能，支持：
 //! - 跨平台hosts文件位置检测（Unix和Windows）
 //! - 标准hosts文件格式解析（IP + hostname，注释支持）
-//! - IPv4和IPv6地址
+//! - `IPv4和IPv6地址`
 //! - 内存缓存和文件监视（可选）
 //! - 通配符和别名支持
 
@@ -49,8 +49,7 @@ impl HostsResolver {
 
         let enabled = std::env::var("SB_DNS_HOSTS_ENABLE")
             .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true); // 默认启用
+            .is_none_or(|v| v == "1" || v.eq_ignore_ascii_case("true")); // 默认启用
 
         let mut resolver = Self {
             hosts: Arc::new(RwLock::new(HashMap::new())),
@@ -168,7 +167,7 @@ impl HostsResolver {
     }
 
     /// 设置是否启用
-    pub fn set_enabled(&mut self, enabled: bool) {
+    pub const fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
@@ -212,7 +211,7 @@ impl Resolver for HostsResolver {
         ))
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "hosts"
     }
 }

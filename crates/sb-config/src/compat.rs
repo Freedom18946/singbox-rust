@@ -3,15 +3,36 @@ use serde_json::Value;
 // Legacy compatibility layer removed - model::Config is deprecated
 // All v1→v2 migration now happens through migrate_to_v2() using serde_json::Value
 
+/// V1 condition fields that get wrapped into the V2 `when` object.
+const V1_CONDITION_FIELDS: &[&str] = &[
+    "domain",
+    "domain_suffix",
+    "domain_keyword",
+    "domain_regex",
+    "geosite",
+    "geoip",
+    "ip_cidr",
+    "port",
+    "network",
+    "protocol",
+    "process",
+];
+
 /// Migrate legacy config (v1-style) into v2 canonical layout.
-// - Moves root `rules` -> `route.rules`
-// - Renames `default_outbound` -> `route.default`
-// - Normalizes outbound type `socks5` -> `socks`
-// - Renames inbound/outbound `tag` -> `name`
-// - Merges inbound `listen` + `listen_port` -> `listen: "IP:PORT"`
-// - Renames route rule `outbound` -> `to`
-// - Wraps rule conditions in `when` object
-// - Injects `schema_version: 2`
+///
+/// Transformations applied:
+/// - Moves root `rules` → `route.rules`
+/// - Renames `default_outbound` → `route.default`
+/// - Normalizes outbound type `socks5` → `socks`
+/// - Renames inbound/outbound `tag` → `name`
+/// - Merges inbound `listen` + `listen_port` → `listen: "IP:PORT"`
+/// - Renames route rule `outbound` → `to`
+/// - Wraps rule conditions in `when` object
+/// - Injects `schema_version: 2`
+///
+/// # Panics
+/// Does not panic; silently skips malformed fields.
+#[must_use]
 pub fn migrate_to_v2(raw: &Value) -> Value {
     let mut v = raw.clone();
     let obj = match v {
@@ -30,14 +51,17 @@ pub fn migrate_to_v2(raw: &Value) -> Value {
                     inb_obj.insert("name".to_string(), tag);
                 }
                 // listen + listen_port -> listen: "IP:PORT"
+                // Ensure port is within valid range (0-65535)
                 if let Some(port) = inb_obj.remove("listen_port") {
                     if let Some(listen) = inb_obj.get("listen") {
                         if let (Some(listen_str), Some(port_num)) = (listen.as_str(), port.as_u64())
                         {
-                            inb_obj.insert(
-                                "listen".to_string(),
-                                Value::from(format!("{}:{}", listen_str, port_num)),
-                            );
+                            if port_num <= u64::from(u16::MAX) {
+                                inb_obj.insert(
+                                    "listen".to_string(),
+                                    Value::from(format!("{listen_str}:{port_num}")),
+                                );
+                            }
                         }
                     }
                 }
@@ -90,24 +114,10 @@ pub fn migrate_to_v2(raw: &Value) -> Value {
                     }
 
                     // Wrap V1 condition fields in 'when' object
-                    let v1_condition_fields = vec![
-                        "domain",
-                        "domain_suffix",
-                        "domain_keyword",
-                        "domain_regex",
-                        "geosite",
-                        "geoip",
-                        "ip_cidr",
-                        "port",
-                        "network",
-                        "protocol",
-                        "process",
-                    ];
-
                     let mut when_obj = serde_json::Map::new();
                     let mut has_conditions = false;
 
-                    for field in &v1_condition_fields {
+                    for field in V1_CONDITION_FIELDS {
                         if let Some(value) = rule_obj.get(*field) {
                             // For V2 'when' object, use singular string values if array has one element
                             if let Some(arr) = value.as_array() {

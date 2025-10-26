@@ -443,6 +443,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ReplayStream<S> {
 //    - Ensure indistinguishable from real target
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::manual_string_new)]
 mod tests {
     use super::*;
 

@@ -26,7 +26,7 @@ pub struct HysteriaInboundConfig {
 impl Default for HysteriaInboundConfig {
     fn default() -> Self {
         Self {
-            listen: "0.0.0.0:443".parse().expect("valid address"),
+            listen: std::net::SocketAddr::from(([0, 0, 0, 0], 443)),
             up_mbps: 10,
             down_mbps: 50,
             obfs: None,

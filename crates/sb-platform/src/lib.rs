@@ -4,7 +4,7 @@
 //!
 //! ## Process Matching
 //! - [`process`]: Identify processes by network connections
-//! - Native API support (macOS: libproc, Windows: GetExtendedTcpTable)
+//! - Native API support (macOS: libproc, Windows: `GetExtendedTcpTable`)
 //! - Command-line tool fallback (lsof, netstat)
 //! - Feature flag: `native-process-match` (default: enabled)
 //!
@@ -21,7 +21,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```no_run
 //! use sb_platform::process::ProcessMatcher;
 //! use sb_platform::os::NAME;
 //!
@@ -29,9 +29,10 @@
 //! println!("Running on: {}", NAME);
 //!
 //! // Process matching (async)
-//! # tokio_test::block_on(async {
-//! let matcher = ProcessMatcher::new().unwrap();
-//! # });
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let matcher = ProcessMatcher::new()?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Features
@@ -43,18 +44,31 @@
 //! - `tun`: TUN device support
 //! - `full`: Enable all platform features
 
+#![warn(missing_docs)]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::undocumented_unsafe_blocks
+)]
+
 pub mod process;
 pub mod tun;
 
-#[cfg(target_os = "linux")]
+/// OS detection constants and utilities
 pub mod os {
+    /// OS name detected at compile time
+    #[cfg(target_os = "linux")]
     pub const NAME: &str = "linux";
-}
-#[cfg(target_os = "macos")]
-pub mod os {
+
+    /// OS name detected at compile time
+    #[cfg(target_os = "macos")]
     pub const NAME: &str = "macos";
-}
-#[cfg(target_os = "windows")]
-pub mod os {
+
+    /// OS name detected at compile time
+    #[cfg(target_os = "windows")]
     pub const NAME: &str = "windows";
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    compile_error!("Unsupported platform: sb-platform only supports Linux, macOS, and Windows");
 }

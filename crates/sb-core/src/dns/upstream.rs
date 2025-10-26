@@ -2,8 +2,8 @@
 //!
 //! 提供各种 DNS 传输协议的上游实现：
 //! - UDP 上游
-//! - DNS-over-TLS (DoT) 上游
-//! - DNS-over-HTTPS (DoH) 上游
+//! - DNS-over-TLS (`DoT`) 上游
+//! - DNS-over-HTTPS (`DoH`) 上游
 //! - 系统解析器上游
 
 use anyhow::Result;
@@ -43,18 +43,18 @@ impl UdpUpstream {
             server,
             timeout,
             retries,
-            name: format!("udp://{}", server),
+            name: format!("udp://{server}"),
         }
     }
 
     /// 设置超时时间
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
     /// 设置重试次数
-    pub fn with_retries(mut self, retries: usize) -> Self {
+    pub const fn with_retries(mut self, retries: usize) -> Self {
         self.retries = retries;
         self
     }
@@ -79,7 +79,7 @@ impl UdpUpstream {
         let response_len = timeout(self.timeout, socket.recv(&mut response_buf))
             .await
             .map_err(|_| anyhow::anyhow!("DNS query timeout"))?
-            .map_err(|e| anyhow::anyhow!("Failed to receive DNS response: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to receive DNS response: {e}"))?;
 
         response_buf.truncate(response_len);
 
@@ -110,7 +110,7 @@ impl UdpUpstream {
         // QNAME: domain name in label format
         for label in domain.trim_end_matches('.').split('.') {
             if label.is_empty() || label.len() > 63 {
-                return Err(anyhow::anyhow!("Invalid domain label: {}", label));
+                return Err(anyhow::anyhow!("Invalid domain label: {label}"));
             }
             packet.push(label.len() as u8);
             packet.extend_from_slice(label.as_bytes());
@@ -161,7 +161,7 @@ impl UdpUpstream {
 
         Ok(DnsAnswer::new(
             ips,
-            Duration::from_secs(min_ttl.unwrap_or(300) as u64),
+            Duration::from_secs(u64::from(min_ttl.unwrap_or(300))),
             super::cache::Source::Upstream,
             super::cache::Rcode::NoError,
         ))
@@ -289,7 +289,7 @@ impl DnsUpstream for UdpUpstream {
                             domain,
                             attempt,
                             // Log the latest error without risking panic on None
-                            last_error.as_ref().map(|err| err.to_string()).unwrap_or_else(|| "unknown".to_string())
+                            last_error.as_ref().map_or_else(|| "unknown".to_string(), std::string::ToString::to_string)
                         );
                         // 短暂延迟后重试
                         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -321,7 +321,7 @@ impl DnsUpstream for UdpUpstream {
     }
 }
 
-/// DNS-over-TLS (DoT) 上游实现
+/// DNS-over-TLS (`DoT`) 上游实现
 pub struct DotUpstream {
     server: SocketAddr,
     server_name: String,
@@ -330,7 +330,7 @@ pub struct DotUpstream {
 }
 
 impl DotUpstream {
-    /// 创建新的 DoT 上游
+    /// 创建新的 `DoT` 上游
     pub fn new(server: SocketAddr, server_name: String) -> Self {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOT_TIMEOUT_MS")
@@ -343,7 +343,7 @@ impl DotUpstream {
             server,
             server_name: server_name.clone(),
             timeout,
-            name: format!("dot://{}@{}", server_name, server),
+            name: format!("dot://{server_name}@{server}"),
         }
     }
 }
@@ -407,7 +407,7 @@ impl DotUpstream {
         // Connect to DoT server
         let tcp_stream = TcpStream::connect(self.server).await?;
         let server_name = ServerName::try_from(self.server_name.clone())
-            .map_err(|e| anyhow::anyhow!("Invalid server name: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid server name: {e}"))?;
 
         let mut tls_stream = connector.connect(server_name, tcp_stream).await?;
 
@@ -466,7 +466,7 @@ impl DotUpstream {
         for label in domain.trim_end_matches('.').split('.') {
             let label_bytes = label.as_bytes();
             if label_bytes.is_empty() || label_bytes.len() > 63 {
-                return Err(anyhow::anyhow!("Invalid domain label: {}", label));
+                return Err(anyhow::anyhow!("Invalid domain label: {label}"));
             }
             packet.push(label_bytes.len() as u8);
             packet.extend_from_slice(label_bytes);
@@ -499,7 +499,7 @@ impl DotUpstream {
 
         let rcode = flags & 0x000F;
         if rcode != 0 {
-            return Err(anyhow::anyhow!("DNS server returned error code: {}", rcode));
+            return Err(anyhow::anyhow!("DNS server returned error code: {rcode}"));
         }
 
         let qdcount = u16::from_be_bytes([response[4], response[5]]);
@@ -583,7 +583,7 @@ impl DotUpstream {
     }
 }
 
-/// DNS-over-HTTPS (DoH) 上游实现
+/// DNS-over-HTTPS (`DoH`) 上游实现
 pub struct DohUpstream {
     url: String,
     timeout: Duration,
@@ -593,7 +593,7 @@ pub struct DohUpstream {
 }
 
 impl DohUpstream {
-    /// 创建新的 DoH 上游
+    /// 创建新的 `DoH` 上游
     pub fn new(url: String) -> Result<Self> {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOH_TIMEOUT_MS")
@@ -607,14 +607,14 @@ impl DohUpstream {
             let client = reqwest::Client::builder()
                 .timeout(timeout)
                 .build()
-                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
             std::sync::Arc::new(client)
         };
 
         Ok(Self {
             url: url.clone(),
             timeout,
-            name: format!("doh://{}", url),
+            name: format!("doh://{url}"),
             #[cfg(feature = "dns_doh")]
             client,
         })
@@ -666,7 +666,7 @@ impl DohUpstream {
         let temp_upstream = {
             let addr = "0.0.0.0:53"
                 .parse()
-                .map_err(|e| anyhow::anyhow!("invalid DoH bind address: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("invalid DoH bind address: {e}"))?;
             UdpUpstream::new(addr)
         };
         let query_packet = temp_upstream.build_query_packet(domain, record_type)?;
@@ -680,7 +680,7 @@ impl DohUpstream {
             .body(query_packet)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("DoH request failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("DoH request failed: {e}"))?;
 
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
@@ -692,7 +692,7 @@ impl DohUpstream {
         let response_body = response
             .bytes()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to read DoH response: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read DoH response: {e}"))?;
 
         // 解析响应
         temp_upstream.parse_response(&response_body, record_type)
@@ -734,14 +734,13 @@ impl DnsUpstream for SystemUpstream {
         // 使用系统解析器
         let addrs: Vec<std::net::IpAddr> = tokio::net::lookup_host((domain, 0))
             .await
-            .map_err(|e| anyhow::anyhow!("System DNS resolution failed: {}", e))?
+            .map_err(|e| anyhow::anyhow!("System DNS resolution failed: {e}"))?
             .map(|addr| addr.ip())
             .collect();
 
         if addrs.is_empty() {
             return Err(anyhow::anyhow!(
-                "No addresses resolved for domain: {}",
-                domain
+                "No addresses resolved for domain: {domain}"
             ));
         }
 
@@ -797,8 +796,7 @@ mod tests {
             Ok(p) => p,
             Err(e) => {
                 // Use assert! to surface the error without relying on panic!/unwrap/expect
-                assert!(false, "error: {}", e);
-                return;
+                panic!("error: {}", e);
             }
         };
 

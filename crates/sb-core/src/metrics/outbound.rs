@@ -253,7 +253,7 @@ pub struct DummyHistogramVec;
 
 #[cfg(not(feature = "metrics"))]
 impl DummyHistogramVec {
-    pub fn with_label_values(&self, _labels: &[&str]) -> DummyHistogram {
+    pub const fn with_label_values(&self, _labels: &[&str]) -> DummyHistogram {
         DummyHistogram
     }
 }
@@ -263,7 +263,7 @@ pub struct DummyHistogram;
 
 #[cfg(not(feature = "metrics"))]
 impl DummyHistogram {
-    pub fn observe(&self, _value: f64) {}
+    pub const fn observe(&self, _value: f64) {}
 }
 
 #[cfg(feature = "out_trojan")]

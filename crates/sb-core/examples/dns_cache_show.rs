@@ -1,4 +1,4 @@
-#![cfg(feature = "dns_cache")]
+#[cfg(feature = "dns_cache")]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     let host = std::env::args()
@@ -9,4 +9,9 @@ async fn main() -> anyhow::Result<()> {
     let a2 = sb_core::dns::resolve::resolve_all(&host, 80).await?;
     println!("first:  {:?}\nsecond: {:?}", a1, a2);
     Ok(())
+}
+
+#[cfg(not(feature = "dns_cache"))]
+fn main() {
+    eprintln!("dns_cache_show example disabled; enable with --features sb-core/dns_cache");
 }

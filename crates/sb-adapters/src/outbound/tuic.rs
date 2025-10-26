@@ -2,6 +2,8 @@
 //!
 //! Wraps the sb-core TUIC implementation to provide the OutboundConnector interface.
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 use crate::outbound::prelude::*;
 #[cfg(feature = "adapter-tuic")]
 use sb_core::outbound::types::OutboundTcp;
@@ -48,17 +50,11 @@ impl Default for TuicAdapterConfig {
 
 /// TUIC outbound connector adapter
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TuicConnector {
     cfg: TuicAdapterConfig,
 }
 
-impl Default for TuicConnector {
-    fn default() -> Self {
-        Self {
-            cfg: TuicAdapterConfig::default(),
-        }
-    }
-}
 
 impl TuicConnector {
     /// Create new TUIC connector with configuration

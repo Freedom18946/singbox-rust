@@ -1,3 +1,4 @@
+#![allow(clippy::manual_flatten, clippy::clone_on_copy)]
 //! Fake upstream proxy servers to validate scaffold outbound connectors.
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;

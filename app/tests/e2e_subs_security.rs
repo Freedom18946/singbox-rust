@@ -1,3 +1,4 @@
+#![allow(unused_imports, dead_code)]
 use std::time::{Duration, Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

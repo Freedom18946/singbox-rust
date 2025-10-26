@@ -14,7 +14,6 @@ fn main() {
 }
 
 #[cfg(feature = "ech")]
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("ECH (Encrypted Client Hello) Example");
     println!("=====================================\n");

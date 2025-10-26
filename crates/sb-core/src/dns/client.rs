@@ -1,4 +1,4 @@
-//! Minimal DNS client with in-process cache (behind env SB_DNS_ENABLE=1).
+//! Minimal DNS client with in-process cache (behind env `SB_DNS_ENABLE=1`).
 //! 默认关闭；开启后通过系统解析器进行 A/AAAA 解析，并暴露基础指标。
 
 use std::{
@@ -69,8 +69,7 @@ impl DnsClient {
         // 若设置了 UDP 模式，则优先走自定义上游
         let mode_udp = std::env::var("SB_DNS_MODE")
             .ok()
-            .map(|v| v.eq_ignore_ascii_case("udp"))
-            .unwrap_or(false);
+            .is_some_and(|v| v.eq_ignore_ascii_case("udp"));
         let upstream = std::env::var("SB_DNS_UPSTREAM").ok();
         // 2) miss：UDP 或系统解析器
         #[cfg(feature = "metrics")]
@@ -82,8 +81,7 @@ impl DnsClient {
                 // 并发 A/AAAA：behind env（默认关闭，保持现状）
                 let parallel = std::env::var("SB_DNS_PARALLEL")
                     .ok()
-                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                    .unwrap_or(false);
+                    .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
                 if parallel {
                     udp_query_a_aaaa_parallel(&up, host)
                         .await
@@ -141,8 +139,7 @@ impl DnsClient {
     async fn cache_put(&self, host: String, addrs: Vec<IpAddr>, ttl: Option<u32>, negative: bool) {
         let mut map = self.inner.cache.write().await;
         let ttl = ttl
-            .map(|s| Duration::from_secs(s as u64))
-            .unwrap_or(self.inner.ttl_default);
+            .map_or(self.inner.ttl_default, |s| Duration::from_secs(u64::from(s)));
         map.insert(
             host,
             CacheEntry {
@@ -377,7 +374,7 @@ fn parse_answers(
         i += 2;
         let ttl = u32::from_be_bytes([p[i], p[i + 1], p[i + 2], p[i + 3]]);
         i += 4;
-        min_ttl = Some(min_ttl.map(|m| m.min(ttl)).unwrap_or(ttl));
+        min_ttl = Some(min_ttl.map_or(ttl, |m| m.min(ttl)));
         let rdlen = u16::from_be_bytes([p[i], p[i + 1]]) as usize;
         i += 2;
         if p.len() < i + rdlen {

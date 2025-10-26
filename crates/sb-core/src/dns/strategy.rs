@@ -91,19 +91,19 @@ impl QueryExecutor {
     }
 
     /// 设置查询策略
-    pub fn with_strategy(mut self, strategy: QueryStrategy) -> Self {
+    pub const fn with_strategy(mut self, strategy: QueryStrategy) -> Self {
         self.strategy = strategy;
         self
     }
 
     /// 设置重试配置
-    pub fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
+    pub const fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
         self.retry_config = retry_config;
         self
     }
 
     /// 设置查询超时
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.query_timeout = timeout;
         self
     }
@@ -396,7 +396,7 @@ impl QueryExecutor {
                             upstream.name(),
                             domain,
                             attempt,
-                            last_error.as_ref().map(|e| e.to_string()).unwrap_or_else(|| "unknown".into())
+                            last_error.as_ref().map_or_else(|| "unknown".into(), std::string::ToString::to_string)
                         );
 
                         #[cfg(feature = "metrics")]

@@ -87,6 +87,7 @@ loom = { version = "0.7", optional = true }
 sb-test-utils = { path = "../sb-test-utils" }
 tempfile = "3"
 tokio = { version = "1.47", features = ["full", "test-util"] }
+criterion = "0.5"
 
 [features]
 # 默认开启 DNS 相关功能，开箱即用（udp/doh/dot/doq + rustls）

@@ -9,6 +9,7 @@ portrange:80-90=proxy
 portrange:91-100=proxy
 default:direct
 "#;
+    #[cfg_attr(not(feature = "rules_tool"), allow(unused_variables))]
     let r = analyze(txt);
     #[cfg(feature = "rules_tool")]
     {

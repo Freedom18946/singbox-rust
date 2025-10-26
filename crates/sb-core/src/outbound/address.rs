@@ -13,15 +13,15 @@ impl Addr {
     pub fn from_target_addr(target: &TargetAddr) -> Self {
         match target {
             TargetAddr::Ip(sa) => match sa.ip() {
-                IpAddr::V4(v4) => Addr::V4(v4),
-                IpAddr::V6(v6) => Addr::V6(v6),
+                IpAddr::V4(v4) => Self::V4(v4),
+                IpAddr::V6(v6) => Self::V6(v6),
             },
             TargetAddr::Domain(domain, _) => {
                 // Try to parse as IP first
                 match domain.parse::<IpAddr>() {
-                    Ok(IpAddr::V4(v4)) => Addr::V4(v4),
-                    Ok(IpAddr::V6(v6)) => Addr::V6(v6),
-                    _ => Addr::Domain(domain.clone()),
+                    Ok(IpAddr::V4(v4)) => Self::V4(v4),
+                    Ok(IpAddr::V6(v6)) => Self::V6(v6),
+                    _ => Self::Domain(domain.clone()),
                 }
             }
         }
@@ -49,8 +49,8 @@ pub fn encode_ss_addr(addr: &Addr, port: u16, buf: &mut Vec<u8>) {
     buf.extend_from_slice(&port.to_be_bytes());
 }
 
-/// Extract port from TargetAddr
-pub fn get_port_from_target(target: &TargetAddr) -> u16 {
+/// Extract port from `TargetAddr`
+pub const fn get_port_from_target(target: &TargetAddr) -> u16 {
     match target {
         TargetAddr::Ip(sa) => sa.port(),
         TargetAddr::Domain(_, port) => *port,
@@ -105,7 +105,7 @@ mod tests {
 
         match addr {
             Addr::V4(ip) => assert_eq!(ip, Ipv4Addr::new(10, 0, 0, 1)),
-            _ => assert!(false, "Expected IPv4 address from target"),
+            _ => panic!("Expected IPv4 address from target"),
         }
     }
 
@@ -116,7 +116,7 @@ mod tests {
 
         match addr {
             Addr::Domain(domain) => assert_eq!(domain, "github.com"),
-            _ => assert!(false, "Expected domain address from target"),
+            _ => panic!("Expected domain address from target"),
         }
     }
 
@@ -127,7 +127,7 @@ mod tests {
 
         match addr {
             Addr::V4(ip) => assert_eq!(ip, Ipv4Addr::new(127, 0, 0, 1)),
-            _ => assert!(false, "Expected IPv4 address parsed from domain string"),
+            _ => panic!("Expected IPv4 address parsed from domain string"),
         }
     }
 }

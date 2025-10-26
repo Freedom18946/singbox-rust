@@ -8,6 +8,7 @@ use tokio::net::TcpStream;
 pub struct BlockOutbound;
 
 impl BlockOutbound {
+    /// Create a new block outbound instance
     #[inline]
     pub fn new() -> Self {
         Self

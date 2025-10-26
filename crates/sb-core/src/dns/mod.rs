@@ -133,17 +133,17 @@ pub enum RecordType {
 }
 
 impl RecordType {
-    pub fn as_u16(self) -> u16 {
+    pub const fn as_u16(self) -> u16 {
         self as u16
     }
 
-    pub fn from_u16(value: u16) -> Option<Self> {
+    pub const fn from_u16(value: u16) -> Option<Self> {
         match value {
-            1 => Some(RecordType::A),
-            28 => Some(RecordType::AAAA),
-            5 => Some(RecordType::CNAME),
-            15 => Some(RecordType::MX),
-            16 => Some(RecordType::TXT),
+            1 => Some(Self::A),
+            28 => Some(Self::AAAA),
+            5 => Some(Self::CNAME),
+            15 => Some(Self::MX),
+            16 => Some(Self::TXT),
             _ => None,
         }
     }
@@ -167,12 +167,16 @@ pub struct ResolverHandle {
     ipv6_enabled: bool,
     // Prefetch
     #[cfg(any(test, feature = "dev-cli"))]
+    #[allow(dead_code)]
     prefetch_enabled: bool,
     #[cfg(any(test, feature = "dev-cli"))]
+    #[allow(dead_code)]
     prefetch_before: Duration,
     #[cfg(any(test, feature = "dev-cli"))]
+    #[allow(dead_code)]
     prefetch_sem: Arc<tokio::sync::Semaphore>,
     #[cfg(any(test, feature = "dev-cli"))]
+    #[allow(dead_code)]
     prefetch_inflight: Arc<std::sync::Mutex<HashSet<String>>>,
     // Upstream health
     up_health: Arc<std::sync::Mutex<HashMap<String, UpHealth>>>,
@@ -238,8 +242,7 @@ impl ResolverHandle {
     pub fn from_env_or_default() -> Self {
         let enabled = std::env::var("SB_DNS_ENABLE")
             .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
         let default_ttl = Duration::from_secs(
             std::env::var("SB_DNS_DEFAULT_TTL_S")
                 .ok()
@@ -270,8 +273,7 @@ impl ResolverHandle {
             .unwrap_or(1024);
         let ipv6_enabled = std::env::var("SB_DNS_IPV6")
             .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
+            .is_none_or(|v| v == "1" || v.eq_ignore_ascii_case("true"));
         let static_ttl = Duration::from_secs(
             std::env::var("SB_DNS_STATIC_TTL_S")
                 .ok()
@@ -282,13 +284,13 @@ impl ResolverHandle {
         let mut static_map = std::collections::HashMap::new();
         for kv in static_raw
             .split(',')
-            .map(|s| s.trim())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
         {
             if let Some((k, v)) = kv.split_once('=') {
                 let host = k.trim().to_ascii_lowercase();
                 let mut ips = Vec::new();
-                for ip_s in v.split(';').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                for ip_s in v.split(';').map(str::trim).filter(|s| !s.is_empty()) {
                     if let Ok(ip) = ip_s.parse::<IpAddr>() {
                         ips.push(ip);
                     }
@@ -378,7 +380,7 @@ impl ResolverHandle {
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
+    pub const fn is_enabled(&self) -> bool {
         self.enabled
     }
 
@@ -473,7 +475,7 @@ impl ResolverHandle {
         if let Some(ips) = self.static_map.get(&key) {
             let mut ips = ips.clone();
             if !self.ipv6_enabled {
-                ips.retain(|ip| ip.is_ipv4());
+                ips.retain(std::net::IpAddr::is_ipv4);
             }
             #[cfg(feature = "dns_cache")]
             {
@@ -504,7 +506,7 @@ impl ResolverHandle {
             Ok(ans) => {
                 let mut ips = ans.ips;
                 if !self.ipv6_enabled {
-                    ips.retain(|ip| ip.is_ipv4());
+                    ips.retain(std::net::IpAddr::is_ipv4);
                 }
                 if ips.is_empty() {
                     #[cfg(feature = "dns_cache")]
@@ -669,17 +671,17 @@ struct UpHealth {
 fn up_key(up: &Upstream) -> String {
     match up {
         Upstream::System => "system".to_string(),
-        Upstream::Udp(sa) => format!("udp://{}", sa),
-        Upstream::Doh(u) => format!("doh://{}", u),
-        Upstream::Dot(sa) => format!("dot://{}", sa),
-        Upstream::Doq(sa, sni) => format!("doq://{}@{}", sa, sni),
+        Upstream::Udp(sa) => format!("udp://{sa}"),
+        Upstream::Doh(u) => format!("doh://{u}"),
+        Upstream::Dot(sa) => format!("dot://{sa}"),
+        Upstream::Doq(sa, sni) => format!("doq://{sa}@{sni}"),
         Upstream::Unsupported(s) => s.clone(),
     }
 }
 
 fn parse_pool(s: &str) -> Vec<Upstream> {
     let mut out = Vec::new();
-    for tok in s.split(',').map(|x| x.trim()).filter(|x| !x.is_empty()) {
+    for tok in s.split(',').map(str::trim).filter(|x| !x.is_empty()) {
         if tok.eq_ignore_ascii_case("system") {
             out.push(Upstream::System);
             continue;
@@ -819,7 +821,7 @@ async fn query_one(
                     }
                 }
                 ttl = min_ttl
-                    .map(|s| Duration::from_secs(s as u64))
+                    .map(|s| Duration::from_secs(u64::from(s)))
                     .unwrap_or_else(|| {
                         Duration::from_secs(
                             std::env::var("SB_DNS_DEFAULT_TTL_S")
@@ -882,7 +884,7 @@ async fn query_one(
                     }
                 }
                 ttl = min_ttl
-                    .map(|s| Duration::from_secs(s as u64))
+                    .map(|s| Duration::from_secs(u64::from(s)))
                     .unwrap_or_else(|| {
                         Duration::from_secs(
                             std::env::var("SB_DNS_DEFAULT_TTL_S")
@@ -947,9 +949,7 @@ async fn query_one(
                         }
                     }
                 }
-                ttl = min_ttl
-                    .map(|s| Duration::from_secs(s as u64))
-                    .unwrap_or_else(|| Duration::from_secs(60));
+                ttl = min_ttl.map_or_else(|| Duration::from_secs(60), |s| Duration::from_secs(u64::from(s)));
                 #[cfg(feature="metrics")]
                 ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>format!("doq://{}@{}", _sa, _sni), "kind"=>"doq").increment(1);
             }
@@ -983,7 +983,7 @@ async fn query_one(
                     min_ttl = min_ttl.min(t6).or(t6);
                 }
                 ttl = min_ttl
-                    .map(|s| Duration::from_secs(s as u64))
+                    .map(|s| Duration::from_secs(u64::from(s)))
                     .unwrap_or_else(|| {
                         Duration::from_secs(
                             std::env::var("SB_DNS_DEFAULT_TTL_S")
@@ -1001,7 +1001,7 @@ async fn query_one(
             }
         }
         Upstream::Unsupported(s) => {
-            return Err(anyhow::anyhow!(format!("unsupported upstream: {}", s)));
+            return Err(anyhow::anyhow!(format!("unsupported upstream: {s}")));
         }
     }
     // latency metric
@@ -1019,13 +1019,13 @@ async fn query_one(
         let up = up_key(&up);
         ::metrics::histogram!("dns_query_latency_ms", "upstream"=>up, "kind"=>kind).record(elapsed);
     }
-    if !ips.is_empty() {
+    if ips.is_empty() {
+        mark_upstream_fail(&handle, &up_key(&up), "io");
+        Err(anyhow::anyhow!("empty"))
+    } else {
         // Mark success
         mark_upstream_success(&handle, &up_key(&up));
         Ok((ips, ttl))
-    } else {
-        mark_upstream_fail(&handle, &up_key(&up), "io");
-        Err(anyhow::anyhow!("empty"))
     }
 }
 
@@ -1216,15 +1216,15 @@ fn mark_upstream_success(h: &ResolverHandle, key: &str) {
     ::metrics::gauge!("dns_upstream_state", "upstream"=>key.to_string(), "kind"=>if key.starts_with("udp://"){"udp"} else if key=="system" {"system"} else {"other"}, "state"=>"up").set(1.0);
 }
 
-/// Implement the Resolver trait for ResolverHandle to bridge the interface gap
+/// Implement the Resolver trait for `ResolverHandle` to bridge the interface gap
 #[async_trait]
 impl Resolver for ResolverHandle {
     async fn resolve(&self, domain: &str) -> Result<DnsAnswer> {
         // Disambiguate to call the inherent method, not the trait method
-        ResolverHandle::resolve(self, domain).await
+        Self::resolve(self, domain).await
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "resolver_handle"
     }
 }

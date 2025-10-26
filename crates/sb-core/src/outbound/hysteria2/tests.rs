@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 #[cfg(feature = "out_hysteria2")]
-mod tests {
+mod hysteria2_test_suite {
     use crate::outbound::hysteria2::{
         BandwidthLimiter, BrutalConfig, CongestionControl, Hysteria2Config, Hysteria2Outbound,
     };
@@ -477,7 +477,7 @@ mod handshake_and_auth_tests {
         let client_hello = outbound.create_client_hello().unwrap();
 
         // Verify client hello structure
-        assert!(client_hello.len() > 0);
+        assert!(!client_hello.is_empty());
         assert_eq!(&client_hello[0..3], b"HY2"); // Magic bytes
         assert_eq!(client_hello[3], 0x02); // Protocol version
     }
@@ -563,7 +563,7 @@ mod handshake_and_auth_tests {
         let connect_request = outbound.create_connect_request("example.com", 443).unwrap();
 
         // Verify connect request structure
-        assert!(connect_request.len() > 0);
+        assert!(!connect_request.is_empty());
         assert_eq!(connect_request[0], 0x01); // TCP connect command
     }
 }

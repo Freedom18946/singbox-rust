@@ -890,8 +890,7 @@ mod tests {
             file
         } else {
             // Use assertion for test failure - this is acceptable in test context
-            assert!(false, "Test setup: Failed to create temp file");
-            return; // This line will never be reached but satisfies the compiler
+            panic!("Test setup: Failed to create temp file");
         };
 
         let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
@@ -936,8 +935,7 @@ mod tests {
             file
         } else {
             // Use assertion for test failure - this is acceptable in test context
-            assert!(false, "Test setup: Failed to create temp file");
-            return; // This line will never be reached but satisfies the compiler
+            panic!("Test setup: Failed to create temp file");
         };
 
         let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
@@ -990,8 +988,7 @@ mod tests {
             file
         } else {
             // Use assertion for test failure - this is acceptable in test context
-            assert!(false, "Test setup: Failed to create temp file");
-            return; // This line will never be reached but satisfies the compiler
+            panic!("Test setup: Failed to create temp file");
         };
 
         let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
@@ -1038,8 +1035,7 @@ mod tests {
             file
         } else {
             // Use assertion for test failure - this is acceptable in test context
-            assert!(false, "Test setup: Failed to create temp file");
-            return; // This line will never be reached but satisfies the compiler
+            panic!("Test setup: Failed to create temp file");
         };
 
         let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());
@@ -1122,8 +1118,7 @@ mod tests {
             file
         } else {
             // Use assertion for test failure - this is acceptable in test context
-            assert!(false, "Test setup: Failed to create temp file");
-            return; // This line will never be reached but satisfies the compiler
+            panic!("Test setup: Failed to create temp file");
         };
 
         let write_result = std::io::Write::write_all(&mut temp_file, test_data.as_bytes());

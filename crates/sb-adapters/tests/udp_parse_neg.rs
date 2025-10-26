@@ -1,4 +1,5 @@
 #![cfg(feature = "socks")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use sb_adapters::inbound::socks::udp::{parse_udp_datagram, ParseError};
 
 #[test]

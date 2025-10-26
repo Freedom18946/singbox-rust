@@ -11,11 +11,11 @@ pub enum Phase {
 }
 
 impl Phase {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            Phase::TcpConnect => "tcp_connect",
-            Phase::ProxyHandshake => "proxy_handshake",
-            Phase::TlsHandshake => "tls_handshake",
+            Self::TcpConnect => "tcp_connect",
+            Self::ProxyHandshake => "proxy_handshake",
+            Self::TlsHandshake => "tls_handshake",
         }
     }
 }

@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-hysteria2")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use sb_adapters::outbound::hysteria2::{Hysteria2AdapterConfig, Hysteria2Connector};
 use sb_adapters::traits::{DialOpts, OutboundConnector, Target};

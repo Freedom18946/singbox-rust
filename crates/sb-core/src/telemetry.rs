@@ -6,7 +6,7 @@ pub mod error_class;
 
 #[inline]
 pub fn err_kind(e: &io::Error) -> &'static str {
-    use io::ErrorKind::*;
+    use io::ErrorKind::{TimedOut, ConnectionRefused, ConnectionReset, ConnectionAborted, BrokenPipe, AddrInUse, AddrNotAvailable, NotFound, InvalidInput};
     match e.kind() {
         TimedOut => "timeout",
         ConnectionRefused => "refused",
@@ -50,7 +50,7 @@ fn cnt(name: &'static str, kv: &[(&'static str, &'static str)], v: u64) {
 }
 #[cfg(not(feature = "metrics"))]
 #[inline]
-fn cnt(_name: &'static str, _kv: &[(&'static str, &'static str)], _v: u64) {}
+const fn cnt(_name: &'static str, _kv: &[(&'static str, &'static str)], _v: u64) {}
 
 #[inline]
 pub fn outbound_connect(kind: &'static str, result: &'static str, err: Option<&'static str>) {
@@ -91,7 +91,7 @@ pub fn inbound_parse(kind: &'static str, result: &'static str, reason: &'static 
         "sb_inbound_parse_total",
         &[("label", kind), ("result", result), ("err", reason)],
         1,
-    )
+    );
 }
 
 #[inline]
@@ -149,7 +149,7 @@ pub fn router_select(mode: &'static str, target: &RouteTarget) {
         "sb_router_select_total",
         &[("mode", mode), ("ttype", ttype)],
         1,
-    )
+    );
 }
 
 /// HTTP CONNECT 状态分类（传入 status code，返回 err 标签 & 类别）
@@ -166,7 +166,7 @@ pub fn http_status_err(status: u16) -> (&'static str, &'static str) {
 
 /// SOCKS5 REP 映射为 err 标签短语
 #[inline]
-pub fn socks5_rep_err(rep: u8) -> &'static str {
+pub const fn socks5_rep_err(rep: u8) -> &'static str {
     match rep {
         0x00 => "ok",
         0x01 => "general",

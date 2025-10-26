@@ -169,7 +169,7 @@ impl ResourcePressureMonitor {
         // Update metrics
         #[cfg(feature = "metrics")]
         {
-            use sb_core::metrics::registry_ext::get_or_register_gauge_vec_f64;
+            use crate::metrics_ext::get_or_register_gauge_vec_f64;
             let gauge = get_or_register_gauge_vec_f64(
                 "resource_pressure_level",
                 "Resource pressure level",
@@ -422,7 +422,7 @@ mod tests {
         use std::io::{Error, ErrorKind};
 
         // Test FD exhaustion error
-        let fd_error = DialError::Io(Error::new(ErrorKind::Other, "too many open files"));
+        let fd_error = DialError::Io(Error::other("too many open files"));
         let resource_type = error_analysis::analyze_dial_error(&fd_error).await;
         assert_eq!(resource_type, Some(ResourceType::FileDescriptors));
 

@@ -1,6 +1,6 @@
-//! GeoIP metrics collection
+//! `GeoIP` metrics collection
 //!
-//! This module provides metrics for GeoIP lookup operations including:
+//! This module provides metrics for `GeoIP` lookup operations including:
 //! - Lookup duration and success rates
 //! - Provider performance statistics
 //! - Country lookup distribution

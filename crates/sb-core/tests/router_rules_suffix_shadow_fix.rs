@@ -9,6 +9,7 @@ exact:a.example.com=proxy
 suffix:example.com=direct
 default:direct
 "#;
+    #[cfg_attr(not(feature = "rules_tool"), allow(unused_variables))]
     let r = analyze(txt);
     #[cfg(feature = "rules_tool")]
     {

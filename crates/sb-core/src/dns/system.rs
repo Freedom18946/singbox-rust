@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use super::{DnsAnswer, DnsResolver};
 
-/// SystemResolver：
+/// `SystemResolver`：
 // - 优先匹配静态表（SB_DNS_STATIC / SB_DNS_STATIC_TTL_S）
 // - 否则使用 tokio::net::lookup_host 收集 A/AAAA
 // - 无法从系统解析 TTL，采用默认 TTL（SB_DNS_DEFAULT_TTL_S）
@@ -14,7 +14,7 @@ pub struct SystemResolver {
 }
 
 impl SystemResolver {
-    pub fn new(default_ttl: Duration) -> Self {
+    pub const fn new(default_ttl: Duration) -> Self {
         Self { default_ttl }
     }
 }

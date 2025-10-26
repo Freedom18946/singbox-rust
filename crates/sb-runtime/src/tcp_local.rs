@@ -109,11 +109,12 @@ pub async fn io_local_once(
             *b ^= k;
         }
     }
+    let actual_rx_len = buf.len(); // 记录 chaos 处理后的实际长度
     logger.log_frame(&Frame::new(FrameDir::Rx, &buf))?;
 
     // 仅形状校验
     proto.decode_ack(&buf)?;
-    Ok((init.len(), n))
+    Ok((init.len(), actual_rx_len))
 }
 
 /// 内置 Echo 服务器（单连接，读后原样/异或回显）

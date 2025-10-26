@@ -1,7 +1,7 @@
 //! Enhanced DNS Client with Router Integration
 //!
 //! This module provides a minimal DNS client that integrates with the router system
-//! and provides essential DNS resolution services behind the SB_DNS_ENABLE=1 flag.
+//! and provides essential DNS resolution services behind the `SB_DNS_ENABLE=1` flag.
 
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
@@ -62,8 +62,7 @@ impl EnhancedDnsClient {
         let default_ttl = std::env::var("SB_DNS_TTL")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
-            .map(Duration::from_secs)
-            .unwrap_or(Duration::from_secs(300)); // 5 minutes default
+            .map_or(Duration::from_secs(300), Duration::from_secs); // 5 minutes default
 
         let max_cache_size = std::env::var("SB_DNS_CACHE_MAX")
             .ok()
@@ -114,7 +113,7 @@ impl EnhancedDnsClient {
     }
 
     /// Check if DNS client is enabled
-    pub fn is_enabled(&self) -> bool {
+    pub const fn is_enabled(&self) -> bool {
         self.enabled
     }
 
@@ -203,7 +202,7 @@ impl EnhancedDnsClient {
                 1 => Err(anyhow!("DNS format error")),
                 2 => Err(anyhow!("DNS server failure")),
                 3 => Err(anyhow!("NXDOMAIN - name does not exist")),
-                _ => Err(anyhow!("DNS error code: {}", rcode)),
+                _ => Err(anyhow!("DNS error code: {rcode}")),
             };
         }
 
@@ -326,7 +325,7 @@ impl EnhancedDnsClient {
         if all_addresses.is_empty() {
             let error_class = DnsErrorClass::NameError;
             record_failed_query(DnsQueryType::A, error_class);
-            Err(anyhow!("No DNS records found for {}", hostname))
+            Err(anyhow!("No DNS records found for {hostname}"))
         } else {
             record_successful_query(DnsQueryType::A, rtt_ms, false);
             Ok(all_addresses)
@@ -341,7 +340,7 @@ impl EnhancedDnsClient {
 
         let start_time = Instant::now();
 
-        match tokio::net::lookup_host(format!("{}:0", hostname)).await {
+        match tokio::net::lookup_host(format!("{hostname}:0")).await {
             Ok(addr_iter) => {
                 let addresses: Vec<IpAddr> = addr_iter.map(|addr| addr.ip()).collect();
                 if addresses.is_empty() {
@@ -355,7 +354,7 @@ impl EnhancedDnsClient {
             }
             Err(e) => {
                 record_failed_query(DnsQueryType::A, DnsErrorClass::NetworkError);
-                Err(anyhow!("System resolver failed: {}", e))
+                Err(anyhow!("System resolver failed: {e}"))
             }
         }
     }

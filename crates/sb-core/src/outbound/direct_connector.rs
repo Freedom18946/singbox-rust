@@ -1,6 +1,6 @@
 //! Direct outbound connector implementation
 //!
-//! This module provides a direct connection implementation of OutboundConnector
+//! This module provides a direct connection implementation of `OutboundConnector`
 //! that connects directly to targets without any proxy.
 
 use crate::{
@@ -21,14 +21,14 @@ pub struct DirectConnector {
 
 impl DirectConnector {
     /// Create a new direct connector with default timeout
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             connect_timeout: Duration::from_secs(10),
         }
     }
 
     /// Create a new direct connector with custom timeout
-    pub fn with_timeout(connect_timeout: Duration) -> Self {
+    pub const fn with_timeout(connect_timeout: Duration) -> Self {
         Self { connect_timeout }
     }
 
@@ -41,7 +41,7 @@ impl DirectConnector {
                 let mut addrs = lookup_host(&addr_str).await.map_err(|e| {
                     SbError::network(
                         ErrorClass::Connection,
-                        format!("DNS resolution failed: {}", e),
+                        format!("DNS resolution failed: {e}"),
                     )
                 })?;
 
@@ -84,7 +84,7 @@ impl AsyncOutboundConnector for DirectConnector {
             .map_err(|e| {
                 SbError::network(
                     ErrorClass::Connection,
-                    format!("TCP connection failed: {}", e),
+                    format!("TCP connection failed: {e}"),
                 )
             })?;
 
@@ -96,11 +96,11 @@ impl AsyncOutboundConnector for DirectConnector {
 
         // For UDP, we create a socket and connect it to the target
         let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP bind failed: {}", e))
+            SbError::network(ErrorClass::Connection, format!("UDP bind failed: {e}"))
         })?;
 
         socket.connect(addr).await.map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP connect failed: {}", e))
+            SbError::network(ErrorClass::Connection, format!("UDP connect failed: {e}"))
         })?;
 
         Ok(Box::new(DirectUdpTransport::new(socket)))
@@ -129,7 +129,7 @@ pub struct DirectUdpTransport {
 }
 
 impl DirectUdpTransport {
-    fn new(socket: UdpSocket) -> Self {
+    const fn new(socket: UdpSocket) -> Self {
         Self { socket }
     }
 }
@@ -146,7 +146,7 @@ impl UdpTransport for DirectUdpTransport {
                 let mut addrs = lookup_host(&addr_str).await.map_err(|e| {
                     SbError::network(
                         ErrorClass::Connection,
-                        format!("DNS resolution failed: {}", e),
+                        format!("DNS resolution failed: {e}"),
                     )
                 })?;
 
@@ -160,14 +160,35 @@ impl UdpTransport for DirectUdpTransport {
         };
 
         self.socket.send_to(buf, addr).await.map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP send failed: {}", e))
+            SbError::network(ErrorClass::Connection, format!("UDP send failed: {e}"))
         })
     }
 
     async fn recv_from(&self, buf: &mut [u8]) -> SbResult<(usize, SocketAddr)> {
         self.socket.recv_from(buf).await.map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP recv failed: {}", e))
+            SbError::network(ErrorClass::Connection, format!("UDP recv failed: {e}"))
         })
+    }
+}
+
+// Implementation for the async OutboundConnector trait used by adapter
+#[async_trait::async_trait]
+impl crate::adapter::OutboundConnector for DirectConnector {
+    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        let endpoint =
+            crate::types::Endpoint::new(crate::types::Host::domain(host.to_string()), port);
+        let src =
+            std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED), 0);
+        let ctx = crate::types::ConnCtx::new(
+            0, // id
+            crate::types::Network::Tcp,
+            src,
+            endpoint,
+        );
+
+        self.connect_tcp(&ctx)
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }
 
@@ -232,26 +253,5 @@ mod tests {
         let result = connector.connect("127.0.0.1", 80).await;
         // This will fail because nothing is listening, but it tests the interface
         assert!(result.is_err());
-    }
-}
-
-// Implementation for the async OutboundConnector trait used by adapter
-#[async_trait::async_trait]
-impl crate::adapter::OutboundConnector for DirectConnector {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        let endpoint =
-            crate::types::Endpoint::new(crate::types::Host::domain(host.to_string()), port);
-        let src =
-            std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)), 0);
-        let ctx = crate::types::ConnCtx::new(
-            0, // id
-            crate::types::Network::Tcp,
-            src,
-            endpoint,
-        );
-
-        self.connect_tcp(&ctx)
-            .await
-            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 }

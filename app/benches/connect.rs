@@ -5,10 +5,14 @@ use std::time::Duration;
 
 fn bench_connect_loopback(c: &mut Criterion) {
     // Set up a local listener on a random port
-    let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind listener");
-    let addr = listener
-        .local_addr()
-        .expect("Failed to get listener address");
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let addr = match listener.local_addr() {
+        Ok(a) => a,
+        Err(_) => return,
+    };
 
     // Spawn a simple echo server
     thread::spawn(move || {
@@ -32,3 +36,5 @@ fn bench_connect_loopback(c: &mut Criterion) {
 
 criterion_group!(benches, bench_connect_loopback);
 criterion_main!(benches);
+#[cfg(not(feature = "bench"))]
+fn main() {}

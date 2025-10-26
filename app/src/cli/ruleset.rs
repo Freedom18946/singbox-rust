@@ -129,7 +129,7 @@ pub async fn run(args: RulesetArgs) -> Result<()> {
     match args.command {
         RulesetCmd::Validate { file } => validate_ruleset(file).await,
         RulesetCmd::Info { file } => show_info(file).await,
-        RulesetCmd::Format { file, output } => format_ruleset(file, output).await,
+        RulesetCmd::Format { file, output } => format_ruleset(file, output),
         RulesetCmd::Decompile { file, output } => decompile_ruleset(file, output).await,
         RulesetCmd::Match {
             file,
@@ -234,7 +234,7 @@ async fn show_info(file: PathBuf) -> Result<()> {
 }
 
 /// Format a JSON rule-set (prettify)
-async fn format_ruleset(file: PathBuf, output: Option<PathBuf>) -> Result<()> {
+fn format_ruleset(file: PathBuf, output: Option<PathBuf>) -> Result<()> {
     use std::fs;
 
     // Read JSON file
@@ -253,7 +253,7 @@ async fn format_ruleset(file: PathBuf, output: Option<PathBuf>) -> Result<()> {
         fs::write(&output_file, formatted).context("Failed to write output file")?;
         println!("✓ Formatted rule-set written to: {}", output_file.display());
     } else {
-        println!("{}", formatted);
+        println!("{formatted}");
     }
 
     Ok(())
@@ -438,8 +438,8 @@ async fn match_ruleset(
         source_ip: None,
         source_port: None,
     };
-    let matched = matcher.matches(&ctx);
-    println!("matched: {}", matched);
+    let is_matched = matcher.matches(&ctx);
+    println!("matched: {}", is_matched);
     Ok(())
 }
 

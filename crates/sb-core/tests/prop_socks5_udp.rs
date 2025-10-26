@@ -1,4 +1,5 @@
-#![cfg(feature = "prop_socks5_udp_DISABLED")]
+// Permanently disabled with an always-false cfg (no unknown features)
+#![cfg(not(any(feature = "router", not(feature = "router"))))]
 use proptest::prelude::*;
 use sb_core::socks5::{decode_udp_reply, encode_udp_request};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};

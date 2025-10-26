@@ -19,14 +19,14 @@ fn test_router_proxy_name_parsing() {
     let exact_rule = rules.iter().find(|r| matches!(&r.kind, sb_core::router::rules::RuleKind::Exact(domain) if domain == "example.com")).unwrap();
     match &exact_rule.decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "poolA"),
-        _ => assert!(false, "Expected Proxy decision with pool name 'poolA'"),
+        _ => panic!("Expected Proxy decision with pool name 'poolA'"),
     }
 
     // Check suffix rule with named pool
     let suffix_rule = rules.iter().find(|r| matches!(&r.kind, sb_core::router::rules::RuleKind::Suffix(suffix) if suffix == ".internal")).unwrap();
     match &suffix_rule.decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "poolB"),
-        _ => assert!(false, "Expected Proxy decision with pool name 'poolB'"),
+        _ => panic!("Expected Proxy decision with pool name 'poolB'"),
     }
 
     // Check keyword rule with reject
@@ -36,7 +36,7 @@ fn test_router_proxy_name_parsing() {
         .unwrap();
     match &keyword_rule.decision {
         Decision::Reject => {}
-        _ => assert!(false, "Expected Reject decision for ads keyword"),
+        _ => panic!("Expected Reject decision for ads keyword"),
     }
 
     // Check default rule with generic proxy
@@ -46,7 +46,7 @@ fn test_router_proxy_name_parsing() {
         .unwrap();
     match &default_rule.decision {
         Decision::Proxy(None) => {}
-        _ => assert!(false, "Expected Proxy decision with no specific pool name"),
+        _ => panic!("Expected Proxy decision with no specific pool name"),
     }
 }
 
@@ -151,19 +151,13 @@ fn test_router_proxy_name_with_whitespace() {
     let pool_a_rule = rules.iter().find(|r| matches!(&r.kind, sb_core::router::rules::RuleKind::Exact(domain) if domain == "example.com")).unwrap();
     match &pool_a_rule.decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "poolA"),
-        _ => assert!(
-            false,
-            "Expected Proxy decision with pool name 'poolA' for example.com"
-        ),
+        _ => panic!("Expected Proxy decision with pool name 'poolA' for example.com"),
     }
 
     let pool_spaces_rule = rules.iter().find(|r| matches!(&r.kind, sb_core::router::rules::RuleKind::Exact(domain) if domain == "test.com")).unwrap();
     match &pool_spaces_rule.decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "pool-with-spaces"),
-        _ => assert!(
-            false,
-            "Expected Proxy decision with pool name 'pool-with-spaces'"
-        ),
+        _ => panic!("Expected Proxy decision with pool name 'pool-with-spaces'"),
     }
 }
 
@@ -196,10 +190,7 @@ fn test_router_engine_proxy_name_decisions() {
     let decision = engine.decide(&ctx);
     match decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "specialPool"),
-        _ => assert!(
-            false,
-            "Expected named proxy decision for exact domain match"
-        ),
+        _ => panic!("Expected named proxy decision for exact domain match"),
     }
 
     // Test suffix match with named pool
@@ -218,10 +209,7 @@ fn test_router_engine_proxy_name_decisions() {
     let decision = engine.decide(&ctx);
     match decision {
         Decision::Proxy(Some(name)) => assert_eq!(name, "internalPool"),
-        _ => assert!(
-            false,
-            "Expected named proxy decision for suffix domain match"
-        ),
+        _ => panic!("Expected named proxy decision for suffix domain match"),
     }
 
     // Test default decision

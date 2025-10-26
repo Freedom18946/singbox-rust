@@ -84,11 +84,13 @@ fn evp_bytes_to_key(password: &str, key_len: usize) -> Vec<u8> {
     out
 }
 
-fn hkdf_subkey(master: &[u8], salt: &[u8]) -> [u8; 32] {
+fn hkdf_subkey(master: &[u8], salt: &[u8]) -> Result<[u8; 32]> {
     let hk = HkdfSha1::new(Some(salt), master);
     let mut okm = [0u8; 32];
-    hk.expand(b"ss-subkey", &mut okm).expect("hkdf expand");
-    okm
+    hk
+        .expand(b"ss-subkey", &mut okm)
+        .map_err(|_| anyhow!("hkdf expand failed"))?;
+    Ok(okm)
 }
 
 async fn read_exact_n(r: &mut (impl tokio::io::AsyncRead + Unpin), n: usize) -> Result<Vec<u8>> {
@@ -357,7 +359,7 @@ async fn handle_conn_impl(
 ) -> Result<()> {
     // Step 1: read client salt
     let csalt = read_exact_n(cli, cipher.salt_len()).await?;
-    let c_subkey = hkdf_subkey(master_key, &csalt);
+    let c_subkey = hkdf_subkey(master_key, &csalt)?;
     let mut c_read_nonce: u64 = 0;
 
     // Step 2: read first AEAD chunk -> target address
@@ -460,7 +462,7 @@ async fn handle_conn_impl(
                 socks5_connect_through_socks5(addr, &host, port, &opts).await?
             }
         },
-        RDecision::Reject => unreachable!(),
+        RDecision::Reject => return Err(anyhow!("ss: rejected by rules")),
     };
 
     // Step 4: server salt + data plane
@@ -470,7 +472,7 @@ async fn handle_conn_impl(
         rand::thread_rng().fill(&mut s[..]);
         s
     };
-    let s_subkey = hkdf_subkey(master_key, &ssalt);
+    let s_subkey = hkdf_subkey(master_key, &ssalt)?;
     let s_write_nonce: u64 = 0;
 
     // Send server salt first
@@ -482,7 +484,7 @@ async fn handle_conn_impl(
 
     // Client->Upstream decrypt
     let cipher_cu = cipher.clone();
-    let ckey = c_subkey.clone();
+    let ckey = c_subkey;
     let mut c_nonce = c_read_nonce;
     let cu = async move {
         loop {
@@ -498,15 +500,12 @@ async fn handle_conn_impl(
 
     // Upstream->Client encrypt
     let cipher_uc = cipher.clone();
-    let skey = s_subkey.clone();
+    let skey = s_subkey;
     let mut s_nonce = s_write_nonce;
     let uc = async move {
         let mut buf = [0u8; 16384];
         loop {
-            let n = match ur.read(&mut buf).await {
-                Ok(n) => n,
-                Err(_) => 0,
-            };
+            let n: usize = (ur.read(&mut buf).await).unwrap_or_default();
             if n == 0 {
                 break;
             }

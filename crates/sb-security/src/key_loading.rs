@@ -526,26 +526,11 @@ mod tests {
         let source = KeySource::inline("inline-secret");
         let result = loader.load(&source);
 
-        match result {
-            Err(KeyLoadingError::InsecureConfiguration { .. }) => {
-                // This is the expected error type
-            }
-            Err(other) => {
-                std::eprintln!("Expected InsecureConfiguration error, got: {:?}", other);
-                // Use assertion that clippy will accept
-                assert_eq!(
-                    std::mem::discriminant(&other),
-                    std::mem::discriminant(&KeyLoadingError::InsecureConfiguration {
-                        reason: String::new()
-                    }),
-                    "Wrong error type"
-                );
-            }
-            Ok(_) => {
-                // Use assertion with meaningful message
-                assert_eq!(true, false, "Expected error but got success");
-            }
-        }
+        // Should reject insecure inline source in production mode
+        assert!(
+            matches!(result, Err(KeyLoadingError::InsecureConfiguration { .. })),
+            "Expected InsecureConfiguration error, got: {result:?}"
+        );
     }
 
     #[test]

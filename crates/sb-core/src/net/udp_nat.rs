@@ -227,7 +227,7 @@ impl NatMap {
         now: Instant,
         reason_override: Option<&'static str>,
     ) -> EvictResult {
-        use EvictResult::*;
+        use EvictResult::{GenMismatch, Keep, Removed};
         if let Some(e) = self.map.get(&item.key) {
             if e.gen != item.gen {
                 return GenMismatch;

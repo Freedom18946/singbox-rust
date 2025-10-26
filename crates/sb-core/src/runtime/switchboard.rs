@@ -64,12 +64,12 @@ impl DialOpts {
         Self::default()
     }
 
-    pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_connect_timeout(mut self, timeout: Duration) -> Self {
         self.connect_timeout = timeout;
         self
     }
 
-    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
+    pub const fn with_read_timeout(mut self, timeout: Duration) -> Self {
         self.read_timeout = timeout;
         self
     }
@@ -290,7 +290,7 @@ impl SwitchboardBuilder {
             let name = outbound_ir.name.as_deref().unwrap_or("unnamed");
             let result = builder.try_register_from_ir(outbound_ir);
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     info!("Successfully registered outbound: {}", name);
                 }
                 Err(e) => {

@@ -214,7 +214,7 @@ async fn handle_conn(
             if let Some(reg) = registry::global() {
                 if let Some(_pool) = reg.pools.get(&name) {
                     // Use a dummy peer address for pool selection (transport layer abstraction means we don't have the real peer)
-                    let dummy_peer = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
+                    let dummy_peer = SocketAddr::from(([0, 0, 0, 0], 0));
                     if let Some(ep) = sel.select(
                         &name,
                         dummy_peer,
@@ -242,19 +242,19 @@ async fn handle_conn(
                             }
                         }
                     } else {
-                        fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                        fallback_connect(proxy, &target_host, target_port, &opts).await?
                     }
                 } else {
-                    fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                    fallback_connect(proxy, &target_host, target_port, &opts).await?
                 }
             } else {
-                fallback_connect(&proxy, &target_host, target_port, &opts).await?
+                fallback_connect(proxy, &target_host, target_port, &opts).await?
             }
         }
         RDecision::Proxy(None) => {
-            fallback_connect(&proxy, &target_host, target_port, &opts).await?
+            fallback_connect(proxy, &target_host, target_port, &opts).await?
         }
-        RDecision::Reject => unreachable!(),
+        RDecision::Reject => return Err(anyhow!("vmess: rejected by rules")),
     };
 
     // Step 7: Bidirectional relay

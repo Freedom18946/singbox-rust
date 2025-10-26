@@ -47,7 +47,10 @@
     clippy::if_then_some_else_none,
     clippy::collection_is_never_read,
     clippy::future_not_send,
-    clippy::missing_docs_in_private_items
+    clippy::missing_docs_in_private_items,
+    // Style/ergonomics often noisy in CLI/test helpers
+    clippy::redundant_clone,
+    clippy::single_char_pattern
 )] // CLI tools allow relaxed linting
 
 pub mod auth;

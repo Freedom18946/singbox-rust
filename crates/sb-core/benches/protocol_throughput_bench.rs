@@ -2,11 +2,14 @@
 //!
 //! Measures the throughput and latency of various protocol implementations.
 //! These benchmarks help ensure performance doesn't regress.
+#![cfg_attr(not(feature = "bench"), allow(dead_code, unused_imports))]
 
+#[cfg(feature = "bench")]
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use std::time::Duration;
 
 /// Benchmark direct connection throughput
+#[cfg(feature = "bench")]
 fn bench_direct_throughput(c: &mut Criterion) {
     let mut group = c.benchmark_group("direct_throughput");
     group.throughput(Throughput::Bytes(1024 * 1024)); // 1MB
@@ -37,6 +40,7 @@ fn bench_direct_throughput(c: &mut Criterion) {
 }
 
 /// Benchmark protocol handshake overhead
+#[cfg(feature = "bench")]
 fn bench_protocol_handshake(c: &mut Criterion) {
     let mut group = c.benchmark_group("protocol_handshake");
     group.measurement_time(Duration::from_secs(10));
@@ -64,6 +68,7 @@ fn bench_protocol_handshake(c: &mut Criterion) {
 }
 
 /// Benchmark router decision making
+#[cfg(feature = "bench")]
 fn bench_router_decision(c: &mut Criterion) {
     let mut group = c.benchmark_group("router_decision");
 
@@ -89,6 +94,7 @@ fn bench_router_decision(c: &mut Criterion) {
 }
 
 /// Benchmark packet parsing
+#[cfg(feature = "bench")]
 fn bench_packet_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("packet_parsing");
 
@@ -127,7 +133,7 @@ fn bench_packet_parsing(c: &mut Criterion) {
 }
 
 /// Benchmark crypto operations (if enabled)
-#[cfg(feature = "out_ss")]
+#[cfg(all(feature = "bench", feature = "out_ss"))]
 fn bench_crypto_overhead(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_overhead");
 
@@ -148,6 +154,7 @@ fn bench_crypto_overhead(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "bench")]
 criterion_group!(
     benches,
     bench_direct_throughput,
@@ -156,11 +163,16 @@ criterion_group!(
     bench_packet_parsing,
 );
 
-#[cfg(feature = "out_ss")]
+#[cfg(all(feature = "bench", feature = "out_ss"))]
 criterion_group!(crypto_benches, bench_crypto_overhead);
 
-#[cfg(feature = "out_ss")]
+#[cfg(all(feature = "bench", feature = "out_ss"))]
 criterion_main!(benches, crypto_benches);
 
-#[cfg(not(feature = "out_ss"))]
+#[cfg(all(feature = "bench", not(feature = "out_ss")))]
 criterion_main!(benches);
+
+#[cfg(not(feature = "bench"))]
+fn main() {
+    eprintln!("protocol throughput benches disabled; enable with --features bench");
+}

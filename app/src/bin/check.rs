@@ -53,7 +53,7 @@ fn human_check(root: &Value) -> Result<()> {
         if !v.is_array() {
             return Err(anyhow!("{p} 应为数组：示例 `\"{key}\": [{{ ... }}]`"));
         }
-        if v.as_array().unwrap().is_empty() {
+        if v.as_array().is_none_or(|a| a.is_empty()) {
             return Err(anyhow!("{p} 为空：至少提供 1 个条目"));
         }
     }
@@ -161,20 +161,19 @@ fn main() -> Result<()> {
             let validator = jsonschema::Validator::new(&schema_json)
                 .map_err(|e| anyhow!("编译 JSON Schema 失败：{e}"))?;
 
-            if !validator.is_valid(&v) {
-                let errors: Vec<String> = validator
-                    .validate(&v)
-                    .unwrap_err()
-                    .take(5)
-                    .map(|e| format!("{}", e))
-                    .collect();
-
-                tracing::error!(target: "app::check", "配置 schema 验证失败");
-                for (i, error) in errors.iter().enumerate() {
-                    tracing::error!(target: "app::check", idx = i + 1, msg = %error, "schema validation error");
+            {
+                let validation_result = validator.validate(&v);
+                if let Err(iter) = validation_result {
+                    let errors: Vec<String> = iter
+                        .take(5)
+                        .map(|e| format!("{}", e))
+                        .collect();
+                    tracing::error!(target: "app::check", "配置 schema 验证失败");
+                    for (i, error) in errors.iter().enumerate() {
+                        tracing::error!(target: "app::check", idx = i + 1, msg = %error, "schema validation error");
+                    }
+                    std::process::exit(2);
                 }
-
-                std::process::exit(2);
             }
         }
         #[cfg(not(feature = "config_schema"))]

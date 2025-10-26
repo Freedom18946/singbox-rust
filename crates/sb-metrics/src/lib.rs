@@ -1,15 +1,38 @@
 //! sb-metrics: 轻量 Prometheus 导出器 + 统一指标注册。
-//! - 默认不启；设置 `SB_METRICS_ADDR=127.0.0.1:9090` 时自动监听。
+//!
+//! ## 使用方式
+//! - 默认不启动；设置 `SB_METRICS_ADDR=127.0.0.1:9090` 环境变量时自动监听。
+//! - 调用 `maybe_spawn_http_exporter_from_env()` 启动 metrics HTTP 服务器。
+//! - 访问 `http://127.0.0.1:9090/metrics` 获取 Prometheus 格式指标。
+//!
+//! ## 指标类别
+//! - **路由指标** (`router`): 路由规则匹配计数
+//! - **出站指标** (`outbound`): 出站连接尝试、错误、延迟
+//! - **适配器指标** (`adapter`): SOCKS/HTTP 适配器 dial 统计
+//! - **入站指标** (`socks_in`): SOCKS 入站 TCP/UDP 连接
+//! - **传统指标** (`legacy`): UDP NAT、代理选择、健康检查等
+//!
+//! ## 示例
+//! ```rust
+//! use sb_metrics::{inc_router_match, inc_outbound_connect_attempt, observe_outbound_connect_seconds};
+//!
+//! // 记录路由匹配
+//! inc_router_match("domain_suffix", "direct");
+//!
+//! // 记录出站连接
+//! inc_outbound_connect_attempt("socks");
+//! observe_outbound_connect_seconds("socks", 0.123);
+//! ```
 
 #![deny(warnings)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
-pub mod cardinality;
-pub mod http;
-pub mod server;
-pub mod socks;
-pub mod transfer; // 新增：通用传输指标（带宽/字节数），后续按需接线 // Cardinality monitoring for label explosion prevention
+pub mod cardinality; // Cardinality monitoring for label explosion prevention
+pub mod http; // HTTP 侧指标（入站/上游代理共用）
+pub mod server; // Metrics server implementation
+pub mod socks; // SOCKS 侧指标
+pub mod transfer; // 通用传输指标（带宽/字节数）
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -80,7 +103,21 @@ static ERROR_RATE_LIMITER: LazyLock<ErrorRateLimiter> = LazyLock::new(ErrorRateL
 
 pub static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 
+// =============================
+// Constants
+// =============================
+
+/// Error classification labels
+const ERROR_CLASS_TIMEOUT: &str = "timeout";
+const ERROR_CLASS_DNS: &str = "dns";
+const ERROR_CLASS_TLS: &str = "tls";
+const ERROR_CLASS_IO: &str = "io";
+const ERROR_CLASS_AUTH: &str = "auth_err";
+const ERROR_CLASS_PROTO: &str = "proto_err";
+const ERROR_CLASS_OTHER: &str = "other";
+
 // ===================== Router Metrics =====================
+/// Router metrics: track rule matches by category and outbound
 mod router {
     use super::{IntCounterVec, LazyLock, REGISTRY};
     /// 路由命中计数：按规则类别与出站类型维度统计
@@ -112,6 +149,7 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 }
 
 // ===================== Outbound Metrics =====================
+/// Outbound connection metrics: attempts, errors, and latency
 mod outbound {
     use super::{HistogramOpts, HistogramVec, IntCounterVec, LazyLock, Opts, REGISTRY};
 
@@ -193,24 +231,32 @@ pub fn start_timer(kind: &'static str) -> impl FnOnce() {
     }
 }
 
-/// 简单的错误分类器，用于 `inc_outbound_connect_error`
-/// 接受一切实现 `Display` 的错误类型，避免跨 crate trait 约束导致的类型不匹配。
+/// 通用错误分类器，用于 `inc_outbound_connect_error` 和适配器错误分类
+///
+/// 接受任何实现 `Display` 的错误类型，避免跨 crate trait 约束导致的类型不匹配。
+/// 基于错误消息字符串进行简单分类。
 pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
-    let s = e.to_string();
-    // 极简分类——后续根据实际错误类型细化
+    let s = e.to_string().to_lowercase();
     if s.contains("timed out") || s.contains("timeout") {
-        "timeout"
-    } else if s.contains("dns") || s.contains("resolve") || s.contains("Name or service not known")
+        ERROR_CLASS_TIMEOUT
+    } else if s.contains("authentication") || s.contains("auth") {
+        ERROR_CLASS_AUTH
+    } else if s.contains("protocol") || s.contains("invalid") || s.contains("unsupported") {
+        ERROR_CLASS_PROTO
+    } else if s.contains("dns") || s.contains("resolve") || s.contains("name or service not known")
     {
-        "dns"
+        ERROR_CLASS_DNS
     } else if s.contains("tls") || s.contains("certificate") {
-        "tls"
+        ERROR_CLASS_TLS
+    } else if s.contains("io") || s.contains("connection") || s.contains("refused") {
+        ERROR_CLASS_IO
     } else {
-        "io"
+        ERROR_CLASS_OTHER
     }
 }
 
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
+/// Adapter (SOCKS/HTTP) dial metrics: attempts, latency, retries
 mod adapter {
     use super::{HistogramOpts, HistogramVec, IntCounterVec, LazyLock, REGISTRY};
 
@@ -284,17 +330,10 @@ pub fn inc_adapter_retries_total(adapter: &str) {
 }
 
 /// Helper function to classify adapter errors into metric result categories
+///
+/// This is an alias for `classify_error()` to maintain API compatibility.
 pub fn classify_adapter_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
-    let s = e.to_string();
-    if s.contains("timeout") || s.contains("timed out") {
-        "timeout"
-    } else if s.contains("Authentication") || s.contains("auth") {
-        "auth_err"
-    } else if s.contains("Protocol") || s.contains("Invalid") || s.contains("Unsupported") {
-        "proto_err"
-    } else {
-        "io_err"
-    }
+    classify_error(e)
 }
 
 /// Helper to start timing an adapter operation
@@ -309,6 +348,7 @@ pub fn record_adapter_dial(
     start_time: Instant,
     result: Result<(), &dyn core::fmt::Display>,
 ) {
+    // u128 -> f64 conversion: precision loss acceptable for latency values < 2^53 ms (~285 years)
     #[allow(clippy::cast_precision_loss)]
     let latency_ms = start_time.elapsed().as_millis() as f64;
     observe_adapter_dial_latency_ms(adapter, latency_ms);
@@ -321,6 +361,7 @@ pub fn record_adapter_dial(
 }
 
 // ===================== SOCKS Inbound Metrics =====================
+/// SOCKS inbound metrics: TCP connections, UDP associations and packets
 mod socks_in {
     use super::{IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, REGISTRY};
 
@@ -394,6 +435,7 @@ pub fn set_socks_udp_assoc_estimate(n: i64) {
 }
 
 // ===================== Legacy Metrics (from registry.rs) =====================
+/// Legacy metrics: UDP NAT, proxy selection, health checks, build info
 mod legacy {
     use super::{HistogramOpts, IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, REGISTRY};
     use prometheus::{GaugeVec, Histogram};
@@ -543,8 +585,8 @@ mod legacy {
 
 /// 便捷：设置 UDP NAT map 大小
 pub fn set_udp_map_size(size: u64) {
-    #[allow(clippy::cast_possible_wrap)]
-    legacy::UDP_MAP_SIZE.set(size as i64);
+    let value = i64::try_from(size).unwrap_or(i64::MAX);
+    legacy::UDP_MAP_SIZE.set(value);
 }
 
 /// 便捷：递增 UDP eviction（reason: "ttl" | "pressure"）

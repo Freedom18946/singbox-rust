@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! VMess protocol unit tests
 
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,7 @@ pub enum VmessSecurity {
 }
 
 impl VmessSecurity {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "auto" => Self::Auto,
             "aes-128-gcm" => Self::Aes128Gcm,
@@ -47,13 +48,13 @@ pub enum VmessAddressType {
 
 #[test]
 fn test_vmess_security_from_str() {
-    assert_eq!(VmessSecurity::from_str("auto"), VmessSecurity::Auto);
+    assert_eq!(VmessSecurity::parse_str("auto"), VmessSecurity::Auto);
     assert_eq!(
-        VmessSecurity::from_str("aes-128-gcm"),
+        VmessSecurity::parse_str("aes-128-gcm"),
         VmessSecurity::Aes128Gcm
     );
-    assert_eq!(VmessSecurity::from_str("none"), VmessSecurity::None);
-    assert_eq!(VmessSecurity::from_str("unknown"), VmessSecurity::Auto);
+    assert_eq!(VmessSecurity::parse_str("none"), VmessSecurity::None);
+    assert_eq!(VmessSecurity::parse_str("unknown"), VmessSecurity::Auto);
 }
 
 #[test]

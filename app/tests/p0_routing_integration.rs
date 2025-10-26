@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 //! P0 Protocol Integration Tests with Routing Rules
 //!
 //! Tests P0 protocols (REALITY, ECH, Hysteria v1/v2, SSH, TUIC) with:

@@ -19,14 +19,14 @@ pub enum DnsQueryType {
     Other,
 }
 impl DnsQueryType {
-    pub fn from_u16(v: u16) -> Self {
+    pub const fn from_u16(v: u16) -> Self {
         match v {
             1 => Self::A,
             28 => Self::AAAA,
             _ => Self::Other,
         }
     }
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::A => "A",
             Self::AAAA => "AAAA",
@@ -43,7 +43,7 @@ pub enum DnsErrorClass {
     Other,
 }
 impl DnsErrorClass {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Timeout => "timeout",
             Self::NameError => "name_error",

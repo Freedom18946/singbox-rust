@@ -1,43 +1,54 @@
+//! Legacy data model (deprecated).
+//!
+//! This module is retained for backward compatibility. New code should use
+//! the strongly-typed IR from [`crate::ir`] instead.
+
 use serde::{Deserialize, Serialize};
 
 use crate::defaults;
 
-/// Socket listen address (host/IP + port)
+/// Socket listen address (host/IP + port).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListenAddr {
+    /// IP address or hostname.
     pub addr: String,
+    /// Port number.
     pub port: u16,
 }
 
 impl ListenAddr {
+    /// Format as `"addr:port"` string.
+    #[must_use]
     pub fn as_socket_addr(&self) -> String {
         format!("{}:{}", self.addr, self.port)
     }
 }
 
-/// SOCKS username/password pair
+/// SOCKS username/password pair.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct User {
+    /// Username.
     pub username: String,
+    /// Password.
     pub password: String,
 }
 
-/// SOCKS authentication configuration
+/// SOCKS authentication configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SocksAuth {
-    /// No authentication (method 0x00)
+    /// No authentication (method 0x00).
     #[default]
     #[serde(alias = "none")]
     None,
-    /// RFC1929 username/password users
+    /// RFC1929 username/password users.
     Users(Vec<User>),
 }
 
-/// Inbound wrapper with optional tag, flattening the concrete kind
+/// Inbound wrapper with optional tag, flattening the concrete kind.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Inbound {
-    /// Optional tag (compatible with sing-box conventions)
+    /// Optional tag (compatible with sing-box conventions).
     #[serde(default)]
     pub tag: Option<String>,
     /// Concrete inbound kind

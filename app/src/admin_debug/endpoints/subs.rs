@@ -1692,6 +1692,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_end_to_end_hot_reload() {
         // Simulate a complete hot-reload scenario
         let initial_conc = 3;
@@ -1745,6 +1746,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_rps_hot_reload_with_token_reset() {
         // Test that RPS changes immediately reset token count
         resize_rps(3);

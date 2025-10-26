@@ -1,6 +1,6 @@
-//! GeoIP functionality for IP-based routing rules
+//! `GeoIP` functionality for IP-based routing rules
 //!
-//! This module provides comprehensive GeoIP functionality for routing decisions,
+//! This module provides comprehensive `GeoIP` functionality for routing decisions,
 //! including MMDB database support and multiple provider interfaces.
 
 use std::net::IpAddr;
@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 pub mod mmdb;
 pub mod multi;
 
-/// GeoIP lookup result
+/// `GeoIP` lookup result
 #[derive(Debug, Clone)]
 pub struct GeoInfo {
     pub country_code: Option<String>,
@@ -21,7 +21,7 @@ pub struct GeoInfo {
     pub organization: Option<String>,
 }
 
-/// Basic GeoIP service trait
+/// Basic `GeoIP` service trait
 pub trait GeoIpProvider: Send + Sync {
     /// Lookup geographical information for an IP address
     fn lookup(&self, ip: IpAddr) -> Option<GeoInfo>;
@@ -30,16 +30,14 @@ pub trait GeoIpProvider: Send + Sync {
     fn is_country(&self, ip: IpAddr, country_code: &str) -> bool {
         self.lookup(ip)
             .and_then(|info| info.country_code)
-            .map(|code| code.eq_ignore_ascii_case(country_code))
-            .unwrap_or(false)
+            .is_some_and(|code| code.eq_ignore_ascii_case(country_code))
     }
 
     /// Check if an IP belongs to a specific continent
     fn is_continent(&self, ip: IpAddr, continent_code: &str) -> bool {
         self.lookup(ip)
             .and_then(|info| info.continent_code)
-            .map(|code| code.eq_ignore_ascii_case(continent_code))
-            .unwrap_or(false)
+            .is_some_and(|code| code.eq_ignore_ascii_case(continent_code))
     }
 
     /// Get ASN for an IP address
@@ -48,7 +46,7 @@ pub trait GeoIpProvider: Send + Sync {
     }
 }
 
-/// Basic GeoIP service implementation
+/// Basic `GeoIP` service implementation
 pub struct GeoIpService {
     provider: Box<dyn GeoIpProvider>,
 }
@@ -79,17 +77,17 @@ impl GeoIpService {
     }
 }
 
-/// Global GeoIP service instance
+/// Global `GeoIP` service instance
 static GEOIP_SERVICE: OnceLock<GeoIpService> = OnceLock::new();
 
-/// Initialize the global GeoIP service
+/// Initialize the global `GeoIP` service
 pub fn init() -> anyhow::Result<()> {
     let provider = mmdb::MmdbProvider::new()?;
     let _ = GEOIP_SERVICE.set(GeoIpService::new(Box::new(provider)));
     Ok(())
 }
 
-/// Get a reference to the global GeoIP service
+/// Get a reference to the global `GeoIP` service
 pub fn service() -> Option<&'static GeoIpService> {
     GEOIP_SERVICE.get()
 }
@@ -113,8 +111,7 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     #[cfg(not(feature = "metrics"))]
     {
         service()
-            .map(|s| s.is_country(ip, country_code))
-            .unwrap_or(false)
+            .is_some_and(|s| s.is_country(ip, country_code))
     }
 }
 
@@ -132,8 +129,8 @@ pub fn lookup_with_metrics_decision(ip: IpAddr) -> Option<&'static str> {
     // Return outbound based on country
     match geo_info.country_code.as_deref() {
         Some("CN") => Some("direct"),
-        Some("US") | Some("UK") | Some("CA") => Some("proxy"),
-        Some("RU") | Some("IR") | Some("KP") => Some("block"),
+        Some("US" | "UK" | "CA") => Some("proxy"),
+        Some("RU" | "IR" | "KP") => Some("block"),
         _ => Some("auto"),
     }
 }

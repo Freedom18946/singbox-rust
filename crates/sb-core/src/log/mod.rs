@@ -13,13 +13,13 @@ pub enum Level {
     Error,
 }
 impl Level {
-    fn as_str(&self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         match self {
-            Level::Trace => "trace",
-            Level::Debug => "debug",
-            Level::Info => "info",
-            Level::Warn => "warn",
-            Level::Error => "error",
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
         }
     }
 }
@@ -59,7 +59,7 @@ pub fn log(level: Level, msg: &str, kv: &[(&str, &str)]) {
         target,
         msg
     ));
-    for (k, v) in kv.iter() {
+    for (k, v) in kv {
         out.push(' ');
         out.push_str(k);
         out.push('=');

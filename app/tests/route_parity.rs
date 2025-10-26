@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Route explain stability and replay guard tests
 //! 
 //! Ensures route JSON output maintains stable contract:
@@ -649,4 +650,3 @@ fn perf_smoke_route_explain_large_ruleset() {
     
     println!("[perf_smoke] ✓ Route explain with 1000 rules completed");
 }
-

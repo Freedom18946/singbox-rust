@@ -77,14 +77,8 @@ pub async fn respond_json_ok(
     sock: &mut (impl AsyncWriteExt + Unpin),
     body: &impl Serialize,
 ) -> std::io::Result<()> {
-    let json = serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec());
-    respond(
-        sock,
-        200,
-        "application/json",
-        std::str::from_utf8(&json).unwrap(),
-    )
-    .await
+    let json = serde_json::to_string(body).unwrap_or_else(|_| "{}".to_string());
+    respond(sock, 200, "application/json", &json).await
 }
 
 // Legacy JsonError for backward compatibility

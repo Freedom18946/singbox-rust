@@ -36,7 +36,7 @@ pub enum CipherType {
 }
 
 impl Proto {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Trojan => "trojan",
             Self::ShadowTls => "shadowtls",
@@ -51,7 +51,7 @@ impl Proto {
 }
 
 impl ResultTag {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Ok => "ok",
             Self::Timeout => "timeout",
@@ -68,7 +68,7 @@ impl ResultTag {
 }
 
 impl CipherType {
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Aes128Gcm => "aes-128-gcm",
             Self::ChaCha20Poly1305 => "chacha20-poly1305",

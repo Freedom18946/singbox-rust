@@ -59,12 +59,10 @@ pub mod standard;
 pub mod reality;
 
 /// uTLS fingerprint mimicry
-/// TODO: Implement uTLS fingerprint mimicry
+///
+/// TODO: Implement browser fingerprint emulation
 #[cfg(feature = "utls")]
-pub mod utls {
-    //! uTLS fingerprint mimicry (placeholder)
-    //! TODO: Implement browser fingerprint emulation
-}
+pub mod utls {}
 
 /// Encrypted Client Hello
 #[cfg(feature = "ech")]

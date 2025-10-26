@@ -120,7 +120,7 @@ outbounds: [ { type: direct } ]
 route: { rules: [ { outbound: "direct" } ] }
 dns: { mode: system }
 "#;
-    let mut temp_file = NamedTempFile::new().unwrap();
+    let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), config).unwrap();
     let mut cmd = AssertCommand::cargo_bin("check").unwrap();
     let output = cmd

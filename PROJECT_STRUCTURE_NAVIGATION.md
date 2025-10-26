@@ -7,7 +7,7 @@
 > 3. 📋 基于本文档进行开发路径规划
 > 
 > **更新责任**: 任何修改项目结构的操作都必须同步更新本文档  
-> **最后更新**: 2025年9月25日
+> **最后更新**: 2025年10月26日（已对照当前仓库结构校验）
 
 ## 项目概述
 
@@ -17,24 +17,30 @@ SingBox-Rust 是一个高性能的代理服务器实现，采用模块化架构�
 
 ```
 singbox-rust/
-├── 📁 .cargo/                    # Cargo 配置
-├── 📁 .github/                   # GitHub Actions 工作流
-├── 📁 .kiro/                     # Kiro IDE 配置和规范
-├── 📁 app/                       # 主应用程序
-├── 📁 crates/                    # 核心 crate 模块
-├── 📁 docs/                      # 项目文档（Cookbook/Development/OPS 等）
-├── 📁 examples/                  # 示例代码和配置
-├── 📁 tests/                     # 测试文件（重新整理后）
-├── 📁 scripts/                   # 构建和部署脚本
-├── 📁 .e2e/                      # 端到端测试环境
-├── 📁 grafana/                   # Grafana 监控面板
-├── 📁 packaging/                 # systemd/Docker 等发布产物
-├── 📁 refs/                      # 参考资料和分析
-├── 📁 instruction/               # 指令和文档
-├── 📄 Cargo.toml                 # 工作空间配置
-├── 📄 README.md                  # 项目说明
-├── 📄 进度规划与分解V5.md          # 项目进度规划
-└── 📄 其他配置文件...
+├── 📁 .cargo/           # Cargo 配置（构建参数、别名等）
+├── 📁 .e2e/             # 端到端测试产物与摘要
+├── 📁 .github/          # GitHub Actions 工作流
+├── 📁 app/              # 主应用与多 bin CLI（feature 门控）
+├── 📁 crates/           # 工作区各核心 crate 模块
+├── 📁 docs/             # 文档门户（00-.. 分区）
+├── 📁 examples/         # 示例与配置
+├── 📁 fuzz/             # 模糊测试
+├── 📁 grafana/          # 监控看板
+├── 📁 LICENSES/         # 依赖许可证
+├── 📁 reports/          # 报告与基线
+├── 📁 scripts/          # CI、工具、场景脚本
+├── 📁 tests/            # 测试（集成/E2E/配置/数据 等）
+├── 📁 vendor/           # 供应商依赖覆盖（如 tun2socks）
+├── 📁 xtask/            # 开发/发布辅助任务
+├── 📁 xtests/           # 扩展测试工具
+├── 📄 Cargo.toml        # 工作区清单
+├── 📄 Cargo.lock        # 锁文件
+├── 📄 README.md         # 项目说明与快速开始
+├── 📄 GO_PARITY_MATRIX.md  # 与 sing-box 对齐矩阵
+├── 📄 NEXT_STEPS.md     # 下一步里程碑与工作流
+├── 📄 SECURITY.md       # 安全说明
+├── 📄 进度规划与分解V6.md   # 项目进度规划（当前）
+└── 📄 其他：deny.toml、clippy.toml、rust-toolchain.toml 等
 ```
 
 ## 核心模块架构 (crates/)
@@ -43,38 +49,21 @@ singbox-rust/
 
 ```
 crates/
-├── sb-core/           # 🔧 核心功能模块
-│   ├── src/
-│   │   ├── config/    # 配置管理
-│   │   ├── dns/       # DNS 解析系统
-│   │   ├── error/     # 错误处理系统
-│   │   ├── metrics/   # 指标监控系统
-│   │   ├── net/       # 网络层抽象
-│   │   │   ├── udp_nat_core.rs    # UDP NAT 核心实现
-│   │   │   ├── udp_processor.rs   # UDP 数据包处理器
-│   │   │   └── ...
-│   │   ├── outbound/  # 出站连接管理
-│   │   ├── router/    # 路由引擎
-│   │   ├── types/     # 核心类型定义
-│   │   └── ...
-│   └── tests/         # 单元测试
-├── sb-config/         # ⚙️ 配置解析和验证
-├── sb-adapters/       # 🔌 协议适配器
-├── sb-transport/      # 🚀 传输层实现
-├── sb-tls/            # 🔐 TLS 基础设施 (Sprint 5 新增)
-│   ├── src/
-│   │   ├── standard.rs    # 标准 TLS 1.2/1.3 (rustls)
-│   │   ├── reality/       # REALITY 协议 (X25519 伪装)
-│   │   ├── ech/           # ECH (HPKE SNI 加密)
-│   │   └── utls.rs        # uTLS 指纹模拟 (计划中)
-│   └── tests/         # TLS 测试套件
-├── sb-metrics/        # 📊 指标收集系统
-├── sb-runtime/        # ⚡ 运行时管理
-├── sb-platform/       # 🖥️ 平台特定功能
-├── sb-proto/          # 📡 协议定义
-├── sb-security/       # 🛡️ 安全工具 (JWT, 凭据验证)
-├── sb-api/            # 🌐 外部 API (V2Ray/Clash)
-└── sb-subscribe/      # 📥 订阅管理
+├── sb-core/            # 🔧 核心：路由引擎、DNS、NAT、出入站抽象
+├── sb-config/          # ⚙️ 配置解析与 Schema/IR
+├── sb-adapters/        # 🔌 协议适配：VMess/VLESS/Trojan/SS/TUIC/Hysteria 等
+├── sb-transport/       # 🚀 传输：TCP/UDP/WS/H2/H3/Upgrade/Multiplex
+├── sb-tls/             # 🔐 TLS：Standard/REALITY/ECH
+├── sb-metrics/         # 📊 指标：Prometheus 集成
+├── sb-runtime/         # ⚡ 运行时：任务/资源/IO 管理
+├── sb-platform/        # 🖥️ 平台：系统调用与平台特性
+├── sb-proto/           # 📡 协议与通用类型
+├── sb-security/        # 🛡️ 安全：JWT、凭据红化
+├── sb-api/             # 🌐 外部 API（V2Ray/Clash）
+├── sb-subscribe/       # 📥 订阅：远程规则与节点
+├── sb-admin-contract/  # 🧾 管理面契约（admin_envelope）
+├── sb-test-utils/      # 🧪 测试工具与夹具
+└── sb-types/           # 🧰 工作区共享类型
 ```
 
 ### 🎯 模块职责
@@ -100,47 +89,34 @@ crates/
 
 ```
 tests/
-├── 📁 integration/           # 集成测试
-│   ├── test_schema_v2_integration.rs
-│   ├── test_udp_nat_*        # UDP NAT 系统测试
-│   └── verify_*              # 验证脚本
-├── 📁 unit/                  # 单元测试（待添加）
-├── 📁 configs/               # 测试配置文件
-│   ├── test_*_config.yaml    # 各种配置测试用例
-│   ├── test_*.json           # JSON 配置文件
-│   └── test_cert.pem         # 测试证书
-├── 📁 data/                  # 测试数据
-│   ├── demo*.json            # 演示数据
-│   ├── task_receipt*.json    # 任务回执
-│   └── *.long-type-*.txt     # 类型推断临时文件
-├── 📁 scripts/               # 测试脚本
-│   └── verify_*.sh           # 验证脚本
-└── 📁 docs/                  # 测试相关文档
-    ├── UDP_NAT_*.md          # UDP NAT 实现文档
-    └── SCHEMA_V2_*.md        # Schema V2 文档
+├── integration/   # 集成测试
+├── e2e/           # 端到端编排/工具
+├── stress/        # 压测/稳态验证
+├── configs/       # 测试配置
+├── data/          # 测试数据
+├── scripts/       # 测试脚本
+├── docs/          # 测试文档
+└── 顶层若干 *.rs  # 直挂的 E2E/集成测试（如 reality_tls_e2e.rs 等）
 ```
 
 ### 🧪 测试类型说明
 
-| 类型 | 目录 | 用途 |
-|------|------|------|
-| **集成测试** | `integration/` | 跨模块功能测试、端到端验证 |
-| **单元测试** | `unit/` | 单个函数/模块测试 |
-| **配置测试** | `configs/` | 配置解析和验证测试 |
-| **数据文件** | `data/` | 测试用的静态数据 |
-| **脚本测试** | `scripts/` | 自动化验证脚本 |
+- 集成测试：`integration/` 与仓库根 `tests/*.rs`
+- 端到端：`e2e/`
+- 压测/稳态：`stress/`
+- 配置/数据/脚本/文档：`configs/`、`data/`、`scripts/`、`docs/`
 
 ## 应用程序结构 (app/)
 
 ```
 app/
-├── src/
-│   ├── cli/              # 命令行接口
-│   ├── main.rs           # 主入口点
-│   └── ...
-├── tests/                # 应用级测试
-├── examples/             # 使用示例
-└── Cargo.toml            # 应用配置
+├── src/                 # 主入口与子命令（bin/*）
+├── tests/               # 应用级测试
+├── benches/             # 基准测试
+├── examples/            # 使用示例
+├── scripts/             # app 层脚本
+├── build.rs             # 构建期元信息
+└── Cargo.toml           # 应用配置与 feature 门控
 ```
 
 ## 文档结构 (docs/)
@@ -149,25 +125,30 @@ app/
 
 ```
 docs/
-├── ARCHITECTURE.md           # 架构设计文档
-├── CLI_TOOLS.md              # CLI 工具说明
-├── COOKBOOK.md               # 可运行示例与排错
-├── DEVELOPMENT.md            # 质量闸门与开发参考
-├── OPS.md                    # 运维与部署（systemd/Docker）
-├── ENV_VARS.md               # 环境变量清单
-├── PROJECT_STRUCTURE_NAVIGATION.md  # 本导航文档
-└── ...
+├── 00-getting-started/   # 快速开始
+├── 01-user-guide/        # 用户指南/配置
+├── 02-cli-reference/     # CLI 参考
+├── 03-operations/        # 运维/部署
+├── 04-development/       # 开发与贡献
+├── 05-api-reference/     # API 文档
+├── 06-advanced-topics/   # 高级主题（REALITY/ECH 等）
+├── 07-reference/         # 参考（Schema/错误码）
+├── 08-examples/          # 示例
+├── archive/              # 历史归档
+├── RESTRUCTURE_SUMMARY.md
+├── REFACTORING_PROPOSAL.md
+├── CLEANUP_COMPLETION_REPORT.md
+└── README.md
 ```
 
 ## 示例和配置 (examples/)
 
 ```
 examples/
-├── 📁 configs/                 # 示例配置文件
-├── 📁 rules/                   # 路由规则示例
-├── 📁 scenarios/               # 使用场景示例
-├── 📄 *.rs                     # Rust 代码示例
-└── 📄 config.*.json            # 各种配置示例
+├── configs/      # 各类配置样例（minimal/advanced/...）
+├── rules/        # 路由规则样例
+├── scenarios/    # 运行场景脚本/配置
+└── *.rs          # Rust 样例程序
 ```
 
 ## 脚本和工具 (scripts/)
@@ -176,11 +157,16 @@ examples/
 
 ```
 scripts/
-├── ci/                      # CI/CD 脚本
-├── e2e-run.sh               # 非阻断 e2e 汇总
-├── preflight.sh             # 发行前预检门禁
-├── bench.sh                 # 开发态基准脚本
-└── ...
+├── ci/          # CI 相关脚本
+├── dev/         # 本地开发辅助
+├── e2e/         # 端到端测试编排
+├── lib/         # 脚本共享库
+├── lint/        # 质量闸门/静态检查
+├── test/        # 基准/回归守护等
+├── tools/       # 工具与可视化脚本
+├── run          # 单入口运行脚本（多场景）
+├── run-scenarios# 预置场景批跑
+└── scenarios.d/ # 场景定义集合
 ```
 
 ## 开发环境配置
@@ -208,11 +194,10 @@ scripts/
 
 ### 📝 重要文件
 
-- **项目规划**: `进度规划与分解V5.md`
-- **架构文档**: `docs/ARCHITECTURE.md`
-- **API文档**: `docs/CLI_TOOLS.md`
-- **错误处理**: `docs/ERRORS.md`
-- **测试指南**: `tests/README.md`
+- 项目规划: `进度规划与分解V6.md`
+- 文档入口: `docs/README.md` 与分区 `00-..` 目录
+- CLI/使用参考：根 `README.md` 与 `docs/02-cli-reference/`
+- 测试指南: `tests/README.md`
 
 ### 🔍 查找指南
 
@@ -301,4 +286,4 @@ scripts/
 
 **⚠️ 重要提醒**: 本文档的准确性直接影响开发效率和代码质量。请严格遵守维护指南，确保文档始终与项目实际结构保持同步。
 
-*文档版本: v1.2 | 最后更新: 2025年10月9日 | 最后验证: 2025年10月9日*
+*文档版本: v1.3 | 最后更新: 2025年10月26日 | 最后验证: 2025年10月26日*

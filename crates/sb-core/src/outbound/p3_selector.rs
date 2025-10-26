@@ -1,7 +1,7 @@
 //! P3 selector with cold-start protection & jitter threshold (behind env/feature).
-//! score = w_rtt * rtt_ema + w_err * err_rate + w_fuse * fuse_penalty
-//! - rtt_ema：指数滑动平均
-//! - err_rate：近窗口失败率
+//! score = `w_rtt` * `rtt_ema` + `w_err` * `err_rate` + `w_fuse` * `fuse_penalty`
+//! - `rtt_ema：指数滑动平均`
+//! - `err_rate：近窗口失败率`
 //! - fuse：熔断开关（触发后短时降权）
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -50,7 +50,7 @@ impl Stat {
         self.rtt_ema = if self.rtt_ema == 0.0 {
             ms
         } else {
-            cfg.alpha_rtt * ms + (1.0 - cfg.alpha_rtt) * self.rtt_ema
+            cfg.alpha_rtt.mul_add(ms, (1.0 - cfg.alpha_rtt) * self.rtt_ema)
         };
         self.last_seen = Instant::now();
     }
@@ -120,7 +120,7 @@ impl P3Selector {
             Some(x) => x,
             None => return f64::MAX,
         };
-        s.rtt_ema + 1000.0 * s.err_rate() + s.fuse_penalty(&self.cfg)
+        1000.0f64.mul_add(s.err_rate(), s.rtt_ema) + s.fuse_penalty(&self.cfg)
     }
     /// Pick a member outbound by score with jitter threshold.
     ///
@@ -145,17 +145,14 @@ impl P3Selector {
                 _ => {}
             }
         }
-        let (pick, pick_sc) = match best {
-            Some(v) => v,
-            None => {
-                let fallback = self
-                    .last_pick
-                    .clone()
-                    .or_else(|| self.outbounds.first().cloned())
-                    .unwrap_or_default();
-                sb_metrics::inc_proxy_select(fallback.as_str());
-                return fallback;
-            }
+        let (pick, pick_sc) = if let Some(v) = best { v } else {
+            let fallback = self
+                .last_pick
+                .clone()
+                .or_else(|| self.outbounds.first().cloned())
+                .unwrap_or_default();
+            sb_metrics::inc_proxy_select(fallback.as_str());
+            return fallback;
         };
         // 抖动阈：若新旧差距不足阈值比率，保持原选择
         if let Some(prev) = self.last_pick.clone() {

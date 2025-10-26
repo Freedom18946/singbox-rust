@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
-/// Perform a single DNS-over-QUIC query using the unified DoQ transport.
+/// Perform a single DNS-over-QUIC query using the unified `DoQ` transport.
 ///
 /// - `server`: QUIC server socket address (e.g., 1.1.1.1:853)
 /// - `server_name`: SNI / TLS name (e.g., "cloudflare-dns.com")

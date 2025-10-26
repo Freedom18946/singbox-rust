@@ -25,7 +25,7 @@ pub fn derive_subkey(master_key: &[u8], salt: &[u8], hash_alg: HashAlgorithm) ->
 }
 
 #[cfg(not(feature = "out_ss"))]
-pub fn derive_subkey(_master_key: &[u8], _salt: &[u8], _hash_alg: HashAlgorithm) -> [u8; 32] {
+pub const fn derive_subkey(_master_key: &[u8], _salt: &[u8], _hash_alg: HashAlgorithm) -> [u8; 32] {
     [0u8; 32]
 }
 
@@ -56,7 +56,7 @@ pub fn generate_salt(size: usize) -> Vec<u8> {
 }
 
 #[cfg(not(feature = "out_ss"))]
-pub fn generate_salt(_size: usize) -> Vec<u8> {
+pub const fn generate_salt(_size: usize) -> Vec<u8> {
     Vec::new()
 }
 

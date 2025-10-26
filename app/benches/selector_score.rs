@@ -22,3 +22,5 @@ fn bench_selector_score(c: &mut Criterion) {
 
 criterion_group!(benches, bench_selector_score);
 criterion_main!(benches);
+#[cfg(not(feature = "bench"))]
+fn main() {}

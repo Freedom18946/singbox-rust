@@ -1,6 +1,6 @@
 //! Outbound manager for handling multiple outbound connectors
 //!
-//! This module provides the OutboundManager that holds and manages
+//! This module provides the `OutboundManager` that holds and manages
 //! different outbound connector instances.
 
 use crate::outbound::traits::OutboundConnector;

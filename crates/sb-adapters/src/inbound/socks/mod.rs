@@ -44,18 +44,23 @@ use metrics;
 pub mod tcp;
 pub mod udp;
 
+/// SOCKS5 inbound configuration
 #[derive(Clone, Debug)]
 pub struct SocksInboundConfig {
+    /// Listen address
     pub listen: SocketAddr,
     /// 给 UDP ASSOCIATE 用于宣告的地址；仅在 Some 时回复非 0 地址。
     pub udp_bind: Option<SocketAddr>,
+    /// Router handle
     pub router: Arc<RouterHandle>,
+    /// Outbound registry handle
     pub outbounds: Arc<OutboundRegistryHandle>,
     /// 保留给未来：当我们在这里内置启动 udp 模块时使用
     #[allow(dead_code)]
     pub udp_nat_ttl: Duration,
 }
 
+/// Serve SOCKS5 proxy with ready signal notification
 pub async fn serve_socks(
     cfg: SocksInboundConfig,
     mut stop_rx: mpsc::Receiver<()>,
@@ -101,6 +106,7 @@ pub async fn serve_socks(
 }
 
 // 兼容旧别名
+/// Compatibility alias - run SOCKS5 proxy
 pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
     // NOTE(linus): UDP Associate 骨架已就绪，但默认不启用。
     // 后续批次将基于配置/env 决定是否绑定一个 UDP socket 并回送 BND.ADDR。
@@ -117,6 +123,8 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
     // }
     serve_socks(cfg, stop_rx, None).await
 }
+
+/// Compatibility alias - serve SOCKS5 proxy
 pub async fn serve(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
     serve_socks(cfg, stop_rx, None).await
 }
@@ -582,8 +590,8 @@ async fn handle_conn(
                     }
                 }
                 RDecision::Reject => {
-                    // Safety: RDecision::Reject is handled earlier at line 222-225 with early return
-                    unreachable!("RDecision::Reject filtered out earlier")
+                    // Should have been filtered earlier; return explicit error to avoid panic.
+                    return Err(io::Error::other("socks: rejected by rules"));
                 }
             };
 

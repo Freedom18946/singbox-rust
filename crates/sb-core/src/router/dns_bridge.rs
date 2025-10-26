@@ -177,7 +177,7 @@ mod tests {
                 assert_eq!(ips.len(), 1);
                 assert_eq!(ips[0], "1.2.3.4".parse::<IpAddr>().unwrap());
             }
-            _ => assert!(false, "Expected successful DNS resolution"),
+            _ => panic!("Expected successful DNS resolution"),
         }
     }
 
@@ -197,7 +197,7 @@ mod tests {
 
         match result {
             DnsResult::Miss => {}
-            _ => assert!(false, "Expected Miss result for empty DNS response"),
+            _ => panic!("Expected Miss result for empty DNS response"),
         }
     }
 
@@ -212,7 +212,7 @@ mod tests {
 
         match result {
             DnsResult::Error => {}
-            _ => assert!(false, "Expected Error result from DNS resolver"),
+            _ => panic!("Expected Error result from DNS resolver"),
         }
     }
 }

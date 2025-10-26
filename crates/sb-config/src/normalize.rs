@@ -1,11 +1,14 @@
 //! Canonical normalization helpers for IR.
-//! - 域名小写与去点
-//! - 通配符规范化（前导 *.* → *.）
-//! - 端口集规范化（展开/合并，内部仍存字符串但序列稳定）
-//! - CIDR 合法性快速检查（留给校验器严格处理）
+//!
+//! - Domain: lowercase and trim dots
+//! - Wildcard: normalize leading `*.*` → `*.`
+//! - Ports: normalize ranges (expand/merge, maintain stable ordering)
+//! - CIDR: quick validity check (strict handling deferred to validator)
+
 use crate::ir::{ConfigIR, RuleIR};
 use std::net::Ipv4Addr;
 
+/// Normalize domain: lowercase, trim dots, handle wildcards.
 fn norm_domain(s: &str) -> String {
     let t = s.trim().to_ascii_lowercase();
     let t = t.trim_matches('.');
@@ -16,11 +19,13 @@ fn norm_domain(s: &str) -> String {
     }
 }
 
+/// Normalize port list: expand ranges (e.g., `"80-82"` → `[80,81,82]`),
+/// then merge back to stable string representation.
 fn norm_port_vec(v: &mut Vec<String>) {
     if v.is_empty() {
         return;
     }
-    // 将 "80-82" 展开为 [80,81,82] 再合并为区间；最终仍存为字符串，但顺序稳定
+    // Expand "80-82" to [80,81,82], merge to intervals, store as strings with stable order
     let mut acc = Vec::<u16>::new();
     for item in v.iter() {
         if let Some((a, b)) = item.split_once('-') {
@@ -38,7 +43,7 @@ fn norm_port_vec(v: &mut Vec<String>) {
     }
     acc.sort_unstable();
     acc.dedup();
-    // 再压回区间字符串
+    // Compress back to interval strings
     let mut out = Vec::<String>::new();
     let mut i = 0usize;
     while i < acc.len() {

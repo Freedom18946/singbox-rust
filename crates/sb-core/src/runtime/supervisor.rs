@@ -234,11 +234,7 @@ impl Supervisor {
             .context("failed to send reload message")?;
 
         // Compute diff between old and new configuration
-        if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() != Some("1") {
-            // Fast path: skip diff computation unless explicitly requested
-            let _ = &new_ir; // mark as used in minimal path
-            Ok(Diff::default())
-        } else {
+        if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() == Some("1") {
             // Compute actual diff for debugging/monitoring purposes
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             tracing::debug!(
@@ -250,6 +246,10 @@ impl Supervisor {
                 "Configuration diff computed"
             );
             Ok(diff)
+        } else {
+            // Fast path: skip diff computation unless explicitly requested
+            let _ = &new_ir; // mark as used in minimal path
+            Ok(Diff::default())
         }
     }
 
@@ -470,12 +470,12 @@ impl SupervisorHandle {
             .await
             .context("failed to send reload message")?;
 
-        if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() != Some("1") {
-            let _ = &new_ir;
-            Ok(Diff::default())
-        } else {
+        if std::env::var("SB_RUNTIME_DIFF").ok().as_deref() == Some("1") {
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             Ok(diff)
+        } else {
+            let _ = &new_ir;
+            Ok(Diff::default())
         }
     }
 
@@ -494,8 +494,8 @@ pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationTo
     tokio::spawn(async move {
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => break,
-                _ = tokio::time::sleep(Duration::from_secs(30)) => {}
+                () = cancel.cancelled() => break,
+                () = tokio::time::sleep(Duration::from_secs(30)) => {}
             }
             // Perform health checks
             tracing::debug!(
@@ -526,9 +526,9 @@ pub fn engine_from_ir(_ir: &sb_config::ir::ConfigIR) -> Result<()> {
 
 impl Bridge {
     /// Create bridge from IR configuration
-    pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Bridge> {
+    pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Self> {
         // This should use existing bridge construction logic
         // For now, create a minimal bridge
-        Bridge::new_from_config(ir).context("failed to create bridge from config")
+        Self::new_from_config(ir).context("failed to create bridge from config")
     }
 }

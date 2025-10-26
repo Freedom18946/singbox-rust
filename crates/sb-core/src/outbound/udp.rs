@@ -24,9 +24,9 @@ async fn resolve_target_local(target: UdpTargetAddr) -> Result<SocketAddr> {
 }
 
 /// UDP 发送错误分类（稳定口径）
-/// 返回：timeout/refused/unreachable/peer_closed/other
+/// `返回：timeout/refused/unreachable/peer_closed/other`
 fn classify_udp_error(e: &io::Error) -> &'static str {
-    use io::ErrorKind::*;
+    use io::ErrorKind::{TimedOut, ConnectionRefused, ConnectionReset, BrokenPipe};
     match e.kind() {
         TimedOut => "timeout",
         ConnectionRefused => "refused",
@@ -48,8 +48,8 @@ fn classify_io_error(e: &std::io::Error) -> &'static str {
     match e.raw_os_error() {
         Some(110) => "timeout",                 // ETIMEDOUT
         Some(111) => "refused",                 // ECONNREFUSED
-        Some(101) | Some(113) => "unreachable", // ENETUNREACH/EHOSTUNREACH
-        Some(32) | Some(104) => "peer_closed",  // EPIPE/ECONNRESET
+        Some(101 | 113) => "unreachable", // ENETUNREACH/EHOSTUNREACH
+        Some(32 | 104) => "peer_closed",  // EPIPE/ECONNRESET
         _ => "other",
     }
 }
@@ -59,7 +59,7 @@ fn udp_limiter() -> Option<&'static RateLimiter> {
     LIM.get_or_init(RateLimiter::from_env_udp).as_ref()
 }
 
-/// 可选解析辅助：当目标是域名且 SB_DNS_ENABLE=1 时，使用进程级 DNS 客户端解析一个可用地址。
+/// 可选解析辅助：当目标是域名且 `SB_DNS_ENABLE=1` 时，使用进程级 DNS 客户端解析一个可用地址。
 /// 默认（未启用）则与现状保持一致（交给系统解析器或由调用方自行解析）。
 pub async fn resolve_target_socketaddr(
     dst: &UdpTargetAddr,
@@ -70,8 +70,7 @@ pub async fn resolve_target_socketaddr(
             if std::env::var("SB_DNS_ENABLE")
                 .ok()
                 .as_deref()
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false)
+                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             {
                 // 进程级 DNS client（TTL 60s）
                 static DNS: OnceLock<DnsClient> = OnceLock::new();
@@ -92,7 +91,7 @@ pub async fn resolve_target_socketaddr(
     }
 }
 
-/// 新建上游 UDP socket（按目标族选择绑定地址），返回已就绪的 UdpSocket
+/// 新建上游 UDP socket（按目标族选择绑定地址），返回已就绪的 `UdpSocket`
 pub async fn direct_udp_socket_for(dst: &UdpTargetAddr) -> Result<UdpSocket> {
     match dst {
         UdpTargetAddr::Ip(sa) => {

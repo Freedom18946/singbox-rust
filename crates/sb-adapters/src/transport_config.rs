@@ -1,45 +1,94 @@
-//! Transport configuration for protocol adapters
+//! Transport configuration for protocol adapters.
 //!
 //! This module provides transport layer abstraction for protocol adapters,
 //! allowing VMess, VLESS, Trojan, and other protocols to use different
 //! underlying transports (TCP, WebSocket, gRPC, HTTPUpgrade).
+//!
+//! # Features
+//!
+//! - **TCP**: Direct TCP connections (always available)
+//! - **WebSocket**: WebSocket transport (requires `transport_ws` feature)
+//! - **gRPC**: gRPC bidirectional streaming (requires `transport_grpc` feature)
+//! - **HTTPUpgrade**: HTTP/1.1 Upgrade protocol (requires `transport_httpupgrade` feature)
+//!
+//! # Examples
+//!
+//! ```rust,ignore
+//! use sb_adapters::transport_config::{TransportConfig, TransportType};
+//!
+//! let config = TransportConfig::Tcp;
+//! let dialer = config.create_dialer();
+//! ```
 
 #[cfg(feature = "sb-transport")]
 use std::sync::Arc;
 
-/// Transport type selection
-#[derive(Debug, Clone, PartialEq)]
+/// Transport type selection.
+///
+/// Specifies the underlying transport protocol for proxy connections.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use sb_adapters::transport_config::TransportType;
+///
+/// let transport = TransportType::Tcp;
+/// assert_eq!(transport, TransportType::default());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportType {
-    /// Direct TCP connection
+    /// Direct TCP connection.
     Tcp,
-    /// WebSocket transport
+
+    /// WebSocket transport.
     WebSocket,
-    /// gRPC bidirectional streaming
+
+    /// gRPC bidirectional streaming.
     Grpc,
-    /// HTTP/1.1 Upgrade
+
+    /// HTTP/1.1 Upgrade.
     HttpUpgrade,
 }
 
 impl Default for TransportType {
+    /// Returns `TransportType::Tcp` as the default.
+    #[inline]
     fn default() -> Self {
         Self::Tcp
     }
 }
 
-/// WebSocket transport configuration
+/// WebSocket transport configuration.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use sb_adapters::transport_config::WebSocketTransportConfig;
+///
+/// let config = WebSocketTransportConfig {
+///     path: "/v2ray".to_string(),
+///     headers: vec![("Host".to_string(), "example.com".to_string())],
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WebSocketTransportConfig {
-    /// WebSocket path (default: "/")
+    /// WebSocket path (default: "/").
     pub path: String,
-    /// Custom headers
+
+    /// Custom headers to send with the WebSocket upgrade request.
     pub headers: Vec<(String, String)>,
-    /// Maximum message size (default: 64MB)
+
+    /// Maximum message size in bytes (default: 64MB).
     pub max_message_size: Option<usize>,
-    /// Maximum frame size (default: 16MB)
+
+    /// Maximum frame size in bytes (default: 16MB).
     pub max_frame_size: Option<usize>,
 }
 
 impl Default for WebSocketTransportConfig {
+    /// Returns default WebSocket configuration with path "/" and 64MB max message size.
+    #[inline]
     fn default() -> Self {
         Self {
             path: "/".to_string(),
@@ -51,6 +100,18 @@ impl Default for WebSocketTransportConfig {
 }
 
 /// gRPC transport configuration
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use sb_adapters::transport_config::GrpcTransportConfig;
+///
+/// let config = GrpcTransportConfig {
+///     service_name: "MyService".to_string(),
+///     method_name: "MyMethod".to_string(),
+///     metadata: vec![("Authorization".to_string(), "Bearer token".to_string())],
+/// };
+/// ```
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GrpcTransportConfig {
     /// Service name (default: "TunnelService")
@@ -62,6 +123,8 @@ pub struct GrpcTransportConfig {
 }
 
 impl Default for GrpcTransportConfig {
+    /// Returns default gRPC configuration with TunnelService/Tunnel.
+    #[inline]
     fn default() -> Self {
         Self {
             service_name: "TunnelService".to_string(),
@@ -81,6 +144,8 @@ pub struct HttpUpgradeTransportConfig {
 }
 
 impl Default for HttpUpgradeTransportConfig {
+    /// Returns default HTTPUpgrade configuration with path "/".
+    #[inline]
     fn default() -> Self {
         Self {
             path: "/".to_string(),
@@ -106,13 +171,26 @@ pub enum TransportConfig {
 }
 
 impl Default for TransportConfig {
+    /// Returns `TransportConfig::Tcp` as the default.
+    #[inline]
     fn default() -> Self {
         Self::Tcp
     }
 }
 
 impl TransportConfig {
-    /// Get transport type
+    /// Returns the transport type of this configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use sb_adapters::transport_config::{TransportConfig, TransportType};
+    ///
+    /// let config = TransportConfig::Tcp;
+    /// assert_eq!(config.transport_type(), TransportType::Tcp);
+    /// ```
+    #[inline]
+    #[must_use]
     pub fn transport_type(&self) -> TransportType {
         match self {
             Self::Tcp => TransportType::Tcp,
@@ -122,8 +200,11 @@ impl TransportConfig {
         }
     }
 
-    /// Create a dialer for this transport configuration
+    /// Creates a dialer for this transport configuration.
+    ///
+    /// Falls back to TCP if the required transport feature is not enabled.
     #[cfg(feature = "sb-transport")]
+    #[must_use]
     pub fn create_dialer(&self) -> Box<dyn sb_transport::Dialer> {
         use sb_transport::TcpDialer;
 
@@ -191,8 +272,9 @@ impl TransportConfig {
         }
     }
 
-    /// Create a dialer with TLS wrapping
+    /// Creates a dialer with TLS wrapping.
     #[cfg(feature = "sb-transport")]
+    #[must_use]
     pub fn create_dialer_with_tls(
         &self,
         _tls_config: &sb_transport::TlsConfig,
@@ -210,8 +292,9 @@ impl TransportConfig {
         })
     }
 
-    /// Create a dialer with optional TLS and multiplex
+    /// Creates a dialer with optional TLS and multiplex layers.
     #[cfg(feature = "sb-transport")]
+    #[must_use]
     pub fn create_dialer_with_layers(
         &self,
         tls_config: Option<&sb_transport::TlsConfig>,
@@ -246,13 +329,21 @@ impl TransportConfig {
         Arc::new(dialer)
     }
 
-    /// Create an inbound listener for this transport configuration
+    /// Creates an inbound listener for this transport configuration.
+    ///
+    /// Falls back to TCP if the required transport feature is not enabled.
     ///
     /// # Arguments
+    ///
     /// * `bind_addr` - The address to bind to
     ///
     /// # Returns
-    /// An InboundListener that can accept connections
+    ///
+    /// An `InboundListener` that can accept connections.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if binding to the address fails.
     pub async fn create_inbound_listener(
         &self,
         bind_addr: std::net::SocketAddr,
@@ -333,19 +424,19 @@ impl TransportConfig {
 
 use tokio::net::TcpListener;
 
-/// Trait combining AsyncRead + AsyncWrite for inbound streams
+/// Trait combining `AsyncRead` + `AsyncWrite` for inbound streams.
 pub trait InboundStream:
     tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
 {
 }
 
-/// Blanket implementation for any type that satisfies the bounds
+/// Blanket implementation for any type that satisfies the bounds.
 impl<T> InboundStream for T where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
 {
 }
 
-/// Wrapper to adapt AsyncReadWrite streams to InboundStream
+/// Wrapper to adapt `AsyncReadWrite` streams to `InboundStream`.
 #[cfg(feature = "sb-transport")]
 #[allow(dead_code)] // Adapter is constructed under specific feature/test paths
 struct InboundStreamAdapter {
@@ -388,25 +479,32 @@ impl tokio::io::AsyncWrite for InboundStreamAdapter {
     }
 }
 
-/// Inbound listener that abstracts over different transport types
+/// Inbound listener that abstracts over different transport types.
 pub enum InboundListener {
-    /// Direct TCP listener
+    /// Direct TCP listener.
     Tcp(TcpListener),
-    /// WebSocket listener
+
+    /// WebSocket listener.
     #[cfg(feature = "transport_ws")]
     WebSocket(sb_transport::websocket::WebSocketListener),
-    /// gRPC server (future implementation)
+
+    /// gRPC server.
     #[cfg(feature = "transport_grpc")]
     Grpc(sb_transport::grpc::GrpcServer),
-    /// HTTPUpgrade listener (future implementation)
+
+    /// HTTPUpgrade listener.
     #[cfg(feature = "transport_httpupgrade")]
     HttpUpgrade(sb_transport::httpupgrade::HttpUpgradeListener),
 }
 
 impl InboundListener {
-    /// Accept a new connection from the listener
+    /// Accepts a new connection from the listener.
     ///
-    /// Returns a stream that implements AsyncRead + AsyncWrite
+    /// Returns a stream that implements `AsyncRead + AsyncWrite`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if accepting the connection fails.
     pub async fn accept(&self) -> Result<Box<dyn InboundStream>, std::io::Error> {
         match self {
             Self::Tcp(listener) => {
@@ -445,7 +543,11 @@ impl InboundListener {
         }
     }
 
-    /// Get the local address this listener is bound to
+    /// Returns the local address this listener is bound to.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the address cannot be retrieved.
     pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
         match self {
             Self::Tcp(listener) => listener.local_addr(),

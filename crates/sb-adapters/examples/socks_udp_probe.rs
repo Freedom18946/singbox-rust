@@ -18,7 +18,7 @@ use tokio::{net::UdpSocket, time};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 4 && std::env::var("SB_SOCKS_UDP_RELAY").is_err() {
+    if args.len() < 4 && env::var("SB_SOCKS_UDP_RELAY").is_err() {
         eprintln!(
             "Usage: {} <server-udp-addr> <target-host> <target-port> [payload or 0xHEX]",
             args[0]
@@ -26,7 +26,14 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("       or set SB_SOCKS_UDP_RELAY=host:port to omit the first arg");
         std::process::exit(2);
     }
-    let (server, host, port, payload) = if let Ok(relay) = std::env::var("SB_SOCKS_UDP_RELAY") {
+    let (server, host, port, payload) = if let Ok(relay) = env::var("SB_SOCKS_UDP_RELAY") {
+        if args.len() < 3 {
+            eprintln!(
+                "Usage: {} <target-host> <target-port> [payload or 0xHEX] (with SB_SOCKS_UDP_RELAY)",
+                args[0]
+            );
+            std::process::exit(2);
+        }
         let server: SocketAddr = relay.parse()?;
         let host = args[1].clone();
         let port: u16 = args[2].parse()?;

@@ -423,15 +423,17 @@ mod tests {
 
     #[test]
     fn domain_and_not_port() {
-        let mut cfg = ConfigIR::default();
-        cfg.route = RouteIR {
-            rules: vec![RuleIR {
-                domain: vec!["example.com".into()],
-                not_port: vec!["25".into()],
-                outbound: Some("direct".into()),
-                ..Default::default()
-            }],
-            default: Some("direct".into()),
+        let cfg = ConfigIR {
+            route: RouteIR {
+                rules: vec![RuleIR {
+                    domain: vec!["example.com".into()],
+                    not_port: vec!["25".into()],
+                    outbound: Some("direct".into()),
+                    ..Default::default()
+                }],
+                default: Some("direct".into()),
+            },
+            ..Default::default()
         };
         let eng = Engine::new(&cfg);
         let ok = eng.decide(

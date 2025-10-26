@@ -32,7 +32,7 @@ fn test_geoip_rules_integration() {
     if let Some(decision) = router_handle.enhanced_geoip_lookup(us_ip, &router_index) {
         assert_eq!(decision, "direct");
     } else {
-        assert!(false, "Expected GeoIP match for US IP");
+        panic!("Expected GeoIP match for US IP");
     }
 
     // Test CN IP (should match geoip:CN=proxy)
@@ -40,7 +40,7 @@ fn test_geoip_rules_integration() {
     if let Some(decision) = router_handle.enhanced_geoip_lookup(cn_ip, &router_index) {
         assert_eq!(decision, "proxy");
     } else {
-        assert!(false, "Expected GeoIP match for CN IP");
+        panic!("Expected GeoIP match for CN IP");
     }
 
     // Test JP IP (should match geoip:JP=reject)
@@ -48,7 +48,7 @@ fn test_geoip_rules_integration() {
     if let Some(decision) = router_handle.enhanced_geoip_lookup(jp_ip, &router_index) {
         assert_eq!(decision, "reject");
     } else {
-        assert!(false, "Expected GeoIP match for JP IP");
+        panic!("Expected GeoIP match for JP IP");
     }
 
     // Test unknown IP (should return None, fall back to default)
@@ -81,7 +81,7 @@ fn test_geoip_case_insensitive_matching() {
     if let Some(decision) = router_handle.enhanced_geoip_lookup(us_ip, &router_index) {
         assert_eq!(decision, "direct");
     } else {
-        assert!(false, "Expected case-insensitive GeoIP match for US IP");
+        panic!("Expected case-insensitive GeoIP match for US IP");
     }
 }
 
@@ -109,6 +109,6 @@ fn test_geoip_multiple_rules_first_match_wins() {
     if let Some(decision) = router_handle.enhanced_geoip_lookup(us_ip, &router_index) {
         assert_eq!(decision, "direct");
     } else {
-        assert!(false, "Expected GeoIP match for US IP");
+        panic!("Expected GeoIP match for US IP");
     }
 }

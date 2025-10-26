@@ -9,22 +9,40 @@ use crate::ir::RouteIR;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-/// Represents changes in a collection
+/// Represents changes in a collection.
+///
+/// Used to track additions and removals during configuration diff operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Change {
+    /// Names/identifiers of newly added items.
     pub added: Vec<String>,
+    /// Names/identifiers of removed items.
     pub removed: Vec<String>,
 }
 
-/// Complete diff between two configurations
+/// Complete diff between two configurations.
+///
+/// Provides granular change tracking for inbounds, outbounds, and routing rules.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Diff {
+    /// Changes to inbound listeners.
     pub inbounds: Change,
+    /// Changes to outbound proxies.
     pub outbounds: Change,
+    /// Changes to routing rules.
     pub rules: Change,
 }
 
-/// Generate a diff between two configurations
+/// Generate a diff between two configurations.
+///
+/// # Examples
+/// ```ignore
+/// let old_config = ConfigIR { /* ... */ };
+/// let new_config = ConfigIR { /* ... */ };
+/// let diff = diff(&old_config, &new_config);
+/// println!("Added inbounds: {:?}", diff.inbounds.added);
+/// ```
+#[must_use]
 pub fn diff(old: &ConfigIR, new: &ConfigIR) -> Diff {
     Diff {
         inbounds: diff_inbounds(&old.inbounds, &new.inbounds),
@@ -33,7 +51,9 @@ pub fn diff(old: &ConfigIR, new: &ConfigIR) -> Diff {
     }
 }
 
-/// Compute inbound differences based on listen address:port combination
+/// Compute inbound differences based on `listen:port` combination.
+///
+/// Treats each unique `address:port` as a distinct inbound.
 fn diff_inbounds(old: &[InboundIR], new: &[InboundIR]) -> Change {
     let old_keys: HashSet<String> = old
         .iter()
@@ -51,7 +71,9 @@ fn diff_inbounds(old: &[InboundIR], new: &[InboundIR]) -> Change {
     Change { added, removed }
 }
 
-/// Compute outbound differences based on name (if present) or server:port combination
+/// Compute outbound differences based on name (if present) or `server:port` combination.
+///
+/// Prioritizes named outbounds, falls back to generated keys for unnamed ones.
 fn diff_outbounds(old: &[OutboundIR], new: &[OutboundIR]) -> Change {
     let old_keys: HashSet<String> = old.iter().map(outbound_key).collect();
     let new_keys: HashSet<String> = new.iter().map(outbound_key).collect();
@@ -62,21 +84,28 @@ fn diff_outbounds(old: &[OutboundIR], new: &[OutboundIR]) -> Change {
     Change { added, removed }
 }
 
-/// Generate a unique key for an outbound
+/// Generate a unique key for an outbound.
+///
+/// Prioritizes the `name` field if present, otherwise generates a key
+/// from type, server, and port.
 fn outbound_key(ob: &OutboundIR) -> String {
     if let Some(name) = &ob.name {
         return name.clone();
     }
 
+    let ty_str = ob.ty_str();
     match (&ob.server, ob.port) {
-        (Some(server), Some(port)) => format!("{}:{}:{}", ob.ty_str(), server, port),
-        (Some(server), None) => format!("{}:{}", ob.ty_str(), server),
-        (None, Some(port)) => format!("{}:*:{}", ob.ty_str(), port),
-        (None, None) => ob.ty_str().to_string(),
+        (Some(server), Some(port)) => format!("{ty_str}:{server}:{port}"),
+        (Some(server), None) => format!("{ty_str}:{server}"),
+        (None, Some(port)) => format!("{ty_str}:*:{port}"),
+        (None, None) => ty_str.to_owned(),
     }
 }
 
-/// Compute rule differences based on rule content hash
+/// Compute rule differences based on rule content hash.
+///
+/// Rules are identified by their content (not index), enabling
+/// detection of semantic changes rather than just positional shifts.
 fn diff_rules(old: &[RuleIR], new: &[RuleIR]) -> Change {
     let old_hashes: HashMap<String, usize> = old
         .iter()
@@ -112,88 +141,66 @@ fn diff_rules(old: &[RuleIR], new: &[RuleIR]) -> Change {
     Change { added, removed }
 }
 
-/// Generate a stable hash for a rule (simple content-based)
+/// Generate a stable hash for a rule (simple content-based).
+///
+/// Uses a non-cryptographic hash ([`DefaultHasher`]) for performance.
+/// Hash collisions are theoretically possible but unlikely in practice
+/// given typical rule set sizes.
+///
+/// # Stability
+/// The hash is stable across calls for the same rule content,
+/// with components sorted alphabetically before hashing.
 fn rule_hash(rule: &RuleIR) -> String {
-    // Create a stable string representation for hashing
+    /// Helper macro to add non-empty field to components.
+    macro_rules! add_field {
+        ($components:expr, $field:expr, $name:literal) => {
+            if !$field.is_empty() {
+                $components.push(format!("{}:{}", $name, $field.join(",")));
+            }
+        };
+    }
+
     let mut components = Vec::new();
 
     // Positive conditions
-    if !rule.domain.is_empty() {
-        components.push(format!("domain:{}", rule.domain.join(",")));
-    }
-    if !rule.geosite.is_empty() {
-        components.push(format!("geosite:{}", rule.geosite.join(",")));
-    }
-    if !rule.geoip.is_empty() {
-        components.push(format!("geoip:{}", rule.geoip.join(",")));
-    }
-    if !rule.ipcidr.is_empty() {
-        components.push(format!("ipcidr:{}", rule.ipcidr.join(",")));
-    }
-    if !rule.port.is_empty() {
-        components.push(format!("port:{}", rule.port.join(",")));
-    }
-    if !rule.process.is_empty() {
-        components.push(format!("process:{}", rule.process.join(",")));
-    }
-    if !rule.network.is_empty() {
-        components.push(format!("network:{}", rule.network.join(",")));
-    }
-    if !rule.protocol.is_empty() {
-        components.push(format!("protocol:{}", rule.protocol.join(",")));
-    }
-    if !rule.source.is_empty() {
-        components.push(format!("source:{}", rule.source.join(",")));
-    }
-    if !rule.dest.is_empty() {
-        components.push(format!("dest:{}", rule.dest.join(",")));
-    }
-    if !rule.user_agent.is_empty() {
-        components.push(format!("user_agent:{}", rule.user_agent.join(",")));
-    }
+    add_field!(components, rule.domain, "domain");
+    add_field!(components, rule.geosite, "geosite");
+    add_field!(components, rule.geoip, "geoip");
+    add_field!(components, rule.ipcidr, "ipcidr");
+    add_field!(components, rule.port, "port");
+    add_field!(components, rule.process, "process");
+    add_field!(components, rule.network, "network");
+    add_field!(components, rule.protocol, "protocol");
+    add_field!(components, rule.source, "source");
+    add_field!(components, rule.dest, "dest");
+    add_field!(components, rule.user_agent, "user_agent");
 
     // Negative conditions
-    if !rule.not_domain.is_empty() {
-        components.push(format!("not_domain:{}", rule.not_domain.join(",")));
-    }
-    if !rule.not_geosite.is_empty() {
-        components.push(format!("not_geosite:{}", rule.not_geosite.join(",")));
-    }
-    if !rule.not_geoip.is_empty() {
-        components.push(format!("not_geoip:{}", rule.not_geoip.join(",")));
-    }
-    if !rule.not_ipcidr.is_empty() {
-        components.push(format!("not_ipcidr:{}", rule.not_ipcidr.join(",")));
-    }
-    if !rule.not_port.is_empty() {
-        components.push(format!("not_port:{}", rule.not_port.join(",")));
-    }
-    if !rule.not_process.is_empty() {
-        components.push(format!("not_process:{}", rule.not_process.join(",")));
-    }
-    if !rule.not_network.is_empty() {
-        components.push(format!("not_network:{}", rule.not_network.join(",")));
-    }
-    if !rule.not_protocol.is_empty() {
-        components.push(format!("not_protocol:{}", rule.not_protocol.join(",")));
-    }
+    add_field!(components, rule.not_domain, "not_domain");
+    add_field!(components, rule.not_geosite, "not_geosite");
+    add_field!(components, rule.not_geoip, "not_geoip");
+    add_field!(components, rule.not_ipcidr, "not_ipcidr");
+    add_field!(components, rule.not_port, "not_port");
+    add_field!(components, rule.not_process, "not_process");
+    add_field!(components, rule.not_network, "not_network");
+    add_field!(components, rule.not_protocol, "not_protocol");
 
     // Outbound
     if let Some(outbound) = &rule.outbound {
-        components.push(format!("outbound:{}", outbound));
+        components.push(format!("outbound:{outbound}"));
     }
 
     // Sort for stable ordering
     components.sort();
 
-    // Create a simple hash using the first 8 characters of a content-based string
+    // Create a simple hash using the first 8 hex digits of a content-based string
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let content = components.join("|");
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
-    format!("{:08x}", hasher.finish() & 0xffffffff)
+    format!("{:08x}", hasher.finish() & 0xffff_ffff)
 }
 
 #[cfg(test)]

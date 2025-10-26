@@ -435,6 +435,7 @@ fn write_u24<W: Write>(writer: &mut W, value: u32) -> io::Result<()> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::identity_op)]
 mod tests {
     use super::*;
 

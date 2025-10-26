@@ -98,7 +98,7 @@ pub struct Diff {
 
 pub fn diff(old: &Value, new: &Value) -> Diff {
     let mut d = Diff::default();
-    for key in ["inbounds", "outbounds"].iter() {
+    for key in &["inbounds", "outbounds"] {
         let o = v_to_set(old, key);
         let n = v_to_set(new, key);
         let add = n.difference(&o).count();
@@ -136,9 +136,9 @@ mod tests {
         )
         .unwrap();
         let b: Value = serde_json::from_str(r#"{"inbounds":[{"type":"socks","listen":"0.0.0.0","port":1080}],"route":{"rules":[{"domain":["a.com"]}]}}"#).unwrap();
-        let (m, mr) = merge(a.clone(), &[b.clone()]);
+        let (m, mr) = merge(a.clone(), std::slice::from_ref(&b));
         assert!(mr.added_rules >= 1);
         let d = diff(&a, &m);
-        assert!(d.added.get("rules").is_some());
+        assert!(d.added.contains_key("rules"));
     }
 }

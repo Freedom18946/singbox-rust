@@ -1,7 +1,7 @@
 //! Core types for singbox-rust
 //!
 //! This module defines the fundamental types used throughout the system,
-//! including Host, Endpoint, ConnCtx, and Network types.
+//! including Host, Endpoint, `ConnCtx`, and Network types.
 
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
@@ -19,7 +19,7 @@ pub struct UdpSocketBind {
 }
 
 impl UdpSocketBind {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub const fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
             reuse_addr: false,
@@ -27,12 +27,12 @@ impl UdpSocketBind {
         }
     }
 
-    pub fn with_reuse_addr(mut self, reuse: bool) -> Self {
+    pub const fn with_reuse_addr(mut self, reuse: bool) -> Self {
         self.reuse_addr = reuse;
         self
     }
 
-    pub fn with_reuse_port(mut self, reuse: bool) -> Self {
+    pub const fn with_reuse_port(mut self, reuse: bool) -> Self {
         self.reuse_port = reuse;
         self
     }
@@ -52,7 +52,7 @@ impl Host {
     }
 
     /// Create a new Host from an IP address
-    pub fn ip(ip: IpAddr) -> Self {
+    pub const fn ip(ip: IpAddr) -> Self {
         Self::Ip(ip)
     }
 
@@ -65,28 +65,28 @@ impl Host {
     }
 
     /// Check if this host is a domain name
-    pub fn is_domain(&self) -> bool {
-        matches!(self, Host::Name(_))
+    pub const fn is_domain(&self) -> bool {
+        matches!(self, Self::Name(_))
     }
 
     /// Check if this host is an IP address
-    pub fn is_ip(&self) -> bool {
-        matches!(self, Host::Ip(_))
+    pub const fn is_ip(&self) -> bool {
+        matches!(self, Self::Ip(_))
     }
 
     /// Get the domain name if this is a domain host
     pub fn as_domain(&self) -> Option<&str> {
         match self {
-            Host::Name(d) => Some(d),
-            Host::Ip(_) => None,
+            Self::Name(d) => Some(d),
+            Self::Ip(_) => None,
         }
     }
 
     /// Get the IP address if this is an IP host
-    pub fn as_ip(&self) -> Option<IpAddr> {
+    pub const fn as_ip(&self) -> Option<IpAddr> {
         match self {
-            Host::Name(_) => None,
-            Host::Ip(ip) => Some(*ip),
+            Self::Name(_) => None,
+            Self::Ip(ip) => Some(*ip),
         }
     }
 }
@@ -94,8 +94,8 @@ impl Host {
 impl fmt::Display for Host {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Host::Name(d) => write!(f, "{}", d),
-            Host::Ip(ip) => write!(f, "{}", ip),
+            Self::Name(d) => write!(f, "{d}"),
+            Self::Ip(ip) => write!(f, "{ip}"),
         }
     }
 }
@@ -135,7 +135,7 @@ impl Endpoint {
     }
 
     /// Create endpoint from socket address
-    pub fn from_socket_addr(addr: SocketAddr) -> Self {
+    pub const fn from_socket_addr(addr: SocketAddr) -> Self {
         Self {
             host: Host::ip(addr.ip()),
             port: addr.port(),
@@ -174,14 +174,14 @@ pub enum Network {
 impl fmt::Display for Network {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Network::Tcp => write!(f, "tcp"),
-            Network::Udp => write!(f, "udp"),
+            Self::Tcp => write!(f, "tcp"),
+            Self::Udp => write!(f, "udp"),
         }
     }
 }
 
 /// Process information for connection context
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessInfo {
     pub name: String,
     pub path: String,
@@ -189,7 +189,7 @@ pub struct ProcessInfo {
 }
 
 impl ProcessInfo {
-    pub fn new(name: String, path: String, pid: u32) -> Self {
+    pub const fn new(name: String, path: String, pid: u32) -> Self {
         Self { name, path, pid }
     }
 }

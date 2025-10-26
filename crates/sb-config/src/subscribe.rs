@@ -1,8 +1,14 @@
-//! 订阅导入（Clash / Sing-Box 子集）
-//! 目标：把第三方订阅（文本）映射为我们内部的 `Config`
-//! - Clash: YAML (proxies / proxy-groups / rules)
-//! - Sing-Box: JSON/YAML (outbounds / route.rules)
-//!   取最常见的子集，保持健壮降级；不做远程下载，这里只做 parse。
+//! Subscription import for Clash and Sing-Box formats.
+//!
+//! ## Goal
+//! Parse third-party subscriptions (text) into internal [`Config`] representation.
+//!
+//! ## Supported Formats
+//! - **Clash**: YAML (proxies, proxy-groups, rules)
+//! - **Sing-Box**: JSON/YAML (outbounds, route.rules)
+//!
+//! Takes a common subset and handles degradation gracefully.
+//! No remote downloads—this module only parses.
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -11,19 +17,24 @@ use std::collections::HashSet;
 
 use crate::{Auth, Config, Outbound, Rule};
 
-/// 入口：根据格式自动探测并解析
+/// Auto-detect and parse subscription format.
+///
+/// Tries Sing-Box JSON first, then Clash YAML, then Sing-Box YAML.
+///
+/// # Errors
+/// Returns an error if the format is unsupported or parsing fails.
 pub fn from_subscription(text: &str) -> Result<Config> {
-    // 先尝试 Sing-Box JSON (JSON should be tried before YAML as it's more specific)
+    // Try Sing-Box JSON first (JSON should be tried before YAML as it's more specific)
     if let Ok(cfg) = parse_singbox_json(text) {
         return Ok(cfg);
     }
-    // 再尝试 Clash YAML
+    // Try Clash YAML
     if let Ok(cfg) = parse_clash_yaml(text) {
         return Ok(cfg);
     }
-    // 最后尝试 Sing-Box YAML（将 YAML 转 JSON 再复用解析）
+    // Finally try Sing-Box YAML (convert YAML to JSON and reuse parser)
     if let Ok(val_yaml) = serde_yaml::from_str::<serde_yaml::Value>(text) {
-        let json = serde_json::to_value(val_yaml).context("yaml->json")?;
+        let json = serde_json::to_value(val_yaml).context("yaml->json conversion failed")?;
         if let Ok(cfg) = parse_singbox_json_value(json) {
             return Ok(cfg);
         }
@@ -305,7 +316,7 @@ fn parse_singbox_json_value(val: JsonValue) -> Result<Config> {
 mod tests {
     use super::*;
     #[test]
-    fn clash_minimal() {
+    fn clash_minimal() -> anyhow::Result<()> {
         let y = r#"
 proxies:
   - {name: corp-socks, type: socks5, server: 10.0.0.3, port: 1080, username: u, password: p}
@@ -313,27 +324,29 @@ rules:
   - DOMAIN-SUFFIX,example.com,corp-socks
   - MATCH,c
 "#;
-        let cfg = from_subscription(y).unwrap();
+        let cfg = from_subscription(y)?;
         assert!(cfg
             .outbounds
             .iter()
             .any(|o| matches!(o, Outbound::Socks5 {name, ..} if name=="corp-socks")));
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.default_outbound.as_deref(), Some("c"));
+        Ok(())
     }
 
     #[test]
-    fn singbox_minimal() {
+    fn singbox_minimal() -> anyhow::Result<()> {
         let j = r#"
 {"outbounds":[{"type":"http","tag":"h","server":"1.1.1.1","server_port":3128}],
  "route":{"rules":[{"outbound":"h","domain_suffix":["example.com"]}]}}
 "#;
-        let cfg = from_subscription(j).unwrap();
+        let cfg = from_subscription(j)?;
 
         assert!(cfg
             .outbounds
             .iter()
             .any(|o| matches!(o, Outbound::Http {name, ..} if name=="h")));
         assert_eq!(cfg.rules.len(), 1);
+        Ok(())
     }
 }

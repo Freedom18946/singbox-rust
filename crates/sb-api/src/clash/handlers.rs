@@ -10,8 +10,42 @@ use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-/// Convert internal Connection to API Connection type
+// ===== Constants =====
+
+const DEFAULT_INBOUND_IP: &str = "127.0.0.1";
+const DEFAULT_INBOUND_PORT: &str = "0";
+const DEFAULT_INBOUND_NAME: &str = "unknown";
+const DEFAULT_DNS_MODE: &str = "normal";
+const DEFAULT_PROCESS_NAME: &str = "unknown";
+const DEFAULT_PORT: &str = "0";
+const DEFAULT_DELAY_TIMEOUT_MS: u32 = 5000;
+const DEFAULT_TEST_URL: &str = "http://www.google.com/generate_204";
+const MAX_PORT_NUMBER: u64 = 65535;
+
+const PROXY_TYPE_DIRECT: &str = "Direct";
+const PROXY_TYPE_REJECT: &str = "Reject";
+const PROXY_TYPE_SOCKS5: &str = "SOCKS5";
+const PROXY_TYPE_HTTP: &str = "HTTP";
+const PROXY_TYPE_VLESS: &str = "VLESS";
+const PROXY_TYPE_VMESS: &str = "VMESS";
+const PROXY_TYPE_TROJAN: &str = "TROJAN";
+const PROXY_TYPE_SHADOWSOCKS: &str = "SHADOWSOCKS";
+const PROXY_TYPE_RELAY: &str = "RELAY";
+const PROXY_TYPE_UNKNOWN: &str = "Unknown";
+
+const DIRECT_PROXY_NAME: &str = "DIRECT";
+const REJECT_PROXY_NAME: &str = "REJECT";
+
+// ===== Helper Functions =====
+
+/// Convert internal `Connection` to API `Connection` type
 fn convert_connection(conn: &crate::managers::Connection) -> Connection {
+    // Compute connection start as UNIX epoch ms using monotonic elapsed
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let start_ms = now_ms.saturating_sub(conn.start_time.elapsed().as_millis());
     Connection {
         id: conn.id.clone(),
         metadata: ConnectionMetadata {
@@ -21,60 +55,203 @@ fn convert_connection(conn: &crate::managers::Connection) -> Connection {
             source_port: conn.source.port().to_string(),
             destination_ip: parse_destination_ip(&conn.destination),
             destination_port: parse_destination_port(&conn.destination),
-            inbound_ip: "127.0.0.1".to_string(),
-            inbound_port: "0".to_string(),
-            inbound_name: "unknown".to_string(),
-            inbound_user: "".to_string(),
+            inbound_ip: DEFAULT_INBOUND_IP.to_string(),
+            inbound_port: DEFAULT_INBOUND_PORT.to_string(),
+            inbound_name: DEFAULT_INBOUND_NAME.to_string(),
+            inbound_user: String::new(),
             host: conn.destination.clone(),
-            dns_mode: "normal".to_string(),
+            dns_mode: DEFAULT_DNS_MODE.to_string(),
             uid: 0,
-            process: "unknown".to_string(),
-            process_path: "".to_string(),
-            special_proxy: "".to_string(),
-            special_rules: "".to_string(),
+            process: DEFAULT_PROCESS_NAME.to_string(),
+            process_path: String::new(),
+            special_proxy: String::new(),
+            special_rules: String::new(),
             remote_destination: conn.destination.clone(),
-            sniff_host: "".to_string(),
+            sniff_host: String::new(),
         },
         upload: conn.get_upload(),
         download: conn.get_download(),
-        start: conn.start_time.elapsed().as_millis().to_string(),
+        start: start_ms.to_string(),
         chains: conn.chains.clone(),
         rule: conn.rule.clone(),
-        rule_payload: "".to_string(),
+        rule_payload: String::new(),
     }
 }
 
 /// Best-effort proxy type inference from a tag/name
-fn infer_proxy_type(name: &str) -> String {
-    let n = name.to_lowercase();
+fn infer_proxy_type(name: &str) -> &'static str {
+    let n = name.to_ascii_lowercase();
     if n.contains("direct") {
-        return "Direct".to_string();
+        return PROXY_TYPE_DIRECT;
     }
     if n.contains("reject") {
-        return "Reject".to_string();
+        return PROXY_TYPE_REJECT;
     }
     if n.contains("socks") {
-        return "SOCKS5".to_string();
+        return PROXY_TYPE_SOCKS5;
     }
     if n.contains("http") {
-        return "HTTP".to_string();
+        return PROXY_TYPE_HTTP;
     }
     if n.contains("vless") {
-        return "VLESS".to_string();
+        return PROXY_TYPE_VLESS;
     }
     if n.contains("vmess") {
-        return "VMESS".to_string();
+        return PROXY_TYPE_VMESS;
     }
     if n.contains("trojan") {
-        return "TROJAN".to_string();
+        return PROXY_TYPE_TROJAN;
     }
     if n.contains("shadow") || n.contains("ss") {
-        return "SHADOWSOCKS".to_string();
+        return PROXY_TYPE_SHADOWSOCKS;
     }
-    "Unknown".to_string()
+    PROXY_TYPE_UNKNOWN
 }
 
+/// Determine connection type based on network protocol and proxy type
+fn determine_connection_type(network: &str, proxy: &str) -> String {
+    match network.to_ascii_lowercase().as_str() {
+        "tcp" => {
+            let p = proxy.to_ascii_lowercase();
+            if p.contains("direct") {
+                PROXY_TYPE_DIRECT.to_string()
+            } else if p.contains("socks") {
+                PROXY_TYPE_SOCKS5.to_string()
+            } else if p.contains("http") {
+                PROXY_TYPE_HTTP.to_string()
+            } else if p.contains("vless") {
+                PROXY_TYPE_VLESS.to_string()
+            } else if p.contains("vmess") {
+                PROXY_TYPE_VMESS.to_string()
+            } else if p.contains("trojan") {
+                PROXY_TYPE_TROJAN.to_string()
+            } else if p.contains("shadowsocks") || p.contains("ss") {
+                PROXY_TYPE_SHADOWSOCKS.to_string()
+            } else {
+                PROXY_TYPE_HTTP.to_string()
+            }
+        }
+        "udp" => {
+            if proxy.eq_ignore_ascii_case("direct") {
+                PROXY_TYPE_DIRECT.to_string()
+            } else {
+                PROXY_TYPE_RELAY.to_string()
+            }
+        }
+        _ => PROXY_TYPE_UNKNOWN.to_string(),
+    }
+}
+
+/// Parse destination IP from destination string
+fn parse_destination_ip(destination: &str) -> String {
+    // Try to parse as SocketAddr first (IP:port format)
+    if let Ok(addr) = destination.parse::<std::net::SocketAddr>() {
+        return addr.ip().to_string();
+    }
+
+    // Try to extract IP from host:port format
+    if let Some(colon_pos) = destination.rfind(':') {
+        let host_part = &destination[..colon_pos];
+
+        // Check if it's an IPv6 address in brackets
+        if let Some(stripped) = host_part.strip_prefix('[') {
+            if let Some(inner) = stripped.strip_suffix(']') {
+                return inner.to_string();
+            }
+        }
+
+        // Try to parse as IP address
+        if let Ok(ip) = host_part.parse::<std::net::IpAddr>() {
+            return ip.to_string();
+        }
+
+        // If not an IP, it's probably a hostname
+        return host_part.to_string();
+    }
+
+    // If no port separator found, assume it's just a hostname
+    destination.to_string()
+}
+
+/// Parse destination port from destination string
+fn parse_destination_port(destination: &str) -> String {
+    // Try to parse as SocketAddr first
+    if let Ok(addr) = destination.parse::<std::net::SocketAddr>() {
+        return addr.port().to_string();
+    }
+
+    // Try to extract port from host:port format
+    if let Some(colon_pos) = destination.rfind(':') {
+        let port_part = &destination[colon_pos + 1..];
+
+        // Validate port is numeric
+        if let Ok(port) = port_part.parse::<u16>() {
+            return port.to_string();
+        }
+    }
+
+    // Default port if none found or invalid
+    DEFAULT_PORT.to_string()
+}
+
+/// Validate port value is within valid range (1-65535)
+fn validate_port(port: u64) -> Result<(), String> {
+    if (1..=MAX_PORT_NUMBER).contains(&port) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Port value {port} out of range (valid: 1..={MAX_PORT_NUMBER})"
+        ))
+    }
+}
+
+/// Convert internal Provider to API Provider format
+fn convert_provider_to_api(
+    name: String,
+    p: crate::managers::Provider,
+    behavior: &str,
+) -> (String, Provider) {
+    (
+        name.clone(),
+        Provider {
+            name: p.name,
+            r#type: p.provider_type,
+            vehicle_type: if p.url.is_some() {
+                "HTTP".to_string()
+            } else {
+                "File".to_string()
+            },
+            behavior: behavior.to_string(),
+            updated_at: p
+                .last_update
+                .map(|t| t.elapsed().as_secs().to_string())
+                .unwrap_or_else(|| "never".to_string()),
+            subscription_info: None,
+            proxies: vec![],
+            rules: vec![],
+        },
+    )
+}
+
+/// Simulate random proxy delay for testing purposes
+fn simulate_proxy_delay(proxy_name: &str) -> i32 {
+    use rand::Rng;
+    if proxy_name == DIRECT_PROXY_NAME {
+        0
+    } else if proxy_name == REJECT_PROXY_NAME {
+        -1
+    } else {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(10..200)
+    }
+}
+
+// ===== API Handlers =====
+
 /// Get all proxies
+///
+/// Returns a list of all available proxies from the outbound manager,
+/// including default DIRECT and REJECT proxies.
 pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
 
@@ -83,26 +260,26 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
         let tags = outbound_manager.list_tags().await;
         for tag in tags {
             let proxy = Proxy {
-                name: tag.to_string(),
-                r#type: infer_proxy_type(&tag),
+                name: tag.clone(),
+                r#type: infer_proxy_type(&tag).to_string(),
                 all: vec![],
-                now: tag.to_string(),
+                now: tag.clone(),
                 alive: Some(true),
                 delay: None,
                 extra: HashMap::new(),
             };
-            proxies.insert(tag.to_string(), proxy);
+            proxies.insert(tag, proxy);
         }
     }
 
-    // Mock data for demonstration
+    // Add default proxies
     proxies.insert(
-        "DIRECT".to_string(),
+        DIRECT_PROXY_NAME.to_string(),
         Proxy {
-            name: "DIRECT".to_string(),
-            r#type: "Direct".to_string(),
+            name: DIRECT_PROXY_NAME.to_string(),
+            r#type: PROXY_TYPE_DIRECT.to_string(),
             all: vec![],
-            now: "DIRECT".to_string(),
+            now: DIRECT_PROXY_NAME.to_string(),
             alive: Some(true),
             delay: Some(0),
             extra: HashMap::new(),
@@ -110,12 +287,12 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     );
 
     proxies.insert(
-        "REJECT".to_string(),
+        REJECT_PROXY_NAME.to_string(),
         Proxy {
-            name: "REJECT".to_string(),
-            r#type: "Reject".to_string(),
+            name: REJECT_PROXY_NAME.to_string(),
+            r#type: PROXY_TYPE_REJECT.to_string(),
             all: vec![],
-            now: "REJECT".to_string(),
+            now: REJECT_PROXY_NAME.to_string(),
             alive: Some(true),
             delay: None,
             extra: HashMap::new(),
@@ -126,6 +303,8 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
 }
 
 /// Select a proxy for a proxy group
+///
+/// Updates the selected proxy for a given proxy group.
 pub async fn select_proxy(
     State(state): State<ApiState>,
     Path(proxy_name): Path<String>,
@@ -151,26 +330,29 @@ pub async fn select_proxy(
 }
 
 /// Get proxy delay/latency
+///
+/// Tests the latency of a specific proxy by making a request to the test URL.
 pub async fn get_proxy_delay(
     State(state): State<ApiState>,
     Path(proxy_name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    // Implement proxy delay testing
+    // Check if proxy exists
     if let Some(outbound_manager) = &state.outbound_manager {
         if !outbound_manager.contains(&proxy_name).await {
             return Json(json!({ "delay": -1 })).into_response();
         }
     }
+
     let timeout = params
         .get("timeout")
         .and_then(|t| t.parse::<u32>().ok())
-        .unwrap_or(5000);
+        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS);
 
     let url = params
         .get("url")
-        .map(|s| s.as_str())
-        .unwrap_or("http://www.google.com/generate_204");
+        .map(std::string::String::as_str)
+        .unwrap_or(DEFAULT_TEST_URL);
 
     log::info!(
         "Testing delay for proxy '{}' with URL '{}' and timeout {}ms",
@@ -180,13 +362,7 @@ pub async fn get_proxy_delay(
     );
 
     // Simulate delay test - in real implementation, this would ping the proxy
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let simulated_delay = if proxy_name == "DIRECT" {
-        0
-    } else {
-        rng.gen_range(10..200)
-    };
+    let simulated_delay = simulate_proxy_delay(&proxy_name);
 
     Json(json!({
         "delay": simulated_delay,
@@ -196,6 +372,8 @@ pub async fn get_proxy_delay(
 }
 
 /// Get all active connections
+///
+/// Returns a list of all currently active network connections managed by the connection manager.
 pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse {
     let connections = if let Some(connection_manager) = &state.connection_manager {
         match connection_manager.get_connections().await {
@@ -210,37 +388,39 @@ pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse
         }
     } else {
         // Fallback to demo connection when no connection manager is available
+        let start_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .to_string();
+
         vec![Connection {
             id: Uuid::new_v4().to_string(),
             metadata: ConnectionMetadata {
                 network: "tcp".to_string(),
-                r#type: "HTTP".to_string(),
+                r#type: PROXY_TYPE_HTTP.to_string(),
                 source_ip: "192.168.1.100".to_string(),
                 source_port: "12345".to_string(),
                 destination_ip: "8.8.8.8".to_string(),
                 destination_port: "80".to_string(),
-                inbound_ip: "127.0.0.1".to_string(),
+                inbound_ip: DEFAULT_INBOUND_IP.to_string(),
                 inbound_port: "7890".to_string(),
                 inbound_name: "http".to_string(),
-                inbound_user: "".to_string(),
+                inbound_user: String::new(),
                 host: "www.google.com".to_string(),
-                dns_mode: "normal".to_string(),
+                dns_mode: DEFAULT_DNS_MODE.to_string(),
                 uid: 1000,
                 process: "firefox".to_string(),
                 process_path: "/usr/bin/firefox".to_string(),
-                special_proxy: "".to_string(),
-                special_rules: "".to_string(),
+                special_proxy: String::new(),
+                special_rules: String::new(),
                 remote_destination: "8.8.8.8:80".to_string(),
-                sniff_host: "".to_string(),
+                sniff_host: String::new(),
             },
             upload: 1024,
             download: 4096,
-            start: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .to_string(),
-            chains: vec!["DIRECT".to_string()],
+            start: start_time,
+            chains: vec![DIRECT_PROXY_NAME.to_string()],
             rule: "DOMAIN".to_string(),
             rule_payload: "www.google.com".to_string(),
         }]
@@ -250,6 +430,8 @@ pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse
 }
 
 /// Close a specific connection
+///
+/// Terminates an active connection identified by its connection ID.
 pub async fn close_connection(
     State(state): State<ApiState>,
     Path(connection_id): Path<String>,
@@ -280,6 +462,8 @@ pub async fn close_connection(
 }
 
 /// Close all connections
+///
+/// Terminates all active connections managed by the connection manager.
 pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoResponse {
     if let Some(connection_manager) = &state.connection_manager {
         match connection_manager.close_all_connections().await {
@@ -299,24 +483,27 @@ pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoRe
 }
 
 /// Get routing rules
+///
+/// Returns the current routing rules configuration. This is a demo implementation
+/// that returns static rules; the full version would integrate with the router.
 pub async fn get_rules(State(_state): State<ApiState>) -> impl IntoResponse {
     // Demo rules for compatibility; integration point for live router
     let rules = vec![
         Rule {
             r#type: "DOMAIN".to_string(),
             payload: "www.google.com".to_string(),
-            proxy: "DIRECT".to_string(),
+            proxy: DIRECT_PROXY_NAME.to_string(),
             order: Some(1),
         },
         Rule {
             r#type: "DOMAIN-SUFFIX".to_string(),
             payload: ".cn".to_string(),
-            proxy: "DIRECT".to_string(),
+            proxy: DIRECT_PROXY_NAME.to_string(),
             order: Some(2),
         },
         Rule {
             r#type: "FINAL".to_string(),
-            payload: "".to_string(),
+            payload: String::new(),
             proxy: "PROXY".to_string(),
             order: Some(999),
         },
@@ -326,6 +513,8 @@ pub async fn get_rules(State(_state): State<ApiState>) -> impl IntoResponse {
 }
 
 /// Get current configuration
+///
+/// Returns the current runtime configuration of the service.
 pub async fn get_configs(State(_state): State<ApiState>) -> impl IntoResponse {
     // Demo config for compatibility; integration point for runtime config
     let config = Config {
@@ -341,6 +530,8 @@ pub async fn get_configs(State(_state): State<ApiState>) -> impl IntoResponse {
 }
 
 /// Update configuration
+///
+/// Merges partial configuration updates into the current configuration.
 pub async fn update_configs(
     State(_state): State<ApiState>,
     Json(config): Json<serde_json::Value>,
@@ -348,32 +539,32 @@ pub async fn update_configs(
     log::info!("Configuration update requested with payload: {:?}", config);
 
     // Validate configuration structure
-    if !config.is_object() {
-        log::warn!("Invalid configuration format: expected object");
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Invalid configuration format",
-                "message": "Configuration must be a valid JSON object"
-            })),
-        )
-            .into_response();
-    }
-
-    // Parse common configuration fields
-    let obj = config.as_object().unwrap();
+    let obj = match config.as_object() {
+        Some(o) => o,
+        None => {
+            log::warn!("Invalid configuration format: expected object");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "Invalid configuration format",
+                    "message": "Configuration must be a valid JSON object"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     // Validate port ranges if provided
     for port_key in &["port", "socks-port", "mixed-port", "controller-port"] {
         if let Some(port_val) = obj.get(*port_key) {
             if let Some(port) = port_val.as_u64() {
-                if port > 65535 {
-                    log::warn!("Invalid port value for {}: {}", port_key, port);
+                if let Err(err) = validate_port(port) {
+                    log::warn!("Invalid port value for {}: {}", port_key, err);
                     return (
                         StatusCode::BAD_REQUEST,
                         Json(json!({
                             "error": "Invalid port",
-                            "message": format!("Port value {} exceeds maximum 65535", port)
+                            "message": err
                         })),
                     )
                         .into_response();
@@ -390,8 +581,6 @@ pub async fn update_configs(
 
     log::info!("Configuration validation passed. Runtime reload would be triggered here.");
 
-    // For now, acknowledge the request as the runtime config reload mechanism
-    // needs to be integrated with the core configuration system
     (
         StatusCode::OK,
         Json(json!({
@@ -403,6 +592,8 @@ pub async fn update_configs(
 }
 
 /// Get proxy providers
+///
+/// Returns all configured proxy providers with their current status.
 pub async fn get_proxy_providers(State(state): State<ApiState>) -> impl IntoResponse {
     if let Some(provider_manager) = &state.provider_manager {
         match provider_manager.get_proxy_providers().await {
@@ -410,28 +601,7 @@ pub async fn get_proxy_providers(State(state): State<ApiState>) -> impl IntoResp
                 // Convert internal Provider to API Provider format
                 let api_providers: HashMap<String, Provider> = providers
                     .into_iter()
-                    .map(|(name, p)| {
-                        (
-                            name.clone(),
-                            Provider {
-                                name: p.name,
-                                r#type: p.provider_type,
-                                vehicle_type: if p.url.is_some() {
-                                    "HTTP".to_string()
-                                } else {
-                                    "File".to_string()
-                                },
-                                behavior: String::new(),
-                                updated_at: p
-                                    .last_update
-                                    .map(|t| t.elapsed().as_secs().to_string())
-                                    .unwrap_or_else(|| "never".to_string()),
-                                subscription_info: None,
-                                proxies: vec![],
-                                rules: vec![],
-                            },
-                        )
-                    })
+                    .map(|(name, p)| convert_provider_to_api(name, p, ""))
                     .collect();
                 Json(json!({ "providers": api_providers }))
             }
@@ -447,6 +617,8 @@ pub async fn get_proxy_providers(State(state): State<ApiState>) -> impl IntoResp
 }
 
 /// Get specific proxy provider
+///
+/// Returns detailed information about a specific proxy provider.
 pub async fn get_proxy_provider(
     State(state): State<ApiState>,
     Path(provider_name): Path<String>,
@@ -489,6 +661,8 @@ pub async fn get_proxy_provider(
 }
 
 /// Update proxy provider
+///
+/// Triggers an update/refresh of a specific proxy provider.
 pub async fn update_proxy_provider(
     State(state): State<ApiState>,
     Path(provider_name): Path<String>,
@@ -515,6 +689,8 @@ pub async fn update_proxy_provider(
 }
 
 /// Health check proxy provider
+///
+/// Performs a health check on all proxies in a specific provider.
 pub async fn healthcheck_proxy_provider(
     State(state): State<ApiState>,
     Path(provider_name): Path<String>,
@@ -544,6 +720,8 @@ pub async fn healthcheck_proxy_provider(
 }
 
 /// Get rule providers
+///
+/// Returns all configured rule providers with their current status.
 pub async fn get_rule_providers(State(state): State<ApiState>) -> impl IntoResponse {
     if let Some(provider_manager) = &state.provider_manager {
         match provider_manager.get_rule_providers().await {
@@ -551,28 +729,7 @@ pub async fn get_rule_providers(State(state): State<ApiState>) -> impl IntoRespo
                 // Convert internal Provider to API Provider format
                 let api_providers: HashMap<String, Provider> = providers
                     .into_iter()
-                    .map(|(name, p)| {
-                        (
-                            name.clone(),
-                            Provider {
-                                name: p.name,
-                                r#type: p.provider_type,
-                                vehicle_type: if p.url.is_some() {
-                                    "HTTP".to_string()
-                                } else {
-                                    "File".to_string()
-                                },
-                                behavior: "domain".to_string(), // Default behavior
-                                updated_at: p
-                                    .last_update
-                                    .map(|t| t.elapsed().as_secs().to_string())
-                                    .unwrap_or_else(|| "never".to_string()),
-                                subscription_info: None,
-                                proxies: vec![],
-                                rules: vec![],
-                            },
-                        )
-                    })
+                    .map(|(name, p)| convert_provider_to_api(name, p, "domain"))
                     .collect();
                 Json(json!({ "providers": api_providers }))
             }
@@ -588,6 +745,8 @@ pub async fn get_rule_providers(State(state): State<ApiState>) -> impl IntoRespo
 }
 
 /// Get specific rule provider
+///
+/// Returns detailed information about a specific rule provider.
 pub async fn get_rule_provider(
     State(state): State<ApiState>,
     Path(provider_name): Path<String>,
@@ -630,6 +789,8 @@ pub async fn get_rule_provider(
 }
 
 /// Update rule provider
+///
+/// Triggers an update/refresh of a specific rule provider.
 pub async fn update_rule_provider(
     State(state): State<ApiState>,
     Path(provider_name): Path<String>,
@@ -659,6 +820,8 @@ pub async fn update_rule_provider(
 }
 
 /// Flush fake IP cache
+///
+/// Clears all fake IP mappings from the DNS resolver cache.
 pub async fn flush_fakeip_cache(State(state): State<ApiState>) -> impl IntoResponse {
     log::info!("Fake IP cache flush requested");
 
@@ -667,7 +830,7 @@ pub async fn flush_fakeip_cache(State(state): State<ApiState>) -> impl IntoRespo
         let (_, fakeip_count) = dns_resolver.get_cache_stats().await;
 
         match dns_resolver.flush_fake_ip_cache().await {
-            Ok(_) => {
+            Ok(()) => {
                 log::info!(
                     "Successfully flushed {} fake IP cache entries",
                     fakeip_count
@@ -708,6 +871,8 @@ pub async fn flush_fakeip_cache(State(state): State<ApiState>) -> impl IntoRespo
 }
 
 /// Flush DNS cache
+///
+/// Clears all DNS query results from the resolver cache.
 pub async fn flush_dns_cache(State(state): State<ApiState>) -> impl IntoResponse {
     log::info!("DNS cache flush requested");
 
@@ -716,7 +881,7 @@ pub async fn flush_dns_cache(State(state): State<ApiState>) -> impl IntoResponse
         let (dns_count, _) = dns_resolver.get_cache_stats().await;
 
         match dns_resolver.flush_dns_cache().await {
-            Ok(_) => {
+            Ok(()) => {
                 log::info!("Successfully flushed {} DNS cache entries", dns_count);
                 (
                     StatusCode::OK,
@@ -754,6 +919,8 @@ pub async fn flush_dns_cache(State(state): State<ApiState>) -> impl IntoResponse
 }
 
 /// Get version information
+///
+/// Returns version and build information about the service.
 pub async fn get_version(State(_state): State<ApiState>) -> impl IntoResponse {
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -763,6 +930,8 @@ pub async fn get_version(State(_state): State<ApiState>) -> impl IntoResponse {
 }
 
 /// Get status/health check
+///
+/// Simple health check endpoint to verify the API server is running.
 pub async fn get_status(State(_state): State<ApiState>) -> impl IntoResponse {
     Json(json!({
         "status": "ok",
@@ -771,6 +940,8 @@ pub async fn get_status(State(_state): State<ApiState>) -> impl IntoResponse {
 }
 
 /// Query DNS for a domain
+///
+/// Performs a DNS query and returns the resolved addresses.
 pub async fn get_dns_query(
     State(state): State<ApiState>,
     Query(params): Query<HashMap<String, String>>,
@@ -791,7 +962,7 @@ pub async fn get_dns_query(
         }
     };
 
-    let query_type = params.get("type").map(|s| s.as_str()).unwrap_or("A");
+    let query_type = params.get("type").map(std::string::String::as_str).unwrap_or("A");
 
     // Validate query type
     let valid_types = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "PTR"];
@@ -866,6 +1037,8 @@ pub async fn get_dns_query(
 }
 
 /// Get all proxy groups
+///
+/// Returns all proxy groups including individual proxies and default groups.
 pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse {
     log::info!("Meta groups list requested");
 
@@ -876,31 +1049,28 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
         let tags = outbound_manager.list_tags().await;
 
         for tag in tags {
-            // Create a group entry for each proxy
-            // In a full implementation, this would distinguish between actual groups (selector, url-test, etc.)
-            // and individual proxies
             let group = json!({
                 "name": tag,
                 "type": infer_proxy_type(&tag),
-                "all": vec![tag.clone()], // For individual proxies, "all" contains just itself
-                "now": tag.clone(), // Current selected proxy (for groups)
+                "all": vec![tag.clone()],
+                "now": tag.clone(),
                 "hidden": false,
                 "icon": "",
                 "udp": true,
             });
-            groups.insert(tag.clone(), group);
+            groups.insert(tag, group);
         }
     }
 
     // Add default groups
-    if !groups.contains_key("DIRECT") {
+    if !groups.contains_key(DIRECT_PROXY_NAME) {
         groups.insert(
-            "DIRECT".to_string(),
+            DIRECT_PROXY_NAME.to_string(),
             json!({
-                "name": "DIRECT",
-                "type": "Direct",
-                "all": vec!["DIRECT"],
-                "now": "DIRECT",
+                "name": DIRECT_PROXY_NAME,
+                "type": PROXY_TYPE_DIRECT,
+                "all": vec![DIRECT_PROXY_NAME],
+                "now": DIRECT_PROXY_NAME,
                 "hidden": false,
                 "icon": "",
                 "udp": true,
@@ -908,14 +1078,14 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
         );
     }
 
-    if !groups.contains_key("REJECT") {
+    if !groups.contains_key(REJECT_PROXY_NAME) {
         groups.insert(
-            "REJECT".to_string(),
+            REJECT_PROXY_NAME.to_string(),
             json!({
-                "name": "REJECT",
-                "type": "Reject",
-                "all": vec!["REJECT"],
-                "now": "REJECT",
+                "name": REJECT_PROXY_NAME,
+                "type": PROXY_TYPE_REJECT,
+                "all": vec![REJECT_PROXY_NAME],
+                "now": REJECT_PROXY_NAME,
                 "hidden": false,
                 "icon": "",
                 "udp": false,
@@ -928,6 +1098,8 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
 }
 
 /// Get specific proxy group
+///
+/// Returns detailed information about a specific proxy group.
 pub async fn get_meta_group(
     State(state): State<ApiState>,
     Path(group_name): Path<String>,
@@ -951,42 +1123,48 @@ pub async fn get_meta_group(
     }
 
     // Check default groups
-    if group_name == "DIRECT" {
-        let group = json!({
-            "name": "DIRECT",
-            "type": "Direct",
-            "all": vec!["DIRECT"],
-            "now": "DIRECT",
-            "hidden": false,
-            "icon": "",
-            "udp": true,
-        });
-        return (StatusCode::OK, Json(group)).into_response();
-    } else if group_name == "REJECT" {
-        let group = json!({
-            "name": "REJECT",
-            "type": "Reject",
-            "all": vec!["REJECT"],
-            "now": "REJECT",
-            "hidden": false,
-            "icon": "",
-            "udp": false,
-        });
-        return (StatusCode::OK, Json(group)).into_response();
+    match group_name.as_str() {
+        DIRECT_PROXY_NAME => {
+            let group = json!({
+                "name": DIRECT_PROXY_NAME,
+                "type": PROXY_TYPE_DIRECT,
+                "all": vec![DIRECT_PROXY_NAME],
+                "now": DIRECT_PROXY_NAME,
+                "hidden": false,
+                "icon": "",
+                "udp": true,
+            });
+            (StatusCode::OK, Json(group)).into_response()
+        }
+        REJECT_PROXY_NAME => {
+            let group = json!({
+                "name": REJECT_PROXY_NAME,
+                "type": PROXY_TYPE_REJECT,
+                "all": vec![REJECT_PROXY_NAME],
+                "now": REJECT_PROXY_NAME,
+                "hidden": false,
+                "icon": "",
+                "udp": false,
+            });
+            (StatusCode::OK, Json(group)).into_response()
+        }
+        _ => {
+            log::warn!("Proxy group '{}' not found", group_name);
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "error": "Group not found",
+                    "message": format!("Proxy group '{}' does not exist", group_name)
+                })),
+            )
+                .into_response()
+        }
     }
-
-    log::warn!("Proxy group '{}' not found", group_name);
-    (
-        StatusCode::NOT_FOUND,
-        Json(json!({
-            "error": "Group not found",
-            "message": format!("Proxy group '{}' does not exist", group_name)
-        })),
-    )
-        .into_response()
 }
 
 /// Test proxy group delay
+///
+/// Tests the latency of all proxies in a group.
 pub async fn get_meta_group_delay(
     State(state): State<ApiState>,
     Path(group_name): Path<String>,
@@ -998,18 +1176,18 @@ pub async fn get_meta_group_delay(
     let timeout = params
         .get("timeout")
         .and_then(|t| t.parse::<u32>().ok())
-        .unwrap_or(5000);
+        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS);
 
     let url = params
         .get("url")
-        .map(|s| s.as_str())
-        .unwrap_or("http://www.google.com/generate_204");
+        .map(std::string::String::as_str)
+        .unwrap_or(DEFAULT_TEST_URL);
 
     // Check if group exists
     let exists = if let Some(outbound_manager) = &state.outbound_manager {
         outbound_manager.contains(&group_name).await
     } else {
-        group_name == "DIRECT" || group_name == "REJECT"
+        group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME
     };
 
     if !exists {
@@ -1031,16 +1209,8 @@ pub async fn get_meta_group_delay(
         timeout
     );
 
-    // Simulate delay test - in real implementation, this would test each proxy in the group
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let simulated_delay = if group_name == "DIRECT" {
-        0
-    } else if group_name == "REJECT" {
-        -1 // REJECT always returns -1 (unreachable)
-    } else {
-        rng.gen_range(10..200)
-    };
+    // Simulate delay test
+    let simulated_delay = simulate_proxy_delay(&group_name);
 
     log::info!(
         "Group '{}' delay test result: {}ms",
@@ -1056,6 +1226,8 @@ pub async fn get_meta_group_delay(
 }
 
 /// Get memory usage statistics
+///
+/// Returns memory usage information for the service process.
 pub async fn get_meta_memory(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Memory usage statistics requested");
 
@@ -1063,10 +1235,10 @@ pub async fn get_meta_memory(State(_state): State<ApiState>) -> impl IntoRespons
     // In a real implementation, this would use platform-specific APIs
     // For now, return simulated memory statistics
     let memory_stats = json!({
-        "inuse": 52428800_u64,        // 50 MB in use
-        "oslimit": 4294967296_u64,    // 4 GB OS limit
-        "sys": 71303168_u64,          // 68 MB system memory
-        "gc": 24_u32                  // GC runs
+        "inuse": 52_428_800_u64,        // 50 MB in use
+        "oslimit": 4_294_967_296_u64,   // 4 GB OS limit
+        "sys": 71_303_168_u64,          // 68 MB system memory
+        "gc": 24_u32                    // GC runs
     });
 
     log::info!("Returning memory statistics: {}", memory_stats);
@@ -1074,6 +1246,8 @@ pub async fn get_meta_memory(State(_state): State<ApiState>) -> impl IntoRespons
 }
 
 /// Trigger garbage collection
+///
+/// Requests garbage collection. Note: Rust uses automatic memory management.
 pub async fn trigger_gc(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Manual garbage collection requested");
 
@@ -1087,87 +1261,9 @@ pub async fn trigger_gc(State(_state): State<ApiState>) -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
-/// Determine connection type based on network protocol and proxy type
-fn determine_connection_type(network: &str, proxy: &str) -> String {
-    // Map network protocol to connection type
-    match network.to_lowercase().as_str() {
-        "tcp" => {
-            // For TCP connections, determine type based on proxy
-            match proxy.to_lowercase().as_str() {
-                "direct" => "DIRECT".to_string(),
-                p if p.contains("socks") => "SOCKS5".to_string(),
-                p if p.contains("http") => "HTTP".to_string(),
-                p if p.contains("vless") => "VLESS".to_string(),
-                p if p.contains("vmess") => "VMESS".to_string(),
-                p if p.contains("trojan") => "TROJAN".to_string(),
-                p if p.contains("shadowsocks") || p.contains("ss") => "SHADOWSOCKS".to_string(),
-                _ => "HTTP".to_string(), // Default to HTTP for unknown TCP proxies
-            }
-        }
-        "udp" => {
-            // For UDP connections, typically relay-based
-            if proxy == "direct" {
-                "DIRECT".to_string()
-            } else {
-                "RELAY".to_string()
-            }
-        }
-        _ => "Unknown".to_string(),
-    }
-}
-
-/// Parse destination IP from destination string
-fn parse_destination_ip(destination: &str) -> String {
-    // Try to parse as SocketAddr first (IP:port format)
-    if let Ok(addr) = destination.parse::<std::net::SocketAddr>() {
-        return addr.ip().to_string();
-    }
-
-    // Try to extract IP from host:port format
-    if let Some(colon_pos) = destination.rfind(':') {
-        let host_part = &destination[..colon_pos];
-
-        // Check if it's an IPv6 address in brackets
-        if host_part.starts_with('[') && host_part.ends_with(']') {
-            return host_part[1..host_part.len() - 1].to_string();
-        }
-
-        // Try to parse as IP address
-        if let Ok(ip) = host_part.parse::<std::net::IpAddr>() {
-            return ip.to_string();
-        }
-
-        // If not an IP, it's probably a hostname
-        return host_part.to_string();
-    }
-
-    // If no port separator found, assume it's just a hostname
-    destination.to_string()
-}
-
-/// Parse destination port from destination string
-fn parse_destination_port(destination: &str) -> String {
-    // Try to parse as SocketAddr first
-    if let Ok(addr) = destination.parse::<std::net::SocketAddr>() {
-        return addr.port().to_string();
-    }
-
-    // Try to extract port from host:port format
-    if let Some(colon_pos) = destination.rfind(':') {
-        let port_part = &destination[colon_pos + 1..];
-
-        // Validate port is numeric
-        if let Ok(port) = port_part.parse::<u16>() {
-            return port.to_string();
-        }
-    }
-
-    // Default port if none found or invalid
-    "0".to_string()
-}
-
 /// Replace entire configuration (PUT /configs)
-/// Unlike PATCH /configs which merges changes, this replaces the entire config
+///
+/// Unlike PATCH /configs which merges changes, this replaces the entire config.
 pub async fn replace_configs(
     State(_state): State<ApiState>,
     Json(config): Json<serde_json::Value>,
@@ -1175,19 +1271,20 @@ pub async fn replace_configs(
     log::info!("Configuration replacement requested");
 
     // Validate configuration structure
-    if !config.is_object() {
-        log::warn!("Invalid configuration format: expected object");
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Invalid configuration format",
-                "message": "Configuration must be a valid JSON object"
-            })),
-        )
-            .into_response();
-    }
-
-    let obj = config.as_object().unwrap();
+    let obj = match config.as_object() {
+        Some(o) => o,
+        None => {
+            log::warn!("Invalid configuration format: expected object");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "Invalid configuration format",
+                    "message": "Configuration must be a valid JSON object"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     // Validate required fields for full config replacement
     let required_fields = ["port", "socks-port", "mode"];
@@ -1208,13 +1305,13 @@ pub async fn replace_configs(
     for port_key in &["port", "socks-port", "mixed-port", "controller-port"] {
         if let Some(port_val) = obj.get(*port_key) {
             if let Some(port) = port_val.as_u64() {
-                if port > 65535 {
-                    log::warn!("Invalid port value for {}: {}", port_key, port);
+                if let Err(err) = validate_port(port) {
+                    log::warn!("Invalid port value for {}: {}", port_key, err);
                     return (
                         StatusCode::BAD_REQUEST,
                         Json(json!({
                             "error": "Invalid port",
-                            "message": format!("Port value {} exceeds maximum 65535", port)
+                            "message": err
                         })),
                     )
                         .into_response();
@@ -1251,11 +1348,12 @@ pub async fn replace_configs(
 
     log::info!("Configuration replacement accepted. Full reload would be triggered here.");
 
-    (StatusCode::NO_CONTENT,).into_response()
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// Redirect to Clash UI
-/// This endpoint redirects to the external Clash dashboard UI
+///
+/// This endpoint redirects to the external Clash dashboard UI.
 pub async fn get_ui(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("UI redirect requested");
 
@@ -1264,8 +1362,6 @@ pub async fn get_ui(State(_state): State<ApiState>) -> impl IntoResponse {
     // 2. Serve static files from the UI directory
     // 3. Or redirect to the configured external UI URL
 
-    // For now, provide a message indicating where UI should be configured
-    // Most Clash dashboards connect directly via the API, so this is informational
     (
         StatusCode::OK,
         Json(json!({
@@ -1288,16 +1384,11 @@ pub async fn get_ui(State(_state): State<ApiState>) -> impl IntoResponse {
 }
 
 /// Get tracing profile data (GET /profile/tracing)
-/// Provides profiling and debugging information
+///
+/// Provides profiling and debugging information.
 pub async fn get_profile_tracing(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Profile tracing requested");
 
-    // In a full implementation, this would:
-    // 1. Collect active trace spans
-    // 2. Return timing information for requests
-    // 3. Provide debugging context for connection flows
-
-    // For now, return a placeholder structure indicating the endpoint is available
     (
         StatusCode::OK,
         Json(json!({
@@ -1311,7 +1402,8 @@ pub async fn get_profile_tracing(State(_state): State<ApiState>) -> impl IntoRes
 }
 
 /// Update script configuration (PATCH /script)
-/// Allows updating script rules dynamically
+///
+/// Allows updating script rules dynamically.
 pub async fn update_script(
     State(_state): State<ApiState>,
     Json(script_config): Json<serde_json::Value>,
@@ -1319,23 +1411,27 @@ pub async fn update_script(
     log::info!("Script configuration update requested");
 
     // Validate script configuration structure
-    if !script_config.is_object() {
-        log::warn!("Invalid script configuration format: expected object");
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Invalid script format",
-                "message": "Script configuration must be a valid JSON object"
-            })),
-        )
-            .into_response();
-    }
-
-    let obj = script_config.as_object().unwrap();
+    let obj = match script_config.as_object() {
+        Some(o) => o,
+        None => {
+            log::warn!("Invalid script configuration format: expected object");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "Invalid script format",
+                    "message": "Script configuration must be a valid JSON object"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     // Validate required fields
-    if let Some(code) = obj.get("code") {
-        if !code.is_string() || code.as_str().unwrap().is_empty() {
+    match obj.get("code") {
+        Some(code) if code.is_string() && !code.as_str().is_none_or(str::is_empty) => {
+            // Valid code field
+        }
+        Some(_) => {
             log::warn!("Script code field is empty or invalid");
             return (
                 StatusCode::BAD_REQUEST,
@@ -1346,25 +1442,20 @@ pub async fn update_script(
             )
                 .into_response();
         }
-    } else {
-        log::warn!("Missing required 'code' field in script configuration");
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Missing field",
-                "message": "Field 'code' is required for script configuration"
-            })),
-        )
-            .into_response();
+        None => {
+            log::warn!("Missing required 'code' field in script configuration");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "Missing field",
+                    "message": "Field 'code' is required for script configuration"
+                })),
+            )
+                .into_response();
+        }
     }
 
     log::info!("Script configuration validated successfully");
-
-    // In a full implementation, this would:
-    // 1. Parse and validate the script syntax
-    // 2. Load script into the scripting engine
-    // 3. Update active script rules
-    // 4. Return compilation status
 
     (
         StatusCode::OK,
@@ -1377,7 +1468,8 @@ pub async fn update_script(
 }
 
 /// Test script execution (POST /script)
-/// Allows testing script rules against sample data
+///
+/// Allows testing script rules against sample data.
 pub async fn test_script(
     State(_state): State<ApiState>,
     Json(test_request): Json<serde_json::Value>,
@@ -1385,23 +1477,39 @@ pub async fn test_script(
     log::info!("Script test execution requested");
 
     // Validate test request structure
-    if !test_request.is_object() {
-        log::warn!("Invalid test request format: expected object");
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error": "Invalid request format",
-                "message": "Test request must be a valid JSON object"
-            })),
-        )
-            .into_response();
-    }
-
-    let obj = test_request.as_object().unwrap();
+    let obj = match test_request.as_object() {
+        Some(o) => o,
+        None => {
+            log::warn!("Invalid test request format: expected object");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "error": "Invalid request format",
+                    "message": "Test request must be a valid JSON object"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     // Validate required fields for testing
     let script_code = match obj.get("script") {
-        Some(s) if s.is_string() && !s.as_str().unwrap().is_empty() => s.as_str().unwrap(),
+        Some(s) if s.is_string() => {
+            match s.as_str() {
+                Some(code) if !code.is_empty() => code,
+                _ => {
+                    log::warn!("Script field is empty");
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({
+                            "error": "Missing field",
+                            "message": "Field 'script' is required and must be a non-empty string"
+                        })),
+                    )
+                        .into_response();
+                }
+            }
+        }
         _ => {
             log::warn!("Missing or invalid 'script' field in test request");
             return (
@@ -1415,15 +1523,7 @@ pub async fn test_script(
         }
     };
 
-    let _test_data = obj.get("data").cloned().unwrap_or(json!({}));
-
     log::info!("Testing script with {} bytes of code", script_code.len());
-
-    // In a full implementation, this would:
-    // 1. Parse and compile the script
-    // 2. Execute script with test data in sandboxed environment
-    // 3. Return execution result, output, and any errors
-    // 4. Measure execution time and resource usage
 
     // For now, return a mock successful execution
     (
@@ -1442,17 +1542,11 @@ pub async fn test_script(
 }
 
 /// Upgrade connections to WebSocket (GET /connectionsUpgrade)
-/// This endpoint would upgrade HTTP connections to WebSocket for real-time connection monitoring
+///
+/// This endpoint would upgrade HTTP connections to WebSocket for real-time connection monitoring.
 pub async fn upgrade_connections(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Connection upgrade to WebSocket requested");
 
-    // In a full implementation, this would:
-    // 1. Check if the request has proper Upgrade headers
-    // 2. Upgrade the HTTP connection to WebSocket
-    // 3. Stream real-time connection updates
-    // 4. Handle WebSocket heartbeat and disconnection
-
-    // For now, return information about the WebSocket endpoint
     (
         StatusCode::OK,
         Json(json!({
@@ -1465,15 +1559,10 @@ pub async fn upgrade_connections(State(_state): State<ApiState>) -> impl IntoRes
 }
 
 /// Meta upgrade endpoint (GET /metaUpgrade)
-/// Provides information about upgrading to Meta version
+///
+/// Provides information about upgrading to Meta version.
 pub async fn get_meta_upgrade(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Meta upgrade information requested");
-
-    // In a full implementation, this would:
-    // 1. Check current version
-    // 2. Check for available updates
-    // 3. Provide download URLs and checksums
-    // 4. Return upgrade instructions
 
     (
         StatusCode::OK,
@@ -1488,7 +1577,8 @@ pub async fn get_meta_upgrade(State(_state): State<ApiState>) -> impl IntoRespon
 }
 
 /// Update external UI (POST /meta/upgrade/ui)
-/// Allows updating the external dashboard UI
+///
+/// Allows updating the external dashboard UI.
 pub async fn upgrade_external_ui(
     State(_state): State<ApiState>,
     Json(request): Json<serde_json::Value>,
@@ -1524,13 +1614,6 @@ pub async fn upgrade_external_ui(
     }
 
     log::info!("External UI upgrade URL validated: {}", ui_url);
-
-    // In a full implementation, this would:
-    // 1. Download UI files from the provided URL
-    // 2. Verify checksums
-    // 3. Extract and install UI files
-    // 4. Update UI configuration
-    // 5. Return installation status
 
     (
         StatusCode::OK,

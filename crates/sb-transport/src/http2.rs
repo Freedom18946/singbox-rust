@@ -308,8 +308,14 @@ impl AsyncRead for Http2StreamAdapter {
                     self.read_buffer = Some(remaining);
                 }
 
-                // Release flow control window
-                let _ = self.recv_stream.flow_control().release_capacity(data_len);
+                // Release flow control window; log and continue on error
+                if let Err(e) = self
+                    .recv_stream
+                    .flow_control()
+                    .release_capacity(data_len)
+                {
+                    debug!("HTTP/2 release_capacity error: {}", e);
+                }
 
                 Poll::Ready(Ok(()))
             }

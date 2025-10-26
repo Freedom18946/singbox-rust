@@ -1,4 +1,5 @@
 #![cfg(feature = "adapter-socks")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! SOCKS5 E2E tests with mock servers
 //!
 //! These tests create mock SOCKS5 servers to verify that the connector

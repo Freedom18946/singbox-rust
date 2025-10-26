@@ -28,7 +28,7 @@ impl TlsOpts {
         }
     }
 
-    pub fn with_allow_insecure(mut self, allow: bool) -> Self {
+    pub const fn with_allow_insecure(mut self, allow: bool) -> Self {
         self.allow_insecure = allow;
         self
     }

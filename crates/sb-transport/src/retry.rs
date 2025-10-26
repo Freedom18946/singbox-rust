@@ -127,7 +127,7 @@ impl RetryPolicy {
                         );
                         #[cfg(feature = "metrics")]
                         {
-                            use sb_core::metrics::registry_ext::get_or_register_counter_vec;
+                            use crate::metrics_ext::get_or_register_counter_vec;
                             let ctr = get_or_register_counter_vec(
                                 "retry_attempts_total",
                                 "Total retry attempts",
@@ -142,7 +142,7 @@ impl RetryPolicy {
                     // Record the attempt
                     #[cfg(feature = "metrics")]
                     {
-                        use sb_core::metrics::registry_ext::get_or_register_counter_vec;
+                        use crate::metrics_ext::get_or_register_counter_vec;
                         let ctr = get_or_register_counter_vec(
                             "retry_attempts_total",
                             "Total retry attempts",
@@ -480,7 +480,7 @@ mod tests {
         assert!(!is_transient_network_error(&other_error));
 
         // Test DNS errors
-        let dns_error = DialError::Io(Error::new(ErrorKind::Other, "failed to lookup address"));
+        let dns_error = DialError::Io(Error::other("failed to lookup address"));
         assert!(is_transient_dns_error(&dns_error));
 
         let dns_other = DialError::Other("dns resolution failed".to_string());

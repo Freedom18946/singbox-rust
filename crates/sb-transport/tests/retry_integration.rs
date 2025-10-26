@@ -140,8 +140,7 @@ async fn test_retry_conditions() {
     let connection_refused = DialError::Io(Error::new(ErrorKind::ConnectionRefused, "refused"));
     assert!(retry_conditions::is_retriable_error(&connection_refused));
 
-    let dns_error = DialError::Io(Error::new(
-        ErrorKind::Other,
+    let dns_error = DialError::Io(Error::other(
         "failed to lookup address information",
     ));
     assert!(retry_conditions::is_retriable_error(&dns_error));

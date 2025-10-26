@@ -232,14 +232,19 @@ pub mod generated {
                 _req: tonic::codegen::http::Request<tonic::transport::Body>,
             ) -> Self::Future {
                 Box::pin(async move {
-                    Ok(tonic::codegen::http::Response::builder()
+                    match tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
                         .body(BoxBody::new(
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
-                        ))
-                        .unwrap())
+                        )) {
+                            Ok(resp) => Ok(resp),
+                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                                http_body::Empty::new()
+                                    .map_err(|_| tonic::Status::internal("Empty body error")),
+                            ))),
+                        }
                 })
             }
         }
@@ -324,14 +329,19 @@ pub mod generated {
                 _req: tonic::codegen::http::Request<tonic::transport::Body>,
             ) -> Self::Future {
                 Box::pin(async move {
-                    Ok(tonic::codegen::http::Response::builder()
+                    match tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
                         .body(BoxBody::new(
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
-                        ))
-                        .unwrap())
+                        )) {
+                            Ok(resp) => Ok(resp),
+                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                                http_body::Empty::new()
+                                    .map_err(|_| tonic::Status::internal("Empty body error")),
+                            ))),
+                        }
                 })
             }
         }
@@ -401,14 +411,19 @@ pub mod generated {
                 _req: tonic::codegen::http::Request<tonic::transport::Body>,
             ) -> Self::Future {
                 Box::pin(async move {
-                    Ok(tonic::codegen::http::Response::builder()
+                    match tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
                         .body(BoxBody::new(
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
-                        ))
-                        .unwrap())
+                        )) {
+                            Ok(resp) => Ok(resp),
+                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                                http_body::Empty::new()
+                                    .map_err(|_| tonic::Status::internal("Empty body error")),
+                            ))),
+                        }
                 })
             }
         }
@@ -476,14 +491,19 @@ pub mod generated {
                 _req: tonic::codegen::http::Request<tonic::transport::Body>,
             ) -> Self::Future {
                 Box::pin(async move {
-                    Ok(tonic::codegen::http::Response::builder()
+                    match tonic::codegen::http::Response::builder()
                         .status(200)
                         .header("content-type", "application/grpc")
                         .body(BoxBody::new(
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
-                        ))
-                        .unwrap())
+                        )) {
+                            Ok(resp) => Ok(resp),
+                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                                http_body::Empty::new()
+                                    .map_err(|_| tonic::Status::internal("Empty body error")),
+                            ))),
+                        }
                 })
             }
         }

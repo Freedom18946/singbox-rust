@@ -1,10 +1,15 @@
-//! Server metrics module placeholder
+//! Server metrics module
+//!
+//! Placeholder for future server-specific metrics collection.
+
 use prometheus::{opts, register_int_counter, IntCounter};
 use std::sync::LazyLock;
 
-/// Placeholder server metrics
+/// Total number of server requests handled
 pub static SERVER_REQUESTS_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
-    #[allow(clippy::expect_used)]
     register_int_counter!(opts!("server_requests_total", "Total server requests"))
-        .expect("register server_requests_total")
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
+            IntCounter::new("dummy_counter", "dummy").unwrap()
+        })
 });

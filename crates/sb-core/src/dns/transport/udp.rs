@@ -23,7 +23,7 @@ pub struct UdpTransport {
 }
 
 impl UdpTransport {
-    pub fn new(upstream: UdpUpstream) -> Self {
+    pub const fn new(upstream: UdpUpstream) -> Self {
         Self { upstream }
     }
 }

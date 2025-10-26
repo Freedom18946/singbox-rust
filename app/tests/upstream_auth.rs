@@ -1,3 +1,4 @@
+#![allow(clippy::manual_flatten, clippy::clone_on_copy)]
 //! Validate that scaffold upstreams receive credentials from IR.
 use sb_config::ir::{
     ConfigIR, Credentials, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR,

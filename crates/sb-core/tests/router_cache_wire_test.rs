@@ -53,6 +53,6 @@ fn test_cache_stats_provider() {
     let stats = cache_stats::snapshot();
     assert!(stats.is_some());
     let stats = stats.unwrap();
-    assert_eq!(stats.enabled, true);
+    assert!(stats.enabled);
     assert_eq!(stats.capacity, 5);
 }

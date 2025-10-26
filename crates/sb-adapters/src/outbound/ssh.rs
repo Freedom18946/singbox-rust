@@ -73,10 +73,27 @@ impl SshConnector {
                     password: Some("invalid".to_string()),
                     ..Default::default()
                 };
-                let core = std::sync::Arc::new(
-                    sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config)
-                        .unwrap_or_else(|_| panic!("Failed to create dummy SSH core"))
-                );
+                let core = match sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config) {
+                    Ok(c) => std::sync::Arc::new(c),
+                    Err(e) => {
+                        tracing::error!(error=%e, "Failed to create dummy SSH core; using safe fallback config");
+                        // Safe fallback config to satisfy constructor validation
+                        let fb = sb_core::outbound::ssh_stub::SshConfig {
+                            server: "127.0.0.1".to_string(),
+                            port: 22,
+                            username: "dummy".to_string(),
+                            password: Some("dummy".to_string()),
+                            ..Default::default()
+                        };
+                        let c = sb_core::outbound::ssh_stub::SshOutbound::new(fb)
+                            .map_err(|e2| {
+                                tracing::error!(error=%e2, "SSH fallback core creation failed");
+                                e2
+                            })
+                            .expect("SSH fallback core must construct");
+                        std::sync::Arc::new(c)
+                    }
+                };
                 return Self { config, core };
             }
 
@@ -109,10 +126,22 @@ impl SshConnector {
                         password: Some("invalid".to_string()),
                         ..Default::default()
                     };
-                    std::sync::Arc::new(
-                        sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config)
-                            .unwrap_or_else(|_| panic!("Failed to create dummy SSH core"))
-                    )
+                    match sb_core::outbound::ssh_stub::SshOutbound::new(dummy_config) {
+                        Ok(c) => std::sync::Arc::new(c),
+                        Err(e2) => {
+                            tracing::error!(error=%e2, "Failed to create dummy SSH core; using safe fallback config");
+                            let fb = sb_core::outbound::ssh_stub::SshConfig {
+                                server: "127.0.0.1".to_string(),
+                                port: 22,
+                                username: "dummy".to_string(),
+                                password: Some("dummy".to_string()),
+                                ..Default::default()
+                            };
+                            let c = sb_core::outbound::ssh_stub::SshOutbound::new(fb)
+                                .expect("SSH fallback core must construct");
+                            std::sync::Arc::new(c)
+                        }
+                    }
                 }
             };
 

@@ -17,7 +17,7 @@ impl Bucket {
         let now = std::time::Instant::now();
         let dt = now.duration_since(self.last).as_secs_f64();
         self.last = now;
-        self.tokens = (self.tokens + dt * self.rate).min(self.cap as f64);
+        self.tokens = dt.mul_add(self.rate, self.tokens).min(self.cap as f64);
         if self.tokens >= cost as f64 {
             self.tokens -= cost as f64;
             true

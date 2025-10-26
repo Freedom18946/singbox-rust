@@ -1,12 +1,31 @@
+//! JSON normalization utilities.
+//!
+//! Provides functions to canonicalize JSON by sorting object keys recursively,
+//! useful for deterministic comparisons and testing.
+
 use anyhow::Context;
 use serde_json::{Map, Value};
 use std::{fs, path::Path};
 
-/// 递归排序对象的键；数组保序；标量原样返回
+/// Recursively normalize a JSON value by sorting object keys.
+///
+/// - Objects: Keys are sorted alphabetically, values are recursively normalized
+/// - Arrays: Order is preserved, elements are recursively normalized
+/// - Scalars: Returned as-is
+///
+/// # Examples
+/// ```
+/// use serde_json::json;
+/// use sb_config::json_norm::normalize_value;
+///
+/// let input = json!({"z": 1, "a": 2});
+/// let output = normalize_value(input);
+/// // Object keys are now sorted: {"a": 2, "z": 1}
+/// ```
+#[must_use]
 pub fn normalize_value(v: Value) -> Value {
     match v {
         Value::Object(mut m) => {
-            // 先把所有子项 normalize，再按 key 排序
             let mut nm = Map::new();
             let mut keys: Vec<_> = m.keys().cloned().collect();
             keys.sort_unstable();
@@ -22,13 +41,26 @@ pub fn normalize_value(v: Value) -> Value {
     }
 }
 
-/// 从文件读取 JSON，做 normalize，返回字符串
+/// Read a JSON file, normalize it, and return the pretty-printed string.
+///
+/// # Errors
+/// Returns an error if:
+/// - File cannot be read
+/// - Content is not valid JSON
+/// - Serialization fails
+///
+/// # Examples
+/// ```no_run
+/// use sb_config::json_norm::normalize_file_to_string;
+///
+/// let normalized = normalize_file_to_string("config.json")?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn normalize_file_to_string(path: impl AsRef<Path>) -> anyhow::Result<String> {
     let raw = fs::read_to_string(&path)
-        .with_context(|| format!("read file failed: {}", path.as_ref().display()))?;
-    // 只支持 JSON（sing-box 官方即 JSON）
+        .with_context(|| format!("failed to read file: {}", path.as_ref().display()))?;
     let v: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("parse json failed: {}", path.as_ref().display()))?;
+        .with_context(|| format!("failed to parse JSON: {}", path.as_ref().display()))?;
     let nv = normalize_value(v);
     Ok(serde_json::to_string_pretty(&nv)?)
 }

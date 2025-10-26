@@ -714,7 +714,7 @@ mod tests_schema_lock {
         let s = serde_json::to_string_pretty(&rep).unwrap();
         // 锁定字段顺序/必需项（回归友好）：前三行严格匹配
         let lines: Vec<&str> = s.lines().collect();
-        assert!(lines[0].contains("{"));
+        assert!(lines[0].contains('{'));
         assert!(lines[1].contains("\"ok\""));
         assert!(lines[2].contains("\"file\""));
         assert!(s.contains("\"issues\""));

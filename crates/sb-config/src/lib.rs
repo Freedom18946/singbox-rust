@@ -25,11 +25,12 @@
 //! use sb_config::Config;
 //!
 //! // Load and validate config
-//! let config = Config::load("config.yaml").expect("load config");
+//! let config = Config::load("config.yaml")?;
 //!
 //! // Convert to IR for internal use
-//! let ir = sb_config::present::to_ir(&config).unwrap();
+//! let ir = sb_config::present::to_ir(&config)?;
 //! # let _ = ir; // doctest: suppress unused var warning
+//! # Ok::<(), anyhow::Error>(())
 //! ```
 //!
 //! ## Migration Path
@@ -587,7 +588,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_minimal() {
+    fn parse_minimal() -> anyhow::Result<()> {
         let y = r#"
 inbounds:
   - type: http
@@ -599,12 +600,13 @@ rules:
   - domain_suffix: ["example.com"]
     outbound: direct
         "#;
-        let cfg: Config = serde_yaml::from_str(y).unwrap();
-        cfg.validate().unwrap();
+        let cfg: Config = serde_yaml::from_str(y)?;
+        cfg.validate()?;
+        Ok(())
     }
 
     #[test]
-    fn rule_match_suffix() {
+    fn rule_match_suffix() -> anyhow::Result<()> {
         let y = r#"
 outbounds:
   - type: direct
@@ -613,7 +615,7 @@ rules:
   - domain_suffix: ["example.com", ".google.com"]
     outbound: direct
         "#;
-        let cfg: Config = serde_yaml::from_str(y).unwrap();
+        let cfg: Config = serde_yaml::from_str(y)?;
         assert_eq!(
             cfg.pick_outbound_for_host("www.example.com"),
             Some("direct")
@@ -623,6 +625,7 @@ rules:
             Some("direct")
         );
         assert_eq!(cfg.pick_outbound_for_host("foo.bar"), None);
+        Ok(())
     }
 
     /* TODO: Re-enable after breaking circular dependency

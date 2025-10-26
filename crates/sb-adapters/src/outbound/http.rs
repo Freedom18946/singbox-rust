@@ -242,7 +242,7 @@ impl OutboundConnector for HttpProxyConnector {
 
                         // Create TLS config
                         let root_store = tokio_rustls::rustls::RootCertStore {
-                            roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
+                            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
                         };
 
                         let config = ClientConfig::builder()

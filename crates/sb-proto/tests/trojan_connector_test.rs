@@ -10,11 +10,8 @@ async fn trojan_connector_writes_hello() {
     let (dialer, mut server_side) = DuplexDialer::new_pair();
     let c = TrojanConnector::new(dialer, "pass");
 
-    // Create target with proper structure
-    let target = Target {
-        host: "example.com".to_string(),
-        port: 443,
-    };
+    // Create target with proper constructor
+    let target = Target::new("example.com", 443);
 
     let cli = c.connect(&target).await.expect("connect");
 

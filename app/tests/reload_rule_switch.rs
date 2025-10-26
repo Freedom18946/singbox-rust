@@ -1,3 +1,4 @@
+#![allow(clippy::len_zero)]
 //! Rule switching reload integration test
 //!
 //! Tests hot reload functionality for routing rule changes,

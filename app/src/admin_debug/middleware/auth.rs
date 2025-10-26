@@ -89,7 +89,9 @@ impl Middleware for AuthMiddleware {
 
                 // Add hint if available
                 if let Some(hint) = error_body.hint {
-                    envelope.error.as_mut().unwrap().hint = Some(hint);
+                    if let Some(ref mut err) = envelope.error {
+                        err.hint = Some(hint);
+                    }
                 }
 
                 // Add request ID

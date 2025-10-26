@@ -50,12 +50,12 @@ impl TlsClient {
         let server_name = server_name
             .clone()
             .try_into()
-            .map_err(|e| anyhow::anyhow!("Invalid server name: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid server name: {e}"))?;
 
         let tls_stream = connector
             .connect(server_name, tcp_stream)
             .await
-            .map_err(|e| anyhow::anyhow!("TLS connection failed: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("TLS connection failed: {e}"))?;
 
         Ok(tls_stream)
     }
@@ -77,18 +77,15 @@ impl TlsClient {
                 negotiated_alpn: None,
             };
         }
-        let stream = match stream {
-            Some(s) => s,
-            None => {
-                let fallback = error.unwrap_or(NetClass {
-                    code: crate::error_map::IssueCode::TlsHandshakeProtocol,
-                    class: "proto",
-                });
-                return TlsResult {
-                    error: Some(fallback),
-                    negotiated_alpn: None,
-                };
-            }
+        let stream = if let Some(s) = stream { s } else {
+            let fallback = error.unwrap_or(NetClass {
+                code: crate::error_map::IssueCode::TlsHandshakeProtocol,
+                class: "proto",
+            });
+            return TlsResult {
+                error: Some(fallback),
+                negotiated_alpn: None,
+            };
         };
 
         let mut cfg = ClientConfig::builder()

@@ -69,8 +69,9 @@ async fn test_connect_env_tls() {
             assert!(report.elapsed_ms > 0);
         }
         Err(e) => {
-            // TLS might fail in test environment, but should not be "not implemented"
-            assert!(!e.contains("tls not implemented"));
+            // TLS might fail in test environment, but should not be FeatureDisabled
+            let err_str = e.to_string();
+            assert!(!err_str.contains("feature not enabled"));
         }
     }
 }

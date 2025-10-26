@@ -1,9 +1,11 @@
+#![cfg_attr(not(feature = "bench"), allow(dead_code, unused_imports))]
+#[cfg(feature = "bench")]
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-#[cfg(feature = "suffix_trie")]
+#[cfg(all(feature = "bench", feature = "suffix_trie"))]
 use sb_core::router::bench_api::build_index;
 
-#[cfg(feature = "suffix_trie")]
+#[cfg(all(feature = "bench", feature = "suffix_trie"))]
 fn bench_trie(c: &mut Criterion) {
     let mut rules = String::new();
     for i in 0..10_000 {
@@ -14,19 +16,24 @@ fn bench_trie(c: &mut Criterion) {
     c.bench_function("suffix_trie_query", |b| {
         b.iter(|| {
             let host = black_box("www.dom09999.example.com");
-            #[allow(unused_mut)]
-            let mut out: Option<&'static str> = None;
             #[cfg(feature = "suffix_trie")]
             {
-                out = idx.trial_decide_by_suffix(host);
+                idx.trial_decide_by_suffix(host)
             }
-            out
+            #[cfg(not(feature = "suffix_trie"))]
+            {
+                None::<&'static str>
+            }
         });
     });
 }
 
-#[cfg(not(feature = "suffix_trie"))]
-fn bench_trie(_c: &mut Criterion) {}
+#[cfg(not(all(feature = "bench", feature = "suffix_trie")))]
+fn main() {
+    eprintln!("suffix_trie bench disabled; enable with --features bench,sb-core/suffix_trie");
+}
 
+#[cfg(all(feature = "bench", feature = "suffix_trie"))]
 criterion_group!(benches, bench_trie);
+#[cfg(all(feature = "bench", feature = "suffix_trie"))]
 criterion_main!(benches);
