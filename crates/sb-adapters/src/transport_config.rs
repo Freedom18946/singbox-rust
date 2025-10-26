@@ -426,13 +426,13 @@ use tokio::net::TcpListener;
 
 /// Trait combining `AsyncRead` + `AsyncWrite` for inbound streams.
 pub trait InboundStream:
-    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
+    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send
 {
 }
 
 /// Blanket implementation for any type that satisfies the bounds.
 impl<T> InboundStream for T where
-    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send
 {
 }
 

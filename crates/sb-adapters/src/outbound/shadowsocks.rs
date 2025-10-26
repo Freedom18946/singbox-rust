@@ -388,8 +388,7 @@ impl ShadowsocksStream {
         };
 
         // Build target address payload
-        let addr_payload = ss_stream
-            .encode_target_address(&target, &resolve_mode)
+        let addr_payload = ShadowsocksStream::encode_target_address(&target, &resolve_mode)
             .await?;
 
         // Encrypt and send initial payload
@@ -400,7 +399,6 @@ impl ShadowsocksStream {
     }
 
     async fn encode_target_address(
-        &self,
         target: &Target,
         resolve_mode: &ResolveMode,
     ) -> Result<Vec<u8>> {

@@ -24,10 +24,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 ///
 /// This trait is automatically implemented for any type that implements
 /// `AsyncRead` + `AsyncWrite` + `Unpin` + `Send`.
-pub trait TlsStream: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+pub trait TlsStream: AsyncRead + AsyncWrite + Unpin + Send {}
 
 /// Blanket implementation for `TlsStream`
-impl<T> TlsStream for T where T: AsyncRead + AsyncWrite + Unpin + Send + Sync {}
+impl<T> TlsStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
 /// TLS stream type alias
 pub type TlsIoStream = Box<dyn TlsStream>;
@@ -48,7 +48,7 @@ pub trait TlsConnector: Send + Sync {
     /// - `server_name`: The server name for SNI
     async fn connect<S>(&self, stream: S, server_name: &str) -> io::Result<TlsIoStream>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static;
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static;
 }
 
 /// Standard TLS connector (rustls)

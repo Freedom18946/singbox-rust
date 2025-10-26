@@ -70,7 +70,7 @@ impl RealityConnector {
     /// 4. Verify server response (temporary cert vs real target cert)
     async fn reality_handshake<S>(&self, stream: S) -> RealityResult<crate::TlsIoStream>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         debug!("Starting REALITY handshake");
 
@@ -149,7 +149,7 @@ impl RealityConnector {
 impl TlsConnector for RealityConnector {
     async fn connect<S>(&self, stream: S, server_name: &str) -> io::Result<crate::TlsIoStream>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         debug!(
             "REALITY connect: server_name={}, target={}",

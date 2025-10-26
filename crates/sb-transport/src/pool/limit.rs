@@ -55,6 +55,8 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
 
 #[cfg(test)]
 mod tests {
+    use super::LimitedDialer;
+    use std::sync::Arc;
 
     #[cfg(feature = "disabled_tests")]
     #[tokio::test]
@@ -75,7 +77,7 @@ mod tests {
         let ld = LimitedDialer::new(d, 1, 10);
         let t1 = ld.connect("h", 1);
         let t2 = ld.connect("h", 1);
-        let (_r1, r2) = tokio::join!(t1, t2);
+        let (_r1, r2): (Result<crate::dialer::IoStream, DialError>, Result<crate::dialer::IoStream, DialError>) = tokio::join!(t1, t2);
         assert!(matches!(r2, Err(DialError::Other(ref s)) if s=="queue_timeout"));
     }
 
@@ -87,7 +89,13 @@ mod tests {
             Box::pin(async {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 Err(DialError::Other("x".into()))
-            })
+            }) as std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<crate::dialer::IoStream, DialError>,
+                        > + Send + 'static,
+                >,
+            >
         });
         let ld = LimitedDialer::new(d, 1, 50);
         let _ = ld.connect("h", 1); // in-flight
@@ -103,7 +111,13 @@ mod tests {
             Box::pin(async {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 Err(DialError::Other("x".into()))
-            })
+            }) as std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<crate::dialer::IoStream, DialError>,
+                        > + Send + 'static,
+                >,
+            >
         });
         let ld = LimitedDialer::new(d, 1, 50);
         let h = tokio::spawn({

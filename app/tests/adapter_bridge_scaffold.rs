@@ -9,6 +9,7 @@ mod t_scaffold {
     use std::time::Duration;
 
     #[test]
+    #[ignore = "requires local networking privileges"]
     fn socks_scaffold_runs_and_forwards() {
         // echo server
         let l = TcpListener::bind("127.0.0.1:0").unwrap();

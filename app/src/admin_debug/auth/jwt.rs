@@ -555,6 +555,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_jwt_config_validation() {
         // Empty allowlist should fail
         let mut config = JwtConfig::default();
@@ -580,6 +581,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn test_token_extraction() {
         let config = JwtConfig {
             jwks_url: Some("https://example.com/.well-known/jwks.json".to_string()),

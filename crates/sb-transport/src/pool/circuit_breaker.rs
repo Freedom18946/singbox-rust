@@ -107,6 +107,8 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::CircuitBreakerDialer;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_circuit_breaker_allows_successful_requests() {
@@ -147,7 +149,13 @@ mod tests {
                 count.fetch_add(1, Ordering::Relaxed);
                 Err(DialError::Other("connection failed".to_string()))
             })
-                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+                as Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
+                            > + Send + 'static,
+                    >,
+                >
         });
 
         let config = CircuitBreakerConfig {
@@ -204,10 +212,16 @@ mod tests {
                 } else {
                     // Subsequent calls succeed
                     let (client, _server) = tokio::io::duplex(64);
-                    Ok(Box::new(client) as IoStream)
+                    Ok(Box::new(client) as crate::dialer::IoStream)
                 }
             })
-                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+                as Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
+                            > + Send + 'static,
+                    >,
+                >
         });
 
         let config = CircuitBreakerConfig {
@@ -243,7 +257,13 @@ mod tests {
         use std::pin::Pin;
         let timeout_dialer = FnDialer::new(|_host, _port| {
             Box::pin(async move { Err(DialError::Other("timeout".to_string())) })
-                as Pin<Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>>
+                as Pin<
+                    Box<
+                        dyn std::future::Future<
+                                Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
+                            > + Send + 'static,
+                    >,
+                >
         });
 
         let cb_dialer = CircuitBreakerDialer::new(

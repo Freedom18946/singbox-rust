@@ -57,7 +57,7 @@ pub enum DialError {
 // - 实现 `Send`（可在线程间传递）
 // - 实现 `Sync`（可在线程间共享）
 pub trait AsyncReadWrite:
-    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
+    tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send
 {
 }
 
@@ -66,7 +66,7 @@ pub trait AsyncReadWrite:
 /// 这是一个 blanket implementation，意味着任何同时满足
 /// AsyncRead + AsyncWrite + Unpin + Send + Sync 的类型都会自动获得该实现
 impl<T> AsyncReadWrite for T where
-    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send
 {
 }
 
@@ -482,7 +482,7 @@ where
             &str,
             u16,
         ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send>,
+            Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send + 'static>,
         >,
 {
     /// 调用内部闭包执行自定义连接逻辑
