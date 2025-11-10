@@ -152,10 +152,34 @@ Last audited: 2025-11-10 10:45 UTC
    - ✅ 更新 http crate 到 v1.3 以兼容 h3
    - 优先级：**P1**，影响：DNS 覆盖率 → 67% (8/12)
 
-5. **添加 adapter 路径测试**（WS-E，质量保障）
-   - 为已实现的 10 种入站 + 8 种出站添加 e2e 测试
-   - 验证 feature gate 组合不会导致编译失败
-   - 优先级：**P1**，影响：防止回归
+5. ◐ **添加 adapter 路径测试**（WS-E，质量保障）— 60% 完成，架构问题阻塞
+   - ✅ 完成测试覆盖审计（97个集成测试分析）
+   - ✅ 创建 Go ↔ Rust 对比脚本（route explain, geodata）
+   - ✅ 添加 CI parity 验证工作流
+   - ✅ 文档化架构问题（ADAPTER_ARCHITECTURE_ISSUES.md）
+   - ✅ 修复 VMess/VLESS adapter 注册编译错误
+   - ⚠️ **阻塞器**：OutboundIR 缺失协议特定字段（security, alter_id, method等）
+   - ✗ Adapter 实例化测试（因 IR 不完整而编译失败）
+   - ✗ Feature gate 组合矩阵（待 adapter 测试通过后）
+   - ✗ DNS outbound e2e 测试
+   - ✗ 热重载 adapter 路径测试
+   - 优先级：**P0**（需先完成 Task 5.5 解除阻塞）
+   - 影响：防止回归，验证 TUIC/Hysteria2 迁移正确性
+   - 详见：WS_E_TASK_5_REPORT.md, ADAPTER_ARCHITECTURE_ISSUES.md
+
+5.5. **扩展 OutboundIR v2 字段**（WS-A/B，解除 Task 5 阻塞）— **新增 P0 任务**
+   - 添加 VMess 特定字段：security, alter_id
+   - 添加 Shadowsocks 特定字段：method, plugin, plugin_opts
+   - 添加 VLESS 特定字段：encryption
+   - 添加 Trojan 特定字段：tls_ca_paths, tls_ca_pem
+   - 修复 HeaderEntry 字段可访问性（key, value）
+   - 标准化 tls_alpn 类型（String → Vec<String>）
+   - 更新 adapter builders 以使用新字段
+   - 模式：遵循 Task 3 (commit 9504f12) 的 InboundIR v2 扩展模式
+   - 优先级：**P0**（阻塞 Task 5 完成）
+   - ETA：1-2 天
+   - 影响：解锁 VMess/VLESS/Shadowsocks/Trojan adapter 实例化
+   - 详见：ADAPTER_ARCHITECTURE_ISSUES.md (P0 fix section)
 
 6. **WireGuard outbound MVP**（WS-B，高级用户需求）
    - 集成 boringtun 或内核 WireGuard
@@ -186,9 +210,10 @@ Last audited: 2025-11-10 10:45 UTC
 
 ### 对比基准
 - **协议覆盖率**：
-  - 入站目标：90% (15/17)，当前：41% (7/17)
-  - 出站目标：95% (18/19)，当前：42% (8/19)
-  - DNS 目标：75% (9/12)，当前：58% (7/12)
+  - 入站目标：90% (15/17)，**当前：59% (10/17)** - 2025-11-11 更新
+  - 出站目标：95% (18/19)，**当前：53% (10/19)** - 2025-11-11 更新
+  - DNS 目标：75% (9/12)，**当前：67% (8/12)** - 2025-11-11 更新
+  - 注：当前数据基于实际可工作的 adapter，不包括 stub 或因 IR 不完整无法实例化的 adapter
 - **性能基准**：与 Go 版本对比 throughput/latency（SOCKS/Shadowsocks/VMess）
 - **配置兼容性**：所有 Go 基础配置应能无修改导入 Rust
 
@@ -272,6 +297,15 @@ Last audited: 2025-11-10 10:45 UTC
 - **E2E 脚本**：`scripts/e2e/*.sh`
 
 ## 版本历史
+- **2025-11-11**：Task 5 (WS-E) 进展更新与架构问题发现
+  - 完成 WS-E Task 5（adapter 路径测试）的 60%，发现架构阻塞问题
+  - 新增 Task 5.5（OutboundIR v2 扩展）作为 P0 解除阻塞任务
+  - 创建 Go ↔ Rust 自动对比脚本（route_explain_parity.sh, geodata_parity.sh）
+  - 添加 CI parity 验证工作流（parity-tests.yml）
+  - 文档化 5 类架构问题（ADAPTER_ARCHITECTURE_ISSUES.md）
+  - 修复 adapter 注册编译错误（VMess/VLESS 字段不匹配）
+  - 更新协议覆盖率：入站 59%，出站 53%，DNS 67%
+  - 详见：WS_E_TASK_5_REPORT.md
 - **2025-11-10**：大幅更新，基于详细的 Go ↔ Rust 对比分析
   - 新增详细的协议对比矩阵（入站/出站/DNS/endpoint/service）
   - 更新工作流优先级，反映当前进展（41-42% 完成率）
