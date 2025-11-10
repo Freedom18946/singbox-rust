@@ -1054,6 +1054,136 @@ impl DohUpstream {
     }
 }
 
+/// DNS-over-HTTP/3 (`DoH3`) 上游实现
+pub struct Doh3Upstream {
+    server: std::net::SocketAddr,
+    server_name: String,
+    path: String,
+    timeout: Duration,
+    name: String,
+    #[cfg(feature = "dns_doh3")]
+    transport: std::sync::Arc<crate::dns::transport::Doh3Transport>,
+    ecs: Option<String>,
+}
+
+impl Doh3Upstream {
+    /// 创建新的 `DoH3` 上游
+    pub fn new(server: std::net::SocketAddr, server_name: String, path: String) -> Result<Self> {
+        Self::new_with_tls(server, server_name, path, Vec::new(), Vec::new(), false)
+    }
+
+    /// 带 TLS 扩展的构造：支持追加 CA 与跳过校验（测试用途）
+    pub fn new_with_tls(
+        server: std::net::SocketAddr,
+        server_name: String,
+        path: String,
+        _ca_paths: Vec<String>,
+        _ca_pem: Vec<String>,
+        _skip_verify: bool,
+    ) -> Result<Self> {
+        let timeout = Duration::from_millis(
+            std::env::var("SB_DNS_DOH3_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(5000),
+        );
+
+        #[cfg(feature = "dns_doh3")]
+        let transport = {
+            let t = crate::dns::transport::Doh3Transport::new_with_tls(
+                server,
+                server_name.clone(),
+                path.clone(),
+                _ca_paths,
+                _ca_pem,
+                _skip_verify,
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to create DoH3 transport: {e}"))?;
+            std::sync::Arc::new(t)
+        };
+
+        Ok(Self {
+            server,
+            server_name: server_name.clone(),
+            path: path.clone(),
+            timeout,
+            name: format!("doh3://{}:{}{}", server_name, server.port(), path),
+            #[cfg(feature = "dns_doh3")]
+            transport,
+            ecs: None,
+        })
+    }
+
+    /// Attach per-upstream ECS string
+    pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
+        self.ecs = ecs;
+        self
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for Doh3Upstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let _ = (&self.server, &self.timeout);
+        #[cfg(feature = "dns_doh3")]
+        {
+            self.query_doh3(domain, record_type).await
+        }
+        #[cfg(not(feature = "dns_doh3"))]
+        {
+            let _ = (domain, record_type);
+            Err(anyhow::anyhow!("DoH3 support requires dns_doh3 feature"))
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        #[cfg(feature = "dns_doh3")]
+        {
+            matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    self.query("dns.google", RecordType::A),
+                )
+                .await,
+                Ok(Ok(_))
+            )
+        }
+        #[cfg(not(feature = "dns_doh3"))]
+        {
+            false
+        }
+    }
+}
+
+#[cfg(feature = "dns_doh3")]
+impl Doh3Upstream {
+    async fn query_doh3(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        // 构建 DNS 查询包
+        let temp_upstream = {
+            let addr = "0.0.0.0:53"
+                .parse()
+                .map_err(|e| anyhow::anyhow!("invalid DoH3 bind address: {e}"))?;
+            UdpUpstream::new(addr).with_client_subnet(self.ecs.clone())
+        };
+        let query_packet = temp_upstream.build_query_packet(domain, record_type)?;
+
+        // 发送 DoH3 请求通过 QUIC/HTTP3 传输
+        use crate::dns::transport::DnsTransport;
+        let response_body = self
+            .transport
+            .query(&query_packet)
+            .await
+            .map_err(|e| anyhow::anyhow!("DoH3 request failed: {e}"))?;
+
+        // 解析响应
+        temp_upstream.parse_response(&response_body, record_type)
+    }
+}
+
 /// 系统解析器上游实现
 pub struct SystemUpstream {
     default_ttl: Duration,

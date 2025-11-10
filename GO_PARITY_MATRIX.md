@@ -12,16 +12,16 @@ Status legend
 ## 扼要结论（Executive Summary）
 
 ### 协议适配器现状
-- `sb_adapters::register_all()` 只有在显式编译 `app` 的 `adapters` 特性时才会执行（`app/src/bootstrap.rs:680-683`），并且注册列表现已扩展到覆盖 HTTP/SOCKS/Mixed + Shadowsocks/VMess/VLESS/Trojan 入站，以及 HTTP/SOCKS/Shadowsocks/Trojan/VMess/VLESS/DNS 出站（`crates/sb-adapters/src/register.rs:15-114`）。
-- Naive/ShadowTLS/Hysteria/Hysteria2/TUIC/AnyTLS 等 QUIC 入站已在注册表中添加 stub builder（`crates/sb-adapters/src/register.rs:478-524`），但仅返回警告而无实际实现。
-- TUN/Redirect/TProxy/Direct 入站虽然在 `sb-adapters/src/inbound/` 中有实现文件，但尚未在 `register.rs` 中注册，因此无法通过 adapter 路径调用。
+- `sb_adapters::register_all()` 只有在显式编译 `app` 的 `adapters` 特性时才会执行（`app/src/bootstrap.rs:680-683`），并且注册列表现已扩展到覆盖 HTTP/SOCKS/Mixed + Shadowsocks/VMess/VLESS/Trojan/TUN/Redirect/TProxy 入站（10种），以及 HTTP/SOCKS/Shadowsocks/Trojan/VMess/VLESS/DNS 出站（8种）（`crates/sb-adapters/src/register.rs:15-170`）。
+- Naive/ShadowTLS/Hysteria/Hysteria2/TUIC/AnyTLS 等 QUIC 入站已在注册表中添加 stub builder（`crates/sb-adapters/src/register.rs:537-583`），但仅返回警告而无实际实现。
+- ✅ TUN/Redirect/TProxy 入站已在 `register.rs` 中完整注册并实现（`crates/sb-adapters/src/register.rs:159-168, 1273-1440`），可通过 adapter 路径调用。Direct 入站虽然在 `sb-adapters/src/inbound/` 中有实现文件，但尚未在 adapter 注册表中。
 - `OutboundType` 枚举已扩展到 19 项（`crates/sb-config/src/ir/mod.rs:95-134`），新增了 Dns/Tor/AnyTLS/Hysteria(v1)/WireGuard 等 Go 独有类型，但只有 DNS outbound 实现了完整的 adapter builder（feature-gated），其余均为 stub。
 
 ### 端点与服务
 - Go 注册表暴露 WireGuard/Tailscale endpoint 与 Resolved/DERP/SSM 服务（`go_fork_source/sing-box-1.12.12/include/registry.go:102-138`），Rust IR 与运行期完全没有 endpoints/services 结构（`crates/sb-config/src/ir/mod.rs:382-404`、`crates/sb-core/src/services/mod.rs:1-3`），仅保留可选 NTP 服务。
 
 ### DNS 传输
-- `resolver_from_ir` 支持 system/UDP/DoH/DoT/DoQ 五种基础传输 + hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-60`），完全缺少 Go 提供的 HTTP3(DoH over HTTP/3)、DHCP、tailscale、resolved 传输（`go_fork_source/sing-box-1.12.12/include/quic.go:29-32`、`go_fork_source/sing-box-1.12.12/include/dhcp.go`、`go_fork_source/sing-box-1.12.12/include/tailscale.go:17-19`）。
+- `resolver_from_ir` 支持 system/UDP/DoH/DoT/DoQ/DoH3 六种基础传输 + hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-60`），缺少 Go 提供的 DHCP、tailscale、resolved 传输（`go_fork_source/sing-box-1.12.12/include/dhcp.go`、`go_fork_source/sing-box-1.12.12/include/tailscale.go:17-19`）。HTTP3 (DoH over HTTP/3) 已于 2025-11-10 完成实现（`crates/sb-core/src/dns/transport/doh3.rs`）。
 
 ## 功能总览（Feature Index）
 
@@ -31,7 +31,7 @@ Status legend
 | 配置/IR/校验 | ◐ Partial | `sb-config` 顶层只暴露 inbounds/outbounds/log/dns/certificate/ntp（`crates/sb-config/src/ir/mod.rs:382-404`），`InboundType`/`OutboundType` 仍停留在 7/13 个内建项（`crates/sb-config/src/ir/mod.rs:21-80`），没有 endpoint/service/dns outbound/wireguard/tor/anytls/hysteria(v1) 的 schema。 |
 | 运行时与热重载 | ◐ Partial | Supervisor 会重新构建 engine 并调用 adapter-first bridge，但由于 IR 无法描述新协议，热重载仍只能覆盖少量入/出站（`crates/sb-core/src/runtime/supervisor.rs:104`、`crates/sb-core/src/adapter/bridge.rs:2153`）。 |
 | 路由/桥接 | ◐ Partial | `to_inbound_param` 只识别 `socks/http/mixed/tun/redirect/tproxy/direct`，Redirect/TProxy 继续返回 `UnsupportedInbound`，其它协议型入站完全没有入口（`crates/sb-core/src/adapter/bridge.rs:203`、`crates/sb-core/src/adapter/bridge.rs:328`）。 |
-| DNS 子系统 | ◐ Partial | Resolver 只会拼 `system/udp/doh/dot/doq` upstream 与 hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-142`），HTTP3/DHCP/tailscale/resolved 传输与服务入口均未实现。 |
+| DNS 子系统 | ◐ Partial | Resolver 支持 `system/udp/doh/dot/doq/doh3` upstream 与 hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-176`），DHCP/tailscale/resolved 传输与服务入口未实现。DoH3 于 2025-11-10 完成（`dns/transport/doh3.rs`）。 |
 | 协议出站 | ◐ Partial | Adapter/scaffold 仅能构建 direct/block/http/socks/shadowsocks/vless/vmess/trojan/tuic/hysteria2/shadowtls/ssh/urltest/selector，但 `adapter-dns` 现在可注册 `dns` 连接（需 IP `server` 和 new `dns_*` IR 字段）；Go 独有的 tor/anytls/wireguard/hysteria(v1) 仍缺席（`crates/sb-core/src/adapter/bridge.rs:239-257`、`crates/sb-core/src/adapter/bridge.rs:500-730`、`crates/sb-adapters/src/register.rs:530-577`）。 |
 | 协议入站 | ✗ Missing | `InboundType` 只有 `socks/http/mixed/tun/redirect/tproxy/direct`（`crates/sb-config/src/ir/mod.rs:21-45`），即便 adapter 提供 Naive/ShadowTLS/Trojan/TUIC/Hysteria(H1/H2) 模块也无法被 IR/Bridge 调用。 |
 | 传输层 | ◐ Partial | `sb-transport` 具备 TLS/WS/H2/HTTPUpgrade/GRPC/mux/QUIC，但目前只被 VLESS/VMess/Trojan/TUIC/Hysteria2 路径调用，REALITY/ECH 也仅在部分协议中启用。 |
@@ -47,9 +47,9 @@ Status legend
 
 | 协议 | Go 1.12.12 | Rust 实现状态 | 注册状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| tun | ✅ | ◐ Partial | 未注册 | 实现文件存在 `sb-adapters/src/inbound/tun.rs`，但未在 `register.rs` 中注册 |
-| redirect | ✅ | ◐ Partial | 未注册 | 实现文件存在 `sb-adapters/src/inbound/redirect.rs`，但未注册；IR 返回 `UnsupportedInbound` |
-| tproxy | ✅ | ◐ Partial | 未注册 | 实现文件存在 `sb-adapters/src/inbound/tproxy.rs`，但未注册；IR 返回 `UnsupportedInbound` |
+| tun | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/tun.rs` + adapter (`register.rs:159-162, 1273-1308`) |
+| redirect | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/redirect.rs` (Linux only, `register.rs:164-168, 1310-1374`) |
+| tproxy | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/tproxy.rs` (Linux only, `register.rs:164-168, 1376-1440`) |
 | direct | ✅ | ✗ Missing | 未注册 | IR 枚举中定义但无实现 |
 | socks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/socks/` |
 | http | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/http.rs` |
@@ -66,11 +66,10 @@ Status legend
 | hysteria2 | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:502-508`) |
 
 **Rust 入站实现小结：**
-- 完整实现并注册：7 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless)
-- 实现文件存在但未注册：3 种 (tun, redirect, tproxy)
+- 完整实现并注册：10 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, tun, redirect, tproxy)
 - 注册为 stub (返回警告)：6 种 (naive, shadowtls, hysteria, hysteria2, tuic, anytls)
 - 完全缺失：1 种 (direct)
-- **总计：17 种入站中，仅 7 种完全可用 (41%)**
+- **总计：17 种入站中，10 种完全可用 (59%)，较前次 +3 种（+18%）**
 
 ### 出站协议对比（Outbound Protocols）
 
@@ -92,15 +91,16 @@ Status legend
 | vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/vless.rs` |
 | anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:596-602`) |
 | hysteria (v1) | ✅ (QUIC) | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:612-618`) |
-| tuic | ✅ (QUIC) | ◐ Partial | scaffold | 实现文件存在但不完整，走 scaffold |
-| hysteria2 | ✅ (QUIC) | ◐ Partial | scaffold | 实现文件存在但不完整，走 scaffold |
+| tuic | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-core/src/outbound/tuic.rs` + adapter (`register.rs:679-761`, feature: `out_tuic`) |
+| hysteria2 | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-core/src/outbound/hysteria2.rs` + adapter (`register.rs:763-858`, feature: `out_hysteria2`) |
 | wireguard | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:604-610`) |
 
 **Rust 出站实现小结：**
-- 完整实现并注册：8 种 (direct-scaffold, http, socks, shadowsocks, vmess, trojan, vless, dns)
-- 实现文件存在但不完整：5 种 (block, selector, urltest, ssh, shadowtls, tuic, hysteria2)
+- 完整实现并注册：10 种 (direct-scaffold, http, socks, shadowsocks, vmess, trojan, vless, dns, tuic, hysteria2)
+- 实现文件存在但不完整：3 种 (selector, urltest, ssh, shadowtls)
 - 注册为 stub (返回警告)：4 种 (tor, anytls, hysteria v1, wireguard)
-- **总计：19 种出站中，仅 8 种完全可用 (42%)**
+- 完全缺失：2 种 (block 缺少 adapter)
+- **总计：19 种出站中，10 种完全可用 (53%)，较前次 +2 种（+11%）**
 
 ### 端点对比（Endpoints）
 
@@ -120,7 +120,7 @@ Status legend
 | TLS (DoT) | ✅ | ✅ Supported | 完整支持 DoT upstream |
 | HTTPS (DoH) | ✅ | ✅ Supported | 完整支持 DoH upstream |
 | QUIC (DoQ) | ✅ (with_quic) | ✅ Supported | 完整支持 DoQ upstream |
-| HTTP3 (DoH/3) | ✅ (with_quic) | ✗ Missing | Go 通过 `quic.RegisterHTTP3Transport` 注册 (`include/quic.go:31-32`)，Rust 不支持 |
+| HTTP3 (DoH/3) | ✅ (with_quic) | ✅ Supported | 完整支持 DoH3 upstream，通过 h3/h3-quinn crate 实现，支持 doh3:// 和 h3:// URL (`dns/transport/doh3.rs`，2025-11-10 完成) |
 | hosts | ✅ | ✅ Supported | 通过 `hosts_overlay` 实现 |
 | local | ✅ | ✅ Supported | system resolver 覆盖 |
 | fakeip | ✅ | ✅ Supported | 通过 `fakeip_overlay` 实现 |
@@ -129,9 +129,9 @@ Status legend
 | tailscale | ✅ (with_tailscale) | ✗ Missing | Go 通过 `tailscale.RegistryTransport` 注册 (`include/tailscale.go:17-19`)，Rust 无实现 |
 
 **Rust DNS 传输小结：**
-- 完整支持：7 种 (TCP, UDP, TLS, HTTPS, QUIC, hosts, fakeip)
-- 完全缺失：5 种 (HTTP3, resolved, DHCP, tailscale, local-stub)
-- **总计：12 种 DNS 传输中，7 种可用 (58%)**
+- 完整支持：8 种 (TCP, UDP, TLS, HTTPS, QUIC, HTTP3, hosts, fakeip)
+- 完全缺失：4 种 (resolved, DHCP, tailscale, local-stub)
+- **总计：12 种 DNS 传输中，8 种可用 (67%)**
 
 ### 服务对比（Services）
 

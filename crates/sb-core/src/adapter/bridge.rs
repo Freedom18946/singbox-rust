@@ -1939,6 +1939,7 @@ pub fn cb_state_snapshot() -> Vec<(String, i32)> {
         .collect()
 }
 
+#[cfg(feature = "v2ray_transport")]
 #[derive(Clone)]
 struct CbConnector {
     name: String,
@@ -1946,6 +1947,7 @@ struct CbConnector {
     cb: std::sync::Arc<sb_transport::circuit_breaker::CircuitBreaker>,
 }
 
+#[cfg(feature = "v2ray_transport")]
 impl std::fmt::Debug for CbConnector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CbConnector")
@@ -1954,6 +1956,7 @@ impl std::fmt::Debug for CbConnector {
     }
 }
 
+#[cfg(feature = "v2ray_transport")]
 #[async_trait::async_trait]
 impl OutboundConnector for CbConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
@@ -1994,6 +1997,7 @@ impl OutboundConnector for CbConnector {
     }
 }
 
+#[cfg(feature = "v2ray_transport")]
 fn maybe_wrap_with_cb(name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn OutboundConnector> {
     // Default disabled; enable with SB_CB_ENABLE=1
     let enabled = std::env::var("SB_CB_ENABLE")
@@ -2008,6 +2012,12 @@ fn maybe_wrap_with_cb(name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn 
         inner,
         cb: std::sync::Arc::new(cb),
     })
+}
+
+#[cfg(not(feature = "v2ray_transport"))]
+fn maybe_wrap_with_cb(_name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn OutboundConnector> {
+    // Circuit breaker requires v2ray_transport feature
+    inner
 }
 
 /// Helper: assembles selector outbounds with resolved members.

@@ -89,6 +89,18 @@ fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
         let up = super::upstream::DoqUpstream::new(sa, sni);
         return Ok(Some(Arc::new(up)));
     }
+    if let Some(rest) = a.strip_prefix("doh3://").or_else(|| a.strip_prefix("h3://")) {
+        // Format: doh3://host:port/path or h3://host:port/path
+        let (host_port, path) = if let Some((hp, p)) = rest.split_once('/') {
+            (hp, format!("/{}", p))
+        } else {
+            (rest, "/dns-query".to_string())
+        };
+        let (host, port) = split_host_port(host_port, 443)?;
+        let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
+        let up = super::upstream::Doh3Upstream::new(sa, host.to_string(), path)?;
+        return Ok(Some(Arc::new(up)));
+    }
     Ok(None)
 }
 
@@ -135,6 +147,27 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
             srv.ca_pem.clone(),
             srv.skip_cert_verify.unwrap_or(false),
         );
+        up = up.with_client_subnet(srv.client_subnet.clone());
+        return Ok(Some(Arc::new(up)));
+    }
+    if let Some(rest) = a.strip_prefix("doh3://").or_else(|| a.strip_prefix("h3://")) {
+        // Format: doh3://host:port/path or h3://host:port/path
+        let (host_port, path) = if let Some((hp, p)) = rest.split_once('/') {
+            (hp, format!("/{}", p))
+        } else {
+            (rest, "/dns-query".to_string())
+        };
+        let (host, port) = split_host_port(host_port, 443)?;
+        let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
+        let sni = srv.sni.clone().unwrap_or_else(|| host.to_string());
+        let mut up = super::upstream::Doh3Upstream::new_with_tls(
+            sa,
+            sni,
+            path,
+            srv.ca_paths.clone(),
+            srv.ca_pem.clone(),
+            srv.skip_cert_verify.unwrap_or(false),
+        )?;
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }

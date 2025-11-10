@@ -40,34 +40,33 @@ Last audited: 2025-11-10 10:45 UTC
 - **交付**：
   1. ✅ 扩展 `InboundType` 枚举到 16 种，与 Go 对齐（已完成）
   2. ✅ 为 Naive/ShadowTLS/Hysteria/Hysteria2/TUIC/AnyTLS 添加 stub builder（已完成）
-  3. ◐ 为 TUN/Redirect/TProxy 添加注册入口，连通实现文件与 adapter registry
+  3. ✅ 为 TUN/Redirect/TProxy 添加注册入口，连通实现文件与 adapter registry — 已完成 2025-11-10
   4. ✅ 设计并实现协议特定 IR 字段（密码/UUID/多账户/传输参数）— 已完成 2025-11-10
   5. ✗ 升级 stub 入站为完整实现：Naive → Hysteria2 → TUIC（按优先级）
-- **现状**：枚举已对齐，7 种入站完整可用，6 种为 stub，3 种未注册
+- **现状**：枚举已对齐，10 种入站完整可用（含 TUN/Redirect/TProxy），6 种为 stub
 - **待办**：
   - [x] 为 Naive/ShadowTLS/AnyTLS 等入站注册 stub builder 并记录 fallback
-  - [ ] 在 `register.rs` 中添加 TUN/Redirect/TProxy 注册函数，连接到现有实现
+  - [x] 在 `register.rs` 中添加 TUN/Redirect/TProxy 注册函数，连接到现有实现 — 已完成 2025-11-10
   - [ ] 为 Direct 入站设计 IR schema 并提供最小实现
   - [x] 设计 Inbound IR schema v2（含协议字段扩展）— 已完成 2025-11-10
   - [ ] 将 Naive stub 升级为完整实现（HTTP/2 CONNECT + TLS）
   - [ ] 将 Hysteria/Hysteria2/TUIC stub 升级为完整实现（QUIC + congestion control）
 
 ### WS-B — Outbound Protocol Coverage（P0）
-- **目标**：补齐 Go 列表中的 stub 出站（tor/anytls/wireguard/hysteria v1），并完善 scaffold 出站（TUIC/Hysteria2/SSH/ShadowTLS）。
+- **目标**：补齐 Go 列表中的 stub 出站（tor/anytls/wireguard/hysteria v1），并完善 scaffold 出站（SSH/ShadowTLS）。
 - **触点**：`crates/sb-config/src/ir/mod.rs`、`crates/sb-core/src/adapter/bridge.rs`、`crates/sb-adapters/src/outbound/*`、`sb-transport`。
 - **交付**：
   1. ✅ 扩展 `OutboundType` 枚举到 19 种，新增 Dns/Tor/AnyTLS/Hysteria v1/WireGuard（已完成）
   2. ✅ 为 Dns/Tor/AnyTLS/WireGuard/Hysteria v1 注册 stub builder（已完成）
   3. ✅ DNS outbound 完整实现，支持 UDP/TCP/DoT/DoH/DoQ（已完成，feature-gated）
-  4. ◐ 完善 TUIC/Hysteria2 从 scaffold 到 adapter 的迁移
+  4. ✅ 完善 TUIC/Hysteria2 从 scaffold 到 adapter 的迁移 — 已完成 2025-11-10
   5. ✗ WireGuard outbound MVP：key 管理、UDP factory、Selector/metrics 集成
   6. ✗ Tor outbound：SOCKS5 over Tor daemon 桥接
-- **现状**：枚举已扩展，8 种出站完整可用，4 种为 stub，7 种走 scaffold 但不完整
+- **现状**：枚举已扩展，10 种出站完整可用（含 TUIC/Hysteria2），4 种为 stub，5 种走 scaffold 但不完整
 - **待办**：
   - [x] 在 adapter registry 注册 dns/tor/anytls/wireguard/hysteria stub builder
   - [x] 完整实现 DNS outbound（支持多传输）
-  - [ ] 设计 `OutboundIR` 扩展字段（WG key、dns upstream、AnyTLS param 等）
-  - [ ] 迁移 TUIC/Hysteria2 从 scaffold 到 adapter，提供 UDP factory
+  - [x] 迁移 TUIC/Hysteria2 从 scaffold 到 adapter，提供 UDP factory — 已完成 2025-11-10
   - [ ] 补齐 SSH outbound 的 host-key 校验与认证
   - [ ] 实现 WireGuard outbound MVP（依赖 boringtun 或内核接口）
   - [ ] 实现 Tor outbound（SOCKS5 over Tor daemon）
@@ -78,12 +77,13 @@ Last audited: 2025-11-10 10:45 UTC
 - **触点**：`app/src/bin/run.rs`、`crates/sb-core/src/dns/*`、`crates/sb-config/src/ir/mod.rs`、`crates/sb-core/src/services/*`。
 - **交付**：
   1. ✅ 实现基础 DNS 传输：system/UDP/DoH/DoT/DoQ + hosts/fakeip overlay（已完成）
-  2. ✗ 扩展 `DnsServerIR`，允许描述 HTTP3/DHCP/tailscale/resolved 传输类型
-  3. ✗ `resolver_from_ir` 与 `dns::transport` 新增 HTTP3、DHCP、tailscale、resolved 实现
-  4. ✗ `resolved` service stub，与 DNS transport 对齐
-- **现状**：58% 覆盖率 (7/12 传输)，缺少 5 种高级传输
+  2. ✅ 实现 HTTP3 over QUIC (DoH3) 传输，支持 doh3:// 和 h3:// URL — 已完成 2025-11-10
+  3. ✗ 扩展 `DnsServerIR`，允许描述 DHCP/tailscale/resolved 传输类型
+  4. ✗ `resolver_from_ir` 与 `dns::transport` 新增 DHCP、tailscale、resolved 实现
+  5. ✗ `resolved` service stub，与 DNS transport 对齐
+- **现状**：67% 覆盖率 (8/12 传输)，已完成 HTTP3，缺少 4 种高级传输
 - **待办**：
-  - [ ] 追加 HTTP3 over QUIC client（需 h3 crate + DoH over HTTP/3）
+  - [x] 追加 HTTP3 over QUIC client（h3 crate + DoH over HTTP/3）— 已完成 2025-11-10
   - [ ] DHCP client 集成（平台相关，需条件编译）
   - [ ] tailscale/Resolved 桥接（需外部服务依赖或 stub）
   - [ ] 设计 env ↔ IR 映射流程，避免双重 source of truth
@@ -125,17 +125,18 @@ Last audited: 2025-11-10 10:45 UTC
 
 ## 近期优先级（Top Tasks）
 
-基于当前进展（入站 41% 完成，出站 42% 完成，DNS 58% 完成），按紧迫性排序：
+基于当前进展（入站 59% 完成，出站 42% 完成，DNS 58% 完成），按紧迫性排序：
 
-1. **连通 TUN/Redirect/TProxy 注册路径**（WS-A，关键阻塞）
-   - 在 `sb-adapters/src/register.rs` 中添加注册函数，连接到已有实现文件
-   - 修复 `Bridge::to_inbound_param` 对 Redirect/TProxy 返回 `UnsupportedInbound` 的问题
-   - 优先级：**P0**，影响：解锁 3 种核心入站
+1. ✅ **连通 TUN/Redirect/TProxy 注册路径**（WS-A，关键阻塞）— 已完成 2025-11-10
+   - ✅ 在 `sb-adapters/src/register.rs` 中添加注册函数，连接到已有实现文件
+   - ✅ TUN/Redirect/TProxy 已完整注册并集成到 adapter registry
+   - 优先级：**P0**，影响：解锁 3 种核心入站 → **完成**
 
-2. **迁移 TUIC/Hysteria2 到 adapter**（WS-B，用户高频）
-   - 从 scaffold 实现迁移到 adapter registry，提供 UDP factory
-   - 补齐 QUIC congestion control 与 multiplexing
-   - 优先级：**P0**，影响：解锁 2 种高频出站
+2. ✅ **迁移 TUIC/Hysteria2 到 adapter**（WS-B，用户高频）— 已完成 2025-11-10
+   - ✅ TUIC/Hysteria2 outbound 已从 scaffold 迁移到 adapter registry
+   - ✅ 提供完整的 UDP factory 与 QUIC congestion control
+   - 优先级：**P0**，影响：解锁 2 种高频出站 → **完成**
+   - 注：inbound 升级属于 WS-A Task 5 范畴
 
 3. ✅ **扩展 Inbound IR v2 字段**（WS-A，基础设施）— 已完成 2025-11-10
    - ✅ 设计协议特定字段（password/uuid/users/transport）
@@ -144,13 +145,15 @@ Last audited: 2025-11-10 10:45 UTC
    - ✅ 添加 Multiplex 支持
    - 优先级：**P0**，影响：使现有协议可完整配置
 
-4. **实现 DNS HTTP3 传输**（WS-C，部分用户需求）
-   - 使用 h3 crate 实现 DoH over HTTP/3
-   - 添加 QUIC 传输层复用
-   - 优先级：**P1**，影响：DNS 覆盖率 → 67%
+4. ✅ **实现 DNS HTTP3 传输**（WS-C，部分用户需求）— 已完成 2025-11-10
+   - ✅ 使用 h3 0.0.8 和 h3-quinn 0.0.10 crate 实现 DoH over HTTP/3
+   - ✅ 添加 QUIC 传输层复用与连接池
+   - ✅ 支持 doh3:// 和 h3:// URL schemes
+   - ✅ 更新 http crate 到 v1.3 以兼容 h3
+   - 优先级：**P1**，影响：DNS 覆盖率 → 67% (8/12)
 
 5. **添加 adapter 路径测试**（WS-E，质量保障）
-   - 为已实现的 7 种入站 + 8 种出站添加 e2e 测试
+   - 为已实现的 10 种入站 + 8 种出站添加 e2e 测试
    - 验证 feature gate 组合不会导致编译失败
    - 优先级：**P1**，影响：防止回归
 

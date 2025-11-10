@@ -16,6 +16,8 @@ mod udp;
 
 #[cfg(feature = "dns_doh")]
 pub mod doh;
+#[cfg(feature = "dns_doh3")]
+pub mod doh3;
 #[cfg(feature = "dns_doq")]
 pub mod doq;
 #[cfg(feature = "dns_dot")]
@@ -27,6 +29,8 @@ pub use udp::{UdpTransport, UdpUpstream};
 
 #[cfg(feature = "dns_doh")]
 pub use doh::{DohConfig, DohServers, DohTransport};
+#[cfg(feature = "dns_doh3")]
+pub use doh3::Doh3Transport;
 #[cfg(feature = "dns_doq")]
 pub use doq::DoqTransport;
 #[cfg(feature = "dns_dot")]

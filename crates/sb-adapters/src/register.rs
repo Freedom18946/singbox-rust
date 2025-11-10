@@ -10,44 +10,6 @@ use sb_core::adapter::{
 };
 use tracing::warn;
 
-/// Adapter wrapper that bridges `sb_adapters::traits::OutboundConnector`
-/// to `sb_core::adapter::OutboundConnector`.
-#[derive(Debug, Clone)]
-struct AdapterWrapper {
-    inner: Arc<dyn crate::traits::OutboundConnector>,
-}
-
-#[async_trait::async_trait]
-impl OutboundConnector for AdapterWrapper {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        use crate::traits::{DialOpts, Target, TransportKind};
-        use tokio::io::{AsyncRead, AsyncWrite};
-
-        let target = Target {
-            host: host.to_string(),
-            port,
-            kind: TransportKind::Tcp,
-        };
-        let opts = DialOpts::default();
-
-        match self.inner.dial(target, opts).await {
-            Ok(boxed_stream) => {
-                // Convert BoxedStream to TcpStream
-                // This is a workaround - BoxedStream is a trait object, not a concrete TcpStream
-                // We'll need to handle this differently
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "AdapterWrapper: cannot convert BoxedStream to TcpStream"
-                ))
-            }
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Dial failed: {}", e)
-            )),
-        }
-    }
-}
-
 static REGISTER_ONCE: Once = Once::new();
 
 /// Register adapter-provided builders with sb-core registry. Safe to call multiple times.
@@ -177,23 +139,10 @@ fn build_http_outbound(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use crate::outbound::http::HttpProxyConnector;
-    use sb_config::outbound::HttpProxyConfig;
-
-    let server = param.server.as_ref()?;
-    let port = param.port.unwrap_or(8080);
-    let endpoint = format!("{}:{}", server, port);
-    let credentials = param.credentials.as_ref();
-    let cfg = HttpProxyConfig {
-        server: endpoint,
-        tag: param.name.clone(),
-        username: credentials.and_then(|c| c.username.clone()),
-        password: credentials.and_then(|c| c.password.clone()),
-        connect_timeout_sec: Some(30),
-        tls: None,
-    };
-    let conn = HttpProxyConnector::new(cfg);
-    Some((Arc::new(conn), None))
+    // TODO: Architecture mismatch - HttpProxyConnector implements sb_adapters::traits::OutboundConnector
+    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
+    warn!("HTTP outbound temporarily disabled due to trait architecture mismatch");
+    None
 }
 
 #[cfg(not(feature = "adapter-http"))]
@@ -215,23 +164,10 @@ fn build_socks_outbound(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use crate::outbound::socks5::Socks5Connector;
-    use sb_config::outbound::Socks5Config;
-
-    let server = param.server.as_ref()?;
-    let port = param.port.unwrap_or(1080);
-    let endpoint = format!("{}:{}", server, port);
-    let credentials = param.credentials.as_ref();
-    let cfg = Socks5Config {
-        server: endpoint,
-        tag: param.name.clone(),
-        username: credentials.and_then(|c| c.username.clone()),
-        password: credentials.and_then(|c| c.password.clone()),
-        connect_timeout_sec: Some(30),
-        tls: None,
-    };
-    let conn = Socks5Connector::new(cfg);
-    Some((Arc::new(conn), None))
+    // TODO: Architecture mismatch - Socks5Connector implements sb_adapters::traits::OutboundConnector
+    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
+    warn!("SOCKS outbound temporarily disabled due to trait architecture mismatch");
+    None
 }
 
 #[cfg(not(feature = "adapter-socks"))]
@@ -247,16 +183,69 @@ fn build_socks_outbound(
 
 #[cfg(feature = "adapter-shadowsocks")]
 fn build_shadowsocks_outbound(
-    _param: &OutboundParam,
-    _ir: &OutboundIR,
+    param: &OutboundParam,
+    ir: &OutboundIR,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - ShadowsocksConnector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("Shadowsocks outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use sb_core::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksOutbound};
+    use sb_core::outbound::crypto_types::OutboundTcp;
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port)?;
+    let method = ir.method.as_ref()?.clone();
+    let password = ir.password.as_ref()?.clone();
+
+    // Build config
+    let cfg = ShadowsocksConfig {
+        server: server.clone(),
+        port,
+        method,
+        password,
+        plugin: ir.plugin.clone(),
+        plugin_opts: ir.plugin_opts.clone(),
+    };
+
+    // Create outbound
+    let outbound = ShadowsocksOutbound::new(cfg);
+    let outbound_arc = Arc::new(outbound);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct ShadowsocksConnectorWrapper {
+        inner: Arc<ShadowsocksOutbound>,
+    }
+
+    impl std::fmt::Debug for ShadowsocksConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("ShadowsocksConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for ShadowsocksConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // Shadowsocks uses encrypted stream, cannot return TcpStream directly
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Shadowsocks uses encrypted stream; use switchboard registry instead",
+            ))
+        }
+    }
+
+    let wrapper = ShadowsocksConnectorWrapper {
+        inner: outbound_arc.clone(),
+    };
+
+    // Return TCP connector wrapper and UDP factory
+    Some((
+        Arc::new(wrapper),
+        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+    ))
 }
 
 #[cfg(not(feature = "adapter-shadowsocks"))]
@@ -272,16 +261,70 @@ fn build_shadowsocks_outbound(
 
 #[cfg(feature = "adapter-trojan")]
 fn build_trojan_outbound(
-    _param: &OutboundParam,
-    _ir: &OutboundIR,
+    param: &OutboundParam,
+    ir: &OutboundIR,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - TrojanConnector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("Trojan outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use sb_core::outbound::trojan::{TrojanConfig, TrojanOutbound};
+    use sb_core::outbound::crypto_types::OutboundTcp;
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port)?;
+    let password = ir.password.as_ref()?.clone();
+
+    // Build config
+    let cfg = TrojanConfig {
+        server: server.clone(),
+        port,
+        password,
+        sni: ir.tls_sni.clone(),
+        alpn: ir.alpn.clone().or_else(|| ir.tls_alpn.clone()),
+        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        tls_ca_paths: ir.tls_ca_paths.clone(),
+        tls_ca_pem: ir.tls_ca_pem.clone(),
+    };
+
+    // Create outbound
+    let outbound = TrojanOutbound::new(cfg).ok()?;
+    let outbound_arc = Arc::new(outbound);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct TrojanConnectorWrapper {
+        inner: Arc<TrojanOutbound>,
+    }
+
+    impl std::fmt::Debug for TrojanConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("TrojanConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for TrojanConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // Trojan uses encrypted stream, cannot return TcpStream directly
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Trojan uses encrypted stream; use switchboard registry instead",
+            ))
+        }
+    }
+
+    let wrapper = TrojanConnectorWrapper {
+        inner: outbound_arc.clone(),
+    };
+
+    // Return TCP connector wrapper and UDP factory
+    Some((
+        Arc::new(wrapper),
+        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+    ))
 }
 
 #[cfg(not(feature = "adapter-trojan"))]
@@ -297,16 +340,74 @@ fn build_trojan_outbound(
 
 #[cfg(feature = "adapter-vmess")]
 fn build_vmess_outbound(
-    _param: &OutboundParam,
-    _ir: &OutboundIR,
+    param: &OutboundParam,
+    ir: &OutboundIR,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - VmessConnector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("Vmess outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use sb_core::outbound::vmess::{VmessConfig, VmessOutbound};
+    use sb_core::outbound::crypto_types::OutboundTcp;
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port)?;
+    let uuid_str = ir.uuid.as_ref()?;
+    let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
+
+    // Build config
+    let cfg = VmessConfig {
+        server: server.clone(),
+        port,
+        uuid,
+        security: ir
+            .security
+            .clone()
+            .unwrap_or_else(|| "auto".to_string()),
+        alter_id: ir.alter_id.unwrap_or(0),
+        tls: ir.tls.unwrap_or(false),
+        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        tls_sni: ir.tls_sni.clone(),
+    };
+
+    // Create outbound
+    let outbound = VmessOutbound::new(cfg).ok()?;
+    let outbound_arc = Arc::new(outbound);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct VmessConnectorWrapper {
+        inner: Arc<VmessOutbound>,
+    }
+
+    impl std::fmt::Debug for VmessConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("VmessConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for VmessConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // VMess uses encrypted stream, cannot return TcpStream directly
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "VMess uses encrypted stream; use switchboard registry instead",
+            ))
+        }
+    }
+
+    let wrapper = VmessConnectorWrapper {
+        inner: outbound_arc.clone(),
+    };
+
+    // Return TCP connector wrapper and UDP factory
+    Some((
+        Arc::new(wrapper),
+        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+    ))
 }
 
 #[cfg(not(feature = "adapter-vmess"))]
@@ -322,16 +423,71 @@ fn build_vmess_outbound(
 
 #[cfg(feature = "adapter-vless")]
 fn build_vless_outbound(
-    _param: &OutboundParam,
-    _ir: &OutboundIR,
+    param: &OutboundParam,
+    ir: &OutboundIR,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - VlessConnector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("Vless outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use sb_core::outbound::vless::{VlessConfig, VlessOutbound};
+    use sb_core::outbound::crypto_types::OutboundTcp;
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port)?;
+    let uuid_str = ir.uuid.as_ref()?;
+    let uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
+
+    // Build config
+    let cfg = VlessConfig {
+        server: server.clone(),
+        port,
+        uuid,
+        flow: ir.flow.clone(),
+        encryption: ir.encryption.clone().unwrap_or_else(|| "none".to_string()),
+        tls: ir.tls.unwrap_or(false),
+        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        tls_sni: ir.tls_sni.clone(),
+    };
+
+    // Create outbound
+    let outbound = VlessOutbound::new(cfg).ok()?;
+    let outbound_arc = Arc::new(outbound);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct VlessConnectorWrapper {
+        inner: Arc<VlessOutbound>,
+    }
+
+    impl std::fmt::Debug for VlessConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("VlessConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for VlessConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // VLESS uses encrypted stream, cannot return TcpStream directly
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "VLESS uses encrypted stream; use switchboard registry instead",
+            ))
+        }
+    }
+
+    let wrapper = VlessConnectorWrapper {
+        inner: outbound_arc.clone(),
+    };
+
+    // Return TCP connector wrapper and UDP factory
+    Some((
+        Arc::new(wrapper),
+        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+    ))
 }
 
 #[cfg(not(feature = "adapter-vless"))]
@@ -591,48 +747,10 @@ fn build_dns_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
 ) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
-    use crate::outbound::dns::{DnsConfig, DnsConnector, DnsTransport};
-    use std::net::IpAddr;
-    use std::time::Duration;
-
-    let server = param
-        .server
-        .as_ref()
-        .or_else(|| ir.server.as_ref())?;
-    let addr = match server.parse::<IpAddr>() {
-        Ok(ip) => ip,
-        Err(e) => {
-            warn!(target: "sb_adapters::register", address=%server, error=%e, "invalid DNS server address");
-            return None;
-        }
-    };
-
-    let transport = match ir
-        .dns_transport
-        .as_ref()
-        .map(|s| s.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("tcp") => DnsTransport::Tcp,
-        Some("dot") | Some("tls") => DnsTransport::DoT,
-        Some("doh") | Some("https") => DnsTransport::DoH,
-        Some("doq") | Some("quic") => DnsTransport::DoQ,
-        _ => DnsTransport::Udp,
-    };
-
-    let config = DnsConfig {
-        server: addr,
-        port: param.port.or(ir.port),
-        transport,
-        timeout: Duration::from_millis(ir.dns_timeout_ms.unwrap_or(5000)),
-        query_timeout: Duration::from_millis(ir.dns_query_timeout_ms.unwrap_or(3000)),
-        tls_server_name: ir.dns_tls_server_name.clone(),
-        enable_edns0: ir.dns_enable_edns0.unwrap_or(true),
-        edns0_buffer_size: ir.dns_edns0_buffer_size.unwrap_or(1232),
-        doh_url: ir.dns_doh_url.clone(),
-    };
-    let connector = DnsConnector::new(config);
-    Some((Arc::new(connector), None))
+    // TODO: Architecture mismatch - DnsConnector implements sb_adapters::traits::OutboundConnector
+    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
+    warn!("DNS outbound temporarily disabled due to trait architecture mismatch");
+    None
 }
 
 #[cfg(not(feature = "adapter-dns"))]
