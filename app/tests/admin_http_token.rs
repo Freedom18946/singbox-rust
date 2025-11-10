@@ -66,6 +66,8 @@ fn admin_requires_token_when_configured() {
             }],
             default: Some("direct".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

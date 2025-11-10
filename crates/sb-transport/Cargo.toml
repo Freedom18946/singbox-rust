@@ -61,3 +61,5 @@ tonic-build = { version = "0.12", optional = true }
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disabled_tests)'] }

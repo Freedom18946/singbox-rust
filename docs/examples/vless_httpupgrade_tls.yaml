@@ -1,0 +1,17 @@
+# Minimal example: VLESS over TLS+HTTPUpgrade
+outbounds:
+  - type: vless
+    tag: vless-hup
+    server: vless.host:443
+    uuid: 12345678-1234-1234-1234-123456789abc
+    tls:
+      enabled: true
+      sni: api.vless.host
+    transport:
+      type: httpupgrade
+      path: "/connect"
+      headers:
+        X-Auth: demo
+route:
+  rules: []
+  default: vless-hup

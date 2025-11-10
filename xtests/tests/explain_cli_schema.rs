@@ -1,4 +1,3 @@
-use assert_cmd::prelude::*;
 use serde_json::Value;
 use std::process::Command;
 

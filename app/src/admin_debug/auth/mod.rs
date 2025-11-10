@@ -6,7 +6,11 @@
 //! All authentication errors are mapped to `sb_admin_contract::ErrorKind::Auth`
 //! for consistent contract compliance.
 
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod apikey;
 pub mod jwt;

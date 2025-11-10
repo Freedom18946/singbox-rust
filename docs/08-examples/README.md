@@ -17,6 +17,7 @@ Ready-to-use configuration examples for common use cases.
 
 - **[REALITY Server](advanced/reality-server.md)** - Anti-censorship VLESS+REALITY
 - **[Hysteria2 Client](advanced/hysteria2-client.md)** - High-performance QUIC proxy
+- **[TUIC UDP over Stream](advanced/tuic-udp.md)** - TUIC UDP relay with QUIC streams
 - **[Load Balancing](advanced/load-balancing.md)** - Multiple proxies with failover
 - **[Smart Routing](advanced/smart-routing.md)** - Route by domain, IP, process
 
@@ -24,6 +25,7 @@ Ready-to-use configuration examples for common use cases.
 
 - **[V2Ray Transports](transport/)** - WebSocket, HTTP/2, gRPC configurations
 - **[Multiplex](transport/multiplex.md)** - Connection multiplexing with yamux
+- **[Fallback (WS↔H2)](transport/fallback.md)** - Enable automatic fallback between WebSocket and HTTP/2
 
 ### DNS Examples
 

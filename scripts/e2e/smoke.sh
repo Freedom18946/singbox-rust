@@ -78,6 +78,8 @@ if (( METRICS_ON==1 )); then
   echo "sb_in_parse_socks_ok=$(scrape_metric_sum sb_inbound_parse_total 'label=\"socks\"' 'result=\"ok\"')" >> "$tmp_before"
   echo "sb_io_up_http=$(scrape_metric_sum sb_io_bytes_total 'label=\"http\"' 'dir=\"up\"')" >> "$tmp_before"
   echo "sb_io_down_http=$(scrape_metric_sum sb_io_bytes_total 'label=\"http\"' 'dir=\"down\"')" >> "$tmp_before"
+  # 统一入站错误（HTTP）基线
+  echo "inb_err_http=$(scrape_metric_sum inbound_error_total 'protocol=\"http\"')" >> "$tmp_before"
 fi
 
 # ===== 2) HTTP CONNECT 成功 =====
@@ -110,12 +112,14 @@ if (( METRICS_ON==1 )); then
   echo "sb_in_parse_socks_ok=$(scrape_metric_sum sb_inbound_parse_total 'label=\"socks\"' 'result=\"ok\"')" >> "$tmp_after"
   echo "sb_io_up_http=$(scrape_metric_sum sb_io_bytes_total 'label=\"http\"' 'dir=\"up\"')" >> "$tmp_after"
   echo "sb_io_down_http=$(scrape_metric_sum sb_io_bytes_total 'label=\"http\"' 'dir=\"down\"')" >> "$tmp_after"
+  # 统一入站错误（HTTP）对比
+  echo "inb_err_http=$(scrape_metric_sum inbound_error_total 'protocol=\"http\"')" >> "$tmp_after"
 
   step "断言指标增长"
   # shellcheck disable=SC2046
-  source "$tmp_before"; b_router=$sb_router_select_ok; b_och=$sb_out_connect_http_ok; b_ocd=$sb_out_connect_direct_ok; b_ohh=$sb_out_handshake_http_ok; b_iph=$sb_in_parse_http_ok; b_ips=$sb_in_parse_socks_ok; b_up=$sb_io_up_http; b_down=$sb_io_down_http
+  source "$tmp_before"; b_router=$sb_router_select_ok; b_och=$sb_out_connect_http_ok; b_ocd=$sb_out_connect_direct_ok; b_ohh=$sb_out_handshake_http_ok; b_iph=$sb_in_parse_http_ok; b_ips=$sb_in_parse_socks_ok; b_up=$sb_io_up_http; b_down=$sb_io_down_http; b_inb_http=$inb_err_http
   # shellcheck disable=SC2046
-  source "$tmp_after";  a_router=$sb_router_select_ok; a_och=$sb_out_connect_http_ok; a_ocd=$sb_out_connect_direct_ok; a_ohh=$sb_out_handshake_http_ok; a_iph=$sb_in_parse_http_ok; a_ips=$sb_in_parse_socks_ok; a_up=$sb_io_up_http; a_down=$sb_io_down_http
+  source "$tmp_after";  a_router=$sb_router_select_ok; a_och=$sb_out_connect_http_ok; a_ocd=$sb_out_connect_direct_ok; a_ohh=$sb_out_handshake_http_ok; a_iph=$sb_in_parse_http_ok; a_ips=$sb_in_parse_socks_ok; a_up=$sb_io_up_http; a_down=$sb_io_down_http; a_inb_http=$inb_err_http
 
   delta_gt "$b_router" "$a_router" "router_select_total 增长"
   delta_gt "$b_och"    "$a_och"    "outbound_connect{http,ok} 增长"
@@ -125,6 +129,7 @@ if (( METRICS_ON==1 )); then
   delta_gt "$b_ips"    "$a_ips"    "inbound_parse{socks,ok} 增长"
   delta_gt "$b_up"     "$a_up"     "sb_io_bytes_total{http,up} 增长"
   delta_gt "$b_down"   "$a_down"   "sb_io_bytes_total{http,down} 增长"
+  delta_gt "$b_inb_http" "$a_inb_http" "inbound_error_total{protocol=http} 增长（触发非 CONNECT）"
 fi
 
 ok "冒烟完成 ✅"

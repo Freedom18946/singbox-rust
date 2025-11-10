@@ -1,103 +1,196 @@
-# sing-box Parity Matrix
+# sing-box Parity Matrix (Rust vs Go 1.12.12)
 
-Baseline: SagerNet/sing-box `dev-next` (GitHub, 2025-10-14)
-Last audited: 2025-10-14 23:30 UTC
+Baseline: sing-box 1.12.12 (Go) — `go_fork_source/sing-box-1.12.12`
+Last audited: 2025-11-10 10:40 UTC
 
 Status legend
-- ✅ Supported: behaviour matches upstream for the documented surface
-- ◐ Partial: implementation exists but lacks upstream options, integration, or packaging
-- ✗ Missing: no usable implementation yet
+- ✅ Supported: 行为与上游一致或等效，已注册并完整实现
+- ◐ Partial: 有实现但选项/集成/包装不完整，或已存在但未注册
+- ⚠ Stub: 已注册但仅返回警告，无实际实现
+- ✗ Missing: 不可用或未实现
 
-## CLI Surface (single binary expected)
+## 扼要结论（Executive Summary）
 
-| Feature | Upstream reference | Status | Notes |
+### 协议适配器现状
+- `sb_adapters::register_all()` 只有在显式编译 `app` 的 `adapters` 特性时才会执行（`app/src/bootstrap.rs:680-683`），并且注册列表现已扩展到覆盖 HTTP/SOCKS/Mixed + Shadowsocks/VMess/VLESS/Trojan 入站，以及 HTTP/SOCKS/Shadowsocks/Trojan/VMess/VLESS/DNS 出站（`crates/sb-adapters/src/register.rs:15-114`）。
+- Naive/ShadowTLS/Hysteria/Hysteria2/TUIC/AnyTLS 等 QUIC 入站已在注册表中添加 stub builder（`crates/sb-adapters/src/register.rs:478-524`），但仅返回警告而无实际实现。
+- TUN/Redirect/TProxy/Direct 入站虽然在 `sb-adapters/src/inbound/` 中有实现文件，但尚未在 `register.rs` 中注册，因此无法通过 adapter 路径调用。
+- `OutboundType` 枚举已扩展到 19 项（`crates/sb-config/src/ir/mod.rs:95-134`），新增了 Dns/Tor/AnyTLS/Hysteria(v1)/WireGuard 等 Go 独有类型，但只有 DNS outbound 实现了完整的 adapter builder（feature-gated），其余均为 stub。
+
+### 端点与服务
+- Go 注册表暴露 WireGuard/Tailscale endpoint 与 Resolved/DERP/SSM 服务（`go_fork_source/sing-box-1.12.12/include/registry.go:102-138`），Rust IR 与运行期完全没有 endpoints/services 结构（`crates/sb-config/src/ir/mod.rs:382-404`、`crates/sb-core/src/services/mod.rs:1-3`），仅保留可选 NTP 服务。
+
+### DNS 传输
+- `resolver_from_ir` 支持 system/UDP/DoH/DoT/DoQ 五种基础传输 + hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-60`），完全缺少 Go 提供的 HTTP3(DoH over HTTP/3)、DHCP、tailscale、resolved 传输（`go_fork_source/sing-box-1.12.12/include/quic.go:29-32`、`go_fork_source/sing-box-1.12.12/include/dhcp.go`、`go_fork_source/sing-box-1.12.12/include/tailscale.go:17-19`）。
+
+## 功能总览（Feature Index）
+
+| 类别 | 状态 | 备注 |
+| --- | --- | --- |
+| CLI 子命令 | ◐ Partial | 子命令面齐全，但 `tools connect` 仍手动调用 `Bridge::new_from_config`，缺乏 router handle，因此无法驱动 adapter 路径或 selector/health 能力（`app/src/cli/tools.rs:126`、`app/src/cli/tools.rs:188`）。 |
+| 配置/IR/校验 | ◐ Partial | `sb-config` 顶层只暴露 inbounds/outbounds/log/dns/certificate/ntp（`crates/sb-config/src/ir/mod.rs:382-404`），`InboundType`/`OutboundType` 仍停留在 7/13 个内建项（`crates/sb-config/src/ir/mod.rs:21-80`），没有 endpoint/service/dns outbound/wireguard/tor/anytls/hysteria(v1) 的 schema。 |
+| 运行时与热重载 | ◐ Partial | Supervisor 会重新构建 engine 并调用 adapter-first bridge，但由于 IR 无法描述新协议，热重载仍只能覆盖少量入/出站（`crates/sb-core/src/runtime/supervisor.rs:104`、`crates/sb-core/src/adapter/bridge.rs:2153`）。 |
+| 路由/桥接 | ◐ Partial | `to_inbound_param` 只识别 `socks/http/mixed/tun/redirect/tproxy/direct`，Redirect/TProxy 继续返回 `UnsupportedInbound`，其它协议型入站完全没有入口（`crates/sb-core/src/adapter/bridge.rs:203`、`crates/sb-core/src/adapter/bridge.rs:328`）。 |
+| DNS 子系统 | ◐ Partial | Resolver 只会拼 `system/udp/doh/dot/doq` upstream 与 hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-142`），HTTP3/DHCP/tailscale/resolved 传输与服务入口均未实现。 |
+| 协议出站 | ◐ Partial | Adapter/scaffold 仅能构建 direct/block/http/socks/shadowsocks/vless/vmess/trojan/tuic/hysteria2/shadowtls/ssh/urltest/selector，但 `adapter-dns` 现在可注册 `dns` 连接（需 IP `server` 和 new `dns_*` IR 字段）；Go 独有的 tor/anytls/wireguard/hysteria(v1) 仍缺席（`crates/sb-core/src/adapter/bridge.rs:239-257`、`crates/sb-core/src/adapter/bridge.rs:500-730`、`crates/sb-adapters/src/register.rs:530-577`）。 |
+| 协议入站 | ✗ Missing | `InboundType` 只有 `socks/http/mixed/tun/redirect/tproxy/direct`（`crates/sb-config/src/ir/mod.rs:21-45`），即便 adapter 提供 Naive/ShadowTLS/Trojan/TUIC/Hysteria(H1/H2) 模块也无法被 IR/Bridge 调用。 |
+| 传输层 | ◐ Partial | `sb-transport` 具备 TLS/WS/H2/HTTPUpgrade/GRPC/mux/QUIC，但目前只被 VLESS/VMess/Trojan/TUIC/Hysteria2 路径调用，REALITY/ECH 也仅在部分协议中启用。 |
+| 选择器 | ◐ Partial | `assemble_selectors`/`SelectorGroup` 可以构建 selector/urltest，并在有 Tokio runtime 时启动健康检查，但受限于可用出站集合。 |
+| 端点（Endpoints） | ✗ Missing | IR 中没有 `endpoints` 字段（`crates/sb-config/src/ir/mod.rs:382-404`），`sb-core` 也缺乏任何 endpoint registry/实现，对比 Go 的 WireGuard/Tailscale endpoint 全部缺失。 |
+| 服务（Services） | ✗ Missing | 运行期仅有可选 `service_ntp` 模块（`crates/sb-core/src/services/mod.rs:1-3`），没有 Resolved/DERP/SSM/Geo 相关服务。 |
+| 观测/指标 | ◐ Partial | 存在路由/出站部分指标，但缺乏与 Go 对齐的标签和 explain/health 覆盖，新增 adapter 亦无测试保障。 |
+| 发布/数据 | ◐ Partial | `tools geodata-update` 可拉取 Geo 数据，但没有自动校验或发布链路。 |
+
+## 与 go_fork_source 注册表对照（详细差距快照）
+
+### 入站协议对比（Inbound Protocols）
+
+| 协议 | Go 1.12.12 | Rust 实现状态 | 注册状态 | 说明 |
+| --- | --- | --- | --- | --- |
+| tun | ✅ | ◐ Partial | 未注册 | 实现文件存在 `sb-adapters/src/inbound/tun.rs`，但未在 `register.rs` 中注册 |
+| redirect | ✅ | ◐ Partial | 未注册 | 实现文件存在 `sb-adapters/src/inbound/redirect.rs`，但未注册；IR 返回 `UnsupportedInbound` |
+| tproxy | ✅ | ◐ Partial | 未注册 | 实现文件存在 `sb-adapters/src/inbound/tproxy.rs`，但未注册；IR 返回 `UnsupportedInbound` |
+| direct | ✅ | ✗ Missing | 未注册 | IR 枚举中定义但无实现 |
+| socks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/socks/` |
+| http | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/http.rs` |
+| mixed | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/mixed.rs` |
+| shadowsocks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/shadowsocks.rs` |
+| vmess | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vmess.rs` |
+| trojan | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/trojan.rs` |
+| naive | ✅ | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:478-484`) |
+| shadowtls | ✅ | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:486-492`) |
+| vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vless.rs` |
+| anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:518-524`) |
+| hysteria (v1) | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:494-500`) |
+| tuic | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:510-516`) |
+| hysteria2 | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:502-508`) |
+
+**Rust 入站实现小结：**
+- 完整实现并注册：7 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless)
+- 实现文件存在但未注册：3 种 (tun, redirect, tproxy)
+- 注册为 stub (返回警告)：6 种 (naive, shadowtls, hysteria, hysteria2, tuic, anytls)
+- 完全缺失：1 种 (direct)
+- **总计：17 种入站中，仅 7 种完全可用 (41%)**
+
+### 出站协议对比（Outbound Protocols）
+
+| 协议 | Go 1.12.12 | Rust 实现状态 | 注册状态 | 说明 |
+| --- | --- | --- | --- | --- |
+| direct | ✅ | ◐ Partial | scaffold | 仅 scaffold 实现，无 adapter |
+| block | ✅ | ◐ Partial | scaffold | 仅 scaffold 实现，无 adapter |
+| dns | ✅ | ✅ Supported | 已注册 | 完整实现，feature-gated (`adapter-dns`)，支持 UDP/TCP/DoT/DoH/DoQ |
+| selector | ✅ (group) | ◐ Partial | scaffold | 仅 scaffold 实现 `SelectorGroup` |
+| urltest | ✅ (group) | ◐ Partial | scaffold | 仅 scaffold 实现 `SelectorGroup` |
+| socks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/socks5.rs` |
+| http | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/http.rs` |
+| shadowsocks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/shadowsocks.rs` |
+| vmess | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/vmess.rs` |
+| trojan | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/trojan.rs` |
+| tor | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:588-594`) |
+| ssh | ✅ | ◐ Partial | scaffold | 实现文件存在但仅走 scaffold 路径 |
+| shadowtls | ✅ | ◐ Partial | scaffold | 实现文件存在但不完整 |
+| vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/vless.rs` |
+| anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:596-602`) |
+| hysteria (v1) | ✅ (QUIC) | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:612-618`) |
+| tuic | ✅ (QUIC) | ◐ Partial | scaffold | 实现文件存在但不完整，走 scaffold |
+| hysteria2 | ✅ (QUIC) | ◐ Partial | scaffold | 实现文件存在但不完整，走 scaffold |
+| wireguard | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:604-610`) |
+
+**Rust 出站实现小结：**
+- 完整实现并注册：8 种 (direct-scaffold, http, socks, shadowsocks, vmess, trojan, vless, dns)
+- 实现文件存在但不完整：5 种 (block, selector, urltest, ssh, shadowtls, tuic, hysteria2)
+- 注册为 stub (返回警告)：4 种 (tor, anytls, hysteria v1, wireguard)
+- **总计：19 种出站中，仅 8 种完全可用 (42%)**
+
+### 端点对比（Endpoints）
+
+| 端点类型 | Go 1.12.12 | Rust 实现状态 | 说明 |
 | --- | --- | --- | --- |
-| Unified `sing-box` dispatcher | `cmd/sing-box/cmd.go` | ◐ Partial | Unified dispatcher exists at `app/src/main.rs`; subcommands (`check/merge/format/generate/geoip/geosite/ruleset/run/tools/version`) are wired behind features. Runtime `run` remains limited by config→runtime bridging. |
-| `check` | `cmd/sing-box/cmd_check.go` | ◐ Partial | `app/src/bin/check.rs` validates only basic HTTP/SOCKS/TUN shapes; no schema enforcement for DNS, services, or advanced adapters. |
-| `format` | `cmd/sing-box/cmd_format.go` | ◐ Partial | Implemented at `app/src/cli/format.rs`; JSON/YAML support present; directory recursion and some defaults differ from upstream. |
-| `merge` | `cmd/sing-box/cmd_merge.go` | ◐ Partial | `app/src/cli/merge.rs` covers basic merge; missing upstream-grade conflict diagnostics and recursive directory loading. |
-| `generate` (reality/ech/tls/wireguard/vapid) | `cmd/sing-box/cmd_generate*.go` | ✅ Supported | Implemented inside the main CLI (`app/src/cli/generate.rs`) with parity subcommands. |
-| `geoip` | `cmd/sing-box/cmd_geoip*.go` | ◐ Partial | `app/src/cli/geoip.rs` supports list/lookup/export; manual DB paths; dataset not bundled; no auto-update. |
-| `geosite` | `cmd/sing-box/cmd_geosite*.go` | ◐ Partial | `app/src/cli/geosite.rs` works with text DB; no binary DB or updater. |
-| `rule-set` | `cmd/sing-box/cmd_rule_set*.go` | ◐ Partial | `app/src/cli/ruleset.rs` has validate/info/format; compile/decompile/upgrade parity incomplete. |
-| `tools` (`connect`, `fetch`, `synctime`, `fetch-http3`) | `cmd/sing-box/cmd_tools*.go` | ◐ Partial | `app/src/cli/tools.rs` implements connect/fetch/synctime; HTTP/3 feature-gated; QUIC tooling differs. |
-| `run` | `cmd/sing-box/cmd_run.go` | ◐ Partial | Entry exists; config→runtime bridge incomplete: inbounds/router/outbounds not fully instantiated; hot reload disabled. |
-| `version` | `cmd/sing-box/cmd_version.go` | ✅ Supported | `app/src/cli/version.rs` prints semantic version plus JSON format flag. |
+| wireguard | ✅ (with_wireguard) | ✗ Missing | Go 通过 `wireguard.RegisterEndpoint` 注册 (`include/wireguard.go:15-17`)，Rust 无 endpoint IR 或实现 |
+| tailscale | ✅ (with_tailscale) | ✗ Missing | Go 通过 `tailscale.RegisterEndpoint` 注册 (`include/tailscale.go:13-15`)，Rust 无 endpoint IR 或实现 |
 
-## Configuration Coverage
+**总计：2 种端点全部缺失 (0%)**
 
-### Top-level sections
+### DNS 传输对比（DNS Transports）
 
-| Section | Upstream doc | Status | Notes |
+| 传输类型 | Go 1.12.12 | Rust 实现状态 | 说明 |
 | --- | --- | --- | --- |
-| `log` | `docs/configuration/log/index.md` | ✗ Missing | Not consumed by runtime; no serializer hook. |
-| `dns` | `docs/configuration/dns/index.md` | ◐ Partial | Schema present (tests/golden); not converted to IR or wired to runtime resolver; env still controls backends. |
-| `ntp` | `docs/configuration/ntp/index.md` | ◐ Partial | Fields present in tests; runtime service feature-gated and not started from config. |
-| `certificate` | `docs/configuration/certificate/index.md` | ✗ Missing | No certificate loader or reference counting in runtime. |
-| `endpoints` | `docs/configuration/endpoint/index.md` | ✗ Missing | Endpoint arrays unsupported in runtime. |
-| `inbounds` | `docs/configuration/inbound/index.md` | ◐ Partial | IR supports HTTP/SOCKS/TUN/Direct; runtime start-up path disabled; advanced inbounds not exposed. |
-| `outbounds` | `docs/configuration/outbound/index.md` | ◐ Partial | IR parses major protocols; builders not invoked to create adapters; many transport options env-driven. |
-| `route` | `docs/configuration/route/index.md` | ◐ Partial | IR rich; runtime does not install router index from IR by default; hot-reload disabled. |
-| `services` | `docs/configuration/service/index.md` | ✗ Missing | DERP/resolved/ssm-api not implemented. |
-| `experimental` | `docs/configuration/experimental/index.md` | ✗ Missing | No runtime bridge. |
+| TCP | ✅ | ✅ Supported | `resolver_from_ir` 支持通过 upstream 配置 |
+| UDP | ✅ | ✅ Supported | 默认传输，完整支持 |
+| TLS (DoT) | ✅ | ✅ Supported | 完整支持 DoT upstream |
+| HTTPS (DoH) | ✅ | ✅ Supported | 完整支持 DoH upstream |
+| QUIC (DoQ) | ✅ (with_quic) | ✅ Supported | 完整支持 DoQ upstream |
+| HTTP3 (DoH/3) | ✅ (with_quic) | ✗ Missing | Go 通过 `quic.RegisterHTTP3Transport` 注册 (`include/quic.go:31-32`)，Rust 不支持 |
+| hosts | ✅ | ✅ Supported | 通过 `hosts_overlay` 实现 |
+| local | ✅ | ✅ Supported | system resolver 覆盖 |
+| fakeip | ✅ | ✅ Supported | 通过 `fakeip_overlay` 实现 |
+| resolved | ✅ | ✗ Missing | Go 通过 `resolved.RegisterTransport` 注册 (`include/registry.go:121`)，Rust 无实现 |
+| DHCP | ✅ (platform) | ✗ Missing | Go 通过 `registerDHCPTransport` 注册 (`include/dhcp.go`)，Rust 无实现 |
+| tailscale | ✅ (with_tailscale) | ✗ Missing | Go 通过 `tailscale.RegistryTransport` 注册 (`include/tailscale.go:17-19`)，Rust 无实现 |
 
-### Inbound protocols
+**Rust DNS 传输小结：**
+- 完整支持：7 种 (TCP, UDP, TLS, HTTPS, QUIC, hosts, fakeip)
+- 完全缺失：5 种 (HTTP3, resolved, DHCP, tailscale, local-stub)
+- **总计：12 种 DNS 传输中，7 种可用 (58%)**
 
-| Protocol | Upstream doc | Status | Notes |
+### 服务对比（Services）
+
+| 服务类型 | Go 1.12.12 | Rust 实现状态 | 说明 |
 | --- | --- | --- | --- |
-| `http` | `docs/configuration/inbound/http.md` | ◐ Partial | Adapter exists; runtime start disabled; advanced fields not surfaced. |
-| `socks` | `docs/configuration/inbound/socks.md` | ◐ Partial | TCP/UDP support present; runtime start disabled; auth variants limited in config. |
-| `tun` | `docs/configuration/inbound/tun.md` | ◐ Partial | Started from config (phase-1 skeleton). No L3/L4 forwarding yet. |
-| `direct` | `docs/configuration/inbound/direct.md` | ◐ Partial | Started from config (TCP+UDP forwarder); basic timeouts; no auth. |
-| `redirect` / `tproxy` | `docs/configuration/inbound/redirect.md` / `.../tproxy.md` | ◐ Partial | Adapters implemented; missing IR/runtime glue. |
-| `shadowsocks`, `shadowtls`, `trojan`, `vless`, `vmess`, `naive`, `hysteria`, `hysteria2`, `tuic`, `anytls` | respective docs | ◐ Partial | Implementations exist in `sb-adapters`; lacking config→runtime wiring and advanced options exposure. |
+| resolved | ✅ | ✗ Missing | Go 通过 `resolved.RegisterService` 注册 (`include/registry.go:133`)，Rust 无 service IR 或实现 |
+| ssmapi | ✅ | ✗ Missing | Go 通过 `ssmapi.RegisterService` 注册 (`include/registry.go:134`)，Rust 无实现 |
+| derp | ✅ (with_tailscale) | ✗ Missing | Go 通过 `derp.Register` 注册 (`include/tailscale.go:21-23`)，Rust 无实现 |
+| ntp | ✗ | ◐ Partial | Rust 独有，通过 `service_ntp` 可选模块实现 (`crates/sb-core/src/services/mod.rs`) |
 
-### Outbound protocols
+**总计：Go 的 3 种服务全部缺失 (0%)；Rust 有独立的 NTP 服务**
 
-| Protocol | Upstream doc | Status | Notes |
+## 配置与 IR 覆盖
+
+### IR 顶层字段对比
+
+| 字段 | Go 1.12.12 | Rust IR 状态 | 说明 |
 | --- | --- | --- | --- |
-| `direct` / `block` | `docs/configuration/outbound/direct.md` / `.../block.md` | ◐ Partial | Implemented; IR present; runtime builder path incomplete; advanced dial controls limited. |
-| `http` / `socks` | `docs/configuration/outbound/http.md` / `.../socks.md` | ◐ Partial | Parsing exists; TLS/transport settings not fully forwarded; env toggles used for transport. |
-| `vmess` / `vless` | `docs/configuration/outbound/vmess.md` / `.../vless.md` | ◐ Partial | Outbound code exists; multiplex/transport configuration not driven from IR yet. |
-| `tuic` | `docs/configuration/outbound/tuic.md` | ◐ Partial | Outbound present; some features (0-RTT/UDP relay options) need parity checks. |
-| `shadowsocks`, `shadowtls`, `trojan`, `hysteria`, `hysteria2`, `ssh` | respective docs | ◐ Partial | Implementations exist; config-driven builders incomplete; SSH is limited; WireGuard remains stub. |
-| `anytls`, `tor`, `wireguard` | respective docs | ✗ Missing | No usable implementation or only placeholder (WireGuard stub). |
-| `selector` / `urltest` | `docs/configuration/outbound/selector.md` / `.../urltest.md` | ◐ Partial | Selector (manual) wired from config using core selector; URLTest pending. |
+| log | ✅ | ✅ | 完整支持 |
+| dns | ✅ | ✅ | 基础支持，但缺少部分传输类型 |
+| certificate | ✅ | ✅ | 完整支持 |
+| ntp | ✅ | ✅ | Rust 独立实现 |
+| inbounds | ✅ | ◐ Partial | IR 枚举定义不完整，缺少协议字段 |
+| outbounds | ✅ | ◐ Partial | IR 枚举已扩展但协议字段不完整 |
+| route/routing | ✅ | ✅ | 完整支持 |
+| experimental | ✅ | ✗ Missing | Rust IR 完全不支持 |
+| endpoints | ✅ | ✗ Missing | Rust IR 完全不支持 |
+| services | ✅ | ✗ Missing | Rust IR 完全不支持 (除 NTP) |
 
-## Services
+### Inbound/Outbound IR 字段对比
 
-| Service | Upstream doc | Status | Notes |
-| --- | --- | --- | --- |
-| `derp` | `docs/configuration/service/derp.md` | ✗ Missing | Repository lacks DERP service implementation; `rg derp` only finds documentation. |
-| `resolved` | `docs/configuration/service/resolved.md` | ✗ Missing | No resolver bridge or config. |
-| `ssm-api` | `docs/configuration/service/ssm-api.md` | ✗ Missing | Admin API scaffolding absent. |
+**InboundType 枚举：**
+- Rust 已定义 16 种：`Socks/Http/Tun/Mixed/Redirect/Tproxy/Direct/Shadowsocks/Vmess/Vless/Trojan/Naive/Shadowtls/Anytls/Hysteria/Hysteria2/Tuic` (`crates/sb-config/src/ir/mod.rs:31-66`)
+- 但 IR 结构缺少协议特定字段（密码/UUID/多账户/传输参数等），无法完整表达 Go 配置
 
-## Geo & Rule-Set Tooling
+**OutboundType 枚举：**
+- Rust 已定义 19 种（与 Go 基本对齐）：`Direct/Http/Socks/Block/Selector/Shadowsocks/Shadowtls/UrlTest/Hysteria2/Tuic/Vless/Vmess/Trojan/Ssh/Dns/Tor/Anytls/Hysteria/WireGuard` (`crates/sb-config/src/ir/mod.rs:95-137`)
+- 新增了 Go 独有类型（Dns/Tor/AnyTLS/Hysteria v1/WireGuard），但大部分缺少配置字段实现
 
-| Area | Upstream reference | Status | Notes |
-| --- | --- | --- | --- |
-| GeoIP database tooling | `cmd/sing-box/cmd_geoip*.go` | ◐ Partial | `app/src/bin/geoip.rs` handles text/MMDB input but the project does not ship databases or caching helpers. |
-| Geosite database tooling | `cmd/sing-box/cmd_geosite*.go` | ◐ Partial | `app/src/bin/geosite.rs` works with text DB only; no binary format or updater. |
-| Rule-set compile/convert | `cmd/sing-box/cmd_rule_set*.go` | ✗ Missing | `app/src/bin/ruleset.rs` inspects metadata but lacks compile/decompile/upgrade flows. |
+**DNS IR：**
+- `DnsIR` 描述 servers/rules/fakeip/hosts/TTL (`crates/sb-config/src/ir/mod.rs:704-759`)
+- 缺少字段：HTTP3/DHCP/tailscale/resolved 传输配置，服务引用
 
-## Runtime Observations
+### 配置示例兼容性
 
-- `run` path now starts HTTP/SOCKS/TUN inbounds from IR, installs router index; hot reload updates router index and outbound registry (inbounds not hot-reloaded).
-- DNS pool minimally consumed from `dns.servers` (env still overrides via `SB_DNS_*`).
-- V2Ray transport chain (TLS/WS/H2/HTTPUpgrade/gRPC) for VMess/VLESS uses env toggles; not IR-driven.
-- WireGuard outbound remains a stub (`crates/sb-core/src/outbound/wireguard_stub.rs`).
-- No automation for packaging GeoIP/Geosite or rule-set assets; builds rely on external files.
+- **Go → Rust 迁移**：基础协议（socks/http/shadowsocks/vmess/vless/trojan）可直接迁移；高级协议需等待实现
+- **Rust → Go 迁移**：完全兼容（Rust 是 Go 的子集）
+- **热重载兼容**：受限于 IR 表达能力，只能覆盖已实现的协议子集
 
-## Summary of Priority Gaps
+## 验证与对齐
+- 现有集成测试仍集中在路由 explain/配置校验层面（`app/tests/route_parity.rs`、`app/tests/p0_upstream_compatibility.rs`），未覆盖 adapter 入站/出站、DNS 回退或热重载路径。
+- CLI `tools connect/run` 还没有与 Go 工具做输出 diff，`geoip/geosite` 也缺乏黄金样本。
+- Adapter 路径没有任何自动化验证：即使启用 `adapters` feature 也缺乏 e2e/单测，导致注册表和 README 所 claim 的协议列表无法被 CI 证明。
 
-1. Bridge `ConfigIR` → runtime: start inbounds/router/outbounds; enable hot reload; wire selector/urltest and health checks.
-2. Consume `dns` block: backend pool/strategy from config, env as override; unify resolver metrics/errors.
-3. Drive P0 protocol outbounds from IR with transport/multiplex options (VMess/VLESS/Trojan/Shadowsocks/TUIC/Hysteria2).
-4. Add sniff→route conditions; ensure performance and correctness at scale.
-5. Finish rule-set compile/decompile/upgrade and package GeoIP/Geosite datasets with updater.
-6. Address stubs or document exclusions (WireGuard, AnyTLS, Tor); add conformance tests.
-
-## Planned Milestones
-- M1: Minimal run path from config (HTTP/SOCKS/TUN + direct/block/http/socks) with router and hot reload.
-- M2: P0 protocol activation with transport/multiplex and selector/urltest; DNS config integration.
-- M3: Sniffing-based routing, tooling parity (rule-set/geo), `ntp` service from config; publish packaging scripts.
+## 附录：关键源码锚点
+- Go 注册总表：`go_fork_source/sing-box-1.12.12/include/registry.go`
+- Bootstrap & feature gate：`app/Cargo.toml`、`app/src/bootstrap.rs`
+- Rust 运行时/桥接：`crates/sb-core/src/runtime/supervisor.rs`、`crates/sb-core/src/adapter/bridge.rs`
+- 适配器注册表：`crates/sb-core/src/adapter/registry.rs`
+- DNS：`crates/sb-core/src/dns/*`
+- 协议适配器：`crates/sb-adapters/src/*`、`crates/sb-core/src/outbound/*`
+- CLI 工具：`app/src/bin/*`、`app/src/cli/*`

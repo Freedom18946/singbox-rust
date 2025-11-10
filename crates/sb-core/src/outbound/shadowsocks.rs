@@ -11,7 +11,7 @@ use std::pin::Pin;
 #[cfg(feature = "out_ss")]
 use std::task::{Context, Poll};
 #[cfg(feature = "out_ss")]
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[cfg(feature = "out_ss")]
 #[derive(Clone, Debug)]
@@ -106,33 +106,90 @@ impl OutboundTcp for ShadowsocksOutbound {
 
         // Step 2: Perform Shadowsocks handshake
         let mut stream = ShadowsocksStream::new(tcp, self.key.clone(), self.config.cipher.clone());
+        stream.handshake(target).await?;
 
-        let handshake_result = stream.handshake(target).await;
-        let elapsed = start.elapsed();
+        // Session key for subsequent frames
+        let session_key = stream
+            .session_key
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| std::io::Error::other("missing session key after handshake"))?;
 
-        match handshake_result {
-            Ok(()) => {
-                #[cfg(feature = "metrics")]
-                {
-                    crate::telemetry::outbound_handshake("shadowsocks", "ok", None);
-                    if let Ok(ms) = u64::try_from(elapsed.as_millis()) {
-                        crate::metrics::outbound::handshake_duration_histogram()
-                            .with_label_values(&["shadowsocks"])
-                            .observe(ms as f64);
+        // Split remote stream and create local loopback pair
+        let (mut ss_r, mut ss_w) = stream.inner.into_split();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        let accept_task = tokio::spawn(async move { listener.accept().await.map(|(s, _)| s) });
+        let client = tokio::net::TcpStream::connect(local_addr).await?;
+        let local_server = accept_task
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))??;
+        let (mut ls_r, mut ls_w) = local_server.into_split();
+
+        // Pumps
+        let cipher_w = self.config.cipher.clone();
+        let session_key_w = session_key.clone();
+        tokio::spawn(async move {
+            let mut write_nonce: u64 = 2;
+            let mut buf = vec![0u8; 32 * 1024];
+            loop {
+                match ls_r.read(&mut buf).await {
+                    Ok(0) => { let _ = ss_w.shutdown().await; break; }
+                    Ok(n) => {
+                        if let Ok(enc_len) = ss_encrypt_aead(&session_key_w, write_nonce, &cipher_w, &(n as u16).to_be_bytes()) {
+                            if ss_w.write_all(&enc_len).await.is_err() { break; }
+                        } else { break; }
+                        if let Ok(enc_payload) = ss_encrypt_aead(&session_key_w, write_nonce.wrapping_add(1), &cipher_w, &buf[..n]) {
+                            if ss_w.write_all(&enc_payload).await.is_err() { break; }
+                        } else { break; }
+                        write_nonce = write_nonce.wrapping_add(2);
                     }
+                    Err(_) => break,
                 }
-                Ok(stream)
             }
-            Err(e) => {
-                #[cfg(feature = "metrics")]
-                crate::telemetry::outbound_handshake(
-                    "shadowsocks",
-                    "error",
-                    Some(crate::telemetry::err_kind(&e)),
-                );
-                Err(e)
+        });
+
+        let cipher_r = self.config.cipher.clone();
+        let session_key_r = session_key;
+        tokio::spawn(async move {
+            let mut read_nonce: u64 = 0;
+            let tag = cipher_r.tag_size();
+            let mut len_buf = vec![0u8; 2 + tag];
+            loop {
+                if let Err(_) = ss_r.read_exact(&mut len_buf).await { break; }
+                let len_plain = match ss_decrypt_aead(&session_key_r, read_nonce, &cipher_r, &len_buf) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                if len_plain.len() < 2 { break; }
+                let plain_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
+
+                let mut payload = vec![0u8; plain_len + tag];
+                if let Err(_) = ss_r.read_exact(&mut payload).await { break; }
+                let plain = match ss_decrypt_aead(&session_key_r, read_nonce.wrapping_add(1), &cipher_r, &payload) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                if ls_w.write_all(&plain).await.is_err() { break; }
+                read_nonce = read_nonce.wrapping_add(2);
+            }
+            let _ = ls_w.shutdown().await;
+        });
+
+        let wrapped = ShadowsocksStream::new(client, self.key.clone(), self.config.cipher.clone());
+
+        let elapsed = start.elapsed();
+        #[cfg(feature = "metrics")]
+        {
+            crate::telemetry::outbound_handshake("shadowsocks", "ok", None);
+            if let Ok(ms) = u64::try_from(elapsed.as_millis()) {
+                crate::metrics::outbound::handshake_duration_histogram()
+                    .with_label_values(&["shadowsocks"])
+                    .observe(ms as f64);
             }
         }
+
+        Ok(wrapped)
     }
 
     fn protocol_name(&self) -> &'static str {
@@ -149,6 +206,7 @@ pub struct ShadowsocksStream {
     #[allow(dead_code)]
     read_nonce: u64,
     handshake_complete: bool,
+    session_key: Option<Vec<u8>>,
 }
 
 #[cfg(feature = "out_ss")]
@@ -161,6 +219,7 @@ impl ShadowsocksStream {
             write_nonce: 0,
             read_nonce: 0,
             handshake_complete: false,
+            session_key: None,
         }
     }
 
@@ -189,6 +248,7 @@ impl ShadowsocksStream {
         let encrypted_addr = self.encrypt_data(&addr_buf, &session_key)?;
         self.inner.write_all(&encrypted_addr).await?;
 
+        self.session_key = Some(session_key);
         self.handshake_complete = true;
         Ok(())
     }
@@ -269,6 +329,64 @@ impl ShadowsocksStream {
         output.extend_from_slice(&result);
 
         Ok(output)
+    }
+}
+
+#[cfg(feature = "out_ss")]
+fn ss_encrypt_aead(
+    key: &[u8],
+    nonce_counter: u64,
+    cipher: &ShadowsocksCipher,
+    data: &[u8],
+) -> std::io::Result<Vec<u8>> {
+    let mut nonce_bytes = vec![0u8; cipher.nonce_size()];
+    nonce_bytes[..8].copy_from_slice(&nonce_counter.to_le_bytes());
+    match cipher {
+        ShadowsocksCipher::Aes256Gcm => {
+            use aes_gcm::aead::{Aead, Payload};
+            let c = Aes256Gcm::new_from_slice(key)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid key"))?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            c.encrypt(nonce, Payload { msg: data, aad: &[] })
+                .map_err(|_| std::io::Error::other("encrypt failed"))
+        }
+        ShadowsocksCipher::Chacha20Poly1305 => {
+            use chacha20poly1305::aead::{Aead, Payload};
+            let c = ChaCha20Poly1305::new_from_slice(key)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid key"))?;
+            let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
+            c.encrypt(nonce, Payload { msg: data, aad: &[] })
+                .map_err(|_| std::io::Error::other("encrypt failed"))
+        }
+    }
+}
+
+#[cfg(feature = "out_ss")]
+fn ss_decrypt_aead(
+    key: &[u8],
+    nonce_counter: u64,
+    cipher: &ShadowsocksCipher,
+    data: &[u8],
+) -> std::io::Result<Vec<u8>> {
+    let mut nonce_bytes = vec![0u8; cipher.nonce_size()];
+    nonce_bytes[..8].copy_from_slice(&nonce_counter.to_le_bytes());
+    match cipher {
+        ShadowsocksCipher::Aes256Gcm => {
+            use aes_gcm::aead::{Aead, Payload};
+            let c = Aes256Gcm::new_from_slice(key)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid key"))?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            c.decrypt(nonce, Payload { msg: data, aad: &[] })
+                .map_err(|_| std::io::Error::other("decrypt failed"))
+        }
+        ShadowsocksCipher::Chacha20Poly1305 => {
+            use chacha20poly1305::aead::{Aead, Payload};
+            let c = ChaCha20Poly1305::new_from_slice(key)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid key"))?;
+            let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
+            c.decrypt(nonce, Payload { msg: data, aad: &[] })
+                .map_err(|_| std::io::Error::other("decrypt failed"))
+        }
     }
 }
 

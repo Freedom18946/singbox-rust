@@ -22,6 +22,7 @@
 //!     // ... 处理请求 ...
 //! } // Drop 时自动上报耗时
 //! ```
+use crate::labels::ensure_allowed_labels;
 use prometheus::{
     opts, register_histogram, register_int_counter, register_int_counter_vec, register_int_gauge,
     Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge,
@@ -142,6 +143,7 @@ pub static HTTP_REQ_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
 
 /// 按方法维度的请求计数（避免高基数，仅固定方法集合）
 pub static HTTP_METHOD_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    ensure_allowed_labels("http_method_total", &["method"]);
     register_int_counter_vec!(
         "http_method_total",
         "HTTP requests by method",
@@ -155,6 +157,7 @@ pub static HTTP_METHOD_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
 
 /// 按状态码段（2xx/3xx/4xx/5xx）的响应计数
 pub static HTTP_STATUS_CLASS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    ensure_allowed_labels("http_status_class_total", &["class"]);
     register_int_counter_vec!(
         "http_status_class_total",
         "HTTP responses by status class",
@@ -242,6 +245,7 @@ pub fn on_connect_fail() {
 
 /// Metrics export failure classification
 pub static METRICS_EXPORT_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    ensure_allowed_labels("metrics_export_fail_total", &["class"]);
     register_int_counter_vec!(
         "metrics_export_fail_total",
         "Metrics export failures by class",

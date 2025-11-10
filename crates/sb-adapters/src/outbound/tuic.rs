@@ -76,11 +76,15 @@ impl TuicConnector {
             congestion_control: self.cfg.congestion_control.clone(),
             alpn: self.cfg.alpn.clone(),
             skip_cert_verify: self.cfg.skip_cert_verify,
+            sni: None,
+            tls_ca_paths: Vec::new(),
+            tls_ca_pem: Vec::new(),
             udp_relay_mode: match self.cfg.udp_relay_mode {
                 TuicUdpRelayMode::Native => UdpRelayMode::Native,
                 TuicUdpRelayMode::Quic => UdpRelayMode::Quic,
             },
             udp_over_stream: self.cfg.udp_over_stream,
+            zero_rtt_handshake: false,
         };
 
         let core = TuicOutbound::new(core_cfg).map_err(|e| AdapterError::Other(e.to_string()))?;
@@ -133,11 +137,15 @@ impl OutboundConnector for TuicConnector {
                 congestion_control: self.cfg.congestion_control.clone(),
                 alpn: self.cfg.alpn.clone(),
                 skip_cert_verify: self.cfg.skip_cert_verify,
+                sni: None,
+                tls_ca_paths: Vec::new(),
+                tls_ca_pem: Vec::new(),
                 udp_relay_mode: match self.cfg.udp_relay_mode {
                     TuicUdpRelayMode::Native => sb_core::outbound::tuic::UdpRelayMode::Native,
                     TuicUdpRelayMode::Quic => sb_core::outbound::tuic::UdpRelayMode::Quic,
                 },
                 udp_over_stream: self.cfg.udp_over_stream,
+                zero_rtt_handshake: false,
             };
 
             let core = sb_core::outbound::tuic::TuicOutbound::new(core_cfg)

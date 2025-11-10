@@ -153,6 +153,8 @@ fn upstream_http_basic_auth_sent() {
             }],
             default: Some("B".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

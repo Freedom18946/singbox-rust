@@ -137,7 +137,7 @@ pub fn get_current_concurrency() -> u64 {
 async fn acquire_permits() -> anyhow::Result<()> {
     limiter_init();
     #[allow(clippy::expect_used)] // Safe: limiter_init() just called above
-    let sem = {
+    let sem: Arc<Semaphore> = {
         let sem_lock = MAX_CONC.get().expect("limiter initialized");
         let sem_guard = sem_lock.read().await;
         Arc::clone(&*sem_guard)

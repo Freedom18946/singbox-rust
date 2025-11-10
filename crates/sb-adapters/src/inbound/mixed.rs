@@ -57,6 +57,8 @@ pub async fn serve_mixed(
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "accept failed");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("mixed", &e);
                         continue;
                     }
                 };
@@ -141,7 +143,11 @@ async fn handle_mixed_conn(
                 ))
             }
         }
-        Err(e) => Err(e),
+        Err(e) => {
+            sb_core::metrics::http::record_error_display(&e);
+            sb_core::metrics::record_inbound_error_display("mixed", &e);
+            Err(e)
+        },
     }
 }
 

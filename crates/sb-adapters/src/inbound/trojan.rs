@@ -163,6 +163,8 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "trojan: accept error");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("trojan", &e);
                         continue;
                     }
                 };
@@ -187,6 +189,8 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                             warn!("REALITY TLS over V2Ray transports not yet supported, using stream directly");
                             // TODO: Implement generic TLS wrapping for any AsyncRead+AsyncWrite stream
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("trojan", &e);
                                 warn!(%peer, error=%e, "trojan: REALITY session error (direct stream)");
                             }
                         } else if tls_acceptor_clone.is_some() {
@@ -194,11 +198,14 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                             warn!("Standard TLS over V2Ray transports not yet fully supported, using stream directly");
                             // TODO: Implement TLS acceptor for generic streams
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("trojan", &e);
                                 warn!(%peer, error=%e, "trojan: session error (direct stream)");
                             }
                         } else {
                             // No TLS configured, use stream directly
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
                                 warn!(%peer, error=%e, "trojan: session error (no TLS)");
                             }
                         }
@@ -211,11 +218,15 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                             warn!("Standard TLS over V2Ray transports not yet fully supported, using stream directly");
                             // TODO: Implement TLS acceptor for generic streams
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("trojan", &e);
                                 warn!(%peer, error=%e, "trojan: session error (direct stream)");
                             }
                         } else {
                             // No TLS configured, use stream directly
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("trojan", &e);
                                 warn!(%peer, error=%e, "trojan: session error (no TLS)");
                             }
                         }

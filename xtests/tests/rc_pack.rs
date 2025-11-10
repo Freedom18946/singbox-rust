@@ -32,7 +32,7 @@ fn rc_pack_generates_snapshots() {
 
     let snapshots_dir = rc_dir.join("snapshots");
     assert!(snapshots_dir.exists(), "snapshots directory missing");
-    let mut entries = fs::read_dir(&snapshots_dir)
+    let entries = fs::read_dir(&snapshots_dir)
         .map(|iter| iter.filter_map(Result::ok).count())
         .unwrap_or_default();
     assert!(entries > 0, "snapshots directory is empty");

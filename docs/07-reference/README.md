@@ -69,14 +69,16 @@ route:
 
 | Platform           | Status     | Notes                    |
 | ------------------ | ---------- | ------------------------ |
-| **Linux** x86_64   | ✅ Full    | All features supported   |
-| **Linux** aarch64  | ✅ Full    | ARM64 support            |
-| **macOS** x86_64   | ✅ Full    | Intel Macs               |
-| **macOS** arm64    | ✅ Full    | Apple Silicon (M1/M2/M3) |
-| **Windows** x86_64 | ✅ Full    | Windows 10/11            |
+| **Linux** x86_64   | ✅ Full    | Core + platform IO best  |
+| **Linux** aarch64  | ✅ Full    | ARM64                    |
+| **macOS** x86_64   | ✅ Core    | See Platform IO notes    |
+| **macOS** arm64    | ✅ Core    | See Platform IO notes    |
+| **Windows** x86_64 | ✅ Core    | See Platform IO notes    |
 | **FreeBSD**        | ⚠️ Partial | Limited TUN support      |
 | **Android**        | 🚧 Planned | Via JNI bindings         |
 | **iOS**            | 🚧 Planned | Via Swift bindings       |
+
+See Platform IO specifics: `docs/07-reference/platform-io.md`.
 
 ### Protocol Support Matrix
 

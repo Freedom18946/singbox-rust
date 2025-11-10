@@ -13,6 +13,10 @@ pub struct QuicConfig {
     pub port: u16,
     pub alpn: Vec<Vec<u8>>,
     pub allow_insecure: bool,
+    pub sni: Option<String>,
+    pub extra_ca_paths: Vec<String>,
+    pub extra_ca_pem: Vec<String>,
+    pub enable_0rtt: bool,
 }
 
 #[cfg(feature = "out_quic")]
@@ -23,6 +27,10 @@ impl QuicConfig {
             port,
             alpn: Vec::new(),
             allow_insecure: false,
+            sni: None,
+            extra_ca_paths: Vec::new(),
+            extra_ca_pem: Vec::new(),
+            enable_0rtt: false,
         }
     }
 
@@ -35,6 +43,26 @@ impl QuicConfig {
         self.allow_insecure = allow;
         self
     }
+
+    pub fn with_sni(mut self, sni: Option<String>) -> Self {
+        self.sni = sni;
+        self
+    }
+
+    pub fn with_extra_ca_paths(mut self, paths: Vec<String>) -> Self {
+        self.extra_ca_paths = paths;
+        self
+    }
+
+    pub fn with_extra_ca_pem(mut self, pems: Vec<String>) -> Self {
+        self.extra_ca_pem = pems;
+        self
+    }
+
+    pub fn with_enable_0rtt(mut self, enable: bool) -> Self {
+        self.enable_0rtt = enable;
+        self
+    }
 }
 
 /// Establish QUIC connection with unified configuration
@@ -43,14 +71,34 @@ pub async fn connect(cfg: &QuicConfig) -> anyhow::Result<Connection> {
     use rustls::{ClientConfig as RustlsConfig, RootCertStore};
     use std::sync::Arc;
 
-    // 1) Build rustls client with roots and ALPN
-    let mut roots = RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    // 1) Build rustls client with global roots + extra CAs and ALPN
+    let mut roots: RootCertStore = crate::tls::global::base_root_store();
+    // extra CA from paths
+    for path in &cfg.extra_ca_paths {
+        if let Ok(bytes) = std::fs::read(path) {
+            let mut rd = std::io::BufReader::new(&bytes[..]);
+            for item in rustls_pemfile::certs(&mut rd) {
+                if let Ok(der) = item { let _ = roots.add(der); }
+            }
+        }
+    }
+    // extra CA from inline PEM
+    for pem in &cfg.extra_ca_pem {
+        let mut rd = std::io::BufReader::new(pem.as_bytes());
+        for item in rustls_pemfile::certs(&mut rd) {
+            if let Ok(der) = item { let _ = roots.add(der); }
+        }
+    }
+
     let mut tls = RustlsConfig::builder()
         .with_root_certificates(roots)
         .with_no_client_auth();
     if !cfg.alpn.is_empty() {
         tls.alpn_protocols = cfg.alpn.clone();
+    }
+    // Enable early data when requested (0-RTT)
+    if cfg.enable_0rtt {
+        tls.enable_early_data = true;
     }
     if cfg.allow_insecure {
         #[cfg(feature = "tls_rustls")]
@@ -60,17 +108,24 @@ pub async fn connect(cfg: &QuicConfig) -> anyhow::Result<Connection> {
                 .set_certificate_verifier(Arc::new(NoVerify::new()));
         }
     }
-    // Use platform verifier for TLS roots; feature flags can extend this
-    // with custom root stores or pinning.
-    let client = quinn::ClientConfig::try_with_platform_verifier()
-        .map_err(|e| anyhow::anyhow!("Failed to create QUIC client config: {}", e))?;
+    #[cfg(feature = "metrics")]
+    if cfg.enable_0rtt {
+        metrics::counter!("quic_0rtt_enabled_total").increment(1);
+    }
+    // Build Quinn client config from rustls config
+    let client = quinn::ClientConfig::new(Arc::new(
+        quinn::crypto::rustls::QuicClientConfig::try_from(tls)
+            .map_err(|e| anyhow::anyhow!("Failed to build rustls QUIC config: {}", e))?,
+    ));
 
     // 2) Create client endpoint
     let mut ep = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
     ep.set_default_client_config(client);
 
     // 3) Resolve server and connect with appropriate SNI
-    let server_name = if cfg.server.parse::<std::net::IpAddr>().is_ok() {
+    let server_name = if let Some(sni) = cfg.sni.as_deref() {
+        sni
+    } else if cfg.server.parse::<std::net::IpAddr>().is_ok() {
         if cfg.allow_insecure {
             "localhost"
         } else {

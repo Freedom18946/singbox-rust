@@ -1,0 +1,16 @@
+# Minimal example: Trojan over TLS+gRPC
+outbounds:
+  - type: trojan
+    tag: trojan-grpc
+    server: trojan.host:443
+    password: secret
+    tls:
+      enabled: true
+      sni: grpc.trojan.host
+    transport:
+      type: grpc
+      service_name: TunnelService
+      method_name: Tunnel
+route:
+  rules: []
+  default: trojan-grpc

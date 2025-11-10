@@ -12,6 +12,9 @@ pub mod geoip;
 pub mod http;
 pub mod http_exporter;
 pub mod labels;
+pub mod error_class;
+pub mod label_guard;
+pub mod inbound;
 pub mod outbound;
 pub mod udp;
 pub mod udp_v2;
@@ -69,6 +72,7 @@ pub fn prewarm_build_info() {
 /// Initialize and register all metrics
 pub fn register_all_metrics() {
     http::register_metrics();
+    inbound::register_metrics();
     outbound::register_metrics();
     udp::register_metrics();
     dns::register_metrics();
@@ -84,7 +88,7 @@ pub use http::{
 pub use outbound::{
     record_connect_attempt, record_connect_duration as record_outbound_duration,
     record_connect_error, record_connect_failure, record_connect_success, OutboundErrorClass,
-    OutboundKind,
+    OutboundKind, set_circuit_state as set_outbound_circuit_state,
 };
 
 pub use udp::{
@@ -100,6 +104,9 @@ pub use dns::{
     record_rtt as record_dns_rtt, record_successful_query as record_dns_success,
     set_cache_size as set_dns_cache_size, DnsErrorClass, DnsQueryType,
 };
+
+pub use error_class::{classify_display as classify_error, record_outbound_error, ErrorClass};
+pub use inbound::{record_error as record_inbound_error, record_error_display as record_inbound_error_display};
 
 #[cfg(test)]
 mod tests {

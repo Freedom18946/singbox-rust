@@ -360,6 +360,85 @@ fn handle(
             let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
             write_json(&mut cli, 200, &body)
         }
+        ("GET", "/inbounds") => {
+            let mut total: u64 = 0;
+            let entries: Vec<_> = bridge
+                .inbounds
+                .iter()
+                .enumerate()
+                .map(|(i, ib)| {
+                    let tcp = ib.active_connections().unwrap_or(0);
+                    let udp = ib.udp_sessions_estimate().unwrap_or(0);
+                    let active = tcp.saturating_add(udp);
+                    total = total.saturating_add(active);
+                    let kind = bridge.inbound_kind_at(i).to_string();
+                    let mut obj = serde_json::json!({"index": i, "kind": kind, "active": active});
+                    if udp > 0 {
+                        obj["tcp_active"] = serde_json::json!(tcp);
+                        obj["udp_sessions"] = serde_json::json!(udp);
+                    }
+                    obj
+                })
+                .collect();
+            let obj = serde_json::json!({ "total": total, "entries": entries });
+            let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
+            write_json(&mut cli, 200, &body)
+        }
+        ("GET", "/cb-states") => {
+            let items: Vec<_> = crate::adapter::bridge::cb_state_snapshot()
+                .into_iter()
+                .map(|(name, code)| {
+                    let state = match code {
+                        0 => "closed",
+                        1 => "half-open",
+                        2 => "open",
+                        _ => "unknown",
+                    };
+                    serde_json::json!({"outbound": name, "state": state, "code": code})
+                })
+                .collect();
+            let obj = serde_json::json!({ "items": items });
+            let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
+            write_json(&mut cli, 200, &body)
+        }
+        ("GET", "/metricsz") => {
+            // Compose a concise JSON summary combining inbound + cb states
+            let mut total_inbound: u64 = 0;
+            let inb: Vec<_> = bridge
+                .inbounds
+                .iter()
+                .enumerate()
+                .map(|(i, ib)| {
+                    let tcp = ib.active_connections().unwrap_or(0);
+                    let udp = ib.udp_sessions_estimate().unwrap_or(0);
+                    let active = tcp.saturating_add(udp);
+                    total_inbound = total_inbound.saturating_add(active);
+                    serde_json::json!({
+                        "kind": bridge.inbound_kind_at(i),
+                        "active": active,
+                        "tcp": tcp,
+                        "udp": udp
+                    })
+                })
+                .collect();
+            let mut cb_closed = 0u64;
+            let mut cb_half = 0u64;
+            let mut cb_open = 0u64;
+            for (_n, code) in crate::adapter::bridge::cb_state_snapshot() {
+                match code {
+                    0 => cb_closed += 1,
+                    1 => cb_half += 1,
+                    2 => cb_open += 1,
+                    _ => {}
+                }
+            }
+            let obj = serde_json::json!({
+                "inbound": { "total_active": total_inbound, "entries": inb },
+                "cb_states": { "closed": cb_closed, "half_open": cb_half, "open": cb_open }
+            });
+            let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
+            write_json(&mut cli, 200, &body)
+        }
         #[cfg(feature = "router")]
         ("POST", "/explain") => {
             let body = match read_body(&mut cli, &headers) {

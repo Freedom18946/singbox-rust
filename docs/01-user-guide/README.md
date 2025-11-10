@@ -217,6 +217,7 @@ Advanced TLS features:
 - **Custom CA**: Self-signed certificate support
 
 See [TLS Configuration](configuration/tls.md).
+See DNS configuration: [DNS Configuration](configuration/dns.md).
 
 ### Transport Layers
 

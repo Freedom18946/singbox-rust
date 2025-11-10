@@ -101,6 +101,8 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vless: accept error");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("vless", &e);
                         continue;
                     }
                 };
@@ -121,11 +123,15 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                             warn!("REALITY TLS over V2Ray transports not yet supported, using stream directly");
                             // TODO: Implement generic TLS wrapping for any AsyncRead+AsyncWrite stream
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("vless", &e);
                                 warn!(%peer, error=%e, "vless: REALITY session error (direct stream)");
                             }
                         } else {
                             // No REALITY - handle plain connection
                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("vless", &e);
                                 warn!(%peer, error=%e, "vless: session error");
                             }
                         }
@@ -134,6 +140,8 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     #[cfg(not(feature = "tls_reality"))]
                     {
                         if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("vless", &e);
                             warn!(%peer, error=%e, "vless: session error");
                         }
                     }

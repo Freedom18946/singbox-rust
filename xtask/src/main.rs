@@ -279,6 +279,9 @@ fn cmd_metrics_check(args: Vec<String>) -> Result<()> {
         "127.0.0.1:19090".to_string()
     };
 
+    // 可选：要求 inbound_error_total 必须存在（否则报错）
+    let require_inbound_errors = args.iter().any(|a| a == "--require-inbound-errors");
+
     info(&format!("连接到: {}", addr));
 
     // 发起 HTTP 请求
@@ -318,8 +321,19 @@ fn cmd_metrics_check(args: Vec<String>) -> Result<()> {
         bail!("缺少必需的 metrics: {:?}", missing);
     }
 
+    // 可选：检查统一入站错误族是否存在
+    let has_inbound_error_total = lines.iter().any(|l| l.contains("inbound_error_total"));
+    if require_inbound_errors && !has_inbound_error_total {
+        bail!("缺少 inbound_error_total。请在被测环境中触发一次入站错误（如 HTTP 非 CONNECT），或取消 --require-inbound-errors");
+    }
+    if has_inbound_error_total {
+        info("检测到 inbound_error_total（统一入站错误计数）");
+    } else {
+        warn("未检测到 inbound_error_total（可能当前无入站错误，忽略）");
+    }
+
     // 检查 label 白名单
-    let allowed_labels = ["rule", "reason", "class", "outbound"];
+    let allowed_labels = ["rule", "reason", "class", "outbound", "protocol"];
     let mut disallowed = Vec::new();
 
     for line in &lines {

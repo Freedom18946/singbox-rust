@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -51,6 +51,8 @@ pub struct DirectForward {
     cfg: DirectConfig,
     shutdown: Arc<AtomicBool>,
     udp_sessions: Arc<Mutex<HashMap<SocketAddr, UdpSession>>>,
+    active: Arc<AtomicU64>,
+    udp_count: Arc<AtomicU64>,
 }
 
 impl DirectForward {
@@ -63,6 +65,8 @@ impl DirectForward {
             cfg: DirectConfig::default(),
             shutdown: Arc::new(AtomicBool::new(false)),
             udp_sessions: Arc::new(Mutex::new(HashMap::new())),
+            active: Arc::new(AtomicU64::new(0)),
+            udp_count: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -106,10 +110,18 @@ impl DirectForward {
                 Ok((socket, peer)) => {
                     tracing::debug!(%peer, "direct inbound TCP: accepted");
                     let me = self.clone_for_spawn();
+                    let active = self.active.clone();
+                    let udp_count = self.udp_count.clone();
+                    active.fetch_add(1, Ordering::Relaxed);
+                    let sum = active.load(Ordering::Relaxed) + udp_count.load(Ordering::Relaxed);
+                    crate::metrics::inbound::set_active_connections("direct", sum);
                     tokio::spawn(async move {
                         if let Err(e) = me.handle_tcp(socket).await {
                             tracing::debug!(error=%e, "direct inbound TCP: session error");
                         }
+                        active.fetch_sub(1, Ordering::Relaxed);
+                        let sum = active.load(Ordering::Relaxed) + udp_count.load(Ordering::Relaxed);
+                        crate::metrics::inbound::set_active_connections("direct", sum);
                     });
                 }
                 Err(e) => {
@@ -205,6 +217,9 @@ impl DirectForward {
                 last_activity: Instant::now(),
             },
         );
+        self.udp_count.fetch_add(1, Ordering::Relaxed);
+        let sum = self.active.load(Ordering::Relaxed) + self.udp_count.load(Ordering::Relaxed);
+        crate::metrics::inbound::set_active_connections("direct", sum);
 
         tracing::debug!(client=%client_addr, "direct inbound UDP: created new session");
         Ok(upstream)
@@ -264,7 +279,11 @@ impl DirectForward {
 
         // Remove session
         let mut sessions = self.udp_sessions.lock().await;
-        sessions.remove(&client_addr);
+        if sessions.remove(&client_addr).is_some() {
+            self.udp_count.fetch_sub(1, Ordering::Relaxed);
+            let sum = self.active.load(Ordering::Relaxed) + self.udp_count.load(Ordering::Relaxed);
+            crate::metrics::inbound::set_active_connections("direct", sum);
+        }
     }
 
     async fn cleanup_expired_udp_sessions(&self) {
@@ -277,9 +296,17 @@ impl DirectForward {
             .map(|(addr, _)| *addr)
             .collect();
 
+        let mut removed = 0u64;
         for addr in expired {
-            sessions.remove(&addr);
+            if sessions.remove(&addr).is_some() {
+                removed += 1;
+            }
             tracing::debug!(client=%addr, "direct inbound UDP: cleaned up expired session");
+        }
+        if removed > 0 {
+            self.udp_count.fetch_sub(removed, Ordering::Relaxed);
+            let sum = self.active.load(Ordering::Relaxed) + self.udp_count.load(Ordering::Relaxed);
+            crate::metrics::inbound::set_active_connections("direct", sum);
         }
     }
 
@@ -314,6 +341,8 @@ impl DirectForward {
             cfg: self.cfg.clone(),
             shutdown: self.shutdown.clone(),
             udp_sessions: self.udp_sessions.clone(),
+            active: self.active.clone(),
+            udp_count: self.udp_count.clone(),
         }
     }
 }
@@ -328,5 +357,18 @@ impl InboundService for DirectForward {
                 rt.block_on(self.serve_async())
             }
         }
+    }
+
+    fn request_shutdown(&self) {
+        // Best-effort: set shutdown flag; accept loop will exit upon next accept
+        self.shutdown.store(true, Ordering::Relaxed);
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        Some(self.active.load(Ordering::Relaxed))
+    }
+
+    fn udp_sessions_estimate(&self) -> Option<u64> {
+        Some(self.udp_count.load(Ordering::Relaxed))
     }
 }

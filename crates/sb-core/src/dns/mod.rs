@@ -18,6 +18,8 @@ use cache::{Key as CacheKey, QType as CacheQType};
 pub mod cache;
 pub mod cache_v2;
 pub mod client;
+#[cfg(feature = "router")]
+pub mod config_builder;
 #[cfg(feature = "dns_doh")]
 pub mod doh;
 #[cfg(feature = "dns_doq")]
@@ -40,6 +42,7 @@ pub mod stub;
 pub mod system;
 pub mod transport;
 pub mod upstream;
+pub mod global;
 
 #[cfg(test)]
 mod integration_tests;

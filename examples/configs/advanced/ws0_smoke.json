@@ -1,0 +1,66 @@
+{
+  "inbounds": [
+    {"type":"socks","listen":"127.0.0.1","port":1080}
+  ],
+  "outbounds": [
+    {"type":"direct","name":"direct"},
+    {"type":"block","name":"block"},
+    {
+      "type":"shadowsocks","name":"ss-out",
+      "server":"1.1.1.1","port":443,
+      "password":"pass","method":"aes-256-gcm"
+    },
+    {
+      "type":"vmess","name":"vmess-out",
+      "server":"example.com","port":443,
+      "uuid":"b831381d-6324-4d53-ad4f-8cda48b30811",
+      "transport":["tls","ws"],
+      "ws_path":"/vmess","ws_host":"example.com",
+      "tls_sni":"example.com","tls_alpn":"h2,http/1.1"
+    },
+    {
+      "type":"vless","name":"vless-out",
+      "server":"example.com","port":443,
+      "uuid":"b831381d-6324-4d53-ad4f-8cda48b30811",
+      "transport":["tls","ws"],
+      "ws_path":"/vless","ws_host":"example.com",
+      "tls_sni":"example.com","tls_alpn":"h2"
+    },
+    {
+      "type":"trojan","name":"trojan-out",
+      "server":"example.com","port":443,
+      "password":"trojanpass","tls_sni":"example.com","alpn":"h2"
+    },
+    {
+      "type":"tuic","name":"tuic-out",
+      "server":"example.com","port":443,
+      "uuid":"b831381d-6324-4d53-ad4f-8cda48b30811","token":"toktok",
+      "alpn":"h3", "skip_cert_verify": true
+    },
+    {
+      "type":"hysteria2","name":"hysteria2-out",
+      "server":"example.com","port":443,
+      "password":"hy2pass","congestion_control":"bbr",
+      "tls_sni":"example.com","tls_alpn":"h3",
+      "up_mbps":10,"down_mbps":20
+    },
+    {
+      "type":"shadowtls","name":"stl-out",
+      "server":"example.com","port":443,
+      "tls_sni":"example.com","alpn":"http/1.1"
+    },
+    {
+      "type":"selector","name":"auto",
+      "members":["vmess-out","vless-out","ss-out","direct"],
+      "default_member":"direct"
+    },
+    {
+      "type":"urltest","name":"auto-test",
+      "members":["vmess-out","vless-out","ss-out"],
+      "test_url":"http://www.gstatic.com/generate_204",
+      "test_interval_ms":5000,
+      "test_timeout_ms":1000
+    }
+  ],
+  "route": {"default":"auto"}
+}

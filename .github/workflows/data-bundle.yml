@@ -1,0 +1,92 @@
+name: Build Data Bundle
+
+on:
+  push:
+    paths:
+      - 'rules/**/*.json'
+      - 'scripts/tools/update-geodata.sh'
+      - 'scripts/tools/make-data-bundle.sh'
+      - 'scripts/tools/compile-rulesets.sh'
+      - 'scripts/tools/gen-data-manifest.sh'
+      - 'scripts/ci/tasks/build-data-bundle.sh'
+  workflow_dispatch:
+    inputs:
+      features:
+        description: 'Cargo feature list (comma separated)'
+        required: false
+        default: 'router,explain'
+      geoip_url:
+        description: 'Override GeoIP DB URL'
+        required: false
+      geosite_url:
+        description: 'Override Geosite DB URL'
+        required: false
+      geoip_sha256:
+        description: 'GeoIP expected SHA-256'
+        required: false
+      geosite_sha256:
+        description: 'Geosite expected SHA-256'
+        required: false
+      artifact_suffix:
+        description: 'Suffix to append to artifact name'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BIN_FEATURES: ${{ inputs.features || 'router,explain' }}
+      GEOIP_URL: ${{ inputs.geoip_url }}
+      GEOSITE_URL: ${{ inputs.geosite_url }}
+      GEOIP_SHA256: ${{ inputs.geoip_sha256 }}
+      GEOSITE_SHA256: ${{ inputs.geosite_sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install deps
+        run: sudo apt-get update -y && sudo apt-get install -y jq curl
+
+      - name: Build data bundle
+        run: |
+          chmod +x scripts/ci/tasks/build-data-bundle.sh scripts/tools/*.sh || true
+          scripts/ci/tasks/build-data-bundle.sh
+
+      - name: Compute artifact name
+        id: names
+        shell: bash
+        run: |
+          REF_SLUG="${GITHUB_REF_NAME//\//-}"
+          SHORT_SHA="$(git rev-parse --short=8 HEAD)"
+          SUFFIX="${{ inputs.artifact_suffix }}"
+          NAME="singbox-data-bundle-${REF_SLUG}-${SHORT_SHA}"
+          if [[ -n "$SUFFIX" ]]; then NAME+="-$SUFFIX"; fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.name }}
+          path: bundle/**
+          if-no-files-found: error
+

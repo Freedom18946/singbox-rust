@@ -115,49 +115,70 @@ impl VmessOutbound {
         &self,
         target: &HostPort,
         stream: &mut S,
-    ) -> io::Result<()> {
+    ) -> io::Result<[u8; 16]> {
         // Generate timestamp for authentication
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        // Prepare authentication header
+        // Derive KDF keys and generate nonce for request
+        let (req_key_vec, resp_key_vec) = aead::kdf(&self.config.id, &self.config.security)
+            .map_err(|e| io::Error::other(format!("VMess KDF error: {}", e)))?;
+        let mut request_key = [0u8; 16];
+        request_key.copy_from_slice(&req_key_vec[..16]);
+        let mut response_key = [0u8; 16];
+        response_key.copy_from_slice(&resp_key_vec[..16]);
+        let nonce = aead::generate_nonce(&self.config.security);
+
+        // Prepare authentication header: timestamp + legacy HMAC + nonce + req_tag
         let mut auth_header = Vec::new();
         auth_header.extend_from_slice(&timestamp.to_be_bytes());
-
-        // Create HMAC for authentication
-        let mut mac =
-            <Hmac<Sha256> as Mac>::new_from_slice(self.config.id.as_bytes()).map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidInput, format!("HMAC error: {}", e))
-            })?;
-        mac.update(&auth_header);
-        let auth_hash = mac.finalize().into_bytes();
-
-        auth_header.extend_from_slice(&auth_hash[..16]); // Use first 16 bytes
-
-        // Send authentication header
-        stream.write_all(&auth_header).await?;
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.config.id.as_bytes())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("HMAC error: {}", e)))?;
+        mac.update(&timestamp.to_be_bytes());
+        let legacy = mac.finalize().into_bytes();
+        auth_header.extend_from_slice(&legacy[..16]);
+        // Append nonce and AEAD request tag
+        auth_header.extend_from_slice(&nonce);
+        let req_tag = aead::req_tag(timestamp, &self.config.id, &nonce)
+            .map_err(|e| io::Error::other(format!("req_tag error: {}", e)))?;
+        auth_header.extend_from_slice(&req_tag);
+        // Write auth header with timeout
+        let write_timeout = std::time::Duration::from_millis(
+            std::env::var("SB_VMESS_WRITE_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(500),
+        );
+        tokio::time::timeout(write_timeout, stream.write_all(&auth_header))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "VMess auth write timeout"))??;
 
         // Generate and send request
         let request = self.encode_vmess_request(target)?;
 
-        // Encrypt request with request key
-        let request_key = self.generate_request_key();
-
-        // Use request_key for AEAD encryption (simplified implementation)
-        let encrypted_request = self.encrypt_request(&request, &request_key)?;
+        // Encrypt request with request key and explicit nonce
+        let encrypted_request = self.encrypt_request(&request, &request_key, &nonce)?;
         tracing::debug!(
             "VMess request encrypted with {} byte key",
             request_key.len()
         );
 
-        stream.write_all(&encrypted_request).await?;
+        tokio::time::timeout(write_timeout, stream.write_all(&encrypted_request))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "VMess request write timeout"))??;
 
         // Read and validate response tag
         let mut response_tag = [0u8; 16];
+        let resp_timeout = std::time::Duration::from_millis(
+            std::env::var("SB_VMESS_RESP_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(500),
+        );
         match tokio::time::timeout(
-            std::time::Duration::from_millis(500),
+            resp_timeout,
             stream.read_exact(&mut response_tag),
         )
         .await
@@ -173,16 +194,18 @@ impl VmessOutbound {
             }
             Ok(Ok(_)) => {
                 // Validate response tag using AEAD module
-                let response_key = self.generate_response_key();
-                let request_tag = self.generate_request_key(); // Simplified - should use actual request tag
-
-                match aead::resp_tag(&request_tag, &response_key) {
+                match aead::resp_tag(&req_tag, &response_key) {
                     Ok(expected_tag) => {
                         if response_tag != expected_tag {
                             return Err(io::Error::new(
                                 io::ErrorKind::InvalidData,
                                 "VMess response tag validation failed",
                             ));
+                        }
+                        #[cfg(feature = "metrics")]
+                        {
+                            use metrics::counter;
+                            counter!("vmess_handshake_total", "result"=>"ok").increment(1);
                         }
                     }
                     Err(_) => {
@@ -192,37 +215,33 @@ impl VmessOutbound {
             }
         }
 
-        Ok(())
+        Ok(request_key)
     }
 
+    #[allow(dead_code)]
     fn generate_request_key(&self) -> [u8; 16] {
-        let mut hasher = Sha256::new();
-        hasher.update(self.config.id.as_bytes());
-        hasher.update(b"c48619fe-8f02-49e0-b9e9-edf763e17e21");
-        let hash = hasher.finalize();
+        let (req_key, _resp_key) = aead::kdf(&self.config.id, &self.config.security)
+            .expect("vmess cipher already validated");
         let mut key = [0u8; 16];
-        key.copy_from_slice(&hash[..16]);
+        key.copy_from_slice(&req_key[..16]);
         key
     }
 
+    #[allow(dead_code)]
     fn generate_response_key(&self) -> [u8; 16] {
-        let mut hasher = Sha256::new();
-        hasher.update(self.config.id.as_bytes());
-        hasher.update(b"c42f7b3e-64e6-4396-8e01-eb28c8c7d56c");
-        let hash = hasher.finalize();
+        let (_req_key, resp_key) = aead::kdf(&self.config.id, &self.config.security)
+            .expect("vmess cipher already validated");
         let mut key = [0u8; 16];
-        key.copy_from_slice(&hash[..16]);
+        key.copy_from_slice(&resp_key[..16]);
         key
     }
 
-    fn encrypt_request(&self, plaintext: &[u8], key: &[u8; 16]) -> io::Result<Vec<u8>> {
+    fn encrypt_request(&self, plaintext: &[u8], key: &[u8; 16], nonce_bytes: &[u8]) -> io::Result<Vec<u8>> {
         match self.config.security.as_str() {
             "aes-128-gcm" => {
                 let cipher = Aes128Gcm::new_from_slice(key)
                     .map_err(|e| io::Error::other(format!("AES key error: {}", e)))?;
-
-                // Generate random nonce
-                let nonce = Nonce::from_slice(&[0u8; 12]); // In real implementation, use random nonce
+                let nonce = Nonce::from_slice(nonce_bytes);
 
                 let ciphertext = cipher
                     .encrypt(nonce, plaintext)
@@ -236,9 +255,7 @@ impl VmessOutbound {
             "chacha20-poly1305" => {
                 let cipher_key = Key::from_slice(key);
                 let cipher = ChaCha20Poly1305::new(cipher_key);
-
-                // Generate random nonce
-                let nonce = chacha20poly1305::Nonce::from_slice(&[0u8; 12]); // In real implementation, use random nonce
+                let nonce = chacha20poly1305::Nonce::from_slice(nonce_bytes);
 
                 let ciphertext = cipher
                     .encrypt(nonce, plaintext)
@@ -273,8 +290,18 @@ impl VmessOutbound {
         // Response authentication (1 byte)
         request.push(0x01);
 
-        // Options (1 byte) - no special options
-        request.push(0x00);
+        // Options (1 byte)
+        // Controlled via env SB_VMESS_OPTIONS, comma separated: pad,chunk
+        let opts_env = std::env::var("SB_VMESS_OPTIONS").unwrap_or_default();
+        let mut options: u8 = 0;
+        for part in opts_env.split(',').map(|s| s.trim().to_ascii_lowercase()) {
+            match part.as_str() {
+                "pad" | "padding" => options |= 0x04,     // example bit
+                "chunk" | "chunkmask" => options |= 0x01, // example bit
+                _ => {}
+            }
+        }
+        request.push(options);
 
         // Padding and Security (4 bits each)
         let padding_security = match self.config.security.as_str() {
@@ -307,8 +334,13 @@ impl VmessOutbound {
 
         encode_ss_addr(&addr, target.port, &mut request);
 
-        // Padding length and data
-        let padding_len = fastrand::u8(0..16);
+        // Padding length and data (controlled by SB_VMESS_PADDING_MAX, default 15)
+        let max_pad = std::env::var("SB_VMESS_PADDING_MAX")
+            .ok()
+            .and_then(|v| v.parse::<u8>().ok())
+            .unwrap_or(15)
+            .min(15);
+        let padding_len = if max_pad == 0 { 0 } else { fastrand::u8(0..=max_pad) };
         request.push(padding_len);
         if padding_len > 0 {
             let padding: Vec<u8> = (0..padding_len).map(|_| fastrand::u8(..)).collect();
@@ -326,15 +358,113 @@ impl VmessOutbound {
 }
 
 #[cfg(feature = "out_vmess")]
+fn vmess_encrypt_aead(
+    cipher_name: &str,
+    key: &[u8; 16],
+    nonce_counter: u64,
+    data: &[u8],
+) -> io::Result<Vec<u8>> {
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes[..8].copy_from_slice(&nonce_counter.to_le_bytes());
+    match cipher_name {
+        "aes-128-gcm" => {
+            let cipher = Aes128Gcm::new_from_slice(key)
+                .map_err(|e| io::Error::other(format!("AES key error: {}", e)))?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            cipher
+                .encrypt(nonce, data)
+                .map_err(|e| io::Error::other(format!("AES encryption error: {}", e)))
+        }
+        "chacha20-poly1305" => {
+            let k = chacha20poly1305::Key::from_slice(key);
+            let cipher = ChaCha20Poly1305::new(k);
+            let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
+            cipher
+                .encrypt(nonce, data)
+                .map_err(|e| io::Error::other(format!("ChaCha20 encryption error: {}", e)))
+        }
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Unsupported cipher: {}", other),
+        )),
+    }
+}
+
+#[cfg(feature = "out_vmess")]
+fn vmess_decrypt_aead(
+    cipher_name: &str,
+    key: &[u8; 16],
+    nonce_counter: u64,
+    data: &[u8],
+) -> io::Result<Vec<u8>> {
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes[..8].copy_from_slice(&nonce_counter.to_le_bytes());
+    match cipher_name {
+        "aes-128-gcm" => {
+            let cipher = Aes128Gcm::new_from_slice(key)
+                .map_err(|e| io::Error::other(format!("AES key error: {}", e)))?;
+            let nonce = Nonce::from_slice(&nonce_bytes);
+            cipher
+                .decrypt(nonce, data)
+                .map_err(|e| io::Error::other(format!("AES decryption error: {}", e)))
+        }
+        "chacha20-poly1305" => {
+            let k = chacha20poly1305::Key::from_slice(key);
+            let cipher = ChaCha20Poly1305::new(k);
+            let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
+            cipher
+                .decrypt(nonce, data)
+                .map_err(|e| io::Error::other(format!("ChaCha20 decryption error: {}", e)))
+        }
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Unsupported cipher: {}", other),
+        )),
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "out_vmess")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vmess_aead_roundtrip_aes() {
+        let key = [1u8; 16];
+        let nonce0 = 0u64;
+        let plain = b"hello vmess";
+        let ct_len = vmess_encrypt_aead("aes-128-gcm", &key, nonce0, &(plain.len() as u16).to_be_bytes()).unwrap();
+        let pt_len = vmess_decrypt_aead("aes-128-gcm", &key, nonce0, &ct_len).unwrap();
+        assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
+        let ct = vmess_encrypt_aead("aes-128-gcm", &key, nonce0 + 1, plain).unwrap();
+        let pt = vmess_decrypt_aead("aes-128-gcm", &key, nonce0 + 1, &ct).unwrap();
+        assert_eq!(pt, plain);
+    }
+
+    #[test]
+    fn test_vmess_aead_roundtrip_chacha() {
+        let key = [2u8; 16];
+        let nonce0 = 7u64;
+        let plain = b"hello chacha";
+        let ct_len = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0, &(plain.len() as u16).to_be_bytes()).unwrap();
+        let pt_len = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0, &ct_len).unwrap();
+        assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
+        let ct = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0 + 1, plain).unwrap();
+        let pt = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0 + 1, &ct).unwrap();
+        assert_eq!(pt, plain);
+    }
+}
+
+#[cfg(feature = "out_vmess")]
 #[async_trait]
 impl OutboundTcp for VmessOutbound {
     type IO = TcpStream;
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
         use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_error, record_connect_success,
-            OutboundErrorClass,
+            record_connect_attempt, record_connect_success,
         };
+        use crate::metrics::record_outbound_error;
 
         record_connect_attempt(crate::outbound::OutboundKind::Vmess);
 
@@ -345,10 +475,7 @@ impl OutboundTcp for VmessOutbound {
             match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
                 Ok(stream) => stream,
                 Err(e) => {
-                    record_connect_error(
-                        crate::outbound::OutboundKind::Direct,
-                        OutboundErrorClass::Io,
-                    );
+                    record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
                     #[cfg(feature = "metrics")]
                     {
@@ -360,12 +487,11 @@ impl OutboundTcp for VmessOutbound {
                 }
             };
 
-        // Perform handshake on the connected stream
-        if let Err(e) = self.do_handshake_on(target, &mut stream).await {
-            record_connect_error(
-                crate::outbound::OutboundKind::Direct,
-                OutboundErrorClass::Protocol,
-            );
+        // Perform handshake and receive data key
+        let data_key = match self.do_handshake_on(target, &mut stream).await {
+            Ok(k) => k,
+            Err(e) => {
+                record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
             #[cfg(feature = "metrics")]
             {
@@ -373,10 +499,78 @@ impl OutboundTcp for VmessOutbound {
                 counter!("vmess_connect_total", "result" => "handshake_fail").increment(1);
             }
 
-            return Err(e);
-        }
+                return Err(e);
+            }
+        };
 
         record_connect_success(crate::outbound::OutboundKind::Direct);
+
+        // After handshake, wrap the connection with a local loopback bridge that
+        // encrypts all subsequent payloads using AEAD frames with the derived key.
+        let (mut ss_r, mut ss_w) = stream.into_split();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        let accept_task = tokio::spawn(async move { listener.accept().await.map(|(s, _)| s) });
+        let client = tokio::net::TcpStream::connect(local_addr).await?;
+        let local_server = accept_task
+            .await
+            .map_err(|e| io::Error::other(e.to_string()))??;
+        let (mut ls_r, mut ls_w) = local_server.into_split();
+
+        // Select cipher
+        let cipher = self.config.security.clone();
+        // Writer: local -> server
+        let key_w = data_key;
+        let cipher_w = cipher.clone();
+        tokio::spawn(async move {
+            let mut write_nonce: u64 = 0;
+            let mut buf = vec![0u8; 32 * 1024];
+            loop {
+                match ls_r.read(&mut buf).await {
+                    Ok(0) => { let _ = ss_w.shutdown().await; break; }
+                    Ok(n) => {
+                        // frame length
+                        if let Ok(enc_len) = vmess_encrypt_aead(&cipher_w, &key_w, write_nonce, &(n as u16).to_be_bytes()) {
+                            if ss_w.write_all(&enc_len).await.is_err() { break; }
+                        } else { break; }
+                        // frame payload
+                        if let Ok(enc_payload) = vmess_encrypt_aead(&cipher_w, &key_w, write_nonce.wrapping_add(1), &buf[..n]) {
+                            if ss_w.write_all(&enc_payload).await.is_err() { break; }
+                        } else { break; }
+                        write_nonce = write_nonce.wrapping_add(2);
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // Reader: server -> local
+        let key_r = data_key;
+        let cipher_r = cipher;
+        tokio::spawn(async move {
+            let mut read_nonce: u64 = 0;
+            let tag = 16usize; // AEAD tag size for both ciphers here
+            let mut len_buf = vec![0u8; 2 + tag];
+            loop {
+                if let Err(_) = ss_r.read_exact(&mut len_buf).await { break; }
+                let len_plain = match vmess_decrypt_aead(&cipher_r, &key_r, read_nonce, &len_buf) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                if len_plain.len() < 2 { break; }
+                let plain_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
+
+                let mut payload = vec![0u8; plain_len + tag];
+                if let Err(_) = ss_r.read_exact(&mut payload).await { break; }
+                let plain = match vmess_decrypt_aead(&cipher_r, &key_r, read_nonce.wrapping_add(1), &payload) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                if ls_w.write_all(&plain).await.is_err() { break; }
+                read_nonce = read_nonce.wrapping_add(2);
+            }
+            let _ = ls_w.shutdown().await;
+        });
 
         // Record VMess-specific metrics
         #[cfg(feature = "metrics")]
@@ -399,7 +593,7 @@ impl OutboundTcp for VmessOutbound {
                 .increment(1);
         }
 
-        Ok(stream)
+        Ok(client)
     }
 
     fn protocol_name(&self) -> &'static str {
@@ -442,108 +636,32 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
             port: ctx.dst.port,
         };
 
-        // Determine transport chain from environment variable
-        let transports = self.config.transport.clone().unwrap_or_else(|| {
-            let t = std::env::var("SB_VMESS_TRANSPORT").unwrap_or_default();
-            t.split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-        });
-        let has = |k: &str| transports.iter().any(|x| x.eq_ignore_ascii_case(k));
-        let want_tls = self.config.tls_sni.is_some() || has("tls");
-        let want_ws = has("ws");
-        let want_h2 = has("h2");
-        let want_hup = has("httpupgrade") || has("http_upgrade");
-        let want_mux = has("mux") || has("multiplex");
-        let want_grpc = has("grpc");
+        let alpn_csv = self
+            .config
+            .tls_alpn
+            .as_ref()
+            .map(|v| v.join(","));
+        let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
+        let builder = crate::runtime::transport::map::apply_layers(
+            TransportBuilder::tcp(),
+            chain_opt,
+            self.config.tls_sni.as_deref(),
+            alpn_csv.as_deref(),
+            self.config.ws_path.as_deref(),
+            self.config.ws_host.as_deref(),
+            self.config.h2_path.as_deref(),
+            self.config.h2_host.as_deref(),
+            self.config.http_upgrade_path.as_deref(),
+            &self.config.http_upgrade_headers,
+            self.config.grpc_service.as_deref(),
+            self.config.grpc_method.as_deref(),
+            self.config.grpc_authority.as_deref(),
+            &self.config.grpc_metadata,
+            None,
+        );
 
-        let mut builder = TransportBuilder::tcp();
-
-        if want_tls {
-            let tls_cfg = sb_transport::tls::webpki_roots_config();
-            let alpn = if let Some(ref alpn_list) = self.config.tls_alpn {
-                Some(alpn_list.iter().map(|s| s.as_bytes().to_vec()).collect())
-            } else if want_h2 {
-                Some(vec![b"h2".to_vec()])
-            } else {
-                None
-            };
-            let sni = self.config.tls_sni.clone();
-            builder = builder.tls(tls_cfg, sni, alpn);
-        }
-
-        if want_ws {
-            let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-            if let Some(ref p) = self.config.ws_path {
-                ws_cfg.path = p.clone();
-            } else if let Ok(path) = std::env::var("SB_WS_PATH") {
-                ws_cfg.path = path;
-            }
-            if let Some(ref host_header) = self.config.ws_host {
-                ws_cfg
-                    .headers
-                    .push(("Host".to_string(), host_header.clone()));
-            } else if let Ok(host_header) = std::env::var("SB_WS_HOST") {
-                ws_cfg.headers.push(("Host".to_string(), host_header));
-            }
-            builder = builder.websocket(ws_cfg);
-        }
-
-        if want_h2 {
-            let mut h2_cfg = sb_transport::http2::Http2Config::default();
-            if let Some(ref p) = self.config.h2_path {
-                h2_cfg.path = p.clone();
-            } else if let Ok(path) = std::env::var("SB_H2_PATH") {
-                h2_cfg.path = path;
-            }
-            if let Some(ref host_header) = self.config.h2_host {
-                h2_cfg.host = host_header.clone();
-            } else if let Ok(host_header) = std::env::var("SB_H2_HOST") {
-                h2_cfg.host = host_header;
-            }
-            builder = builder.http2(h2_cfg);
-        }
-
-        if want_hup {
-            let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-            if let Some(ref path) = self.config.http_upgrade_path {
-                hup_cfg.path = path.clone();
-            } else if let Ok(path) = std::env::var("SB_HUP_PATH") {
-                hup_cfg.path = path;
-            }
-            if !self.config.http_upgrade_headers.is_empty() {
-                hup_cfg.headers = self.config.http_upgrade_headers.clone();
-            }
-            builder = builder.http_upgrade(hup_cfg);
-        }
-
-        if want_mux {
-            let cfg = sb_transport::multiplex::MultiplexConfig::default();
-            builder = builder.multiplex(cfg);
-        }
-
-        if want_grpc {
-            let mut cfg = sb_transport::grpc::GrpcConfig::default();
-            if let Some(ref service) = self.config.grpc_service {
-                cfg.service_name = service.clone();
-            }
-            if let Some(ref method) = self.config.grpc_method {
-                cfg.method_name = method.clone();
-            }
-            if let Some(ref authority) = self.config.grpc_authority {
-                cfg.server_name = Some(authority.clone());
-            }
-            if !self.config.grpc_metadata.is_empty() {
-                cfg.metadata = self.config.grpc_metadata.clone();
-            }
-            cfg.enable_tls = want_tls;
-            builder = builder.grpc(cfg);
-        }
-
-        let dialer = builder.build();
-
-        let mut stream = dialer
+        let mut stream = builder
+            .build()
             .connect(self.config.server.as_str(), self.config.port)
             .await
             .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;

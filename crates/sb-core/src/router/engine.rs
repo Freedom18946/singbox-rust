@@ -153,6 +153,13 @@ impl RouterHandle {
         handle
     }
 
+    /// Construct handle from a pre-built RouterIndex (bypassing env loaders).
+    pub fn from_index(idx: Arc<RouterIndex>) -> Self {
+        let mut handle = Self::from_env();
+        handle.idx = Arc::new(RwLock::new(idx));
+        handle
+    }
+
     #[cfg(feature = "router_cache_lru_demo")]
     /// Returns LRU cache snapshot for diagnostics
     #[allow(dead_code)]

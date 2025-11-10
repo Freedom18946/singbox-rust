@@ -11,6 +11,50 @@ use async_trait::async_trait;
 use std::{net::SocketAddr, time::Duration};
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
+use crate::dns::transport::DnsTransport;
+
+// Helper: parse EDNS0 Client Subnet from env (global default)
+fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
+    let s = std::env::var("SB_DNS_CLIENT_SUBNET").ok()?;
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (ip_str, prefix_opt) = if let Some((a, p)) = s.split_once('/') {
+        (a, p.parse::<u8>().ok())
+    } else {
+        (s, None)
+    };
+    if let Ok(ipv4) = ip_str.parse::<std::net::Ipv4Addr>() {
+        let prefix = prefix_opt.unwrap_or(24).min(32);
+        let mut b = ipv4.octets();
+        mask_prefix(&mut b, prefix);
+        let addr_len = ((prefix as usize) + 7) / 8;
+        return Some((1, prefix, 0, b[..addr_len].to_vec()));
+    }
+    if let Ok(ipv6) = ip_str.parse::<std::net::Ipv6Addr>() {
+        let prefix = prefix_opt.unwrap_or(56).min(128);
+        let mut b = ipv6.octets();
+        mask_prefix(&mut b, prefix);
+        let addr_len = ((prefix as usize) + 7) / 8;
+        return Some((2, prefix, 0, b[..addr_len].to_vec()));
+    }
+    None
+}
+
+fn mask_prefix(bytes: &mut [u8], prefix: u8) {
+    let full = (prefix / 8) as usize;
+    let rem = (prefix % 8) as usize;
+    if full < bytes.len() {
+        for i in full + 1..bytes.len() {
+            bytes[i] = 0;
+        }
+        if rem > 0 {
+            let mask = (!0u8) << (8 - rem);
+            bytes[full] &= mask;
+        }
+    }
+}
 
 /// UDP DNS 上游实现
 pub struct UdpUpstream {
@@ -22,6 +66,8 @@ pub struct UdpUpstream {
     retries: usize,
     /// 上游名称
     name: String,
+    /// EDNS Client Subnet
+    client_subnet: Option<String>,
 }
 
 impl UdpUpstream {
@@ -44,6 +90,7 @@ impl UdpUpstream {
             timeout,
             retries,
             name: format!("udp://{server}"),
+            client_subnet: None,
         }
     }
 
@@ -56,6 +103,12 @@ impl UdpUpstream {
     /// 设置重试次数
     pub const fn with_retries(mut self, retries: usize) -> Self {
         self.retries = retries;
+        self
+    }
+
+    /// 设置 EDNS Client Subnet
+    pub fn with_client_subnet(mut self, client_subnet: Option<String>) -> Self {
+        self.client_subnet = client_subnet;
         self
     }
 
@@ -120,6 +173,29 @@ impl UdpUpstream {
         // QTYPE and QCLASS
         packet.extend_from_slice(&record_type.as_u16().to_be_bytes());
         packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
+
+        // Optional EDNS0 Client Subnet (global env-driven)
+        if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
+            // Increase ARCOUNT to 1
+            packet[10] = 0; packet[11] = 1;
+            // OPT RR
+            packet.push(0); // NAME root
+            packet.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT
+            packet.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=udp size
+            packet.extend_from_slice(&0u32.to_be_bytes()); // TTL
+            // ECS option
+            let mut opt = Vec::new();
+            opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE=8
+            let data_len = 4u16 + (addr_bytes.len() as u16);
+            opt.extend_from_slice(&data_len.to_be_bytes());
+            opt.extend_from_slice(&family.to_be_bytes());
+            opt.push(src_prefix);
+            opt.push(scope_prefix);
+            opt.extend_from_slice(&addr_bytes);
+            // RDLEN + OPT data
+            packet.extend_from_slice(&(opt.len() as u16).to_be_bytes());
+            packet.extend_from_slice(&opt);
+        }
 
         Ok(packet)
     }
@@ -327,11 +403,25 @@ pub struct DotUpstream {
     server_name: String,
     timeout: Duration,
     name: String,
+    extra_ca_paths: Vec<String>,
+    extra_ca_pem: Vec<String>,
+    skip_verify: bool,
+    ecs: Option<String>,
 }
 
 impl DotUpstream {
     /// 创建新的 `DoT` 上游
     pub fn new(server: SocketAddr, server_name: String) -> Self {
+        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false)
+    }
+
+    pub fn new_with_tls(
+        server: SocketAddr,
+        server_name: String,
+        extra_ca_paths: Vec<String>,
+        extra_ca_pem: Vec<String>,
+        skip_verify: bool,
+    ) -> Self {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOT_TIMEOUT_MS")
                 .ok()
@@ -344,6 +434,10 @@ impl DotUpstream {
             server_name: server_name.clone(),
             timeout,
             name: format!("dot://{server_name}@{server}"),
+            extra_ca_paths,
+            extra_ca_pem,
+            skip_verify,
+            ecs: None,
         }
     }
 }
@@ -396,13 +490,24 @@ impl DotUpstream {
         use tokio::net::TcpStream;
         use tokio_rustls::TlsConnector;
 
-        // Create TLS configuration
-        let config = rustls::ClientConfig::builder()
-            .with_root_certificates(rustls::RootCertStore::from_iter(
-                webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-            ))
-            .with_no_client_auth();
-        let connector = TlsConnector::from(Arc::new(config));
+        // Create TLS configuration using global roots + per-upstream extras
+        let mut roots = crate::tls::global::base_root_store();
+        for p in &self.extra_ca_paths {
+            if let Ok(bytes) = std::fs::read(p) {
+                let mut rd = std::io::BufReader::new(&bytes[..]);
+                for it in rustls_pemfile::certs(&mut rd) { if let Ok(der) = it { let _ = roots.add(der); } }
+            }
+        }
+        for pem in &self.extra_ca_pem {
+            let mut rd = std::io::BufReader::new(pem.as_bytes());
+            for it in rustls_pemfile::certs(&mut rd) { if let Ok(der) = it { let _ = roots.add(der); } }
+        }
+        let mut cfg = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+        if self.skip_verify {
+            let v = crate::tls::danger::NoVerify::new();
+            cfg.dangerous().set_certificate_verifier(Arc::new(v));
+        }
+        let connector = TlsConnector::from(Arc::new(cfg));
 
         // Connect to DoT server
         let tcp_stream = TcpStream::connect(self.server).await?;
@@ -476,6 +581,29 @@ impl DotUpstream {
         // QTYPE and QCLASS
         packet.extend_from_slice(&qtype.to_be_bytes());
         packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
+
+        // Optional EDNS0 Client Subnet (global env-driven)
+        if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
+            // Increase ARCOUNT to 1
+            packet[10] = 0; packet[11] = 1;
+            // OPT RR
+            packet.push(0); // NAME root
+            packet.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT
+            packet.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=udp size
+            packet.extend_from_slice(&0u32.to_be_bytes()); // TTL
+            // ECS option
+            let mut opt = Vec::new();
+            opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE=8
+            let data_len = 4u16 + (addr_bytes.len() as u16);
+            opt.extend_from_slice(&data_len.to_be_bytes());
+            opt.extend_from_slice(&family.to_be_bytes());
+            opt.push(src_prefix);
+            opt.push(scope_prefix);
+            opt.extend_from_slice(&addr_bytes);
+            // RDLEN + OPT data
+            packet.extend_from_slice(&(opt.len() as u16).to_be_bytes());
+            packet.extend_from_slice(&opt);
+        }
 
         Ok(packet)
     }
@@ -581,6 +709,193 @@ impl DotUpstream {
             offset += 1 + len as usize;
         }
     }
+
+    /// Attach per-upstream ECS string
+    pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
+        self.ecs = ecs;
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dot_upstream_name_contains_sni_and_addr() {
+        let sa: SocketAddr = "1.1.1.1:853".parse().unwrap();
+        let up = DotUpstream::new_with_tls(sa, "cloudflare-dns.com".to_string(), vec![], vec![], false);
+        assert!(up.name().contains("cloudflare-dns.com"));
+        assert!(up.name().contains("1.1.1.1:853"));
+    }
+
+    #[test]
+    fn doq_upstream_name_contains_sni_and_addr() {
+        let sa: SocketAddr = "1.0.0.1:853".parse().unwrap();
+        let up = DoqUpstream::new_with_tls(sa, "one.one.one.one".to_string(), vec![], vec![], false);
+        assert!(up.name().contains("one.one.one.one"));
+        assert!(up.name().contains("1.0.0.1:853"));
+    }
+
+    #[test]
+    fn doh_upstream_name_contains_url() {
+        let up = DohUpstream::new_with_tls(
+            "https://1.1.1.1/dns-query".to_string(),
+            vec![],
+            vec![],
+            false,
+        )
+        .expect("doh upstream");
+        assert!(up.name().contains("https://1.1.1.1/dns-query"));
+    }
+
+    #[test]
+    fn dot_upstream_tls_fields_set() {
+        let sa: SocketAddr = "9.9.9.9:853".parse().unwrap();
+        let up = DotUpstream::new_with_tls(
+            sa,
+            "dns.quad9.net".to_string(),
+            vec!["/etc/ssl/certs/quad9.pem".to_string()],
+            vec!["-----BEGIN CERTIFICATE-----...".to_string()],
+            true,
+        );
+        // Access private fields within the same module
+        assert_eq!(up.server_name, "dns.quad9.net");
+        assert_eq!(up.extra_ca_paths.len(), 1);
+        assert_eq!(up.extra_ca_pem.len(), 1);
+        assert!(up.skip_verify);
+    }
+
+    #[test]
+    fn doq_upstream_tls_fields_set() {
+        let sa: SocketAddr = "9.9.9.11:853".parse().unwrap();
+        let up = DoqUpstream::new_with_tls(
+            sa,
+            "dns.quad9.net".to_string(),
+            vec!["/etc/ssl/certs/quad9.pem".to_string()],
+            vec![],
+            true,
+        );
+        assert_eq!(up.server_name, "dns.quad9.net");
+        assert_eq!(up.extra_ca_paths.len(), 1);
+        assert!(up.skip_verify);
+    }
+}
+
+/// DNS-over-QUIC (`DoQ`) 上游实现
+pub struct DoqUpstream {
+    server: SocketAddr,
+    server_name: String,
+    timeout: Duration,
+    name: String,
+    extra_ca_paths: Vec<String>,
+    extra_ca_pem: Vec<String>,
+    skip_verify: bool,
+    ecs: Option<String>,
+}
+
+impl DoqUpstream {
+    pub fn new(server: SocketAddr, server_name: String) -> Self {
+        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false)
+    }
+
+    pub fn new_with_tls(
+        server: SocketAddr,
+        server_name: String,
+        extra_ca_paths: Vec<String>,
+        extra_ca_pem: Vec<String>,
+        skip_verify: bool,
+    ) -> Self {
+        let timeout = Duration::from_millis(
+            std::env::var("SB_DNS_DOQ_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(5000),
+        );
+        Self {
+            server,
+            server_name: server_name.clone(),
+            timeout,
+            name: format!("doq://{server_name}@{server}"),
+            extra_ca_paths,
+            extra_ca_pem,
+            skip_verify,
+            ecs: None,
+        }
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for DoqUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        #[cfg(feature = "dns_doq")]
+        {
+            let qtype = record_type.as_u16();
+            // Build DNS wire-format query
+            let req_bytes = {
+                // Reuse UDP builder to include ECS if configured on this upstream
+                let addr = "0.0.0.0:53".parse().unwrap();
+                let up = UdpUpstream::new(addr).with_client_subnet(self.ecs.clone());
+                up.build_query_packet(domain, record_type)?
+            };
+            // Build DoQ transport with per-upstream extras
+            let transport = crate::dns::transport::DoqTransport::new_with_tls(
+                self.server,
+                self.server_name.clone(),
+                self.extra_ca_paths.clone(),
+                self.extra_ca_pem.clone(),
+                self.skip_verify,
+            )?;
+            let resp_bytes = tokio::time::timeout(
+                self.timeout,
+                transport.query(&req_bytes),
+            )
+            .await??;
+            let (ips, ttl) = crate::dns::udp::parse_answers(&resp_bytes, qtype)?;
+            let ttl = ttl
+                .map(|s| Duration::from_secs(u64::from(s)))
+                .unwrap_or(Duration::from_secs(60));
+            return Ok(DnsAnswer::new(
+                ips,
+                ttl,
+                super::cache::Source::Upstream,
+                super::cache::Rcode::NoError,
+            ));
+        }
+        #[cfg(not(feature = "dns_doq"))]
+        {
+            let _ = (domain, record_type);
+            return Err(anyhow::anyhow!("DoQ support requires dns_doq feature"));
+        }
+    }
+
+    fn name(&self) -> &str { &self.name }
+
+    async fn health_check(&self) -> bool {
+        #[cfg(feature = "dns_doq")]
+        {
+            matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    self.query("dns.google", RecordType::A),
+                )
+                .await,
+                Ok(Ok(_))
+            )
+        }
+        #[cfg(not(feature = "dns_doq"))]
+        {
+            false
+        }
+    }
+}
+
+impl DoqUpstream {
+    /// Attach per-upstream ECS string
+    pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
+        self.ecs = ecs;
+        self
+    }
 }
 
 /// DNS-over-HTTPS (`DoH`) 上游实现
@@ -590,11 +905,22 @@ pub struct DohUpstream {
     name: String,
     #[cfg(feature = "dns_doh")]
     client: std::sync::Arc<reqwest::Client>,
+    ecs: Option<String>,
 }
 
 impl DohUpstream {
     /// 创建新的 `DoH` 上游
     pub fn new(url: String) -> Result<Self> {
+        Self::new_with_tls(url, Vec::new(), Vec::new(), false)
+    }
+
+    /// 带 TLS 扩展的构造：支持追加 CA 与跳过校验（测试用途）
+    pub fn new_with_tls(
+        url: String,
+        ca_paths: Vec<String>,
+        ca_pem: Vec<String>,
+        skip_verify: bool,
+    ) -> Result<Self> {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOH_TIMEOUT_MS")
                 .ok()
@@ -604,8 +930,30 @@ impl DohUpstream {
 
         #[cfg(feature = "dns_doh")]
         let client = {
-            let client = reqwest::Client::builder()
-                .timeout(timeout)
+            use reqwest::Certificate;
+            use std::io::Read as _;
+            let mut builder = reqwest::Client::builder().timeout(timeout);
+            // Append per-upstream CA files
+            for p in ca_paths {
+                if let Ok(mut f) = std::fs::File::open(&p) {
+                    let mut buf = Vec::new();
+                    if f.read_to_end(&mut buf).is_ok() {
+                        if let Ok(cert) = Certificate::from_pem(&buf) {
+                            builder = builder.add_root_certificate(cert);
+                        }
+                    }
+                }
+            }
+            // Append inline CA
+            for pem in ca_pem {
+                if let Ok(cert) = Certificate::from_pem(pem.as_bytes()) {
+                    builder = builder.add_root_certificate(cert);
+                }
+            }
+            if skip_verify {
+                builder = builder.danger_accept_invalid_certs(true);
+            }
+            let client = builder
                 .build()
                 .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?;
             std::sync::Arc::new(client)
@@ -617,6 +965,7 @@ impl DohUpstream {
             name: format!("doh://{url}"),
             #[cfg(feature = "dns_doh")]
             client,
+            ecs: None,
         })
     }
 }
@@ -667,7 +1016,7 @@ impl DohUpstream {
             let addr = "0.0.0.0:53"
                 .parse()
                 .map_err(|e| anyhow::anyhow!("invalid DoH bind address: {e}"))?;
-            UdpUpstream::new(addr)
+            UdpUpstream::new(addr).with_client_subnet(self.ecs.clone())
         };
         let query_packet = temp_upstream.build_query_packet(domain, record_type)?;
 
@@ -696,6 +1045,12 @@ impl DohUpstream {
 
         // 解析响应
         temp_upstream.parse_response(&response_body, record_type)
+    }
+
+    /// Attach per-upstream ECS string
+    pub fn with_client_subnet(mut self, ecs: Option<String>) -> Self {
+        self.ecs = ecs;
+        self
     }
 }
 

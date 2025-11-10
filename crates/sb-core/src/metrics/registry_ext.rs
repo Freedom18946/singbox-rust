@@ -84,6 +84,8 @@ fn histogram_fallback() -> &'static HistogramVec {
 }
 
 pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'static IntGaugeVec {
+    // Enforce label whitelist for CI/consistency
+    super::label_guard::ensure_allowed_labels(name, labels);
     let map = INT_GAUGE_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -116,6 +118,8 @@ pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'s
 
 /// Float GaugeVec accessor to avoid transmute at call sites that need `GaugeVec`.
 pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) -> &'static GaugeVec {
+    // Enforce label whitelist for CI/consistency
+    super::label_guard::ensure_allowed_labels(name, labels);
     let map = GAUGE_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -148,6 +152,8 @@ pub fn get_or_register_counter_vec(
     help: &str,
     labels: &[&str],
 ) -> &'static IntCounterVec {
+    // Enforce label whitelist for CI/consistency
+    super::label_guard::ensure_allowed_labels(name, labels);
     let map = COUNTER_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -240,6 +246,8 @@ pub fn get_or_register_histogram_vec(
     labels: &[&str],
     buckets: Option<Vec<f64>>,
 ) -> &'static HistogramVec {
+    // Enforce label whitelist for CI/consistency
+    super::label_guard::ensure_allowed_labels(name, labels);
     let map = HISTOGRAM_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -281,8 +289,8 @@ mod tests {
 
     #[test]
     fn repeated_registration_returns_same_instance() {
-        let a = get_or_register_gauge_vec("t_repeat_gauge", "help", &["l1", "l2"]);
-        let b = get_or_register_gauge_vec("t_repeat_gauge", "help", &["l1", "l2"]);
+        let a = get_or_register_gauge_vec("t_repeat_gauge", "help", &["class", "kind"]);
+        let b = get_or_register_gauge_vec("t_repeat_gauge", "help", &["class", "kind"]);
         assert_eq!(a as *const IntGaugeVec, b as *const IntGaugeVec);
     }
 
@@ -297,7 +305,7 @@ mod tests {
         for i in 0..8 {
             let out = out.clone();
             handles.push(thread::spawn(move || {
-                let p = get_or_register_counter_vec(name, "help", &["l"]);
+                let p = get_or_register_counter_vec(name, "help", &["class"]);
                 let addr = p as *const IntCounterVec as usize;
                 out.insert(i, addr);
             }));
@@ -311,9 +319,16 @@ mod tests {
 
     #[test]
     fn histogram_repeated_buckets_ignored_after_first() {
-        let h1 = get_or_register_histogram_vec("t_hist", "help", &["l"], Some(vec![1.0, 2.0, 5.0]));
-        let h2 = get_or_register_histogram_vec("t_hist", "help", &["l"], None);
+        let h1 = get_or_register_histogram_vec("t_hist", "help", &["class"], Some(vec![1.0, 2.0, 5.0]));
+        let h2 = get_or_register_histogram_vec("t_hist", "help", &["class"], None);
         assert_eq!(h1 as *const HistogramVec, h2 as *const HistogramVec);
+    }
+
+    #[test]
+    #[should_panic]
+    fn label_guard_panics_on_unknown() {
+        // Using a non-whitelisted label key should trigger the guard.
+        let _ = get_or_register_counter_vec("t_bad_label", "help", &["unknown_label_key"]);
     }
 }
 
@@ -330,7 +345,7 @@ mod loom_smoke {
             let mut hs = Vec::new();
             for _ in 0..3 {
                 hs.push(thread::spawn(move || {
-                    let p = get_or_register_counter_vec(name, "h", &["l"]) as *const _;
+                    let p = get_or_register_counter_vec(name, "h", &["class"]) as *const _;
                     p as usize
                 }));
             }

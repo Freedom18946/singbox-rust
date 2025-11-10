@@ -2,6 +2,8 @@
 //! - Optional Basic auth via (username,password)
 //! - Route decision via Engine; outbound resolved by Bridge (adapter优先)
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -105,7 +107,7 @@ fn basic_ok(headers: &[(String, String)], user: &str, pass: &str) -> bool {
     false
 }
 
-async fn handle(
+pub(crate) async fn handle(
     mut cli: TcpStream,
     eng: &EngineX<'_>,
     br: &Bridge,
@@ -185,7 +187,9 @@ async fn handle(
             network: "tcp",
             protocol: "http-connect",
             sniff_host: Some(&host),
-            sniff_alpn: None,
+            // For HTTP CONNECT control plane, we don't have stream bytes yet.
+            // When sniff is enabled, we can still hint ALPN as http/1.1.
+            sniff_alpn: if sniff_enabled { Some("http/1.1") } else { None },
         };
         eng.decide(&input, false)
     };
@@ -245,6 +249,7 @@ pub struct HttpConnect {
     basic_user: Option<String>,
     basic_pass: Option<String>,
     sniff_enabled: bool,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl HttpConnect {
@@ -257,6 +262,7 @@ impl HttpConnect {
             basic_user: None,
             basic_pass: None,
             sniff_enabled: false,
+            shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -300,8 +306,15 @@ impl HttpConnect {
         );
 
         loop {
-            match listener.accept().await {
-                Ok((socket, _)) => {
+            if self.shutdown.load(Ordering::Relaxed) { break; }
+            match tokio::time::timeout(Duration::from_millis(1000), listener.accept()).await {
+                Err(_) => continue,
+                Ok(Err(e)) => {
+                    crate::log::log(Level::Warn, "accept failed", &[("err", &format!("{}", e))]);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    continue;
+                }
+                Ok(Ok((socket, _))) => {
                     let eng_clone = eng.clone();
                     let br_clone = br.clone();
                     let auth = self.basic_user.clone().zip(self.basic_pass.clone());
@@ -312,12 +325,9 @@ impl HttpConnect {
                         }
                     });
                 }
-                Err(e) => {
-                    crate::log::log(Level::Warn, "accept failed", &[("err", &format!("{}", e))]);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                }
             }
         }
+        Ok(())
     }
 }
 
@@ -354,5 +364,9 @@ impl InboundService for HttpConnect {
                 runtime.block_on(self.do_serve_async(eng, br))
             }
         }
+    }
+
+    fn request_shutdown(&self) {
+        self.shutdown.store(true, Ordering::Relaxed);
     }
 }

@@ -142,6 +142,20 @@ pub fn record_error(error_class: HttpErrorClass) {
     inc_errors(error_class.as_str());
 }
 
+/// Convenience: record HTTP error from a Display error using unified classification
+pub fn record_error_display(e: &dyn core::fmt::Display) {
+    use crate::metrics::error_class::{classify_display, ErrorClass};
+    let ec = classify_display(e);
+    let http = match ec {
+        ErrorClass::Timeout => HttpErrorClass::ConnectTimeout,
+        ErrorClass::Io => HttpErrorClass::ConnectionReset,
+        ErrorClass::Auth => HttpErrorClass::AuthFailed,
+        ErrorClass::Protocol => HttpErrorClass::ParseError,
+        _ => HttpErrorClass::Other,
+    };
+    record_error(http);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

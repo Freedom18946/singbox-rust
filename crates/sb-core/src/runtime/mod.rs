@@ -10,6 +10,7 @@ use std::thread::{self, JoinHandle as ThreadJoinHandle};
 
 pub mod supervisor;
 pub mod switchboard;
+pub mod transport;
 
 #[cfg(feature = "router")]
 pub struct Runtime<'a> {

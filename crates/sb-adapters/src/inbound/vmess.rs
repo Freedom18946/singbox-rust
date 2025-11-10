@@ -105,6 +105,8 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vmess: accept error");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("vmess", &e);
                         continue;
                     }
                 };
@@ -114,6 +116,8 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 tokio::spawn(async move {
                     // Use &mut *stream to dereference Box<dyn InboundStream>
                     if let Err(e) = handle_conn_stream(&cfg_clone, security_clone, &mut *stream).await {
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("vmess", &e);
                         warn!(error=%e, "vmess: session error");
                         let _ = stream.shutdown().await;
                     }

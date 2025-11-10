@@ -39,12 +39,8 @@ impl DotTransport {
 
         #[cfg(feature = "tls")]
         let tls_config = {
-            let root_store = rustls::RootCertStore {
-                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
-            };
-
             let mut config = rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
+                .with_root_certificates(crate::tls::global::base_root_store())
                 .with_no_client_auth();
 
             // 启用 ALPN 协议协商

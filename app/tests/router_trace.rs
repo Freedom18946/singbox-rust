@@ -20,6 +20,8 @@ fn engine_trace_matches_domain_and_port() {
             }],
             default: Some("direct".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = sb_core::routing::engine::Engine::new(&ir);
     let input = sb_core::routing::engine::Input {
@@ -57,6 +59,8 @@ fn engine_uses_sniff_host_over_original_host() {
             }],
             default: Some("block".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = sb_core::routing::engine::Engine::new(&ir);
     // original host is IP (won't match domain rule); sniff_host provides domain

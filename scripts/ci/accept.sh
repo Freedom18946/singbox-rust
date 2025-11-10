@@ -101,10 +101,14 @@ error_rate=$(echo "scale=2; $errors * 100 / 12" | bc -l 2>/dev/null || echo 0)
 echo "{\"udp_nat_variance_pct\": $error_rate, \"rate_limit_delta\": 0, \"dns_err_delta\": 0, \"duration_sec\": $duration}" > .e2e/soak/report.json
 
 if (( $(echo "$error_rate < 5" | bc -l 2>/dev/null || echo 0) )); then
-  J=$(jq '.soak.duration_sec=$d|.soak.udp_nat_variance_pct=$v|.soak.rate_limit_delta=0|.soak.dns_err_delta=0|.soak.passed=true' --argjson v "$error_rate" --argjson d "$duration" <<<"$J")
+J=$(jq '.soak.duration_sec=$d|.soak.udp_nat_variance_pct=$v|.soak.rate_limit_delta=0|.soak.dns_err_delta=0|.soak.passed=true' --argjson v "$error_rate" --argjson d "$duration" <<<"$J")
 else
   J=$(jq '.soak.passed=false' <<<"$J")
 fi
+
+echo "[accept] inbound errors (udp parse)"
+IE_JSON="$( scripts/ci/tasks/inbound-errors.sh )"
+J=$(jq --argjson ie "$IE_JSON" '.inbound_errors=$ie' <<<"$J")
 
 echo "[accept] release matrix"
 scripts/release-matrix || true

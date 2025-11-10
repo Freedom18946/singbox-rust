@@ -28,7 +28,7 @@ net_e2e = []
 # Dev/auxiliary CLI feature gates
 bench-cli = ["hdrhistogram", "metrics"]
 manpage = []
-dev-cli = ["notify"]
+dev-cli = ["notify", "ignore"]
 prefetch = []
 admin_envelope = ["sb-admin-contract"]
 auth = ["admin_envelope"]
@@ -36,7 +36,7 @@ rate_limit = ["admin_envelope"]
 jwt = ["jsonwebtoken", "rsa", "p256", "pkcs8", "pkcs1"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
-router  = ["sb-core", "sb-core/router", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "out_ss"]
+router  = ["sb-core", "sb-core/router", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss"]
 observe = ["router", "sb-metrics"]
 out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
@@ -61,7 +61,8 @@ io_local_alpha = ["sb-runtime/io_local_alpha"]
 
 # Minimal stub: enable Prometheus CLI paths under acceptance builds
 prom = []
-tls_reality = []
+tls_reality = ["sb-tls"]
+tls_ech = ["sb-tls/ech"]
 
 ## Empty features for check-cfg quieting
 handshake_alpha = ["sb-runtime", "sb-runtime/handshake_alpha"]
@@ -77,6 +78,26 @@ strict_warnings = []
 config_schema = ["jsonschema"]
 tls-rustls = []
 dns-proto = ["trust-dns-proto"]
+adapter-hysteria = ["sb-core/out_hysteria"]
+adapter-hysteria2 = ["sb-core/out_hysteria2"]
+adapter-ssh = ["sb-core/out_ssh"]
+adapter-tuic = ["sb-core/out_tuic"]
+
+# Internal gating to include sb-adapters powered inbounds in bootstrap
+adapters = [
+    "sb-adapters",
+    "sb-adapters/adapter-http",
+    "sb-adapters/http",
+    "sb-adapters/adapter-socks",
+    "sb-adapters/socks",
+    "sb-adapters/adapter-shadowsocks",
+    "sb-adapters/adapter-trojan",
+    "sb-adapters/adapter-vmess",
+    "sb-adapters/adapter-vless",
+    "sb-adapters/adapter-tun",
+    "sb-adapters/tun",
+    "sb-adapters/mixed",
+]
 
 ## 新增组合预设（示例）
 cli_min = []                         # 仅 CLI，不拉业务依赖
@@ -90,6 +111,7 @@ full    = [
     # 其它你需要的聚合开关...
 ]
 scaffold = ["sb-core/scaffold"]
+service_ntp = ["sb-core/service_ntp"]
 
 ## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
 [[bin]]
@@ -193,6 +215,11 @@ name = "format"
 path = "src/bin/format.rs"
 
 [[bin]]
+name = "metrics-serve"
+path = "src/bin/metrics-serve.rs"
+required-features = ["observe"]
+
+[[bin]]
 name = "tools"
 path = "src/bin/tools.rs"
 required-features = ["tools"]
@@ -207,11 +234,17 @@ name = "geoip"
 path = "src/bin/geoip.rs"
 required-features = ["router"]
 
+[[bin]]
+name = "transport-plan"
+path = "src/bin/transport-plan.rs"
+required-features = ["router"]
+
 [dependencies]
 anyhow      = { workspace = true }
 clap        = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
+regex       = { workspace = true }
 sb-admin-contract = { workspace = true, optional = true }
 tokio       = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"], optional = true }
@@ -223,10 +256,14 @@ sha2        = "0.10"
 hmac        = "0.12"
 subtle      = "2.5"
 hex         = "0.4"
+url         = { version = "2", optional = true }
+bytes       = { version = "1", optional = true }
+reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream","json"], optional = true }
 httparse    = "1.8"
 hyper       = "0.14"
-tokio-rustls = "0.25"
-rustls      = "0.23"
+# Align rustls provider: enable ring backend explicitly to avoid runtime provider panic
+tokio-rustls = "0.26"
+rustls      = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2.1"
 webpki-roots = "0.26"
 rand = "0.8"
@@ -234,21 +271,16 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rcgen = "0.12"
 trust-dns-resolver = { version = "0.23", default-features = false, features = ["tokio-runtime"] }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
+sb-adapters = { path = "../crates/sb-adapters", optional = true }
 sb-config   = { path = "../crates/sb-config", package = "sb-config" }
 sb-metrics  = { path = "../crates/sb-metrics", optional = true }
 sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
-sb-runtime  = { path = "../crates/sb-runtime", optional = true }
-sb-adapters = { path = "../crates/sb-adapters", features = ["http","socks","tun","sb-transport","transport_tls","transport_mux","tls_reality","transport_ech"] }
-reqwest     = { version = "0.12", default-features = false, features = ["rustls-tls","stream","json"], optional = true }
-url         = { version = "2", optional = true }
-bytes       = { version = "1", optional = true }
-uuid        = { version = "1" }
+sb-tls      = { path = "../crates/sb-tls", package = "sb-tls", optional = true }
 futures-util= { version = "0.3", optional = true }
-walkdir     = "2"
-regex       = "1"
-ignore      = "0.4"
-toml        = "0.8"
-once_cell   = { workspace = true }
+sb-runtime  = { path = "../crates/sb-runtime", optional = true }
+uuid        = { version = "1", features = ["v4"] }
+
+#[dev-dependencies are declared later]
 lazy_static = "1.4"
 prometheus = "0.13"
 ipnet       = "2"
@@ -256,6 +288,7 @@ fastrand    = "2"
 base64      = "0.22"
 percent-encoding = "2.3"
 idna        = "0.5"
+toml        = { version = "0.8", optional = true }
 clap_complete = "4"
 clap_mangen = "0.2"
 indicatif = "0.17"
@@ -283,6 +316,8 @@ pkcs8 = { version = "0.10", optional = true }
 pkcs1 = { version = "0.7", optional = true }
 # File watching for hot reload
 notify = { version = "6.1", optional = true }
+once_cell = "1"
+ignore = { version = "0.4", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

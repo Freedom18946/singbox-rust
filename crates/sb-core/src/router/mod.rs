@@ -8,6 +8,7 @@
 pub mod dns_bridge;
 pub mod dns_integration;
 pub mod engine;
+pub mod dns;
 pub mod geo;
 pub mod hot_reload;
 pub mod hot_reload_cli;

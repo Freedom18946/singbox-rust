@@ -132,6 +132,19 @@ pub fn register_metrics() {
     // no-op: metrics crate uses lazy counters
 }
 
+/// Convenience: record DNS error from a Display error via unified classification
+pub fn record_error_display(e: &dyn core::fmt::Display) {
+    use crate::metrics::error_class::{classify_display, ErrorClass};
+    let ec = classify_display(e);
+    let dns = match ec {
+        ErrorClass::Timeout => DnsErrorClass::Timeout,
+        ErrorClass::Io => DnsErrorClass::NetworkError,
+        ErrorClass::Dns => DnsErrorClass::NameError,
+        _ => DnsErrorClass::Other,
+    };
+    record_error(dns);
+}
+
 // Optional Prometheus registry for cache metrics (legacy experiments)
 #[cfg(feature = "metrics")]
 use prometheus::IntCounterVec;

@@ -287,12 +287,18 @@ impl SelectorGroup {
         if self.mode != SelectMode::UrlTest {
             return;
         }
-
+        // Use a weak reference so the task stops automatically when selector is dropped
+        let weak = Arc::downgrade(&self);
         let interval = self.test_interval;
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(interval).await;
-                self.run_health_checks().await;
+                // Attempt to upgrade; exit when the selector is dropped (e.g., hot reload)
+                if let Some(selector) = weak.upgrade() {
+                    tokio::time::sleep(interval).await;
+                    selector.run_health_checks().await;
+                } else {
+                    break;
+                }
             }
         });
     }
@@ -306,9 +312,10 @@ impl SelectorGroup {
             let tag = member.tag.clone();
             let health = member.health.clone();
             let url = url.clone();
+            let connector = member.connector.clone();
 
             tokio::spawn(async move {
-                match health_check(&url, timeout).await {
+                match health_check_via(connector, &url, timeout).await {
                     Ok(rtt_ms) => {
                         health.record_success(rtt_ms);
                         tracing::trace!(
@@ -316,7 +323,8 @@ impl SelectorGroup {
                             rtt_ms = rtt_ms,
                             "health check ok"
                         );
-                        // Note: set_proxy_rtt metric will be added when metrics module is extended
+                        // Update score gauge with observed RTT (lower is better)
+                        sb_metrics::set_proxy_select_score(&tag, rtt_ms as f64);
                     }
                     Err(e) => {
                         health.record_failure();
@@ -381,6 +389,8 @@ impl OutboundConnector for SelectorGroup {
                     "connect ok"
                 );
                 sb_metrics::inc_proxy_select(&self.name);
+                // Update score gauge with observed connect RTT in ms
+                sb_metrics::set_proxy_select_score(&self.name, elapsed_ms as f64);
             }
             Err(e) => {
                 member.health.record_failure();
@@ -408,14 +418,14 @@ async fn health_check(url: &str, timeout: Duration) -> std::io::Result<u64> {
     let start = Instant::now();
 
     // Parse URL to extract host and port
-    let (host, port, _use_https) = parse_test_url(url)?;
+    let (host, port, _use_https, path) = parse_test_url(url)?;
 
     // Perform HTTP HEAD request
     let result = tokio::time::timeout(timeout, async {
         let mut stream = TcpStream::connect((host.as_str(), port)).await?;
 
         let request = format!(
-            "HEAD {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+            "HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
         );
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -456,28 +466,83 @@ async fn health_check(url: &str, timeout: Duration) -> std::io::Result<u64> {
     }
 }
 
+/// Perform a health check via a specific outbound connector
+async fn health_check_via(
+    connector: Arc<dyn OutboundConnector>,
+    url: &str,
+    timeout: Duration,
+) -> std::io::Result<u64> {
+    let start = Instant::now();
+
+    let (host, port, use_https, path) = parse_test_url(url)?;
+
+    // Use connector to establish a stream to host:port
+    let result = tokio::time::timeout(timeout, async {
+        let mut stream = connector.connect(&host, port).await?;
+
+        if use_https {
+            // For HTTPS, just consider TCP connect success as OK at P0 level
+            return Ok(());
+        }
+
+        // For HTTP, send a HEAD request
+        let req = format!(
+            "HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+        );
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        stream.write_all(req.as_bytes()).await?;
+
+        let mut buf = [0u8; 1024];
+        let n = stream.read(&mut buf).await?;
+        if n > 12 {
+            let response = std::str::from_utf8(&buf[..n]).unwrap_or("");
+            if response.starts_with("HTTP/1.") {
+                if let Some(code_str) = response.split_whitespace().nth(1) {
+                    if let Ok(code) = code_str.parse::<u16>() {
+                        if (200..400).contains(&code) {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid http response",
+        ))
+    })
+    .await;
+
+    match result {
+        Ok(Ok(())) => Ok(start.elapsed().as_millis() as u64),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "health check timeout",
+        )),
+    }
+}
+
 /// Parse test URL to extract host, port, and scheme
-fn parse_test_url(url: &str) -> std::io::Result<(String, u16, bool)> {
+fn parse_test_url(url: &str) -> std::io::Result<(String, u16, bool, String)> {
     if let Some(url_without_scheme) = url.strip_prefix("https://") {
-        let parts: Vec<&str> = url_without_scheme
-            .split('/')
-            .next()
-            .unwrap()
-            .split(':')
-            .collect();
+        let (authority, path) = url_without_scheme
+            .split_once('/')
+            .map(|(a, p)| (a, format!("/{}", p)))
+            .unwrap_or((url_without_scheme, "/".to_string()));
+        let parts: Vec<&str> = authority.split(':').collect();
         let host = parts[0].to_string();
         let port = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(443);
-        Ok((host, port, true))
+        Ok((host, port, true, path))
     } else if let Some(url_without_scheme) = url.strip_prefix("http://") {
-        let parts: Vec<&str> = url_without_scheme
-            .split('/')
-            .next()
-            .unwrap()
-            .split(':')
-            .collect();
+        let (authority, path) = url_without_scheme
+            .split_once('/')
+            .map(|(a, p)| (a, format!("/{}", p)))
+            .unwrap_or((url_without_scheme, "/".to_string()));
+        let parts: Vec<&str> = authority.split(':').collect();
         let host = parts[0].to_string();
         let port = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(80);
-        Ok((host, port, false))
+        Ok((host, port, false, path))
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -492,15 +557,17 @@ mod tests {
 
     #[test]
     fn test_parse_url() {
-        let (host, port, https) = parse_test_url("http://www.google.com/generate_204").unwrap();
+        let (host, port, https, path) = parse_test_url("http://www.google.com/generate_204").unwrap();
         assert_eq!(host, "www.google.com");
         assert_eq!(port, 80);
         assert!(!https);
+        assert_eq!(path, "/generate_204");
 
-        let (host, port, https) = parse_test_url("https://example.com:8443/test").unwrap();
+        let (host, port, https, path) = parse_test_url("https://example.com:8443/test").unwrap();
         assert_eq!(host, "example.com");
         assert_eq!(port, 8443);
         assert!(https);
+        assert_eq!(path, "/test");
     }
 
     #[test]

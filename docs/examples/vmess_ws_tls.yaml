@@ -1,0 +1,18 @@
+# Minimal example: VMess over TLS+WebSocket
+outbounds:
+  - type: vmess
+    tag: vmess-ws
+    server: example.com:443
+    uuid: 12345678-1234-1234-1234-123456789abc
+    tls:
+      enabled: true
+      sni: www.example.com
+      alpn: "http/1.1"
+    transport:
+      type: ws
+      path: "/ws"
+      headers:
+        Host: www.example.com
+route:
+  rules: []
+  default: vmess-ws

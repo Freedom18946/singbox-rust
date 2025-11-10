@@ -15,7 +15,7 @@
 //!
 //! Run with: cargo bench --bench bench_p0_protocols
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{black_box, criterion_group, BenchmarkId, Criterion, Throughput};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -83,20 +83,22 @@ fn bench_baseline_throughput(c: &mut Criterion) {
     for &size in &[1024usize, 10 * 1024, 100 * 1024, 1024 * 1024] {
         group.throughput(Throughput::Bytes(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
-            b.to_async(&rt).iter(|| async {
-                let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
-                let data = vec![0xAB; size];
+            b.iter(|| {
+                rt.block_on(async {
+                    let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
+                    let data = vec![0xAB; size];
 
-                if stream.write_all(&data).await.is_err() {
-                    return;
-                }
+                    if stream.write_all(&data).await.is_err() {
+                        return;
+                    }
 
-                let mut received = vec![0u8; size];
-                if stream.read_exact(&mut received).await.is_err() {
-                    return;
-                }
+                    let mut received = vec![0u8; size];
+                    if stream.read_exact(&mut received).await.is_err() {
+                        return;
+                    }
 
-                black_box(received);
+                    black_box(received);
+                });
             });
         });
     }
@@ -112,21 +114,23 @@ fn bench_baseline_latency(c: &mut Criterion) {
     group.sample_size(1000);
 
     group.bench_function("small_payload", |b| {
-        b.to_async(&rt).iter(|| async {
-            let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
-            let data = b"PING";
+        b.iter(|| {
+            rt.block_on(async {
+                    let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
+                let data = b"PING";
 
-            if stream.write_all(data).await.is_err() {
-                return;
-            }
+                    if stream.write_all(data).await.is_err() {
+                    return;
+                }
 
-            let mut received = [0u8; 4];
-            if stream.read_exact(&mut received).await.is_err() {
-                return;
-            }
+                    let mut received = [0u8; 4];
+                    if stream.read_exact(&mut received).await.is_err() {
+                    return;
+                }
 
-            black_box(received);
-        });
+                        black_box(received);
+                });
+            });
     });
 
     group.finish();
@@ -140,9 +144,11 @@ fn bench_baseline_connection_establishment(c: &mut Criterion) {
     group.sample_size(500);
 
     group.bench_function("tcp_connect", |b| {
-        b.to_async(&rt).iter(|| async {
-            let Ok(stream) = TcpStream::connect(addr).await else { return; };
-            black_box(stream);
+        b.iter(|| {
+            rt.block_on(async {
+                let Ok(stream) = TcpStream::connect(addr).await else { return; };
+                black_box(stream);
+            });
         });
     });
 
@@ -165,10 +171,12 @@ mod reality_benches {
         let public_key = PublicKey::from(&secret);
 
         let config = RealityClientConfig {
-            enabled: true,
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
             public_key: hex::encode(public_key.as_bytes()),
             short_id: Some("01ab".to_string()),
-            server_name: "www.apple.com".to_string(),
+            fingerprint: "chrome".to_string(),
+            alpn: Vec::new(),
         };
 
         let mut group = c.benchmark_group("reality");
@@ -179,7 +187,7 @@ mod reality_benches {
         group.bench_function("config_validation", |b| {
             b.iter(|| {
                 let cfg = config.clone();
-                black_box(cfg.validate());
+                let _ = black_box(cfg.validate());
             });
         });
 
@@ -231,7 +239,7 @@ mod ech_benches {
         group.bench_function("config_validation", |b| {
             b.iter(|| {
                 let cfg = config.clone();
-                black_box(cfg.validate());
+                let _ = black_box(cfg.validate());
             });
         });
 
@@ -354,7 +362,7 @@ mod ssh_benches {
 // TUIC Benchmarks
 // ============================================================================
 
-#[cfg(feature = "sb-core/out_tuic")]
+#[cfg(feature = "adapter-tuic")]
 mod tuic_benches {
     use super::*;
 
@@ -411,28 +419,30 @@ fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
             BenchmarkId::new("concurrent_connections", conn_count),
             &conn_count,
             |b, &count| {
-                b.to_async(&rt).iter(|| async {
-                    let mut handles = Vec::new();
+                b.iter(|| {
+                    rt.block_on(async {
+                        let mut handles = Vec::new();
 
-                    for _ in 0..count {
-                        let handle = tokio::spawn(async move {
-                            let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
-                            let data = vec![0xAB; 1024];
-                            if stream.write_all(&data).await.is_err() {
-                                return;
-                            }
-                            let mut received = vec![0u8; 1024];
-                            if stream.read_exact(&mut received).await.is_err() {
-                                return;
-                            }
-                            black_box(received);
-                        });
-                        handles.push(handle);
-                    }
+                        for _ in 0..count {
+                            let handle = tokio::spawn(async move {
+                                let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
+                                let data = vec![0xAB; 1024];
+                                if stream.write_all(&data).await.is_err() {
+                                    return;
+                                }
+                                let mut received = vec![0u8; 1024];
+                                if stream.read_exact(&mut received).await.is_err() {
+                                    return;
+                                }
+                                black_box(received);
+                            });
+                            handles.push(handle);
+                        }
 
-                    for handle in handles {
-                        let _ = handle.await;
-                    }
+                        for handle in handles {
+                            let _ = handle.await;
+                        }
+                    });
                 });
             },
         );
@@ -485,7 +495,7 @@ criterion_group!(
     ssh_benches::bench_ssh_connection_pooling
 );
 
-#[cfg(feature = "sb-core/out_tuic")]
+#[cfg(feature = "adapter-tuic")]
 criterion_group!(
     tuic_benches_group,
     tuic_benches::bench_tuic_connection_establishment,
@@ -495,29 +505,29 @@ criterion_group!(
 
 // Custom main function to handle conditional feature compilation
 fn main() {
-    let mut criterion = Criterion::default().configure_from_args();
+    let criterion = Criterion::default().configure_from_args();
 
     // Always run baseline benchmarks
-    baseline_benches(&mut criterion);
+    baseline_benches();
 
     // Conditionally run P0 protocol benchmarks based on enabled features
     #[cfg(feature = "tls_reality")]
-    reality_benches_group(&mut criterion);
+    reality_benches_group();
 
     #[cfg(feature = "tls_ech")]
-    ech_benches_group(&mut criterion);
+    ech_benches_group();
 
     #[cfg(feature = "adapter-hysteria")]
-    hysteria_benches_group(&mut criterion);
+    hysteria_benches_group();
 
     #[cfg(feature = "adapter-hysteria2")]
-    hysteria2_benches_group(&mut criterion);
+    hysteria2_benches_group();
 
     #[cfg(feature = "adapter-ssh")]
-    ssh_benches_group(&mut criterion);
+    ssh_benches_group();
 
-    #[cfg(feature = "sb-core/out_tuic")]
-    tuic_benches_group(&mut criterion);
+    #[cfg(feature = "adapter-tuic")]
+    tuic_benches_group();
 
 criterion.final_summary();
 }

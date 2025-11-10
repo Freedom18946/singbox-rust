@@ -16,6 +16,7 @@
 //! // Drop 时自动观测吞吐率
 //! ```
 
+use crate::labels::ensure_allowed_labels;
 use prometheus::{
     opts, register_histogram, register_int_counter, register_int_counter_vec, Histogram,
     IntCounter, IntCounterVec,
@@ -71,6 +72,7 @@ pub static BYTES_UP_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
 
 /// 按方向与通道类型聚合的字节计数
 pub static BYTES_TOTAL_VEC: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    ensure_allowed_labels("bytes_total", &["dir", "chan"]);
     register_int_counter_vec!(
         "bytes_total",
         "Total bytes by direction and channel",

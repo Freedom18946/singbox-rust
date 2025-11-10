@@ -1,0 +1,21 @@
+{
+  "inbounds": [
+    {"type": "socks", "listen": "127.0.0.1", "port": 1082}
+  ],
+  "outbounds": [
+    {
+      "type": "trojan",
+      "name": "trojan-h2",
+      "server": "example.com",
+      "port": 443,
+      "password": "trojanpass",
+      "transport": ["tls", "h2"],
+      "tls_sni": "example.com",
+      "h2_path": "/",
+      "h2_host": "example.com"
+    },
+    {"type": "direct", "name": "direct"}
+  ],
+  "route": {"default": "trojan-h2"}
+}
+

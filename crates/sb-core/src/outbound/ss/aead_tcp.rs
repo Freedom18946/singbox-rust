@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use std::io::{Error, ErrorKind, Result};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce as AesNonce};
@@ -123,8 +123,83 @@ impl Outbound for SsAeadTcp {
         }
 
         // Wrap in AEAD stream for ongoing encryption
-        let stream = SsAeadTcpStream::new(tcp, subkey, self.config.cipher.clone());
-        Ok(stream.into_tcp_stream())
+        // Establish a local TCP pair and pump plaintext<->ciphertext with AEAD framing
+        // Create a loopback listener and connect to it; return the client end.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let local_addr = listener.local_addr()?;
+        let server_task = tokio::spawn(async move { listener.accept().await.map(|(s, _)| s) });
+        let client = tokio::net::TcpStream::connect(local_addr).await?;
+        let local_server = server_task.await.map_err(|e| anyhow::anyhow!(e))?;
+        let local_server = local_server?;
+
+        // Split streams
+        let (mut ls_r, mut ls_w) = local_server.into_split();
+        let (mut ss_r, mut ss_w) = tcp.into_split();
+
+        // Clone parameters for tasks
+        let cipher_w = self.config.cipher.clone();
+        let cipher_r = self.config.cipher.clone();
+        let subkey_w = subkey;
+        let subkey_r = subkey_w; // same subkey
+
+        // Writer: local -> ss (encrypt frames)
+        tokio::spawn(async move {
+            let mut write_nonce: u64 = 2; // after addr (0,1)
+            let mut buf = vec![0u8; 32 * 1024];
+            loop {
+                match ls_r.read(&mut buf).await {
+                    Ok(0) => {
+                        let _ = ss_w.shutdown().await;
+                        break;
+                    }
+                    Ok(n) => {
+                        let enc_res = encrypt_aead_chunk(&buf[..n], &subkey_w, write_nonce, &cipher_w);
+                        if let Ok(enc) = enc_res {
+                            if ss_w.write_all(&enc).await.is_err() {
+                                break;
+                            }
+                            write_nonce = write_nonce.wrapping_add(2);
+                        } else {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // Reader: ss -> local (decrypt frames)
+        tokio::spawn(async move {
+            let mut read_nonce: u64 = 0;
+            let tag = cipher_r.tag_size();
+            let mut len_buf = vec![0u8; 2 + tag];
+            loop {
+                if let Err(_) = ss_r.read_exact(&mut len_buf).await { break; }
+                let plain_len = match decrypt_aead(&len_buf, &subkey_r, read_nonce, &cipher_r)
+                    .and_then(|v| {
+                        if v.len() >= 2 {
+                            Ok::<_, std::io::Error>(u16::from_be_bytes([v[0], v[1]]) as usize)
+                        } else {
+                            Err(std::io::Error::other("bad len"))
+                        }
+                    }) {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+
+                let mut payload = vec![0u8; plain_len + tag];
+                if let Err(_) = ss_r.read_exact(&mut payload).await { break; }
+                let plain = match decrypt_aead(&payload, &subkey_r, read_nonce.wrapping_add(1), &cipher_r) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                if ls_w.write_all(&plain).await.is_err() { break; }
+                read_nonce = read_nonce.wrapping_add(2);
+            }
+            let _ = ls_w.shutdown().await;
+        });
+
+        Ok(client)
     }
 
     async fn tcp_connect_tls(
@@ -135,7 +210,7 @@ impl Outbound for SsAeadTcp {
     }
 
     async fn udp_bind(&self, _req: UdpBindRequest) -> anyhow::Result<tokio::net::UdpSocket> {
-        anyhow::bail!("UDP not implemented for Shadowsocks AEAD TCP");
+        anyhow::bail!("UDP not supported by shadowsocks-aead-tcp outbound");
     }
 
     fn name(&self) -> &'static str {
@@ -145,7 +220,7 @@ impl Outbound for SsAeadTcp {
 
 /// Encrypt a chunk using AEAD with proper framing
 /// Format: AEAD(length) || AEAD(payload)
-fn encrypt_aead_chunk(
+pub(crate) fn encrypt_aead_chunk(
     data: &[u8],
     key: &[u8],
     nonce_counter: u64,
@@ -282,23 +357,17 @@ pub struct SsAeadTcpStream {
 }
 
 impl SsAeadTcpStream {
+    #[allow(dead_code)]
     fn new(stream: tokio::net::TcpStream, key: [u8; 32], cipher: SsAeadCipher) -> Self {
         Self {
             inner: stream,
             key,
             cipher,
-            write_nonce: 2, // Start from 2 since 0,1 were used for address
+            write_nonce: 2,
             read_nonce: 0,
             read_buffer: Vec::new(),
             write_buffer: Vec::new(),
         }
-    }
-
-    // Convert to TcpStream for compatibility (this is a simplification)
-    fn into_tcp_stream(self) -> tokio::net::TcpStream {
-        // In a real implementation, this would return a wrapper that handles AEAD encryption
-        // For now, return the underlying stream (this breaks encryption but maintains compatibility)
-        self.inner
     }
 }
 
@@ -308,7 +377,7 @@ impl AsyncRead for SsAeadTcpStream {
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<Result<()>> {
-        // Simplified implementation - in practice this would handle AEAD decryption of chunks
+        // Pass-through: this struct is not used in final return path
         Pin::new(&mut self.inner).poll_read(cx, buf)
     }
 }
@@ -319,7 +388,7 @@ impl AsyncWrite for SsAeadTcpStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize>> {
-        // Simplified implementation - in practice this would handle AEAD encryption of chunks
+        // Pass-through: this struct is not used in final return path
         Pin::new(&mut self.inner).poll_write(cx, buf)
     }
 

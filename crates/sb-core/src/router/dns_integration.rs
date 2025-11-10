@@ -46,14 +46,15 @@ pub fn setup_dns_routing_with_config(config: DnsIntegrationConfig) -> RouterHand
     let mut router = RouterHandle::from_env();
 
     if config.enabled {
-        let dns_resolver = ResolverHandle::from_env_or_default();
+        let dns_resolver: Arc<dyn Resolver> = crate::dns::global::get()
+            .unwrap_or_else(|| Arc::new(ResolverHandle::from_env_or_default()));
 
         if config.enhanced_metrics {
             let enhanced_resolver =
-                EnhancedDnsResolver::new(Arc::new(dns_resolver), config.resolver_name);
+                EnhancedDnsResolver::new(dns_resolver.clone(), config.resolver_name);
             router = router.with_dns_resolver(Arc::new(enhanced_resolver));
         } else {
-            router = router.with_dns_resolver(Arc::new(dns_resolver));
+            router = router.with_dns_resolver(dns_resolver.clone());
         }
     }
 

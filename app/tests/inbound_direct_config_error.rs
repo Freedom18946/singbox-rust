@@ -23,6 +23,8 @@ fn direct_inbound_missing_override_errors() {
             rules: vec![],
             default: Some("direct".into()),
         },
+        ntp: None,
+        dns: None,
     };
 
     let res = Bridge::new_from_config(&ir);

@@ -228,7 +228,11 @@ mod tests {
 
         let client_config = config.build_client_config().unwrap();
         // Verify configuration was created successfully
-        assert!(client_config.as_ref().crypto_provider().cipher_suites.len() > 0);
+        assert!(!client_config
+            .as_ref()
+            .crypto_provider()
+            .cipher_suites
+            .is_empty());
     }
 
     #[tokio::test]

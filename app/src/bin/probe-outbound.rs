@@ -19,6 +19,9 @@ struct Args {
     /// Connection timeout in seconds
     #[arg(long, default_value_t = 10)]
     timeout: u64,
+    /// Print derived transport chain for the outbound
+    #[arg(long, default_value_t = false)]
+    print_transport: bool,
 }
 
 #[tokio::main]
@@ -33,6 +36,20 @@ async fn main() -> Result<()> {
     // Build switchboard and find outbound
     let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir)
         .context("build switchboard")?;
+
+    if args.print_transport {
+        if let Some(ob) = ir
+            .outbounds
+            .iter()
+            .find(|o| o.name.as_deref() == Some(args.outbound.as_str()))
+        {
+            #[cfg(feature = "v2ray_transport")]
+            {
+                let chain = sb_core::runtime::transport::map::chain_from_ir(ob);
+                eprintln!("transport_chain={}", chain.join(","));
+            }
+        }
+    }
 
     let connector = sb
         .get_connector(&args.outbound)

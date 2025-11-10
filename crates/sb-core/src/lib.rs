@@ -97,6 +97,9 @@ pub mod http;
 
 pub mod obs;
 
+// Optional runtime services (e.g., NTP). Submodules are feature-gated inside.
+pub mod services;
+
 // 别名模块：为兼容性提供简短的模块名
 pub mod observe {
     pub use crate::outbound::observe::*;

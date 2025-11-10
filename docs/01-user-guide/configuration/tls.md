@@ -218,6 +218,18 @@ See [ECH Protocol Guide](../protocols/ech.md) for details.
 Use custom Certificate Authority for certificate validation:
 
 ```yaml
+# Global (applies to all TLS outbounds)
+certificate:
+  ca_paths:
+    - /etc/ssl/certs/custom-root.pem
+    - ./my-org-ca.pem
+  # Or inline PEM blocks
+  ca_pem:
+    - |
+      -----BEGIN CERTIFICATE-----
+      MIIB...snip...
+      -----END CERTIFICATE-----
+
 outbounds:
   - type: trojan
     tag: trojan-custom-ca
@@ -246,8 +258,19 @@ outbounds:
     tls:
       enabled: true
       sni: trojan.example.com
-      client_cert: /path/to/client.crt
-      client_key: /path/to/client.key
+      # Provide client certificate and private key (paths)
+      client_cert_path: /path/to/client.crt
+      client_key_path: /path/to/client.key
+
+      # Or inline PEM blocks
+      # client_cert_pem: |
+      #   -----BEGIN CERTIFICATE-----
+      #   ...
+      #   -----END CERTIFICATE-----
+      # client_key_pem: |
+      #   -----BEGIN PRIVATE KEY-----
+      #   ...
+      #   -----END PRIVATE KEY-----
 ```
 
 ### ALPN Negotiation
@@ -355,6 +378,59 @@ outbounds:
 ```
 
 See [Transport Configuration](../features/transports.md) for details.
+
+---
+
+## TLS for QUIC Protocols (TUIC/Hysteria2)
+
+QUIC-based outbounds use TLS for handshake (via QUIC). TLS trust follows the same rules:
+
+- Global trust: webpki roots + top-level `certificate.ca_paths/ca_pem`
+- Per-outbound overrides: `outbounds[].tls.ca_paths/ca_pem`, `outbounds[].tls.sni`, `outbounds[].tls.skip_cert_verify`
+
+### TUIC with custom CA and SNI
+
+```yaml
+outbounds:
+  - type: tuic
+    tag: tuic-internal
+    server: tuic.internal.example
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    token: secret-token
+
+    tls:
+      sni: internal.example
+      ca_paths:
+        - /etc/ssl/certs/internal-root.pem
+      # ca_pem: ["-----BEGIN CERTIFICATE-----...-----END CERTIFICATE-----"]
+      # skip_cert_verify: false
+```
+
+### Hysteria2 with custom CA
+
+```yaml
+outbounds:
+  - type: hysteria2
+    tag: hy2-internal
+    server: hy2.internal.example
+    port: 443
+    password: your-password
+
+    tls:
+      sni: internal.example
+      ca_paths: [/etc/ssl/certs/internal-root.pem]
+      # alpn: [h3, hysteria2]
+```
+
+Note:
+- `skip_cert_verify: true` is accepted for testing only and disables certificate validation.
+- When connecting to IPs, set `tls.sni` to a valid hostname for proper verification.
+
+### DNS over QUIC (DoQ)
+
+DoQ uses the same TLS trust model: global top-level additions in `certificate` are respected when verifying DoQ upstreams.
+Per‑DNS upstream custom CA is not yet configurable; use top-level `certificate` to append CAs.
 
 ---
 
@@ -621,3 +697,23 @@ route:
 - [VMess Protocol](../protocols/vmess.md)
 - [VLESS Protocol](../protocols/vless.md)
 - [Troubleshooting Guide](../troubleshooting.md)
+### Per‑Outbound Custom CA
+
+Append extra CA certificates for a specific outbound (in addition to global `certificate`):
+
+```yaml
+outbounds:
+  - type: vmess
+    tag: vmess-internal-ca
+    server: vmess.internal.example
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+
+    tls:
+      enabled: true
+      sni: vmess.internal.example
+      ca_paths:
+        - /etc/ssl/certs/internal-root.pem
+      # Or inline
+      # ca_pem: ["-----BEGIN CERTIFICATE-----...-----END CERTIFICATE-----"]
+```

@@ -58,6 +58,8 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
                 let (cli, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("shadowtls", &e);
                         warn!(error=%e, "shadowtls: accept error");
                         continue;
                     }
@@ -71,10 +73,16 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
                     match tls_transport.wrap_server(cli).await {
                         Ok(tls_stream) => {
                             if let Err(e) = handle_conn(&cfg_clone, tls_stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("shadowtls", &e);
                                 warn!(%peer, error=%e, "shadowtls: session error");
                             }
                         }
-                        Err(e) => warn!(%peer, error=%e, "shadowtls: TLS handshake failed"),
+                        Err(e) => {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("shadowtls", &e);
+                            warn!(%peer, error=%e, "shadowtls: TLS handshake failed")
+                        },
                     }
                 });
             }

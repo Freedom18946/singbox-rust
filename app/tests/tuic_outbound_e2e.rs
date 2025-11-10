@@ -8,14 +8,11 @@
 //! - Authentication scenarios
 //! - Upstream compatibility
 
-#[cfg(feature = "sb-core/out_tuic")]
+#[cfg(feature = "adapter-tuic")]
 mod tuic_tests {
-    use super::*;
-    use std::net::SocketAddr;
-    use std::time::Duration;
+    use uuid::Uuid;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, TcpStream, UdpSocket};
-    use tokio::time::timeout;
+    use tokio::net::{TcpListener, UdpSocket};
 
     /// Test TCP proxy through TUIC outbound
     #[tokio::test]
@@ -23,7 +20,7 @@ mod tuic_tests {
     async fn test_tuic_tcp_proxy() {
         // Start a simple echo server
         let echo_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let echo_addr = echo_server.local_addr().unwrap();
+        let _echo_addr = echo_server.local_addr().unwrap();
 
         tokio::spawn(async move {
             loop {
@@ -56,7 +53,7 @@ mod tuic_tests {
     async fn test_tuic_udp_relay_native() {
         // Start UDP echo server
         let echo_server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let echo_addr = echo_server.local_addr().unwrap();
+        let _echo_addr = echo_server.local_addr().unwrap();
 
         tokio::spawn(async move {
             let mut buf = vec![0u8; 1500];
@@ -77,7 +74,7 @@ mod tuic_tests {
     /// Test UDP over stream mode
     #[tokio::test]
     #[ignore] // Requires running TUIC server
-    #[cfg(feature = "sb-core/out_tuic")]
+    #[cfg(feature = "adapter-tuic")]
     async fn test_tuic_udp_over_stream() {
         use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
@@ -108,7 +105,7 @@ mod tuic_tests {
     /// Test TUIC authentication with valid credentials
     #[tokio::test]
     #[ignore] // Requires running TUIC server
-    #[cfg(feature = "sb-core/out_tuic")]
+    #[cfg(feature = "adapter-tuic")]
     async fn test_tuic_auth_success() {
         use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
@@ -202,9 +199,10 @@ mod tuic_tests {
 }
 
 // Packet encoding tests (don't require full TUIC implementation)
-#[cfg(feature = "sb-core/out_tuic")]
+#[cfg(feature = "adapter-tuic")]
 mod packet_tests {
-    use super::*;
+    use uuid::Uuid;
+    use sb_adapters::OutboundConnector;
 
     /// Test TUIC packet encoding/decoding
     #[tokio::test]

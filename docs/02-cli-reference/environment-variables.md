@@ -16,6 +16,8 @@ Complete reference of all environment variables supported by singbox-rust.
 | `SB_CONFIG`     | string | -       | Configuration file path                             |
 | `SB_HARDEN`     | bool   | `0`     | Enable hardened mode (stricter security)            |
 | `SB_FAILPOINTS` | string | -       | Enable fail points for chaos testing                |
+| `SB_TRANSPORT_FALLBACK` | bool | `1` | Enable WS↔H2/Upgrade→WS fallback attempts (VMess/VLESS/Trojan with sb-transport) |
+| `SB_TRANSPORT_SNI_FALLBACK` | bool | `1` | When TLS implied by hints (H2/gRPC) without SNI, use server host as SNI if it looks like a domain |
 
 ### Logging
 
@@ -23,8 +25,9 @@ Complete reference of all environment variables supported by singbox-rust.
 | ------------------ | ------ | ------- | ------------------------------------------- |
 | `RUST_LOG`         | string | `info`  | Log level filter (debug, info, warn, error) |
 | `SB_LOG_LEVEL`     | string | `info`  | Alternative log level setting               |
-| `SB_LOG_FORMAT`    | string | `text`  | Log format: `text` or `json`                |
+| `SB_LOG_FORMAT`    | string | `compact`  | Log format: `compact` or `json`              |
 | `SB_LOG_SAMPLE`    | bool   | `0`     | Enable log sampling                         |
+| `SB_LOG_TIMESTAMP` | bool   | `1`     | Include timestamp in log output             |
 | `SB_ACCESS_LOG`    | bool   | `0`     | Enable access logging                       |
 | `SB_PANIC_LOG`     | bool   | `0`     | Log panics to file                          |
 | `SB_PANIC_LOG_MAX` | int    | -       | Maximum panic log size                      |
@@ -90,6 +93,7 @@ Complete reference of all environment variables supported by singbox-rust.
 | `SB_DNS_ENABLE`   | bool   | `0`      | Enable DNS resolution features                 |
 | `SB_DNS_MODE`     | string | `system` | DNS mode: `system`, `doh`, `dot`, `doq`, `udp` |
 | `SB_DNS_SERVERS`  | string | -        | DNS servers (comma-separated)                  |
+| `SB_DNS_CLIENT_SUBNET` | string | - | EDNS0 Client Subnet, e.g., `1.2.3.0/24` or `2001:db8::/56`; attaches ECS to queries |
 | `SB_DNS_UPSTREAM` | string | -        | Upstream DNS server                            |
 | `SB_DNS_IPV6`     | bool   | `1`      | Enable IPv6 DNS queries                        |
 | `SB_DNS_FALLBACK` | string | -        | Fallback DNS server                            |

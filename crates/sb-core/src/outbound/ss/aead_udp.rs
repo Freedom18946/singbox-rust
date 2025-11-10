@@ -2,7 +2,7 @@ use super::super::address::{encode_ss_addr, get_port_from_target, Addr};
 use super::super::types::{Outbound, TargetAddr, TcpConnectRequest, UdpBindRequest};
 use super::aead_tcp::{encrypt_aead, SsAeadCipher};
 use super::hkdf::{derive_subkey, generate_salt, HashAlgorithm};
-use crate::metrics::outbound as metrics;
+// metrics are referenced via fully-qualified paths inside cfg blocks to avoid unused import warnings
 
 use async_trait::async_trait;
 use std::io::{Error, ErrorKind, Result};
@@ -43,15 +43,161 @@ impl Outbound for SsAeadUdp {
     }
 
     async fn udp_bind(&self, req: UdpBindRequest) -> anyhow::Result<tokio::net::UdpSocket> {
-        let sock = UdpSocket::bind(req.bind).await?;
+        // Require target for UDP proxying to know destination host:port per flow
+        let target_opt = req.target.clone();
 
-        // Connect to Shadowsocks server for easier packet routing
+        // Remote UDP socket connected to Shadowsocks server
+        let remote = UdpSocket::bind("0.0.0.0:0").await?;
         let server_addr = format!("{}:{}", self.config.server, self.config.port);
-        sock.connect(&server_addr).await?;
+        #[cfg(feature = "metrics")]
+        {
+            crate::metrics::outbound::record_ss_connect_attempt(self.config.cipher.name());
+        }
+        #[cfg(feature = "metrics")]
+        let t0 = std::time::Instant::now();
+        let connect_res = remote.connect(&server_addr).await;
+        match connect_res {
+            Ok(_) => {
+                #[cfg(feature = "metrics")]
+                {
+                    crate::metrics::outbound::record_ss_connect_success_with_cipher(
+                        self.config.cipher.name(),
+                    );
+                    // Count as a connect duration sample as well for UDP path
+                    crate::metrics::outbound::record_connect_duration(t0.elapsed().as_millis() as f64);
+                }
+            }
+            Err(e) => {
+                #[cfg(feature = "metrics")]
+                {
+                    crate::metrics::outbound::record_ss_connect_error_with_cipher(
+                        self.config.cipher.name(),
+                    );
+                    crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                        "udp_connect",
+                        self.config.cipher.name(),
+                    );
+                }
+                return Err(e);
+            }
+        }
+        let aead = SsAeadUdpSocket::new(remote, self.config.clone())?;
 
-        // Wrap in AEAD UDP socket for encryption
-        let aead_sock = SsAeadUdpSocket::new(sock, self.config.clone())?;
-        Ok(aead_sock.into_udp_socket())
+        // Local UDP pair: app <-> bridge (connected both ways)
+        let local_app = UdpSocket::bind(req.bind).await?;
+        let lb_recv = UdpSocket::bind("127.0.0.1:0").await?; // app -> bridge
+        let lb_send = UdpSocket::bind("127.0.0.1:0").await?; // bridge -> app
+        let app_addr = local_app.local_addr()?;
+        let lb_recv_addr = lb_recv.local_addr()?;
+        let _lb_send_addr = lb_send.local_addr()?;
+        // Connect directions
+        local_app.connect(lb_recv_addr).await?;
+        lb_recv.connect(app_addr).await?;
+        lb_send.connect(app_addr).await?;
+
+        // Pump app->server (encrypt) from bridge side
+        {
+            let aead = aead.clone();
+            let lb_recv = lb_recv; // move
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 64 * 1024];
+                loop {
+                    match lb_recv.recv(&mut buf).await {
+                        Ok(n) => {
+                            // Determine target: from req.target if provided; otherwise attempt to parse SOCKS-style header
+                            let (payload, target_addr) = if let Some(t) = target_opt.clone() {
+                                (&buf[..n], t)
+                            } else {
+                                match parse_ss_addr(&buf[..n]) {
+                                    Ok((taddr, off)) if off <= n => (&buf[off..n], match taddr {
+                                        super::super::types::TargetAddr::Ip(sa) => super::super::types::TargetAddr::Ip(sa),
+                                        super::super::types::TargetAddr::Domain(d, p) => super::super::types::TargetAddr::Domain(d, p),
+                                    }),
+                                    _ => {
+                                        // Drop invalid packet silently
+                                        #[cfg(feature = "metrics")]
+                                        crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                            "addr_parse",
+                                            aead.config.cipher.name(),
+                                        );
+                                        continue;
+                                    }
+                                }
+                            };
+
+                            match aead.encapsulate_udp_packet(payload, &target_addr) {
+                                Ok(pkt) => {
+                                    if let Err(_e) = aead.inner.send(&pkt).await {
+                                        #[cfg(feature = "metrics")]
+                                        crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                            "server_send",
+                                            aead.config.cipher.name(),
+                                        );
+                                    }
+                                }
+                                Err(_e) => {
+                                    #[cfg(feature = "metrics")]
+                                    crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                        "encrypt",
+                                        aead.config.cipher.name(),
+                                    );
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            #[cfg(feature = "metrics")]
+                            crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                "app_recv",
+                                aead.config.cipher.name(),
+                            );
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Pump server->app (decrypt) and forward to bridge
+        {
+            let lb_send = lb_send; // move
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 64 * 1024];
+                loop {
+                    match aead.inner.recv(&mut buf).await {
+                        Ok(n) => {
+                            match aead.decapsulate_udp_packet(&buf[..n]) {
+                                Ok((data_len, _dst)) => {
+                                    if let Err(_e) = lb_send.send(&buf[..data_len]).await {
+                                        #[cfg(feature = "metrics")]
+                                        crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                            "app_send",
+                                            aead.config.cipher.name(),
+                                        );
+                                    }
+                                }
+                                Err(_e) => {
+                                    #[cfg(feature = "metrics")]
+                                    crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                        "decrypt",
+                                        aead.config.cipher.name(),
+                                    );
+                                }
+                            }
+                        }
+                        Err(_e) => {
+                            #[cfg(feature = "metrics")]
+                            crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                "server_recv",
+                                aead.config.cipher.name(),
+                            );
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        Ok(local_app)
     }
 
     fn name(&self) -> &'static str {
@@ -60,15 +206,16 @@ impl Outbound for SsAeadUdp {
 }
 
 /// AEAD UDP socket wrapper
+#[derive(Clone)]
 pub struct SsAeadUdpSocket {
-    inner: UdpSocket,
+    inner: std::sync::Arc<UdpSocket>,
     config: SsAeadUdpConfig,
 }
 
 impl SsAeadUdpSocket {
     pub fn new(socket: UdpSocket, config: SsAeadUdpConfig) -> Result<Self> {
         Ok(Self {
-            inner: socket,
+            inner: std::sync::Arc::new(socket),
             config,
         })
     }
@@ -76,9 +223,14 @@ impl SsAeadUdpSocket {
     /// Send UDP packet to target through Shadowsocks server
     pub async fn send_to_target(&self, data: &[u8], target: &TargetAddr) -> Result<usize> {
         let packet = self.encapsulate_udp_packet(data, target)?;
-
         #[cfg(feature = "metrics")]
-        metrics::record_shadowsocks_encrypt_bytes(packet.len() as u64);
+        {
+            // Count plaintext bytes encrypted on UDP path
+            crate::metrics::outbound::record_ss_encrypt_bytes_with_cipher(
+                data.len() as u64,
+                self.config.cipher.name(),
+            );
+        }
 
         let sent = self.inner.send(&packet).await?;
 
@@ -95,12 +247,17 @@ impl SsAeadUdpSocket {
         let (n, _peer) = self.inner.recv_from(buf).await?;
 
         #[cfg(feature = "metrics")]
-        {
-            crate::metrics::outbound::record_ss_udp_recv_with_cipher(self.config.cipher.name());
-        }
+        crate::metrics::outbound::record_ss_udp_recv_with_cipher(self.config.cipher.name());
 
         // Decrypt and parse the UDP packet
         let (data_len, target) = self.decapsulate_udp_packet(&buf[..n])?;
+        #[cfg(feature = "metrics")]
+        {
+            crate::metrics::outbound::record_ss_decrypt_bytes_with_cipher(
+                data_len as u64,
+                self.config.cipher.name(),
+            );
+        }
 
         // Move decrypted data to beginning of buffer
         buf.copy_within(0..data_len, 0);
@@ -125,7 +282,17 @@ impl SsAeadUdpSocket {
         payload.extend_from_slice(data);
 
         // Encrypt payload
+        let t0 = std::time::Instant::now();
         let encrypted_payload = encrypt_aead(&payload, &subkey, 0, &self.config.cipher)?;
+        #[cfg(feature = "metrics")]
+        {
+            let ms = t0.elapsed().as_millis() as f64;
+            crate::metrics::outbound::record_ss_aead_op_duration(
+                ms,
+                self.config.cipher.name(),
+                "udp_encrypt",
+            );
+        }
 
         // Build final packet: salt + encrypted_payload
         let mut packet = Vec::with_capacity(salt.len() + encrypted_payload.len());
@@ -151,7 +318,17 @@ impl SsAeadUdpSocket {
         let subkey = derive_subkey(&self.config.master_key, salt, HashAlgorithm::Sha1);
 
         // Decrypt payload
+        let t0 = std::time::Instant::now();
         let payload = decrypt_aead(encrypted_payload, &subkey, 0, &self.config.cipher)?;
+        #[cfg(feature = "metrics")]
+        {
+            let ms = t0.elapsed().as_millis() as f64;
+            crate::metrics::outbound::record_ss_aead_op_duration(
+                ms,
+                self.config.cipher.name(),
+                "udp_decrypt",
+            );
+        }
 
         // Parse address and extract data
         let (target, addr_len) = parse_ss_addr(&payload)?;
@@ -165,11 +342,8 @@ impl SsAeadUdpSocket {
     }
 
     // Convert to UdpSocket for compatibility (this is a simplification)
-    fn into_udp_socket(self) -> UdpSocket {
-        // In a real implementation, this would return a wrapper that handles AEAD encryption
-        // For now, return the underlying socket (this breaks encryption but maintains compatibility)
-        self.inner
-    }
+    #[allow(dead_code)]
+    fn into_udp_socket(self) -> UdpSocket { unreachable!("not used after bridging implementation") }
 }
 
 /// Decrypt AEAD data (reuse from TCP module with import)

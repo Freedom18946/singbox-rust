@@ -40,7 +40,8 @@ pub fn run(args: RouteArgs) -> Result<()> {
         // Use real ExplainEngine instead of stub
         let engine = ExplainEngine::from_config(&cfg)
             .with_context(|| "create explain engine from config")?;
-        let result = engine.explain(&args.dest, args.with_trace);
+        let net = if args.udp { "udp" } else { "tcp" };
+        let result = engine.explain_with_network(&args.dest, net, args.with_trace);
 
         output::emit(
             args.format,

@@ -142,7 +142,12 @@ impl TunInbound {
 
     /// Phase 1: skeleton；Phase 2.1: utun open + read drop；
     /// Phase 2.2: 解析 IP / TCP / UDP，装配 ConnectParams（仍然不转发负载）
-    pub async fn serve(&self) -> io::Result<()> {
+    pub fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
+        rt.block_on(async { self.run().await })
+    }
+
+    async fn run(&self) -> io::Result<()> {
         tracing::info!(
             "tun inbound starting: platform={}, name={}, mtu={}",
             self.cfg.platform,

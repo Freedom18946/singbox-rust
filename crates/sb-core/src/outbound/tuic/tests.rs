@@ -738,3 +738,37 @@ mod protocol_constants_tests {
         assert_eq!(0x04, 0x04); // IPv6
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "out_tuic")]
+mod contract_tests {
+    use super::*;
+    use crate::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
+    use crate::adapter::UdpOutboundFactory;
+
+    // Contract (ignored): requires a reachable TUIC QUIC server
+    // Run manually with a local TUIC server on 127.0.0.1:8443
+    #[tokio::test]
+    #[ignore]
+    async fn ignored_tuic_udp_session_open() {
+        let cfg = TuicConfig {
+            server: "127.0.0.1".to_string(),
+            port: 8443,
+            uuid: uuid::Uuid::new_v4(),
+            token: "token".to_string(),
+            password: None,
+            congestion_control: Some("bbr".to_string()),
+            alpn: Some("tuic".to_string()),
+            skip_cert_verify: true,
+            sni: None,
+            tls_ca_paths: Vec::new(),
+            tls_ca_pem: Vec::new(),
+            udp_relay_mode: UdpRelayMode::Native,
+            udp_over_stream: true,
+            zero_rtt_handshake: false,
+        };
+        let ob = TuicOutbound::new(cfg).unwrap();
+        let sess = ob.open_session().await; // Factory method
+        assert!(sess.is_ok());
+    }
+}

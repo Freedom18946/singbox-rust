@@ -82,7 +82,14 @@ impl HysteriaInbound {
 
         #[cfg(feature = "adapter-hysteria")]
         {
-            self.core.start().await.map_err(AdapterError::Io)
+            match self.core.start().await {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    sb_core::metrics::http::record_error_display(&e);
+                    sb_core::metrics::record_inbound_error_display("hysteria", &e);
+                    Err(AdapterError::Io(e))
+                }
+            }
         }
     }
 
@@ -94,9 +101,14 @@ impl HysteriaInbound {
 
         #[cfg(feature = "adapter-hysteria")]
         {
-            let (stream, addr) = self.core.accept().await.map_err(AdapterError::Io)?;
-
-            Ok((Box::new(stream) as BoxedStream, addr))
+            match self.core.accept().await {
+                Ok((stream, addr)) => Ok((Box::new(stream) as BoxedStream, addr)),
+                Err(e) => {
+                    sb_core::metrics::http::record_error_display(&e);
+                    sb_core::metrics::record_inbound_error_display("hysteria", &e);
+                    Err(AdapterError::Io(e))
+                }
+            }
         }
     }
 }

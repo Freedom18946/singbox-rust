@@ -106,7 +106,7 @@ Features: acceptance,metrics,router,tls,quic
 
 ### `route` - Test Routing Decision
 
-Explain routing decisions for a destination:
+Explain routing decisions for a destination (stable schema):
 
 ```bash
 singbox-rust route -c config.yaml --dest example.com:443 --explain
@@ -120,10 +120,19 @@ singbox-rust route -c config.yaml --dest example.com:443 --explain
 - `--format <FORMAT>` - Output format: `text`, `json`
 - `--trace` - Enable trace-level logging
 
-**Example**:
+**Example (JSON output fields)**:
 
 ```bash
 singbox-rust route -c config.yaml --dest google.com:443 --explain --format json
+
+# Output keys (stable):
+# {
+#   "dest": "google.com:443",
+#   "matched_rule": "ab12cd34",    // sha256-8 of matched rule
+#   "chain": ["domain:google.com", "geoip:US"],
+#   "outbound": "proxy-us",
+#   "trace": { ... }                // present only with --with-trace
+# }
 ```
 
 See [route-explain command](route-explain.md).
@@ -533,6 +542,7 @@ singbox-rust run -c config.v2.yaml
 | [`rule-set`](rule-set.md)           | Rule-set tools     | `singbox-rust rule-set compile rules.json`                |
 | [`generate`](generate.md)           | Generate keys      | `singbox-rust generate reality-keypair`                   |
 | [`tools`](tools.md)                 | Network utils      | `singbox-rust tools connect example.com:443`              |
+| [`tools geodata-update`](tools.md#geodata-update) | Download geodata | `singbox-rust tools geodata-update --dest ./data`         |
 | [`gen-completions`](completions.md) | Shell completions  | `singbox-rust gen-completions --all`                      |
 
 ---

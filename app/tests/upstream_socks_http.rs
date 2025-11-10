@@ -222,6 +222,8 @@ fn outbound_scaffold_socks_and_http_connect() {
             }],
             default: Some("S".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

@@ -9,7 +9,7 @@
 //!
 //! Run with: cargo test --test stress_tests --release -- p0 --ignored
 
-use super::stress::*;
+use crate::stress::*;
 use std::time::Duration;
 
 // ============================================================================
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 #[cfg(feature = "tls_reality")]
 mod reality_stress {
-    use super::*;
+    // no-op: keep module minimal
 
     #[tokio::test]
     #[ignore]
@@ -61,7 +61,7 @@ mod reality_stress {
 
 #[cfg(feature = "tls_ech")]
 mod ech_stress {
-    use super::*;
+    // no-op: keep module minimal
 
     #[tokio::test]
     #[ignore]
@@ -89,7 +89,7 @@ mod ech_stress {
 
 #[cfg(feature = "adapter-hysteria")]
 mod hysteria_v1_stress {
-    use super::*;
+    // placeholder: no stress helpers used yet
 
     #[tokio::test]
     #[ignore]
@@ -126,7 +126,7 @@ mod hysteria_v1_stress {
 
 #[cfg(feature = "adapter-hysteria2")]
 mod hysteria_v2_stress {
-    use super::*;
+    // placeholder: no stress helpers used yet
 
     #[tokio::test]
     #[ignore]
@@ -163,7 +163,7 @@ mod hysteria_v2_stress {
 
 #[cfg(feature = "adapter-ssh")]
 mod ssh_stress {
-    use super::*;
+    // placeholder: no stress helpers used yet
 
     #[tokio::test]
     #[ignore]
@@ -198,9 +198,9 @@ mod ssh_stress {
 // TUIC Stress Tests
 // ============================================================================
 
-#[cfg(feature = "sb-core/out_tuic")]
+#[cfg(feature = "adapter-tuic")]
 mod tuic_stress {
-    use super::*;
+    // placeholder: no stress helpers used yet
 
     #[tokio::test]
     #[ignore]

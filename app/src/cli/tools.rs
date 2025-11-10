@@ -37,6 +37,24 @@ pub enum ToolsCmd {
         #[arg(long = "outbound")]
         outbound: Option<String>,
     },
+    /// Download/update GeoIP/Geosite databases into a directory
+    GeodataUpdate {
+        /// Destination directory to write geoip.db and geosite.db
+        #[arg(long, value_name = "DIR", default_value = "./data")] 
+        dest: PathBuf,
+        /// GeoIP database URL
+        #[arg(long, default_value = "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db")]
+        geoip_url: String,
+        /// Geosite database URL
+        #[arg(long, default_value = "https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db")]
+        geosite_url: String,
+        /// Optional SHA256 for geoip.db
+        #[arg(long)]
+        geoip_sha256: Option<String>,
+        /// Optional SHA256 for geosite.db
+        #[arg(long)]
+        geosite_sha256: Option<String>,
+    },
     /// Fetch a URL (HTTP/HTTPS) and print body to stdout
     Fetch {
         /// URL to fetch
@@ -77,6 +95,9 @@ pub async fn run(args: ToolsArgs) -> Result<()> {
         ToolsCmd::Fetch { url, output } => fetch(url, output).await,
         ToolsCmd::Synctime { server, timeout } => synctime(server, timeout).await,
         ToolsCmd::FetchHttp3 { url, output } => fetch_http3(url, output).await,
+        ToolsCmd::GeodataUpdate { dest, geoip_url, geosite_url, geoip_sha256, geosite_sha256 } => {
+            geodata_update(dest, &geoip_url, &geosite_url, geoip_sha256.as_deref(), geosite_sha256.as_deref()).await
+        }
     }
 }
 
@@ -151,14 +172,69 @@ fn parse_addr(s: &str) -> Option<(String, u16)> {
     None
 }
 
-async fn connect_udp(addr: String, _config_path: PathBuf, _outbound: Option<String>) -> Result<()> {
+async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String>) -> Result<()> {
     use tokio::net::UdpSocket;
     use tokio::time::{timeout, Duration};
 
     let (host, port) = parse_addr(&addr).context("invalid address, expected host:port")?;
-    let target = format!("{}:{}", host, port);
 
-    // For MVP, use direct UDP (no outbound routing yet)
+    // Try to use an outbound UDP factory when available
+    let factory = if let Some(name) = outbound.as_deref() {
+        // Load config JSON and build bridge to access UDP factories
+        let raw = std::fs::read(&config_path)
+            .with_context(|| format!("read {}", config_path.display()))?;
+        let val: serde_json::Value = serde_json::from_slice(&raw).context("parse JSON config")?;
+        let ir = sb_config::validator::v2::to_ir_v1(&val);
+        let bridge = sb_core::adapter::Bridge::new_from_config(&ir).context("build bridge")?;
+        bridge.find_udp_factory(name)
+    } else {
+        None
+    };
+
+    if let Some(f) = factory {
+        // Use adapter-provided UDP session
+        let sess = f.open_session().await.context("open udp session")?;
+        // stdin -> udp
+        let host_c = host.clone();
+        let s1 = tokio::spawn(async move {
+            let mut stdin = tokio::io::stdin();
+            let mut buf = [0u8; 8192];
+            loop {
+                match tokio::io::AsyncReadExt::read(&mut stdin, &mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if sess.send_to(&buf[..n], &host_c, port).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        // udp -> stdout
+        let s2 = tokio::spawn(async move {
+            let mut stdout = tokio::io::stdout();
+            loop {
+                match sess.recv_from().await {
+                    Ok((data, _src)) => {
+                        if tokio::io::AsyncWriteExt::write_all(&mut stdout, &data)
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = tokio::io::AsyncWriteExt::flush(&mut stdout).await;
+        });
+        let _ = tokio::join!(s1, s2);
+        return Ok(());
+    }
+
+    // Fallback: direct UDP
+    let target = format!("{}:{}", host, port);
     let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.context("bind udp")?);
     sock.connect(&target).await.context("connect udp")?;
 
@@ -267,6 +343,108 @@ async fn synctime(server: String, timeout: u64) -> Result<()> {
     let t0 = ntp_now_seconds();
     let offset = compute_ntp_offset(t0, &buf);
     println!("ntp_server={server} offset_seconds={:.6}", offset);
+    Ok(())
+}
+
+async fn geodata_update(
+    dest: PathBuf,
+    geoip_url: &str,
+    geosite_url: &str,
+    geoip_sha256: Option<&str>,
+    geosite_sha256: Option<&str>,
+) -> Result<()> {
+    use sha2::{Digest, Sha256};
+    use tokio::fs;
+
+    fs::create_dir_all(&dest)
+        .await
+        .with_context(|| format!("create dir {}", dest.display()))?;
+
+    let client = reqwest::Client::builder()
+        .user_agent(format!("singbox-rust-tools/{}", env!("CARGO_PKG_VERSION")))
+        .build()?;
+
+    // Download helper
+    async fn download(
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<bytes::Bytes> {
+        let rsp = client.get(url).send().await.with_context(|| format!("GET {}", url))?;
+        if !rsp.status().is_success() {
+            anyhow::bail!("download failed: {} {}", rsp.status(), url);
+        }
+        Ok(rsp.bytes().await.with_context(|| format!("read body from {}", url))?)
+    }
+
+    // Write helper with optional sha256
+    async fn write_checked(
+        path: &PathBuf,
+        data: &[u8],
+        sha256: Option<&str>,
+        label: &str,
+    ) -> Result<()> {
+        if let Some(expect) = sha256 {
+            let mut hasher = Sha256::new();
+            hasher.update(data);
+            let got = format!("{:x}", hasher.finalize());
+            if !got.eq_ignore_ascii_case(expect) {
+                anyhow::bail!("{} sha256 mismatch: expected={}, got={}", label, expect, got);
+            }
+        }
+        tokio::fs::write(path, data)
+            .await
+            .with_context(|| format!("write {}", path.display()))?;
+        Ok(())
+    }
+
+    let geoip = download(&client, geoip_url).await?;
+    let geosite = download(&client, geosite_url).await?;
+
+    let geoip_path = dest.join("geoip.db");
+    let geosite_path = dest.join("geosite.db");
+    write_checked(&geoip_path, &geoip, geoip_sha256, "geoip").await?;
+    write_checked(&geosite_path, &geosite, geosite_sha256, "geosite").await?;
+
+    // Produce a simple manifest for packaging/release integration
+    // Includes filenames, sizes and SHA256 checksums for reproducibility
+    let mut sha = Sha256::new();
+    sha.update(&geoip);
+    let geoip_sha = format!("{:x}", sha.finalize_reset());
+    sha.update(&geosite);
+    let geosite_sha = format!("{:x}", sha.finalize());
+
+    let manifest = serde_json::json!({
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "files": [
+            {
+                "name": "geoip.db",
+                "path": geoip_path.to_string_lossy(),
+                "size": geoip.len(),
+                "sha256": geoip_sha,
+                "source_url": geoip_url,
+            },
+            {
+                "name": "geosite.db",
+                "path": geosite_path.to_string_lossy(),
+                "size": geosite.len(),
+                "sha256": geosite_sha,
+                "source_url": geosite_url,
+            }
+        ]
+    });
+    let manifest_path = dest.join("manifest.json");
+    tokio::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)
+        .await
+        .with_context(|| format!("write {}", manifest_path.display()))?;
+
+    eprintln!(
+        "updated: {} ({} bytes), {} ({} bytes)",
+        geoip_path.display(),
+        geoip.len(),
+        geosite_path.display(),
+        geosite.len()
+    );
+    eprintln!("manifest: {}", manifest_path.display());
     Ok(())
 }
 

@@ -188,10 +188,14 @@ pub async fn serve(cfg: TuicInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> R
                         Ok(conn) => {
                             debug!("TUIC: new connection from {}", conn.remote_address());
                             if let Err(e) = handle_conn(cfg_clone, conn).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("tuic", &e);
                                 debug!("TUIC connection error: {}", e);
                             }
                         }
                         Err(e) => {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("tuic", &e);
                             error!("TUIC connection failed: {}", e);
                         }
                     }
@@ -217,6 +221,8 @@ async fn handle_conn(cfg: Arc<TuicInboundConfig>, conn: quinn::Connection) -> Re
                 break;
             }
             Err(e) => {
+                sb_core::metrics::http::record_error_display(&e);
+                sb_core::metrics::record_inbound_error_display("tuic", &e);
                 warn!("TUIC: stream accept error from {}: {}", peer, e);
                 break;
             }
@@ -225,6 +231,8 @@ async fn handle_conn(cfg: Arc<TuicInboundConfig>, conn: quinn::Connection) -> Re
         let cfg_clone = cfg.clone();
         tokio::spawn(async move {
             if let Err(e) = handle_stream(cfg_clone, stream, peer).await {
+                sb_core::metrics::http::record_error_display(&e);
+                sb_core::metrics::record_inbound_error_display("tuic", &e);
                 debug!("TUIC: stream error from {}: {}", peer, e);
             }
         });

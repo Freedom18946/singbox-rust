@@ -7,7 +7,7 @@
 //! - Metrics collection
 
 // This test is intentionally disabled pending API convergence.
-#![cfg(feature = "disabled_tests")]
+#![cfg(disabled_tests)]
 
 use sb_transport::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 use sb_transport::dialer::{DialError, Dialer, FnDialer, IoStream};

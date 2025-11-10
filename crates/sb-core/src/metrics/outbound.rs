@@ -4,6 +4,7 @@
     any(test),
     allow(dead_code, unused_imports, unused_variables, unused_must_use)
 )]
+#![cfg_attr(not(feature = "metrics"), allow(unused_variables, unused_imports))]
 
 #[cfg(feature = "metrics")]
 use crate::metrics::registry_ext::{
@@ -141,6 +142,19 @@ pub fn record_connect_duration(_duration_ms: f64) {
             None,
         );
         hv.with_label_values(&[]).observe(_duration_ms);
+    }
+}
+
+/// Set circuit breaker state for an outbound by name.
+/// Mapping: 0 = closed, 1 = half-open, 2 = open
+pub fn set_circuit_state(outbound: &str, state: i32) {
+    #[cfg(feature = "metrics")]
+    {
+        metrics::gauge!(
+            "outbound_circuit_state",
+            "outbound" => outbound.to_string()
+        )
+        .set(state as f64);
     }
 }
 
@@ -321,6 +335,11 @@ pub fn register_comprehensive_metrics() {
     );
     describe_counter!("ss_udp_send_total", "Shadowsocks UDP send packets");
     describe_counter!("ss_udp_recv_total", "Shadowsocks UDP recv packets");
+    describe_counter!("ss_decrypt_bytes_total", "Shadowsocks decrypted bytes (TCP)");
+    describe_counter!(
+        "ss_stream_error_total",
+        "Shadowsocks stream errors by reason"
+    );
     describe_histogram!(
         "ss_aead_op_duration_ms",
         "Shadowsocks AEAD operation duration"
@@ -488,6 +507,24 @@ pub fn record_aead_encrypt_total(
         "result" => _result.as_str()
     )
     .increment(1);
+}
+
+// Extra Shadowsocks stream metrics used by bridge pumps
+#[cfg(feature = "out_ss")]
+pub fn record_ss_stream_error_with_cipher(reason: &str, cipher: &str) {
+    #[cfg(feature = "metrics")]
+    counter!(
+        "ss_stream_error_total",
+        "cipher" => cipher.to_string(),
+        "reason" => reason.to_string()
+    )
+    .increment(1);
+}
+
+#[cfg(feature = "out_ss")]
+pub fn record_ss_decrypt_bytes_with_cipher(bytes: u64, cipher: &str) {
+    #[cfg(feature = "metrics")]
+    counter!("ss_decrypt_bytes_total", "cipher" => cipher.to_string()).increment(bytes);
 }
 
 pub fn record_aead_decrypt_total(

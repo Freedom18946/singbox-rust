@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 
 use crate::dns::transport::DnsTransport;
-use crate::metrics::dns::{record_error, record_query, record_rtt, DnsErrorClass, DnsQueryType};
+use crate::metrics::dns::{record_error_display, record_query, record_rtt, DnsErrorClass, DnsQueryType};
 
 /// Enhanced UDP DNS transport with metrics and error handling
 pub struct EnhancedUdpTransport {
@@ -189,8 +189,7 @@ impl DnsTransport for EnhancedUdpTransport {
             Some(e) => e,
             None => anyhow!("No DNS servers available"),
         };
-        let error_class = Self::classify_error(&final_error);
-        record_error(error_class);
+        record_error_display(&final_error);
 
         Err(final_error)
     }

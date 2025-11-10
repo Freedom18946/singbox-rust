@@ -71,7 +71,5 @@ async fn tls_dialer_compiles() {
     // 这里不进行实际的网络连接测试
     let _ = &d;
 
-    // 断言测试通过
     // 如果能执行到这里，说明编译和实例化都成功了
-    assert!(true);
 }

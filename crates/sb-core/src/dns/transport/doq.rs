@@ -24,6 +24,16 @@ pub struct DoqTransport {
 
 impl DoqTransport {
     pub fn new(server: SocketAddr, server_name: String) -> Result<Self> {
+        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false)
+    }
+
+    pub fn new_with_tls(
+        server: SocketAddr,
+        server_name: String,
+        extra_ca_paths: Vec<String>,
+        extra_ca_pem: Vec<String>,
+        skip_verify: bool,
+    ) -> Result<Self> {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOQ_TIMEOUT_MS")
                 .ok()
@@ -34,14 +44,26 @@ impl DoqTransport {
         let mut endpoint =
             quinn::Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(io::Error::other)?;
 
-        // Build rustls config with ALPN for DoQ using webpki-roots
-        let mut roots = rustls::RootCertStore::empty();
-        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
+        // Build rustls config with ALPN for DoQ using global trust (+ per-upstream additions)
+        let mut roots = crate::tls::global::base_root_store();
+        for p in extra_ca_paths {
+            if let Ok(bytes) = std::fs::read(p) {
+                let mut rd = std::io::BufReader::new(&bytes[..]);
+                for it in rustls_pemfile::certs(&mut rd) { if let Ok(der) = it { let _ = roots.add(der); } }
+            }
+        }
+        for pem in extra_ca_pem {
+            let mut rd = std::io::BufReader::new(pem.as_bytes());
+            for it in rustls_pemfile::certs(&mut rd) { if let Ok(der) = it { let _ = roots.add(der); } }
+        }
         let mut crypto = rustls::ClientConfig::builder()
             .with_root_certificates(roots)
             .with_no_client_auth();
         crypto.alpn_protocols = vec![b"doq".to_vec()];
+        if skip_verify {
+            let v = crate::tls::danger::NoVerify::new();
+            crypto.dangerous().set_certificate_verifier(std::sync::Arc::new(v));
+        }
 
         let client_cfg = quinn::ClientConfig::new(std::sync::Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(crypto).map_err(io::Error::other)?,

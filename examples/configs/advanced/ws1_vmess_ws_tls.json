@@ -1,0 +1,22 @@
+{
+  "inbounds": [
+    {"type": "socks", "listen": "127.0.0.1", "port": 1081}
+  ],
+  "outbounds": [
+    {
+      "type": "vmess",
+      "name": "vmess-ws-tls",
+      "server": "example.com",
+      "port": 443,
+      "uuid": "b831381d-6324-4d53-ad4f-8cda48b30811",
+      "transport": ["tls", "ws"],
+      "tls_sni": "example.com",
+      "tls_alpn": "h2,http/1.1",
+      "ws_path": "/vmess",
+      "ws_host": "example.com"
+    },
+    {"type": "direct", "name": "direct"}
+  ],
+  "route": {"default": "vmess-ws-tls"}
+}
+

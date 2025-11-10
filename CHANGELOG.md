@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - RC Preparation (Phase 8)
 
+### Added (Parity WS6/WS2)
+- NTP service via config block (feature-gated):
+  - Added `ntp` to IR (`enabled`, `server`, `server_port`, `interval_ms`, `timeout_ms`).
+  - Config→IR parsing and IR→view rendering (`interval` shown as `XmYs`).
+  - Runtime supervisor spawns/stops background NTP task on start/reload when `service_ntp` feature is enabled.
+  - App feature `service_ntp` forwards to `sb-core/service_ntp`.
+- DNS config wiring (minimal path, env-bridge):
+  - `app run` consumes top-level `dns.servers` and `dns.strategy`, derives resolver env vars without overriding user-set env:
+    - DoH: `SB_DNS_MODE=doh`, `SB_DNS_DOH_URL=https://...`
+    - UDP: `SB_DNS_MODE=udp`, `SB_DNS_UDP_SERVER=host:53`
+    - DoT: `SB_DNS_MODE=dot`, `SB_DNS_DOT_ADDR=host:853`
+    - DoQ (best-effort): `SB_DNS_MODE=doq`, optional `SB_DNS_DOQ_ADDR`, `SB_DNS_DOQ_SERVER_NAME`
+    - Strategy mapping: `ipv4_only/prefer_ipv4`→`SB_DNS_QTYPE=a`,`SB_DNS_HE_ORDER=A_FIRST`; `ipv6_only/prefer_ipv6` similarly
+  - Builds `SB_DNS_POOL` tokens for advanced pool resolver (non-blocking for unsupported schemes).
+  - DNS stub (`DNS_STUB=1` or `--dns-from-env`) remains available and is skipped when config-driven DNS is applied.
+
+### Changed (WS2 complete)
+- DNS IR → Resolver (direct injection):
+  - Added typed `dns` IR in sb-config with `servers`, `rules`, `default`.
+  - Built IR-driven resolver in sb-core (supports UDP/DoH/DoT, system) and registered it in a global handle for router use.
+  - Wired router DNS integration to prefer the IR-built resolver; falls back to env handle if absent.
+  - Rules are mapped into the DNS rule engine using in-memory Rule-Set (suffix/keyword/exact → upstream tag with priority).
+  - Supervisor sets/updates global DNS resolver on start/reload based on IR.
+  - Added DoQ upstream support in IR builder (feature `dns_doq`).
+  - Extended DNS IR with timeout/TTL/fakeip/pool knobs; applied to resolver/upstreams (best-effort via direct parameters/env compatibility).
+
 ### Added (Phase 8 - RC Packaging)
 - **Release Artifacts**:
   - Man page generation via `app man --out dist/man/app.1` (feature: `manpage`)

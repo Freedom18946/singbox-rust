@@ -55,10 +55,12 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(disabled_tests)]
     use super::LimitedDialer;
+    #[cfg(disabled_tests)]
     use std::sync::Arc;
 
-    #[cfg(feature = "disabled_tests")]
+    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn reject_when_queue_times_out() {
         use crate::dialer::{DialError, FnDialer};
@@ -81,7 +83,7 @@ mod tests {
         assert!(matches!(r2, Err(DialError::Other(ref s)) if s=="queue_timeout"));
     }
 
-    #[cfg(feature = "disabled_tests")]
+    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn queued_then_ok() {
         use crate::dialer::{DialError, FnDialer};
@@ -103,7 +105,7 @@ mod tests {
         assert!(r.is_err());
     }
 
-    #[cfg(feature = "disabled_tests")]
+    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn cancel_releases_queue() {
         use crate::dialer::{DialError, FnDialer};

@@ -135,10 +135,14 @@ adapter-ssh = ["sb-core/out_ssh"]
 adapter-tuic = ["sb-core/out_tuic"]
 adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 adapter-dns = []
+adapter-tun = ["tun"]
+adapter-redirect = []
+adapter-tproxy = []
 
 # TLS features
 tls_reality = ["dep:sb-tls", "sb-tls/reality"]
 transport_ech = ["dep:sb-tls", "sb-tls/ech"]
+
 
 # Transport layer features (forward to sb-transport)
 transport_tls = ["dep:sb-transport", "sb-transport/transport_tls"]
@@ -152,6 +156,9 @@ transport_h2 = ["dep:sb-transport", "sb-transport/transport_h2"]
 
 # Feature alias for sb-transport dependency detection
 sb-transport = ["dep:sb-transport"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disabled_test_temporarily)'] }
 
 [[bench]]
 name = "adapters_conn"

@@ -33,6 +33,7 @@ pub mod http; // HTTP 侧指标（入站/上游代理共用）
 pub mod server; // Metrics server implementation
 pub mod socks; // SOCKS 侧指标
 pub mod transfer; // 通用传输指标（带宽/字节数）
+pub mod inbound; // 入站统一错误指标
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -51,6 +52,24 @@ use prometheus::{
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
+
+mod labels;
+
+fn guarded_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec {
+    labels::ensure_allowed_labels(name, labels);
+    // Safe construction; if it fails, fall back to dummy with a generic label
+    IntCounterVec::new(Opts::new(name, help), labels).unwrap_or_else(|_| {
+        #[allow(clippy::unwrap_used)]
+        IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
+    })
+}
+
+fn guarded_histogram_vec(name: &str, help: &str, labels: &[&str], buckets: Vec<f64>) -> HistogramVec {
+    labels::ensure_allowed_labels(name, labels);
+    let opts = HistogramOpts::new(name, help).buckets(buckets);
+    #[allow(clippy::unwrap_used)]
+    HistogramVec::new(opts, labels).unwrap()
+}
 
 /// Error rate limiter for metrics server to prevent log noise
 struct ErrorRateLimiter {
@@ -124,18 +143,11 @@ mod router {
     /// labels: category = {"`domain_suffix`","`ip_cidr`","`advanced`","`default`",...},
     ///         outbound = {"direct","block","socks","http",...}
     pub static ROUTER_MATCH_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let vec = IntCounterVec::new(
-            prometheus::Opts::new(
-                "router_rule_match_total",
-                "Router rule matches total by category and outbound",
-            ),
+        let vec = super::guarded_counter_vec(
+            "router_rule_match_total",
+            "Router rule matches total by category and outbound",
             &["category", "outbound"],
-        )
-        .unwrap_or_else(|_| {
-            // Fallback to a dummy counter on initialization failure
-            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-            IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(vec.clone())).ok();
         vec
     });
@@ -151,35 +163,26 @@ pub fn inc_router_match(category: &str, outbound_label: &str) {
 // ===================== Outbound Metrics =====================
 /// Outbound connection metrics: attempts, errors, and latency
 mod outbound {
-    use super::{HistogramOpts, HistogramVec, IntCounterVec, LazyLock, Opts, REGISTRY};
+    use super::{HistogramVec, IntCounterVec, LazyLock, REGISTRY};
 
     /// 出站连接尝试总数（含成功/失败），用于比对失败率
     pub static CONNECT_ATTEMPT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = IntCounterVec::new(
-            Opts::new(
-                "outbound_connect_attempt_total",
-                "Outbound connect attempts",
-            ),
+        let v = super::guarded_counter_vec(
+            "outbound_connect_attempt_total",
+            "Outbound connect attempts",
             &["kind"], // direct | socks | http | other
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
 
     /// 出站连接失败计数
     pub static CONNECT_ERROR_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = IntCounterVec::new(
-            Opts::new("outbound_connect_error_total", "Outbound connect errors"),
+        let v = super::guarded_counter_vec(
+            "outbound_connect_error_total",
+            "Outbound connect errors",
             &["kind", "class"], // class: dns | timeout | io | tls | other
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback dummy counter initialization
-            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -187,15 +190,14 @@ mod outbound {
     /// 出站连接成功直方图（秒）
     pub static CONNECT_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
         // 预置桶：1ms~10s，覆盖直连与代理常见场景
-        let opts = HistogramOpts::new(
+        let v = super::guarded_histogram_vec(
             "outbound_connect_seconds",
             "Outbound connect latency (seconds)",
-        )
-        .buckets(vec![
-            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0,
-        ]);
-        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
-        let v = HistogramVec::new(opts, &["kind"]).unwrap();
+            &["kind"],
+            vec![
+                0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0,
+            ],
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -258,22 +260,16 @@ pub fn classify_error<E: core::fmt::Display + ?Sized>(e: &E) -> &'static str {
 // ===================== Adapter Metrics (SOCKS/HTTP) =====================
 /// Adapter (SOCKS/HTTP) dial metrics: attempts, latency, retries
 mod adapter {
-    use super::{HistogramOpts, HistogramVec, IntCounterVec, LazyLock, REGISTRY};
+    use super::{HistogramVec, IntCounterVec, LazyLock, REGISTRY};
 
     /// Adapter dial total counter - tracks all dial attempts with results
     /// labels: adapter = {"socks5", "http"}, result = {"ok", "timeout", "`proto_err`", "`auth_err`", "`io_err`"}
     pub static DIAL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let vec = IntCounterVec::new(
-            prometheus::Opts::new(
-                "adapter_dial_total",
-                "Adapter dial attempts total by adapter and result",
-            ),
+        let vec = super::guarded_counter_vec(
+            "adapter_dial_total",
+            "Adapter dial attempts total by adapter and result",
             &["adapter", "result"],
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)]
-            IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(vec.clone())).ok();
         vec
     });
@@ -281,15 +277,15 @@ mod adapter {
     /// Adapter dial latency histogram in milliseconds
     /// labels: adapter = {"socks5", "http"}
     pub static DIAL_LATENCY_MS: LazyLock<HistogramVec> = LazyLock::new(|| {
-        let opts = HistogramOpts::new(
+        let v = super::guarded_histogram_vec(
             "adapter_dial_latency_ms",
             "Adapter dial latency in milliseconds",
-        )
-        .buckets(vec![
-            1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0,
-        ]);
-        #[allow(clippy::unwrap_used)]
-        let v = HistogramVec::new(opts, &["adapter"]).unwrap();
+            &["adapter"],
+            vec![
+                1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0,
+                10000.0,
+            ],
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -297,14 +293,11 @@ mod adapter {
     /// Adapter retry attempts counter
     /// labels: adapter = {"socks5", "http"}
     pub static RETRIES_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let vec = IntCounterVec::new(
-            prometheus::Opts::new("adapter_retries_total", "Adapter retry attempts total"),
+        let vec = super::guarded_counter_vec(
+            "adapter_retries_total",
+            "Adapter retry attempts total",
             &["adapter"],
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)]
-            IntCounterVec::new(prometheus::Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(vec.clone())).ok();
         vec
     });
@@ -363,7 +356,7 @@ pub fn record_adapter_dial(
 // ===================== SOCKS Inbound Metrics =====================
 /// SOCKS inbound metrics: TCP connections, UDP associations and packets
 mod socks_in {
-    use super::{IntCounter, IntCounterVec, IntGauge, LazyLock, Opts, REGISTRY};
+    use super::{IntCounter, IntCounterVec, IntGauge, LazyLock, REGISTRY};
 
     /// SOCKS TCP 连接总数（握手成功即计数）
     pub static TCP_CONN_TOTAL: LazyLock<IntCounter> = LazyLock::new(|| {
@@ -391,15 +384,11 @@ mod socks_in {
 
     /// UDP 包计数：方向 in -> server / out -> client
     pub static UDP_PKTS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        #[allow(clippy::unwrap_used)] // Metrics initialization failure at startup is acceptable
-        let v = IntCounterVec::new(
-            Opts::new(
-                "inbound_socks_udp_packets_total",
-                "SOCKS inbound UDP packets",
-            ),
+        let v = super::guarded_counter_vec(
+            "inbound_socks_udp_packets_total",
+            "SOCKS inbound UDP packets",
             &["dir"], // "in" | "out"
-        )
-        .unwrap();
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -452,28 +441,18 @@ mod legacy {
 
     /// UDP NAT eviction counter
     pub static UDP_EVICT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = IntCounterVec::new(
-            Opts::new("udp_evict_total", "UDP NAT eviction total"),
+        let v = super::guarded_counter_vec(
+            "udp_evict_total",
+            "UDP NAT eviction total",
             &["reason"], // ttl | pressure
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)]
-            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
 
     /// UDP failure counter
     pub static UDP_FAIL_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = IntCounterVec::new(
-            Opts::new("udp_fail_total", "UDP failure total"),
-            &["class"], // timeout | io | other
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)]
-            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        let v = super::guarded_counter_vec("udp_fail_total", "UDP failure total", &["class"]);
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -544,14 +523,11 @@ mod legacy {
 
     /// Prometheus HTTP export failure counter
     pub static PROM_HTTP_FAIL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = IntCounterVec::new(
-            Opts::new("prom_http_fail_total", "Prometheus HTTP export failures"),
+        let v = super::guarded_counter_vec(
+            "prom_http_fail_total",
+            "Prometheus HTTP export failures",
             &["class"], // bind | conn | io | other
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)]
-            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -570,14 +546,11 @@ mod legacy {
 
     /// Proxy selection counter
     pub static PROXY_SELECT_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
-        let v = IntCounterVec::new(
-            Opts::new("proxy_select_total", "Proxy selection invocations"),
+        let v = super::guarded_counter_vec(
+            "proxy_select_total",
+            "Proxy selection invocations",
             &["proxy"],
-        )
-        .unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)]
-            IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-        });
+        );
         REGISTRY.register(Box::new(v.clone())).ok();
         v
     });
@@ -722,4 +695,30 @@ pub fn export_prometheus() -> String {
         .encode(&metric_families, &mut buf)
         .expect("Prometheus encoding should never fail");
     String::from_utf8(buf).expect("Prometheus output should be valid UTF-8")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn exporter_noise_smoke() {
+        // Directly exercise the /metrics handler without binding sockets.
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/metrics")
+            .body(Body::empty())
+            .unwrap();
+        let resp = metrics_http(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Exercise non-/metrics path
+        let req2 = Request::builder()
+            .method(Method::GET)
+            .uri("/not-found")
+            .body(Body::empty())
+            .unwrap();
+        let resp2 = metrics_http(req2).await.unwrap();
+        assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
+    }
 }

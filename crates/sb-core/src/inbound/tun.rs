@@ -123,12 +123,19 @@ impl TunInboundService {
 
             // In a real implementation, this would:
             // 1. Read packet from TUN device
-            // 2. Parse IP headers and extract destination
-            // 3. Optionally peek first bytes of streams for TLS SNI/HTTP Host when sniff is enabled
+            // 2. Parse IP headers and extract destination (host/port, proto)
+            // 3. Optionally peek first bytes of streams for TLS SNI/ALPN when sniff is enabled
             if self.sniff_enabled {
-                // Placeholder: demonstrate that sniff path can be activated safely
-                // Real implementation should extract SNI/ALPN from TCP ClientHello packets.
-                tracing::trace!("tun: sniff enabled (stage1) - no-op");
+                // Demonstrate that sniff path can be called safely. The actual integration
+                // should provide the first TLS/QUIC payload bytes from the flow classifier.
+                let sample: &[u8] = &[]; // replace with real first-segment data
+                if let Some(info) = crate::routing::sniff::sniff_tls_client_hello(sample) {
+                    tracing::trace!(target: "sb_core::inbound::tun", ?info, "tls clienthello sniffed");
+                } else if let Some(alpn) = crate::routing::sniff::sniff_quic_initial(sample) {
+                    tracing::trace!(target: "sb_core::inbound::tun", alpn=%alpn, "quic initial detected");
+                } else {
+                    tracing::trace!(target: "sb_core::inbound::tun", "sniff: no tls/quic signature");
+                }
             }
             // 4. Query router for routing decision
             // 4. Forward packet to appropriate outbound
@@ -163,5 +170,10 @@ impl InboundService for TunInboundService {
             }
             Ok(())
         })
+    }
+
+    fn request_shutdown(&self) {
+        // Signal packet loop to stop
+        self.shutdown();
     }
 }

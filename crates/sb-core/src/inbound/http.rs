@@ -124,6 +124,7 @@ impl HttpInboundService {
     /// Handle a single HTTP CONNECT request
     async fn handle_connect(&self, mut client: TcpStream, peer: SocketAddr) -> io::Result<()> {
         self.active_connections.fetch_add(1, Ordering::Relaxed);
+        crate::metrics::inbound::set_active_connections("http", self.active_connections());
         debug!("HTTP CONNECT: New connection from {}", peer);
 
         let result = async {
@@ -263,6 +264,7 @@ impl HttpInboundService {
         }
 
         self.active_connections.fetch_sub(1, Ordering::Relaxed);
+        crate::metrics::inbound::set_active_connections("http", self.active_connections());
         debug!("HTTP CONNECT: Connection {} closed", peer);
         Ok(())
     }
@@ -334,5 +336,14 @@ impl InboundService for HttpInboundService {
 
         // Run the server
         rt.block_on(async { self.serve_async().await })
+    }
+
+    fn request_shutdown(&self) {
+        // Signal accept loop to stop and let existing connections drain
+        self.shutdown();
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        Some(self.active_connections())
     }
 }

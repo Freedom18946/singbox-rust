@@ -86,6 +86,7 @@ metrics = "0.24"
 sb-types = { path = "crates/sb-types" }
 sb-admin-contract = { path = "crates/sb-admin-contract", version = "0.1.0" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+regex = "1"
 
 [profile.dev]
 opt-level = 1

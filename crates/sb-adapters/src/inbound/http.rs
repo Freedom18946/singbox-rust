@@ -176,6 +176,9 @@ pub async fn serve_http(
                     Err(e) => {
                         use std::io::ErrorKind::*;
                         tracing::warn!(error=%e, "http: accept error");
+                        // Unified HTTP error classification for metrics
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("http", &e);
                         match e.kind() {
                             Interrupted | WouldBlock | ConnectionAborted | ConnectionReset | TimedOut => {
                                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -208,6 +211,8 @@ pub async fn serve_http(
                             Ok(tls_stream) => tls_stream,
                             Err(e) => {
                                 warn!(peer=%peer, error=%e, "http: TLS handshake failed");
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("http", &e);
                                 return;
                             }
                         }
@@ -248,13 +253,16 @@ where
     info!(?peer, "http: accepted");
     let (method, target) = match read_request_line(&mut cli).await {
         Ok(mt) => mt,
-        Err(_) => {
+        Err(e) => {
             #[cfg(feature = "metrics")]
             {
                 metrics::counter!("http_respond_total", "code" => "400").increment(1);
                 counter!("http_requests_total", "method"=>"_parse_error", "code"=>"400")
                     .increment(1);
             }
+            // Record parse-related error using unified HTTP classifier
+            sb_core::metrics::http::record_error_display(&e);
+            sb_core::metrics::record_inbound_error_display("http", &e);
             return respond_400(&mut cli, "read_line").await.map(|_| ());
         }
     };
@@ -266,6 +274,7 @@ where
             // 将方法名原样落盘（低基数）；避免 move，clone 一次
             counter!("http_requests_total", "method"=>method.clone(), "code"=>"405").increment(1);
         }
+        sb_core::metrics::http::inc_405_responses();
         access::log(
             "http_bad_method",
             &[("proto", "http".into()), ("method", method.to_string())],

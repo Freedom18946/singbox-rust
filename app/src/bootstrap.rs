@@ -26,10 +26,13 @@ use sb_core::router::RouterHandle;
 #[cfg(feature = "router")]
 use std::collections::HashMap;
 
+#[cfg(feature = "adapters")]
 use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
+#[cfg(feature = "adapters")]
 use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
+#[cfg(feature = "adapters")]
 use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
-#[cfg(feature = "tun")]
+#[cfg(all(feature = "tun", feature = "adapters"))]
 use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
 
 const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
@@ -186,6 +189,9 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                             alpn: alpn_list,
                             salamander: ob.salamander.clone(),
                             brutal: brutal_cfg,
+                            tls_ca_paths: Vec::new(),
+                            tls_ca_pem: Vec::new(),
+                            zero_rtt_handshake: false,
                         };
                         map.insert(name, OutboundImpl::Hysteria2(cfg));
                     }
@@ -216,8 +222,12 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                         congestion_control: ob.congestion_control.clone(),
                                         alpn: ob.alpn.clone().or(ob.tls_alpn.clone()),
                                         skip_cert_verify: ob.skip_cert_verify.unwrap_or(false),
+                                        sni: ob.tls_sni.clone(),
+                                        tls_ca_paths: Vec::new(),
+                                        tls_ca_pem: Vec::new(),
                                         udp_relay_mode: relay_mode,
                                         udp_over_stream: ob.udp_over_stream.unwrap_or(false),
+                                        zero_rtt_handshake: ob.zero_rtt_handshake.unwrap_or(false),
                                     };
                                     map.insert(name, OutboundImpl::Tuic(cfg));
                                 }
@@ -667,6 +677,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // Start health checking (behind env)
     ob_health::spawn_if_enabled().await;
 
+    #[cfg(feature = "adapters")]
+    sb_adapters::register_all();
+
     // 1) 构建 Registry/Router 并包装成 Handle（严格失败）
     cfg.validate()?; // Configuration validation (IR compiled inside)
 
@@ -765,69 +778,83 @@ async fn start_inbounds_from_ir(
     for ib in inbounds {
         match ib.ty {
             InboundType::Http => {
-                let listen_str = if ib.listen.contains(':') {
-                    ib.listen.clone()
-                } else {
-                    format!("{}:{}", ib.listen, ib.port)
-                };
-                if let Ok(addr) = parse_listen_addr(&listen_str) {
-                    let (_tx, rx) = mpsc::channel::<()>(1);
-                    let cfg = HttpProxyConfig {
-                        listen: addr,
-                        #[cfg(feature = "router")]
-                        router: router.clone(),
-                        #[cfg(not(feature = "router"))]
-                        router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                        outbounds: outbounds.clone(),
-                        tls: None,
+                #[cfg(feature = "adapters")]
+                {
+                    let listen_str = if ib.listen.contains(':') {
+                        ib.listen.clone()
+                    } else {
+                        format!("{}:{}", ib.listen, ib.port)
                     };
-                    tokio::spawn(async move {
-                        if let Err(e) = serve_http(cfg, rx, None).await {
-                            warn!(addr=%listen_str, error=%e, "http inbound failed");
-                        }
-                    });
-                } else {
-                    warn!(%listen_str, "http inbound: invalid listen address");
+                    if let Ok(addr) = parse_listen_addr(&listen_str) {
+                        let (_tx, rx) = mpsc::channel::<()>(1);
+                        let cfg = HttpProxyConfig {
+                            listen: addr,
+                            #[cfg(feature = "router")]
+                            router: router.clone(),
+                            #[cfg(not(feature = "router"))]
+                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                            outbounds: outbounds.clone(),
+                            tls: None,
+                        };
+                        tokio::spawn(async move {
+                            if let Err(e) = serve_http(cfg, rx, None).await {
+                                warn!(addr=%listen_str, error=%e, "http inbound failed");
+                            }
+                        });
+                    } else {
+                        warn!(%listen_str, "http inbound: invalid listen address");
+                    }
+                }
+                #[cfg(not(feature = "adapters"))]
+                {
+                    warn!("http inbound requires 'adapters' feature; skipping");
                 }
             }
             InboundType::Socks => {
-                let listen_str = if ib.listen.contains(':') {
-                    ib.listen.clone()
-                } else {
-                    format!("{}:{}", ib.listen, ib.port)
-                };
-                if let Ok(addr) = parse_listen_addr(&listen_str) {
-                    let (_tx, rx) = mpsc::channel::<()>(1);
-                    let cfg = SocksInboundConfig {
-                        listen: addr,
-                        udp_bind: parse_udp_bind_from_env(),
-                        #[cfg(feature = "router")]
-                        router: router.clone(),
-                        #[cfg(not(feature = "router"))]
-                        router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                        outbounds: outbounds.clone(),
-                        udp_nat_ttl: Duration::from_secs(60),
+                #[cfg(feature = "adapters")]
+                {
+                    let listen_str = if ib.listen.contains(':') {
+                        ib.listen.clone()
+                    } else {
+                        format!("{}:{}", ib.listen, ib.port)
                     };
-                    tokio::spawn(async move {
-                        if let Err(e) = serve_socks(cfg, rx, None).await {
-                            warn!(addr=%listen_str, error=%e, "socks inbound failed");
-                        }
-                    });
-                    // start UDP association service if config or env enables
-                    if ib.udp || socks_udp_should_start() {
+                    if let Ok(addr) = parse_listen_addr(&listen_str) {
+                        let (_tx, rx) = mpsc::channel::<()>(1);
+                        let cfg = SocksInboundConfig {
+                            listen: addr,
+                            udp_bind: parse_udp_bind_from_env(),
+                            #[cfg(feature = "router")]
+                            router: router.clone(),
+                            #[cfg(not(feature = "router"))]
+                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                            outbounds: outbounds.clone(),
+                            udp_nat_ttl: Duration::from_secs(60),
+                        };
                         tokio::spawn(async move {
-                            if let Err(e) = serve_socks5_udp_service().await {
-                                warn!(error=%e, "socks udp service failed");
+                            if let Err(e) = serve_socks(cfg, rx, None).await {
+                                warn!(addr=%listen_str, error=%e, "socks inbound failed");
                             }
                         });
+                        // start UDP association service if config or env enables
+                        if ib.udp || socks_udp_should_start() {
+                            tokio::spawn(async move {
+                                if let Err(e) = serve_socks5_udp_service().await {
+                                    warn!(error=%e, "socks udp service failed");
+                                }
+                            });
+                        }
+                    } else {
+                        warn!(%listen_str, "socks inbound: invalid listen address");
                     }
-                } else {
-                    warn!(%listen_str, "socks inbound: invalid listen address");
+                }
+                #[cfg(not(feature = "adapters"))]
+                {
+                    warn!("socks inbound requires 'adapters' feature; skipping");
                 }
             }
             InboundType::Tun => {
                 // Phase 1: spawn TUN inbound skeleton with defaults
-                #[cfg(feature = "tun")]
+                #[cfg(all(feature = "tun", feature = "adapters"))]
                 {
                     let cfg = TunInboundConfig::default();
                     let inbound = TunInbound::new(cfg, {
@@ -847,7 +874,7 @@ async fn start_inbounds_from_ir(
                     });
                     info!("tun inbound spawned (phase1 skeleton)");
                 }
-                #[cfg(not(feature = "tun"))]
+                #[cfg(any(not(feature = "tun"), not(feature = "adapters")))]
                 {
                     warn!("config includes tun inbound, but feature 'tun' is disabled; skipping");
                 }
@@ -861,12 +888,9 @@ async fn start_inbounds_from_ir(
                         continue;
                     }
                 };
-                let dst_port = match ib.override_port {
-                    Some(p) => p,
-                    None => {
-                        warn!("direct inbound missing override_port; skipping");
-                        continue;
-                    }
+                let Some(dst_port) = ib.override_port else {
+                    warn!("direct inbound missing override_port; skipping");
+                    continue;
                 };
                 let listen_str = if ib.listen.contains(':') {
                     ib.listen.clone()
@@ -875,7 +899,7 @@ async fn start_inbounds_from_ir(
                 };
                 match parse_listen_addr(&listen_str) {
                     Ok(addr) => {
-                        let f_dst = format!("{}:{}", dst_host, dst_port);
+                        let f_dst = format!("{dst_host}:{dst_port}");
                         let forward = sb_core::inbound::direct::DirectForward::new(
                             addr, dst_host, dst_port, ib.udp,
                         );
@@ -888,6 +912,18 @@ async fn start_inbounds_from_ir(
                         warn!(addr=%listen_str, error=%e, "direct inbound: invalid listen address");
                     }
                 }
+            }
+            InboundType::Redirect | InboundType::Tproxy => {
+                warn!(
+                    kind=?ib.ty,
+                    "inbound type not supported in this build; consider using 'tun' or SOCKS/HTTP inbound"
+                );
+            }
+            _ => {
+                warn!(
+                    kind=?ib.ty,
+                    "inbound type requires adapters feature; enable 'app/adapters' or route through sb_core bridge"
+                );
             }
         }
     }

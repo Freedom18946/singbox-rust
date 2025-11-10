@@ -82,7 +82,12 @@ pub async fn serve_socks(
             r = listener.accept() => {
                 let (mut cli, peer) = match r {
                     Ok(v) => v,
-                    Err(e) => { warn!(error=%e, "accept failed"); continue; }
+                    Err(e) => { 
+                        warn!(error=%e, "accept failed");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("socks", &e);
+                        continue; 
+                    }
                 };
                 let cfg_clone = cfg.clone();
                 tokio::spawn(async move {
@@ -96,6 +101,8 @@ pub async fn serve_socks(
                             return;
                         }
                         // 其他错误继续告警
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("socks", &e);
                         warn!(peer=%peer, error=%e, "socks session error");
                     }
                 });

@@ -51,6 +51,9 @@ scripts/e2e/run.sh   # optional e2e summary → .e2e/summary.json
 
 # Run comprehensive E2E tests (auth + rate limiting)
 cargo run -p xtask -- e2e
+
+# Run app with adapter bridge (HTTP/SOCKS/Mixed/TUN via sb-adapters)
+cargo run -p app --features "adapters,router" -- --config config.json
 ```
 
 DNS backends (env-driven)
@@ -85,6 +88,11 @@ cargo build -p sb-core --features service_ntp
   - `RUST_LOG=info` enables info-level logs (use `debug` for more detail).
   - Example: `RUST_LOG=sb_core=debug,app=info cargo run -p app -- version`.
   - JSON output (when subscriber configured): `RUST_LOG=info APP_LOG_JSON=1 ...`.
+
+- Metrics & redaction
+  - Prometheus exporter: set `SB_METRICS_ADDR=127.0.0.1:9090` and the app exposes `/metrics`.
+  - Log sampling: set `SB_LOG_SAMPLE=<N>` to rate‑limit info/debug logs per-target per-second (default off).
+  - Secret redaction: enabled by default; set `SB_LOG_REDACT=0` to disable. See `METRICS_CATALOG.md` for details and label whitelist.
 
 CLI bench (HTTP/2) requires feature `reqwest`:
 
@@ -157,7 +165,8 @@ bash scripts/tools/run-examples.sh examples/configs/advanced/full_stack.json
   - [API Reference](docs/05-api-reference/) - HTTP/gRPC API 文档
   - [Advanced Topics](docs/06-advanced-topics/) - REALITY/ECH 等高级特性
   - [Reference](docs/07-reference/) - Schema 和错误码参考
-  - [Examples](docs/08-examples/) - 配置示例
+- [Examples](docs/08-examples/) - 配置示例
+ - [UDP Support](docs/UDP_SUPPORT.md) - SOCKS5 UDP 行为、会话/直连路径、NAT 策略、e2e 运行说明
 
 ### 🧪 测试文档
 
@@ -179,6 +188,33 @@ Common examples:
 - `cargo run -p app -- geosite --file geosite.db export netflix`
 - `cargo run -p app -- ruleset validate rules.srs`
 - `cargo run -p app -- tools connect example.com:443 -c config.json`
+
+### Adapter Bridge Coverage
+
+Enabling the `adapters` feature switches the bridge to sb-adapters implementations
+for the following protocols:
+
+| Protocol | Direction | Extra `sb-adapters` features |
+| --- | --- | --- |
+| HTTP CONNECT | inbound/outbound | `http`, `adapter-http` |
+| SOCKS5 | inbound/outbound | `socks`, `adapter-socks` |
+| Mixed (HTTP+SOCKS) | inbound | `mixed`, `http`, `socks` |
+| TUN (Phase 1 skeleton) | inbound | `tun`, `adapter-tun` |
+| Shadowsocks AEAD | inbound/outbound | `adapter-shadowsocks` |
+| VMess | inbound/outbound | `adapter-vmess` |
+| VLESS | inbound/outbound | `adapter-vless` |
+| Trojan | inbound/outbound | `adapter-trojan` |
+
+Example:
+
+```bash
+cargo run -p app \
+  --features "router,adapters,sb-adapters/adapter-shadowsocks" \
+  -- --config config.json
+```
+
+When adapters are disabled (the default), the bridge automatically falls back to the
+built-in scaffold implementations.
 
 ### Admin 实现选择
 

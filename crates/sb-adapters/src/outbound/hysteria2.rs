@@ -74,6 +74,9 @@ impl Hysteria2Connector {
             alpn: self.cfg.alpn.clone(),
             salamander: self.cfg.salamander.clone(),
             brutal: None,
+            tls_ca_paths: Vec::new(),
+            tls_ca_pem: Vec::new(),
+            zero_rtt_handshake: false,
         };
 
         let core =
@@ -135,6 +138,9 @@ impl OutboundConnector for Hysteria2Connector {
                 alpn: self.cfg.alpn.clone(),
                 salamander: self.cfg.salamander.clone(),
                 brutal: None,
+                tls_ca_paths: Vec::new(),
+                tls_ca_pem: Vec::new(),
+                zero_rtt_handshake: false,
             };
 
             let core = sb_core::outbound::hysteria2::Hysteria2Outbound::new(core_cfg)

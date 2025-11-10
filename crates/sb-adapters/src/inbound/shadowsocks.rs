@@ -291,6 +291,8 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                         Ok(v) => v,
                         Err(e) => {
                             warn!(error=%e, "ss: multiplex accept error");
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
                             continue;
                         }
                     };
@@ -301,6 +303,8 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                         // For multiplexed streams or non-TCP transports, we don't have a peer address
                         let peer = SocketAddr::from(([0, 0, 0, 0], 0));
                         if let Err(e) = handle_conn_stream(&cfg_clone, method_clone, &master_clone, &mut stream, peer).await {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
                             warn!(%peer, error=%e, "ss: multiplex session error");
                         }
                     });
@@ -319,6 +323,8 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                         Ok(v) => v,
                         Err(e) => {
                             warn!(error=%e, "ss: accept error");
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
                             continue;
                         }
                     };
@@ -329,6 +335,8 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                         // For non-TCP transports, we don't have a peer address
                         let peer = SocketAddr::from(([0, 0, 0, 0], 0));
                         if let Err(e) = handle_conn_stream(&cfg_clone, method_clone, &master_clone, &mut stream, peer).await {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("shadowsocks", &e);
                             warn!(%peer, error=%e, "ss: session error");
                         }
                     });

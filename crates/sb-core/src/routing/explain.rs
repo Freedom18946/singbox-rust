@@ -75,7 +75,15 @@ impl ExplainEngine {
         Ok(ExplainEngine { ir, engine })
     }
 
+    /// Explain routing for a destination using TCP as the default network.
+    /// This preserves existing behavior. For UDP decisions, prefer `explain_with_network`.
     pub fn explain(&self, dest: &str, with_trace: bool) -> ExplainResult {
+        self.explain_with_network(dest, "tcp", with_trace)
+    }
+
+    /// Explain routing for a destination with an explicit network ("tcp"|"udp").
+    /// Protocol defaults to "socks" for explain purposes.
+    pub fn explain_with_network(&self, dest: &str, network: &str, with_trace: bool) -> ExplainResult {
         // 解析 host:port
         let (host, port) = if let Some((h, p)) = dest.rsplit_once(':') {
             let parsed_port = p
@@ -89,7 +97,7 @@ impl ExplainEngine {
             &Input {
                 host: &host,
                 port,
-                network: "tcp",
+                network,
                 protocol: "socks",
                 sniff_host: None,
                 sniff_alpn: None,

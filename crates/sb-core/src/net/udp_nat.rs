@@ -80,6 +80,11 @@ impl NatMap {
         })
     }
 
+    /// 当前 NAT 表项数量
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
     #[inline]
     fn now(&self) -> Instant {
         Instant::now()
@@ -134,6 +139,43 @@ impl NatMap {
         #[cfg(feature = "metrics")]
         self.metrics.size_gauge.set(self.map.len() as i64);
         upstream
+    }
+
+    /// 异步版本：允许通过异步工厂创建上游 socket，并返回 (socket, 是否新建)
+    pub async fn get_or_insert_with_async<Fut, F>(&self, key: NatKey, make: F) -> (Arc<UdpSocket>, bool)
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Arc<UdpSocket>> + Send,
+    {
+        self.pre_evict().await;
+
+        if let Some(mut e) = self.map.get_mut(&key) {
+            e.gen = e.gen.wrapping_add(1);
+            e.last_seen = self.now();
+            e.expiry = e.last_seen + self.ttl;
+            let item = HeapItem { expiry: e.expiry, gen: e.gen, key: key.clone() };
+            {
+                let mut h = self.heap.lock().await;
+                h.push(item);
+                #[cfg(feature = "metrics")]
+                self.metrics.heap_len.set(h.len() as i64);
+            }
+            return (e.upstream.clone(), false);
+        }
+
+        let now = self.now();
+        let upstream = make().await;
+        let entry = NatEntry { upstream: upstream.clone(), last_seen: now, expiry: now + self.ttl, gen: 1, bytes_in: 0, bytes_out: 0 };
+        self.map.insert(key.clone(), entry);
+        {
+            let mut h = self.heap.lock().await;
+            h.push(HeapItem { expiry: now + self.ttl, gen: 1, key });
+            #[cfg(feature = "metrics")]
+            self.metrics.heap_len.set(h.len() as i64);
+        }
+        #[cfg(feature = "metrics")]
+        self.metrics.size_gauge.set(self.map.len() as i64);
+        (upstream, true)
     }
 
     /// 记录流量（可在收发路径调用）

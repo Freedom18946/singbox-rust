@@ -60,6 +60,24 @@ cargo test --test integration
 
 # Schema V2 测试
 cargo test --test test_schema_v2_integration
+
+### UDP 端到端（可选）
+
+部分 UDP E2E 测试需要本地套接字/QUIC/TLS 支持，默认不会自动执行。可通过环境变量开启：
+
+```
+export SB_E2E_UDP=1
+
+# SOCKS5 UDP → 直连 NAT 回退
+cargo test --test socks_udp_direct_e2e -- --nocapture
+
+# Shadowsocks/TUIC/Hysteria2 UDP 会话（需本地 inbound）
+cargo test --test shadowsocks_udp_e2e --features net_e2e -- --nocapture
+cargo test --test tuic_udp_e2e        --features net_e2e -- --nocapture
+cargo test --test hysteria2_udp_e2e   --features net_e2e -- --nocapture
+```
+
+注：这些测试仅绑定到 127.0.0.1；自签证书场景会关闭证书校验。
 ```
 
 ### 运行验证脚本

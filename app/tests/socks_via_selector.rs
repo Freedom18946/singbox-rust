@@ -103,6 +103,8 @@ fn end2end_via_selector() {
             }],
             default: Some("S".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

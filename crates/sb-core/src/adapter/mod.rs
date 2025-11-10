@@ -9,9 +9,12 @@
 
 use sb_config::ir::Credentials;
 use std::sync::Arc;
+use std::collections::HashMap;
+use std::net::SocketAddr;
 
 pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
+pub mod registry;
 
 /// Helper to parse socket address from listen and port
 #[allow(dead_code)]
@@ -33,6 +36,23 @@ fn direct_connector_fallback() -> Arc<dyn OutboundConnector> {
 pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
     /// Blocking entry point to run the service (spawns internal workers).
     fn serve(&self) -> std::io::Result<()>;
+
+    /// Request a graceful shutdown if supported by the implementation.
+    /// Default implementation is a no-op for servers that don't support it.
+    fn request_shutdown(&self) {
+        // Default: do nothing
+    }
+
+    /// Optional: return current active connections if available.
+    /// Implementers that track connection count can override this.
+    fn active_connections(&self) -> Option<u64> {
+        None
+    }
+
+    /// Optional: return current estimated UDP session count (for UDP-capable inbounds)
+    fn udp_sessions_estimate(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// Outbound connector trait for establishing TCP connections to targets.
@@ -44,6 +64,22 @@ pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
 }
 
+/// UDP session for datagram-based outbound protocols (e.g. QUIC-based).
+#[async_trait::async_trait]
+pub trait UdpOutboundSession: Send + Sync + std::fmt::Debug + 'static {
+    /// Send a UDP datagram to the specified host:port through this session
+    async fn send_to(&self, data: &[u8], host: &str, port: u16) -> std::io::Result<()>;
+    /// Receive the next UDP datagram from remote; returns payload and source address
+    async fn recv_from(&self) -> std::io::Result<(Vec<u8>, SocketAddr)>;
+}
+
+/// Factory that creates UDP outbound sessions (per SOCKS UDP association).
+pub trait UdpOutboundFactory: Send + Sync + std::fmt::Debug + 'static {
+    fn open_session(&self) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
+    >;
+}
+
 /// Inbound construction parameters (derived from IR).
 #[derive(Clone, Debug)]
 pub struct InboundParam {
@@ -53,6 +89,11 @@ pub struct InboundParam {
     pub port: u16,
     pub basic_auth: Option<Credentials>,
     pub sniff: bool,
+    /// Enable UDP on inbound (for protocols that support it)
+    pub udp: bool,
+    /// Optional fixed override destination (used by direct inbound)
+    pub override_host: Option<String>,
+    pub override_port: Option<u16>,
 }
 
 /// Outbound construction parameters (derived from IR).
@@ -79,6 +120,30 @@ pub struct OutboundParam {
     pub ssh_known_hosts_path: Option<String>,
 }
 
+impl Default for OutboundParam {
+    fn default() -> Self {
+        Self {
+            kind: "direct".to_string(),
+            name: None,
+            server: None,
+            port: None,
+            credentials: None,
+            uuid: None,
+            token: None,
+            password: None,
+            congestion_control: None,
+            alpn: None,
+            skip_cert_verify: None,
+            udp_relay_mode: None,
+            udp_over_stream: None,
+            ssh_private_key: None,
+            ssh_private_key_passphrase: None,
+            ssh_host_key_verification: None,
+            ssh_known_hosts_path: None,
+        }
+    }
+}
+
 /// Factory interface for creating inbound services (implemented by sb-adapters).
 pub trait InboundFactory: Send + Sync {
     fn create(&self, p: &InboundParam) -> Option<Arc<dyn InboundService>>;
@@ -96,8 +161,12 @@ pub trait OutboundFactory: Send + Sync {
 #[derive(Clone, Debug)]
 pub struct Bridge {
     pub inbounds: Vec<Arc<dyn InboundService>>,
+    /// Inbound protocol kinds aligned with `inbounds` indices
+    pub inbound_kinds: Vec<String>,
     /// (name, kind, connector) tuples
     pub outbounds: Vec<(String, String, Arc<dyn OutboundConnector>)>,
+    /// UDP outbound factories by name
+    pub udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>>,
 }
 
 impl Bridge {
@@ -105,7 +174,9 @@ impl Bridge {
     pub fn new() -> Self {
         Self {
             inbounds: vec![],
+            inbound_kinds: vec![],
             outbounds: vec![],
+            udp_factories: HashMap::new(),
         }
     }
 
@@ -154,6 +225,18 @@ impl Bridge {
                         Arc::new(HttpInboundService::with_config(addr, cfg))
                             as Arc<dyn InboundService>
                     }
+                    sb_config::ir::InboundType::Mixed => {
+                        use crate::inbound::mixed::MixedInbound;
+
+                        let mut srv = MixedInbound::new(inbound.listen.clone(), inbound.port);
+                        if let Some(creds) = &inbound.basic_auth {
+                            let user = creds.username.clone().or_else(|| creds.username_env.clone());
+                            let pass = creds.password.clone().or_else(|| creds.password_env.clone());
+                            srv = srv.with_basic_auth(user, pass);
+                        }
+                        srv = srv.with_sniff(inbound.sniff);
+                        Arc::new(srv) as Arc<dyn InboundService>
+                    }
                     sb_config::ir::InboundType::Tun => {
                         // TUN inbound service
                         use crate::inbound::tun::TunInboundService;
@@ -175,6 +258,33 @@ impl Bridge {
                         Arc::new(DirectForward::new(addr, host, dst_port, inbound.udp))
                             as Arc<dyn InboundService>
                     }
+                    sb_config::ir::InboundType::Redirect => {
+                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
+                            "redirect",
+                            "requires Linux iptables REDIRECT and adapter integration",
+                            Some("Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string()),
+                        );
+                        Arc::new(msg) as Arc<dyn InboundService>
+                    }
+                    sb_config::ir::InboundType::Tproxy => {
+                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
+                            "tproxy",
+                            "requires Linux IP_TRANSPARENT and adapter integration",
+                            Some("Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string()),
+                        );
+                        Arc::new(msg) as Arc<dyn InboundService>
+                    }
+                    _ => {
+                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
+                            inbound.ty.ty_str(),
+                            "requires adapter implementation; build with adapters features enabled",
+                            Some(
+                                "Add sb-adapters adapters feature (e.g., via app feature 'adapters') to enable this inbound"
+                                    .to_string(),
+                            ),
+                        );
+                        Arc::new(msg) as Arc<dyn InboundService>
+                    }
                 };
 
                 // Stage 1: acknowledge sniff flag without changing behavior
@@ -186,7 +296,8 @@ impl Bridge {
                     );
                 }
 
-                bridge.add_inbound(inbound_service);
+                let kind = inbound.ty.ty_str();
+                bridge.add_inbound_with_kind(kind, inbound_service);
             }
         }
 
@@ -225,14 +336,42 @@ impl Bridge {
                     }
                 }
                 sb_config::ir::OutboundType::Http => {
-                    // HTTP proxy connector would be implemented here
-                    // For now, fall back to direct
-                    direct_connector_fallback()
+                    // HTTP upstream connector (scaffold implementation)
+                    #[cfg(feature = "scaffold")]
+                    {
+                        use crate::outbound::http_upstream::HttpUp;
+                        let (user, pass) = outbound
+                            .credentials
+                            .as_ref()
+                            .map(|c| (c.username.clone(), c.password.clone()))
+                            .unwrap_or((None, None));
+                        let server = outbound.server.clone().unwrap_or_default();
+                        let port = outbound.port.unwrap_or(8080);
+                        Arc::new(HttpUp::new(server, port, user, pass)) as Arc<dyn OutboundConnector>
+                    }
+                    #[cfg(not(feature = "scaffold"))]
+                    {
+                        direct_connector_fallback()
+                    }
                 }
                 sb_config::ir::OutboundType::Socks => {
-                    // SOCKS5 proxy connector would be implemented here
-                    // For now, fall back to direct
-                    direct_connector_fallback()
+                    // SOCKS5 upstream connector (scaffold implementation)
+                    #[cfg(feature = "scaffold")]
+                    {
+                        use crate::outbound::socks_upstream::SocksUp;
+                        let (user, pass) = outbound
+                            .credentials
+                            .as_ref()
+                            .map(|c| (c.username.clone(), c.password.clone()))
+                            .unwrap_or((None, None));
+                        let server = outbound.server.clone().unwrap_or_default();
+                        let port = outbound.port.unwrap_or(1080);
+                        Arc::new(SocksUp::new(server, port, user, pass)) as Arc<dyn OutboundConnector>
+                    }
+                    #[cfg(not(feature = "scaffold"))]
+                    {
+                        direct_connector_fallback()
+                    }
                 }
                 sb_config::ir::OutboundType::Vless => {
                     #[cfg(feature = "out_vless")]
@@ -326,9 +465,15 @@ impl Bridge {
                                             skip_cert_verify: outbound
                                                 .skip_cert_verify
                                                 .unwrap_or(false),
+                                            sni: outbound.tls_sni.clone(),
+                                            tls_ca_paths: outbound.tls_ca_paths.clone(),
+                                            tls_ca_pem: outbound.tls_ca_pem.clone(),
                                             udp_relay_mode: relay_mode,
                                             udp_over_stream: outbound
                                                 .udp_over_stream
+                                                .unwrap_or(false),
+                                            zero_rtt_handshake: outbound
+                                                .zero_rtt_handshake
                                                 .unwrap_or(false),
                                         };
                                         match TuicOutbound::new(cfg) {
@@ -362,6 +507,9 @@ impl Bridge {
                     // Fallback to direct in this adapter path
                     direct_connector_fallback()
                 }
+                _ => {
+                    direct_connector_fallback()
+                }
             };
 
             bridge.add_outbound(name, kind, connector);
@@ -372,11 +520,23 @@ impl Bridge {
     /// Registers an inbound service.
     pub fn add_inbound(&mut self, ib: Arc<dyn InboundService>) {
         self.inbounds.push(ib);
+        self.inbound_kinds.push("unknown".to_string());
+    }
+
+    /// Registers an inbound service with explicit kind label
+    pub fn add_inbound_with_kind(&mut self, kind: &str, ib: Arc<dyn InboundService>) {
+        self.inbounds.push(ib);
+        self.inbound_kinds.push(kind.to_string());
     }
 
     /// Registers an outbound connector with name and kind.
     pub fn add_outbound(&mut self, name: String, kind: String, ob: Arc<dyn OutboundConnector>) {
         self.outbounds.push((name, kind, ob));
+    }
+
+    /// Registers an UDP outbound factory with name.
+    pub fn add_outbound_udp_factory(&mut self, name: String, f: Arc<dyn UdpOutboundFactory>) {
+        self.udp_factories.insert(name, f);
     }
 
     /// Finds an outbound connector by name.
@@ -386,6 +546,11 @@ impl Bridge {
         self.outbounds
             .iter()
             .find_map(|(n, _k, ob)| (n == name).then(|| Arc::clone(ob)))
+    }
+
+    /// Finds an UDP factory by name
+    pub fn find_udp_factory(&self, name: &str) -> Option<Arc<dyn UdpOutboundFactory>> {
+        self.udp_factories.get(name).cloned()
     }
 
     /// Finds the first outbound connector with kind "direct" as a fallback.
@@ -405,6 +570,11 @@ impl Bridge {
             .iter()
             .map(|(n, k, _)| (n.clone(), k.clone()))
             .collect()
+    }
+
+    /// Gets inbound kind for index, or "unknown" if missing
+    pub fn inbound_kind_at(&self, idx: usize) -> &str {
+        self.inbound_kinds.get(idx).map(|s| s.as_str()).unwrap_or("unknown")
     }
 
     /// Alias for `find_outbound` - finds an outbound connector by name.

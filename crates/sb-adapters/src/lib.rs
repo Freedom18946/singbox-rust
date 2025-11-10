@@ -134,6 +134,9 @@ pub mod traits;
 /// various transport protocols like TLS, REALITY, WebSocket, gRPC, and more.
 pub mod transport_config;
 
+/// Registry helpers to integrate adapters with sb-core bridge.
+pub mod register;
+
 /// Utility functions and helpers.
 ///
 /// Contains shared utility code used across multiple adapters, including
@@ -172,3 +175,6 @@ pub use traits::{BoxedStream, OutboundConnector, OutboundDatagram, Target, Trans
 /// - [`TransportConfig`]: Main transport configuration structure
 /// - [`TransportType`]: Enum of available transport types (TLS, WS, gRPC, etc.)
 pub use transport_config::{TransportConfig, TransportType};
+
+/// Register adapter builders with sb-core registry (idempotent).
+pub use register::register_all;

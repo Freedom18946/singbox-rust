@@ -96,13 +96,22 @@ impl VlessOutbound {
         target: &HostPort,
         stream: &mut S,
     ) -> io::Result<()> {
+        let t0 = std::time::Instant::now();
         // Send VLESS request header
         let request = self.encode_vless_request(target);
         stream.write_all(&request).await?;
 
-        // Read response header - minimal validation
+        // Read response header - validation with timeout
         let mut response_header = [0u8; 2];
-        stream.read_exact(&mut response_header).await?;
+        let handshake_timeout = std::time::Duration::from_millis(
+            std::env::var("SB_VLESS_HANDSHAKE_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(800),
+        );
+        tokio::time::timeout(handshake_timeout, stream.read_exact(&mut response_header))
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "VLESS handshake timeout"))??;
 
         // Validate response version and additional length
         if response_header[0] != 0x01 {
@@ -119,6 +128,13 @@ impl VlessOutbound {
             stream.read_exact(&mut additional_data).await?;
         }
 
+        #[cfg(feature = "metrics")]
+        {
+            use metrics::{counter, histogram};
+            counter!("vless_handshake_total", "result"=>"ok").increment(1);
+            histogram!("vless_handshake_ms").record(t0.elapsed().as_millis() as f64);
+        }
+
         Ok(())
     }
 
@@ -131,8 +147,29 @@ impl VlessOutbound {
         // UUID (16 bytes)
         request.extend_from_slice(self.config.uuid.as_bytes());
 
-        // Additional length (1 byte) - currently 0 for minimal implementation
-        request.push(0x00);
+        // Additional TLVs
+        let mut additional = Vec::new();
+        if let Some(flow) = &self.config.flow {
+            if !flow.is_empty() {
+                additional.push(0x01); // flow TLV id
+                let fb = flow.as_bytes();
+                additional.push(fb.len() as u8);
+                additional.extend_from_slice(fb);
+            }
+        }
+        if let Some(enc) = &self.config.encryption {
+            if enc != "none" {
+                additional.push(0x02); // encryption TLV id
+                let eb = enc.as_bytes();
+                additional.push(eb.len() as u8);
+                additional.extend_from_slice(eb);
+            }
+        }
+        // Additional length (1 byte) followed by TLV content
+        request.push(additional.len() as u8);
+        if !additional.is_empty() {
+            request.extend_from_slice(&additional);
+        }
 
         // Command (1 byte) - TCP connect
         request.push(0x01);
@@ -150,6 +187,47 @@ impl VlessOutbound {
         encode_ss_addr(&addr, target.port, &mut request);
 
         request
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "out_vless")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vless_encode_basic() {
+        let cfg = VlessConfig {
+            server: "s".into(),
+            port: 443,
+            uuid: uuid::Uuid::new_v4(),
+            flow: None,
+            encryption: Some("none".into()),
+            ..Default::default()
+        };
+        let outbound = VlessOutbound::new(cfg).unwrap();
+        let hp = HostPort { host: "example.com".into(), port: 80 };
+        let req = outbound.encode_vless_request(&hp);
+        assert_eq!(req[0], 0x01); // version
+        // additional length is 0 when no TLV
+        assert_eq!(req[17], 0x00);
+    }
+
+    #[test]
+    fn test_vless_encode_with_flow_tlv() {
+        let cfg = VlessConfig {
+            server: "s".into(),
+            port: 443,
+            uuid: uuid::Uuid::new_v4(),
+            flow: Some("xtls-rprx-vision".into()),
+            encryption: Some("none".into()),
+            ..Default::default()
+        };
+        let outbound = VlessOutbound::new(cfg).unwrap();
+        let hp = HostPort { host: "example.com".into(), port: 80 };
+        let req = outbound.encode_vless_request(&hp);
+        assert_eq!(req[0], 0x01);
+        assert!(req[17] > 0); // additional has content
     }
 }
 
@@ -172,108 +250,34 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
             port: ctx.dst.port,
         };
 
-        // Determine transport chain from environment variable
-        let transports = self.config.transport.clone().unwrap_or_else(|| {
-            let t = std::env::var("SB_VLESS_TRANSPORT").unwrap_or_default();
-            t.split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-        });
-        let has = |k: &str| transports.iter().any(|x| x.eq_ignore_ascii_case(k));
-        let want_tls = self.config.tls_sni.is_some() || has("tls");
-        let want_ws = has("ws");
-        let want_h2 = has("h2");
-        let want_mux = has("mux") || has("multiplex");
-        let want_grpc = has("grpc");
-        let want_hup = has("httpupgrade") || has("http_upgrade");
+        // Use unified IR→Builder mapping (no env overrides)
+        let alpn_csv = self
+            .config
+            .tls_alpn
+            .as_ref()
+            .map(|v| v.join(","));
 
-        let mut builder = TransportBuilder::tcp();
+        let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
+        let builder = crate::runtime::transport::map::apply_layers(
+            TransportBuilder::tcp(),
+            chain_opt,
+            self.config.tls_sni.as_deref(),
+            alpn_csv.as_deref(),
+            self.config.ws_path.as_deref(),
+            self.config.ws_host.as_deref(),
+            self.config.h2_path.as_deref(),
+            self.config.h2_host.as_deref(),
+            self.config.http_upgrade_path.as_deref(),
+            &self.config.http_upgrade_headers,
+            self.config.grpc_service.as_deref(),
+            self.config.grpc_method.as_deref(),
+            self.config.grpc_authority.as_deref(),
+            &self.config.grpc_metadata,
+            None,
+        );
 
-        if want_tls {
-            let tls_cfg = sb_transport::tls::webpki_roots_config();
-            let alpn = if let Some(ref alpn_list) = self.config.tls_alpn {
-                Some(alpn_list.iter().map(|s| s.as_bytes().to_vec()).collect())
-            } else if want_h2 {
-                Some(vec![b"h2".to_vec()])
-            } else {
-                None
-            };
-            let sni = self.config.tls_sni.clone();
-            builder = builder.tls(tls_cfg, sni, alpn);
-        }
-
-        if want_ws {
-            let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-            if let Some(ref p) = self.config.ws_path {
-                ws_cfg.path = p.clone();
-            } else if let Ok(path) = std::env::var("SB_WS_PATH") {
-                ws_cfg.path = path;
-            }
-            if let Some(ref host_header) = self.config.ws_host {
-                ws_cfg
-                    .headers
-                    .push(("Host".to_string(), host_header.clone()));
-            } else if let Ok(host_header) = std::env::var("SB_WS_HOST") {
-                ws_cfg.headers.push(("Host".to_string(), host_header));
-            }
-            builder = builder.websocket(ws_cfg);
-        }
-
-        if want_h2 {
-            let mut h2_cfg = sb_transport::http2::Http2Config::default();
-            if let Some(ref p) = self.config.h2_path {
-                h2_cfg.path = p.clone();
-            } else if let Ok(path) = std::env::var("SB_H2_PATH") {
-                h2_cfg.path = path;
-            }
-            if let Some(ref host_header) = self.config.h2_host {
-                h2_cfg.host = host_header.clone();
-            } else if let Ok(host_header) = std::env::var("SB_H2_HOST") {
-                h2_cfg.host = host_header;
-            }
-            builder = builder.http2(h2_cfg);
-        }
-
-        if want_hup {
-            let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-            if let Some(ref path) = self.config.http_upgrade_path {
-                hup_cfg.path = path.clone();
-            } else if let Ok(path) = std::env::var("SB_HUP_PATH") {
-                hup_cfg.path = path;
-            }
-            if !self.config.http_upgrade_headers.is_empty() {
-                hup_cfg.headers = self.config.http_upgrade_headers.clone();
-            }
-            builder = builder.http_upgrade(hup_cfg);
-        }
-
-        if want_mux {
-            let cfg = sb_transport::multiplex::MultiplexConfig::default();
-            builder = builder.multiplex(cfg);
-        }
-
-        if want_grpc {
-            let mut cfg = sb_transport::grpc::GrpcConfig::default();
-            if let Some(ref service) = self.config.grpc_service {
-                cfg.service_name = service.clone();
-            }
-            if let Some(ref method) = self.config.grpc_method {
-                cfg.method_name = method.clone();
-            }
-            if let Some(ref authority) = self.config.grpc_authority {
-                cfg.server_name = Some(authority.clone());
-            }
-            if !self.config.grpc_metadata.is_empty() {
-                cfg.metadata = self.config.grpc_metadata.clone();
-            }
-            cfg.enable_tls = want_tls;
-            builder = builder.grpc(cfg);
-        }
-
-        let dialer = builder.build();
-
-        let mut stream = dialer
+        let mut stream = builder
+            .build()
             .connect(self.config.server.as_str(), self.config.port)
             .await
             .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;
@@ -294,9 +298,10 @@ impl OutboundTcp for VlessOutbound {
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
         use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_error, record_connect_success,
-            OutboundErrorClass,
+            record_connect_attempt, record_connect_success,
         };
+        use crate::metrics::record_outbound_error;
+        use crate::metrics::{record_connect_error, OutboundErrorClass};
 
         record_connect_attempt(crate::outbound::OutboundKind::Vless);
 
@@ -307,10 +312,7 @@ impl OutboundTcp for VlessOutbound {
             match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
                 Ok(stream) => stream,
                 Err(e) => {
-                    record_connect_error(
-                        crate::outbound::OutboundKind::Direct,
-                        OutboundErrorClass::Io,
-                    );
+                    record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
                     #[cfg(feature = "metrics")]
                     {
@@ -325,10 +327,7 @@ impl OutboundTcp for VlessOutbound {
         // Send VLESS request header
         let request = self.encode_vless_request(target);
         if let Err(e) = stream.write_all(&request).await {
-            record_connect_error(
-                crate::outbound::OutboundKind::Direct,
-                OutboundErrorClass::Protocol,
-            );
+            record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
             #[cfg(feature = "metrics")]
             {
@@ -342,10 +341,7 @@ impl OutboundTcp for VlessOutbound {
         // Read response header - minimal validation
         let mut response_header = [0u8; 2];
         if let Err(e) = stream.read_exact(&mut response_header).await {
-            record_connect_error(
-                crate::outbound::OutboundKind::Direct,
-                OutboundErrorClass::Protocol,
-            );
+            record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
             #[cfg(feature = "metrics")]
             {
@@ -358,9 +354,12 @@ impl OutboundTcp for VlessOutbound {
 
         // Validate response version and additional length
         if response_header[0] != 0x01 {
-            record_connect_error(
+            record_outbound_error(
                 crate::outbound::OutboundKind::Direct,
-                OutboundErrorClass::Protocol,
+                &io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid VLESS response version: {}", response_header[0]),
+                ),
             );
 
             #[cfg(feature = "metrics")]

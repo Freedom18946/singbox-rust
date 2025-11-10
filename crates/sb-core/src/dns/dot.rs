@@ -12,7 +12,7 @@ pub async fn query_dot_once(
     qtype: u16,
     timeout_ms: u64,
 ) -> Result<(Vec<IpAddr>, Option<u32>)> {
-    let req = build_query(host, qtype)?;
+    let req = crate::dns::udp::build_query(host, qtype)?;
     let tcp =
         tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(addr)).await??;
     let tls = TlsClient::from_env();
@@ -36,34 +36,6 @@ pub async fn query_dot_once(
     tokio::time::timeout(Duration::from_millis(timeout_ms), s.read_exact(&mut resp)).await??;
     let (ips, ttl) = parse_answers(&resp, qtype)?;
     Ok((ips, ttl))
-}
-
-fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
-    // 12B header + qname + QTYPE/QCLASS
-    let id = (std::time::Instant::now().elapsed().as_nanos() as u16).to_be_bytes();
-    // header
-    let mut out = vec![
-        id[0], id[1], // ID
-        0x01, 0x00, // RD=1
-        0x00, 0x01, // QDCOUNT=1
-        0x00, 0x00, // ANCOUNT
-        0x00, 0x00, // NSCOUNT
-        0x00, 0x00, // ARCOUNT
-    ];
-    // QNAME
-    for label in host.trim_end_matches('.').split('.') {
-        let b = label.as_bytes();
-        if b.is_empty() || b.len() > 63 {
-            return Err(anyhow::anyhow!("bad label"));
-        }
-        out.push(b.len() as u8);
-        out.extend_from_slice(b);
-    }
-    out.push(0); // root
-                 // QTYPE / QCLASS=IN(1)
-    out.extend_from_slice(&qtype.to_be_bytes());
-    out.extend_from_slice(&1u16.to_be_bytes());
-    Ok(out)
 }
 
 fn parse_answers(mut buf: &[u8], want: u16) -> Result<(Vec<IpAddr>, Option<u32>)> {

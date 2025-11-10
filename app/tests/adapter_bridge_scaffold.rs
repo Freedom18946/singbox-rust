@@ -54,6 +54,8 @@ mod t_scaffold {
                 ..Default::default()
             }],
             route: RouteIR::default(),
+            ntp: None,
+            dns: None,
         };
         let eng = Engine::new(&ir);
         std::env::set_var("ADAPTER_FORCE", "scaffold");
@@ -88,6 +90,37 @@ mod t_scaffold {
         let mut buf = [0u8; 4];
         s.read_exact(&mut buf).unwrap();
         assert_eq!(&buf, b"ping");
+    }
+
+    #[test]
+    fn unsupported_inbound_ty_logically_fails() {
+        let ir = ConfigIR {
+            inbounds: vec![InboundIR {
+                ty: InboundType::Naive,
+                listen: "127.0.0.1".into(),
+                port: 10801,
+                sniff: false,
+                udp: false,
+                basic_auth: None,
+                override_host: None,
+                override_port: None,
+            }],
+            outbounds: vec![OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("direct".into()),
+                ..Default::default()
+            }],
+            route: RouteIR::default(),
+            ntp: None,
+            dns: None,
+        };
+        let eng = Engine::new(&ir);
+        std::env::set_var("ADAPTER_FORCE", "scaffold");
+        let br = build_bridge(&ir, eng);
+        assert_eq!(br.inbound_kinds.len(), 1);
+        assert_eq!(br.inbound_kinds[0], "naive");
+        let res = br.inbounds[0].serve();
+        assert!(res.is_err(), "naive inbound should not be supported under scaffold");
     }
 }
 

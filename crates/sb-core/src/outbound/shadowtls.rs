@@ -38,6 +38,12 @@ pub struct ShadowTlsOutbound {
 #[cfg(feature = "out_shadowtls")]
 impl ShadowTlsOutbound {
     pub fn new(config: ShadowTlsConfig) -> anyhow::Result<Self> {
+        // Ensure a CryptoProvider is installed for rustls 0.23
+        #[allow(unused_must_use)]
+        {
+            use tokio_rustls::rustls::crypto::ring;
+            let _ = ring::default_provider().install_default();
+        }
         // System roots
         let mut roots = rustls::RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -72,9 +78,9 @@ impl OutboundTcp for ShadowTlsOutbound {
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
         use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_error, record_connect_success,
-            OutboundErrorClass,
+            record_connect_attempt, record_connect_success,
         };
+        use crate::metrics::record_outbound_error;
 
         record_connect_attempt(crate::outbound::OutboundKind::ShadowTls);
 
@@ -85,10 +91,7 @@ impl OutboundTcp for ShadowTlsOutbound {
             match TcpStream::connect((self.config.server.as_str(), self.config.port)).await {
                 Ok(stream) => stream,
                 Err(e) => {
-                    record_connect_error(
-                        crate::outbound::OutboundKind::Direct,
-                        OutboundErrorClass::Io,
-                    );
+                    record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
                     return Err(e);
                 }
             };
@@ -108,10 +111,7 @@ impl OutboundTcp for ShadowTlsOutbound {
         let mut tls_stream = match connector.connect(server_name, tcp_stream).await {
             Ok(stream) => stream,
             Err(e) => {
-                record_connect_error(
-                    crate::outbound::OutboundKind::Direct,
-                    OutboundErrorClass::Handshake,
-                );
+                record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
                 // Record specific ShadowTLS metrics
                 #[cfg(feature = "metrics")]

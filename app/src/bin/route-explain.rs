@@ -1,8 +1,6 @@
 #![cfg(feature = "explain")]
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
-use sb_core::router::explain::{self, explain_decision, ExplainQuery};
-use sb_core::router::RouterHandle;
-use serde_json::Map;
+use sb_core::routing::ExplainEngine;
 use std::net::IpAddr;
 
 fn main() {
@@ -14,7 +12,7 @@ fn main() {
     let mut port = 0u16;
     let mut proto = "tcp";
     let mut fmt = "json";
-    let mut alpn: Option<String> = None;
+    let mut _alpn: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -58,7 +56,7 @@ fn main() {
             "--alpn" => {
                 i += 1;
                 if i < args.len() {
-                    alpn = Some(args[i].clone());
+                    _alpn = Some(args[i].clone());
                 }
             }
             "--json" => {
@@ -71,52 +69,34 @@ fn main() {
         }
         i += 1;
     }
-    // 使用运行时环境构建 RouterHandle（共享索引，无副作用）
-    let router: RouterHandle = RouterHandle::from_env();
+    // 统一使用 routing::ExplainEngine 输出稳定字段集：dest/matched_rule/chain/outbound/trace
+    let net = if proto == "udp" { "udp" } else { "tcp" };
+    // 目的地优先级：--host | --sni | --ip 拼接端口
+    let base_host = host_opt.or(sni).or_else(|| ip.map(|i| i.to_string()));
+    let dest = if let Some(h) = base_host { format!("{}:{}", h, port) } else { format!("{}:{}","",port) };
 
-    let r = explain_decision(
-        &router,
-        ExplainQuery {
-            sni: sni.clone(),
-            host: host_opt.or(sni),
-            ip,
-            port,
-            proto,
-            transport: None,
-            alpn,
-        },
-    );
+    // ExplainEngine 需要完整 Config；此工具作为开发辅助，允许使用空 ConfigIR（默认 direct）
+    let cfg = sb_config::Config::default();
+    let engine = ExplainEngine::from_config(&cfg).expect("explain engine");
+    let res = engine.explain_with_network(&dest, net, true);
 
     match fmt {
         "dot" => {
+            // 生成简化版 dot 输出（仅包含链路与命中规则）
             println!("digraph explain {{");
-            println!("  decision [label=\"decision: {}\"];", r.phase);
-            for (idx, s) in r.steps.iter().enumerate() {
-                println!(
-                    "  n{idx} [label=\"{}\\nrule:{}\\nmatched:{}\\n{}\"];",
-                    s.phase, s.rule_id, s.matched, s.reason
-                );
-                if idx > 0 {
-                    println!("  n{} -> n{};", idx - 1, idx);
+            println!("  info [label=\"dest: {}\\noutbound: {}\\nrule:{}\"];", res.dest, res.outbound, res.matched_rule);
+            for (idx, ch) in res.chain.iter().enumerate() {
+                println!("  c{idx} [label=\"{}\"];", ch);
+                if idx == 0 {
+                    println!("  info -> c{idx};");
+                } else {
+                    println!("  c{} -> c{};", idx - 1, idx);
                 }
             }
             println!("}}");
         }
         _ => {
-            // Extra log hints for quick eyeballing
-            tracing::info!(target: "app::route-explain", decision = %r.phase, "decision");
-            if let Some(s) = r.steps.iter().find(|s| s.matched) {
-                tracing::info!(
-                    target: "app::route-explain",
-                    phase = %s.phase,
-                    rule_id = %s.rule_id,
-                    reason = %s.reason,
-                    "first_match"
-                );
-            }
-            let trace = Map::new();
-            let envelope = explain::envelope_from_result(&r, trace);
-            println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
+            println!("{}", serde_json::to_string_pretty(&res).unwrap());
         }
     }
 }

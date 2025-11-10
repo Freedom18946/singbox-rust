@@ -386,6 +386,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "socks" => crate::ir::InboundType::Socks,
                 "http" => crate::ir::InboundType::Http,
                 "tun" => crate::ir::InboundType::Tun,
+                "mixed" => crate::ir::InboundType::Mixed,
+                "redirect" => crate::ir::InboundType::Redirect,
+                "tproxy" => crate::ir::InboundType::Tproxy,
                 "direct" => crate::ir::InboundType::Direct,
                 _ => crate::ir::InboundType::Socks,
             };
@@ -447,6 +450,31 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 basic_auth,
                 override_host,
                 override_port,
+                // Protocol-specific fields (all default to None)
+                method: None,
+                password: None,
+                users_shadowsocks: None,
+                network: None,
+                uuid: None,
+                alter_id: None,
+                users_vmess: None,
+                flow: None,
+                users_vless: None,
+                users_trojan: None,
+                transport: None,
+                ws_path: None,
+                ws_host: None,
+                h2_path: None,
+                h2_host: None,
+                grpc_service: None,
+                tls_enabled: None,
+                tls_cert_path: None,
+                tls_key_path: None,
+                tls_cert_pem: None,
+                tls_key_pem: None,
+                tls_server_name: None,
+                tls_alpn: None,
+                multiplex: None,
             });
         }
     }
@@ -549,6 +577,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("tls_alpn")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                tls_ca_paths: Vec::new(),
+                tls_ca_pem: Vec::new(),
+                tls_client_cert_path: None,
+                tls_client_key_path: None,
+                tls_client_cert_pem: None,
+                tls_client_key_pem: None,
                 reality_enabled: None,
                 reality_public_key: None,
                 reality_short_id: None,
@@ -575,6 +609,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 udp_over_stream: o.get("udp_over_stream").and_then(|v| v.as_bool()),
+                zero_rtt_handshake: o
+                    .get("zero_rtt_handshake")
+                    .and_then(|v| v.as_bool()),
                 up_mbps: parse_u32_field(o.get("up_mbps")),
                 down_mbps: parse_u32_field(o.get("down_mbps")),
                 obfs: o
@@ -607,6 +644,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 test_timeout_ms: None,
                 test_tolerance_ms: None,
                 interrupt_exist_connections: None,
+                dns_transport: None,
+                dns_timeout_ms: None,
+                dns_query_timeout_ms: None,
+                dns_tls_server_name: None,
+                dns_enable_edns0: None,
+                dns_edns0_buffer_size: None,
+                dns_doh_url: None,
             };
 
             if let Some(transport_val) = o.get("transport") {
@@ -657,6 +701,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 .get("method")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+
+            // Defaults: Shadowsocks method defaults to aes-256-gcm when omitted
+            if ob.ty == crate::ir::OutboundType::Shadowsocks && ob.method.is_none() {
+                ob.method = Some("aes-256-gcm".to_string());
+            }
 
             if matches!(ob.ty, crate::ir::OutboundType::UrlTest) {
                 ob.test_url = Some(
@@ -793,6 +842,57 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .or_else(|| tls.get("allow_insecure").and_then(|v| v.as_bool()));
                 }
 
+                // Per-outbound additional CA and client auth
+                if ob.tls_ca_paths.is_empty() {
+                    if let Some(arr) = tls.get("ca_paths").and_then(|v| v.as_array()) {
+                        for p in arr {
+                            if let Some(s) = p.as_str() {
+                                let s = s.trim();
+                                if !s.is_empty() { ob.tls_ca_paths.push(s.to_string()); }
+                            }
+                        }
+                    }
+                }
+                if ob.tls_ca_pem.is_empty() {
+                    match tls.get("ca_pem") {
+                        Some(v) if v.is_array() => {
+                            for it in v.as_array().unwrap() {
+                                if let Some(s) = it.as_str() { let s = s.trim(); if !s.is_empty() { ob.tls_ca_pem.push(s.to_string()); } }
+                            }
+                        }
+                        Some(v) if v.is_string() => {
+                            if let Some(s) = v.as_str() { let s = s.trim(); if !s.is_empty() { ob.tls_ca_pem.push(s.to_string()); } }
+                        }
+                        _ => {}
+                    }
+                }
+                if ob.tls_client_cert_path.is_none() {
+                    ob.tls_client_cert_path = tls
+                        .get("client_cert_path")
+                        .or_else(|| tls.get("client_cert"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.tls_client_key_path.is_none() {
+                    ob.tls_client_key_path = tls
+                        .get("client_key_path")
+                        .or_else(|| tls.get("client_key"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.tls_client_cert_pem.is_none() {
+                    ob.tls_client_cert_pem = tls
+                        .get("client_cert_pem")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.tls_client_key_pem.is_none() {
+                    ob.tls_client_key_pem = tls
+                        .get("client_key_pem")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+
                 // Parse REALITY configuration
                 if let Some(reality) = tls.get("reality").and_then(|v| v.as_object()) {
                     ob.reality_enabled = reality.get("enabled").and_then(|v| v.as_bool());
@@ -867,6 +967,278 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 .map(|s| s.to_string());
         }
     }
+
+    // Parse optional log block (top-level)
+    if let Some(log) = doc.get("log").and_then(|v| v.as_object()) {
+        let mut l = crate::ir::LogIR::default();
+        l.level = log
+            .get("level")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        l.timestamp = log.get("timestamp").and_then(|v| v.as_bool());
+        // Non-standard extension for rust build: allow format override
+        l.format = log
+            .get("format")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        ir.log = Some(l);
+    }
+
+    // Parse optional NTP block (top-level)
+    if let Some(ntp) = doc.get("ntp").and_then(|v| v.as_object()) {
+        let mut n = crate::ir::NtpIR::default();
+        n.enabled = ntp
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        n.server = ntp
+            .get("server")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        n.server_port = ntp
+            .get("server_port")
+            .and_then(|v| v.as_u64())
+            .and_then(|x| u16::try_from(x).ok());
+        // Support either interval (string like "30m") or interval_ms (number)
+        n.interval_ms = parse_seconds_field_to_millis(ntp.get("interval"))
+            .or_else(|| ntp.get("interval_ms").and_then(|v| v.as_u64()));
+        // Optional timeout_ms (number or duration string)
+        n.timeout_ms = parse_millis_field(ntp.get("timeout_ms"))
+            .or_else(|| parse_seconds_field_to_millis(ntp.get("timeout")));
+        ir.ntp = Some(n);
+    }
+
+    // Parse optional certificate block (top-level)
+    if let Some(cert) = doc.get("certificate").and_then(|v| v.as_object()) {
+        let mut c = crate::ir::CertificateIR::default();
+        if let Some(arr) = cert.get("ca_paths").and_then(|v| v.as_array()) {
+            for p in arr {
+                if let Some(s) = p.as_str() {
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        c.ca_paths.push(s.to_string());
+                    }
+                }
+            }
+        }
+        // Support both array and single-string for ca_pem
+        match cert.get("ca_pem") {
+            Some(v) if v.is_array() => {
+                if let Some(arr) = v.as_array() {
+                    for it in arr {
+                        if let Some(s) = it.as_str() {
+                            let s = s.trim();
+                            if !s.is_empty() {
+                                c.ca_pem.push(s.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            Some(v) if v.is_string() => {
+                if let Some(s) = v.as_str() {
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        c.ca_pem.push(s.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+        ir.certificate = Some(c);
+    }
+
+    // Parse optional DNS block (top-level)
+    if let Some(dns) = doc.get("dns").and_then(|v| v.as_object()) {
+        let mut dd = crate::ir::DnsIR::default();
+        // Global ECS/Client Subnet (string like "x.x.x.x/24" or "2001:db8::/56")
+        dd.client_subnet = dns
+            .get("client_subnet")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
+            for s in servers {
+                if let Some(map) = s.as_object() {
+                    let tag = map
+                        .get("tag")
+                        .or_else(|| map.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    let address = map
+                        .get("address")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if !tag.is_empty() && !address.is_empty() {
+                        // Optional TLS extras
+                        let mut ca_paths = Vec::new();
+                        if let Some(arr) = map.get("ca_paths").and_then(|v| v.as_array()) {
+                            for p in arr {
+                                if let Some(s) = p.as_str() {
+                                    let s = s.trim();
+                                    if !s.is_empty() { ca_paths.push(s.to_string()); }
+                                }
+                            }
+                        }
+                        let mut ca_pem = Vec::new();
+                        match map.get("ca_pem") {
+                            Some(v) if v.is_array() => {
+                                for it in v.as_array().unwrap() {
+                                    if let Some(s) = it.as_str() { let s = s.trim(); if !s.is_empty() { ca_pem.push(s.to_string()); } }
+                                }
+                            }
+                            Some(v) if v.is_string() => {
+                                if let Some(s) = v.as_str() { let s = s.trim(); if !s.is_empty() { ca_pem.push(s.to_string()); } }
+                            }
+                            _ => {}
+                        }
+                        let client_subnet = map
+                            .get("client_subnet")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        dd.servers.push(crate::ir::DnsServerIR {
+                            tag,
+                            address,
+                            sni: map.get("sni").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            ca_paths,
+                            ca_pem,
+                            skip_cert_verify: map.get("skip_cert_verify").and_then(|v| v.as_bool()),
+                            client_subnet,
+                        });
+                    }
+                }
+            }
+        }
+        if let Some(rules) = dns.get("rules").and_then(|v| v.as_array()) {
+            for (idx, r) in rules.iter().enumerate() {
+                if let Some(obj) = r.as_object() {
+                    let server = obj
+                        .get("server")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if server.is_empty() {
+                        continue;
+                    }
+                    let mut dr = crate::ir::DnsRuleIR::default();
+                    dr.server = server;
+                    dr.priority = Some(idx as u32 + 1);
+                    if let Some(ds) = obj.get("domain_suffix").and_then(|v| v.as_array()) {
+                        for d in ds {
+                            if let Some(s) = d.as_str() {
+                                let s = s.trim();
+                                if !s.is_empty() { dr.domain_suffix.push(s.to_string()); }
+                            }
+                        }
+                    }
+                    if let Some(de) = obj.get("domain").and_then(|v| v.as_array()) {
+                        for d in de {
+                            if let Some(s) = d.as_str() {
+                                let s = s.trim();
+                                if !s.is_empty() { dr.domain.push(s.to_string()); }
+                            }
+                        }
+                    }
+                    if let Some(kw) = obj.get("keyword").and_then(|v| v.as_array()) {
+                        for d in kw {
+                            if let Some(s) = d.as_str() {
+                                let s = s.trim();
+                                if !s.is_empty() { dr.keyword.push(s.to_string()); }
+                            }
+                        }
+                    }
+                    // Note: geosite/geolocation matching is not directly mapped here.
+                    if !(dr.domain_suffix.is_empty() && dr.domain.is_empty() && dr.keyword.is_empty()) {
+                        dd.rules.push(dr);
+                    }
+                }
+            }
+        }
+        dd.default = dns
+            .get("final")
+            .or_else(|| dns.get("default"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        // Global knobs
+        if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) { dd.timeout_ms = Some(v); }
+        if let Some(t) = dns.get("ttl").and_then(|v| v.as_object()) {
+            dd.ttl_default_s = t.get("default").and_then(|x| x.as_u64());
+            dd.ttl_min_s = t.get("min").and_then(|x| x.as_u64());
+            dd.ttl_max_s = t.get("max").and_then(|x| x.as_u64());
+            dd.ttl_neg_s = t.get("neg").and_then(|x| x.as_u64());
+        }
+        if let Some(fk) = dns.get("fakeip").and_then(|v| v.as_object()) {
+            dd.fakeip_enabled = fk.get("enabled").and_then(|x| x.as_bool());
+            let v4 = fk.get("inet4_range").and_then(|x| x.as_str()).map(|s| s.to_string());
+            let v6 = fk.get("inet6_range").and_then(|x| x.as_str()).map(|s| s.to_string());
+            if let Some(s) = v4 {
+                if let Some((base, mask)) = s.split_once('/') {
+                    dd.fakeip_v4_base = Some(base.to_string());
+                    dd.fakeip_v4_mask = mask.parse::<u8>().ok();
+                } else {
+                    dd.fakeip_v4_base = Some(s);
+                }
+            }
+            if let Some(s) = v6 {
+                if let Some((base, mask)) = s.split_once('/') {
+                    dd.fakeip_v6_base = Some(base.to_string());
+                    dd.fakeip_v6_mask = mask.parse::<u8>().ok();
+                } else {
+                    dd.fakeip_v6_base = Some(s);
+                }
+            }
+        }
+        if let Some(s) = dns.get("pool_strategy").and_then(|v| v.as_str()) { dd.pool_strategy = Some(s.to_string()); }
+        if let Some(p) = dns.get("pool").and_then(|v| v.as_object()) {
+            dd.pool_race_window_ms = p.get("race_window_ms").and_then(|x| x.as_u64());
+            dd.pool_he_race_ms = p.get("he_race_ms").and_then(|x| x.as_u64());
+            dd.pool_he_order = p.get("he_order").and_then(|x| x.as_str()).map(|s| s.to_string());
+            dd.pool_max_inflight = p.get("max_inflight").and_then(|x| x.as_u64());
+            dd.pool_per_host_inflight = p.get("per_host_inflight").and_then(|x| x.as_u64());
+        }
+
+        // Static hosts mapping
+        if let Some(h) = dns.get("hosts").and_then(|v| v.as_object()) {
+            for (domain, val) in h {
+                let domain = domain.trim().to_string();
+                if domain.is_empty() { continue; }
+                let mut ips: Vec<String> = Vec::new();
+                match val {
+                    serde_json::Value::String(s) => {
+                        let s = s.trim();
+                        if !s.is_empty() { ips.push(s.to_string()); }
+                    }
+                    serde_json::Value::Array(arr) => {
+                        for it in arr {
+                            if let Some(s) = it.as_str() {
+                                let s = s.trim();
+                                if !s.is_empty() { ips.push(s.to_string()); }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if !ips.is_empty() {
+                    dd.hosts.push(crate::ir::DnsHostIR { domain, ips });
+                }
+            }
+            dd.hosts_ttl_s = dns
+                .get("hosts_ttl")
+                .or_else(|| dns.get("static_ttl"))
+                .and_then(|v| v.as_u64());
+        }
+
+        if !dd.servers.is_empty() || !dd.rules.is_empty() || dd.default.is_some() || dd.timeout_ms.is_some() || !dd.hosts.is_empty() {
+            ir.dns = Some(dd);
+        }
+    }
+
     normalize_credentials(&mut ir);
     ir
 }
@@ -989,6 +1361,48 @@ mod tests {
         assert_eq!(outbound.salamander.as_deref(), Some("fingerprint"));
         assert_eq!(outbound.brutal_up_mbps, Some(300));
         assert_eq!(outbound.brutal_down_mbps, Some(400));
+    }
+
+    #[test]
+    fn test_default_shadowsocks_method() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "shadowsocks",
+                "name": "ss-out",
+                "server": "127.0.0.1",
+                "port": 8388,
+                "password": "secret"
+                // no method provided
+            }]
+        });
+
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let outbound = &ir.outbounds[0];
+        assert_eq!(outbound.ty, crate::ir::OutboundType::Shadowsocks);
+        assert_eq!(outbound.method.as_deref(), Some("aes-256-gcm"));
+    }
+
+    #[test]
+    fn test_parse_ntp_block() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "ntp": {
+                "enabled": true,
+                "server": "time.apple.com",
+                "server_port": 123,
+                "interval": "30m",
+                "timeout_ms": 2500
+            }
+        });
+        let ir = to_ir_v1(&json);
+        let ntp = ir.ntp.expect("ntp should be present");
+        assert!(ntp.enabled);
+        assert_eq!(ntp.server.as_deref(), Some("time.apple.com"));
+        assert_eq!(ntp.server_port, Some(123));
+        assert_eq!(ntp.interval_ms, Some(30 * 60 * 1000));
+        assert_eq!(ntp.timeout_ms, Some(2500));
     }
 
     #[test]
@@ -1311,5 +1725,78 @@ mod tests {
         assert_eq!(ss.port, Some(8388));
         assert_eq!(ss.password.as_deref(), Some("secret"));
         assert_eq!(ss.method.as_deref(), Some("aes-256-gcm"));
+    }
+
+    #[test]
+    fn test_parse_outbound_tls_nested_fields() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vmess",
+                "name": "vmess-internal",
+                "server": "vmess.internal",
+                "port": 443,
+                "tls": {
+                    "sni": "internal.example",
+                    "alpn": "h2,http/1.1",
+                    "skip_cert_verify": true,
+                    "ca_paths": ["/etc/ssl/certs/internal-root.pem"],
+                    "ca_pem": "-----BEGIN CERTIFICATE-----\nMIIB...snip...\n-----END CERTIFICATE-----",
+                    "client_cert_path": "/path/to/client.crt",
+                    "client_key_path": "/path/to/client.key"
+                }
+            }]
+        });
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds.len(), 1);
+        let ob = &ir.outbounds[0];
+        assert_eq!(ob.tls_sni.as_deref(), Some("internal.example"));
+        assert_eq!(ob.tls_alpn.as_deref(), Some("h2,http/1.1"));
+        assert_eq!(ob.skip_cert_verify, Some(true));
+        assert_eq!(ob.tls_ca_paths, vec!["/etc/ssl/certs/internal-root.pem".to_string()]);
+        assert_eq!(ob.tls_ca_pem.len(), 1);
+        assert_eq!(ob.tls_client_cert_path.as_deref(), Some("/path/to/client.crt"));
+        assert_eq!(ob.tls_client_key_path.as_deref(), Some("/path/to/client.key"));
+    }
+
+    #[test]
+    fn test_parse_top_level_certificate_block() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "certificate": {
+                "ca_paths": ["/etc/custom/root.pem"],
+                "ca_pem": ["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"]
+            }
+        });
+        let ir = to_ir_v1(&json);
+        let cert = ir.certificate.expect("certificate should be parsed");
+        assert_eq!(cert.ca_paths, vec!["/etc/custom/root.pem".to_string()]);
+        assert_eq!(cert.ca_pem.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_dns_servers_with_tls_extras() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {"tag": "sys", "address": "system"},
+                    {"tag": "dot1", "address": "dot://1.1.1.1:853", "sni": "cloudflare-dns.com", "ca_paths": ["/etc/ssl/certs/custom.pem"], "skip_cert_verify": false},
+                    {"tag": "doq1", "address": "doq://1.0.0.1:853@one.one.one.one", "ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                ],
+                "default": "sys"
+            }
+        });
+        let ir = to_ir_v1(&json);
+        assert!(ir.dns.is_some());
+        let dns = ir.dns.unwrap();
+        let mut tags: Vec<String> = dns.servers.iter().map(|s| s.tag.clone()).collect();
+        tags.sort();
+        assert_eq!(tags, vec!["doq1", "dot1", "sys"]);
+        let dot = dns.servers.iter().find(|s| s.tag == "dot1").unwrap();
+        assert_eq!(dot.sni.as_deref(), Some("cloudflare-dns.com"));
+        assert_eq!(dot.ca_paths, vec!["/etc/ssl/certs/custom.pem".to_string()]);
+        let doq = dns.servers.iter().find(|s| s.tag == "doq1").unwrap();
+        assert_eq!(doq.ca_pem.len(), 1);
     }
 }

@@ -33,6 +33,7 @@ use tokio::sync::Mutex;
 use super::quic::common::{connect as quic_connect, QuicConfig};
 #[cfg(feature = "out_hysteria2")]
 use super::types::{HostPort, OutboundTcp};
+use crate::adapter::{UdpOutboundFactory, UdpOutboundSession};
 
 #[cfg(feature = "out_hysteria2")]
 #[derive(Clone, Debug)]
@@ -49,6 +50,11 @@ pub struct Hysteria2Config {
     pub alpn: Option<Vec<String>>,
     pub salamander: Option<String>,
     pub brutal: Option<BrutalConfig>,
+    // TLS trust augmentation (per-outbound)
+    pub tls_ca_paths: Vec<String>,
+    pub tls_ca_pem: Vec<String>,
+    /// Enable QUIC 0-RTT handshake when supported
+    pub zero_rtt_handshake: bool,
 }
 
 #[cfg(feature = "out_hysteria2")]
@@ -59,7 +65,7 @@ pub struct BrutalConfig {
 }
 
 #[cfg(feature = "out_hysteria2")]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CongestionControl {
     Bbr,
     Cubic,
@@ -68,7 +74,7 @@ pub enum CongestionControl {
 }
 
 #[cfg(feature = "out_hysteria2")]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Hysteria2Outbound {
     config: Hysteria2Config,
     quic_config: QuicConfig,
@@ -79,7 +85,7 @@ pub struct Hysteria2Outbound {
 }
 
 #[cfg(feature = "out_hysteria2")]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BandwidthLimiter {
     up_limit: Option<u32>,
     down_limit: Option<u32>,
@@ -162,7 +168,11 @@ impl Hysteria2Outbound {
 
         let quic_config = QuicConfig::new(config.server.clone(), config.port)
             .with_alpn(alpn)
-            .with_allow_insecure(config.skip_cert_verify);
+            .with_allow_insecure(config.skip_cert_verify)
+            .with_sni(config.sni.clone())
+            .with_extra_ca_paths(config.tls_ca_paths.clone())
+            .with_extra_ca_pem(config.tls_ca_pem.clone())
+            .with_enable_0rtt(config.zero_rtt_handshake);
 
         // Determine congestion control algorithm
         let congestion_control = match config.congestion_control.as_deref() {
@@ -718,6 +728,43 @@ impl Hysteria2Outbound {
 }
 
 #[cfg(feature = "out_hysteria2")]
+impl UdpOutboundFactory for Hysteria2Outbound {
+    fn open_session(
+        &self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
+    > {
+        let this = self.clone();
+        Box::pin(async move {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "stage"=>"attempt").increment(1);
+            let conn = match this.get_connection().await {
+                Ok(c) => c,
+                Err(e) => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "result"=>"conn_error").increment(1);
+                    return Err(e);
+                }
+            };
+            let sess = match this.create_udp_session(&conn).await {
+                Ok(s) => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "result"=>"ok").increment(1);
+                    s
+                }
+                Err(e) => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "result"=>"error").increment(1);
+                    return Err(e);
+                }
+            };
+            Ok(Arc::new(sess) as Arc<dyn UdpOutboundSession>)
+        })
+    }
+}
+
+#[cfg(feature = "out_hysteria2")]
+#[derive(Debug)]
 pub struct Hysteria2UdpSession {
     connection: Connection,
     session_id: [u8; 8],
@@ -767,6 +814,12 @@ impl Hysteria2UdpSession {
         self.connection
             .send_datagram(packet.into())
             .map_err(|e| io::Error::other(format!("UDP send failed: {}", e)))?;
+
+        #[cfg(feature = "metrics")]
+        {
+            metrics::counter!("udp_quic_send_total", "proto"=>"hysteria2").increment(1);
+            metrics::counter!("udp_quic_send_bytes_total", "proto"=>"hysteria2").increment(data.len() as u64);
+        }
 
         Ok(())
     }
@@ -857,6 +910,12 @@ impl Hysteria2UdpSession {
         };
         let payload = data[i..].to_vec();
 
+        #[cfg(feature = "metrics")]
+        {
+            metrics::counter!("udp_quic_recv_total", "proto"=>"hysteria2").increment(1);
+            metrics::counter!("udp_quic_recv_bytes_total", "proto"=>"hysteria2").increment(payload.len() as u64);
+        }
+
         // Check bandwidth limits
         if let Some(ref limiter) = self.bandwidth_limiter {
             limiter.refill_tokens().await;
@@ -873,14 +932,26 @@ impl Hysteria2UdpSession {
 }
 
 #[cfg(feature = "out_hysteria2")]
+#[async_trait::async_trait]
+impl UdpOutboundSession for Hysteria2UdpSession {
+    async fn send_to(&self, data: &[u8], host: &str, port: u16) -> io::Result<()> {
+        let target = HostPort { host: host.to_string(), port };
+        self.send_udp(data, &target).await
+    }
+
+    async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
+        self.recv_udp().await
+    }
+}
+
+#[cfg(feature = "out_hysteria2")]
 #[async_trait]
 impl OutboundTcp for Hysteria2Outbound {
     type IO = crate::outbound::quic::io::QuicBidiStream;
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
         use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_error, record_connect_success,
-            OutboundErrorClass,
+            record_connect_attempt, record_connect_success,
         };
 
         record_connect_attempt(crate::outbound::OutboundKind::Hysteria2);
@@ -891,9 +962,9 @@ impl OutboundTcp for Hysteria2Outbound {
         let connection = match self.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
-                record_connect_error(
+                crate::metrics::record_outbound_error(
                     crate::outbound::OutboundKind::Direct,
-                    OutboundErrorClass::Handshake,
+                    &e,
                 );
 
                 #[cfg(feature = "metrics")]
@@ -910,9 +981,9 @@ impl OutboundTcp for Hysteria2Outbound {
         let (send_stream, recv_stream) = match self.create_tcp_tunnel(&connection, target).await {
             Ok(streams) => streams,
             Err(e) => {
-                record_connect_error(
+                crate::metrics::record_outbound_error(
                     crate::outbound::OutboundKind::Direct,
-                    OutboundErrorClass::Protocol,
+                    &e,
                 );
 
                 #[cfg(feature = "metrics")]
@@ -1044,9 +1115,26 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
 impl crate::adapter::OutboundConnector for Hysteria2Outbound {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
         // Establish QUIC connection first
-        let conn = super::quic::common::connect(&self.quic_config)
-            .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e))?;
+        #[cfg(feature = "metrics")]
+        let t0 = std::time::Instant::now();
+        #[cfg(feature = "metrics")]
+        {
+            use crate::metrics::outbound::{record_connect_attempt, OutboundKind};
+            record_connect_attempt(OutboundKind::Hysteria2);
+            metrics::counter!("hysteria2_connect_total", "result" => "attempt").increment(1);
+        }
+        let conn = match super::quic::common::connect(&self.quic_config).await {
+            Ok(c) => c,
+            Err(e) => {
+                #[cfg(feature = "metrics")]
+                {
+                    use crate::metrics::outbound::{record_connect_error, OutboundErrorClass, OutboundKind};
+                    record_connect_error(OutboundKind::Hysteria2, OutboundErrorClass::Handshake);
+                    metrics::counter!("hysteria2_connect_total", "result" => "error").increment(1);
+                }
+                return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e));
+            }
+        };
 
         // Open a bidirectional stream for Hysteria2 protocol
         let (send_stream, recv_stream) = conn
@@ -1056,11 +1144,25 @@ impl crate::adapter::OutboundConnector for Hysteria2Outbound {
 
         // Perform Hysteria2 handshake and authentication
         let mut hysteria2_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
-
         // Hysteria2 protocol: Send authentication and target request
-        self.hysteria2_handshake(&mut hysteria2_stream, host, port)
-            .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
+        if let Err(e) = self.hysteria2_handshake(&mut hysteria2_stream, host, port).await {
+            #[cfg(feature = "metrics")]
+            {
+                use crate::metrics::outbound::{record_connect_error, OutboundErrorClass, OutboundKind};
+                record_connect_error(OutboundKind::Hysteria2, OutboundErrorClass::Handshake);
+                metrics::counter!("hysteria2_connect_total", "result" => "error").increment(1);
+            }
+            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, e));
+        }
+
+        #[cfg(feature = "metrics")]
+        {
+            use crate::metrics::outbound::{record_connect_duration, record_connect_success, OutboundKind};
+            record_connect_success(OutboundKind::Hysteria2);
+            record_connect_duration(t0.elapsed().as_millis() as f64);
+            metrics::counter!("hysteria2_connect_total", "result" => "ok").increment(1);
+            metrics::histogram!("hysteria2_handshake_ms").record(t0.elapsed().as_millis() as f64);
+        }
 
         // Convert to async TcpStream-like behavior
         self.create_tcp_proxy(hysteria2_stream).await
@@ -1098,6 +1200,7 @@ pub mod inbound {
     use quinn::{Connection, Endpoint, RecvStream, SendStream, ServerConfig};
     use sha2::{Digest, Sha256};
     use std::io;
+    // keep single Arc import (already present above)
     use std::net::SocketAddr;
     use std::sync::Arc;
     use tokio::io::{AsyncRead, AsyncWrite};

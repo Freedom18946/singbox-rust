@@ -394,6 +394,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             tracing::debug!(error=%e, "socks5-udp: send to dst failed");
             #[cfg(feature = "metrics")]
             counter!("socks_udp_error_total", "class"=>"send_fail").increment(1);
+            sb_core::metrics::udp::record_error_display(&e);
             continue;
         }
         #[cfg(feature = "metrics")]
@@ -735,8 +736,9 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
                     {
                         use metrics::counter;
                         counter!("socks_udp_error_total", "class" => "io").increment(1);
-                        metrics::counter!("inbound_error_total", "proto" => "socks_udp", "class" => "io").increment(1);
                     }
+                    sb_core::metrics::record_inbound_error_display("socks_udp", &e);
+                    sb_core::metrics::udp::record_error_display(&e);
                     tracing::debug!("socks5 udp recv err: {e}");
                     continue;
                 }
@@ -779,8 +781,9 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
                     {
                         use metrics::counter;
                         counter!("socks_udp_error_total", "class" => "parse").increment(1);
-                        metrics::counter!("inbound_error_total", "proto" => "socks_udp", "class" => "parse").increment(1);
                     }
+                    sb_core::metrics::record_inbound_error_display("socks_udp", &e);
+                    sb_core::metrics::udp::record_error_display(&e);
                     tracing::debug!("socks5 udp parse err: {e}");
                     continue;
                 }
@@ -924,8 +927,8 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                 {
                     use metrics::counter;
                     counter!("socks_udp_error_total", "class" => "io").increment(1);
-                    metrics::counter!("inbound_error_total", "proto" => "socks_udp", "class" => "io").increment(1);
                 }
+                sb_core::metrics::record_inbound_error_display("socks_udp", &e);
                 tracing::debug!("socks5 udp recv err: {e}");
                 continue;
             }
@@ -964,9 +967,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         let (dst, header_len) = match parse_udp_datagram(pkt) {
             Ok(v) => v,
             Err(_e) => {
-                #[cfg(feature = "metrics")]
-                metrics::counter!("inbound_error_total", "proto"=>"socks_udp", "class"=>"parse")
-                    .increment(1);
+                sb_core::metrics::record_inbound_error_display("socks_udp", &_e);
                 continue;
             }
         };
@@ -1180,9 +1181,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                 );
             }
             Err(_e) => {
-                #[cfg(feature = "metrics")]
-                metrics::counter!("inbound_error_total", "proto"=>"socks_udp", "class"=>"send")
-                    .increment(1);
+                sb_core::metrics::record_inbound_error_display("socks_udp", &_e);
                 access::log(
                     "socks_udp_forward_fail",
                     &[

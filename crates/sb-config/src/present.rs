@@ -26,7 +26,20 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                 crate::ir::InboundType::Http => "http",
                 crate::ir::InboundType::Socks => "socks",
                 crate::ir::InboundType::Tun => "tun",
+                crate::ir::InboundType::Mixed => "mixed",
+                crate::ir::InboundType::Redirect => "redirect",
+                crate::ir::InboundType::Tproxy => "tproxy",
                 crate::ir::InboundType::Direct => "direct",
+                crate::ir::InboundType::Shadowsocks => "shadowsocks",
+                crate::ir::InboundType::Vmess => "vmess",
+                crate::ir::InboundType::Vless => "vless",
+                crate::ir::InboundType::Trojan => "trojan",
+                crate::ir::InboundType::Naive => "naive",
+                crate::ir::InboundType::Shadowtls => "shadowtls",
+                crate::ir::InboundType::Anytls => "anytls",
+                crate::ir::InboundType::Hysteria => "hysteria",
+                crate::ir::InboundType::Hysteria2 => "hysteria2",
+                crate::ir::InboundType::Tuic => "tuic",
             };
             obj.insert("type".into(), Value::from(ty));
             Value::Object(obj)
@@ -195,6 +208,12 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                 crate::ir::OutboundType::Vmess => "vmess",
                 crate::ir::OutboundType::Trojan => "trojan",
                 crate::ir::OutboundType::Ssh => "ssh",
+                crate::ir::OutboundType::Dns => "dns",
+                crate::ir::OutboundType::Tor => "tor",
+                crate::ir::OutboundType::Anytls => "anytls",
+                crate::ir::OutboundType::Hysteria => "hysteria",
+                crate::ir::OutboundType::Wireguard => "wireguard",
+                crate::ir::OutboundType::Tailscale => "tailscale",
             };
             obj.insert("type".into(), Value::from(ty));
             Value::Object(obj)
@@ -228,6 +247,30 @@ pub fn to_view(ir: &ConfigIR) -> Value {
         route.insert("default".into(), Value::from(default.clone()));
     }
     root.insert("route".into(), Value::Object(route));
+
+    // Optional: NTP view (compat with Go 1.12.x)
+    if let Some(ntp) = &ir.ntp {
+        use std::time::Duration;
+        let mut ntp_obj = Map::new();
+        if let Some(server) = &ntp.server {
+            ntp_obj.insert("server".into(), Value::from(server.clone()));
+        }
+        if let Some(port) = ntp.server_port {
+            ntp_obj.insert("server_port".into(), Value::from(port));
+        }
+        // Render interval as human-ish string like "30m0s" if provided
+        if let Some(ms) = ntp.interval_ms {
+            let secs = Duration::from_millis(ms).as_secs();
+            // Format as XmYs (simple formatting to match examples like 30m0s)
+            let minutes = secs / 60;
+            let seconds = secs % 60;
+            let text = format!("{}m{}s", minutes, seconds);
+            ntp_obj.insert("interval".into(), Value::from(text));
+        }
+        if !ntp_obj.is_empty() {
+            root.insert("ntp".into(), Value::Object(ntp_obj));
+        }
+    }
 
     Value::Object(root)
 }

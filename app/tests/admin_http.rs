@@ -59,6 +59,8 @@ fn admin_health_and_explain() {
             }],
             default: Some("direct".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

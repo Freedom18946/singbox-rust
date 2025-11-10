@@ -22,6 +22,18 @@ pub struct TrojanConfig {
     pub sni: String,
     pub alpn: Option<Vec<String>>,
     pub skip_cert_verify: bool,
+    // Transport extras
+    pub transport: Option<Vec<String>>,
+    pub ws_path: Option<String>,
+    pub ws_host: Option<String>,
+    pub h2_path: Option<String>,
+    pub h2_host: Option<String>,
+    pub http_upgrade_path: Option<String>,
+    pub http_upgrade_headers: Vec<(String, String)>,
+    pub grpc_service: Option<String>,
+    pub grpc_method: Option<String>,
+    pub grpc_authority: Option<String>,
+    pub grpc_metadata: Vec<(String, String)>,
 }
 
 #[cfg(feature = "out_trojan")]
@@ -34,6 +46,17 @@ impl TrojanConfig {
             sni,
             alpn: None,
             skip_cert_verify: false,
+            transport: None,
+            ws_path: None,
+            ws_host: None,
+            h2_path: None,
+            h2_host: None,
+            http_upgrade_path: None,
+            http_upgrade_headers: Vec::new(),
+            grpc_service: None,
+            grpc_method: None,
+            grpc_authority: None,
+            grpc_metadata: Vec::new(),
         }
     }
 
@@ -58,6 +81,15 @@ pub struct TrojanOutbound {
 #[cfg(feature = "out_trojan")]
 impl TrojanOutbound {
     pub fn new(config: TrojanConfig) -> std::io::Result<Self> {
+        // Ensure a CryptoProvider is installed for rustls 0.23
+        #[allow(unused_must_use)]
+        {
+            #[cfg(feature = "tls_rustls")]
+            {
+                use rustls::crypto::ring;
+                let _ = ring::default_provider().install_default();
+            }
+        }
         // Create TLS configuration for Trojan
         // Root store with system roots
         let mut roots = rustls::RootCertStore::empty();
@@ -117,75 +149,29 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
             port: ctx.dst.port,
         };
 
-        // Trojan requires TLS; default to TLS if not explicitly disabled
-        let t = std::env::var("SB_TROJAN_TRANSPORT").unwrap_or_else(|_| "tls".to_string());
-        let want_tls = t.contains("tls");
-        let want_ws = t.contains("ws");
-        let want_h2 = t.contains("h2");
-        let want_hup = t.contains("httpupgrade") || t.contains("http_upgrade");
-        let want_mux = t.contains("mux") || t.contains("multiplex");
-        let want_grpc = t.contains("grpc");
+        // Build layered transport via unified mapper. For Trojan, always pass SNI to imply TLS.
+        let alpn_csv = self.config.alpn.as_ref().map(|v| v.join(","));
+        let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
+        let builder = crate::runtime::transport::map::apply_layers(
+            TransportBuilder::tcp(),
+            chain_opt,
+            Some(self.config.sni.as_str()),
+            alpn_csv.as_deref(),
+            self.config.ws_path.as_deref(),
+            self.config.ws_host.as_deref(),
+            self.config.h2_path.as_deref(),
+            self.config.h2_host.as_deref(),
+            self.config.http_upgrade_path.as_deref(),
+            &self.config.http_upgrade_headers,
+            self.config.grpc_service.as_deref(),
+            self.config.grpc_method.as_deref(),
+            self.config.grpc_authority.as_deref(),
+            &self.config.grpc_metadata,
+            None,
+        );
 
-        let mut builder = TransportBuilder::tcp();
-
-        // Always apply TLS for Trojan unless explicitly turned off (not recommended)
-        if want_tls {
-            let tls_cfg = sb_transport::tls::webpki_roots_config();
-            // Respect configured ALPN if any
-            let alpn = if want_h2 {
-                Some(vec![b"h2".to_vec()])
-            } else {
-                None
-            };
-
-            // Optionally set SNI from TrojanConfig.sni via env override
-            let sni_override = Some(self.config.sni.clone());
-            builder = builder.tls(tls_cfg, sni_override, alpn);
-        }
-
-        if want_ws {
-            let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-            if let Ok(path) = std::env::var("SB_WS_PATH") {
-                ws_cfg.path = path;
-            }
-            if let Ok(host_header) = std::env::var("SB_WS_HOST") {
-                ws_cfg.headers.push(("Host".to_string(), host_header));
-            }
-            builder = builder.websocket(ws_cfg);
-        }
-
-        if want_h2 {
-            let mut h2_cfg = sb_transport::http2::Http2Config::default();
-            if let Ok(path) = std::env::var("SB_H2_PATH") {
-                h2_cfg.path = path;
-            }
-            if let Ok(host_header) = std::env::var("SB_H2_HOST") {
-                h2_cfg.host = host_header;
-            }
-            builder = builder.http2(h2_cfg);
-        }
-
-        if want_hup {
-            let mut hup_cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-            if let Ok(path) = std::env::var("SB_HUP_PATH") {
-                hup_cfg.path = path;
-            }
-            builder = builder.http_upgrade(hup_cfg);
-        }
-
-        if want_mux {
-            let cfg = sb_transport::multiplex::MultiplexConfig::default();
-            builder = builder.multiplex(cfg);
-        }
-
-        if want_grpc {
-            let cfg = sb_transport::grpc::GrpcConfig::default();
-            builder = builder.grpc(cfg);
-        }
-
-        let dialer = builder.build();
-
-        let mut stream = dialer
+        let mut stream = builder
+            .build()
             .connect(self.config.server.as_str(), self.config.port)
             .await
             .map_err(|e| crate::error::SbError::other(format!("transport dial failed: {}", e)))?;

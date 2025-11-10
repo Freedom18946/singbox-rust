@@ -38,6 +38,33 @@ jobs:
       - name: Unit tests (sb-core/sb-adapters)
         run: |
           cargo test --features "http,socks,metrics,dns" -p sb-core -p sb-adapters -- --nocapture
+      - name: Unit tests (sb-metrics)
+        run: |
+          cargo test -q -p sb-metrics -- --nocapture
+      - name: Prometheus /metrics curl smoke (sb-metrics example)
+        run: |
+          SB_METRICS_ADDR=127.0.0.1:9090 \
+          cargo run -q -p sb-metrics --example serve &
+          SVC=$!
+          sleep 0.5
+          OUT=$(curl -sSf http://127.0.0.1:9090/metrics)
+          echo "$OUT" | head -n 20
+          echo "$OUT" | grep -q 'router_rule_match_total' || (echo 'missing router_rule_match_total' && exit 1)
+          echo "$OUT" | grep -q 'outbound_connect_seconds' || (echo 'missing outbound_connect_seconds' && exit 1)
+          echo "$OUT" | grep -q 'inbound_socks_udp_packets_total' || (echo 'missing inbound_socks_udp_packets_total' && exit 1)
+          echo "$OUT" | grep -q 'bytes_total' || (echo 'missing bytes_total' && exit 1)
+          echo "$OUT" | grep -q 'adapter_dial_total' || (echo 'missing adapter_dial_total' && exit 1)
+          echo "$OUT" | grep -q 'adapter_dial_latency_ms' || (echo 'missing adapter_dial_latency_ms' && exit 1)
+          echo "$OUT" | grep -q 'udp_evict_total' || (echo 'missing udp_evict_total' && exit 1)
+          echo "$OUT" | grep -q 'http_method_total' || (echo 'missing http_method_total' && exit 1)
+          echo "$OUT" | grep -q 'http_status_class_total' || (echo 'missing http_status_class_total' && exit 1)
+          kill $SVC || true
+      - name: sb-core metrics dump greps (dns/http error families)
+        run: |
+          OUT=$(cargo run -q -p sb-core --features metrics --example dump-metrics)
+          echo "$OUT" | grep -q 'dns_error_total' || (echo 'missing dns_error_total' && exit 1)
+          echo "$OUT" | grep -q 'http_errors_total' || (echo 'missing http_errors_total' && exit 1)
+          echo "$OUT" | grep -q 'http_respond_405_total' || (echo 'missing http_respond_405_total' && exit 1)
 
   e2e:
     runs-on: ubuntu-latest

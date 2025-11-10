@@ -12,6 +12,12 @@ dsl_analyze = ["singbox-bin/dsl_analyze"]
 pprof = ["singbox-bin/pprof"]
 out_trojan = ["sb-core/out_trojan"]
 out_ss = ["sb-core/out_ss"]
+tls_reality = ["singbox-bin/tls_reality"]
+tls_ech = ["singbox-bin/tls_ech"]
+adapter-hysteria = ["sb-core/out_hysteria"]
+adapter-hysteria2 = ["sb-core/out_hysteria2"]
+adapter-ssh = ["sb-core/out_ssh"]
+adapter-tuic = ["sb-core/out_tuic"]
 
 [dev-dependencies]
 assert_cmd = "2"

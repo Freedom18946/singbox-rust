@@ -557,17 +557,45 @@ sudo systemctl status singbox-rs
 
 ### Database Updates
 
+Option A — One‑liner (scripts provided):
+
 ```bash
-# Update GeoIP/Geosite databases
-wget https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db
-wget https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db
+# 1) Fetch latest geodata into ./data
+scripts/tools/update-geodata.sh --dest ./data
 
-# Move to config directory
-sudo mv geoip.db geosite.db /etc/singbox/
+# 2) Install to system path
+sudo install -d /etc/singbox
+sudo install -m 0644 ./data/geoip.db ./data/geosite.db /etc/singbox/
 
-# Reload (if hot-reload supported)
+# 3) Reload
 sudo systemctl reload singbox-rs
 ```
+
+Option B — Manual download:
+
+```bash
+wget https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db
+wget https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db
+sudo mv geoip.db geosite.db /etc/singbox/
+sudo systemctl reload singbox-rs
+```
+
+Bundle data for distribution:
+
+```bash
+# Compile your JSON rule-sets to SRS (if any)
+cargo build -q
+scripts/tools/compile-rulesets.sh --in ./rules --out ./out --bin target/debug/app
+
+# Fetch geodata and bundle everything
+scripts/tools/update-geodata.sh --dest ./data
+scripts/tools/make-data-bundle.sh --data ./data --rules ./out --out ./bundle
+ls -l ./bundle
+```
+
+### Related
+
+- [Data Pipeline — Rules & Geodata](data-pipeline.md)
 
 ---
 
@@ -613,3 +641,39 @@ sudo systemctl reload singbox-rs
 - [Troubleshooting Guide](../01-user-guide/troubleshooting.md)
 - [GitHub Issues](https://github.com/your-repo/issues)
 - [User Guide](../01-user-guide/)
+### DNS Configuration (DoT/DoQ) — TLS Fields
+
+Per-upstream TLS fields are available for DoT/DoQ under `dns.servers[]`:
+
+- `sni`: SNI override used for TLS verification
+- `ca_paths`: List of PEM files to append to trust store
+- `ca_pem`: Inline PEM (string or array) appended to trust store
+- `skip_cert_verify`: Skip TLS verification (testing only)
+
+Example:
+
+```yaml
+dns:
+  servers:
+    - tag: dot1
+      address: dot://1.1.1.1:853
+      sni: cloudflare-dns.com
+      ca_paths: [/etc/ssl/certs/custom.pem]
+    - tag: doh1
+      address: https://1.1.1.1/dns-query
+      # Per-upstream CA additions and skip verify are also supported for DoH
+      ca_pem: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+      # skip_cert_verify: false
+    - tag: doq1
+      address: doq://1.0.0.1:853@one.one.one.one
+      ca_pem: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+  default: dot1
+```
+
+Global trust additions via top-level `certificate` apply in addition to per‑upstream fields.

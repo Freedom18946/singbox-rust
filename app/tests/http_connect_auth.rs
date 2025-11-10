@@ -100,6 +100,8 @@ fn http_inbound_basic_auth_required() {
             }],
             default: Some("direct".into()),
         },
+        ntp: None,
+        dns: None,
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

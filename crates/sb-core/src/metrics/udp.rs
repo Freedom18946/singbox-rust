@@ -214,6 +214,25 @@ pub fn register_metrics() {
     // no-op; metrics are created by macros on use
 }
 
+/// Convenience: record UDP upstream failure from a Display error using heuristic classification
+pub fn record_error_display(e: &dyn core::fmt::Display) {
+    let s = e.to_string().to_ascii_lowercase();
+    let class = if s.contains("timeout") || s.contains("timed out") {
+        UdpErrorClass::Timeout
+    } else if s.contains("decode") || s.contains("invalid") || s.contains("bad") || s.contains("parse") {
+        UdpErrorClass::Decode
+    } else if s.contains("canceled") || s.contains("cancelled") {
+        UdpErrorClass::Canceled
+    } else if s.contains("no route") || s.contains("unreachable") {
+        UdpErrorClass::NoRoute
+    } else if s.contains("io") || s.contains("connection") || s.contains("refused") || s.contains("send") || s.contains("recv") {
+        UdpErrorClass::Io
+    } else {
+        UdpErrorClass::Other
+    };
+    record_upstream_failure(class);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

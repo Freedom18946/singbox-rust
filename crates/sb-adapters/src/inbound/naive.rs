@@ -69,6 +69,8 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     Ok(v) => v,
                     Err(e) => {
                         error!(error=%e, "naive: accept error");
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("naive", &e);
                         continue;
                     }
                 };
@@ -84,7 +86,11 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                                 debug!(%peer, error=%e, "naive: connection error");
                             }
                         }
-                        Err(e) => warn!(%peer, error=%e, "naive: TLS handshake failed"),
+                        Err(e) => { 
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("naive", &e);
+                            warn!(%peer, error=%e, "naive: TLS handshake failed")
+                        },
                     }
                 });
             }

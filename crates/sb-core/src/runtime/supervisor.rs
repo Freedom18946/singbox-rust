@@ -29,6 +29,8 @@ pub struct State {
     pub engine: Engine<'static>,
     pub bridge: Arc<Bridge>,
     pub health: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(feature = "service_ntp")]
+    pub ntp: Option<tokio::task::JoinHandle<()>>,
     pub started_at: Instant,
     /// Current configuration IR for diff computation during reload
     pub current_ir: sb_config::ir::ConfigIR,
@@ -67,6 +69,8 @@ impl State {
             engine,
             bridge: Arc::new(bridge),
             health: None,
+            #[cfg(feature = "service_ntp")]
+            ntp: None,
             started_at: Instant::now(),
             current_ir: ir,
         }
@@ -99,6 +103,15 @@ impl Supervisor {
         // Build bridge via adapter bridge to enable routed inbounds/outbounds
         let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone());
 
+        // Configure DNS resolver from IR (if provided)
+        if let Some(dns_ir) = ir.dns.as_ref() {
+            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(dns_ir) {
+                crate::dns::global::set(resolver);
+            }
+        }
+        // Apply TLS certificate configuration (global trust augmentation)
+        crate::tls::global::apply_from_ir(ir.certificate.as_ref());
+
         let initial_state = State::new(engine_static, bridge, ir);
         let state = Arc::new(RwLock::new(initial_state));
 
@@ -123,6 +136,39 @@ impl Supervisor {
                 });
                 drop(state_guard);
                 state.write().await.health = Some(health_handle);
+            }
+            #[cfg(feature = "service_ntp")]
+            {
+                // Spawn NTP service if enabled in config
+                let mut sw = state.write().await;
+                if let Some(ntp_cfg) = &sw.current_ir.ntp {
+                    if ntp_cfg.enabled {
+                        let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
+                            (Some(s), Some(p)) => format!("{s}:{p}"),
+                            (Some(s), None) => {
+                                if s.contains(':') { s.clone() } else { format!("{s}:123") }
+                            }
+                            (None, Some(p)) => format!("time.google.com:{p}"),
+                            (None, None) => crate::services::ntp::NtpConfig::default().server,
+                        };
+                        let interval = std::time::Duration::from_millis(
+                            ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
+                        );
+                        let timeout = std::time::Duration::from_millis(
+                            ntp_cfg.timeout_ms.unwrap_or(1500),
+                        );
+                        let ntp = crate::services::ntp::NtpService::new(
+                            crate::services::ntp::NtpConfig {
+                                enabled: true,
+                                server,
+                                interval,
+                                timeout,
+                            },
+                        )
+                        .spawn();
+                        sw.ntp = ntp;
+                    }
+                }
             }
         }
 
@@ -284,6 +330,23 @@ impl Supervisor {
         state: &Arc<RwLock<State>>,
         new_ir: sb_config::ir::ConfigIR,
     ) -> Result<()> {
+        // Step 0: Ask old inbounds to stop accepting (best-effort)
+        {
+            let state_guard = state.read().await;
+            for ib in &state_guard.bridge.inbounds {
+                ib.request_shutdown();
+            }
+        }
+
+        // Give old listeners a short grace to release ports
+        let grace_ms = std::env::var("SB_INBOUND_RELOAD_GRACE_MS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(1200);
+        if grace_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(grace_ms)).await;
+        }
+
         // Build new engine and bridge
         let new_engine = Engine::from_ir(&new_ir).context("failed to build new engine")?;
         let new_engine_static = new_engine.clone_as_static();
@@ -291,7 +354,16 @@ impl Supervisor {
         // Build new bridge via adapter bridge
         let new_bridge = crate::adapter::bridge::build_bridge(&new_ir, new_engine.clone());
 
-        // Start new inbound listeners first
+        // Update DNS resolver from IR if present
+        if let Some(dns_ir) = new_ir.dns.as_ref() {
+            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(dns_ir) {
+                crate::dns::global::set(resolver);
+            }
+        }
+        // Refresh global TLS trust configuration from IR
+        crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
+
+        // Start new inbound listeners
         let new_bridge_arc = Arc::new(new_bridge);
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
@@ -310,6 +382,12 @@ impl Supervisor {
             if let Some(old_health) = state_guard.health.take() {
                 old_health.abort();
             }
+            #[cfg(feature = "service_ntp")]
+            {
+                if let Some(h) = state_guard.ntp.take() {
+                    h.abort();
+                }
+            }
 
             // Replace engine, bridge, and current IR
             state_guard.engine = new_engine_static;
@@ -325,6 +403,37 @@ impl Supervisor {
                 });
                 state_guard.health = Some(health_handle);
             }
+            #[cfg(feature = "service_ntp")]
+            {
+                if let Some(ntp_cfg) = &state_guard.current_ir.ntp {
+                    if ntp_cfg.enabled {
+                        let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
+                            (Some(s), Some(p)) => format!("{s}:{p}"),
+                            (Some(s), None) => {
+                                if s.contains(':') { s.clone() } else { format!("{s}:123") }
+                            }
+                            (None, Some(p)) => format!("time.google.com:{p}"),
+                            (None, None) => crate::services::ntp::NtpConfig::default().server,
+                        };
+                        let interval = std::time::Duration::from_millis(
+                            ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
+                        );
+                        let timeout = std::time::Duration::from_millis(
+                            ntp_cfg.timeout_ms.unwrap_or(1500),
+                        );
+                        let ntp = crate::services::ntp::NtpService::new(
+                            crate::services::ntp::NtpConfig {
+                                enabled: true,
+                                server,
+                                interval,
+                                timeout,
+                            },
+                        )
+                        .spawn();
+                        state_guard.ntp = ntp;
+                    }
+                }
+            }
         }
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
@@ -338,10 +447,27 @@ impl Supervisor {
         state: &Arc<RwLock<State>>,
         new_ir: sb_config::ir::ConfigIR,
     ) -> Result<()> {
+        // Step 0: Ask old inbounds to stop accepting (best-effort)
+        {
+            let state_guard = state.read().await;
+            for ib in &state_guard.bridge.inbounds {
+                ib.request_shutdown();
+            }
+        }
+
+        // Give old listeners a short grace to release ports
+        let grace_ms = std::env::var("SB_INBOUND_RELOAD_GRACE_MS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(1200);
+        if grace_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(grace_ms)).await;
+        }
+
         // Build new bridge (no engine needed)
         let new_bridge = Bridge::from_ir(&new_ir).context("failed to build new bridge")?;
 
-        // Start new inbound listeners first
+        // Start new inbound listeners
         let new_bridge_arc = Arc::new(new_bridge);
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
@@ -385,7 +511,13 @@ impl Supervisor {
     async fn handle_shutdown(state: &Arc<RwLock<State>>, deadline: Instant) {
         let start_shutdown = Instant::now();
 
-        // Stop accepting new connections (implementation depends on inbound design)
+        // Stop accepting new connections (best-effort)
+        {
+            let state_guard = state.read().await;
+            for ib in &state_guard.bridge.inbounds {
+                ib.request_shutdown();
+            }
+        }
         tracing::warn!(
             target: "sb_core::runtime",
             deadline_ms = deadline.saturating_duration_since(start_shutdown).as_millis() as u64,
@@ -400,12 +532,27 @@ impl Supervisor {
                 break;
             }
 
-            // Check if we have active connections (simplified for now)
+            // Aggregate active connection counts from inbounds that expose it
+            let active_total: u64 = {
+                let guard = state.read().await;
+                guard
+                    .bridge
+                    .inbounds
+                    .iter()
+                    .filter_map(|ib| ib.active_connections())
+                    .sum()
+            };
+
+            if active_total == 0 {
+                tracing::info!(target: "sb_core::runtime", "all inbound connections drained");
+                break;
+            }
+
+            // Sleep a bit and re-check
             tokio::time::sleep(Duration::from_millis(100)).await;
 
-            // In a real implementation, check active connection count
-            // For now, just wait a bit to simulate connection draining
-            if now.duration_since(wait_start) > Duration::from_millis(500) {
+            // Safety valve: don't wait extremely short — allow minimal drain window
+            if now.duration_since(wait_start) > Duration::from_millis(500) && active_total == 0 {
                 break;
             }
         }

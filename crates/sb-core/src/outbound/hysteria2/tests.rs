@@ -1078,6 +1078,30 @@ mod integration_tests {
         // This would require a real server that supports UDP relay
     }
 
+    // Contract (ignored): open a real UDP session via factory
+    #[tokio::test]
+    #[ignore] // Requires external Hysteria2 server on 127.0.0.1:8443
+    async fn ignored_hysteria2_udp_session_open() {
+        use crate::adapter::UdpOutboundFactory;
+        let cfg = Hysteria2Config {
+            server: "127.0.0.1".to_string(),
+            port: 8443,
+            password: "test-password".to_string(),
+            congestion_control: Some("bbr".to_string()),
+            up_mbps: None,
+            down_mbps: None,
+            obfs: None,
+            skip_cert_verify: true,
+            sni: None,
+            alpn: None,
+            salamander: None,
+            brutal: None,
+        };
+        let outbound = Hysteria2Outbound::new(cfg).unwrap();
+        let res = outbound.open_session().await;
+        assert!(res.is_ok());
+    }
+
     #[tokio::test]
     #[ignore] // Requires external Hysteria2 server
     async fn test_congestion_control_performance() {

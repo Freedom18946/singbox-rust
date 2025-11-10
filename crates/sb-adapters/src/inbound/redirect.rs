@@ -45,9 +45,21 @@ pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Resu
                 tracing::debug!("redirect: accept-loop heartbeat");
             }
             r = listener.accept() => {
-                let (cli, peer) = match r { Ok(v) => v, Err(e) => { warn!(error=%e, "redirect: accept error"); continue; } };
+                let (cli, peer) = match r { 
+                    Ok(v) => v, 
+                    Err(e) => { 
+                        warn!(error=%e, "redirect: accept error"); 
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("redirect", &e);
+                        continue; 
+                    } 
+                };
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(cli, peer).await { warn!(%peer, error=%e, "redirect: session error"); }
+                    if let Err(e) = handle_conn(cli, peer).await { 
+                        sb_core::metrics::http::record_error_display(&e);
+                        sb_core::metrics::record_inbound_error_display("redirect", &e);
+                        warn!(%peer, error=%e, "redirect: session error"); 
+                    }
                 });
             }
         }

@@ -108,6 +108,7 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 mod tests {
     use super::*;
     use super::CircuitBreakerDialer;
+    #[cfg(disabled_tests)]
     use std::sync::Arc;
 
     #[tokio::test]
@@ -133,7 +134,7 @@ mod tests {
     // TODO: Fix FnDialer trait bounds issue
     // The closure type doesn't properly satisfy the Dialer trait bounds
     // This test is temporarily disabled until the type system issue is resolved
-    #[cfg(feature = "disabled_tests")]
+    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn test_circuit_breaker_opens_on_failures() {
         use crate::dialer::FnDialer;
@@ -191,7 +192,7 @@ mod tests {
         assert_eq!(call_count.load(Ordering::Relaxed), 2);
     }
 
-    #[cfg(feature = "disabled_tests")]
+    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn test_circuit_breaker_half_open_recovery() {
         use crate::dialer::FnDialer;
@@ -250,7 +251,7 @@ mod tests {
         assert!(result2.is_ok());
     }
 
-    #[cfg(feature = "disabled_tests")]
+    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn test_timeout_error_classification() {
         use crate::dialer::FnDialer;

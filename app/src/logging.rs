@@ -9,6 +9,7 @@
 
 use anyhow::{self, Result};
 use std::collections::HashMap;
+use std::io::{self, Write};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
@@ -29,6 +30,10 @@ pub struct LoggingConfig {
     pub level: String,
     /// Sampling configuration for high-frequency logs
     pub sampling: Option<SamplingConfig>,
+    /// Enable sensitive data redaction in log output (SB_LOG_REDACT, default: on)
+    pub redact: bool,
+    /// Include timestamp in logs (SB_LOG_TIMESTAMP, default: on)
+    pub timestamp: bool,
 }
 
 /// Supported log output formats
@@ -86,6 +91,14 @@ impl LoggingConfig {
             format,
             level,
             sampling,
+            redact: std::env::var("SB_LOG_REDACT")
+                .ok()
+                .map(|v| v != "0")
+                .unwrap_or(true),
+            timestamp: std::env::var("SB_LOG_TIMESTAMP")
+                .ok()
+                .map(|v| v != "0")
+                .unwrap_or(true),
         }
     }
 }
@@ -108,39 +121,69 @@ pub fn init_logging() -> Result<()> {
 
     match config.format {
         LogFormat::Json => {
-            let fmt_layer = fmt::layer()
-                .json()
-                .with_target(true)
-                .with_writer(std::io::stderr)
-                .with_filter(env_filter);
-
             let sampling_layer = config.sampling.as_ref().map(|_| SamplingLayer);
-
-            if let Some(sampling_layer) = sampling_layer {
-                tracing_subscriber::registry()
-                    .with(fmt_layer)
-                    .with(sampling_layer)
-                    .init();
+            if config.timestamp {
+                let fmt_layer = fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_writer(make_writer(config.redact))
+                    .with_filter(env_filter.clone());
+                if let Some(sampling_layer) = sampling_layer {
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .with(sampling_layer)
+                        .init();
+                } else {
+                    tracing_subscriber::registry().with(fmt_layer).init();
+                }
             } else {
-                tracing_subscriber::registry().with(fmt_layer).init();
+                let fmt_layer = fmt::layer()
+                    .json()
+                    .without_time()
+                    .with_target(true)
+                    .with_writer(make_writer(config.redact))
+                    .with_filter(env_filter.clone());
+                if let Some(sampling_layer) = sampling_layer {
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .with(sampling_layer)
+                        .init();
+                } else {
+                    tracing_subscriber::registry().with(fmt_layer).init();
+                }
             }
         }
         LogFormat::Compact => {
-            let fmt_layer = fmt::layer()
-                .compact()
-                .with_target(true)
-                .with_writer(std::io::stderr)
-                .with_filter(env_filter);
-
             let sampling_layer = config.sampling.as_ref().map(|_| SamplingLayer);
-
-            if let Some(sampling_layer) = sampling_layer {
-                tracing_subscriber::registry()
-                    .with(fmt_layer)
-                    .with(sampling_layer)
-                    .init();
+            if config.timestamp {
+                let fmt_layer = fmt::layer()
+                    .compact()
+                    .with_target(true)
+                    .with_writer(make_writer(config.redact))
+                    .with_filter(env_filter.clone());
+                if let Some(sampling_layer) = sampling_layer {
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .with(sampling_layer)
+                        .init();
+                } else {
+                    tracing_subscriber::registry().with(fmt_layer).init();
+                }
             } else {
-                tracing_subscriber::registry().with(fmt_layer).init();
+                let fmt_layer = fmt::layer()
+                    .compact()
+                    .without_time()
+                    .with_target(true)
+                    .with_writer(make_writer(config.redact))
+                    .with_filter(env_filter.clone());
+                if let Some(sampling_layer) = sampling_layer {
+                    tracing_subscriber::registry()
+                        .with(fmt_layer)
+                        .with(sampling_layer)
+                        .init();
+                } else {
+                    tracing_subscriber::registry().with(fmt_layer).init();
+                }
             }
         }
     }
@@ -152,10 +195,52 @@ pub fn init_logging() -> Result<()> {
         format = ?config.format,
         level = %config.level,
         sampling = ?config.sampling,
+        redact = %config.redact,
         "Logging system initialized"
     );
 
     Ok(())
+}
+
+/// Create a writer (possibly redacting) for tracing-subscriber fmt layer
+fn make_writer(redact: bool) -> fmt::writer::BoxMakeWriter {
+    fmt::writer::BoxMakeWriter::new(move || {
+        if redact {
+            Box::new(RedactingWriter { buf: Vec::with_capacity(256), inner: io::stderr() })
+                as Box<dyn Write + Send>
+        } else {
+            Box::new(io::stderr()) as Box<dyn Write + Send>
+        }
+    })
+}
+
+/// Writer that buffers a single event line, applies redaction, then flushes
+struct RedactingWriter {
+    buf: Vec<u8>,
+    inner: io::Stderr,
+}
+
+impl Write for RedactingWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.buf.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Drop for RedactingWriter {
+    fn drop(&mut self) {
+        use crate::redact::redact_str;
+        if self.buf.is_empty() {
+            return;
+        }
+        let s = String::from_utf8_lossy(&self.buf);
+        let redacted = redact_str(&s);
+        let _ = self.inner.write_all(redacted.as_bytes());
+        let _ = self.inner.flush();
+    }
 }
 
 /// Sampling layer for rate limiting high-frequency logs
