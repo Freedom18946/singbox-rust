@@ -78,7 +78,7 @@ impl Outbound for SsAeadUdp {
                         self.config.cipher.name(),
                     );
                 }
-                return Err(e);
+                return Err(e.into());
             }
         }
         let aead = SsAeadUdpSocket::new(remote, self.config.clone())?;

@@ -23,7 +23,7 @@ pub struct RunArgs {
     http_listen: Option<SocketAddr>,
 
     #[arg(long = "config")]
-    config_path: Option<PathBuf>,
+    pub config_path: Option<PathBuf>,
 
     /// 只做配置检查：解析+构建，零副作用；成功返回 0，否则返回非 0
     #[arg(long, default_value_t = false)]

@@ -359,15 +359,25 @@ fn build_vmess_outbound(
     let cfg = VmessConfig {
         server: server.clone(),
         port,
-        uuid,
+        id: uuid,
         security: ir
             .security
             .clone()
-            .unwrap_or_else(|| "auto".to_string()),
+            .unwrap_or_else(|| "aes-128-gcm".to_string()),
         alter_id: ir.alter_id.unwrap_or(0),
-        tls: ir.tls.unwrap_or(false),
-        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        transport: ir.transport.clone(),
+        ws_path: ir.ws_path.clone(),
+        ws_host: ir.ws_host.clone(),
+        h2_path: ir.h2_path.clone(),
+        h2_host: ir.h2_host.clone(),
         tls_sni: ir.tls_sni.clone(),
+        tls_alpn: ir.tls_alpn.clone().map(|s| s.split(',').map(|s| s.trim().to_string()).collect()),
+        grpc_service: ir.grpc_service.clone(),
+        grpc_method: ir.grpc_method.clone(),
+        grpc_authority: ir.grpc_authority.clone(),
+        grpc_metadata: ir.grpc_metadata.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
+        http_upgrade_path: ir.http_upgrade_path.clone(),
+        http_upgrade_headers: ir.http_upgrade_headers.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
     };
 
     // Create outbound
@@ -403,10 +413,10 @@ fn build_vmess_outbound(
         inner: outbound_arc.clone(),
     };
 
-    // Return TCP connector wrapper and UDP factory
+    // Return TCP connector wrapper (VMess doesn't support UDP factory yet)
     Some((
         Arc::new(wrapper),
-        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+        None,
     ))
 }
 
@@ -444,10 +454,20 @@ fn build_vless_outbound(
         port,
         uuid,
         flow: ir.flow.clone(),
-        encryption: ir.encryption.clone().unwrap_or_else(|| "none".to_string()),
-        tls: ir.tls.unwrap_or(false),
-        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        encryption: ir.encryption.clone(),
+        transport: ir.transport.clone(),
+        ws_path: ir.ws_path.clone(),
+        ws_host: ir.ws_host.clone(),
+        h2_path: ir.h2_path.clone(),
+        h2_host: ir.h2_host.clone(),
         tls_sni: ir.tls_sni.clone(),
+        tls_alpn: ir.tls_alpn.clone().map(|s| s.split(',').map(|s| s.trim().to_string()).collect()),
+        grpc_service: ir.grpc_service.clone(),
+        grpc_method: ir.grpc_method.clone(),
+        grpc_authority: ir.grpc_authority.clone(),
+        grpc_metadata: ir.grpc_metadata.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
+        http_upgrade_path: ir.http_upgrade_path.clone(),
+        http_upgrade_headers: ir.http_upgrade_headers.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
     };
 
     // Create outbound
@@ -483,10 +503,10 @@ fn build_vless_outbound(
         inner: outbound_arc.clone(),
     };
 
-    // Return TCP connector wrapper and UDP factory
+    // Return TCP connector wrapper (VLESS doesn't support UDP factory yet)
     Some((
         Arc::new(wrapper),
-        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+        None,
     ))
 }
 
