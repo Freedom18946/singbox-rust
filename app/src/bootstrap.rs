@@ -52,7 +52,7 @@ fn parse_alpn_tokens(src: &str) -> Vec<String> {
 fn map_header_entries(entries: &[sb_config::ir::HeaderEntry]) -> Vec<(String, String)> {
     entries
         .iter()
-        .map(|h| (h.name.clone(), h.value.clone()))
+        .map(|h| (h.key.clone(), h.value.clone()))
         .collect()
 }
 
@@ -159,9 +159,8 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
 
                         let alpn_list = ob
                             .tls_alpn
-                            .as_ref()
-                            .or(ob.alpn.as_ref())
-                            .map(|raw| parse_alpn_tokens(raw));
+                            .clone()
+                            .or_else(|| ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw)));
                         let brutal_cfg = match (ob.brutal_up_mbps, ob.brutal_down_mbps) {
                             (Some(up), Some(down)) => Some(BrutalConfig {
                                 up_mbps: up,
@@ -220,7 +219,10 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                         token: token.clone(),
                                         password: ob.password.clone(),
                                         congestion_control: ob.congestion_control.clone(),
-                                        alpn: ob.alpn.clone().or(ob.tls_alpn.clone()),
+                                        alpn: ob
+                                            .tls_alpn
+                                            .clone()
+                                            .or_else(|| ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw))),
                                         skip_cert_verify: ob.skip_cert_verify.unwrap_or(false),
                                         sni: ob.tls_sni.clone(),
                                         tls_ca_paths: Vec::new(),
@@ -307,9 +309,8 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         if let Ok(uuid) = uuid::Uuid::parse_str(uuid_str) {
                             let tls_alpn = ob
                                 .tls_alpn
-                                .as_ref()
-                                .or(ob.alpn.as_ref())
-                                .map(|raw| parse_alpn_tokens(raw));
+                                .clone()
+                                .or_else(|| ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw)));
                             let cfg = sb_core::outbound::vless::VlessConfig {
                                 server: server.clone(),
                                 port,
@@ -344,9 +345,8 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         if let Ok(id) = uuid::Uuid::parse_str(id_str) {
                             let tls_alpn = ob
                                 .tls_alpn
-                                .as_ref()
-                                .or(ob.alpn.as_ref())
-                                .map(|raw| parse_alpn_tokens(raw));
+                                .clone()
+                                .or_else(|| ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw)));
                             let cfg = sb_core::outbound::vmess::VmessConfig {
                                 server: server.clone(),
                                 port,
@@ -385,10 +385,13 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                             password.clone(),
                             sni,
                         );
-                        if let Some(raw) = ob.tls_alpn.as_ref().or(ob.alpn.as_ref()) {
-                            let tokens = parse_alpn_tokens(raw);
-                            if !tokens.is_empty() {
-                                cfg = cfg.with_alpn(tokens);
+                        if let Some(list) = ob
+                            .tls_alpn
+                            .clone()
+                            .or_else(|| ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw)))
+                        {
+                            if !list.is_empty() {
+                                cfg = cfg.with_alpn(list);
                             }
                         }
                         if ob.skip_cert_verify.unwrap_or(false) {

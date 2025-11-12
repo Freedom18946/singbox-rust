@@ -821,7 +821,7 @@ fn tuic_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<crate::o
         token,
         password: ir.password.clone(),
         congestion_control: ir.congestion_control.clone(),
-        alpn: ir.alpn.clone().or_else(|| ir.tls_alpn.clone()),
+        alpn: ir.tls_alpn.clone(),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
         sni: ir.tls_sni.clone(),
         tls_ca_paths: ir.tls_ca_paths.clone(),
@@ -842,10 +842,7 @@ fn hysteria2_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<cra
         (Some(up), Some(down)) => Some(BrutalConfig { up_mbps: up, down_mbps: down }),
         _ => None,
     };
-    let alpn_list = ir
-        .tls_alpn
-        .as_ref()
-        .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
+    let alpn_list = ir.tls_alpn.clone();
     Ok(Some(Hysteria2Config {
         server,
         port,
@@ -875,7 +872,17 @@ fn shadowtls_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<cra
         server,
         port,
         sni,
-        alpn: ir.alpn.clone().or_else(|| ir.tls_alpn.clone()),
+        alpn: ir
+            .tls_alpn
+            .clone()
+            .or_else(|| {
+                ir.alpn.as_ref().map(|raw| {
+                    raw.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect::<Vec<_>>()
+                })
+            }),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
     }))
 }
@@ -1091,7 +1098,7 @@ struct VmessConnector {
     h2_path: Option<String>,
     h2_host: Option<String>,
     tls_sni: Option<String>,
-    tls_alpn: Option<String>,
+    tls_alpn: Option<Vec<String>>,
     // Extras
     http_upgrade_path: Option<String>,
     http_upgrade_headers: Vec<(String, String)>,
@@ -1119,7 +1126,7 @@ impl VmessConnector {
             http_upgrade_headers: ob
                 .http_upgrade_headers
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect(),
             grpc_service: ob.grpc_service.clone(),
             grpc_method: ob.grpc_method.clone(),
@@ -1127,7 +1134,7 @@ impl VmessConnector {
             grpc_metadata: ob
                 .grpc_metadata
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect(),
         })
     }
@@ -1184,7 +1191,7 @@ struct TrojanConnector {
     h2_path: Option<String>,
     h2_host: Option<String>,
     tls_sni: Option<String>,
-    tls_alpn: Option<String>,
+    tls_alpn: Option<Vec<String>>,
     http_upgrade_path: Option<String>,
     http_upgrade_headers: Vec<(String, String)>,
     grpc_service: Option<String>,
@@ -1211,7 +1218,7 @@ impl TrojanConnector {
             http_upgrade_headers: ob
                 .http_upgrade_headers
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect(),
             grpc_service: ob.grpc_service.clone(),
             grpc_method: ob.grpc_method.clone(),
@@ -1219,7 +1226,7 @@ impl TrojanConnector {
             grpc_metadata: ob
                 .grpc_metadata
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect(),
         })
     }
@@ -1239,11 +1246,12 @@ impl OutboundConnector for TrojanConnector {
             target: &Target,
             chain: Option<&[String]>,
         ) -> AdapterResult<BoxedStream> {
+            let alpn_csv = this.tls_alpn.as_ref().map(|v| v.join(","));
             let b = crate::runtime::transport::map::apply_layers(
                 TransportBuilder::tcp(),
                 chain,
                 this.tls_sni.as_deref(),
-                this.tls_alpn.as_deref(),
+                alpn_csv.as_deref(),
                 this.ws_path.as_deref(),
                 this.ws_host.as_deref(),
                 this.h2_path.as_deref(),
@@ -1291,7 +1299,7 @@ impl OutboundConnector for TrojanConnector {
                 ob.http_upgrade_headers = self
                     .http_upgrade_headers
                     .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry { name: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
                     .collect();
                 ob.grpc_service = self.grpc_service.clone();
                 ob.grpc_method = self.grpc_method.clone();
@@ -1299,7 +1307,7 @@ impl OutboundConnector for TrojanConnector {
                 ob.grpc_metadata = self
                     .grpc_metadata
                     .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry { name: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
                     .collect();
 
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
@@ -1358,7 +1366,7 @@ struct VlessConnector {
     h2_path: Option<String>,
     h2_host: Option<String>,
     tls_sni: Option<String>,
-    tls_alpn: Option<String>,
+    tls_alpn: Option<Vec<String>>,
     http_upgrade_path: Option<String>,
     http_upgrade_headers: Vec<(String, String)>,
     grpc_service: Option<String>,
@@ -1385,7 +1393,7 @@ impl VlessConnector {
             http_upgrade_headers: ob
                 .http_upgrade_headers
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect(),
             grpc_service: ob.grpc_service.clone(),
             grpc_method: ob.grpc_method.clone(),
@@ -1393,7 +1401,7 @@ impl VlessConnector {
             grpc_metadata: ob
                 .grpc_metadata
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect(),
         })
     }
@@ -1414,11 +1422,12 @@ impl OutboundConnector for VlessConnector {
             target: &Target,
             chain: Option<&[String]>,
         ) -> AdapterResult<BoxedStream> {
+            let alpn_csv = this.tls_alpn.as_ref().map(|v| v.join(","));
             let b = crate::runtime::transport::map::apply_layers(
                 TransportBuilder::tcp(),
                 chain,
                 this.tls_sni.as_deref(),
-                this.tls_alpn.as_deref(),
+                alpn_csv.as_deref(),
                 this.ws_path.as_deref(),
                 this.ws_host.as_deref(),
                 this.h2_path.as_deref(),
@@ -1475,7 +1484,7 @@ impl OutboundConnector for VlessConnector {
                 ob.http_upgrade_headers = self
                     .http_upgrade_headers
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { name: k.clone(), value: v.clone() })
+                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
                     .collect();
                 ob.grpc_service = self.grpc_service.clone();
                 ob.grpc_method = self.grpc_method.clone();
@@ -1483,7 +1492,7 @@ impl OutboundConnector for VlessConnector {
                 ob.grpc_metadata = self
                     .grpc_metadata
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { name: k.clone(), value: v.clone() })
+                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
                     .collect();
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {
@@ -1536,11 +1545,12 @@ impl OutboundConnector for VmessConnector {
             target: &Target,
             chain: Option<&[String]>,
         ) -> AdapterResult<BoxedStream> {
+            let alpn_csv = this.tls_alpn.as_ref().map(|v| v.join(","));
             let b = crate::runtime::transport::map::apply_layers(
                 TransportBuilder::tcp(),
                 chain,
                 this.tls_sni.as_deref(),
-                this.tls_alpn.as_deref(),
+                alpn_csv.as_deref(),
                 this.ws_path.as_deref(),
                 this.ws_host.as_deref(),
                 this.h2_path.as_deref(),
@@ -1598,7 +1608,7 @@ impl OutboundConnector for VmessConnector {
                 ob.http_upgrade_headers = self
                     .http_upgrade_headers
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { name: k.clone(), value: v.clone() })
+                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
                     .collect();
                 ob.grpc_service = self.grpc_service.clone();
                 ob.grpc_method = self.grpc_method.clone();
@@ -1606,7 +1616,7 @@ impl OutboundConnector for VmessConnector {
                 ob.grpc_metadata = self
                     .grpc_metadata
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { name: k.clone(), value: v.clone() })
+                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
                     .collect();
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {

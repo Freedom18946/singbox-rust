@@ -12,6 +12,8 @@ pub mod socks;
 #[cfg(all(feature = "http", feature = "socks"))]
 pub mod mixed;
 
+pub mod direct;
+
 #[cfg(feature = "tun")]
 pub mod tun;
 
@@ -42,7 +44,7 @@ pub mod vless;
 #[cfg(feature = "shadowtls")]
 pub mod shadowtls;
 
-#[cfg(feature = "naive")]
+#[cfg(feature = "adapter-naive")]
 pub mod naive;
 
 #[cfg(feature = "tuic")]

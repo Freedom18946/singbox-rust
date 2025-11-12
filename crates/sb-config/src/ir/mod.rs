@@ -197,6 +197,15 @@ pub struct VlessUserIR {
     /// VLESS flow control (e.g., "xtls-rprx-vision").
     #[serde(default)]
     pub flow: Option<String>,
+    /// VMess/VLESS security parameters
+    #[serde(default)]
+    pub security: Option<String>,
+    /// VMess alterId (legacy)
+    #[serde(default)]
+    pub alter_id: Option<u8>,
+    /// VLESS encryption parameter (e.g., "none")
+    #[serde(default)]
+    pub encryption: Option<String>,
 }
 
 /// Trojan user configuration for multi-user inbound.
@@ -379,6 +388,17 @@ pub struct OutboundIR {
     pub uuid: Option<String>,
     #[serde(default)]
     pub flow: Option<String>,
+    /// VLESS encryption parameter (e.g., "none").
+    #[serde(default)]
+    pub encryption: Option<String>,
+
+    // VMess-specific fields
+    /// VMess security/cipher (e.g., "aes-128-gcm", "chacha20-poly1305", "auto").
+    #[serde(default)]
+    pub security: Option<String>,
+    /// VMess alterId (legacy, usually 0).
+    #[serde(default)]
+    pub alter_id: Option<u8>,
     #[serde(default)]
     pub network: Option<String>,
     #[serde(default)]
@@ -423,8 +443,9 @@ pub struct OutboundIR {
     /// Optional TLS SNI and ALPN list
     #[serde(default)]
     pub tls_sni: Option<String>,
+    /// TLS ALPN list (Vec). Previously CSV string; standardized here.
     #[serde(default)]
-    pub tls_alpn: Option<String>,
+    pub tls_alpn: Option<Vec<String>>,
     /// Optional DNS transport override for new dns outbound
     #[serde(default)]
     pub dns_transport: Option<String>,
@@ -506,6 +527,11 @@ pub struct OutboundIR {
     /// Trojan password.
     #[serde(default)]
     pub password: Option<String>,
+    // Shadowsocks plugin support
+    #[serde(default)]
+    pub plugin: Option<String>,
+    #[serde(default)]
+    pub plugin_opts: Option<String>,
 
     // SSH-specific fields
     /// SSH private key content or file path (when `ssh_private_key_path` is not used).
@@ -543,8 +569,8 @@ pub struct OutboundIR {
 /// HTTP header entry (for gRPC metadata or HTTP Upgrade headers).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct HeaderEntry {
-    /// Header name.
-    pub name: String,
+    /// Header key/name.
+    pub key: String,
     /// Header value.
     pub value: String,
 }

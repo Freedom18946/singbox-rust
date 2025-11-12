@@ -18,7 +18,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
 /// Naive server configuration
@@ -312,6 +312,129 @@ async fn relay_h2_tcp(
     tokio::select! {
         r1 = h2_to_tcp => r1,
         r2 = tcp_to_h2 => r2,
+    }
+}
+
+/// Naive inbound adapter that implements InboundService trait
+#[derive(Debug)]
+pub struct NaiveInboundAdapter {
+    config: NaiveInboundConfig,
+    shutdown_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
+}
+
+impl NaiveInboundAdapter {
+    /// Create a new Naive inbound adapter from parameters.
+    ///
+    /// # Arguments
+    /// * `param` - Inbound parameters containing listen address, TLS cert/key, and credentials.
+    ///
+    /// # Returns
+    /// A boxed InboundService or an error if parameters are invalid.
+    pub fn new(param: &sb_core::adapter::InboundParam, router: Arc<router::RouterHandle>) -> Result<Box<dyn sb_core::adapter::InboundService>> {
+        // Parse listen address
+        let listen_str = format!("{}:{}", param.listen, param.port);
+        let listen: SocketAddr = listen_str.parse().map_err(|e| {
+            anyhow!("invalid listen address '{}': {}", listen_str, e)
+        })?;
+
+        // Get TLS certificate and key (required for Naive)
+        let (cert_pem, cert_path) = match (&param.tls_cert_pem, &param.tls_cert_path) {
+            (Some(pem), _) => (Some(pem.clone()), None),
+            (None, Some(path)) => (None, Some(path.clone())),
+            (None, None) => {
+                return Err(anyhow!("Naive inbound requires TLS certificate (tls_cert_pem or tls_cert_path)"));
+            }
+        };
+
+        let (key_pem, key_path) = match (&param.tls_key_pem, &param.tls_key_path) {
+            (Some(pem), _) => (Some(pem.clone()), None),
+            (None, Some(path)) => (None, Some(path.clone())),
+            (None, None) => {
+                return Err(anyhow!("Naive inbound requires TLS private key (tls_key_pem or tls_key_path)"));
+            }
+        };
+
+        // Create TLS configuration using sb-transport infrastructure
+        // Naive requires HTTP/2 ALPN
+        let alpn = param.tls_alpn.clone().unwrap_or_else(|| vec!["h2".to_string()]);
+
+        let standard_tls = sb_transport::tls::StandardTlsConfig {
+            server_name: param.tls_server_name.clone(),
+            alpn,
+            insecure: false,
+            cert_path,
+            key_path,
+            cert_pem,
+            key_pem,
+        };
+
+        let tls = sb_transport::TlsConfig::Standard(standard_tls);
+
+        // Get optional authentication credentials
+        let username = param.basic_auth.as_ref().and_then(|a| a.username.clone());
+        let password = param.basic_auth.as_ref().and_then(|a| a.password.clone());
+
+        let config = NaiveInboundConfig {
+            listen,
+            tls,
+            router,
+            username,
+            password,
+        };
+
+        Ok(Box::new(NaiveInboundAdapter {
+            config,
+            shutdown_tx: Arc::new(Mutex::new(None)),
+        }))
+    }
+}
+
+impl sb_core::adapter::InboundService for NaiveInboundAdapter {
+    fn serve(&self) -> std::io::Result<()> {
+        let config = self.config.clone();
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+
+        // Store shutdown channel
+        {
+            let mut tx = self.shutdown_tx.blocking_lock();
+            *tx = Some(stop_tx);
+        }
+
+        // Use current tokio runtime or create new one
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                // Already in a tokio runtime, spawn the server task
+                handle.spawn(async move {
+                    if let Err(e) = serve(config, stop_rx).await {
+                        error!(error=%e, "Naive inbound server error");
+                    }
+                });
+                Ok(())
+            }
+            Err(_) => {
+                // No tokio runtime, create one and block on it
+                let runtime = tokio::runtime::Runtime::new()
+                    .map_err(std::io::Error::other)?;
+                runtime.block_on(serve(config, stop_rx))
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            }
+        }
+    }
+
+    fn request_shutdown(&self) {
+        if let Some(tx) = self.shutdown_tx.blocking_lock().take() {
+            let _ = tx.blocking_send(());
+        }
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        // TODO: Add connection tracking in the future
+        None
+    }
+
+    fn udp_sessions_estimate(&self) -> Option<u64> {
+        // Naive doesn't support UDP
+        None
     }
 }
 

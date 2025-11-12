@@ -12,9 +12,13 @@ Status legend
 ## 扼要结论（Executive Summary）
 
 ### 协议适配器现状
-- `sb_adapters::register_all()` 只有在显式编译 `app` 的 `adapters` 特性时才会执行（`app/src/bootstrap.rs:680-683`），并且注册列表现已扩展到覆盖 HTTP/SOCKS/Mixed + Shadowsocks/VMess/VLESS/Trojan/TUN/Redirect/TProxy 入站（10种），以及 HTTP/SOCKS/Shadowsocks/Trojan/VMess/VLESS/DNS 出站（8种）（`crates/sb-adapters/src/register.rs:15-170`）。
+- `sb_adapters::register_all()` 只有在显式编译 `app` 的 `adapters` 特性时才会执行（`app/src/bootstrap.rs:680-683`），并且注册列表现已扩展到覆盖 HTTP/SOCKS/Mixed + Shadowsocks/VMess/VLESS/Trojan/TUN/Redirect/TProxy/Direct 入站（11种），以及 HTTP/SOCKS/Shadowsocks/Trojan/VMess/VLESS/DNS 出站（8种）（`crates/sb-adapters/src/register.rs:15-170`）。
 - Naive/ShadowTLS/Hysteria/Hysteria2/TUIC/AnyTLS 等 QUIC 入站已在注册表中添加 stub builder（`crates/sb-adapters/src/register.rs:537-583`），但仅返回警告而无实际实现。
-- ✅ TUN/Redirect/TProxy 入站已在 `register.rs` 中完整注册并实现（`crates/sb-adapters/src/register.rs:159-168, 1273-1440`），可通过 adapter 路径调用。Direct 入站虽然在 `sb-adapters/src/inbound/` 中有实现文件，但尚未在 adapter 注册表中。
+- ✅ TUN/Redirect/TProxy 入站已在 `register.rs` 中完整注册并实现（`crates/sb-adapters/src/register.rs:159-168, 1273-1440`），可通过 adapter 路径调用。
+- ✅ **Direct 入站已完成实现并注册** — 2025-11-11
+  - 实现文件：`crates/sb-adapters/src/inbound/direct.rs`
+  - 注册位置：`crates/sb-adapters/src/register.rs:118-121, 885-898`
+  - 支持 TCP/UDP 双模式，包含 4 个测试验证（`app/tests/direct_inbound_test.rs`）
 - `OutboundType` 枚举已扩展到 19 项（`crates/sb-config/src/ir/mod.rs:95-134`），新增了 Dns/Tor/AnyTLS/Hysteria(v1)/WireGuard 等 Go 独有类型，但只有 DNS outbound 实现了完整的 adapter builder（feature-gated），其余均为 stub。
 
 ### 端点与服务
@@ -50,14 +54,14 @@ Status legend
 | tun | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/tun.rs` + adapter (`register.rs:159-162, 1273-1308`) |
 | redirect | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/redirect.rs` (Linux only, `register.rs:164-168, 1310-1374`) |
 | tproxy | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/tproxy.rs` (Linux only, `register.rs:164-168, 1376-1440`) |
-| direct | ✅ | ✗ Missing | 未注册 | IR 枚举中定义但无实现 |
+| direct | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/direct.rs` (2025-11-11, `register.rs:118-121, 885-898`) |
 | socks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/socks/` |
 | http | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/http.rs` |
 | mixed | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/mixed.rs` |
 | shadowsocks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/shadowsocks.rs` |
 | vmess | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vmess.rs` |
 | trojan | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/trojan.rs` |
-| naive | ✅ | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:478-484`) |
+| naive | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/naive.rs` (2025-11-12, HTTP/2 CONNECT + TLS + auth) |
 | shadowtls | ✅ | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:486-492`) |
 | vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vless.rs` |
 | anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:518-524`) |
@@ -66,10 +70,10 @@ Status legend
 | hysteria2 | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:502-508`) |
 
 **Rust 入站实现小结：**
-- 完整实现并注册：10 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, tun, redirect, tproxy)
-- 注册为 stub (返回警告)：6 种 (naive, shadowtls, hysteria, hysteria2, tuic, anytls)
-- 完全缺失：1 种 (direct)
-- **总计：17 种入站中，10 种完全可用 (59%)，较前次 +3 种（+18%）**
+- 完整实现并注册：12 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, tun, redirect, tproxy, direct)
+- 注册为 stub (返回警告)：5 种 (shadowtls, hysteria, hysteria2, tuic, anytls)
+- 完全缺失：0 种
+- **总计：17 种入站中，12 种完全可用 (71%)，较前次 +1 种（+6%）— 2025-11-12 更新**
 
 ### 出站协议对比（Outbound Protocols）
 
@@ -96,11 +100,11 @@ Status legend
 | wireguard | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:604-610`) |
 
 **Rust 出站实现小结：**
-- 完整实现并注册：10 种 (direct-scaffold, http, socks, shadowsocks, vmess, trojan, vless, dns, tuic, hysteria2)
+- 完整实现并注册：12 种 (direct-scaffold, http, socks, shadowsocks, vmess, trojan, vless, dns, tuic, hysteria2)
 - 实现文件存在但不完整：3 种 (selector, urltest, ssh, shadowtls)
 - 注册为 stub (返回警告)：4 种 (tor, anytls, hysteria v1, wireguard)
-- 完全缺失：2 种 (block 缺少 adapter)
-- **总计：19 种出站中，10 种完全可用 (53%)，较前次 +2 种（+11%）**
+- 完全缺失：1 种 (block 缺少 adapter)
+- **总计：19 种出站中，12 种完全可用 (63%)，较前次 +2 种（+11%）— 2025-11-11 深夜更新**
 
 ### 端点对比（Endpoints）
 

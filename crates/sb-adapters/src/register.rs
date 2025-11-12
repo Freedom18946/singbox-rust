@@ -1,7 +1,5 @@
-use std::io;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Once};
-use std::time::Duration;
+use std::sync::{Arc, Once};
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::registry;
@@ -60,6 +58,9 @@ pub fn register_all() {
         {
             let _ = registry::register_outbound("hysteria2", build_hysteria2_outbound);
         }
+        {
+            let _ = registry::register_outbound("ssh", build_ssh_outbound);
+        }
 
         #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
         {
@@ -117,6 +118,10 @@ pub fn register_all() {
         {
             let _ = registry::register_inbound("anytls", build_anytls_inbound);
         }
+        #[cfg(feature = "router")]
+        {
+            let _ = registry::register_inbound("direct", build_direct_inbound);
+        }
 
         #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
         {
@@ -134,15 +139,71 @@ pub fn register_all() {
 #[cfg(feature = "adapter-http")]
 fn build_http_outbound(
     param: &OutboundParam,
-    _ir: &OutboundIR,
+    ir: &OutboundIR,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - HttpProxyConnector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("HTTP outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use crate::outbound::http::HttpProxyConnector;
+    use sb_config::outbound::HttpProxyConfig;
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port)?;
+
+    // Build server address string (host:port format)
+    let server_addr = format!("{}:{}", server, port);
+
+    // Extract credentials if present
+    let (username, password) = ir.credentials.as_ref()
+        .map(|c| (c.username.clone(), c.password.clone()))
+        .unwrap_or((None, None));
+
+    // Build config
+    let cfg = HttpProxyConfig {
+        server: server_addr,
+        tag: ir.name.clone(),
+        username,
+        password,
+        connect_timeout_sec: Some(30),
+        tls: None, // TODO: Add TLS support from IR
+    };
+
+    // Create connector
+    let connector = HttpProxyConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct HttpConnectorWrapper {
+        inner: Arc<HttpProxyConnector>,
+    }
+
+    impl std::fmt::Debug for HttpConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("HttpConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for HttpConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // HTTP proxy uses CONNECT method, cannot return raw TcpStream
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("HTTP proxy uses CONNECT method for {}:{}; use switchboard registry instead", host, port),
+            ))
+        }
+    }
+
+    let wrapper = HttpConnectorWrapper {
+        inner: connector_arc,
+    };
+
+    // Return TCP connector wrapper (no UDP support for HTTP proxy)
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(feature = "adapter-http"))]
@@ -159,15 +220,71 @@ fn build_http_outbound(
 #[cfg(feature = "adapter-socks")]
 fn build_socks_outbound(
     param: &OutboundParam,
-    _ir: &OutboundIR,
+    ir: &OutboundIR,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - Socks5Connector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("SOCKS outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use crate::outbound::socks5::Socks5Connector;
+    use sb_config::outbound::Socks5Config;
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port)?;
+
+    // Build server address string (host:port format)
+    let server_addr = format!("{}:{}", server, port);
+
+    // Extract credentials if present
+    let (username, password) = ir.credentials.as_ref()
+        .map(|c| (c.username.clone(), c.password.clone()))
+        .unwrap_or((None, None));
+
+    // Build config
+    let cfg = Socks5Config {
+        server: server_addr,
+        tag: ir.name.clone(),
+        username,
+        password,
+        connect_timeout_sec: Some(30),
+        tls: None, // TODO: Add TLS support from IR
+    };
+
+    // Create connector
+    let connector = Socks5Connector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct Socks5ConnectorWrapper {
+        inner: Arc<Socks5Connector>,
+    }
+
+    impl std::fmt::Debug for Socks5ConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("Socks5ConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for Socks5ConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // SOCKS5 uses proxy protocol, cannot return raw TcpStream
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("SOCKS5 uses proxy protocol for {}:{}; use switchboard registry instead", host, port),
+            ))
+        }
+    }
+
+    let wrapper = Socks5ConnectorWrapper {
+        inner: connector_arc,
+    };
+
+    // Return TCP connector wrapper (UDP support can be added later)
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(feature = "adapter-socks"))]
@@ -181,7 +298,7 @@ fn build_socks_outbound(
     None
 }
 
-#[cfg(feature = "adapter-shadowsocks")]
+#[cfg(all(feature = "adapter-shadowsocks", feature = "out_ss"))]
 fn build_shadowsocks_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
@@ -248,7 +365,7 @@ fn build_shadowsocks_outbound(
     ))
 }
 
-#[cfg(not(feature = "adapter-shadowsocks"))]
+#[cfg(not(all(feature = "adapter-shadowsocks", feature = "out_ss")))]
 fn build_shadowsocks_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -259,7 +376,7 @@ fn build_shadowsocks_outbound(
     None
 }
 
-#[cfg(feature = "adapter-trojan")]
+#[cfg(all(feature = "adapter-trojan", feature = "out_trojan"))]
 fn build_trojan_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
@@ -281,7 +398,17 @@ fn build_trojan_outbound(
         port,
         password,
         sni: ir.tls_sni.clone(),
-        alpn: ir.alpn.clone().or_else(|| ir.tls_alpn.clone()),
+        alpn: ir
+            .tls_alpn
+            .clone()
+            .or_else(|| {
+                ir.alpn.as_ref().map(|raw| {
+                    raw.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect::<Vec<_>>()
+                })
+            }),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
         tls_ca_paths: ir.tls_ca_paths.clone(),
         tls_ca_pem: ir.tls_ca_pem.clone(),
@@ -327,7 +454,7 @@ fn build_trojan_outbound(
     ))
 }
 
-#[cfg(not(feature = "adapter-trojan"))]
+#[cfg(not(all(feature = "adapter-trojan", feature = "out_trojan")))]
 fn build_trojan_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -338,7 +465,7 @@ fn build_trojan_outbound(
     None
 }
 
-#[cfg(feature = "adapter-vmess")]
+#[cfg(all(feature = "adapter-vmess", feature = "out_vmess"))]
 fn build_vmess_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
@@ -371,7 +498,7 @@ fn build_vmess_outbound(
         h2_path: ir.h2_path.clone(),
         h2_host: ir.h2_host.clone(),
         tls_sni: ir.tls_sni.clone(),
-        tls_alpn: ir.tls_alpn.clone().map(|s| s.split(',').map(|s| s.trim().to_string()).collect()),
+        tls_alpn: ir.tls_alpn.clone(),
         grpc_service: ir.grpc_service.clone(),
         grpc_method: ir.grpc_method.clone(),
         grpc_authority: ir.grpc_authority.clone(),
@@ -420,7 +547,7 @@ fn build_vmess_outbound(
     ))
 }
 
-#[cfg(not(feature = "adapter-vmess"))]
+#[cfg(not(all(feature = "adapter-vmess", feature = "out_vmess")))]
 fn build_vmess_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -431,7 +558,7 @@ fn build_vmess_outbound(
     None
 }
 
-#[cfg(feature = "adapter-vless")]
+#[cfg(all(feature = "adapter-vless", feature = "out_vless"))]
 fn build_vless_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
@@ -461,7 +588,7 @@ fn build_vless_outbound(
         h2_path: ir.h2_path.clone(),
         h2_host: ir.h2_host.clone(),
         tls_sni: ir.tls_sni.clone(),
-        tls_alpn: ir.tls_alpn.clone().map(|s| s.split(',').map(|s| s.trim().to_string()).collect()),
+        tls_alpn: ir.tls_alpn.clone(),
         grpc_service: ir.grpc_service.clone(),
         grpc_method: ir.grpc_method.clone(),
         grpc_authority: ir.grpc_authority.clone(),
@@ -510,7 +637,7 @@ fn build_vless_outbound(
     ))
 }
 
-#[cfg(not(feature = "adapter-vless"))]
+#[cfg(not(all(feature = "adapter-vless", feature = "out_vless")))]
 fn build_vless_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
@@ -711,11 +838,18 @@ fn build_socks_inbound(
 }
 
 fn build_naive_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("naive");
-    None
+    use crate::inbound::naive::NaiveInboundAdapter;
+
+    match NaiveInboundAdapter::new(param, ctx.router.clone()) {
+        Ok(adapter) => Some(Arc::from(adapter)),
+        Err(e) => {
+            warn!("Failed to build Naive inbound: {}", e);
+            None
+        }
+    }
 }
 
 fn build_shadowtls_inbound(
@@ -756,6 +890,21 @@ fn build_anytls_inbound(
 ) -> Option<Arc<dyn InboundService>> {
     stub_inbound("anytls");
     None
+}
+
+fn build_direct_inbound(
+    param: &InboundParam,
+    _ctx: &registry::AdapterInboundContext<'_>,
+) -> Option<Arc<dyn InboundService>> {
+    use crate::inbound::direct::DirectInboundAdapter;
+
+    match DirectInboundAdapter::new(param) {
+        Ok(adapter) => Some(Arc::from(adapter)),
+        Err(e) => {
+            warn!("Failed to build Direct inbound: {}", e);
+            None
+        }
+    }
 }
 
 fn stub_inbound(kind: &str) {
@@ -921,15 +1070,7 @@ fn build_hysteria2_outbound(
     };
 
     // Parse ALPN list
-    let alpn_list = ir
-        .tls_alpn
-        .as_ref()
-        .map(|s| {
-            s.split(',')
-                .map(|x| x.trim().to_string())
-                .filter(|x| !x.is_empty())
-                .collect()
-        });
+    let alpn_list = ir.tls_alpn.clone();
 
     // Build config
     let cfg = Hysteria2Config {
@@ -992,6 +1133,98 @@ fn build_hysteria2_outbound(
     _ir: &OutboundIR,
 ) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
     stub_outbound("hysteria2");
+    None
+}
+
+#[cfg(feature = "adapter-ssh")]
+fn build_ssh_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    use crate::outbound::ssh::{SshAdapterConfig, SshConnector};
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port).unwrap_or(22);
+
+    // Get username from credentials
+    let username = ir.credentials.as_ref()
+        .and_then(|c| c.username.clone())?;
+
+    // Get password from credentials or dedicated password field
+    let password = ir.credentials.as_ref()
+        .and_then(|c| c.password.clone())
+        .or_else(|| ir.password.clone());
+
+    // Get private key
+    let private_key = ir.ssh_private_key.clone();
+    let private_key_passphrase = ir.ssh_private_key_passphrase.clone();
+
+    // Ensure at least password or private key is provided
+    if password.is_none() && private_key.is_none() {
+        warn!("SSH outbound requires either password or private_key");
+        return None;
+    }
+
+    // Build config
+    let cfg = SshAdapterConfig {
+        server: server.clone(),
+        port,
+        username,
+        password,
+        private_key,
+        private_key_passphrase,
+        host_key_verification: ir.ssh_host_key_verification.unwrap_or(true),
+        known_hosts_path: ir.ssh_known_hosts_path.clone(),
+        connection_pool_size: ir.ssh_connection_pool_size,
+        compression: ir.ssh_compression.unwrap_or(false),
+        keepalive_interval: ir.ssh_keepalive_interval,
+        connect_timeout: Some(10), // Default 10 seconds
+    };
+
+    // Create connector
+    let connector = SshConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct SshConnectorWrapper {
+        inner: Arc<SshConnector>,
+    }
+
+    impl std::fmt::Debug for SshConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("SshConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for SshConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // SSH uses tunnel proxy protocol, cannot return raw TcpStream
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("SSH uses tunnel proxy for {}:{}; use switchboard registry instead", host, port),
+            ))
+        }
+    }
+
+    let wrapper = SshConnectorWrapper {
+        inner: connector_arc,
+    };
+
+    // SSH only supports TCP, no UDP factory
+    Some((Arc::new(wrapper), None))
+}
+
+#[cfg(not(feature = "adapter-ssh"))]
+fn build_ssh_outbound(
+    _param: &OutboundParam,
+    _ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    stub_outbound("ssh");
     None
 }
 

@@ -226,11 +226,12 @@ pub mod map {
         } else {
             ob.tls_sni.as_deref()
         };
+        let alpn_csv = ob.tls_alpn.as_ref().map(|v| v.join(","));
         apply_layers(
             TransportBuilder::tcp(),
             ob.transport.as_deref(),
             computed_tls_sni,
-            ob.tls_alpn.as_deref(),
+            alpn_csv.as_deref(),
             ob.ws_path.as_deref(),
             ob.ws_host.as_deref(),
             ob.h2_path.as_deref(),
@@ -238,14 +239,14 @@ pub mod map {
             ob.http_upgrade_path.as_deref(),
             &ob.http_upgrade_headers
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect::<Vec<_>>(),
             ob.grpc_service.as_deref(),
             ob.grpc_method.as_deref(),
             ob.grpc_authority.as_deref(),
             &ob.grpc_metadata
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect::<Vec<_>>(),
             tls_cfg_override,
         )
@@ -253,10 +254,11 @@ pub mod map {
 
     /// Expose derived chain for diagnostics and tooling.
     pub fn chain_from_ir(ob: &OutboundIR) -> Vec<String> {
+        let alpn_csv = ob.tls_alpn.as_ref().map(|v| v.join(","));
         derive_chain(
             ob.transport.as_deref(),
             ob.tls_sni.as_deref(),
-            ob.tls_alpn.as_deref(),
+            alpn_csv.as_deref(),
             ob.ws_path.as_deref(),
             ob.ws_host.as_deref(),
             ob.h2_path.as_deref(),
@@ -264,14 +266,14 @@ pub mod map {
             ob.http_upgrade_path.as_deref(),
             &ob.http_upgrade_headers
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect::<Vec<_>>(),
             ob.grpc_service.as_deref(),
             ob.grpc_method.as_deref(),
             ob.grpc_authority.as_deref(),
             &ob.grpc_metadata
                 .iter()
-                .map(|h| (h.name.clone(), h.value.clone()))
+                .map(|h| (h.key.clone(), h.value.clone()))
                 .collect::<Vec<_>>(),
         )
     }

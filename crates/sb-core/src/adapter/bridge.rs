@@ -210,6 +210,13 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         udp: ib.udp,
         override_host: ib.override_host.clone(),
         override_port: ib.override_port,
+        network: ib.network.clone(),
+        tls_cert_path: ib.tls_cert_path.clone(),
+        tls_key_path: ib.tls_key_path.clone(),
+        tls_cert_pem: ib.tls_cert_pem.clone(),
+        tls_key_pem: ib.tls_key_pem.clone(),
+        tls_server_name: ib.tls_server_name.clone(),
+        tls_alpn: ib.tls_alpn.clone(),
     }
 }
 
@@ -242,7 +249,9 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             token: ob.token.clone(),
             password: ob.password.clone(),
             congestion_control: ob.congestion_control.clone(),
-            alpn: ob.alpn.clone().or_else(|| ob.tls_alpn.clone()),
+            alpn: ob.alpn.clone().or_else(|| {
+                ob.tls_alpn.as_ref().map(|v| v.join(","))
+            }),
             skip_cert_verify: ob.skip_cert_verify,
             udp_relay_mode: ob.udp_relay_mode.clone(),
             udp_over_stream: ob.udp_over_stream,
@@ -1004,7 +1013,11 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                 );
                                 // Fallback: try TLS-only if SNI/ALPN present, otherwise plain TCP
                                 let tls_sni = self.ob_ir.tls_sni.clone();
-                                let tls_alpn = self.ob_ir.tls_alpn.clone();
+                                let tls_alpn_csv = self
+                                    .ob_ir
+                                    .tls_alpn
+                                    .as_ref()
+                                    .map(|v| v.join(","));
                                 let base = sb_transport::TransportBuilder::tcp();
                                 let fb_tls = crate::runtime::transport::map::tls_override_from_ob(
                                     &self.ob_ir,
@@ -1013,7 +1026,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                     base,
                                     Some(&[]),
                                     tls_sni.as_deref(),
-                                    tls_alpn.as_deref(),
+                                    tls_alpn_csv.as_deref(),
                                     None,
                                     None,
                                     None,
@@ -1109,25 +1122,20 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                     h2_path: ob.h2_path.clone(),
                     h2_host: ob.h2_host.clone(),
                     tls_sni: ob.tls_sni.clone(),
-                    tls_alpn: ob.tls_alpn.as_ref().map(|s| {
-                        s.split(',')
-                            .map(|x| x.trim().to_string())
-                            .filter(|x| !x.is_empty())
-                            .collect()
-                    }),
+                    tls_alpn: ob.tls_alpn.clone(),
                     grpc_service: ob.grpc_service.clone(),
                     grpc_method: ob.grpc_method.clone(),
                     grpc_authority: ob.grpc_authority.clone(),
                     grpc_metadata: ob
                         .grpc_metadata
                         .iter()
-                        .map(|h| (h.name.clone(), h.value.clone()))
+                        .map(|h| (h.key.clone(), h.value.clone()))
                         .collect(),
                     http_upgrade_path: ob.http_upgrade_path.clone(),
                     http_upgrade_headers: ob
                         .http_upgrade_headers
                         .iter()
-                        .map(|h| (h.name.clone(), h.value.clone()))
+                        .map(|h| (h.key.clone(), h.value.clone()))
                         .collect(),
                 };
 
@@ -1203,7 +1211,11 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                     "vmess transport connect failed; attempting fallback"
                                 );
                                 let tls_sni = self.ob_ir.tls_sni.clone();
-                                let tls_alpn = self.ob_ir.tls_alpn.clone();
+                                let tls_alpn_csv = self
+                                    .ob_ir
+                                    .tls_alpn
+                                    .as_ref()
+                                    .map(|v| v.join(","));
                                 let base = sb_transport::TransportBuilder::tcp();
                                 let fb_tls = crate::runtime::transport::map::tls_override_from_ob(
                                     &self.ob_ir,
@@ -1212,7 +1224,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                     base,
                                     Some(&[]),
                                     tls_sni.as_deref(),
-                                    tls_alpn.as_deref(),
+                                    tls_alpn_csv.as_deref(),
                                     None,
                                     None,
                                     None,
@@ -1308,25 +1320,20 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                     h2_path: ob.h2_path.clone(),
                     h2_host: ob.h2_host.clone(),
                     tls_sni: ob.tls_sni.clone(),
-                    tls_alpn: ob.tls_alpn.as_ref().map(|s| {
-                        s.split(',')
-                            .map(|x| x.trim().to_string())
-                            .filter(|x| !x.is_empty())
-                            .collect()
-                    }),
+                    tls_alpn: ob.tls_alpn.clone(),
                     grpc_service: ob.grpc_service.clone(),
                     grpc_method: ob.grpc_method.clone(),
                     grpc_authority: ob.grpc_authority.clone(),
                     grpc_metadata: ob
                         .grpc_metadata
                         .iter()
-                        .map(|h| (h.name.clone(), h.value.clone()))
+                        .map(|h| (h.key.clone(), h.value.clone()))
                         .collect(),
                     http_upgrade_path: ob.http_upgrade_path.clone(),
                     http_upgrade_headers: ob
                         .http_upgrade_headers
                         .iter()
-                        .map(|h| (h.name.clone(), h.value.clone()))
+                        .map(|h| (h.key.clone(), h.value.clone()))
                         .collect(),
                 };
 
@@ -1611,7 +1618,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                     token,
                     password: p.password.clone(),
                     congestion_control: p.congestion_control.clone(),
-                    alpn: p.alpn.clone().or_else(|| ob.tls_alpn.clone()),
+                    alpn: ob.tls_alpn.clone(),
                     skip_cert_verify: p.skip_cert_verify.unwrap_or(false),
                     sni: ob.tls_sni.clone(),
                     tls_ca_paths: ob.tls_ca_paths.clone(),
@@ -1675,12 +1682,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                     obfs: ob.obfs.clone(),
                     skip_cert_verify: p.skip_cert_verify.unwrap_or(false),
                     sni: ob.tls_sni.clone(),
-                    alpn: ob.tls_alpn.as_ref().map(|s| {
-                        s.split(',')
-                            .map(|x| x.trim().to_string())
-                            .filter(|x| !x.is_empty())
-                            .collect()
-                    }),
+                    alpn: ob.tls_alpn.clone(),
                     salamander: ob.salamander.clone(),
                     brutal,
                     tls_ca_paths: ob.tls_ca_paths.clone(),
@@ -1723,7 +1725,17 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                     server,
                     port,
                     sni,
-                    alpn: p.alpn.clone().or_else(|| ob.tls_alpn.clone()),
+                    alpn: ob
+                        .tls_alpn
+                        .clone()
+                        .or_else(|| {
+                            p.alpn.as_ref().map(|raw| {
+                                raw.split(',')
+                                    .map(|x| x.trim().to_string())
+                                    .filter(|x| !x.is_empty())
+                                    .collect::<Vec<_>>()
+                            })
+                        }),
                     skip_cert_verify: p.skip_cert_verify.unwrap_or(false),
                 };
                 if cfg.skip_cert_verify {

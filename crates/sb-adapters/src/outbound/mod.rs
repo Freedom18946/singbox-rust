@@ -218,12 +218,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for hysteria2::Hysteria2Connector {
             password,
             skip_cert_verify: false,
             sni: ir.tls_sni.clone(),
-            alpn: ir.tls_alpn.as_ref().map(|s| {
-                s.split(',')
-                    .map(|x| x.trim().to_string())
-                    .filter(|x| !x.is_empty())
-                    .collect()
-            }),
+            alpn: ir.tls_alpn.clone(),
             congestion_control: None,
             up_mbps: None,
             down_mbps: None,

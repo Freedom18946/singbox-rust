@@ -81,12 +81,12 @@ fn push_transport_token(tokens: &mut Vec<String>, token: &str) {
     }
 }
 
-fn push_header_entry(target: &mut Vec<HeaderEntry>, name: &str, value: &str) {
-    if name.trim().is_empty() {
+fn push_header_entry(target: &mut Vec<HeaderEntry>, key: &str, value: &str) {
+    if key.trim().is_empty() {
         return;
     }
     target.push(HeaderEntry {
-        name: name.trim().to_string(),
+        key: key.trim().to_string(),
         value: value.to_string(),
     });
 }
@@ -538,6 +538,18 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("flow")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
+                security: o
+                    .get("security")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                alter_id: o
+                    .get("alter_id")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|x| u8::try_from(x).ok()),
+                encryption: o
+                    .get("encryption")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 network: o
                     .get("network")
                     .and_then(|v| v.as_str())
@@ -573,10 +585,25 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("tls_sni")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                tls_alpn: o
-                    .get("tls_alpn")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
+                tls_alpn: match o.get("tls_alpn") {
+                    Some(Value::String(s)) => {
+                        let v = s
+                            .split(',')
+                            .map(|x| x.trim().to_string())
+                            .filter(|x| !x.is_empty())
+                            .collect::<Vec<_>>();
+                        if v.is_empty() { None } else { Some(v) }
+                    }
+                    Some(Value::Array(arr)) => {
+                        let v = arr
+                            .iter()
+                            .filter_map(|it| it.as_str().map(|s| s.trim().to_string()))
+                            .filter(|s| !s.is_empty())
+                            .collect::<Vec<_>>();
+                        if v.is_empty() { None } else { Some(v) }
+                    }
+                    _ => None,
+                },
                 tls_ca_paths: Vec::new(),
                 tls_ca_pem: Vec::new(),
                 tls_client_cert_path: None,
@@ -589,6 +616,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 reality_server_name: None,
                 password: o
                     .get("password")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                plugin: o
+                    .get("plugin")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                plugin_opts: o
+                    .get("plugin_opts")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 token: o
@@ -824,10 +859,27 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .map(|s| s.to_string());
                 }
                 if ob.tls_alpn.is_none() {
-                    ob.tls_alpn = tls
-                        .get("alpn")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
+                    if let Some(val) = tls.get("alpn") {
+                        ob.tls_alpn = match val {
+                            Value::String(s) => {
+                                let v = s
+                                    .split(',')
+                                    .map(|x| x.trim().to_string())
+                                    .filter(|x| !x.is_empty())
+                                    .collect::<Vec<_>>();
+                                if v.is_empty() { None } else { Some(v) }
+                            }
+                            Value::Array(arr) => {
+                                let v = arr
+                                    .iter()
+                                    .filter_map(|it| it.as_str().map(|s| s.trim().to_string()))
+                                    .filter(|s| !s.is_empty())
+                                    .collect::<Vec<_>>();
+                                if v.is_empty() { None } else { Some(v) }
+                            }
+                            _ => None,
+                        };
+                    }
                 }
                 if ob.alpn.is_none() {
                     ob.alpn = tls
@@ -1327,7 +1379,7 @@ mod tests {
         assert_eq!(outbound.udp_over_stream, Some(true));
         assert_eq!(outbound.skip_cert_verify, Some(true));
         assert_eq!(outbound.alpn.as_deref(), Some("h3"));
-        assert_eq!(outbound.tls_alpn.as_deref(), Some("h3"));
+        assert_eq!(outbound.tls_alpn, Some(vec!["h3".to_string()]));
     }
 
     #[test]
@@ -1475,7 +1527,7 @@ mod tests {
         let mut metadata: Vec<(String, String)> = outbound
             .grpc_metadata
             .iter()
-            .map(|h| (h.name.clone(), h.value.clone()))
+            .map(|h| (h.key.clone(), h.value.clone()))
             .collect();
         metadata.sort();
         assert_eq!(metadata.len(), 2);
@@ -1516,7 +1568,7 @@ mod tests {
         let mut headers: Vec<(String, String)> = outbound
             .http_upgrade_headers
             .iter()
-            .map(|h| (h.name.clone(), h.value.clone()))
+            .map(|h| (h.key.clone(), h.value.clone()))
             .collect();
         headers.sort();
         assert_eq!(headers.len(), 2);
@@ -1555,7 +1607,7 @@ mod tests {
 
         // Check TLS fields are parsed
         assert_eq!(outbound.tls_sni, Some("www.apple.com".to_string()));
-        assert_eq!(outbound.tls_alpn, Some("h2,http/1.1".to_string()));
+        assert_eq!(outbound.tls_alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
 
         // Check REALITY fields are parsed
         assert_eq!(outbound.reality_enabled, Some(true));
@@ -1751,7 +1803,7 @@ mod tests {
         assert_eq!(ir.outbounds.len(), 1);
         let ob = &ir.outbounds[0];
         assert_eq!(ob.tls_sni.as_deref(), Some("internal.example"));
-        assert_eq!(ob.tls_alpn.as_deref(), Some("h2,http/1.1"));
+        assert_eq!(ob.tls_alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
         assert_eq!(ob.skip_cert_verify, Some(true));
         assert_eq!(ob.tls_ca_paths, vec!["/etc/ssl/certs/internal-root.pem".to_string()]);
         assert_eq!(ob.tls_ca_pem.len(), 1);

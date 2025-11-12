@@ -25,7 +25,11 @@ async fn main() -> anyhow::Result<()> {
         let kind = ob.ty_str();
         let chain = sb_core::runtime::transport::map::chain_from_ir(ob);
         let sni = ob.tls_sni.clone().unwrap_or_default();
-        let alpn = ob.tls_alpn.clone().unwrap_or_default();
+        let alpn = ob
+            .tls_alpn
+            .as_ref()
+            .map(|v| v.join(","))
+            .unwrap_or_default();
         println!(
             "- outbound: {name}\n  kind: {kind}\n  chain: [{chain}]\n  sni: {sni}\n  alpn: {alpn}",
             name = name,
@@ -38,4 +42,3 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-

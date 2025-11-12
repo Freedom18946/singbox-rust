@@ -94,6 +94,7 @@ adapters = [
     "sb-adapters/adapter-trojan",
     "sb-adapters/adapter-vmess",
     "sb-adapters/adapter-vless",
+    "sb-adapters/adapter-naive",
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",

@@ -889,6 +889,14 @@ pub struct StandardTlsConfig {
     /// Private key path (server-side)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
+
+    /// Certificate content (PEM format, server-side)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cert_pem: Option<String>,
+
+    /// Private key content (PEM format, server-side)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_pem: Option<String>,
 }
 
 // Default is derived above

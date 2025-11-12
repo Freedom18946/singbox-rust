@@ -28,7 +28,7 @@ pub struct TuicConfig {
     pub token: String,
     pub password: Option<String>,
     pub congestion_control: Option<String>,
-    pub alpn: Option<String>,
+    pub alpn: Option<Vec<String>>,
     pub skip_cert_verify: bool,
     pub sni: Option<String>,
     pub tls_ca_paths: Vec<String>,
@@ -59,8 +59,11 @@ pub struct TuicOutbound {
 impl TuicOutbound {
     pub fn new(config: TuicConfig) -> anyhow::Result<Self> {
         // Build QUIC configuration for TUIC
-        let alpn = if let Some(ref alpn_str) = config.alpn {
-            vec![alpn_str.as_bytes().to_vec()]
+        let alpn = if let Some(ref alpn_list) = config.alpn {
+            alpn_list
+                .iter()
+                .map(|s| s.as_bytes().to_vec())
+                .collect::<Vec<_>>()
         } else {
             vec![b"tuic".to_vec()]
         };

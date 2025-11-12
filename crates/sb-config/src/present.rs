@@ -103,7 +103,7 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                             .iter()
                             .map(|h| {
                                 let mut map = Map::new();
-                                map.insert("name".into(), Value::from(h.name.clone()));
+                                map.insert("name".into(), Value::from(h.key.clone()));
                                 map.insert("value".into(), Value::from(h.value.clone()));
                                 Value::Object(map)
                             })
@@ -123,7 +123,7 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                             .iter()
                             .map(|h| {
                                 let mut map = Map::new();
-                                map.insert("name".into(), Value::from(h.name.clone()));
+                                map.insert("name".into(), Value::from(h.key.clone()));
                                 map.insert("value".into(), Value::from(h.value.clone()));
                                 Value::Object(map)
                             })

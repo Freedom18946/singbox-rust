@@ -94,6 +94,22 @@ pub struct InboundParam {
     /// Optional fixed override destination (used by direct inbound)
     pub override_host: Option<String>,
     pub override_port: Option<u16>,
+    /// Network mode: "tcp", "udp", or "tcp,udp" (both)
+    pub network: Option<String>,
+
+    // TLS configuration (for inbounds that need TLS)
+    /// Path to TLS certificate file (PEM format)
+    pub tls_cert_path: Option<String>,
+    /// Path to TLS private key file (PEM format)
+    pub tls_key_path: Option<String>,
+    /// Inline TLS certificate (PEM format)
+    pub tls_cert_pem: Option<String>,
+    /// Inline TLS private key (PEM format)
+    pub tls_key_pem: Option<String>,
+    /// TLS server name (SNI)
+    pub tls_server_name: Option<String>,
+    /// TLS ALPN protocols
+    pub tls_alpn: Option<Vec<String>>,
 }
 
 /// Outbound construction parameters (derived from IR).
@@ -458,10 +474,7 @@ impl Bridge {
                                             token: token.clone(),
                                             password: outbound.password.clone(),
                                             congestion_control: outbound.congestion_control.clone(),
-                                            alpn: outbound
-                                                .alpn
-                                                .clone()
-                                                .or_else(|| outbound.tls_alpn.clone()),
+                                            alpn: outbound.tls_alpn.clone(),
                                             skip_cert_verify: outbound
                                                 .skip_cert_verify
                                                 .unwrap_or(false),
