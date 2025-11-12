@@ -201,6 +201,11 @@ fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
 
 /// Converts inbound IR to adapter parameter.
 fn to_inbound_param(ib: &InboundIR) -> InboundParam {
+    // Serialize Hysteria2 users to JSON if present
+    let users_hysteria2 = ib.users_hysteria2.as_ref().map(|users| {
+        serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
+    });
+
     InboundParam {
         kind: ib.ty.ty_str().to_string(),
         listen: ib.listen.clone(),
@@ -217,6 +222,12 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         tls_key_pem: ib.tls_key_pem.clone(),
         tls_server_name: ib.tls_server_name.clone(),
         tls_alpn: ib.tls_alpn.clone(),
+        users_hysteria2,
+        congestion_control: ib.congestion_control.clone(),
+        salamander: ib.salamander.clone(),
+        obfs: ib.obfs.clone(),
+        brutal_up_mbps: ib.brutal_up_mbps,
+        brutal_down_mbps: ib.brutal_down_mbps,
     }
 }
 

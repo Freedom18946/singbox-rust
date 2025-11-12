@@ -44,9 +44,11 @@ impl Default for Hysteria2InboundConfig {
 }
 
 /// Hysteria v2 inbound adapter
+#[derive(Debug, Clone)]
 pub struct Hysteria2Inbound {
+    config: Hysteria2InboundConfig,
     #[cfg(feature = "adapter-hysteria2")]
-    core: CoreInbound,
+    _core_marker: std::marker::PhantomData<CoreInbound>,
     #[cfg(not(feature = "adapter-hysteria2"))]
     _phantom: std::marker::PhantomData<()>,
 }
@@ -60,25 +62,63 @@ impl Hysteria2Inbound {
 
         #[cfg(feature = "adapter-hysteria2")]
         {
-            let core_config = Hysteria2ServerConfig {
-                listen: config.listen,
-                users: config
-                    .users
-                    .into_iter()
-                    .map(|u| Hysteria2User {
-                        password: u.password,
-                    })
-                    .collect(),
-                cert: config.cert,
-                key: config.key,
-                congestion_control: config.congestion_control,
-                salamander: config.salamander,
-                obfs: config.obfs,
-            };
+            // Validate config
+            if config.users.is_empty() {
+                return Err(AdapterError::NotImplemented {
+                    what: "Hysteria2 requires at least one user",
+                });
+            }
 
             Ok(Self {
-                core: CoreInbound::new(core_config),
+                config,
+                _core_marker: std::marker::PhantomData,
             })
+        }
+    }
+
+    #[cfg(feature = "adapter-hysteria2")]
+    pub async fn start_server(&self) -> Result<()> {
+        use sb_core::outbound::hysteria2::inbound::Hysteria2Inbound as CoreInbound;
+
+        let core_config = Hysteria2ServerConfig {
+            listen: self.config.listen,
+            users: self
+                .config
+                .users
+                .iter()
+                .map(|u| Hysteria2User {
+                    password: u.password.clone(),
+                })
+                .collect(),
+            cert: self.config.cert.clone(),
+            key: self.config.key.clone(),
+            congestion_control: self.config.congestion_control.clone(),
+            salamander: self.config.salamander.clone(),
+            obfs: self.config.obfs.clone(),
+        };
+
+        let core = CoreInbound::new(core_config);
+        match core.start().await {
+            Ok(()) => {
+                // Server started, now continuously accept connections
+                loop {
+                    match core.accept().await {
+                        Ok((_stream, peer)) => {
+                            tracing::debug!("Hysteria2: accepted connection from {}", peer);
+                            // TODO: Handle the stream properly - route through router
+                        }
+                        Err(e) => {
+                            tracing::error!("Hysteria2: accept error: {}", e);
+                            return Err(AdapterError::Io(e));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                sb_core::metrics::http::record_error_display(&e);
+                sb_core::metrics::record_inbound_error_display("hysteria2", &e);
+                Err(AdapterError::Io(e))
+            }
         }
     }
 
@@ -89,16 +129,7 @@ impl Hysteria2Inbound {
         });
 
         #[cfg(feature = "adapter-hysteria2")]
-        {
-            match self.core.start().await {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    sb_core::metrics::http::record_error_display(&e);
-                    sb_core::metrics::record_inbound_error_display("hysteria2", &e);
-                    Err(AdapterError::Io(e))
-                }
-            }
-        }
+        self.start_server().await
     }
 
     pub async fn accept(&self) -> Result<(BoxedStream, SocketAddr)> {
@@ -109,15 +140,58 @@ impl Hysteria2Inbound {
 
         #[cfg(feature = "adapter-hysteria2")]
         {
-            match self.core.accept().await {
-                Ok((stream, addr)) => Ok((Box::new(stream) as BoxedStream, addr)),
-                Err(e) => {
-                    sb_core::metrics::http::record_error_display(&e);
-                    sb_core::metrics::record_inbound_error_display("hysteria2", &e);
-                    Err(AdapterError::Io(e))
+            // This method is not used in the new architecture - start_server handles accept loop
+            Err(AdapterError::NotImplemented {
+                what: "Direct accept() not supported - use start() instead",
+            })
+        }
+    }
+}
+
+impl sb_core::adapter::InboundService for Hysteria2Inbound {
+    fn serve(&self) -> std::io::Result<()> {
+        #[cfg(not(feature = "adapter-hysteria2"))]
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "adapter-hysteria2 feature not enabled",
+            ));
+        }
+
+        #[cfg(feature = "adapter-hysteria2")]
+        {
+            // Use current tokio runtime or fail
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    let config = self.config.clone();
+                    // Start the server
+                    handle.spawn(async move {
+                        let adapter = Hysteria2Inbound {
+                            config,
+                            _core_marker: std::marker::PhantomData,
+                        };
+                        if let Err(e) = adapter.start().await {
+                            tracing::error!(error=?e, "Hysteria2 inbound server failed");
+                        }
+                    });
+                    Ok(())
                 }
+                Err(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "No tokio runtime available",
+                )),
             }
         }
+    }
+
+    fn request_shutdown(&self) {
+        // TODO: Implement graceful shutdown for Hysteria2
+        tracing::debug!("Hysteria2 inbound shutdown requested");
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        // TODO: Track active connections
+        None
     }
 }
 

@@ -841,14 +841,22 @@ fn build_naive_inbound(
     param: &InboundParam,
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use crate::inbound::naive::NaiveInboundAdapter;
+    #[cfg(feature = "adapter-naive")]
+    {
+        use crate::inbound::naive::NaiveInboundAdapter;
 
-    match NaiveInboundAdapter::new(param, ctx.router.clone()) {
-        Ok(adapter) => Some(Arc::from(adapter)),
-        Err(e) => {
-            warn!("Failed to build Naive inbound: {}", e);
-            None
+        match NaiveInboundAdapter::new(param, ctx.router.clone()) {
+            Ok(adapter) => Some(Arc::from(adapter)),
+            Err(e) => {
+                warn!("Failed to build Naive inbound: {}", e);
+                None
+            }
         }
+    }
+    #[cfg(not(feature = "adapter-naive"))]
+    {
+        stub_inbound("naive");
+        None
     }
 }
 
@@ -869,11 +877,105 @@ fn build_hysteria_inbound(
 }
 
 fn build_hysteria2_inbound(
-    _param: &InboundParam,
+    param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("hysteria2");
-    None
+    #[cfg(feature = "adapter-hysteria2")]
+    {
+        use crate::inbound::hysteria2::{Hysteria2Inbound, Hysteria2InboundConfig, Hysteria2UserConfig};
+        use std::net::SocketAddr;
+
+        // Parse listen address
+        let listen_str = format!("{}:{}", param.listen, param.port);
+        let listen: SocketAddr = match listen_str.parse() {
+            Ok(addr) => addr,
+            Err(e) => {
+                warn!("Failed to parse Hysteria2 listen address '{}': {}", listen_str, e);
+                return None;
+            }
+        };
+
+        // Parse users from JSON
+        let users = if let Some(users_json) = &param.users_hysteria2 {
+            match serde_json::from_str::<Vec<sb_config::ir::Hysteria2UserIR>>(users_json) {
+                Ok(user_irs) => user_irs
+                    .into_iter()
+                    .map(|u| Hysteria2UserConfig {
+                        password: u.password,
+                    })
+                    .collect(),
+                Err(e) => {
+                    warn!("Failed to parse Hysteria2 users JSON: {}", e);
+                    vec![]
+                }
+            }
+        } else {
+            vec![]
+        };
+
+        if users.is_empty() {
+            warn!("Hysteria2 inbound requires at least one user");
+            return None;
+        }
+
+        // Get TLS certificate and key (required for Hysteria2)
+        let cert = match (&param.tls_cert_pem, &param.tls_cert_path) {
+            (Some(pem), _) => pem.clone(),
+            (None, Some(path)) => {
+                match std::fs::read_to_string(path) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        warn!("Failed to read Hysteria2 TLS certificate from '{}': {}", path, e);
+                        return None;
+                    }
+                }
+            }
+            (None, None) => {
+                warn!("Hysteria2 inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
+                return None;
+            }
+        };
+
+        let key = match (&param.tls_key_pem, &param.tls_key_path) {
+            (Some(pem), _) => pem.clone(),
+            (None, Some(path)) => {
+                match std::fs::read_to_string(path) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        warn!("Failed to read Hysteria2 TLS private key from '{}': {}", path, e);
+                        return None;
+                    }
+                }
+            }
+            (None, None) => {
+                warn!("Hysteria2 inbound requires TLS private key (tls_key_pem or tls_key_path)");
+                return None;
+            }
+        };
+
+        let config = Hysteria2InboundConfig {
+            listen,
+            users,
+            cert,
+            key,
+            congestion_control: param.congestion_control.clone(),
+            salamander: param.salamander.clone(),
+            obfs: param.obfs.clone(),
+        };
+
+        match Hysteria2Inbound::new(config) {
+            Ok(adapter) => Some(Arc::from(adapter)),
+            Err(e) => {
+                warn!("Failed to build Hysteria2 inbound: {}", e);
+                None
+            }
+        }
+    }
+    #[cfg(not(feature = "adapter-hysteria2"))]
+    {
+        stub_inbound("hysteria2");
+        None
+    }
 }
 
 fn build_tuic_inbound(
@@ -1807,5 +1909,67 @@ impl InboundService for TproxyInboundAdapter {
                 let _ = tx.try_send(());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType};
+
+    #[test]
+    #[cfg(feature = "adapter-hysteria2")]
+    fn test_hysteria2_inbound_fields() {
+        // Create a test InboundIR for Hysteria2
+        let ir = InboundIR {
+            ty: InboundType::Hysteria2,
+            listen: "127.0.0.1".to_string(),
+            port: 8443,
+            sniff: false,
+            udp: false,
+            basic_auth: None,
+            override_host: None,
+            override_port: None,
+            method: None,
+            password: None,
+            users_shadowsocks: None,
+            network: None,
+            uuid: None,
+            alter_id: None,
+            users_vmess: None,
+            flow: None,
+            users_vless: None,
+            users_trojan: None,
+            users_hysteria2: Some(vec![Hysteria2UserIR {
+                name: "test_user".to_string(),
+                password: "test_password".to_string(),
+            }]),
+            congestion_control: Some("bbr".to_string()),
+            salamander: None,
+            obfs: Some("test_obfs".to_string()),
+            brutal_up_mbps: Some(100),
+            brutal_down_mbps: Some(100),
+            transport: None,
+            ws_path: None,
+            ws_host: None,
+            h2_path: None,
+            h2_host: None,
+            grpc_service: None,
+            tls_enabled: None,
+            tls_cert_path: Some("test_cert.pem".to_string()),
+            tls_key_path: Some("test_key.pem".to_string()),
+            tls_cert_pem: None,
+            tls_key_pem: None,
+            tls_server_name: None,
+            tls_alpn: None,
+            multiplex: None,
+        };
+
+        // Verify Hysteria2 fields are set
+        assert!(ir.users_hysteria2.is_some());
+        assert_eq!(ir.congestion_control, Some("bbr".to_string()));
+        assert_eq!(ir.obfs, Some("test_obfs".to_string()));
+        assert_eq!(ir.brutal_up_mbps, Some(100));
+        assert_eq!(ir.brutal_down_mbps, Some(100));
     }
 }

@@ -110,6 +110,20 @@ pub struct InboundParam {
     pub tls_server_name: Option<String>,
     /// TLS ALPN protocols
     pub tls_alpn: Option<Vec<String>>,
+
+    // Hysteria2-specific fields
+    /// Hysteria2 multi-user authentication (JSON-encoded for now)
+    pub users_hysteria2: Option<String>,
+    /// Hysteria2 congestion control algorithm (e.g., "bbr", "cubic", "brutal")
+    pub congestion_control: Option<String>,
+    /// Hysteria2 Salamander obfuscation password
+    pub salamander: Option<String>,
+    /// Hysteria2 obfuscation key
+    pub obfs: Option<String>,
+    /// Hysteria2 Brutal upload limit (Mbps)
+    pub brutal_up_mbps: Option<u32>,
+    /// Hysteria2 Brutal download limit (Mbps)
+    pub brutal_down_mbps: Option<u32>,
 }
 
 /// Outbound construction parameters (derived from IR).

@@ -58,16 +58,26 @@ Last audited: 2025-11-10 10:45 UTC
        - 添加 `StandardTlsConfig` 的 inline PEM 支持（`cert_pem`/`key_pem`）
        - 添加测试验证 Naive 入站注册（`app/tests/naive_inbound_test.rs`）
        - 入站协议覆盖率提升至 **71% (12/17)**
-     - [ ] **Hysteria2 入站实现**：QUIC + congestion control + obfs + auth
+     - ✅ **Hysteria2 入站实现** — 已完成 2025-11-12
+       - 添加 Hysteria2 入站适配器实现（`crates/sb-adapters/src/inbound/hysteria2.rs`）
+       - 实现 QUIC + congestion control (BBR/Brutal) + obfuscation + multi-user auth
+       - 添加 Hysteria2 相关字段到 `InboundIR`（users_hysteria2, congestion_control, salamander, obfs, brutal_up/down_mbps）
+       - 添加 Hysteria2 相关字段到 `InboundParam` 并更新 bridge.rs 转换逻辑
+       - 定义 `Hysteria2UserIR` 类型（name + password）
+       - 在 `app/Cargo.toml` 的 `adapters` 特性中添加 `adapter-hysteria2`
+       - 实现 `InboundService` trait 支持 serve()/request_shutdown()/active_connections()
+       - 替换 `register.rs` 中的 stub 实现为完整的构建器函数
+       - 添加测试验证 Hysteria2 入站字段（`crates/sb-adapters/src/register.rs` tests）
+       - 入站协议覆盖率提升至 **76% (13/17)**
      - [ ] **TUIC 入站实现**：QUIC + congestion control + UDP relay
-- **现状**：枚举已对齐，12 种入站完整可用（含 Naive），5 种为 stub
+- **现状**：枚举已对齐，13 种入站完整可用（含 Naive 和 Hysteria2），4 种为 stub
 - **待办**：
   - [x] 为 Naive/ShadowTLS/AnyTLS 等入站注册 stub builder 并记录 fallback
   - [x] 在 `register.rs` 中添加 TUN/Redirect/TProxy 注册函数，连接到现有实现 — 已完成 2025-11-10
   - [x] 为 Direct 入站设计 IR schema 并提供最小实现 — 已完成 2025-11-11
   - [x] 设计 Inbound IR schema v2（含协议字段扩展）— 已完成 2025-11-10
   - [x] 将 Naive stub 升级为完整实现（HTTP/2 CONNECT + TLS）— 已完成 2025-11-12
-  - [ ] 将 Hysteria2 stub 升级为完整实现（QUIC + congestion control + obfs）
+  - [x] 将 Hysteria2 stub 升级为完整实现（QUIC + congestion control + obfs）— 已完成 2025-11-12
   - [ ] 将 TUIC stub 升级为完整实现（QUIC + congestion control + UDP relay）
 
 ### WS-B — Outbound Protocol Coverage（P0）

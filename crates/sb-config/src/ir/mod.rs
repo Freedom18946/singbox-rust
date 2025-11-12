@@ -217,6 +217,15 @@ pub struct TrojanUserIR {
     pub password: String,
 }
 
+/// Hysteria2 user configuration for multi-user inbound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Hysteria2UserIR {
+    /// User name.
+    pub name: String,
+    /// User password.
+    pub password: String,
+}
+
 /// Multiplex options for inbound connections (yamux-based stream multiplexing).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct MultiplexOptionsIR {
@@ -302,6 +311,26 @@ pub struct InboundIR {
     /// Trojan multi-user configuration.
     #[serde(default)]
     pub users_trojan: Option<Vec<TrojanUserIR>>,
+
+    // Protocol-specific fields (Hysteria2)
+    /// Hysteria2 multi-user configuration.
+    #[serde(default)]
+    pub users_hysteria2: Option<Vec<Hysteria2UserIR>>,
+    /// Hysteria2 congestion control algorithm (e.g., "bbr", "cubic", "brutal").
+    #[serde(default)]
+    pub congestion_control: Option<String>,
+    /// Hysteria2 Salamander obfuscation password.
+    #[serde(default)]
+    pub salamander: Option<String>,
+    /// Hysteria2 obfuscation key.
+    #[serde(default)]
+    pub obfs: Option<String>,
+    /// Hysteria2 Brutal congestion control upload limit (Mbps).
+    #[serde(default)]
+    pub brutal_up_mbps: Option<u32>,
+    /// Hysteria2 Brutal congestion control download limit (Mbps).
+    #[serde(default)]
+    pub brutal_down_mbps: Option<u32>,
 
     // Transport and security options (V2Ray protocols)
     /// Transport layer chain (e.g., ["tls", "ws"] for WebSocket over TLS).

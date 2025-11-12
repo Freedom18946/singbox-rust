@@ -474,6 +474,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 tls_key_pem: None,
                 tls_server_name: None,
                 tls_alpn: None,
+                users_hysteria2: None,
+                congestion_control: None,
+                salamander: None,
+                obfs: None,
+                brutal_up_mbps: None,
+                brutal_down_mbps: None,
                 multiplex: None,
             });
         }

@@ -95,6 +95,7 @@ adapters = [
     "sb-adapters/adapter-vmess",
     "sb-adapters/adapter-vless",
     "sb-adapters/adapter-naive",
+    "sb-adapters/adapter-hysteria2",
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",

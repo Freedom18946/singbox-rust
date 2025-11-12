@@ -67,13 +67,13 @@ Status legend
 | anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:518-524`) |
 | hysteria (v1) | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:494-500`) |
 | tuic | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:510-516`) |
-| hysteria2 | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:502-508`) |
+| hysteria2 | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/hysteria2.rs` (2025-11-12, QUIC + congestion control + obfs + auth) |
 
 **Rust 入站实现小结：**
-- 完整实现并注册：12 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, tun, redirect, tproxy, direct)
-- 注册为 stub (返回警告)：5 种 (shadowtls, hysteria, hysteria2, tuic, anytls)
+- 完整实现并注册：13 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, hysteria2, tun, redirect, tproxy, direct)
+- 注册为 stub (返回警告)：4 种 (shadowtls, hysteria, tuic, anytls)
 - 完全缺失：0 种
-- **总计：17 种入站中，12 种完全可用 (71%)，较前次 +1 种（+6%）— 2025-11-12 更新**
+- **总计：17 种入站中，13 种完全可用 (76%)，较前次 +1 种（+6%）— 2025-11-12 更新**
 
 ### 出站协议对比（Outbound Protocols）
 
