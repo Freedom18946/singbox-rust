@@ -83,7 +83,12 @@ impl OutboundConnector for ShadowTlsConnector {
                 server: self.cfg.server.clone(),
                 port: self.cfg.port,
                 sni: self.cfg.sni.clone(),
-                alpn: self.cfg.alpn.clone(),
+                alpn: self.cfg.alpn.as_ref().map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                }),
                 skip_cert_verify: self.cfg.skip_cert_verify,
             };
 

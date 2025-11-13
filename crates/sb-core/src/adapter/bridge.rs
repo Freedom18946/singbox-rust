@@ -206,6 +206,16 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
     });
 
+    // Serialize TUIC users to JSON if present
+    let users_tuic = ib.users_tuic.as_ref().map(|users| {
+        serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
+    });
+
+    // Serialize Hysteria v1 users to JSON if present
+    let users_hysteria = ib.users_hysteria.as_ref().map(|users| {
+        serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
+    });
+
     InboundParam {
         kind: ib.ty.ty_str().to_string(),
         listen: ib.listen.clone(),
@@ -228,6 +238,14 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         obfs: ib.obfs.clone(),
         brutal_up_mbps: ib.brutal_up_mbps,
         brutal_down_mbps: ib.brutal_down_mbps,
+        users_tuic,
+        users_hysteria,
+        hysteria_protocol: ib.hysteria_protocol.clone(),
+        hysteria_obfs: ib.hysteria_obfs.clone(),
+        hysteria_up_mbps: ib.hysteria_up_mbps,
+        hysteria_down_mbps: ib.hysteria_down_mbps,
+        hysteria_recv_window_conn: ib.hysteria_recv_window_conn,
+        hysteria_recv_window: ib.hysteria_recv_window,
     }
 }
 
@@ -1744,7 +1762,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                 raw.split(',')
                                     .map(|x| x.trim().to_string())
                                     .filter(|x| !x.is_empty())
-                                    .collect::<Vec<_>>()
+                                    .collect::<Vec<String>>()
                             })
                         }),
                     skip_cert_verify: p.skip_cert_verify.unwrap_or(false),

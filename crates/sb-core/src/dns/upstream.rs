@@ -720,6 +720,7 @@ impl DotUpstream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
 
     #[test]
     fn dot_upstream_name_contains_sni_and_addr() {
@@ -779,6 +780,105 @@ mod tests {
         assert_eq!(up.server_name, "dns.quad9.net");
         assert_eq!(up.extra_ca_paths.len(), 1);
         assert!(up.skip_verify);
+    }
+
+    #[tokio::test]
+    async fn test_udp_upstream_creation() {
+        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
+        let upstream = UdpUpstream::new(server);
+
+        assert_eq!(upstream.name(), "udp://8.8.8.8:53");
+        assert_eq!(upstream.server, server);
+    }
+
+    #[tokio::test]
+    async fn test_system_upstream() {
+        let upstream = SystemUpstream::new();
+        assert_eq!(upstream.name(), "system");
+
+        // 系统解析器应该总是健康的
+        assert!(upstream.health_check().await);
+    }
+
+    #[test]
+    fn test_query_packet_building() {
+        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
+        let upstream = UdpUpstream::new(server);
+
+        let packet_res = upstream.build_query_packet("example.com", RecordType::A);
+        assert!(packet_res.is_ok(), "failed to build query packet");
+        let packet = match packet_res {
+            Ok(p) => p,
+            Err(e) => {
+                // Use assert! to surface the error without relying on panic!/unwrap/expect
+                panic!("error: {}", e);
+            }
+        };
+
+        // 验证包的基本结构
+        assert!(packet.len() > 12); // 至少包含 header
+        assert_eq!(packet[4], 0x00); // QDCOUNT high byte
+        assert_eq!(packet[5], 0x01); // QDCOUNT low byte (1 question)
+    }
+
+    #[test]
+    fn test_build_query_packet_invalid_label() {
+        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
+        let upstream = UdpUpstream::new(server);
+
+        // Test with domain label > 63 chars (DNS protocol limit)
+        let long_label = "a".repeat(64);
+        let domain = format!("{}.example.com", long_label);
+
+        let result = upstream.build_query_packet(&domain, RecordType::A);
+        assert!(result.is_err(), "should reject labels > 63 chars");
+
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(
+                msg.contains("Invalid domain label"),
+                "error should mention invalid domain label: {}", msg
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_response_too_short() {
+        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
+        let upstream = UdpUpstream::new(server);
+
+        // DNS response must be at least 12 bytes (header)
+        let short_packet = vec![0u8; 10];
+
+        let result = upstream.parse_response(&short_packet, RecordType::A);
+        assert!(result.is_err(), "should reject packets < 12 bytes");
+
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(
+                msg.contains("too short") || msg.contains("short"),
+                "error should mention packet too short: {}", msg
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_system_upstream_nonexistent_domain() {
+        let upstream = SystemUpstream::new();
+
+        // Query a domain that should not exist
+        let result = upstream.query("invalid-nonexistent-domain-12345.local", RecordType::A).await;
+
+        // Should fail with appropriate error
+        assert!(result.is_err(), "should fail on nonexistent domain");
+
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(
+                msg.contains("failed") || msg.contains("resolution") || msg.contains("not found"),
+                "error should indicate DNS failure: {}", msg
+            );
+        }
     }
 }
 
@@ -1244,110 +1344,5 @@ impl DnsUpstream for SystemUpstream {
     async fn health_check(&self) -> bool {
         // 系统解析器通常总是可用的
         true
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::{Ipv4Addr, SocketAddr};
-
-    #[tokio::test]
-    async fn test_udp_upstream_creation() {
-        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
-        let upstream = UdpUpstream::new(server);
-
-        assert_eq!(upstream.name(), "udp://8.8.8.8:53");
-        assert_eq!(upstream.server, server);
-    }
-
-    #[tokio::test]
-    async fn test_system_upstream() {
-        let upstream = SystemUpstream::new();
-        assert_eq!(upstream.name(), "system");
-
-        // 系统解析器应该总是健康的
-        assert!(upstream.health_check().await);
-    }
-
-    #[test]
-    fn test_query_packet_building() {
-        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
-        let upstream = UdpUpstream::new(server);
-
-        let packet_res = upstream.build_query_packet("example.com", RecordType::A);
-        assert!(packet_res.is_ok(), "failed to build query packet");
-        let packet = match packet_res {
-            Ok(p) => p,
-            Err(e) => {
-                // Use assert! to surface the error without relying on panic!/unwrap/expect
-                panic!("error: {}", e);
-            }
-        };
-
-        // 验证包的基本结构
-        assert!(packet.len() > 12); // 至少包含 header
-        assert_eq!(packet[4], 0x00); // QDCOUNT high byte
-        assert_eq!(packet[5], 0x01); // QDCOUNT low byte (1 question)
-    }
-
-    #[test]
-    fn test_build_query_packet_invalid_label() {
-        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
-        let upstream = UdpUpstream::new(server);
-
-        // Test with domain label > 63 chars (DNS protocol limit)
-        let long_label = "a".repeat(64);
-        let domain = format!("{}.example.com", long_label);
-        
-        let result = upstream.build_query_packet(&domain, RecordType::A);
-        assert!(result.is_err(), "should reject labels > 63 chars");
-        
-        if let Err(e) = result {
-            let msg = e.to_string();
-            assert!(
-                msg.contains("Invalid domain label"),
-                "error should mention invalid domain label: {}", msg
-            );
-        }
-    }
-
-    #[test]
-    fn test_parse_response_too_short() {
-        let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
-        let upstream = UdpUpstream::new(server);
-
-        // DNS response must be at least 12 bytes (header)
-        let short_packet = vec![0u8; 10];
-        
-        let result = upstream.parse_response(&short_packet, RecordType::A);
-        assert!(result.is_err(), "should reject packets < 12 bytes");
-        
-        if let Err(e) = result {
-            let msg = e.to_string();
-            assert!(
-                msg.contains("too short") || msg.contains("short"),
-                "error should mention packet too short: {}", msg
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_system_upstream_nonexistent_domain() {
-        let upstream = SystemUpstream::new();
-        
-        // Query a domain that should not exist
-        let result = upstream.query("invalid-nonexistent-domain-12345.local", RecordType::A).await;
-        
-        // Should fail with appropriate error
-        assert!(result.is_err(), "should fail on nonexistent domain");
-        
-        if let Err(e) = result {
-            let msg = e.to_string();
-            assert!(
-                msg.contains("failed") || msg.contains("resolution") || msg.contains("not found"),
-                "error should indicate DNS failure: {}", msg
-            );
-        }
     }
 }

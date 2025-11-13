@@ -325,19 +325,19 @@ mod tests {
     #[test]
     fn test_parse_test_url() {
         // HTTP
-        let (host, port, https) = parse_test_url("http://www.gstatic.com/generate_204").unwrap();
+        let (host, port, https, _) = parse_test_url("http://www.gstatic.com/generate_204").unwrap();
         assert_eq!(host, "www.gstatic.com");
         assert_eq!(port, 80);
         assert!(!https);
 
         // HTTPS
-        let (host, port, https) = parse_test_url("https://www.google.com/").unwrap();
+        let (host, port, https, _) = parse_test_url("https://www.google.com/").unwrap();
         assert_eq!(host, "www.google.com");
         assert_eq!(port, 443);
         assert!(https);
 
         // Custom port
-        let (host, port, _) = parse_test_url("http://example.com:8080/test").unwrap();
+        let (host, port, _, _) = parse_test_url("http://example.com:8080/test").unwrap();
         assert_eq!(host, "example.com");
         assert_eq!(port, 8080);
     }

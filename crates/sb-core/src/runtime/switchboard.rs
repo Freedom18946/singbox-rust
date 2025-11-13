@@ -880,7 +880,7 @@ fn shadowtls_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<cra
                     raw.split(',')
                         .map(|x| x.trim().to_string())
                         .filter(|x| !x.is_empty())
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<String>>()
                 })
             }),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),

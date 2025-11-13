@@ -124,6 +124,26 @@ pub struct InboundParam {
     pub brutal_up_mbps: Option<u32>,
     /// Hysteria2 Brutal download limit (Mbps)
     pub brutal_down_mbps: Option<u32>,
+
+    // TUIC-specific fields
+    /// TUIC multi-user authentication (JSON-encoded for now)
+    pub users_tuic: Option<String>,
+
+    // Hysteria v1-specific fields
+    /// Hysteria v1 multi-user authentication (JSON-encoded for now)
+    pub users_hysteria: Option<String>,
+    /// Hysteria v1 protocol type ("udp", "wechat-video", "faketcp")
+    pub hysteria_protocol: Option<String>,
+    /// Hysteria v1 obfuscation password
+    pub hysteria_obfs: Option<String>,
+    /// Hysteria v1 upload bandwidth (Mbps)
+    pub hysteria_up_mbps: Option<u32>,
+    /// Hysteria v1 download bandwidth (Mbps)
+    pub hysteria_down_mbps: Option<u32>,
+    /// Hysteria v1 QUIC receive window for connection
+    pub hysteria_recv_window_conn: Option<u64>,
+    /// Hysteria v1 QUIC receive window for stream
+    pub hysteria_recv_window: Option<u64>,
 }
 
 /// Outbound construction parameters (derived from IR).

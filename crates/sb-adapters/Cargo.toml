@@ -12,6 +12,7 @@ anyhow = "1"
 async-trait = "0.1"
 bytes = "1"
 once_cell = "1"
+parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
@@ -116,7 +117,7 @@ dns_dot = []
 dns_doq = ["sb-core/dns_doq"]
 e2e = []
 # TUIC protocol support
-tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots"]
+tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile"]
 
 # Go parity adapter feature gates
 adapter-socks = []
@@ -130,9 +131,9 @@ adapter-vmess = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport
 adapter-vless = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "sb-core/out_vless"]
 adapter-hysteria = ["sb-core/out_hysteria"]
 adapter-hysteria2 = ["sb-core/out_hysteria2"]
-adapter-shadowtls = ["dep:sb-transport", "sb-transport/transport_tls", "sb-core/out_shadowtls"]
+adapter-shadowtls = ["shadowtls", "dep:sb-transport", "sb-transport/transport_tls", "sb-core/out_shadowtls"]
 adapter-ssh = ["sb-core/out_ssh"]
-adapter-tuic = ["sb-core/out_tuic"]
+adapter-tuic = ["tuic", "sb-core/out_tuic"]
 adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 adapter-dns = []
 adapter-tun = ["tun"]

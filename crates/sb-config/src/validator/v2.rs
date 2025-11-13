@@ -480,6 +480,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 obfs: None,
                 brutal_up_mbps: None,
                 brutal_down_mbps: None,
+                users_tuic: None,
+                users_hysteria: None,
+                hysteria_protocol: None,
+                hysteria_obfs: None,
+                hysteria_up_mbps: None,
+                hysteria_down_mbps: None,
+                hysteria_recv_window_conn: None,
+                hysteria_recv_window: None,
                 multiplex: None,
             });
         }
@@ -680,6 +688,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 ssh_compression: None,
                 ssh_keepalive_interval: None,
                 connect_timeout_sec: None,
+                tor_proxy_addr: None,
+                tor_executable_path: None,
+                tor_extra_args: None,
+                tor_data_directory: None,
+                tor_options: None,
                 test_url: None,
                 test_interval_ms: None,
                 test_timeout_ms: None,
@@ -692,6 +705,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 dns_enable_edns0: None,
                 dns_edns0_buffer_size: None,
                 dns_doh_url: None,
+                hysteria_protocol: None,
+                hysteria_auth: None,
+                hysteria_recv_window_conn: None,
+                hysteria_recv_window: None,
             };
 
             if let Some(transport_val) = o.get("transport") {

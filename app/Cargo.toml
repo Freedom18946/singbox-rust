@@ -95,7 +95,10 @@ adapters = [
     "sb-adapters/adapter-vmess",
     "sb-adapters/adapter-vless",
     "sb-adapters/adapter-naive",
+    "sb-adapters/adapter-hysteria",
     "sb-adapters/adapter-hysteria2",
+    "sb-adapters/adapter-tuic",
+    "sb-adapters/adapter-shadowtls",
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",
@@ -333,7 +336,7 @@ criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
-sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "tls_reality", "transport_ech", "transport_mux"] }
+sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "tls_reality", "transport_ech", "transport_mux"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 

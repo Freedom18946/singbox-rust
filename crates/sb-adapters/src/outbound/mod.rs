@@ -282,7 +282,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
                 .tls_sni
                 .clone()
                 .unwrap_or_else(|| "example.com".to_string()),
-            alpn: ir.tls_alpn.clone(),
+            alpn: ir.tls_alpn.as_ref().map(|v| v.join(",")),
             skip_cert_verify: false,
         };
         Ok(Self::new(cfg))

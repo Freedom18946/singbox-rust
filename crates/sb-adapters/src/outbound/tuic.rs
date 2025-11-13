@@ -74,7 +74,12 @@ impl TuicConnector {
             token: self.cfg.token.clone(),
             password: self.cfg.password.clone(),
             congestion_control: self.cfg.congestion_control.clone(),
-            alpn: self.cfg.alpn.clone(),
+            alpn: self.cfg.alpn.as_ref().map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            }),
             skip_cert_verify: self.cfg.skip_cert_verify,
             sni: None,
             tls_ca_paths: Vec::new(),
@@ -135,7 +140,12 @@ impl OutboundConnector for TuicConnector {
                 token: self.cfg.token.clone(),
                 password: self.cfg.password.clone(),
                 congestion_control: self.cfg.congestion_control.clone(),
-                alpn: self.cfg.alpn.clone(),
+                alpn: self.cfg.alpn.as_ref().map(|s| {
+                    s.split(',')
+                        .map(|x| x.trim().to_string())
+                        .filter(|x| !x.is_empty())
+                        .collect()
+                }),
                 skip_cert_verify: self.cfg.skip_cert_verify,
                 sni: None,
                 tls_ca_paths: Vec::new(),

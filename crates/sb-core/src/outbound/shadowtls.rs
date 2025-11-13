@@ -25,7 +25,7 @@ pub struct ShadowTlsConfig {
     pub server: String,
     pub port: u16,
     pub sni: String,
-    pub alpn: Option<String>,
+    pub alpn: Option<Vec<String>>,
     pub skip_cert_verify: bool,
 }
 
@@ -62,8 +62,11 @@ impl ShadowTlsOutbound {
             tls_config.dangerous().set_certificate_verifier(Arc::new(v));
         }
 
-        if let Some(alpn) = &config.alpn {
-            tls_config.alpn_protocols = vec![alpn.as_bytes().to_vec()];
+        if let Some(alpn_list) = &config.alpn {
+            tls_config.alpn_protocols = alpn_list
+                .iter()
+                .map(|proto| proto.as_bytes().to_vec())
+                .collect();
         }
 
         let tls_config = Arc::new(tls_config);

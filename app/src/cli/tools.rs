@@ -196,6 +196,7 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
         let sess = f.open_session().await.context("open udp session")?;
         // stdin -> udp
         let host_c = host.clone();
+        let sess_clone = sess.clone();
         let s1 = tokio::spawn(async move {
             let mut stdin = tokio::io::stdin();
             let mut buf = [0u8; 8192];
@@ -203,7 +204,7 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
                 match tokio::io::AsyncReadExt::read(&mut stdin, &mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if sess.send_to(&buf[..n], &host_c, port).await.is_err() {
+                        if sess_clone.send_to(&buf[..n], &host_c, port).await.is_err() {
                             break;
                         }
                     }

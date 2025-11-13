@@ -4406,6 +4406,7 @@ dependencies = [
  "libc",
  "metrics 0.23.1",
  "once_cell",
+ "parking_lot",
  "proptest",
  "quinn",
  "rand 0.8.5",

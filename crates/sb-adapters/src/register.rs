@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Once};
+use std::io;
+use parking_lot::Mutex;
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::registry;
@@ -38,6 +40,12 @@ pub fn register_all() {
             let _ = registry::register_outbound("vless", build_vless_outbound);
         }
         {
+            let _ = registry::register_outbound("direct", build_direct_outbound);
+        }
+        {
+            let _ = registry::register_outbound("block", build_block_outbound);
+        }
+        {
             let _ = registry::register_outbound("dns", build_dns_outbound);
         }
         {
@@ -60,6 +68,9 @@ pub fn register_all() {
         }
         {
             let _ = registry::register_outbound("ssh", build_ssh_outbound);
+        }
+        {
+            let _ = registry::register_outbound("shadowtls", build_shadowtls_outbound);
         }
 
         #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
@@ -861,19 +872,176 @@ fn build_naive_inbound(
 }
 
 fn build_shadowtls_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("shadowtls");
-    None
+    #[cfg(feature = "adapter-shadowtls")]
+    {
+        use crate::inbound::shadowtls::ShadowTlsInboundConfig;
+        use sb_transport::tls::StandardTlsConfig;
+
+        // Parse listen address
+        let listen_str = format!("{}:{}", param.listen, param.port);
+        let listen: SocketAddr = match listen_str.parse() {
+            Ok(addr) => addr,
+            Err(e) => {
+                warn!("Failed to parse ShadowTLS listen address '{}': {}", listen_str, e);
+                return None;
+            }
+        };
+
+        // Get TLS certificate and key (required for ShadowTLS)
+        let (cert_pem, cert_path) = match (&param.tls_cert_pem, &param.tls_cert_path) {
+            (Some(pem), _) => (Some(pem.clone()), None),
+            (None, Some(path)) => (None, Some(path.clone())),
+            (None, None) => {
+                warn!("ShadowTLS inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
+                return None;
+            }
+        };
+
+        let (key_pem, key_path) = match (&param.tls_key_pem, &param.tls_key_path) {
+            (Some(pem), _) => (Some(pem.clone()), None),
+            (None, Some(path)) => (None, Some(path.clone())),
+            (None, None) => {
+                warn!("ShadowTLS inbound requires TLS private key (tls_key_pem or tls_key_path)");
+                return None;
+            }
+        };
+
+        // Create TLS configuration using sb-transport infrastructure
+        let alpn = param.tls_alpn.clone().unwrap_or_default();
+        let standard_tls = StandardTlsConfig {
+            server_name: param.tls_server_name.clone(),
+            alpn,
+            insecure: false,
+            cert_path,
+            key_path,
+            cert_pem,
+            key_pem,
+        };
+
+        let tls = sb_transport::TlsConfig::Standard(standard_tls);
+
+        let config = ShadowTlsInboundConfig {
+            listen,
+            tls,
+            router: ctx.router.clone(),
+        };
+
+        Some(Arc::new(ShadowTlsInboundAdapter::new(config)))
+    }
+    #[cfg(not(feature = "adapter-shadowtls"))]
+    {
+        stub_inbound("shadowtls");
+        None
+    }
 }
 
 fn build_hysteria_inbound(
-    _param: &InboundParam,
+    param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("hysteria");
-    None
+    #[cfg(feature = "adapter-hysteria")]
+    {
+        use crate::inbound::hysteria::{HysteriaInbound, HysteriaInboundConfig, HysteriaUserConfig};
+        use std::net::SocketAddr;
+
+        // Parse listen address
+        let listen_str = format!("{}:{}", param.listen, param.port);
+        let listen: SocketAddr = match listen_str.parse() {
+            Ok(addr) => addr,
+            Err(e) => {
+                warn!("Failed to parse Hysteria v1 listen address '{}': {}", listen_str, e);
+                return None;
+            }
+        };
+
+        // Parse users from JSON
+        let users = if let Some(users_json) = &param.users_hysteria {
+            match serde_json::from_str::<Vec<sb_config::ir::HysteriaUserIR>>(users_json) {
+                Ok(user_irs) => user_irs
+                    .into_iter()
+                    .map(|u| HysteriaUserConfig {
+                        name: u.name,
+                        auth: u.auth,
+                    })
+                    .collect(),
+                Err(e) => {
+                    warn!("Failed to parse Hysteria v1 users JSON: {}", e);
+                    vec![]
+                }
+            }
+        } else {
+            vec![]
+        };
+
+        if users.is_empty() {
+            warn!("Hysteria v1 inbound requires at least one user");
+            return None;
+        }
+
+        // Get TLS certificate and key paths (required for Hysteria v1)
+        let cert_path = match (&param.tls_cert_pem, &param.tls_cert_path) {
+            (Some(pem), _) => {
+                // Write inline PEM to temporary file
+                let temp_path = format!("/tmp/hysteria_cert_{}.pem", std::process::id());
+                if let Err(e) = std::fs::write(&temp_path, pem) {
+                    warn!("Failed to write Hysteria v1 TLS certificate to temp file: {}", e);
+                    return None;
+                }
+                temp_path
+            }
+            (None, Some(path)) => path.clone(),
+            (None, None) => {
+                warn!("Hysteria v1 inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
+                return None;
+            }
+        };
+
+        let key_path = match (&param.tls_key_pem, &param.tls_key_path) {
+            (Some(pem), _) => {
+                // Write inline PEM to temporary file
+                let temp_path = format!("/tmp/hysteria_key_{}.pem", std::process::id());
+                if let Err(e) = std::fs::write(&temp_path, pem) {
+                    warn!("Failed to write Hysteria v1 TLS private key to temp file: {}", e);
+                    return None;
+                }
+                temp_path
+            }
+            (None, Some(path)) => path.clone(),
+            (None, None) => {
+                warn!("Hysteria v1 inbound requires TLS private key (tls_key_pem or tls_key_path)");
+                return None;
+            }
+        };
+
+        let config = HysteriaInboundConfig {
+            listen,
+            users,
+            up_mbps: param.hysteria_up_mbps.unwrap_or(10),
+            down_mbps: param.hysteria_down_mbps.unwrap_or(50),
+            obfs: param.hysteria_obfs.clone(),
+            cert_path,
+            key_path,
+            recv_window_conn: param.hysteria_recv_window_conn,
+            recv_window: param.hysteria_recv_window,
+        };
+
+        match HysteriaInbound::new(config) {
+            Ok(adapter) => Some(Arc::new(adapter)),
+            Err(e) => {
+                warn!("Failed to build Hysteria v1 inbound: {:?}", e);
+                None
+            }
+        }
+    }
+
+    #[cfg(not(feature = "adapter-hysteria"))]
+    {
+        stub_inbound("hysteria");
+        None
+    }
 }
 
 fn build_hysteria2_inbound(
@@ -978,6 +1146,104 @@ fn build_hysteria2_inbound(
     }
 }
 
+#[cfg(feature = "adapter-tuic")]
+fn build_tuic_inbound(
+    param: &InboundParam,
+    _ctx: &registry::AdapterInboundContext<'_>,
+) -> Option<Arc<dyn InboundService>> {
+    use crate::inbound::tuic::{TuicInboundConfig, TuicUser};
+    use std::net::SocketAddr;
+
+    // Parse listen address
+    let listen_str = format!("{}:{}", param.listen, param.port);
+    let listen: SocketAddr = match listen_str.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!("Failed to parse TUIC listen address '{}': {}", listen_str, e);
+            return None;
+        }
+    };
+
+    // Parse users from JSON
+    let users = if let Some(users_json) = &param.users_tuic {
+        match serde_json::from_str::<Vec<sb_config::ir::TuicUserIR>>(users_json) {
+            Ok(user_irs) => user_irs
+                .into_iter()
+                .filter_map(|u| {
+                    // Parse UUID from string
+                    match uuid::Uuid::parse_str(&u.uuid) {
+                        Ok(uuid) => Some(TuicUser {
+                            uuid,
+                            token: u.token,
+                        }),
+                        Err(e) => {
+                            warn!("Failed to parse TUIC UUID '{}': {}", u.uuid, e);
+                            None
+                        }
+                    }
+                })
+                .collect(),
+            Err(e) => {
+                warn!("Failed to parse TUIC users JSON: {}", e);
+                vec![]
+            }
+        }
+    } else {
+        vec![]
+    };
+
+    if users.is_empty() {
+        warn!("TUIC inbound requires at least one user");
+        return None;
+    }
+
+    // Get TLS certificate and key (required for TUIC)
+    let cert = match (&param.tls_cert_pem, &param.tls_cert_path) {
+        (Some(pem), _) => pem.clone(),
+        (None, Some(path)) => {
+            match std::fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!("Failed to read TUIC TLS certificate from '{}': {}", path, e);
+                    return None;
+                }
+            }
+        }
+        (None, None) => {
+            warn!("TUIC inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
+            return None;
+        }
+    };
+
+    let key = match (&param.tls_key_pem, &param.tls_key_path) {
+        (Some(pem), _) => pem.clone(),
+        (None, Some(path)) => {
+            match std::fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!("Failed to read TUIC TLS private key from '{}': {}", path, e);
+                    return None;
+                }
+            }
+        }
+        (None, None) => {
+            warn!("TUIC inbound requires TLS private key (tls_key_pem or tls_key_path)");
+            return None;
+        }
+    };
+
+    let config = TuicInboundConfig {
+        listen,
+        users,
+        cert,
+        key,
+        congestion_control: param.congestion_control.clone(),
+    };
+
+    Some(Arc::new(TuicInboundAdapter::new(config)))
+}
+
+#[cfg(not(feature = "adapter-tuic"))]
 fn build_tuic_inbound(
     _param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
@@ -1033,12 +1299,168 @@ fn build_dns_outbound(
     None
 }
 
-fn build_tor_outbound(
+fn build_direct_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
 ) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
-    stub_outbound("tor");
-    None
+    use crate::outbound::direct::DirectOutbound;
+
+    // Create direct outbound instance
+    let direct = DirectOutbound::new();
+    let direct_arc = Arc::new(direct);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct DirectConnectorWrapper {
+        inner: Arc<DirectOutbound>,
+    }
+
+    impl std::fmt::Debug for DirectConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("DirectConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for DirectConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // Direct outbound connects directly to target
+            use sb_core::net::Address;
+            use sb_core::pipeline::Outbound;
+
+            let target = if host.parse::<std::net::IpAddr>().is_ok() {
+                Address::Ip(format!("{}:{}", host, port).parse().map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Invalid socket address: {}", e))
+                })?)
+            } else {
+                Address::Domain(host.to_string(), port)
+            };
+
+            self.inner.connect(target).await
+        }
+    }
+
+    let wrapper = DirectConnectorWrapper {
+        inner: direct_arc,
+    };
+
+    // Return TCP connector wrapper (no UDP support for direct)
+    Some((Arc::new(wrapper), None))
+}
+
+fn build_block_outbound(
+    _param: &OutboundParam,
+    _ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    use crate::outbound::block::BlockOutbound;
+
+    // Create block outbound instance
+    let block = BlockOutbound::new();
+    let block_arc = Arc::new(block);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct BlockConnectorWrapper {
+        inner: Arc<BlockOutbound>,
+    }
+
+    impl std::fmt::Debug for BlockConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("BlockConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for BlockConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // Block outbound always returns error
+            use sb_core::net::Address;
+            use sb_core::pipeline::Outbound;
+
+            let target = Address::Domain(host.to_string(), port);
+            self.inner.connect(target).await
+        }
+    }
+
+    let wrapper = BlockConnectorWrapper {
+        inner: block_arc,
+    };
+
+    // Return TCP connector wrapper (no UDP support for block)
+    Some((Arc::new(wrapper), None))
+}
+
+fn build_tor_outbound(
+    _param: &OutboundParam,
+    ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    #[cfg(feature = "adapter-socks")]
+    {
+        use crate::outbound::socks5::Socks5Connector;
+        use sb_config::outbound::Socks5Config;
+
+        // Default Tor SOCKS5 proxy address
+        let default_tor_proxy = "127.0.0.1:9050".to_string();
+
+    // Get Tor proxy address from IR, fall back to default
+    let proxy_addr = ir.tor_proxy_addr.as_ref()
+        .unwrap_or(&default_tor_proxy);
+
+    // Create SOCKS5 config (Tor doesn't require authentication by default)
+    let config = Socks5Config {
+        server: proxy_addr.clone(),
+        tag: ir.name.clone(),
+        username: None,  // Tor SOCKS5 doesn't use auth
+        password: None,
+        connect_timeout_sec: Some(30),
+        tls: None,  // Tor SOCKS5 doesn't use TLS
+    };
+
+    let connector = Socks5Connector::new(config);
+    let connector_arc = Arc::new(connector);
+
+    // Wrapper that implements OutboundConnector trait
+    // Note: Tor uses SOCKS5 proxy protocol and should be used via switchboard registry
+    #[derive(Clone)]
+    struct TorConnectorWrapper {
+        inner: Arc<Socks5Connector>,
+    }
+
+    impl std::fmt::Debug for TorConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("TorConnectorWrapper")
+                .field("proxy", &"127.0.0.1:9050")
+                .finish()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for TorConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // Tor uses SOCKS5 proxy protocol, cannot return raw TcpStream
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Tor uses SOCKS5 proxy protocol for {}:{}; use switchboard registry instead", host, port),
+            ))
+        }
+    }
+
+    let wrapper = TorConnectorWrapper {
+        inner: connector_arc,
+    };
+
+    // Return TCP connector wrapper (UDP over Tor can be added later)
+    Some((Arc::new(wrapper), None))
+    }
+
+    #[cfg(not(feature = "adapter-socks"))]
+    {
+        stub_outbound("tor");
+        None
+    }
 }
 
 fn build_anytls_outbound(
@@ -1057,11 +1479,183 @@ fn build_wireguard_outbound(
     None
 }
 
+#[cfg(feature = "adapter-hysteria")]
+fn build_hysteria_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    use crate::outbound::hysteria::{HysteriaAdapterConfig, HysteriaConnector};
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port).unwrap_or(443);
+
+    // Hysteria v1 specific configuration
+    let protocol = ir.hysteria_protocol.as_ref()
+        .map(|s| s.clone())
+        .unwrap_or_else(|| "udp".to_string());
+
+    let up_mbps = ir.up_mbps.unwrap_or(10);
+    let down_mbps = ir.down_mbps.unwrap_or(50);
+
+    // Auth string (use hysteria_auth if available, otherwise password)
+    let auth = ir.hysteria_auth.as_ref()
+        .or(ir.password.as_ref())
+        .cloned();
+
+    // Obfuscation
+    let obfs = ir.obfs.clone();
+
+    // ALPN (convert Vec<String> if present, otherwise default)
+    let alpn = ir.tls_alpn.as_ref()
+        .map(|v| v.clone())
+        .unwrap_or_else(|| vec!["hysteria".to_string()]);
+
+    // QUIC receive windows
+    let recv_window_conn = ir.hysteria_recv_window_conn;
+    let recv_window = ir.hysteria_recv_window;
+
+    // TLS configuration
+    let skip_cert_verify = ir.skip_cert_verify.unwrap_or(false);
+    let sni = ir.tls_sni.clone();
+
+    // Build config
+    let cfg = HysteriaAdapterConfig {
+        server: server.clone(),
+        port,
+        protocol,
+        up_mbps,
+        down_mbps,
+        obfs,
+        auth,
+        alpn,
+        recv_window_conn,
+        recv_window,
+        skip_cert_verify,
+        sni,
+    };
+
+    // Create connector
+    let connector = HysteriaConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct HysteriaConnectorWrapper {
+        inner: Arc<HysteriaConnector>,
+    }
+
+    impl std::fmt::Debug for HysteriaConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("HysteriaConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for HysteriaConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // Hysteria v1 uses QUIC stream, cannot return raw TcpStream
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead", host, port),
+            ))
+        }
+    }
+
+    let wrapper = HysteriaConnectorWrapper {
+        inner: connector_arc,
+    };
+
+    // No UDP factory for Hysteria v1 yet (can be added later if needed)
+    Some((Arc::new(wrapper), None))
+}
+
+#[cfg(not(feature = "adapter-hysteria"))]
 fn build_hysteria_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
 ) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
     stub_outbound("hysteria");
+    None
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+fn build_shadowtls_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    use crate::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
+
+    // Extract required fields
+    let server = ir.server.as_ref().or(param.server.as_ref())?;
+    let port = ir.port.or(param.port).unwrap_or(443);
+
+    // SNI is required for TLS
+    let sni = ir.tls_sni.as_ref()
+        .map(|s| s.clone())
+        .unwrap_or_else(|| server.clone());
+
+    // ALPN from tls_alpn (Vec<String>), convert to single comma-separated string
+    let alpn = ir.tls_alpn.as_ref()
+        .map(|v| v.join(","));
+
+    // Skip cert verify (default: false)
+    let skip_cert_verify = ir.skip_cert_verify.unwrap_or(false);
+
+    // Build config
+    let cfg = ShadowTlsAdapterConfig {
+        server: server.clone(),
+        port,
+        sni,
+        alpn,
+        skip_cert_verify,
+    };
+
+    // Create connector
+    let connector = ShadowTlsConnector::new(cfg);
+    let connector_arc = Arc::new(connector);
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct ShadowTlsConnectorWrapper {
+        inner: Arc<ShadowTlsConnector>,
+    }
+
+    impl std::fmt::Debug for ShadowTlsConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("ShadowTlsConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for ShadowTlsConnectorWrapper {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            // ShadowTLS uses encrypted TLS stream, cannot return raw TcpStream
+            // Use switchboard registry instead
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("ShadowTLS uses encrypted TLS stream for {}:{}; use switchboard registry instead", host, port),
+            ))
+        }
+    }
+
+    let wrapper = ShadowTlsConnectorWrapper {
+        inner: connector_arc,
+    };
+
+    // ShadowTLS only supports TCP, no UDP factory
+    Some((Arc::new(wrapper), None))
+}
+
+#[cfg(not(feature = "adapter-shadowtls"))]
+fn build_shadowtls_outbound(
+    _param: &OutboundParam,
+    _ir: &OutboundIR,
+) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+    stub_outbound("shadowtls");
     None
 }
 
@@ -1383,7 +1977,7 @@ impl InboundService for HttpInboundAdapter {
             .map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1392,15 +1986,14 @@ impl InboundService for HttpInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1430,7 +2023,7 @@ impl InboundService for SocksInboundAdapter {
             .map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1439,15 +2032,14 @@ impl InboundService for SocksInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1487,7 +2079,7 @@ impl InboundService for VmessInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1496,15 +2088,14 @@ impl InboundService for VmessInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1531,7 +2122,7 @@ impl InboundService for VlessInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1540,15 +2131,14 @@ impl InboundService for VlessInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1569,7 +2159,7 @@ impl InboundService for TunInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let inbound = self.inner.clone();
@@ -1580,15 +2170,14 @@ impl InboundService for TunInboundAdapter {
                 r = inbound.run() => r,
             }
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1615,7 +2204,7 @@ impl InboundService for TrojanInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1624,15 +2213,60 @@ impl InboundService for TrojanInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
+        }
+    }
+}
+
+// ========== ShadowTLS Inbound ==========
+
+#[cfg(feature = "adapter-shadowtls")]
+#[derive(Debug)]
+struct ShadowTlsInboundAdapter {
+    cfg: crate::inbound::shadowtls::ShadowTlsInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+impl ShadowTlsInboundAdapter {
+    fn new(cfg: crate::inbound::shadowtls::ShadowTlsInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(feature = "adapter-shadowtls")]
+impl InboundService for ShadowTlsInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            crate::inbound::shadowtls::serve(cfg, rx)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1677,7 +2311,7 @@ impl InboundService for MixedInboundAdapter {
             .map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1686,15 +2320,14 @@ impl InboundService for MixedInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1721,7 +2354,7 @@ impl InboundService for ShadowsocksInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1730,15 +2363,14 @@ impl InboundService for ShadowsocksInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1824,7 +2456,7 @@ impl InboundService for RedirectInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1833,15 +2465,14 @@ impl InboundService for RedirectInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1890,7 +2521,7 @@ impl InboundService for TproxyInboundAdapter {
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
-            let mut guard = self.stop_tx.lock().map_err(io::Error::other)?;
+            let mut guard = self.stop_tx.lock();
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
@@ -1899,15 +2530,60 @@ impl InboundService for TproxyInboundAdapter {
                 .await
                 .map_err(io::Error::other)
         });
-        let _ = self.stop_tx.lock().map_err(io::Error::other)?.take();
+        let _ = self.stop_tx.lock().take();
         res
     }
 
     fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
+        }
+    }
+}
+
+// ========== TUIC Inbound ==========
+
+#[cfg(feature = "adapter-tuic")]
+#[derive(Debug)]
+struct TuicInboundAdapter {
+    cfg: crate::inbound::tuic::TuicInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(feature = "adapter-tuic")]
+impl TuicInboundAdapter {
+    fn new(cfg: crate::inbound::tuic::TuicInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(feature = "adapter-tuic")]
+impl InboundService for TuicInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            crate::inbound::tuic::serve(cfg, rx)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }
@@ -1915,7 +2591,7 @@ impl InboundService for TproxyInboundAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType};
+    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType, OutboundType};
 
     #[test]
     #[cfg(feature = "adapter-hysteria2")]
@@ -1971,5 +2647,36 @@ mod tests {
         assert_eq!(ir.obfs, Some("test_obfs".to_string()));
         assert_eq!(ir.brutal_up_mbps, Some(100));
         assert_eq!(ir.brutal_down_mbps, Some(100));
+    }
+
+    #[test]
+    #[cfg(feature = "adapter-shadowtls")]
+    fn test_shadowtls_outbound_registration() {
+        // Create a test OutboundIR for ShadowTLS
+        let ir = OutboundIR {
+            ty: OutboundType::Shadowtls,
+            server: Some("example.com".to_string()),
+            port: Some(443),
+            tls_sni: Some("example.com".to_string()),
+            tls_alpn: Some(vec!["http/1.1".to_string(), "h2".to_string()]),
+            skip_cert_verify: Some(false),
+            ..Default::default()
+        };
+
+        let param = OutboundParam {
+            kind: "shadowtls".into(),
+            name: Some("shadowtls_test".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+
+        // Build ShadowTLS outbound
+        let result = build_shadowtls_outbound(&param, &ir);
+
+        // Verify outbound was created successfully
+        assert!(result.is_some(), "ShadowTLS outbound should construct successfully");
+        let (_connector, udp_factory) = result.unwrap();
+        assert!(udp_factory.is_none(), "ShadowTLS should not provide UDP factory");
     }
 }

@@ -226,6 +226,24 @@ pub struct Hysteria2UserIR {
     pub password: String,
 }
 
+/// TUIC user configuration for multi-user inbound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TuicUserIR {
+    /// User UUID.
+    pub uuid: String,
+    /// User token.
+    pub token: String,
+}
+
+/// Hysteria v1 user configuration for multi-user inbound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HysteriaUserIR {
+    /// User name.
+    pub name: String,
+    /// User authentication string.
+    pub auth: String,
+}
+
 /// Multiplex options for inbound connections (yamux-based stream multiplexing).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct MultiplexOptionsIR {
@@ -331,6 +349,34 @@ pub struct InboundIR {
     /// Hysteria2 Brutal congestion control download limit (Mbps).
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
+
+    // Protocol-specific fields (TUIC)
+    /// TUIC multi-user configuration.
+    #[serde(default)]
+    pub users_tuic: Option<Vec<TuicUserIR>>,
+
+    // Protocol-specific fields (Hysteria v1)
+    /// Hysteria v1 multi-user configuration.
+    #[serde(default)]
+    pub users_hysteria: Option<Vec<HysteriaUserIR>>,
+    /// Hysteria v1 protocol type ("udp", "wechat-video", "faketcp").
+    #[serde(default)]
+    pub hysteria_protocol: Option<String>,
+    /// Hysteria v1 obfuscation password.
+    #[serde(default)]
+    pub hysteria_obfs: Option<String>,
+    /// Hysteria v1 upload bandwidth (Mbps).
+    #[serde(default)]
+    pub hysteria_up_mbps: Option<u32>,
+    /// Hysteria v1 download bandwidth (Mbps).
+    #[serde(default)]
+    pub hysteria_down_mbps: Option<u32>,
+    /// Hysteria v1 QUIC receive window for connection.
+    #[serde(default)]
+    pub hysteria_recv_window_conn: Option<u64>,
+    /// Hysteria v1 QUIC receive window for stream.
+    #[serde(default)]
+    pub hysteria_recv_window: Option<u64>,
 
     // Transport and security options (V2Ray protocols)
     /// Transport layer chain (e.g., ["tls", "ws"] for WebSocket over TLS).
@@ -544,6 +590,18 @@ pub struct OutboundIR {
     /// Brutal congestion control download limit (Hysteria2)
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
+    /// Hysteria v1 protocol type ("udp", "wechat-video", "faketcp")
+    #[serde(default)]
+    pub hysteria_protocol: Option<String>,
+    /// Hysteria v1 authentication string
+    #[serde(default)]
+    pub hysteria_auth: Option<String>,
+    /// Hysteria v1 QUIC receive window for connection
+    #[serde(default)]
+    pub hysteria_recv_window_conn: Option<u64>,
+    /// Hysteria v1 QUIC receive window for stream
+    #[serde(default)]
+    pub hysteria_recv_window: Option<u64>,
     /// REALITY TLS configuration.
     #[serde(default)]
     pub reality_enabled: Option<bool>,
@@ -582,6 +640,23 @@ pub struct OutboundIR {
     pub ssh_keepalive_interval: Option<u64>,
     #[serde(default)]
     pub connect_timeout_sec: Option<u32>,
+
+    // Tor-specific fields
+    /// Tor SOCKS5 proxy address (default: 127.0.0.1:9050).
+    #[serde(default)]
+    pub tor_proxy_addr: Option<String>,
+    /// Path to Tor executable (for embedded Tor support, future).
+    #[serde(default)]
+    pub tor_executable_path: Option<String>,
+    /// Extra command-line arguments for Tor process.
+    #[serde(default)]
+    pub tor_extra_args: Option<Vec<String>>,
+    /// Tor data directory for persistent state.
+    #[serde(default)]
+    pub tor_data_directory: Option<String>,
+    /// Torrc configuration options (key-value pairs).
+    #[serde(default)]
+    pub tor_options: Option<std::collections::HashMap<String, String>>,
     /// URLTest probe configuration
     #[serde(default)]
     pub test_url: Option<String>,

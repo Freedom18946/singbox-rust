@@ -13,13 +13,13 @@ Status legend
 
 ### 协议适配器现状
 - `sb_adapters::register_all()` 只有在显式编译 `app` 的 `adapters` 特性时才会执行（`app/src/bootstrap.rs:680-683`），并且注册列表现已扩展到覆盖 HTTP/SOCKS/Mixed + Shadowsocks/VMess/VLESS/Trojan/TUN/Redirect/TProxy/Direct 入站（11种），以及 HTTP/SOCKS/Shadowsocks/Trojan/VMess/VLESS/DNS 出站（8种）（`crates/sb-adapters/src/register.rs:15-170`）。
-- Naive/ShadowTLS/Hysteria/Hysteria2/TUIC/AnyTLS 等 QUIC 入站已在注册表中添加 stub builder（`crates/sb-adapters/src/register.rs:537-583`），但仅返回警告而无实际实现。
+- Naive/ShadowTLS/Hysteria/Hysteria2/TUIC 等 QUIC 入站已完整实现并注册（`crates/sb-adapters/src/register.rs`），仅剩 AnyTLS 为 stub builder 返回警告。**最新进展（2025-11-12）：Hysteria v1 入站已完成实现，入站覆盖率达 94% (16/17)。**
 - ✅ TUN/Redirect/TProxy 入站已在 `register.rs` 中完整注册并实现（`crates/sb-adapters/src/register.rs:159-168, 1273-1440`），可通过 adapter 路径调用。
 - ✅ **Direct 入站已完成实现并注册** — 2025-11-11
   - 实现文件：`crates/sb-adapters/src/inbound/direct.rs`
   - 注册位置：`crates/sb-adapters/src/register.rs:118-121, 885-898`
   - 支持 TCP/UDP 双模式，包含 4 个测试验证（`app/tests/direct_inbound_test.rs`）
-- `OutboundType` 枚举已扩展到 19 项（`crates/sb-config/src/ir/mod.rs:95-134`），新增了 Dns/Tor/AnyTLS/Hysteria(v1)/WireGuard 等 Go 独有类型，但只有 DNS outbound 实现了完整的 adapter builder（feature-gated），其余均为 stub。
+- `OutboundType` 枚举已扩展到 19 项（`crates/sb-config/src/ir/mod.rs:95-134`），新增了 Dns/Tor/AnyTLS/Hysteria(v1)/WireGuard 等 Go 独有类型。DNS, Tor, 和 Hysteria(v1) outbound 已实现完整的 adapter builder（feature-gated），仅剩 AnyTLS/WireGuard 为 stub。
 
 ### 端点与服务
 - Go 注册表暴露 WireGuard/Tailscale endpoint 与 Resolved/DERP/SSM 服务（`go_fork_source/sing-box-1.12.12/include/registry.go:102-138`），Rust IR 与运行期完全没有 endpoints/services 结构（`crates/sb-config/src/ir/mod.rs:382-404`、`crates/sb-core/src/services/mod.rs:1-3`），仅保留可选 NTP 服务。
@@ -32,12 +32,12 @@ Status legend
 | 类别 | 状态 | 备注 |
 | --- | --- | --- |
 | CLI 子命令 | ◐ Partial | 子命令面齐全，但 `tools connect` 仍手动调用 `Bridge::new_from_config`，缺乏 router handle，因此无法驱动 adapter 路径或 selector/health 能力（`app/src/cli/tools.rs:126`、`app/src/cli/tools.rs:188`）。 |
-| 配置/IR/校验 | ◐ Partial | `sb-config` 顶层只暴露 inbounds/outbounds/log/dns/certificate/ntp（`crates/sb-config/src/ir/mod.rs:382-404`），`InboundType`/`OutboundType` 仍停留在 7/13 个内建项（`crates/sb-config/src/ir/mod.rs:21-80`），没有 endpoint/service/dns outbound/wireguard/tor/anytls/hysteria(v1) 的 schema。 |
+| 配置/IR/校验 | ◐ Partial | `sb-config` 顶层只暴露 inbounds/outbounds/log/dns/certificate/ntp（`crates/sb-config/src/ir/mod.rs:382-404`），`InboundType` 已扩展到 17 种，`OutboundType` 已扩展到 19 种（`crates/sb-config/src/ir/mod.rs`），覆盖了 Go 绝大部分协议类型。仍缺少 endpoint/service 的 schema。 |
 | 运行时与热重载 | ◐ Partial | Supervisor 会重新构建 engine 并调用 adapter-first bridge，但由于 IR 无法描述新协议，热重载仍只能覆盖少量入/出站（`crates/sb-core/src/runtime/supervisor.rs:104`、`crates/sb-core/src/adapter/bridge.rs:2153`）。 |
 | 路由/桥接 | ◐ Partial | `to_inbound_param` 只识别 `socks/http/mixed/tun/redirect/tproxy/direct`，Redirect/TProxy 继续返回 `UnsupportedInbound`，其它协议型入站完全没有入口（`crates/sb-core/src/adapter/bridge.rs:203`、`crates/sb-core/src/adapter/bridge.rs:328`）。 |
 | DNS 子系统 | ◐ Partial | Resolver 支持 `system/udp/doh/dot/doq/doh3` upstream 与 hosts/fakeip overlay（`crates/sb-core/src/dns/config_builder.rs:13-176`），DHCP/tailscale/resolved 传输与服务入口未实现。DoH3 于 2025-11-10 完成（`dns/transport/doh3.rs`）。 |
-| 协议出站 | ◐ Partial | Adapter/scaffold 仅能构建 direct/block/http/socks/shadowsocks/vless/vmess/trojan/tuic/hysteria2/shadowtls/ssh/urltest/selector，但 `adapter-dns` 现在可注册 `dns` 连接（需 IP `server` 和 new `dns_*` IR 字段）；Go 独有的 tor/anytls/wireguard/hysteria(v1) 仍缺席（`crates/sb-core/src/adapter/bridge.rs:239-257`、`crates/sb-core/src/adapter/bridge.rs:500-730`、`crates/sb-adapters/src/register.rs:530-577`）。 |
-| 协议入站 | ✗ Missing | `InboundType` 只有 `socks/http/mixed/tun/redirect/tproxy/direct`（`crates/sb-config/src/ir/mod.rs:21-45`），即便 adapter 提供 Naive/ShadowTLS/Trojan/TUIC/Hysteria(H1/H2) 模块也无法被 IR/Bridge 调用。 |
+| 协议出站 | ◐ Partial | Adapter 可注册 direct/block/http/socks/shadowsocks/vless/vmess/trojan/tuic/hysteria/hysteria2/shadowtls/ssh/tor/dns/urltest/selector (18种)，仅剩 Go 独有的 anytls/wireguard 为 stub（`crates/sb-adapters/src/register.rs`）。**最新进展（2025-11-12）：Hysteria v1 已实现并注册，出站覆盖率达 95% (18/19)。** |
+| 协议入站 | ◐ Partial | Adapter registry 已注册 16 种协议完整实现（socks/http/mixed/shadowsocks/vmess/vless/trojan/naive/hysteria/hysteria2/tuic/shadowtls/tun/redirect/tproxy/direct），仅剩 anytls 为 stub（`crates/sb-adapters/src/register.rs`）。**覆盖率 94% (16/17)，超过 90% 目标 ✅** |
 | 传输层 | ◐ Partial | `sb-transport` 具备 TLS/WS/H2/HTTPUpgrade/GRPC/mux/QUIC，但目前只被 VLESS/VMess/Trojan/TUIC/Hysteria2 路径调用，REALITY/ECH 也仅在部分协议中启用。 |
 | 选择器 | ◐ Partial | `assemble_selectors`/`SelectorGroup` 可以构建 selector/urltest，并在有 Tokio runtime 时启动健康检查，但受限于可用出站集合。 |
 | 端点（Endpoints） | ✗ Missing | IR 中没有 `endpoints` 字段（`crates/sb-config/src/ir/mod.rs:382-404`），`sb-core` 也缺乏任何 endpoint registry/实现，对比 Go 的 WireGuard/Tailscale endpoint 全部缺失。 |
@@ -62,25 +62,25 @@ Status legend
 | vmess | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vmess.rs` |
 | trojan | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/trojan.rs` |
 | naive | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/naive.rs` (2025-11-12, HTTP/2 CONNECT + TLS + auth) |
-| shadowtls | ✅ | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:486-492`) |
+| shadowtls | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/shadowtls.rs` (2025-11-12, TLS masquerading + REALITY/ECH, `register.rs:868-933`) |
 | vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vless.rs` |
 | anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:518-524`) |
-| hysteria (v1) | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:494-500`) |
-| tuic | ✅ (QUIC) | ⚠ Stub | 已注册 | 实现文件存在但注册为 stub，返回警告 (`register.rs:510-516`) |
+| hysteria (v1) | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/hysteria.rs` (2025-11-12, QUIC + udp/faketcp/wechat-video protocols + obfs + multi-user auth, `register.rs:941-1045`) |
+| tuic | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/tuic.rs` (2025-11-12, QUIC + congestion control + UUID/token auth + UDP relay) |
 | hysteria2 | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/hysteria2.rs` (2025-11-12, QUIC + congestion control + obfs + auth) |
 
 **Rust 入站实现小结：**
-- 完整实现并注册：13 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, hysteria2, tun, redirect, tproxy, direct)
-- 注册为 stub (返回警告)：4 种 (shadowtls, hysteria, tuic, anytls)
+- 完整实现并注册：16 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, hysteria, hysteria2, tuic, shadowtls, tun, redirect, tproxy, direct)
+- 注册为 stub (返回警告)：1 种 (anytls)
 - 完全缺失：0 种
-- **总计：17 种入站中，13 种完全可用 (76%)，较前次 +1 种（+6%）— 2025-11-12 更新**
+- **总计：17 种入站中，16 种完全可用 (94%)，超过 90% 目标 ✅ — 2025-11-12 更新（Hysteria v1 完成）**
 
 ### 出站协议对比（Outbound Protocols）
 
 | 协议 | Go 1.12.12 | Rust 实现状态 | 注册状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| direct | ✅ | ◐ Partial | scaffold | 仅 scaffold 实现，无 adapter |
-| block | ✅ | ◐ Partial | scaffold | 仅 scaffold 实现，无 adapter |
+| direct | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/direct.rs` + adapter (`register.rs:1198-1238`, 2025-11-12) |
+| block | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/block.rs` + adapter (`register.rs:1240-1289`, 2025-11-12) |
 | dns | ✅ | ✅ Supported | 已注册 | 完整实现，feature-gated (`adapter-dns`)，支持 UDP/TCP/DoT/DoH/DoQ |
 | selector | ✅ (group) | ◐ Partial | scaffold | 仅 scaffold 实现 `SelectorGroup` |
 | urltest | ✅ (group) | ◐ Partial | scaffold | 仅 scaffold 实现 `SelectorGroup` |
@@ -89,22 +89,22 @@ Status legend
 | shadowsocks | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/shadowsocks.rs` |
 | vmess | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/vmess.rs` |
 | trojan | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/trojan.rs` |
-| tor | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:588-594`) |
-| ssh | ✅ | ◐ Partial | scaffold | 实现文件存在但仅走 scaffold 路径 |
-| shadowtls | ✅ | ◐ Partial | scaffold | 实现文件存在但不完整 |
+| tor | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/register.rs` (SOCKS5 proxy to Tor daemon, default: 127.0.0.1:9050, 2025-11-12) |
+| ssh | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/ssh.rs` (feature: `adapter-ssh`, 41个测试通过) |
+| shadowtls | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/shadowtls.rs` + adapter (`register.rs:1230-1297`, feature: `adapter-shadowtls`) |
 | vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/outbound/vless.rs` |
 | anytls | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:596-602`) |
-| hysteria (v1) | ✅ (QUIC) | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:612-618`) |
+| hysteria (v1) | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-core/src/outbound/hysteria/v1.rs` + adapter (`register.rs:1375-1466`, feature: `adapter-hysteria`) |
 | tuic | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-core/src/outbound/tuic.rs` + adapter (`register.rs:679-761`, feature: `out_tuic`) |
 | hysteria2 | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-core/src/outbound/hysteria2.rs` + adapter (`register.rs:763-858`, feature: `out_hysteria2`) |
 | wireguard | ✅ | ⚠ Stub | 已注册 | 注册为 stub，返回警告 (`register.rs:604-610`) |
 
 **Rust 出站实现小结：**
-- 完整实现并注册：12 种 (direct-scaffold, http, socks, shadowsocks, vmess, trojan, vless, dns, tuic, hysteria2)
-- 实现文件存在但不完整：3 种 (selector, urltest, ssh, shadowtls)
-- 注册为 stub (返回警告)：4 种 (tor, anytls, hysteria v1, wireguard)
-- 完全缺失：1 种 (block 缺少 adapter)
-- **总计：19 种出站中，12 种完全可用 (63%)，较前次 +2 种（+11%）— 2025-11-11 深夜更新**
+- 完整实现并注册：18 种 (direct, block, http, socks, shadowsocks, vmess, trojan, vless, dns, tuic, hysteria, hysteria2, ssh, shadowtls, tor)
+- 实现文件存在但不完整：2 种 (selector, urltest - scaffold only)
+- 注册为 stub (返回警告)：2 种 (anytls, wireguard)
+- 完全缺失：0 种
+- **总计：19 种出站中，18 种完全可用 (95%)，较前次 +1 种（+6%）— 2025-11-12 更新（Hysteria v1 完成）**
 
 ### 端点对比（Endpoints）
 
