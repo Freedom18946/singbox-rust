@@ -765,6 +765,222 @@ pub struct RouteIR {
     pub default: Option<String>,
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Endpoint Types and Configuration
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Endpoint type enumeration (WireGuard, Tailscale, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EndpointType {
+    /// WireGuard VPN endpoint
+    Wireguard,
+    /// Tailscale VPN endpoint
+    Tailscale,
+}
+
+/// Endpoint configuration IR.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EndpointIR {
+    /// Endpoint type.
+    #[serde(rename = "type")]
+    pub ty: EndpointType,
+    /// Unique tag identifier.
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Network protocols supported (e.g., ["tcp", "udp"]).
+    #[serde(default)]
+    pub network: Option<Vec<String>>,
+
+    // WireGuard-specific fields
+    /// WireGuard: Use system WireGuard interface
+    #[serde(default)]
+    pub wireguard_system: Option<bool>,
+    /// WireGuard: Interface name
+    #[serde(default)]
+    pub wireguard_name: Option<String>,
+    /// WireGuard: MTU size
+    #[serde(default)]
+    pub wireguard_mtu: Option<u32>,
+    /// WireGuard: Local addresses (CIDR format)
+    #[serde(default)]
+    pub wireguard_address: Option<Vec<String>>,
+    /// WireGuard: Private key (base64)
+    #[serde(default)]
+    pub wireguard_private_key: Option<String>,
+    /// WireGuard: Listen port
+    #[serde(default)]
+    pub wireguard_listen_port: Option<u16>,
+    /// WireGuard: Peer configurations
+    #[serde(default)]
+    pub wireguard_peers: Option<Vec<WireGuardPeerIR>>,
+    /// WireGuard: UDP timeout (e.g., "30s")
+    #[serde(default)]
+    pub wireguard_udp_timeout: Option<String>,
+    /// WireGuard: Number of worker threads
+    #[serde(default)]
+    pub wireguard_workers: Option<i32>,
+
+    // Tailscale-specific fields
+    /// Tailscale: State directory path
+    #[serde(default)]
+    pub tailscale_state_directory: Option<String>,
+    /// Tailscale: Authentication key
+    #[serde(default)]
+    pub tailscale_auth_key: Option<String>,
+    /// Tailscale: Control server URL
+    #[serde(default)]
+    pub tailscale_control_url: Option<String>,
+    /// Tailscale: Ephemeral mode
+    #[serde(default)]
+    pub tailscale_ephemeral: Option<bool>,
+    /// Tailscale: Hostname
+    #[serde(default)]
+    pub tailscale_hostname: Option<String>,
+    /// Tailscale: Accept routes from network
+    #[serde(default)]
+    pub tailscale_accept_routes: Option<bool>,
+    /// Tailscale: Exit node address
+    #[serde(default)]
+    pub tailscale_exit_node: Option<String>,
+    /// Tailscale: Allow LAN access when using exit node
+    #[serde(default)]
+    pub tailscale_exit_node_allow_lan_access: Option<bool>,
+    /// Tailscale: Routes to advertise (CIDR format)
+    #[serde(default)]
+    pub tailscale_advertise_routes: Option<Vec<String>>,
+    /// Tailscale: Advertise as exit node
+    #[serde(default)]
+    pub tailscale_advertise_exit_node: Option<bool>,
+    /// Tailscale: UDP timeout (e.g., "30s")
+    #[serde(default)]
+    pub tailscale_udp_timeout: Option<String>,
+}
+
+/// WireGuard peer configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireGuardPeerIR {
+    /// Peer endpoint address
+    #[serde(default)]
+    pub address: Option<String>,
+    /// Peer endpoint port
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// Peer public key (base64)
+    #[serde(default)]
+    pub public_key: Option<String>,
+    /// Pre-shared key (base64)
+    #[serde(default)]
+    pub pre_shared_key: Option<String>,
+    /// Allowed IPs (CIDR format)
+    #[serde(default)]
+    pub allowed_ips: Option<Vec<String>>,
+    /// Persistent keepalive interval (seconds)
+    #[serde(default)]
+    pub persistent_keepalive_interval: Option<u16>,
+    /// Reserved bytes for connection ID
+    #[serde(default)]
+    pub reserved: Option<Vec<u8>>,
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Service Types and Configuration
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Service type enumeration (Resolved, DERP, SSM, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceType {
+    /// systemd-resolved compatible DNS service
+    Resolved,
+    /// Shadowsocks Manager API service
+    #[serde(rename = "ssmapi")]
+    Ssmapi,
+    /// Tailscale DERP relay service
+    #[serde(rename = "derp")]
+    Derp,
+}
+
+/// Service configuration IR.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceIR {
+    /// Service type.
+    #[serde(rename = "type")]
+    pub ty: ServiceType,
+    /// Unique tag identifier.
+    #[serde(default)]
+    pub tag: Option<String>,
+
+    // Resolved service fields
+    /// Resolved: Listen address (default: "127.0.0.53")
+    #[serde(default)]
+    pub resolved_listen: Option<String>,
+    /// Resolved: Listen port (default: 53)
+    #[serde(default)]
+    pub resolved_listen_port: Option<u16>,
+
+    // SSMAPI service fields
+    /// SSMAPI: Listen address
+    #[serde(default)]
+    pub ssmapi_listen: Option<String>,
+    /// SSMAPI: Listen port
+    #[serde(default)]
+    pub ssmapi_listen_port: Option<u16>,
+    /// SSMAPI: Server configurations (tag -> method:password)
+    #[serde(default)]
+    pub ssmapi_servers: Option<std::collections::HashMap<String, String>>,
+    /// SSMAPI: Cache file path
+    #[serde(default)]
+    pub ssmapi_cache_path: Option<String>,
+    /// SSMAPI: TLS certificate path
+    #[serde(default)]
+    pub ssmapi_tls_cert_path: Option<String>,
+    /// SSMAPI: TLS key path
+    #[serde(default)]
+    pub ssmapi_tls_key_path: Option<String>,
+
+    // DERP service fields
+    /// DERP: Listen address
+    #[serde(default)]
+    pub derp_listen: Option<String>,
+    /// DERP: Listen port
+    #[serde(default)]
+    pub derp_listen_port: Option<u16>,
+    /// DERP: Configuration file path
+    #[serde(default)]
+    pub derp_config_path: Option<String>,
+    /// DERP: Client verification endpoints
+    #[serde(default)]
+    pub derp_verify_client_endpoint: Option<Vec<String>>,
+    /// DERP: Client verification URLs
+    #[serde(default)]
+    pub derp_verify_client_url: Option<Vec<String>>,
+    /// DERP: Home DERP region name
+    #[serde(default)]
+    pub derp_home: Option<String>,
+    /// DERP: Mesh peer addresses
+    #[serde(default)]
+    pub derp_mesh_with: Option<Vec<String>>,
+    /// DERP: Mesh pre-shared key
+    #[serde(default)]
+    pub derp_mesh_psk: Option<String>,
+    /// DERP: Mesh PSK file path
+    #[serde(default)]
+    pub derp_mesh_psk_file: Option<String>,
+    /// DERP: Enable STUN
+    #[serde(default)]
+    pub derp_stun_enabled: Option<bool>,
+    /// DERP: STUN listen port
+    #[serde(default)]
+    pub derp_stun_listen_port: Option<u16>,
+    /// DERP: TLS certificate path
+    #[serde(default)]
+    pub derp_tls_cert_path: Option<String>,
+    /// DERP: TLS key path
+    #[serde(default)]
+    pub derp_tls_key_path: Option<String>,
+}
+
 /// Complete configuration intermediate representation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ConfigIR {
@@ -789,6 +1005,12 @@ pub struct ConfigIR {
     /// Optional DNS configuration
     #[serde(default)]
     pub dns: Option<DnsIR>,
+    /// Endpoint configurations (WireGuard, Tailscale, etc.)
+    #[serde(default)]
+    pub endpoints: Vec<EndpointIR>,
+    /// Service configurations (Resolved, DERP, SSM, etc.)
+    #[serde(default)]
+    pub services: Vec<ServiceIR>,
 }
 
 /// Certificate configuration (global)
@@ -1092,6 +1314,141 @@ mod tests {
         let serialized = serde_json::to_value(&ir).unwrap();
         assert_eq!(serialized.get("ty").unwrap(), "anytls");
     }
+
+    #[test]
+    fn endpoint_type_serialization() {
+        // Test WireGuard endpoint
+        let data = json!({
+            "type": "wireguard",
+            "tag": "wg0",
+            "wireguard_private_key": "ABCD1234",
+            "wireguard_address": ["10.0.0.1/24"]
+        });
+        let ir: EndpointIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, EndpointType::Wireguard);
+        assert_eq!(ir.tag, Some("wg0".to_string()));
+        assert_eq!(ir.wireguard_private_key, Some("ABCD1234".to_string()));
+
+        let serialized = serde_json::to_value(&ir).unwrap();
+        assert_eq!(serialized.get("type").unwrap(), "wireguard");
+    }
+
+    #[test]
+    fn tailscale_endpoint_serialization() {
+        let data = json!({
+            "type": "tailscale",
+            "tag": "ts0",
+            "tailscale_auth_key": "tskey-xyz",
+            "tailscale_hostname": "my-node"
+        });
+        let ir: EndpointIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, EndpointType::Tailscale);
+        assert_eq!(ir.tag, Some("ts0".to_string()));
+        assert_eq!(ir.tailscale_auth_key, Some("tskey-xyz".to_string()));
+        assert_eq!(ir.tailscale_hostname, Some("my-node".to_string()));
+
+        let serialized = serde_json::to_value(&ir).unwrap();
+        assert_eq!(serialized.get("type").unwrap(), "tailscale");
+    }
+
+    #[test]
+    fn service_type_serialization() {
+        // Test Resolved service
+        let data = json!({
+            "type": "resolved",
+            "tag": "resolved-svc",
+            "resolved_listen": "127.0.0.53",
+            "resolved_listen_port": 53
+        });
+        let ir: ServiceIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, ServiceType::Resolved);
+        assert_eq!(ir.tag, Some("resolved-svc".to_string()));
+        assert_eq!(ir.resolved_listen, Some("127.0.0.53".to_string()));
+        assert_eq!(ir.resolved_listen_port, Some(53));
+
+        let serialized = serde_json::to_value(&ir).unwrap();
+        assert_eq!(serialized.get("type").unwrap(), "resolved");
+    }
+
+    #[test]
+    fn ssmapi_service_serialization() {
+        let data = json!({
+            "type": "ssmapi",
+            "tag": "ssm",
+            "ssmapi_listen": "127.0.0.1",
+            "ssmapi_listen_port": 6001
+        });
+        let ir: ServiceIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, ServiceType::Ssmapi);
+        assert_eq!(ir.tag, Some("ssm".to_string()));
+        assert_eq!(ir.ssmapi_listen, Some("127.0.0.1".to_string()));
+        assert_eq!(ir.ssmapi_listen_port, Some(6001));
+
+        let serialized = serde_json::to_value(&ir).unwrap();
+        assert_eq!(serialized.get("type").unwrap(), "ssmapi");
+    }
+
+    #[test]
+    fn derp_service_serialization() {
+        let data = json!({
+            "type": "derp",
+            "tag": "derp-relay",
+            "derp_listen": "0.0.0.0",
+            "derp_listen_port": 3478,
+            "derp_stun_enabled": true
+        });
+        let ir: ServiceIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.ty, ServiceType::Derp);
+        assert_eq!(ir.tag, Some("derp-relay".to_string()));
+        assert_eq!(ir.derp_listen, Some("0.0.0.0".to_string()));
+        assert_eq!(ir.derp_listen_port, Some(3478));
+        assert_eq!(ir.derp_stun_enabled, Some(true));
+
+        let serialized = serde_json::to_value(&ir).unwrap();
+        assert_eq!(serialized.get("type").unwrap(), "derp");
+    }
+
+    #[test]
+    fn config_ir_with_endpoints_and_services() {
+        let data = json!({
+            "inbounds": [],
+            "outbounds": [],
+            "route": {},
+            "endpoints": [
+                {
+                    "type": "wireguard",
+                    "tag": "wg0",
+                    "wireguard_private_key": "test-key"
+                }
+            ],
+            "services": [
+                {
+                    "type": "resolved",
+                    "tag": "dns-svc"
+                }
+            ]
+        });
+        let config: ConfigIR = serde_json::from_value(data).unwrap();
+        assert_eq!(config.endpoints.len(), 1);
+        assert_eq!(config.services.len(), 1);
+        assert_eq!(config.endpoints[0].ty, EndpointType::Wireguard);
+        assert_eq!(config.services[0].ty, ServiceType::Resolved);
+    }
+
+    #[test]
+    fn wireguard_peer_serialization() {
+        let data = json!({
+            "address": "192.168.1.1",
+            "port": 51820,
+            "public_key": "peer-pubkey",
+            "allowed_ips": ["0.0.0.0/0"]
+        });
+        let peer: WireGuardPeerIR = serde_json::from_value(data).unwrap();
+        assert_eq!(peer.address, Some("192.168.1.1".to_string()));
+        assert_eq!(peer.port, Some(51820));
+        assert_eq!(peer.public_key, Some("peer-pubkey".to_string()));
+        assert_eq!(peer.allowed_ips, Some(vec!["0.0.0.0/0".to_string()]));
+    }
 }
 
 /// Log configuration (IR)
@@ -1241,7 +1598,7 @@ pub struct DnsHostIR {
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_reality {
     use super::*;
     #[test]
     fn negation_detect() {
