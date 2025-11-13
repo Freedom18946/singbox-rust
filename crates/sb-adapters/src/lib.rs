@@ -137,6 +137,12 @@ pub mod transport_config;
 /// Registry helpers to integrate adapters with sb-core bridge.
 pub mod register;
 
+/// Endpoint stub implementations (WireGuard, Tailscale).
+pub mod endpoint_stubs;
+
+/// Service stub implementations (Resolved, DERP, SSM).
+pub mod service_stubs;
+
 /// Utility functions and helpers.
 ///
 /// Contains shared utility code used across multiple adapters, including

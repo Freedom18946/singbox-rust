@@ -144,6 +144,10 @@ pub fn register_all() {
             let _ = registry::register_inbound("redirect", build_redirect_inbound);
             let _ = registry::register_inbound("tproxy", build_tproxy_inbound);
         }
+
+        // Register endpoint and service stubs (WireGuard, Tailscale, Resolved, DERP, SSM)
+        crate::endpoint_stubs::register_endpoint_stubs();
+        crate::service_stubs::register_service_stubs();
     });
 }
 

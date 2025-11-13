@@ -770,7 +770,7 @@ pub struct RouteIR {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Endpoint type enumeration (WireGuard, Tailscale, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EndpointType {
     /// WireGuard VPN endpoint
@@ -888,7 +888,7 @@ pub struct WireGuardPeerIR {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Service type enumeration (Resolved, DERP, SSM, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ServiceType {
     /// systemd-resolved compatible DNS service

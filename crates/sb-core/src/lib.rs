@@ -97,7 +97,14 @@ pub mod http;
 
 pub mod obs;
 
-// Optional runtime services (e.g., NTP). Submodules are feature-gated inside.
+// Endpoint management (WireGuard, Tailscale, etc.)
+pub mod endpoint;
+
+// Service management (Resolved, DERP, SSM, etc.) with trait definitions and registry
+pub mod service;
+
+// Optional runtime services (e.g., NTP). Legacy module for compatibility.
+// New services should use the service module above.
 pub mod services;
 
 // 别名模块：为兼容性提供简短的模块名
