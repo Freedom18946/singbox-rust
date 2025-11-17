@@ -45,7 +45,9 @@ impl RealityClientConfig {
         }
 
         // Validate short_id if present
-        if let Some(ref short_id) = self.short_id && !short_id.is_empty() {
+        if let Some(ref short_id) = self.short_id
+            && !short_id.is_empty()
+        {
             if !is_valid_hex(short_id) {
                 return Err("short_id must be hex characters".to_string());
             }
@@ -125,7 +127,9 @@ impl RealityServerConfig {
 
         // Validate short IDs
         for short_id in &self.short_ids {
-            if !is_valid_hex(short_id) { return Err(format!("invalid short_id hex: {short_id}")); }
+            if !is_valid_hex(short_id) {
+                return Err(format!("invalid short_id hex: {short_id}"));
+            }
             if short_id.len() > 16 || short_id.len() % 2 != 0 {
                 return Err(format!("short_id must be 0-16 hex chars: {short_id}"));
             }
@@ -138,8 +142,8 @@ impl RealityServerConfig {
     /// # Errors
     /// Returns an error when the private key is not valid hex or wrong length.
     pub fn private_key_bytes(&self) -> Result<[u8; 32], String> {
-        let bytes = hex::decode(&self.private_key)
-            .map_err(|e| format!("invalid private key hex: {e}"))?;
+        let bytes =
+            hex::decode(&self.private_key).map_err(|e| format!("invalid private key hex: {e}"))?;
 
         bytes
             .try_into()

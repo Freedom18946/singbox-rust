@@ -15,8 +15,14 @@ struct HashResult {
 impl HashResult {
     fn new(hex: Option<String>) -> Self {
         match hex {
-            Some(h) => Self { hex: h, enabled: true },
-            None => Self { hex: "disabled".to_string(), enabled: false },
+            Some(h) => Self {
+                hex: h,
+                enabled: true,
+            },
+            None => Self {
+                hex: "disabled".to_string(),
+                enabled: false,
+            },
         }
     }
 
@@ -63,7 +69,11 @@ fn profile_to_dsl(p: &Profile, normalize: bool) -> String {
 /// Convert use_keyword flag to mode string
 #[inline]
 const fn mode_str(use_keyword: bool) -> &'static str {
-    if use_keyword { "keyword" } else { "suffix" }
+    if use_keyword {
+        "keyword"
+    } else {
+        "suffix"
+    }
 }
 
 /// Parse profile from input based on format

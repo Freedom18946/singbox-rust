@@ -206,8 +206,10 @@ pub fn init_logging() -> Result<()> {
 fn make_writer(redact: bool) -> fmt::writer::BoxMakeWriter {
     fmt::writer::BoxMakeWriter::new(move || {
         if redact {
-            Box::new(RedactingWriter { buf: Vec::with_capacity(256), inner: io::stderr() })
-                as Box<dyn Write + Send>
+            Box::new(RedactingWriter {
+                buf: Vec::with_capacity(256),
+                inner: io::stderr(),
+            }) as Box<dyn Write + Send>
         } else {
             Box::new(io::stderr()) as Box<dyn Write + Send>
         }

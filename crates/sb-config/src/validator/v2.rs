@@ -348,12 +348,11 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             if let Some(map) = ib.as_object() {
                 for k in map.keys() {
                     match k.as_str() {
-                        "name" | "type" | "listen" | "port" | "udp" | "network" | "sniff" 
+                        "name" | "type" | "listen" | "port" | "udp" | "network" | "sniff"
                         | "override_address" | "override_host" | "override_port"
-                        | "interface_name" | "inet4_address" | "inet6_address" | "auto_route" 
-                        | "auth" | "users" | "cert" | "key" 
-                        | "congestion_control" | "salamander" | "obfs" 
-                        | "up_mbps" | "down_mbps" => {}
+                        | "interface_name" | "inet4_address" | "inet6_address" | "auto_route"
+                        | "auth" | "users" | "cert" | "key" | "congestion_control"
+                        | "salamander" | "obfs" | "up_mbps" | "down_mbps" => {}
                         _ => {
                             let kind = if allow_unknown { "warning" } else { "error" };
                             issues.push(emit_issue(
@@ -362,7 +361,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                                 &format!("/inbounds/{}/{}", i, k),
                                 "unknown field",
                                 "remove it",
-                                ));
+                            ));
                         }
                     }
                 }
@@ -509,6 +508,13 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 "vmess" => crate::ir::OutboundType::Vmess,
                 "trojan" => crate::ir::OutboundType::Trojan,
                 "ssh" => crate::ir::OutboundType::Ssh,
+                // Advanced/Go-only types
+                "dns" => crate::ir::OutboundType::Dns,
+                "tor" => crate::ir::OutboundType::Tor,
+                "anytls" => crate::ir::OutboundType::Anytls,
+                "hysteria" => crate::ir::OutboundType::Hysteria,
+                "wireguard" => crate::ir::OutboundType::Wireguard,
+                "tailscale" => crate::ir::OutboundType::Tailscale,
                 _ => crate::ir::OutboundType::Direct,
             };
             let mut ob = crate::ir::OutboundIR {
@@ -517,10 +523,17 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .get("server")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                port: o.get("port").and_then(|v| v.as_u64()).map(|x| x as u16),
+                // Accept both Rust-native `port` and Go-style `server_port`.
+                port: o
+                    .get("port")
+                    .or_else(|| o.get("server_port"))
+                    .and_then(|v| v.as_u64())
+                    .map(|x| x as u16),
                 udp: o.get("udp").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                // Map Go-style `tag` to IR `name`, falling back to `name` if present.
                 name: o
-                    .get("name")
+                    .get("tag")
+                    .or_else(|| o.get("name"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 members: None,
@@ -606,7 +619,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             .map(|x| x.trim().to_string())
                             .filter(|x| !x.is_empty())
                             .collect::<Vec<_>>();
-                        if v.is_empty() { None } else { Some(v) }
+                        if v.is_empty() {
+                            None
+                        } else {
+                            Some(v)
+                        }
                     }
                     Some(Value::Array(arr)) => {
                         let v = arr
@@ -614,7 +631,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             .filter_map(|it| it.as_str().map(|s| s.trim().to_string()))
                             .filter(|s| !s.is_empty())
                             .collect::<Vec<_>>();
-                        if v.is_empty() { None } else { Some(v) }
+                        if v.is_empty() {
+                            None
+                        } else {
+                            Some(v)
+                        }
                     }
                     _ => None,
                 },
@@ -658,9 +679,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
                 udp_over_stream: o.get("udp_over_stream").and_then(|v| v.as_bool()),
-                zero_rtt_handshake: o
-                    .get("zero_rtt_handshake")
-                    .and_then(|v| v.as_bool()),
+                zero_rtt_handshake: o.get("zero_rtt_handshake").and_then(|v| v.as_bool()),
                 up_mbps: parse_u32_field(o.get("up_mbps")),
                 down_mbps: parse_u32_field(o.get("down_mbps")),
                 obfs: o
@@ -890,7 +909,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                     .map(|x| x.trim().to_string())
                                     .filter(|x| !x.is_empty())
                                     .collect::<Vec<_>>();
-                                if v.is_empty() { None } else { Some(v) }
+                                if v.is_empty() {
+                                    None
+                                } else {
+                                    Some(v)
+                                }
                             }
                             Value::Array(arr) => {
                                 let v = arr
@@ -898,7 +921,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                     .filter_map(|it| it.as_str().map(|s| s.trim().to_string()))
                                     .filter(|s| !s.is_empty())
                                     .collect::<Vec<_>>();
-                                if v.is_empty() { None } else { Some(v) }
+                                if v.is_empty() {
+                                    None
+                                } else {
+                                    Some(v)
+                                }
                             }
                             _ => None,
                         };
@@ -923,7 +950,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         for p in arr {
                             if let Some(s) = p.as_str() {
                                 let s = s.trim();
-                                if !s.is_empty() { ob.tls_ca_paths.push(s.to_string()); }
+                                if !s.is_empty() {
+                                    ob.tls_ca_paths.push(s.to_string());
+                                }
                             }
                         }
                     }
@@ -932,11 +961,21 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     match tls.get("ca_pem") {
                         Some(v) if v.is_array() => {
                             for it in v.as_array().unwrap() {
-                                if let Some(s) = it.as_str() { let s = s.trim(); if !s.is_empty() { ob.tls_ca_pem.push(s.to_string()); } }
+                                if let Some(s) = it.as_str() {
+                                    let s = s.trim();
+                                    if !s.is_empty() {
+                                        ob.tls_ca_pem.push(s.to_string());
+                                    }
+                                }
                             }
                         }
                         Some(v) if v.is_string() => {
-                            if let Some(s) = v.as_str() { let s = s.trim(); if !s.is_empty() { ob.tls_ca_pem.push(s.to_string()); } }
+                            if let Some(s) = v.as_str() {
+                                let s = s.trim();
+                                if !s.is_empty() {
+                                    ob.tls_ca_pem.push(s.to_string());
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -1043,6 +1082,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
     }
 
+    // Preserve optional experimental block (schema v2 passthrough).
+    if let Some(exp) = doc.get("experimental") {
+        ir.experimental = Some(exp.clone());
+    }
+
     // Parse optional log block (top-level)
     if let Some(log) = doc.get("log").and_then(|v| v.as_object()) {
         let mut l = crate::ir::LogIR::default();
@@ -1142,12 +1186,41 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .unwrap_or("")
                         .trim()
                         .to_string();
-                    let address = map
-                        .get("address")
+
+                    // Accept both legacy `address: "<proto>://..."` and
+                    // go1.12.4-style `{ "type": "...", "server": "..." }` shapes.
+                    let address = if let Some(addr) =
+                        map.get("address").and_then(|v| v.as_str()).map(|s| s.trim().to_string())
+                    {
+                        addr
+                    } else if let Some(ty) = map
+                        .get("type")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .trim()
-                        .to_string();
+                        .map(|s| s.trim().to_ascii_lowercase())
+                    {
+                        let server = map
+                            .get("server")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        if server.is_empty() {
+                            String::new()
+                        } else {
+                            match ty.as_str() {
+                                // Match Go 1.12.x pretty-printed DNS format
+                                "udp" => format!("udp://{}", server),
+                                "tcp" => format!("tcp://{}", server),
+                                "tls" | "dot" => format!("tls://{}", server),
+                                "https" => format!("https://{}/dns-query", server),
+                                "rcode" => format!("rcode://{}", server),
+                                other => format!("{}://{}", other, server),
+                            }
+                        }
+                    } else {
+                        String::new()
+                    };
+
                     if !tag.is_empty() && !address.is_empty() {
                         // Optional TLS extras
                         let mut ca_paths = Vec::new();
@@ -1155,7 +1228,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                             for p in arr {
                                 if let Some(s) = p.as_str() {
                                     let s = s.trim();
-                                    if !s.is_empty() { ca_paths.push(s.to_string()); }
+                                    if !s.is_empty() {
+                                        ca_paths.push(s.to_string());
+                                    }
                                 }
                             }
                         }
@@ -1163,11 +1238,21 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         match map.get("ca_pem") {
                             Some(v) if v.is_array() => {
                                 for it in v.as_array().unwrap() {
-                                    if let Some(s) = it.as_str() { let s = s.trim(); if !s.is_empty() { ca_pem.push(s.to_string()); } }
+                                    if let Some(s) = it.as_str() {
+                                        let s = s.trim();
+                                        if !s.is_empty() {
+                                            ca_pem.push(s.to_string());
+                                        }
+                                    }
                                 }
                             }
                             Some(v) if v.is_string() => {
-                                if let Some(s) = v.as_str() { let s = s.trim(); if !s.is_empty() { ca_pem.push(s.to_string()); } }
+                                if let Some(s) = v.as_str() {
+                                    let s = s.trim();
+                                    if !s.is_empty() {
+                                        ca_pem.push(s.to_string());
+                                    }
+                                }
                             }
                             _ => {}
                         }
@@ -1179,7 +1264,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         dd.servers.push(crate::ir::DnsServerIR {
                             tag,
                             address,
-                            sni: map.get("sni").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            sni: map
+                                .get("sni")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
                             ca_paths,
                             ca_pem,
                             skip_cert_verify: map.get("skip_cert_verify").and_then(|v| v.as_bool()),
@@ -1204,32 +1292,76 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     let mut dr = crate::ir::DnsRuleIR::default();
                     dr.server = server;
                     dr.priority = Some(idx as u32 + 1);
-                    if let Some(ds) = obj.get("domain_suffix").and_then(|v| v.as_array()) {
-                        for d in ds {
-                            if let Some(s) = d.as_str() {
-                                let s = s.trim();
-                                if !s.is_empty() { dr.domain_suffix.push(s.to_string()); }
+
+                    // Accept both array and single-string forms for match fields.
+                    if let Some(ds_val) = obj.get("domain_suffix") {
+                        match ds_val {
+                            Value::Array(arr) => {
+                                for d in arr {
+                                    if let Some(s) = d.as_str() {
+                                        let s = s.trim();
+                                        if !s.is_empty() {
+                                            dr.domain_suffix.push(s.to_string());
+                                        }
+                                    }
+                                }
                             }
+                            Value::String(s) => {
+                                let s = s.trim();
+                                if !s.is_empty() {
+                                    dr.domain_suffix.push(s.to_string());
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    if let Some(de) = obj.get("domain").and_then(|v| v.as_array()) {
-                        for d in de {
-                            if let Some(s) = d.as_str() {
-                                let s = s.trim();
-                                if !s.is_empty() { dr.domain.push(s.to_string()); }
+                    if let Some(de_val) = obj.get("domain") {
+                        match de_val {
+                            Value::Array(arr) => {
+                                for d in arr {
+                                    if let Some(s) = d.as_str() {
+                                        let s = s.trim();
+                                        if !s.is_empty() {
+                                            dr.domain.push(s.to_string());
+                                        }
+                                    }
+                                }
                             }
+                            Value::String(s) => {
+                                let s = s.trim();
+                                if !s.is_empty() {
+                                    dr.domain.push(s.to_string());
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    if let Some(kw) = obj.get("keyword").and_then(|v| v.as_array()) {
-                        for d in kw {
-                            if let Some(s) = d.as_str() {
-                                let s = s.trim();
-                                if !s.is_empty() { dr.keyword.push(s.to_string()); }
+                    if let Some(kw_val) = obj.get("keyword") {
+                        match kw_val {
+                            Value::Array(arr) => {
+                                for d in arr {
+                                    if let Some(s) = d.as_str() {
+                                        let s = s.trim();
+                                        if !s.is_empty() {
+                                            dr.keyword.push(s.to_string());
+                                        }
+                                    }
+                                }
                             }
+                            Value::String(s) => {
+                                let s = s.trim();
+                                if !s.is_empty() {
+                                    dr.keyword.push(s.to_string());
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     // Note: geosite/geolocation matching is not directly mapped here.
-                    if !(dr.domain_suffix.is_empty() && dr.domain.is_empty() && dr.keyword.is_empty()) {
+                    if !(dr.domain_suffix.is_empty()
+                        && dr.domain.is_empty()
+                        && dr.keyword.is_empty())
+                    {
                         dd.rules.push(dr);
                     }
                 }
@@ -1241,7 +1373,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         // Global knobs
-        if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) { dd.timeout_ms = Some(v); }
+        if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) {
+            dd.timeout_ms = Some(v);
+        }
         if let Some(t) = dns.get("ttl").and_then(|v| v.as_object()) {
             dd.ttl_default_s = t.get("default").and_then(|x| x.as_u64());
             dd.ttl_min_s = t.get("min").and_then(|x| x.as_u64());
@@ -1250,8 +1384,14 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         }
         if let Some(fk) = dns.get("fakeip").and_then(|v| v.as_object()) {
             dd.fakeip_enabled = fk.get("enabled").and_then(|x| x.as_bool());
-            let v4 = fk.get("inet4_range").and_then(|x| x.as_str()).map(|s| s.to_string());
-            let v6 = fk.get("inet6_range").and_then(|x| x.as_str()).map(|s| s.to_string());
+            let v4 = fk
+                .get("inet4_range")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            let v6 = fk
+                .get("inet6_range")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
             if let Some(s) = v4 {
                 if let Some((base, mask)) = s.split_once('/') {
                     dd.fakeip_v4_base = Some(base.to_string());
@@ -1269,11 +1409,16 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 }
             }
         }
-        if let Some(s) = dns.get("pool_strategy").and_then(|v| v.as_str()) { dd.pool_strategy = Some(s.to_string()); }
+        if let Some(s) = dns.get("pool_strategy").and_then(|v| v.as_str()) {
+            dd.pool_strategy = Some(s.to_string());
+        }
         if let Some(p) = dns.get("pool").and_then(|v| v.as_object()) {
             dd.pool_race_window_ms = p.get("race_window_ms").and_then(|x| x.as_u64());
             dd.pool_he_race_ms = p.get("he_race_ms").and_then(|x| x.as_u64());
-            dd.pool_he_order = p.get("he_order").and_then(|x| x.as_str()).map(|s| s.to_string());
+            dd.pool_he_order = p
+                .get("he_order")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
             dd.pool_max_inflight = p.get("max_inflight").and_then(|x| x.as_u64());
             dd.pool_per_host_inflight = p.get("per_host_inflight").and_then(|x| x.as_u64());
         }
@@ -1282,18 +1427,24 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
         if let Some(h) = dns.get("hosts").and_then(|v| v.as_object()) {
             for (domain, val) in h {
                 let domain = domain.trim().to_string();
-                if domain.is_empty() { continue; }
+                if domain.is_empty() {
+                    continue;
+                }
                 let mut ips: Vec<String> = Vec::new();
                 match val {
                     serde_json::Value::String(s) => {
                         let s = s.trim();
-                        if !s.is_empty() { ips.push(s.to_string()); }
+                        if !s.is_empty() {
+                            ips.push(s.to_string());
+                        }
                     }
                     serde_json::Value::Array(arr) => {
                         for it in arr {
                             if let Some(s) = it.as_str() {
                                 let s = s.trim();
-                                if !s.is_empty() { ips.push(s.to_string()); }
+                                if !s.is_empty() {
+                                    ips.push(s.to_string());
+                                }
                             }
                         }
                     }
@@ -1309,7 +1460,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 .and_then(|v| v.as_u64());
         }
 
-        if !dd.servers.is_empty() || !dd.rules.is_empty() || dd.default.is_some() || dd.timeout_ms.is_some() || !dd.hosts.is_empty() {
+        if !dd.servers.is_empty()
+            || !dd.rules.is_empty()
+            || dd.default.is_some()
+            || dd.timeout_ms.is_some()
+            || !dd.hosts.is_empty()
+        {
             ir.dns = Some(dd);
         }
     }
@@ -1436,6 +1592,22 @@ mod tests {
         assert_eq!(outbound.salamander.as_deref(), Some("fingerprint"));
         assert_eq!(outbound.brutal_up_mbps, Some(300));
         assert_eq!(outbound.brutal_down_mbps, Some(400));
+    }
+
+    #[test]
+    fn test_parse_experimental_block() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "feature_flag": true,
+                "nested": { "value": 42 }
+            }
+        });
+
+        let ir = to_ir_v1(&json);
+        let exp = ir.experimental.expect("experimental block should be present");
+        assert_eq!(exp["feature_flag"], serde_json::json!(true));
+        assert_eq!(exp["nested"]["value"], serde_json::json!(42));
     }
 
     #[test]
@@ -1630,7 +1802,10 @@ mod tests {
 
         // Check TLS fields are parsed
         assert_eq!(outbound.tls_sni, Some("www.apple.com".to_string()));
-        assert_eq!(outbound.tls_alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
+        assert_eq!(
+            outbound.tls_alpn,
+            Some(vec!["h2".to_string(), "http/1.1".to_string()])
+        );
 
         // Check REALITY fields are parsed
         assert_eq!(outbound.reality_enabled, Some(true));
@@ -1826,12 +2001,24 @@ mod tests {
         assert_eq!(ir.outbounds.len(), 1);
         let ob = &ir.outbounds[0];
         assert_eq!(ob.tls_sni.as_deref(), Some("internal.example"));
-        assert_eq!(ob.tls_alpn, Some(vec!["h2".to_string(), "http/1.1".to_string()]));
+        assert_eq!(
+            ob.tls_alpn,
+            Some(vec!["h2".to_string(), "http/1.1".to_string()])
+        );
         assert_eq!(ob.skip_cert_verify, Some(true));
-        assert_eq!(ob.tls_ca_paths, vec!["/etc/ssl/certs/internal-root.pem".to_string()]);
+        assert_eq!(
+            ob.tls_ca_paths,
+            vec!["/etc/ssl/certs/internal-root.pem".to_string()]
+        );
         assert_eq!(ob.tls_ca_pem.len(), 1);
-        assert_eq!(ob.tls_client_cert_path.as_deref(), Some("/path/to/client.crt"));
-        assert_eq!(ob.tls_client_key_path.as_deref(), Some("/path/to/client.key"));
+        assert_eq!(
+            ob.tls_client_cert_path.as_deref(),
+            Some("/path/to/client.crt")
+        );
+        assert_eq!(
+            ob.tls_client_key_path.as_deref(),
+            Some("/path/to/client.key")
+        );
     }
 
     #[test]

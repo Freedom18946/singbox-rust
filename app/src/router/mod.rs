@@ -178,7 +178,10 @@ pub mod analyze {
 #[cfg(not(feature = "router"))]
 pub mod explain_index {
     #[allow(dead_code)]
-    pub const fn rebuild_periodic(_router: super::engine::RouterHandle, _interval: std::time::Duration) {
+    pub const fn rebuild_periodic(
+        _router: super::engine::RouterHandle,
+        _interval: std::time::Duration,
+    ) {
         // No-op
     }
 

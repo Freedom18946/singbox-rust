@@ -28,7 +28,10 @@ fn test_hysteria_outbound_registration() {
     };
 
     let builder = registry::get_outbound("hysteria");
-    assert!(builder.is_some(), "Hysteria v1 builder should be registered");
+    assert!(
+        builder.is_some(),
+        "Hysteria v1 builder should be registered"
+    );
 
     let result = builder.unwrap()(&param, &ir);
     assert!(
@@ -66,7 +69,10 @@ fn test_hysteria_with_obfuscation() {
     assert!(builder.is_some());
 
     let result = builder.unwrap()(&param, &ir);
-    assert!(result.is_some(), "Hysteria v1 with obfuscation should build");
+    assert!(
+        result.is_some(),
+        "Hysteria v1 with obfuscation should build"
+    );
 }
 
 /// Test Hysteria v1 with custom QUIC windows
@@ -96,7 +102,10 @@ fn test_hysteria_with_quic_windows() {
 
     let builder = registry::get_outbound("hysteria");
     let result = builder.unwrap()(&param, &ir);
-    assert!(result.is_some(), "Hysteria v1 with QUIC windows should build");
+    assert!(
+        result.is_some(),
+        "Hysteria v1 with QUIC windows should build"
+    );
 }
 
 /// Test Hysteria v1 with ALPN and SNI
@@ -127,7 +136,10 @@ fn test_hysteria_with_alpn_sni() {
 
     let builder = registry::get_outbound("hysteria");
     let result = builder.unwrap()(&param, &ir);
-    assert!(result.is_some(), "Hysteria v1 with ALPN and SNI should build");
+    assert!(
+        result.is_some(),
+        "Hysteria v1 with ALPN and SNI should build"
+    );
 }
 
 /// Test Hysteria v1 defaults when optional fields are missing

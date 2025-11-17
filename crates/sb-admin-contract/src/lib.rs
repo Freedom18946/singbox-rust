@@ -50,10 +50,7 @@ fn strip_nulls(mut v: serde_json::Value) -> serde_json::Value {
             serde_json::Value::Object(std::mem::take(map))
         }
         serde_json::Value::Array(arr) => {
-            let new = std::mem::take(arr)
-                .into_iter()
-                .map(strip_nulls)
-                .collect();
+            let new = std::mem::take(arr).into_iter().map(strip_nulls).collect();
             serde_json::Value::Array(new)
         }
         _ => v,
@@ -304,8 +301,8 @@ mod tests {
 
     #[test]
     fn roundtrip_ok() -> Result<(), Box<dyn std::error::Error>> {
-        let env = ResponseEnvelope::ok(serde_json::json!({"hello": "world"}))
-            .with_request_id("r-1");
+        let env =
+            ResponseEnvelope::ok(serde_json::json!({"hello": "world"})).with_request_id("r-1");
         let s = serde_json::to_string(&env)?;
         let de: ResponseEnvelope<serde_json::Value> = serde_json::from_str(&s)?;
         assert!(de.ok);
@@ -315,10 +312,8 @@ mod tests {
 
     #[test]
     fn roundtrip_err() -> Result<(), Box<dyn std::error::Error>> {
-        let env: ResponseEnvelope<()> = ResponseEnvelope::err(
-            ErrorKind::NotFound,
-            "Resource missing",
-        );
+        let env: ResponseEnvelope<()> =
+            ResponseEnvelope::err(ErrorKind::NotFound, "Resource missing");
         let s = serde_json::to_string(&env)?;
         let de: ResponseEnvelope<()> = serde_json::from_str(&s)?;
         assert!(!de.ok);

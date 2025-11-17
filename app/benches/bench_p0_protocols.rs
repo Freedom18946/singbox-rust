@@ -32,7 +32,12 @@ fn create_runtime() -> Option<Runtime> {
         .enable_all()
         .build()
         .ok()
-        .or_else(|| tokio::runtime::Builder::new_current_thread().enable_all().build().ok())
+        .or_else(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()
+        })
 }
 
 /// Start a simple TCP echo server for testing
@@ -75,8 +80,12 @@ async fn start_echo_server() -> Option<std::net::SocketAddr> {
 // ============================================================================
 
 fn bench_baseline_throughput(c: &mut Criterion) {
-    let Some(rt) = create_runtime() else { return; };
-    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let Some(addr) = rt.block_on(start_echo_server()) else {
+        return;
+    };
 
     let mut group = c.benchmark_group("baseline_throughput");
 
@@ -85,7 +94,9 @@ fn bench_baseline_throughput(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
             b.iter(|| {
                 rt.block_on(async {
-                    let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
+                    let Ok(mut stream) = TcpStream::connect(addr).await else {
+                        return;
+                    };
                     let data = vec![0xAB; size];
 
                     if stream.write_all(&data).await.is_err() {
@@ -107,8 +118,12 @@ fn bench_baseline_throughput(c: &mut Criterion) {
 }
 
 fn bench_baseline_latency(c: &mut Criterion) {
-    let Some(rt) = create_runtime() else { return; };
-    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let Some(addr) = rt.block_on(start_echo_server()) else {
+        return;
+    };
 
     let mut group = c.benchmark_group("baseline_latency");
     group.sample_size(1000);
@@ -116,29 +131,35 @@ fn bench_baseline_latency(c: &mut Criterion) {
     group.bench_function("small_payload", |b| {
         b.iter(|| {
             rt.block_on(async {
-                    let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
+                let Ok(mut stream) = TcpStream::connect(addr).await else {
+                    return;
+                };
                 let data = b"PING";
 
-                    if stream.write_all(data).await.is_err() {
+                if stream.write_all(data).await.is_err() {
                     return;
                 }
 
-                    let mut received = [0u8; 4];
-                    if stream.read_exact(&mut received).await.is_err() {
+                let mut received = [0u8; 4];
+                if stream.read_exact(&mut received).await.is_err() {
                     return;
                 }
 
-                        black_box(received);
-                });
+                black_box(received);
             });
+        });
     });
 
     group.finish();
 }
 
 fn bench_baseline_connection_establishment(c: &mut Criterion) {
-    let Some(rt) = create_runtime() else { return; };
-    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let Some(addr) = rt.block_on(start_echo_server()) else {
+        return;
+    };
 
     let mut group = c.benchmark_group("baseline_connection");
     group.sample_size(500);
@@ -146,7 +167,9 @@ fn bench_baseline_connection_establishment(c: &mut Criterion) {
     group.bench_function("tcp_connect", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let Ok(stream) = TcpStream::connect(addr).await else { return; };
+                let Ok(stream) = TcpStream::connect(addr).await else {
+                    return;
+                };
                 black_box(stream);
             });
         });
@@ -408,8 +431,12 @@ mod tuic_benches {
 // ============================================================================
 
 fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
-    let Some(rt) = create_runtime() else { return; };
-    let Some(addr) = rt.block_on(start_echo_server()) else { return; };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let Some(addr) = rt.block_on(start_echo_server()) else {
+        return;
+    };
 
     let mut group = c.benchmark_group("memory_usage");
     group.sample_size(10);
@@ -425,7 +452,9 @@ fn bench_memory_usage_concurrent_connections(c: &mut Criterion) {
 
                         for _ in 0..count {
                             let handle = tokio::spawn(async move {
-                                let Ok(mut stream) = TcpStream::connect(addr).await else { return; };
+                                let Ok(mut stream) = TcpStream::connect(addr).await else {
+                                    return;
+                                };
                                 let data = vec![0xAB; 1024];
                                 if stream.write_all(&data).await.is_err() {
                                     return;
@@ -529,7 +558,7 @@ fn main() {
     #[cfg(feature = "adapter-tuic")]
     tuic_benches_group();
 
-criterion.final_summary();
+    criterion.final_summary();
 }
 #[cfg(not(feature = "bench"))]
 fn main() {}

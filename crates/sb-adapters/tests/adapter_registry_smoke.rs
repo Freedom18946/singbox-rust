@@ -104,7 +104,10 @@ fn test_documented_inbound_count() {
 
     // This is a documentation test - just verify we're aware of the count
     let total_inbound_types = 17;
-    assert_eq!(total_inbound_types, 17, "Expected 17 inbound types per GO_PARITY_MATRIX.md");
+    assert_eq!(
+        total_inbound_types, 17,
+        "Expected 17 inbound types per GO_PARITY_MATRIX.md"
+    );
 }
 
 /// Test that all documented outbounds are accounted for
@@ -118,5 +121,8 @@ fn test_documented_outbound_count() {
     // Total: 19 outbound types
 
     let total_outbound_types = 19;
-    assert_eq!(total_outbound_types, 19, "Expected 19 outbound types per GO_PARITY_MATRIX.md");
+    assert_eq!(
+        total_outbound_types, 19,
+        "Expected 19 outbound types per GO_PARITY_MATRIX.md"
+    );
 }

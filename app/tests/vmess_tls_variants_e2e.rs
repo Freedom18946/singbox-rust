@@ -22,10 +22,10 @@ use sb_adapters::outbound::vmess::{
     Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
 };
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
+use sb_adapters::transport_config::TransportConfig;
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
-use sb_transport::{TlsConfig, TlsVersion, StandardTlsConfig};
-use sb_adapters::transport_config::TransportConfig;
+use sb_transport::{StandardTlsConfig, TlsConfig, TlsVersion};
 
 /// Helper: Start TCP echo server
 async fn start_echo_server() -> SocketAddr {
@@ -352,7 +352,7 @@ async fn test_vmess_tls_with_multiplex() {
 }
 
 #[tokio::test]
-    #[cfg(feature = "tls_reality")]
+#[cfg(feature = "tls_reality")]
 async fn test_vmess_reality_tls() {
     // Start echo server
     let echo_addr = start_echo_server().await;
@@ -416,7 +416,7 @@ async fn test_vmess_reality_tls() {
 }
 
 #[tokio::test]
-    #[cfg(feature = "tls_reality")]
+#[cfg(feature = "tls_reality")]
 async fn test_vmess_ech_tls() {
     // Start echo server
     let echo_addr = start_echo_server().await;

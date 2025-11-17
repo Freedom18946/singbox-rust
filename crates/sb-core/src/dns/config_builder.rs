@@ -11,8 +11,9 @@ use super::{resolver::DnsResolver, rule_engine::{DnsRuleEngine, DnsRoutingRule},
 /// - When `rules` are present, builds a DnsRuleEngine and wraps it as a Resolver
 /// - Otherwise falls back to a simple DnsResolver over all upstreams
 pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>> {
+    let dns = hydrate_dns_ir_from_env(dns);
     // Apply IR-level global knobs to env for compatibility with existing components
-    apply_env_from_ir(dns);
+    apply_env_from_ir(&dns);
     // 1) Build upstream registry
     let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
     for s in &dns.servers {
@@ -50,14 +51,14 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
         }
         let engine = DnsRuleEngine::new(routing_rules, upstreams, default_tag);
         let base: Arc<dyn Resolver> = Arc::new(EngineResolver { engine });
-        let overlay = maybe_wrap_hosts_overlay(dns, base.clone());
+        let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
         return Ok(overlay);
     }
 
     // 3) No rules: use simple DnsResolver over all upstreams
     let list: Vec<Arc<dyn DnsUpstream>> = upstreams.into_iter().map(|(_, v)| v).collect();
     let base: Arc<dyn Resolver> = Arc::new(DnsResolver::new(list).with_name("dns_ir".to_string()));
-    let overlay = maybe_wrap_hosts_overlay(dns, base.clone());
+    let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
     Ok(overlay)
 }
 
@@ -66,6 +67,15 @@ fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
     if a.is_empty() { return Ok(None); }
     if a.eq_ignore_ascii_case("system") {
         return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
+    }
+    if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
+        return Ok(Some(build_dhcp_dns_upstream(a, None)?));
+    }
+    if a.eq_ignore_ascii_case("tailscale") || a.starts_with("tailscale://") {
+        return Ok(Some(build_tailscale_dns_upstream(a, None)?));
+    }
+    if a.eq_ignore_ascii_case("resolved") || a.starts_with("resolved://") {
+        return Ok(Some(build_resolved_dns_upstream(a, None)?));
     }
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
@@ -110,6 +120,15 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
     if a.is_empty() { return Ok(None); }
     if a.eq_ignore_ascii_case("system") {
         return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
+    }
+    if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
+        return Ok(Some(build_dhcp_dns_upstream(a, Some(&srv.tag))?));
+    }
+    if a.eq_ignore_ascii_case("tailscale") || a.starts_with("tailscale://") {
+        return Ok(Some(build_tailscale_dns_upstream(a, Some(&srv.tag))?));
+    }
+    if a.eq_ignore_ascii_case("resolved") || a.starts_with("resolved://") {
+        return Ok(Some(build_resolved_dns_upstream(a, Some(&srv.tag))?));
     }
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
@@ -175,9 +194,73 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
     build_upstream(a)
 }
 
+#[cfg(feature = "dns_dhcp")]
+fn build_dhcp_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    let up = super::upstream::DhcpUpstream::from_spec(spec, tag)?;
+    Ok(Arc::new(up))
+}
+
+#[cfg(not(feature = "dns_dhcp"))]
+fn build_dhcp_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    Err(anyhow::anyhow!(
+        "dhcp DNS upstream requires the `dns_dhcp` feature; rebuild with `--features sb-core/dns_dhcp`"
+    ))
+}
+
+#[cfg(feature = "dns_tailscale")]
+fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    let (name, addrs) = super::upstream::parse_tailscale_spec(spec, tag)?;
+    Ok(Arc::new(
+        super::upstream::StaticMultiUpstream::new(name, addrs),
+    ))
+}
+
+#[cfg(not(feature = "dns_tailscale"))]
+fn build_tailscale_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    Err(anyhow::anyhow!(
+        "tailscale DNS upstream requires the `dns_tailscale` feature; rebuild with `--features sb-core/dns_tailscale`"
+    ))
+}
+
+#[cfg(feature = "dns_resolved")]
+fn build_resolved_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    let up = super::upstream::ResolvedUpstream::from_spec(spec, tag)?;
+    Ok(Arc::new(up))
+}
+
+#[cfg(not(feature = "dns_resolved"))]
+fn build_resolved_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    Err(anyhow::anyhow!(
+        "resolved DNS upstream requires the `dns_resolved` feature; rebuild with `--features sb-core/dns_resolved`"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(prev) = &self.prev {
+                std::env::set_var(self.key, prev);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn resolver_builds_with_mixed_upstreams() {
@@ -189,6 +272,7 @@ mod tests {
             ca_paths: vec![],
             ca_pem: vec![],
             skip_cert_verify: None,
+            client_subnet: None,
         });
         ir.servers.push(sb_config::ir::DnsServerIR {
             tag: "dot1".into(),
@@ -197,6 +281,7 @@ mod tests {
             ca_paths: vec![],
             ca_pem: vec![],
             skip_cert_verify: Some(false),
+            client_subnet: None,
         });
         ir.servers.push(sb_config::ir::DnsServerIR {
             tag: "doq1".into(),
@@ -205,11 +290,39 @@ mod tests {
             ca_paths: vec![],
             ca_pem: vec![],
             skip_cert_verify: Some(false),
+            client_subnet: None,
         });
         ir.default = Some("sys".into());
 
         let res = resolver_from_ir(&ir);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn hydrate_dns_ir_reads_env_values() {
+        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let _timeout = EnvGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
+        let _fake = EnvGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
+        let _fake_v4 = EnvGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
+        let _fake_v4_mask = EnvGuard::set("SB_FAKEIP_V4_MASK", "15");
+        let _client = EnvGuard::set("SB_DNS_CLIENT_SUBNET", "1.2.3.0/24");
+
+        let hydrated = hydrate_dns_ir_from_env(&sb_config::ir::DnsIR::default());
+        assert_eq!(hydrated.timeout_ms, Some(2500));
+        assert_eq!(hydrated.ttl_default_s, Some(900));
+        assert_eq!(hydrated.fakeip_enabled, Some(true));
+        assert_eq!(hydrated.fakeip_v4_base.as_deref(), Some("198.18.0.0"));
+        assert_eq!(hydrated.fakeip_v4_mask, Some(15));
+        assert_eq!(hydrated.client_subnet.as_deref(), Some("1.2.3.0/24"));
+    }
+
+    #[test]
+    fn hydrate_dns_ir_does_not_override_ir_values() {
+        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let mut ir = sb_config::ir::DnsIR::default();
+        ir.ttl_default_s = Some(120);
+        let hydrated = hydrate_dns_ir_from_env(&ir);
+        assert_eq!(hydrated.ttl_default_s, Some(120));
     }
 }
 
@@ -321,6 +434,90 @@ fn apply_env_from_ir(dns: &sb_config::ir::DnsIR) {
     if let Some(v) = dns.pool_max_inflight { set_if_unset("SB_DNS_POOL_MAX_INFLIGHT", &v.to_string()); }
     if let Some(v) = dns.pool_per_host_inflight { set_if_unset("SB_DNS_PER_HOST_INFLIGHT", &v.to_string()); }
     if let Some(v) = dns.client_subnet.as_ref() { set_if_unset("SB_DNS_CLIENT_SUBNET", v); }
+}
+
+fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
+    let mut hydrated = dns.clone();
+
+    hydrated.timeout_ms = hydrated.timeout_ms.or_else(|| {
+        env_u64("SB_DNS_UDP_TIMEOUT_MS")
+            .or_else(|| env_u64("SB_DNS_TIMEOUT_MS"))
+            .or_else(|| env_u64("SB_DNS_DOH_TIMEOUT_MS"))
+    });
+    hydrated.ttl_default_s =
+        hydrated.ttl_default_s.or_else(|| env_u64("SB_DNS_DEFAULT_TTL_S"));
+    hydrated.ttl_min_s = hydrated.ttl_min_s.or_else(|| env_u64("SB_DNS_MIN_TTL_S"));
+    hydrated.ttl_max_s = hydrated.ttl_max_s.or_else(|| env_u64("SB_DNS_MAX_TTL_S"));
+    hydrated.ttl_neg_s = hydrated.ttl_neg_s.or_else(|| env_u64("SB_DNS_NEG_TTL_S"));
+
+    if hydrated.fakeip_enabled.is_none() {
+        hydrated.fakeip_enabled = env_bool("SB_DNS_FAKEIP_ENABLE");
+    }
+    if hydrated.fakeip_v4_base.is_none() {
+        hydrated.fakeip_v4_base = env_string("SB_FAKEIP_V4_BASE");
+    }
+    if hydrated.fakeip_v4_mask.is_none() {
+        hydrated.fakeip_v4_mask = env_u8("SB_FAKEIP_V4_MASK");
+    }
+    if hydrated.fakeip_v6_base.is_none() {
+        hydrated.fakeip_v6_base = env_string("SB_FAKEIP_V6_BASE");
+    }
+    if hydrated.fakeip_v6_mask.is_none() {
+        hydrated.fakeip_v6_mask = env_u8("SB_FAKEIP_V6_MASK");
+    }
+
+    if hydrated.pool_strategy.is_none() {
+        hydrated.pool_strategy = env_string("SB_DNS_POOL_STRATEGY");
+    }
+    hydrated.pool_race_window_ms =
+        hydrated.pool_race_window_ms.or_else(|| env_u64("SB_DNS_RACE_WINDOW_MS"));
+    hydrated.pool_he_race_ms =
+        hydrated.pool_he_race_ms.or_else(|| env_u64("SB_DNS_HE_RACE_MS"));
+    if hydrated.pool_he_order.is_none() {
+        hydrated.pool_he_order = env_string("SB_DNS_HE_ORDER");
+    }
+    hydrated.pool_max_inflight =
+        hydrated.pool_max_inflight.or_else(|| env_u64("SB_DNS_POOL_MAX_INFLIGHT"));
+    hydrated.pool_per_host_inflight = hydrated
+        .pool_per_host_inflight
+        .or_else(|| env_u64("SB_DNS_PER_HOST_INFLIGHT"));
+
+    if hydrated.client_subnet.is_none() {
+        hydrated.client_subnet = env_string("SB_DNS_CLIENT_SUBNET");
+    }
+
+    if hydrated.hosts_ttl_s.is_none() {
+        hydrated.hosts_ttl_s = env_u64("SB_DNS_STATIC_TTL_S");
+    }
+
+    hydrated
+}
+
+fn env_u64(key: &str) -> Option<u64> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
+fn env_u8(key: &str) -> Option<u8> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
+fn env_bool(key: &str) -> Option<bool> {
+    let raw = std::env::var(key).ok()?;
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" => Some(true),
+        "0" | "false" | "no" => Some(false),
+        _ => None,
+    }
+}
+
+fn env_string(key: &str) -> Option<String> {
+    let val = std::env::var(key).ok()?;
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn build_ruleset_from_rule(r: &sb_config::ir::DnsRuleIR) -> std::sync::Arc<crate::router::ruleset::RuleSet> {

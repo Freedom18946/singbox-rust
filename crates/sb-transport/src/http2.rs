@@ -309,19 +309,16 @@ impl AsyncRead for Http2StreamAdapter {
                 }
 
                 // Release flow control window; log and continue on error
-                if let Err(e) = self
-                    .recv_stream
-                    .flow_control()
-                    .release_capacity(data_len)
-                {
+                if let Err(e) = self.recv_stream.flow_control().release_capacity(data_len) {
                     debug!("HTTP/2 release_capacity error: {}", e);
                 }
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
-                format!("HTTP/2 recv error: {}", e),
-            ))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(format!(
+                "HTTP/2 recv error: {}",
+                e
+            )))),
             Poll::Ready(None) => {
                 debug!("HTTP/2 stream closed");
                 Poll::Ready(Ok(())) // EOF
@@ -345,17 +342,16 @@ impl AsyncWrite for Http2StreamAdapter {
                 let to_send = available.min(buf.len());
                 let data = Bytes::copy_from_slice(&buf[..to_send]);
 
-                self.send_stream.send_data(data, false).map_err(|e| {
-                    std::io::Error::other(
-                        format!("HTTP/2 send error: {}", e),
-                    )
-                })?;
+                self.send_stream
+                    .send_data(data, false)
+                    .map_err(|e| std::io::Error::other(format!("HTTP/2 send error: {}", e)))?;
 
                 Poll::Ready(Ok(to_send))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
-                format!("HTTP/2 capacity error: {}", e),
-            ))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(format!(
+                "HTTP/2 capacity error: {}",
+                e
+            )))),
             Poll::Ready(None) => Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::WriteZero,
                 "HTTP/2 send stream closed",
@@ -373,11 +369,7 @@ impl AsyncWrite for Http2StreamAdapter {
         // Send empty data frame with END_STREAM flag
         self.send_stream
             .send_data(Bytes::new(), true)
-            .map_err(|e| {
-                std::io::Error::other(
-                    format!("HTTP/2 shutdown error: {}", e),
-                )
-            })?;
+            .map_err(|e| std::io::Error::other(format!("HTTP/2 shutdown error: {}", e)))?;
 
         Poll::Ready(Ok(()))
     }

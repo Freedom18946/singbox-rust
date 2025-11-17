@@ -363,13 +363,11 @@ impl Obfuscator for XorObfuscator {
 /// 使用预分配容量的字符串和 `fmt::Write`，避免多次分配
 fn hex_encode(data: &[u8]) -> String {
     use std::fmt::Write;
-    data.iter().fold(
-        String::with_capacity(data.len() * 2),
-        |mut s, b| {
+    data.iter()
+        .fold(String::with_capacity(data.len() * 2), |mut s, b| {
             let _ = write!(s, "{b:02x}");
             s
-        },
-    )
+        })
 }
 
 /// 对 JSONL 帧进行回放解码验证（仅使用 RX 帧）
@@ -454,7 +452,7 @@ mod tests {
         assert_eq!(frame.dir, FrameDir::Tx);
         assert_eq!(frame.len, data.len());
         assert_eq!(frame.head8_hex, "7465737420646174"); // "test dat"
-        // tail 8 of "... for frame" == "72206672616d65"
+                                                         // tail 8 of "... for frame" == "72206672616d65"
         assert_eq!(frame.tail8_hex.len(), 16);
     }
 

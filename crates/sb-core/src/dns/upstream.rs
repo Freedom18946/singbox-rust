@@ -6,9 +6,19 @@
 //! - DNS-over-HTTPS (`DoH`) 上游
 //! - 系统解析器上游
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use std::{net::SocketAddr, time::Duration};
+use parking_lot::{Mutex, RwLock};
+use std::{
+    fs,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
 use crate::dns::transport::DnsTransport;
@@ -53,6 +63,203 @@ fn mask_prefix(bytes: &mut [u8], prefix: u8) {
             let mask = (!0u8) << (8 - rem);
             bytes[full] &= mask;
         }
+    }
+}
+
+fn parse_dhcp_spec(spec: &str) -> (Option<String>, PathBuf) {
+    let mut path = std::env::var("SB_DNS_DHCP_RESOLV_CONF")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(DhcpUpstream::DEFAULT_RESOLV_PATH));
+
+    if spec.eq_ignore_ascii_case("dhcp") {
+        return (None, path);
+    }
+
+    if let Some(rest) = spec.strip_prefix("dhcp://") {
+        if rest.starts_with('/') {
+            return (None, PathBuf::from(rest));
+        }
+
+        let (before_query, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let mut iface = None;
+        let mut override_path = None;
+
+        if !before_query.is_empty() {
+            if before_query.starts_with('/') {
+                override_path = Some(PathBuf::from(before_query));
+            } else if let Some((if_part, path_part)) = before_query.split_once('/') {
+                if !if_part.is_empty() {
+                    iface = Some(if_part.to_string());
+                }
+                if !path_part.is_empty() {
+                    let normalized = if path_part.starts_with('/') {
+                        path_part.to_string()
+                    } else {
+                        format!("/{path_part}")
+                    };
+                    override_path = Some(PathBuf::from(normalized));
+                }
+            } else {
+                iface = Some(before_query.trim_matches('/').to_string());
+            }
+        }
+
+        for pair in query.split('&') {
+            if let Some((key, value)) = pair.split_once('=') {
+                if key == "resolv" && !value.is_empty() {
+                    override_path = Some(PathBuf::from(value));
+                }
+            }
+        }
+
+        if let Some(p) = override_path {
+            path = p;
+        }
+        return (iface, path);
+    }
+
+    (None, path)
+}
+
+fn parse_resolved_spec(spec: &str) -> PathBuf {
+    let mut path = std::env::var("SB_DNS_RESOLVED_STUB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(ResolvedUpstream::DEFAULT_STUB));
+
+    if spec.eq_ignore_ascii_case("resolved") {
+        return path;
+    }
+
+    if let Some(rest) = spec.strip_prefix("resolved://") {
+        if rest.starts_with('/') {
+            return PathBuf::from(rest);
+        }
+
+        let mut override_path = None;
+        if let Some((before_query, query)) = rest.split_once('?') {
+            if before_query.starts_with('/') && !before_query.is_empty() {
+                override_path = Some(PathBuf::from(before_query));
+            }
+            for pair in query.split('&') {
+                if let Some((key, value)) = pair.split_once('=') {
+                    if key == "resolv" && !value.is_empty() {
+                        override_path = Some(PathBuf::from(value));
+                    }
+                }
+            }
+        } else if rest.starts_with('/') {
+            override_path = Some(PathBuf::from(rest));
+        }
+
+        if let Some(p) = override_path {
+            path = p;
+        }
+    }
+
+    path
+}
+
+#[cfg(unix)]
+fn discover_nameservers_from_file(path: &Path) -> Result<Vec<SocketAddr>> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("read resolv.conf from {}", path.display()))?;
+    let mut addrs = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("nameserver") {
+            let addr = rest.trim().split_whitespace().next();
+            if let Some(token) = addr {
+                if let Some(sa) = parse_nameserver_addr(token) {
+                    addrs.push(sa);
+                }
+            }
+        }
+    }
+    Ok(addrs)
+}
+
+#[cfg(not(unix))]
+fn discover_nameservers_from_file(_path: &Path) -> Result<Vec<SocketAddr>> {
+    Err(anyhow::anyhow!(
+        "File-based DNS upstreams are only supported on Unix-like platforms"
+    ))
+}
+
+fn parse_nameserver_addr(token: &str) -> Option<SocketAddr> {
+    if let Ok(sa) = token.parse::<SocketAddr>() {
+        return Some(sa);
+    }
+    if let Ok(ipv4) = token.parse::<Ipv4Addr>() {
+        return Some(SocketAddr::new(IpAddr::V4(ipv4), 53));
+    }
+    if let Ok(ipv6) = token.parse::<Ipv6Addr>() {
+        return Some(SocketAddr::new(IpAddr::V6(ipv6), 53));
+    }
+    if let Some((addr_part, port_part)) = token.rsplit_once(':') {
+        if let Ok(port) = port_part.parse::<u16>() {
+            let normalized = if addr_part.contains(':') && !addr_part.starts_with('[') {
+                format!("[{addr_part}]")
+            } else {
+                addr_part.to_string()
+            };
+            if let Ok(sa) = format!("{normalized}:{port}").parse::<SocketAddr>() {
+                return Some(sa);
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn parse_tailscale_spec(spec: &str, tag: Option<&str>) -> Result<(String, Vec<SocketAddr>)> {
+    let mut raw = Vec::new();
+
+    if let Some(rest) = spec.strip_prefix("tailscale://") {
+        let (before_query, query) = rest.split_once('?').unwrap_or((rest, ""));
+        if !before_query.trim().is_empty() {
+            raw.push(before_query.trim().to_string());
+        }
+        for pair in query.split('&') {
+            if let Some((key, value)) = pair.split_once('=') {
+                if key == "servers" && !value.is_empty() {
+                    raw.extend(
+                        value
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty()),
+                    );
+                }
+            }
+        }
+    }
+
+    if raw.is_empty() {
+        if let Ok(env_value) = std::env::var("SB_TAILSCALE_DNS_ADDRS") {
+            raw.extend(
+                env_value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+            );
+        }
+    }
+
+    let addrs: Vec<SocketAddr> = raw
+        .into_iter()
+        .filter_map(|token| parse_nameserver_addr(&token))
+        .collect();
+
+    if addrs.is_empty() {
+        Err(anyhow::anyhow!(
+            "tailscale DNS upstream requires explicit address (e.g. tailscale://100.64.0.2:53) or env SB_TAILSCALE_DNS_ADDRS"
+        ))
+    } else {
+        let name = tag
+            .map(|t| format!("tailscale::{t}"))
+            .unwrap_or_else(|| "tailscale".to_string());
+        Ok((name, addrs))
     }
 }
 
@@ -177,13 +384,14 @@ impl UdpUpstream {
         // Optional EDNS0 Client Subnet (global env-driven)
         if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
             // Increase ARCOUNT to 1
-            packet[10] = 0; packet[11] = 1;
+            packet[10] = 0;
+            packet[11] = 1;
             // OPT RR
             packet.push(0); // NAME root
             packet.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT
             packet.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=udp size
             packet.extend_from_slice(&0u32.to_be_bytes()); // TTL
-            // ECS option
+                                                           // ECS option
             let mut opt = Vec::new();
             opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE=8
             let data_len = 4u16 + (addr_bytes.len() as u16);
@@ -397,6 +605,396 @@ impl DnsUpstream for UdpUpstream {
     }
 }
 
+/// DHCP-backed upstream that discovers resolver IPs from `/etc/resolv.conf` (or similar).
+pub struct DhcpUpstream {
+    name: String,
+    interface: Option<String>,
+    resolv_path: PathBuf,
+    upstreams: RwLock<Vec<Arc<dyn DnsUpstream>>>,
+    round_robin: AtomicUsize,
+    last_reload: Mutex<Instant>,
+    reload_interval: Duration,
+    fallback: Arc<dyn DnsUpstream>,
+}
+
+impl std::fmt::Debug for DhcpUpstream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DhcpUpstream")
+            .field("name", &self.name)
+            .field("interface", &self.interface)
+            .field("resolv_path", &self.resolv_path)
+            .finish()
+    }
+}
+
+impl DhcpUpstream {
+    const DEFAULT_RELOAD_INTERVAL: Duration = Duration::from_secs(30);
+    const DEFAULT_RESOLV_PATH: &'static str = "/etc/resolv.conf";
+
+    /// Create a new DHCP upstream from an address spec (`dhcp`, `dhcp://eth0`, etc.).
+    pub fn from_spec(spec: &str, tag: Option<&str>) -> Result<Self> {
+        let (iface, resolv_path) = parse_dhcp_spec(spec);
+        let name = tag
+            .map(|t| format!("dhcp::{t}"))
+            .or_else(|| iface.as_ref().map(|ifn| format!("dhcp://{ifn}")))
+            .unwrap_or_else(|| "dhcp://auto".to_string());
+
+        let upstream = Self {
+            name,
+            interface: iface,
+            resolv_path,
+            upstreams: RwLock::new(Vec::new()),
+            round_robin: AtomicUsize::new(0),
+            last_reload: Mutex::new(Instant::now() - Self::DEFAULT_RELOAD_INTERVAL),
+            reload_interval: Self::DEFAULT_RELOAD_INTERVAL,
+            fallback: Arc::new(SystemUpstream::new()),
+        };
+        // Best-effort initial discovery; fallback is used if this fails.
+        let _ = upstream.reload_servers();
+        Ok(upstream)
+    }
+
+    fn snapshot(&self) -> Vec<Arc<dyn DnsUpstream>> {
+        self.upstreams.read().clone()
+    }
+
+    fn reload_servers(&self) -> Result<()> {
+        let servers = discover_nameservers_from_file(&self.resolv_path)
+            .with_context(|| format!("read DHCP DNS from {}", self.resolv_path.display()))?;
+        if servers.is_empty() {
+            tracing::warn!(
+                target: "sb_core::dns",
+                upstream = %self.name,
+                path = %self.resolv_path.display(),
+                "DHCP upstream found no nameservers; using system fallback"
+            );
+            self.upstreams.write().clear();
+            return Ok(());
+        }
+
+        let list: Vec<Arc<dyn DnsUpstream>> = servers
+            .into_iter()
+            .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
+            .collect();
+        tracing::info!(
+            target: "sb_core::dns",
+            upstream = %self.name,
+            count = list.len(),
+            path = %self.resolv_path.display(),
+            "DHCP upstream loaded nameservers"
+        );
+        *self.upstreams.write() = list;
+        *self.last_reload.lock() = Instant::now();
+        Ok(())
+    }
+
+    fn maybe_reload(&self) {
+        let need_reload = {
+            let last = *self.last_reload.lock();
+            last.elapsed() >= self.reload_interval
+        };
+        if need_reload {
+            let _ = self.reload_servers();
+        }
+    }
+
+    async fn query_inner(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        for attempt in 0..2 {
+            let upstreams = self.snapshot();
+            if upstreams.is_empty() {
+                if attempt == 0 {
+                    let _ = self.reload_servers();
+                    continue;
+                }
+                tracing::warn!(
+                    target: "sb_core::dns",
+                    upstream = %self.name,
+                    "DHCP upstream has no servers; delegating to system resolver"
+                );
+                return self.fallback.query(domain, record_type).await;
+            }
+
+            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            for offset in 0..upstreams.len() {
+                let idx = (start + offset) % upstreams.len();
+                match upstreams[idx].query(domain, record_type).await {
+                    Ok(answer) => return Ok(answer),
+                    Err(err) => {
+                        tracing::debug!(
+                            target: "sb_core::dns",
+                            upstream = %self.name,
+                            member = %upstreams[idx].name(),
+                            error = %err,
+                            "DHCP upstream member failed; trying next"
+                        );
+                    }
+                }
+            }
+
+            if attempt == 0 {
+                let _ = self.reload_servers();
+            }
+        }
+
+        tracing::warn!(
+            target: "sb_core::dns",
+            upstream = %self.name,
+            "All DHCP upstream members failed; using system resolver fallback"
+        );
+        self.fallback.query(domain, record_type).await
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for DhcpUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        self.maybe_reload();
+        self.query_inner(domain, record_type).await
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        self.maybe_reload();
+        let snapshot = self.snapshot();
+        if let Some(up) = snapshot.first() {
+            up.health_check().await
+        } else {
+            self.fallback.health_check().await
+        }
+    }
+}
+
+/// Static multi-endpoint upstream (round-robin over a fixed list).
+pub struct StaticMultiUpstream {
+    name: String,
+    members: Vec<Arc<dyn DnsUpstream>>,
+    index: AtomicUsize,
+}
+
+impl StaticMultiUpstream {
+    pub fn new(name: String, addrs: Vec<SocketAddr>) -> Self {
+        let members = addrs
+            .into_iter()
+            .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
+            .collect();
+        Self {
+            name,
+            members,
+            index: AtomicUsize::new(0),
+        }
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for StaticMultiUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        if self.members.is_empty() {
+            return Err(anyhow::anyhow!(
+                "no upstream members configured for {}",
+                self.name
+            ));
+        }
+        let start = self.index.fetch_add(1, Ordering::Relaxed);
+        let mut last_error = None;
+        for offset in 0..self.members.len() {
+            let idx = (start + offset) % self.members.len();
+            match self.members[idx].query(domain, record_type).await {
+                Ok(ans) => return Ok(ans),
+                Err(err) => {
+                    last_error = Some(err);
+                }
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            anyhow::anyhow!("all upstream members failed for {}", self.name)
+        }))
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        if let Some(member) = self.members.first() {
+            member.health_check().await
+        } else {
+            false
+        }
+    }
+}
+
+/// systemd-resolved upstream backed by stub resolv.conf.
+pub struct ResolvedUpstream {
+    name: String,
+    resolv_path: PathBuf,
+    upstreams: RwLock<Vec<Arc<dyn DnsUpstream>>>,
+    round_robin: AtomicUsize,
+    last_reload: Mutex<Instant>,
+    reload_interval: Duration,
+    fallback: Arc<dyn DnsUpstream>,
+}
+
+impl std::fmt::Debug for ResolvedUpstream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedUpstream")
+            .field("name", &self.name)
+            .field("resolv_path", &self.resolv_path)
+            .finish()
+    }
+}
+
+impl ResolvedUpstream {
+    const DEFAULT_STUB: &'static str = "/run/systemd/resolve/stub-resolv.conf";
+    const FALLBACK_RESOLV: &'static str = "/run/systemd/resolve/resolv.conf";
+
+    pub fn from_spec(spec: &str, tag: Option<&str>) -> Result<Self> {
+        let resolv_path = parse_resolved_spec(spec);
+        let name = tag
+            .map(|t| format!("resolved::{t}"))
+            .unwrap_or_else(|| format!("resolved://{}", resolv_path.display()));
+        let upstream = Self {
+            name,
+            resolv_path,
+            upstreams: RwLock::new(Vec::new()),
+            round_robin: AtomicUsize::new(0),
+            last_reload: Mutex::new(Instant::now() - DhcpUpstream::DEFAULT_RELOAD_INTERVAL),
+            reload_interval: DhcpUpstream::DEFAULT_RELOAD_INTERVAL,
+            fallback: Arc::new(SystemUpstream::new()),
+        };
+        let _ = upstream.reload_servers();
+        Ok(upstream)
+    }
+
+    fn snapshot(&self) -> Vec<Arc<dyn DnsUpstream>> {
+        self.upstreams.read().clone()
+    }
+
+    fn reload_servers(&self) -> Result<()> {
+        let mut tried_paths = vec![self.resolv_path.clone()];
+        if self.resolv_path.as_os_str().is_empty() {
+            tried_paths.clear();
+        }
+
+        for path in &[
+            &self.resolv_path,
+            &PathBuf::from(Self::DEFAULT_STUB),
+            &PathBuf::from(Self::FALLBACK_RESOLV),
+        ] {
+            if path.as_os_str().is_empty() || !path.exists() {
+                continue;
+            }
+            match discover_nameservers_from_file(path) {
+                Ok(servers) if !servers.is_empty() => {
+                    let list: Vec<Arc<dyn DnsUpstream>> = servers
+                        .into_iter()
+                        .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
+                        .collect();
+                    tracing::info!(
+                        target: "sb_core::dns",
+                        upstream = %self.name,
+                        path = %path.display(),
+                        count = list.len(),
+                        "resolved upstream loaded nameservers"
+                    );
+                    *self.upstreams.write() = list;
+                    *self.last_reload.lock() = Instant::now();
+                    return Ok(());
+                }
+                Ok(_) => continue,
+                Err(err) => {
+                    tracing::debug!(
+                        target: "sb_core::dns",
+                        upstream = %self.name,
+                        path = %path.display(),
+                        error = %err,
+                        "failed to read resolved stub"
+                    );
+                }
+            }
+        }
+
+        tracing::warn!(
+            target: "sb_core::dns",
+            upstream = %self.name,
+            "resolved upstream found no nameservers; using system resolver"
+        );
+        self.upstreams.write().clear();
+        *self.last_reload.lock() = Instant::now();
+        Ok(())
+    }
+
+    fn maybe_reload(&self) {
+        let need_reload = {
+            let last = *self.last_reload.lock();
+            last.elapsed() >= self.reload_interval
+        };
+        if need_reload {
+            let _ = self.reload_servers();
+        }
+    }
+
+    async fn query_inner(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        for attempt in 0..2 {
+            let upstreams = self.snapshot();
+            if upstreams.is_empty() {
+                if attempt == 0 {
+                    let _ = self.reload_servers();
+                    continue;
+                }
+                return self.fallback.query(domain, record_type).await;
+            }
+            let start = self.round_robin.fetch_add(1, Ordering::Relaxed);
+            for offset in 0..upstreams.len() {
+                let idx = (start + offset) % upstreams.len();
+                match upstreams[idx].query(domain, record_type).await {
+                    Ok(answer) => return Ok(answer),
+                    Err(err) => tracing::debug!(
+                        target: "sb_core::dns",
+                        upstream = %self.name,
+                        member = %upstreams[idx].name(),
+                        error = %err,
+                        "resolved upstream member failed"
+                    ),
+                }
+            }
+            if attempt == 0 {
+                let _ = self.reload_servers();
+            }
+        }
+        tracing::warn!(
+            target: "sb_core::dns",
+            upstream = %self.name,
+            "all resolved upstream members failed; falling back to system resolver"
+        );
+        self.fallback.query(domain, record_type).await
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for ResolvedUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        self.maybe_reload();
+        self.query_inner(domain, record_type).await
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        self.maybe_reload();
+        let snapshot = self.snapshot();
+        if let Some(up) = snapshot.first() {
+            up.health_check().await
+        } else {
+            self.fallback.health_check().await
+        }
+    }
+}
+
 /// DNS-over-TLS (`DoT`) 上游实现
 pub struct DotUpstream {
     server: SocketAddr,
@@ -495,14 +1093,24 @@ impl DotUpstream {
         for p in &self.extra_ca_paths {
             if let Ok(bytes) = std::fs::read(p) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
-                for it in rustls_pemfile::certs(&mut rd) { if let Ok(der) = it { let _ = roots.add(der); } }
+                for it in rustls_pemfile::certs(&mut rd) {
+                    if let Ok(der) = it {
+                        let _ = roots.add(der);
+                    }
+                }
             }
         }
         for pem in &self.extra_ca_pem {
             let mut rd = std::io::BufReader::new(pem.as_bytes());
-            for it in rustls_pemfile::certs(&mut rd) { if let Ok(der) = it { let _ = roots.add(der); } }
+            for it in rustls_pemfile::certs(&mut rd) {
+                if let Ok(der) = it {
+                    let _ = roots.add(der);
+                }
+            }
         }
-        let mut cfg = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+        let mut cfg = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
         if self.skip_verify {
             let v = crate::tls::danger::NoVerify::new();
             cfg.dangerous().set_certificate_verifier(Arc::new(v));
@@ -585,13 +1193,14 @@ impl DotUpstream {
         // Optional EDNS0 Client Subnet (global env-driven)
         if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
             // Increase ARCOUNT to 1
-            packet[10] = 0; packet[11] = 1;
+            packet[10] = 0;
+            packet[11] = 1;
             // OPT RR
             packet.push(0); // NAME root
             packet.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT
             packet.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=udp size
             packet.extend_from_slice(&0u32.to_be_bytes()); // TTL
-            // ECS option
+                                                           // ECS option
             let mut opt = Vec::new();
             opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE=8
             let data_len = 4u16 + (addr_bytes.len() as u16);
@@ -725,7 +1334,8 @@ mod tests {
     #[test]
     fn dot_upstream_name_contains_sni_and_addr() {
         let sa: SocketAddr = "1.1.1.1:853".parse().unwrap();
-        let up = DotUpstream::new_with_tls(sa, "cloudflare-dns.com".to_string(), vec![], vec![], false);
+        let up =
+            DotUpstream::new_with_tls(sa, "cloudflare-dns.com".to_string(), vec![], vec![], false);
         assert!(up.name().contains("cloudflare-dns.com"));
         assert!(up.name().contains("1.1.1.1:853"));
     }
@@ -733,7 +1343,8 @@ mod tests {
     #[test]
     fn doq_upstream_name_contains_sni_and_addr() {
         let sa: SocketAddr = "1.0.0.1:853".parse().unwrap();
-        let up = DoqUpstream::new_with_tls(sa, "one.one.one.one".to_string(), vec![], vec![], false);
+        let up =
+            DoqUpstream::new_with_tls(sa, "one.one.one.one".to_string(), vec![], vec![], false);
         assert!(up.name().contains("one.one.one.one"));
         assert!(up.name().contains("1.0.0.1:853"));
     }
@@ -837,7 +1448,8 @@ mod tests {
             let msg = e.to_string();
             assert!(
                 msg.contains("Invalid domain label"),
-                "error should mention invalid domain label: {}", msg
+                "error should mention invalid domain label: {}",
+                msg
             );
         }
     }
@@ -857,7 +1469,8 @@ mod tests {
             let msg = e.to_string();
             assert!(
                 msg.contains("too short") || msg.contains("short"),
-                "error should mention packet too short: {}", msg
+                "error should mention packet too short: {}",
+                msg
             );
         }
     }
@@ -867,7 +1480,9 @@ mod tests {
         let upstream = SystemUpstream::new();
 
         // Query a domain that should not exist
-        let result = upstream.query("invalid-nonexistent-domain-12345.local", RecordType::A).await;
+        let result = upstream
+            .query("invalid-nonexistent-domain-12345.local", RecordType::A)
+            .await;
 
         // Should fail with appropriate error
         assert!(result.is_err(), "should fail on nonexistent domain");
@@ -876,9 +1491,96 @@ mod tests {
             let msg = e.to_string();
             assert!(
                 msg.contains("failed") || msg.contains("resolution") || msg.contains("not found"),
-                "error should indicate DNS failure: {}", msg
+                "error should indicate DNS failure: {}",
+                msg
             );
         }
+    }
+
+    #[test]
+    fn parse_dhcp_spec_supports_interface_and_path() {
+        let (iface, path) = parse_dhcp_spec("dhcp://eth0?resolv=/run/dhcp/resolv.conf");
+        assert_eq!(iface.as_deref(), Some("eth0"));
+        assert_eq!(path.display().to_string(), "/run/dhcp/resolv.conf");
+
+        let (iface2, path2) = parse_dhcp_spec("dhcp:///custom/resolv.conf");
+        assert_eq!(iface2, None);
+        assert_eq!(path2.display().to_string(), "/custom/resolv.conf");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_nameservers_reads_resolv_conf() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        writeln!(
+            tmp,
+            "\
+nameserver 8.8.8.8
+nameserver 2001:4860:4860::8888
+# comment
+"
+        )
+        .unwrap();
+        let addrs = discover_nameservers_from_file(tmp.path()).unwrap();
+        assert_eq!(addrs.len(), 2);
+        assert_eq!(addrs[0], "8.8.8.8:53".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            addrs[1],
+            "[2001:4860:4860::8888]:53".parse::<SocketAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_tailscale_spec_with_inline_servers() {
+        let (name, addrs) = parse_tailscale_spec("tailscale://100.64.0.2:53", Some("ts")).unwrap();
+        assert_eq!(name, "tailscale::ts");
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(addrs[0], "100.64.0.2:53".parse::<SocketAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_tailscale_spec_uses_env_fallback() {
+        let old = std::env::var("SB_TAILSCALE_DNS_ADDRS").ok();
+        std::env::set_var("SB_TAILSCALE_DNS_ADDRS", "100.64.0.10");
+        let (_, addrs) = parse_tailscale_spec("tailscale://", None).unwrap();
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(addrs[0], "100.64.0.10:53".parse::<SocketAddr>().unwrap());
+        if let Some(val) = old {
+            std::env::set_var("SB_TAILSCALE_DNS_ADDRS", val);
+        } else {
+            std::env::remove_var("SB_TAILSCALE_DNS_ADDRS");
+        }
+    }
+
+    #[test]
+    fn parse_resolved_spec_supports_absolute_and_query() {
+        let path = parse_resolved_spec("resolved:///run/systemd/resolve/resolv.conf");
+        assert_eq!(
+            path.display().to_string(),
+            "/run/systemd/resolve/resolv.conf"
+        );
+
+        let path2 = parse_resolved_spec("resolved://?resolv=/tmp/custom.conf");
+        assert_eq!(path2.display().to_string(), "/tmp/custom.conf");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolved_upstream_uses_stub_file() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        writeln!(tmp, "nameserver 127.0.0.53").unwrap();
+        let up = ResolvedUpstream::from_spec(
+            &format!("resolved://{}", tmp.path().display()),
+            Some("test"),
+        )
+        .unwrap();
+        assert!(!up.snapshot().is_empty());
     }
 }
 
@@ -946,11 +1648,8 @@ impl DnsUpstream for DoqUpstream {
                 self.extra_ca_pem.clone(),
                 self.skip_verify,
             )?;
-            let resp_bytes = tokio::time::timeout(
-                self.timeout,
-                transport.query(&req_bytes),
-            )
-            .await??;
+            let resp_bytes =
+                tokio::time::timeout(self.timeout, transport.query(&req_bytes)).await??;
             let (ips, ttl) = crate::dns::udp::parse_answers(&resp_bytes, qtype)?;
             let ttl = ttl
                 .map(|s| Duration::from_secs(u64::from(s)))
@@ -969,7 +1668,9 @@ impl DnsUpstream for DoqUpstream {
         }
     }
 
-    fn name(&self) -> &str { &self.name }
+    fn name(&self) -> &str {
+        &self.name
+    }
 
     async fn health_check(&self) -> bool {
         #[cfg(feature = "dns_doq")]

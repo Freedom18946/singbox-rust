@@ -164,10 +164,7 @@ fn main() -> Result<()> {
             {
                 let validation_result = validator.validate(&v);
                 if let Err(iter) = validation_result {
-                    let errors: Vec<String> = iter
-                        .take(5)
-                        .map(|e| format!("{}", e))
-                        .collect();
+                    let errors: Vec<String> = iter.take(5).map(|e| format!("{}", e)).collect();
                     tracing::error!(target: "app::check", "配置 schema 验证失败");
                     for (i, error) in errors.iter().enumerate() {
                         tracing::error!(target: "app::check", idx = i + 1, msg = %error, "schema validation error");

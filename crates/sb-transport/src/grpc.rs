@@ -249,9 +249,10 @@ impl AsyncRead for GrpcStreamAdapter {
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(status))) => Poll::Ready(Err(std::io::Error::other(
-                format!("gRPC error: {}", status),
-            ))),
+            Poll::Ready(Some(Err(status))) => Poll::Ready(Err(std::io::Error::other(format!(
+                "gRPC error: {}",
+                status
+            )))),
             Poll::Ready(None) => {
                 debug!("gRPC stream closed");
                 Poll::Ready(Ok(())) // EOF

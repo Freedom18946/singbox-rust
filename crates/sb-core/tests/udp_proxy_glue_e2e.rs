@@ -1,8 +1,8 @@
+use sb_core::socks5::decode_udp_reply;
+use sb_test_utils::socks5::start_mock_socks5;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use sb_test_utils::socks5::start_mock_socks5;
-use sb_core::socks5::decode_udp_reply;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn glue_per_client_roundtrip() -> anyhow::Result<()> {

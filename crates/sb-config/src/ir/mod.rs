@@ -1011,6 +1011,12 @@ pub struct ConfigIR {
     /// Service configurations (Resolved, DERP, SSM, etc.)
     #[serde(default)]
     pub services: Vec<ServiceIR>,
+    /// Optional experimental configuration blob (schema v2 passthrough).
+    ///
+    /// This mirrors Go's top-level `experimental` field and allows unknown or
+    /// forward-compatible options to be preserved without strong typing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experimental: Option<serde_json::Value>,
 }
 
 /// Certificate configuration (global)
@@ -1187,8 +1193,14 @@ impl ConfigIR {
         if outbound.port.is_none() {
             errors.push(format!("outbound '{name}': shadowsocks.port is required"));
         }
-        if outbound.password.as_ref().is_none_or(|p| p.trim().is_empty()) {
-            errors.push(format!("outbound '{name}': shadowsocks.password is required"));
+        if outbound
+            .password
+            .as_ref()
+            .is_none_or(|p| p.trim().is_empty())
+        {
+            errors.push(format!(
+                "outbound '{name}': shadowsocks.password is required"
+            ));
         }
 
         let method = outbound.method.as_deref().unwrap_or_default();
@@ -1268,10 +1280,18 @@ impl ConfigIR {
         let count = ws as u8 + h2 as u8 + hup as u8 + grpc as u8;
         if count > 1 {
             let mut kinds = Vec::new();
-            if ws { kinds.push("ws"); }
-            if h2 { kinds.push("h2"); }
-            if hup { kinds.push("httpupgrade"); }
-            if grpc { kinds.push("grpc"); }
+            if ws {
+                kinds.push("ws");
+            }
+            if h2 {
+                kinds.push("h2");
+            }
+            if hup {
+                kinds.push("httpupgrade");
+            }
+            if grpc {
+                kinds.push("grpc");
+            }
             return Some(format!(
                 "conflicting transports selected: {} (select at most one of ws/h2/httpupgrade/grpc)",
                 kinds.join(", ")
@@ -1490,7 +1510,19 @@ pub struct NtpIR {
 pub struct DnsServerIR {
     /// Upstream tag (unique)
     pub tag: String,
-    /// Address: udp://ip:port | https://... | dot://host:port | doq://host:port[@sni] | system
+    /// Address scheme for this upstream.
+    ///
+    /// Supported values (by scheme prefix or literal):
+    /// - `system`                       — use system resolver
+    /// - `udp://host:port`              — plain UDP DNS
+    /// - `https://...` / `http://...`   — DoH (DNS over HTTPS)
+    /// - `dot://host:port` / `tls://…`  — DoT (DNS over TLS)
+    /// - `doq://host:port[@sni]`        — DoQ (DNS over QUIC)
+    /// - `doh3://host:port/path`        — DoH over HTTP/3
+    /// - `h3://host:port/path`          — HTTP/3 DNS (alias of `doh3://`)
+    /// - `dhcp` / `dhcp://…`            — DHCP-provided DNS (currently stubbed to system)
+    /// - `tailscale` / `tailscale://…`  — Tailscale DNS (currently stubbed)
+    /// - `resolved` / `resolved://…`    — systemd-resolved DNS (currently stubbed)
     pub address: String,
     /// Optional SNI override (for DoT/DoQ)
     #[serde(default)]

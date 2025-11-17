@@ -114,7 +114,10 @@ fn test_doh3_url_parsing_with_default_path() -> Result<()> {
 
     // Test with just hostname
     let upstream = build_upstream("h3://cloudflare-dns.com")?;
-    assert!(upstream.is_some(), "H3 URL with just hostname should be parsed");
+    assert!(
+        upstream.is_some(),
+        "H3 URL with just hostname should be parsed"
+    );
 
     Ok(())
 }
@@ -186,10 +189,15 @@ fn test_system_resolver_parsing() -> Result<()> {
 #[test]
 fn test_all_dns_transports_available() {
     // Test that all DNS transports can be imported when features are enabled
-    use sb_core::dns::transport::{DnsTransport, DotTransport, DohTransport, DoqTransport, Doh3Transport, UdpTransport};
+    use sb_core::dns::transport::{
+        DnsTransport, Doh3Transport, DohTransport, DoqTransport, DotTransport, UdpTransport,
+    };
 
     // This is a compile-time test - if it compiles, all transports are available
-    assert!(true, "All DNS transports should be available with features enabled");
+    assert!(
+        true,
+        "All DNS transports should be available with features enabled"
+    );
 }
 
 #[cfg(feature = "dns_doh3")]
@@ -211,7 +219,11 @@ fn test_doh3_config_roundtrip() -> Result<()> {
         if let Some(u) = upstream {
             let name = u.name();
             assert!(
-                name.contains("doh3") || name.contains("h3") || name.contains("1.1.1.1") || name.contains("cloudflare") || name.contains("google"),
+                name.contains("doh3")
+                    || name.contains("h3")
+                    || name.contains("1.1.1.1")
+                    || name.contains("cloudflare")
+                    || name.contains("google"),
                 "Upstream name '{}' should contain expected keywords for URL '{}'",
                 name,
                 url
@@ -230,12 +242,21 @@ fn test_doh3_vs_doh_url_schemes() {
     // DoH uses https://
     let doh_result = build_upstream("https://1.1.1.1/dns-query");
     #[cfg(feature = "dns_doh")]
-    assert!(doh_result.is_ok() && doh_result.unwrap().is_some(), "DoH should use https://");
+    assert!(
+        doh_result.is_ok() && doh_result.unwrap().is_some(),
+        "DoH should use https://"
+    );
 
     // DoH3 uses doh3:// or h3://
     let doh3_result1 = build_upstream("doh3://1.1.1.1/dns-query");
-    assert!(doh3_result1.is_ok() && doh3_result1.unwrap().is_some(), "DoH3 should use doh3://");
+    assert!(
+        doh3_result1.is_ok() && doh3_result1.unwrap().is_some(),
+        "DoH3 should use doh3://"
+    );
 
     let doh3_result2 = build_upstream("h3://1.1.1.1/dns-query");
-    assert!(doh3_result2.is_ok() && doh3_result2.unwrap().is_some(), "DoH3 should use h3://");
+    assert!(
+        doh3_result2.is_ok() && doh3_result2.unwrap().is_some(),
+        "DoH3 should use h3://"
+    );
 }

@@ -1,5 +1,8 @@
-//! End-to-end test for IR-driven DNS resolver
+//! End-to-end tests for IR-driven DNS resolver
 
+use std::io::Write as _;
+
+use tempfile::NamedTempFile;
 
 #[tokio::test]
 async fn dns_ir_hosts_overlay_and_engine_presence() {
@@ -18,11 +21,14 @@ async fn dns_ir_hosts_overlay_and_engine_presence() {
     let dns_ir = ir.dns.expect("dns ir expected");
 
     // Build resolver from IR
-    let resolver = sb_core::dns::config_builder::resolver_from_ir(&dns_ir)
-        .expect("build resolver from ir");
+    let resolver =
+        sb_core::dns::config_builder::resolver_from_ir(&dns_ir).expect("build resolver from ir");
 
     // Hosts overlay should resolve without using network
-    let ans = resolver.resolve("unit.test.local").await.expect("resolve host");
+    let ans = resolver
+        .resolve("unit.test.local")
+        .await
+        .expect("resolve host");
     assert!(ans.ips.iter().any(|ip| ip.is_ipv4()));
     assert_eq!(ans.ttl.as_secs(), 123);
 
@@ -40,4 +46,59 @@ async fn dns_ir_hosts_overlay_and_engine_presence() {
         .expect("build resolver from ir with rules");
     // name() should be "dns_rule_engine" per EngineResolver
     assert_eq!(resolver2.name(), "dns_rule_engine");
+}
+
+#[cfg(all(feature = "dns_dhcp", feature = "dns_resolved", feature = "dns_tailscale"))]
+#[tokio::test]
+async fn dns_ir_builds_with_dhcp_resolved_tailscale_servers() {
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            EnvGuard { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(prev) = &self.prev {
+                std::env::set_var(self.key, prev);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    // Prepare synthetic resolv.conf files for DHCP/resolved upstream discovery.
+    let mut dhcp_file = NamedTempFile::new().unwrap();
+    writeln!(dhcp_file, "nameserver 127.0.0.1").unwrap();
+    let _dhcp_env = EnvGuard::set("SB_DNS_DHCP_RESOLV_CONF", dhcp_file.path().to_str().unwrap());
+
+    let mut resolved_file = NamedTempFile::new().unwrap();
+    writeln!(resolved_file, "nameserver 127.0.0.53").unwrap();
+    let resolved_spec = format!("resolved://?resolv={}", resolved_file.path().display());
+
+    let json = serde_json::json!({
+        "dns": {
+            "servers": [
+                {"tag": "ts", "address": "tailscale://127.0.0.2:5353"},
+                {"tag": "dh", "address": "dhcp://"},
+                {"tag": "rs", "address": resolved_spec},
+            ],
+            "default": "ts"
+        }
+    });
+
+    let ir = sb_config::validator::v2::to_ir_v1(&json);
+    let dns_ir = ir.dns.expect("dns ir expected");
+    let resolver = sb_core::dns::config_builder::resolver_from_ir(&dns_ir)
+        .expect("build resolver with dhcp/resolved/tailscale upstreams");
+
+    // With no rules, resolver should be the base dns_ir resolver.
+    assert_eq!(resolver.name(), "dns_ir");
 }

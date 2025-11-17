@@ -195,8 +195,12 @@ impl DnsResolver {
             cache: Arc::new(RwLock::new(HashMap::new())),
             fake_ip_mappings: Arc::new(RwLock::new(HashMap::new())),
             dns_servers: vec![
-                "8.8.8.8:53".parse().expect("hardcoded DNS server must be valid"),
-                "1.1.1.1:53".parse().expect("hardcoded DNS server must be valid"),
+                "8.8.8.8:53"
+                    .parse()
+                    .expect("hardcoded DNS server must be valid"),
+                "1.1.1.1:53"
+                    .parse()
+                    .expect("hardcoded DNS server must be valid"),
             ],
         }
     }

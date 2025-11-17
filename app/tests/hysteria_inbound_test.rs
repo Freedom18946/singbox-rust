@@ -215,10 +215,7 @@ fn test_hysteria_v1_inbound_wechat_video_protocol() {
 
     // Verify wechat-video protocol
     assert_eq!(inbound.ty, InboundType::Hysteria);
-    assert_eq!(
-        inbound.hysteria_protocol.as_ref().unwrap(),
-        "wechat-video"
-    );
+    assert_eq!(inbound.hysteria_protocol.as_ref().unwrap(), "wechat-video");
 }
 
 /// Test 4: Hysteria v1 inbound serialization/deserialization
@@ -281,8 +278,7 @@ fn test_hysteria_v1_inbound_serde() {
     assert!(!json.is_empty());
 
     // Deserialize from JSON
-    let deserialized: InboundIR =
-        serde_json::from_str(&json).expect("Failed to deserialize");
+    let deserialized: InboundIR = serde_json::from_str(&json).expect("Failed to deserialize");
 
     // Verify deserialized matches original
     assert_eq!(deserialized.ty, original.ty);

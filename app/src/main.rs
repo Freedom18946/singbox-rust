@@ -154,7 +154,9 @@ fn try_extract_log_from_args(
     };
 
     // If stdin indicated, skip (cannot pre-read here safely)
-    if path.trim() == "-" { return None; }
+    if path.trim() == "-" {
+        return None;
+    }
 
     // Try loading config; ignore errors silently and fall back to env-only logging
     let cfg = match sb_config::Config::load(&path) {

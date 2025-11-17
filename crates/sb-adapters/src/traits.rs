@@ -364,8 +364,7 @@ pub type BoxedStream = Box<dyn AsyncStream>;
 pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
 /// Blanket implementation for any type that implements the required traits.
-impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send
-{}
+impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
 /// Converts a transport `IoStream` to `BoxedStream`.
 ///

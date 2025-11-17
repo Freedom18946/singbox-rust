@@ -44,12 +44,10 @@ impl Default for HysteriaAdapterConfig {
 }
 
 /// Hysteria v1 outbound connector
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct HysteriaConnector {
     cfg: HysteriaAdapterConfig,
 }
-
 
 impl HysteriaConnector {
     pub fn new(cfg: HysteriaAdapterConfig) -> Self {

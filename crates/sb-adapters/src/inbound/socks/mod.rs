@@ -82,11 +82,11 @@ pub async fn serve_socks(
             r = listener.accept() => {
                 let (mut cli, peer) = match r {
                     Ok(v) => v,
-                    Err(e) => { 
+                    Err(e) => {
                         warn!(error=%e, "accept failed");
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("socks", &e);
-                        continue; 
+                        continue;
                     }
                 };
                 let cfg_clone = cfg.clone();

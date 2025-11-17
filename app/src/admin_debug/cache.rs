@@ -210,9 +210,7 @@ impl Lru {
 
                 // Try to move to disk if disk backing is enabled (only for larger entries)
                 if let Some(base_path) = &self.disk_backing {
-                    if size > 4096
-                        && matches!(self.write_to_disk(&key, &cache_entry), Ok(()))
-                    {
+                    if size > 4096 && matches!(self.write_to_disk(&key, &cache_entry), Ok(())) {
                         let disk_entry = TierEntry::Disk {
                             path: disk_path_inner(base_path, &key),
                             etag: cache_entry.etag,

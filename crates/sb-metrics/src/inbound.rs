@@ -32,8 +32,11 @@ pub fn record_error_display(protocol: &str, e: &dyn core::fmt::Display) {
         "auth"
     } else if s.contains("protocol") || s.contains("invalid") || s.contains("decode") {
         "protocol"
-    } else if s.contains("conn") || s.contains("refused") || s.contains("unreachable")
-        || s.contains("broken pipe") || s.contains("reset")
+    } else if s.contains("conn")
+        || s.contains("refused")
+        || s.contains("unreachable")
+        || s.contains("broken pipe")
+        || s.contains("reset")
     {
         "io"
     } else {

@@ -239,12 +239,12 @@ pub mod generated {
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
                         )) {
-                            Ok(resp) => Ok(resp),
-                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
-                                http_body::Empty::new()
-                                    .map_err(|_| tonic::Status::internal("Empty body error")),
-                            ))),
-                        }
+                        Ok(resp) => Ok(resp),
+                        Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))),
+                    }
                 })
             }
         }
@@ -336,12 +336,12 @@ pub mod generated {
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
                         )) {
-                            Ok(resp) => Ok(resp),
-                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
-                                http_body::Empty::new()
-                                    .map_err(|_| tonic::Status::internal("Empty body error")),
-                            ))),
-                        }
+                        Ok(resp) => Ok(resp),
+                        Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))),
+                    }
                 })
             }
         }
@@ -418,12 +418,12 @@ pub mod generated {
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
                         )) {
-                            Ok(resp) => Ok(resp),
-                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
-                                http_body::Empty::new()
-                                    .map_err(|_| tonic::Status::internal("Empty body error")),
-                            ))),
-                        }
+                        Ok(resp) => Ok(resp),
+                        Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))),
+                    }
                 })
             }
         }
@@ -498,12 +498,12 @@ pub mod generated {
                             http_body::Empty::new()
                                 .map_err(|_| tonic::Status::internal("Empty body error")),
                         )) {
-                            Ok(resp) => Ok(resp),
-                            Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
-                                http_body::Empty::new()
-                                    .map_err(|_| tonic::Status::internal("Empty body error")),
-                            ))),
-                        }
+                        Ok(resp) => Ok(resp),
+                        Err(_) => Ok(tonic::codegen::http::Response::new(BoxBody::new(
+                            http_body::Empty::new()
+                                .map_err(|_| tonic::Status::internal("Empty body error")),
+                        ))),
+                    }
                 })
             }
         }

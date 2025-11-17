@@ -5,14 +5,14 @@ use std::fs;
 
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode, IssueKind};
+use crate::cli::output;
+use crate::cli::Format;
 use app::util;
 use sb_config::compat as cfg_compat;
 use sb_config::validator::v2;
-use crate::cli::output;
-use crate::cli::Format;
 
 /// Main check function
-/// 
+///
 /// Exit codes:
 /// - 0: Config is valid (no errors or warnings)
 /// - 1: Config has warnings only (no errors)
@@ -169,10 +169,22 @@ pub fn run(args: CheckArgs) -> Result<i32> {
             output::emit(
                 Format::Sarif,
                 || {
-                    if ok { "Config validation passed".to_string() } else { format!("{} issues ({} errors, {} warnings)",
-                        issues.len(),
-                        issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count(),
-                        issues.iter().filter(|i| matches!(i.kind, IssueKind::Warning)).count()) }
+                    if ok {
+                        "Config validation passed".to_string()
+                    } else {
+                        format!(
+                            "{} issues ({} errors, {} warnings)",
+                            issues.len(),
+                            issues
+                                .iter()
+                                .filter(|i| matches!(i.kind, IssueKind::Error))
+                                .count(),
+                            issues
+                                .iter()
+                                .filter(|i| matches!(i.kind, IssueKind::Warning))
+                                .count()
+                        )
+                    }
                 },
                 &serde_json::from_str::<serde_json::Value>(&sarif_text)
                     .unwrap_or_else(|_| serde_json::json!({})),
@@ -185,7 +197,10 @@ pub fn run(args: CheckArgs) -> Result<i32> {
                     if ok {
                         "Config validation passed".to_string()
                     } else {
-                        let errs = issues.iter().filter(|i| matches!(i.kind, IssueKind::Error)).count();
+                        let errs = issues
+                            .iter()
+                            .filter(|i| matches!(i.kind, IssueKind::Error))
+                            .count();
                         let warns = issues.len().saturating_sub(errs);
                         format!("Validation failed: {errs} errors, {warns} warnings")
                     }

@@ -49,12 +49,10 @@ impl Default for TuicAdapterConfig {
 }
 
 /// TUIC outbound connector adapter
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TuicConnector {
     cfg: TuicAdapterConfig,
 }
-
 
 impl TuicConnector {
     /// Create new TUIC connector with configuration

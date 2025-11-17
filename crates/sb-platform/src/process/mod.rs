@@ -268,10 +268,16 @@ mod tests {
         let result = ProcessMatcher::new();
 
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-        assert!(result.is_ok(), "ProcessMatcher creation should succeed on supported platforms");
+        assert!(
+            result.is_ok(),
+            "ProcessMatcher creation should succeed on supported platforms"
+        );
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-        assert!(result.is_err(), "ProcessMatcher creation should fail on unsupported platforms");
+        assert!(
+            result.is_err(),
+            "ProcessMatcher creation should fail on unsupported platforms"
+        );
     }
 
     #[tokio::test]

@@ -7,7 +7,9 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 
 #[cfg(feature = "out_hysteria2")]
-use sb_core::outbound::hysteria2::inbound::{Hysteria2Inbound, Hysteria2ServerConfig, Hysteria2User};
+use sb_core::outbound::hysteria2::inbound::{
+    Hysteria2Inbound, Hysteria2ServerConfig, Hysteria2User,
+};
 
 use sb_core::adapter::UdpOutboundFactory;
 use sb_core::outbound::hysteria2::Hysteria2Config as OutCfg;
@@ -42,7 +44,9 @@ async fn hysteria2_udp_roundtrip() {
     let server_addr: SocketAddr = "127.0.0.1:44443".parse().unwrap();
     let server_cfg = Hysteria2ServerConfig {
         listen: server_addr,
-        users: vec![Hysteria2User { password: "pwd".into() }],
+        users: vec![Hysteria2User {
+            password: "pwd".into(),
+        }],
         cert: "tests/fixtures/cert.pem".into(),
         key: "tests/fixtures/key.pem".into(),
         congestion_control: Some("bbr".into()),

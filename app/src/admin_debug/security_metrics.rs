@@ -710,7 +710,9 @@ mod tests {
         // Should have error kinds tracking
         // May be empty in test; existence is enough
         assert!(snapshot.error_kinds.is_empty() || !snapshot.error_kinds.is_empty());
-        assert!(snapshot.error_kinds_by_hash.is_empty() || !snapshot.error_kinds_by_hash.is_empty());
+        assert!(
+            snapshot.error_kinds_by_hash.is_empty() || !snapshot.error_kinds_by_hash.is_empty()
+        );
 
         // Should have latency data
         assert!(snapshot.latency_buckets.len() == LAT_BUCKETS.len());

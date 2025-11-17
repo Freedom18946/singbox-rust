@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 //! Workspace binary location utilities for tests
 
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use tempfile::NamedTempFile;
-use std::fs;
 
 /// Locate a workspace binary by name.
 ///

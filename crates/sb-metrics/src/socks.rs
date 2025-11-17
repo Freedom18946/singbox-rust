@@ -31,11 +31,12 @@ use std::sync::LazyLock;
 
 /// 当前 UDP NAT 表大小
 pub static UDP_NAT_SIZE: LazyLock<IntGauge> = LazyLock::new(|| {
-    register_int_gauge!(opts!("socks_udp_nat_size", "Current UDP NAT entries"))
-        .unwrap_or_else(|_| {
+    register_int_gauge!(opts!("socks_udp_nat_size", "Current UDP NAT entries")).unwrap_or_else(
+        |_| {
             #[allow(clippy::unwrap_used)] // Fallback dummy gauge initialization
             IntGauge::new("dummy_gauge", "dummy").unwrap()
-        })
+        },
+    )
 });
 
 /// UDP NAT 淘汰条目累计

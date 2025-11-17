@@ -51,8 +51,12 @@ fn test_tuic_inbound_registration() {
         tls_enabled: None,
         tls_cert_path: None,
         tls_key_path: None,
-        tls_cert_pem: Some("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string()),
-        tls_key_pem: Some("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----".to_string()),
+        tls_cert_pem: Some(
+            "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string(),
+        ),
+        tls_key_pem: Some(
+            "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----".to_string(),
+        ),
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
@@ -134,8 +138,12 @@ fn test_tuic_inbound_requires_users() {
         tls_enabled: None,
         tls_cert_path: None,
         tls_key_path: None,
-        tls_cert_pem: Some("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string()),
-        tls_key_pem: Some("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----".to_string()),
+        tls_cert_pem: Some(
+            "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string(),
+        ),
+        tls_key_pem: Some(
+            "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----".to_string(),
+        ),
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
@@ -196,8 +204,12 @@ fn test_tuic_congestion_control() {
             tls_enabled: None,
             tls_cert_path: None,
             tls_key_path: None,
-            tls_cert_pem: Some("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string()),
-            tls_key_pem: Some("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----".to_string()),
+            tls_cert_pem: Some(
+                "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----".to_string(),
+            ),
+            tls_key_pem: Some(
+                "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----".to_string(),
+            ),
             tls_server_name: None,
             tls_alpn: None,
             multiplex: None,

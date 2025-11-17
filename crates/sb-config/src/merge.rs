@@ -87,7 +87,7 @@ fn merge_typed(mut base: Config, sub: Config) -> Config {
         schema_version: base.schema_version.max(sub.schema_version), // Use higher version
         inbounds: base.inbounds,                                     // Locally controlled
         outbounds,
-        rules: sub.rules,                                            // Subscription overrides
+        rules: sub.rules, // Subscription overrides
         default_outbound: sub.default_outbound.or(base.default_outbound),
         raw: Value::Null,
         ir: crate::ir::ConfigIR::default(),

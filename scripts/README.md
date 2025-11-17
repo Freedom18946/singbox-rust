@@ -19,6 +19,12 @@ This directory contains all development, testing, CI/CD, and operational scripts
 
 # Show help
 ./scripts/run help
+
+# Compare Rust vs Go rule-set CLI output
+RUST_BIN=target/debug/app GO_SINGBOX=./sing-box scripts/ruleset_parity.sh validate assets/demo-ruleset.json
+
+# Compare Rust vs Go route explain output
+GO_SINGBOX=./sing-box scripts/route_explain_compare.sh configs/demo.json example.com:443
 ```
 
 ## Directory Structure

@@ -12,7 +12,7 @@
 
 mod common;
 
-use common::workspace::{write_temp_config, workspace_bin};
+use common::workspace::{workspace_bin, write_temp_config};
 
 fn run_check(bin: &str, cfg_path: &str) -> Option<(bool, String)> {
     let out = std::process::Command::new(bin)

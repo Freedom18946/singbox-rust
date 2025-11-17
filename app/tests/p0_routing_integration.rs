@@ -11,7 +11,7 @@
 
 mod common;
 
-use common::workspace::{run_check, write_temp_config, workspace_bin};
+use common::workspace::{run_check, workspace_bin, write_temp_config};
 
 /// Test domain-based routing with REALITY TLS
 ///

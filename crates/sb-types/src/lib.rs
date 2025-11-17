@@ -157,14 +157,34 @@ impl Display for IssuePayload {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         // Compact single-line format for logs.
         match (&self.ptr, &self.hint) {
-            (Some(ptr), Some(hint)) => write!(f, "[{kind}] {code}: {msg} (at {ptr}; hint: {hint})",
-                                             kind=self.kind, code=self.code, msg=self.msg),
-            (Some(ptr), None) => write!(f, "[{kind}] {code}: {msg} (at {ptr})",
-                                        kind=self.kind, code=self.code, msg=self.msg),
-            (None, Some(hint)) => write!(f, "[{kind}] {code}: {msg} (hint: {hint})",
-                                         kind=self.kind, code=self.code, msg=self.msg),
-            (None, None) => write!(f, "[{kind}] {code}: {msg}",
-                                   kind=self.kind, code=self.code, msg=self.msg),
+            (Some(ptr), Some(hint)) => write!(
+                f,
+                "[{kind}] {code}: {msg} (at {ptr}; hint: {hint})",
+                kind = self.kind,
+                code = self.code,
+                msg = self.msg
+            ),
+            (Some(ptr), None) => write!(
+                f,
+                "[{kind}] {code}: {msg} (at {ptr})",
+                kind = self.kind,
+                code = self.code,
+                msg = self.msg
+            ),
+            (None, Some(hint)) => write!(
+                f,
+                "[{kind}] {code}: {msg} (hint: {hint})",
+                kind = self.kind,
+                code = self.code,
+                msg = self.msg
+            ),
+            (None, None) => write!(
+                f,
+                "[{kind}] {code}: {msg}",
+                kind = self.kind,
+                code = self.code,
+                msg = self.msg
+            ),
         }
     }
 }

@@ -42,7 +42,8 @@ impl Resolver for MockDnsResolver {
     #[allow(clippy::useless_asref)]
     async fn resolve(&self, domain: &str) -> anyhow::Result<DnsAnswer> {
         match self.responses.get(domain) {
-            Some(response) => response.as_ref()
+            Some(response) => response
+                .as_ref()
                 .map(|r| r.clone())
                 .map_err(|e| anyhow::anyhow!("{}", e)),
             None => Err(anyhow::anyhow!("Domain not found: {}", domain)),
@@ -242,8 +243,6 @@ async fn test_dns_bridge_integration() {
             assert_eq!(ips.len(), 1);
             assert_eq!(ips[0], "192.168.1.1".parse::<IpAddr>().unwrap());
         }
-        _ => panic!(
-            "Expected successful DNS resolution with IP addresses"
-        ),
+        _ => panic!("Expected successful DNS resolution with IP addresses"),
     }
 }

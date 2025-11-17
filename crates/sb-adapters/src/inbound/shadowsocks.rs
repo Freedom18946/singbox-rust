@@ -87,8 +87,7 @@ fn evp_bytes_to_key(password: &str, key_len: usize) -> Vec<u8> {
 fn hkdf_subkey(master: &[u8], salt: &[u8]) -> Result<[u8; 32]> {
     let hk = HkdfSha1::new(Some(salt), master);
     let mut okm = [0u8; 32];
-    hk
-        .expand(b"ss-subkey", &mut okm)
+    hk.expand(b"ss-subkey", &mut okm)
         .map_err(|_| anyhow!("hkdf expand failed"))?;
     Ok(okm)
 }

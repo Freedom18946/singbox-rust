@@ -40,13 +40,19 @@ pub enum ToolsCmd {
     /// Download/update GeoIP/Geosite databases into a directory
     GeodataUpdate {
         /// Destination directory to write geoip.db and geosite.db
-        #[arg(long, value_name = "DIR", default_value = "./data")] 
+        #[arg(long, value_name = "DIR", default_value = "./data")]
         dest: PathBuf,
         /// GeoIP database URL
-        #[arg(long, default_value = "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db")]
+        #[arg(
+            long,
+            default_value = "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db"
+        )]
         geoip_url: String,
         /// Geosite database URL
-        #[arg(long, default_value = "https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db")]
+        #[arg(
+            long,
+            default_value = "https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db"
+        )]
         geosite_url: String,
         /// Optional SHA256 for geoip.db
         #[arg(long)]
@@ -95,8 +101,21 @@ pub async fn run(args: ToolsArgs) -> Result<()> {
         ToolsCmd::Fetch { url, output } => fetch(url, output).await,
         ToolsCmd::Synctime { server, timeout } => synctime(server, timeout).await,
         ToolsCmd::FetchHttp3 { url, output } => fetch_http3(url, output).await,
-        ToolsCmd::GeodataUpdate { dest, geoip_url, geosite_url, geoip_sha256, geosite_sha256 } => {
-            geodata_update(dest, &geoip_url, &geosite_url, geoip_sha256.as_deref(), geosite_sha256.as_deref()).await
+        ToolsCmd::GeodataUpdate {
+            dest,
+            geoip_url,
+            geosite_url,
+            geoip_sha256,
+            geosite_sha256,
+        } => {
+            geodata_update(
+                dest,
+                &geoip_url,
+                &geosite_url,
+                geoip_sha256.as_deref(),
+                geosite_sha256.as_deref(),
+            )
+            .await
         }
     }
 }
@@ -122,8 +141,18 @@ async fn connect_tcp(addr: String, config_path: PathBuf, outbound: Option<String
     // Convert to IR
     let ir = sb_config::validator::v2::to_ir_v1(&val);
 
-    // Build bridge with available outbounds
-    let bridge = sb_core::adapter::Bridge::new_from_config(&ir).context("build bridge")?;
+    // Register adapters (if feature enabled) before building bridge
+    #[cfg(feature = "adapters")]
+    sb_adapters::register_all();
+
+    // Build bridge using adapter-aware path (tries adapter registry first, falls back to scaffold)
+    #[cfg(feature = "router")]
+    let bridge = {
+        let engine = sb_core::routing::engine::Engine::new(&ir);
+        sb_core::adapter::bridge::build_bridge(&ir, engine)
+    };
+    #[cfg(not(feature = "router"))]
+    let bridge = sb_core::adapter::bridge::build_bridge(&ir, ());
 
     // Parse host:port
     let (host, port) = parse_addr(&addr).context("invalid address, expected host:port")?;
@@ -185,7 +214,20 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
             .with_context(|| format!("read {}", config_path.display()))?;
         let val: serde_json::Value = serde_json::from_slice(&raw).context("parse JSON config")?;
         let ir = sb_config::validator::v2::to_ir_v1(&val);
-        let bridge = sb_core::adapter::Bridge::new_from_config(&ir).context("build bridge")?;
+
+        // Register adapters before building bridge
+        #[cfg(feature = "adapters")]
+        sb_adapters::register_all();
+
+        // Build bridge using adapter-aware path
+        #[cfg(feature = "router")]
+        let bridge = {
+            let engine = sb_core::routing::engine::Engine::new(&ir);
+            sb_core::adapter::bridge::build_bridge(&ir, engine)
+        };
+        #[cfg(not(feature = "router"))]
+        let bridge = sb_core::adapter::bridge::build_bridge(&ir, ());
+
         bridge.find_udp_factory(name)
     } else {
         None
@@ -366,15 +408,20 @@ async fn geodata_update(
         .build()?;
 
     // Download helper
-    async fn download(
-        client: &reqwest::Client,
-        url: &str,
-    ) -> Result<bytes::Bytes> {
-        let rsp = client.get(url).send().await.with_context(|| format!("GET {}", url))?;
+    async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
+        let rsp = client
+            .get(url)
+            .send()
+            .await
+            .with_context(|| format!("GET {}", url))?;
         if !rsp.status().is_success() {
             anyhow::bail!("download failed: {} {}", rsp.status(), url);
         }
-        Ok(rsp.bytes().await.with_context(|| format!("read body from {}", url))?)
+        let bytes = rsp
+            .bytes()
+            .await
+            .with_context(|| format!("read body from {}", url))?;
+        Ok(bytes.to_vec())
     }
 
     // Write helper with optional sha256
@@ -389,7 +436,12 @@ async fn geodata_update(
             hasher.update(data);
             let got = format!("{:x}", hasher.finalize());
             if !got.eq_ignore_ascii_case(expect) {
-                anyhow::bail!("{} sha256 mismatch: expected={}, got={}", label, expect, got);
+                anyhow::bail!(
+                    "{} sha256 mismatch: expected={}, got={}",
+                    label,
+                    expect,
+                    got
+                );
             }
         }
         tokio::fs::write(path, data)
@@ -475,7 +527,7 @@ fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
     let t1 = 0.0f64;
     let t2 = read_ts(&packet[32..40]); // server receive time
     let t3 = read_ts(&packet[40..48]); // server transmit time
-    // Normalize all timestamps to the integral seconds of t0 so large base seconds cancel out
+                                       // Normalize all timestamps to the integral seconds of t0 so large base seconds cancel out
     let base = t0_ntp_seconds.floor();
     let t0n = t0_ntp_seconds - base;
     let t2n = t2 - base;

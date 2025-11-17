@@ -37,11 +37,7 @@ impl ApiKeyProvider {
         if let Some(token) = auth_header.strip_prefix("Bearer ") {
             let provided_token = token.trim();
             // Constant-time compare to avoid timing side-channels
-            if provided_token
-                .as_bytes()
-                .ct_eq(self.key.as_bytes())
-                .into()
-            {
+            if provided_token.as_bytes().ct_eq(self.key.as_bytes()).into() {
                 Ok(())
             } else {
                 Err(AuthError::invalid("Invalid Bearer token"))

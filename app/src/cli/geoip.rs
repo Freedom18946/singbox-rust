@@ -1,4 +1,8 @@
-#![allow(clippy::doc_markdown, clippy::uninlined_format_args, clippy::unused_async)]
+#![allow(
+    clippy::doc_markdown,
+    clippy::uninlined_format_args,
+    clippy::unused_async
+)]
 //! `GeoIP` tooling subcommand (parity with sing-box `geoip`)
 
 use anyhow::{Context, Result};

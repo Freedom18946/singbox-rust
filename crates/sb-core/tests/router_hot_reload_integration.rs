@@ -181,7 +181,9 @@ async fn test_hot_reload_event_monitoring() {
 
     while start.elapsed() < timeout && events_received < 1 {
         if let Ok(mut rx) = event_rx.try_write() {
-            if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+            if let Ok(Some(event)) =
+                tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
+            {
                 match event {
                     HotReloadEvent::FileChanged { .. } => {
                         events_received += 1;

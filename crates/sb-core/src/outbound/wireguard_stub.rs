@@ -6,12 +6,14 @@
 #[cfg(feature = "out_wireguard")]
 use async_trait::async_trait;
 #[cfg(feature = "out_wireguard")]
-use std::io;
+use std::{io, sync::Arc};
 #[cfg(feature = "out_wireguard")]
 use tokio::net::TcpStream;
 
 #[cfg(feature = "out_wireguard")]
 use super::crypto_types::{HostPort, OutboundTcp};
+#[cfg(feature = "out_wireguard")]
+use crate::adapter::{UdpOutboundFactory, UdpOutboundSession};
 
 #[cfg(feature = "out_wireguard")]
 #[derive(Clone, Debug)]
@@ -73,6 +75,33 @@ impl OutboundTcp for WireGuardOutbound {
 
     fn protocol_name(&self) -> &'static str {
         "wireguard"
+    }
+}
+
+#[cfg(feature = "out_wireguard")]
+impl UdpOutboundFactory for WireGuardOutbound {
+    fn open_session(
+        &self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
+    > {
+        Box::pin(async move {
+            #[cfg(feature = "metrics")]
+            {
+                use metrics::counter;
+                counter!(
+                    "udp_session_open_total",
+                    "proto" => "wireguard",
+                    "result" => "not_implemented"
+                )
+                .increment(1);
+            }
+
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "WireGuard UDP outbound is not yet implemented; requires boringtun or kernel WireGuard integration",
+            ))
+        })
     }
 }
 

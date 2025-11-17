@@ -440,7 +440,9 @@ impl TunInbound {
                                 {
                                     match (l4, dst_ip, dst_port) {
                                         (L4::Tcp, Some(ip), Some(port)) => {
-                                            let addr = Address::SocketAddress(std::net::SocketAddr::new(ip, port));
+                                            let addr = Address::SocketAddress(
+                                                std::net::SocketAddr::new(ip, port),
+                                            );
                                             let params = ConnectParams {
                                                 address: addr,
                                                 inbound_tag: Some(self.cfg.name.clone()),
@@ -515,7 +517,9 @@ impl TunInbound {
                                     {
                                         match (l4, dst_ip, dst_port) {
                                             (L4::Tcp, Some(ip), Some(port)) => {
-                                                let addr = Address::SocketAddress(std::net::SocketAddr::new(ip, port));
+                                                let addr = Address::SocketAddress(
+                                                    std::net::SocketAddr::new(ip, port),
+                                                );
                                                 let params = ConnectParams {
                                                     address: addr,
                                                     inbound_tag: Some(self.cfg.name.clone()),
@@ -708,12 +712,14 @@ mod sys_macos {
             }
         }
         const CTLIOCGINFO: libc::c_ulong = 0xC0644E03; // _IOWR('N', 3, struct ctl_info)
-        // SAFETY: Calling libc::ioctl with valid fd and properly initialized info struct
+                                                       // SAFETY: Calling libc::ioctl with valid fd and properly initialized info struct
         let r = unsafe { libc::ioctl(fd, CTLIOCGINFO, &mut info) };
         if r < 0 {
             let e = io::Error::last_os_error();
             // SAFETY: Closing previously opened fd
-            unsafe { libc::close(fd); }
+            unsafe {
+                libc::close(fd);
+            }
             return Err(e);
         }
         // 3) connect 到 kernel control
@@ -747,7 +753,9 @@ mod sys_macos {
         if r < 0 {
             let e = io::Error::last_os_error();
             // SAFETY: Closing previously opened fd
-            unsafe { libc::close(fd); }
+            unsafe {
+                libc::close(fd);
+            }
             return Err(e);
         }
         Ok(fd)

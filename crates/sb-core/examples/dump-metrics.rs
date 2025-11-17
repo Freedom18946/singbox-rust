@@ -6,7 +6,10 @@ fn main() {
     sb_core::metrics::http::inc_405_responses();
 
     // Also touch outbound error mapping once
-    sb_core::metrics::record_outbound_error(sb_core::metrics::outbound::OutboundKind::Direct, &"connection refused".to_string());
+    sb_core::metrics::record_outbound_error(
+        sb_core::metrics::outbound::OutboundKind::Direct,
+        &"connection refused".to_string(),
+    );
 
     // Export sb-core Prometheus registry
     #[cfg(feature = "metrics")]

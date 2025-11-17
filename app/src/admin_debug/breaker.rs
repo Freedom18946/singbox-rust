@@ -165,7 +165,10 @@ impl HostBreaker {
                 } else {
                     // Transition to half-open
                     let permits = self.half_open_probes.saturating_sub(1);
-                    stat.state = State::HalfOpen { probes: self.half_open_probes, permits };
+                    stat.state = State::HalfOpen {
+                        probes: self.half_open_probes,
+                        permits,
+                    };
                     true // Allow first probe request
                 }
             }

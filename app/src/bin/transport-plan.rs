@@ -5,7 +5,10 @@ async fn main() -> anyhow::Result<()> {
     use clap::Parser;
 
     #[derive(Parser, Debug)]
-    #[command(name = "transport-plan", about = "Print derived transport chain for each outbound")] 
+    #[command(
+        name = "transport-plan",
+        about = "Print derived transport chain for each outbound"
+    )]
     struct Args {
         /// Path to config file (YAML/JSON)
         #[arg(short, long, value_name = "FILE", default_value = "./config.yaml")]

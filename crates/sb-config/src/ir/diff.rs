@@ -441,6 +441,7 @@ mod tests {
             dns: None,
             endpoints: vec![],
             services: vec![],
+            experimental: None,
         };
 
         let new = ConfigIR {
@@ -513,6 +514,7 @@ mod tests {
             dns: None,
             endpoints: vec![],
             services: vec![],
+            experimental: None,
         };
 
         let diff_result = diff(&old, &new);

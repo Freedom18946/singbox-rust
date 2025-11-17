@@ -1,7 +1,7 @@
+use sb_config::ir::{ConfigIR, InboundIR, InboundType};
 use sb_core::adapter::InboundService;
 use sb_core::inbound::socks5::Socks5;
 use sb_core::routing::engine::Engine;
-use sb_config::ir::{ConfigIR, InboundIR, InboundType};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::thread;
 use std::time::Duration;
@@ -42,7 +42,7 @@ fn socks_udp_associate(socks: SocketAddr) -> (TcpStream, SocketAddr) {
     tcp.read_exact(&mut resp).expect("read udp resp");
     assert_eq!(resp[0], 0x05);
     assert_eq!(resp[1], 0x00); // success
-    // Parse bound address
+                               // Parse bound address
     assert_eq!(resp[3], 0x01); // IPv4
     let ip = Ipv4Addr::new(resp[4], resp[5], resp[6], resp[7]);
     let port = u16::from_be_bytes([resp[8], resp[9]]);
@@ -117,8 +117,8 @@ fn socks_udp_via_direct_nat_echo() {
     let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
     let eng = Engine::new(ir_static);
     thread::spawn(move || {
-        let srv = Socks5::new("127.0.0.1".into(), socks_addr.port())
-            .with_engine(eng.clone_as_static());
+        let srv =
+            Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone_as_static());
         let _ = srv.serve();
     });
     thread::sleep(Duration::from_millis(150));

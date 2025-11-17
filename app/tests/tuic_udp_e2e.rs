@@ -47,7 +47,10 @@ async fn tuic_udp_roundtrip() {
     let (stop_tx, stop_rx) = mpsc::channel(1);
     let cfg = TuicInboundConfig {
         listen,
-        users: vec![TuicUser { uuid: Uuid::new_v4(), token: "token".into() }],
+        users: vec![TuicUser {
+            uuid: Uuid::new_v4(),
+            token: "token".into(),
+        }],
         cert: cert_pem,
         key: key_pem,
         congestion_control: Some("bbr".into()),

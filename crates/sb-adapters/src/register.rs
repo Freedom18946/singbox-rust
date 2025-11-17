@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
+use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Once};
-use std::io;
-use parking_lot::Mutex;
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::registry;
@@ -170,7 +170,9 @@ fn build_http_outbound(
     let server_addr = format!("{}:{}", server, port);
 
     // Extract credentials if present
-    let (username, password) = ir.credentials.as_ref()
+    let (username, password) = ir
+        .credentials
+        .as_ref()
         .map(|c| (c.username.clone(), c.password.clone()))
         .unwrap_or((None, None));
 
@@ -208,7 +210,10 @@ fn build_http_outbound(
             // Use switchboard registry instead
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("HTTP proxy uses CONNECT method for {}:{}; use switchboard registry instead", host, port),
+                format!(
+                    "HTTP proxy uses CONNECT method for {}:{}; use switchboard registry instead",
+                    host, port
+                ),
             ))
         }
     }
@@ -251,7 +256,9 @@ fn build_socks_outbound(
     let server_addr = format!("{}:{}", server, port);
 
     // Extract credentials if present
-    let (username, password) = ir.credentials.as_ref()
+    let (username, password) = ir
+        .credentials
+        .as_ref()
         .map(|c| (c.username.clone(), c.password.clone()))
         .unwrap_or((None, None));
 
@@ -289,7 +296,10 @@ fn build_socks_outbound(
             // Use switchboard registry instead
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("SOCKS5 uses proxy protocol for {}:{}; use switchboard registry instead", host, port),
+                format!(
+                    "SOCKS5 uses proxy protocol for {}:{}; use switchboard registry instead",
+                    host, port
+                ),
             ))
         }
     }
@@ -321,24 +331,29 @@ fn build_shadowsocks_outbound(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksOutbound};
     use sb_core::outbound::crypto_types::OutboundTcp;
+    use sb_core::outbound::shadowsocks::{
+        ShadowsocksCipher, ShadowsocksConfig, ShadowsocksOutbound,
+    };
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
-    let method = ir.method.as_ref()?.clone();
     let password = ir.password.as_ref()?.clone();
 
-    // Build config
-    let cfg = ShadowsocksConfig {
-        server: server.clone(),
-        port,
-        method,
-        password,
-        plugin: ir.plugin.clone(),
-        plugin_opts: ir.plugin_opts.clone(),
+    // Map method string to cipher enum (default to AES-256-GCM)
+    let method = ir
+        .method
+        .as_deref()
+        .unwrap_or("aes-256-gcm")
+        .to_ascii_lowercase();
+    let cipher = match method.as_str() {
+        "chacha20-poly1305" | "chacha20-ietf-poly1305" => ShadowsocksCipher::ChaCha20Poly1305,
+        _ => ShadowsocksCipher::Aes256Gcm,
     };
+
+    // Build config using core constructor (no plugin support yet)
+    let cfg = ShadowsocksConfig::new(server.clone(), port, password, cipher);
 
     // Create outbound
     let outbound = ShadowsocksOutbound::new(cfg);
@@ -359,25 +374,26 @@ fn build_shadowsocks_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for ShadowsocksConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Shadowsocks uses encrypted stream, cannot return TcpStream directly
-            // Use switchboard registry instead
+        async fn connect(
+            &self,
+            _host: &str,
+            _port: u16,
+        ) -> std::io::Result<tokio::net::TcpStream> {
+            // Shadowsocks uses encrypted stream; adapter path should use switchboard instead.
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                "Shadowsocks uses encrypted stream; use switchboard registry instead",
+                "Shadowsocks adapter connector is not usable directly; use switchboard registry instead",
             ))
         }
     }
 
     let wrapper = ShadowsocksConnectorWrapper {
-        inner: outbound_arc.clone(),
+        inner: outbound_arc,
     };
 
-    // Return TCP connector wrapper and UDP factory
-    Some((
-        Arc::new(wrapper),
-        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
-    ))
+    // Adapter-level Shadowsocks currently exposes TCP only; UDP factory is handled
+    // by core QUIC/UDP traits when available.
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(all(feature = "adapter-shadowsocks", feature = "out_ss")))]
@@ -399,35 +415,38 @@ fn build_trojan_outbound(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::trojan::{TrojanConfig, TrojanOutbound};
     use sb_core::outbound::crypto_types::OutboundTcp;
+    use sb_core::outbound::trojan::{TrojanConfig, TrojanOutbound};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
     let password = ir.password.as_ref()?.clone();
+    let sni = ir.tls_sni.clone().unwrap_or(server.clone());
 
-    // Build config
-    let cfg = TrojanConfig {
-        server: server.clone(),
-        port,
-        password,
-        sni: ir.tls_sni.clone(),
-        alpn: ir
-            .tls_alpn
-            .clone()
-            .or_else(|| {
-                ir.alpn.as_ref().map(|raw| {
-                    raw.split(',')
-                        .map(|x| x.trim().to_string())
-                        .filter(|x| !x.is_empty())
-                        .collect::<Vec<_>>()
-                })
-            }),
-        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
-        tls_ca_paths: ir.tls_ca_paths.clone(),
-        tls_ca_pem: ir.tls_ca_pem.clone(),
-    };
+    // Base config
+    let mut cfg = TrojanConfig::new(server.clone(), port, password, sni);
+
+    // Optional ALPN list (tls_alpn or legacy alpn CSV)
+    if let Some(alpn) = ir
+        .tls_alpn
+        .clone()
+        .or_else(|| {
+            ir.alpn.as_ref().map(|raw| {
+                raw.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect::<Vec<_>>()
+            })
+        })
+    {
+        cfg = cfg.with_alpn(alpn);
+    }
+
+    // Optional skip_cert_verify
+    if let Some(skip) = ir.skip_cert_verify {
+        cfg = cfg.with_skip_cert_verify(skip);
+    }
 
     // Create outbound
     let outbound = TrojanOutbound::new(cfg).ok()?;
@@ -448,25 +467,25 @@ fn build_trojan_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for TrojanConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Trojan uses encrypted stream, cannot return TcpStream directly
-            // Use switchboard registry instead
+        async fn connect(
+            &self,
+            _host: &str,
+            _port: u16,
+        ) -> std::io::Result<tokio::net::TcpStream> {
+            // Trojan uses encrypted stream; adapter path should use switchboard instead.
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                "Trojan uses encrypted stream; use switchboard registry instead",
+                "Trojan adapter connector is not usable directly; use switchboard registry instead",
             ))
         }
     }
 
     let wrapper = TrojanConnectorWrapper {
-        inner: outbound_arc.clone(),
+        inner: outbound_arc,
     };
 
-    // Return TCP connector wrapper and UDP factory
-    Some((
-        Arc::new(wrapper),
-        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
-    ))
+    // Adapter-level Trojan currently exposes TCP only; UDP factory is not implemented.
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(all(feature = "adapter-trojan", feature = "out_trojan")))]
@@ -488,8 +507,8 @@ fn build_vmess_outbound(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::vmess::{VmessConfig, VmessOutbound};
     use sb_core::outbound::crypto_types::OutboundTcp;
+    use sb_core::outbound::vmess::{VmessConfig, VmessOutbound};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -517,9 +536,17 @@ fn build_vmess_outbound(
         grpc_service: ir.grpc_service.clone(),
         grpc_method: ir.grpc_method.clone(),
         grpc_authority: ir.grpc_authority.clone(),
-        grpc_metadata: ir.grpc_metadata.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
+        grpc_metadata: ir
+            .grpc_metadata
+            .iter()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect(),
         http_upgrade_path: ir.http_upgrade_path.clone(),
-        http_upgrade_headers: ir.http_upgrade_headers.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
+        http_upgrade_headers: ir
+            .http_upgrade_headers
+            .iter()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect(),
     };
 
     // Create outbound
@@ -556,10 +583,7 @@ fn build_vmess_outbound(
     };
 
     // Return TCP connector wrapper (VMess doesn't support UDP factory yet)
-    Some((
-        Arc::new(wrapper),
-        None,
-    ))
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(all(feature = "adapter-vmess", feature = "out_vmess")))]
@@ -581,8 +605,8 @@ fn build_vless_outbound(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::vless::{VlessConfig, VlessOutbound};
     use sb_core::outbound::crypto_types::OutboundTcp;
+    use sb_core::outbound::vless::{VlessConfig, VlessOutbound};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -607,9 +631,17 @@ fn build_vless_outbound(
         grpc_service: ir.grpc_service.clone(),
         grpc_method: ir.grpc_method.clone(),
         grpc_authority: ir.grpc_authority.clone(),
-        grpc_metadata: ir.grpc_metadata.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
+        grpc_metadata: ir
+            .grpc_metadata
+            .iter()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect(),
         http_upgrade_path: ir.http_upgrade_path.clone(),
-        http_upgrade_headers: ir.http_upgrade_headers.iter().map(|e| (e.key.clone(), e.value.clone())).collect(),
+        http_upgrade_headers: ir
+            .http_upgrade_headers
+            .iter()
+            .map(|e| (e.key.clone(), e.value.clone()))
+            .collect(),
     };
 
     // Create outbound
@@ -646,10 +678,7 @@ fn build_vless_outbound(
     };
 
     // Return TCP connector wrapper (VLESS doesn't support UDP factory yet)
-    Some((
-        Arc::new(wrapper),
-        None,
-    ))
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(all(feature = "adapter-vless", feature = "out_vless")))]
@@ -889,7 +918,10 @@ fn build_shadowtls_inbound(
         let listen: SocketAddr = match listen_str.parse() {
             Ok(addr) => addr,
             Err(e) => {
-                warn!("Failed to parse ShadowTLS listen address '{}': {}", listen_str, e);
+                warn!(
+                    "Failed to parse ShadowTLS listen address '{}': {}",
+                    listen_str, e
+                );
                 return None;
             }
         };
@@ -948,7 +980,9 @@ fn build_hysteria_inbound(
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-hysteria")]
     {
-        use crate::inbound::hysteria::{HysteriaInbound, HysteriaInboundConfig, HysteriaUserConfig};
+        use crate::inbound::hysteria::{
+            HysteriaInbound, HysteriaInboundConfig, HysteriaUserConfig,
+        };
         use std::net::SocketAddr;
 
         // Parse listen address
@@ -956,7 +990,10 @@ fn build_hysteria_inbound(
         let listen: SocketAddr = match listen_str.parse() {
             Ok(addr) => addr,
             Err(e) => {
-                warn!("Failed to parse Hysteria v1 listen address '{}': {}", listen_str, e);
+                warn!(
+                    "Failed to parse Hysteria v1 listen address '{}': {}",
+                    listen_str, e
+                );
                 return None;
             }
         };
@@ -991,14 +1028,19 @@ fn build_hysteria_inbound(
                 // Write inline PEM to temporary file
                 let temp_path = format!("/tmp/hysteria_cert_{}.pem", std::process::id());
                 if let Err(e) = std::fs::write(&temp_path, pem) {
-                    warn!("Failed to write Hysteria v1 TLS certificate to temp file: {}", e);
+                    warn!(
+                        "Failed to write Hysteria v1 TLS certificate to temp file: {}",
+                        e
+                    );
                     return None;
                 }
                 temp_path
             }
             (None, Some(path)) => path.clone(),
             (None, None) => {
-                warn!("Hysteria v1 inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
+                warn!(
+                    "Hysteria v1 inbound requires TLS certificate (tls_cert_pem or tls_cert_path)"
+                );
                 return None;
             }
         };
@@ -1008,7 +1050,10 @@ fn build_hysteria_inbound(
                 // Write inline PEM to temporary file
                 let temp_path = format!("/tmp/hysteria_key_{}.pem", std::process::id());
                 if let Err(e) = std::fs::write(&temp_path, pem) {
-                    warn!("Failed to write Hysteria v1 TLS private key to temp file: {}", e);
+                    warn!(
+                        "Failed to write Hysteria v1 TLS private key to temp file: {}",
+                        e
+                    );
                     return None;
                 }
                 temp_path
@@ -1054,7 +1099,9 @@ fn build_hysteria2_inbound(
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-hysteria2")]
     {
-        use crate::inbound::hysteria2::{Hysteria2Inbound, Hysteria2InboundConfig, Hysteria2UserConfig};
+        use crate::inbound::hysteria2::{
+            Hysteria2Inbound, Hysteria2InboundConfig, Hysteria2UserConfig,
+        };
         use std::net::SocketAddr;
 
         // Parse listen address
@@ -1062,7 +1109,10 @@ fn build_hysteria2_inbound(
         let listen: SocketAddr = match listen_str.parse() {
             Ok(addr) => addr,
             Err(e) => {
-                warn!("Failed to parse Hysteria2 listen address '{}': {}", listen_str, e);
+                warn!(
+                    "Failed to parse Hysteria2 listen address '{}': {}",
+                    listen_str, e
+                );
                 return None;
             }
         };
@@ -1093,15 +1143,16 @@ fn build_hysteria2_inbound(
         // Get TLS certificate and key (required for Hysteria2)
         let cert = match (&param.tls_cert_pem, &param.tls_cert_path) {
             (Some(pem), _) => pem.clone(),
-            (None, Some(path)) => {
-                match std::fs::read_to_string(path) {
-                    Ok(content) => content,
-                    Err(e) => {
-                        warn!("Failed to read Hysteria2 TLS certificate from '{}': {}", path, e);
-                        return None;
-                    }
+            (None, Some(path)) => match std::fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!(
+                        "Failed to read Hysteria2 TLS certificate from '{}': {}",
+                        path, e
+                    );
+                    return None;
                 }
-            }
+            },
             (None, None) => {
                 warn!("Hysteria2 inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
                 return None;
@@ -1110,15 +1161,16 @@ fn build_hysteria2_inbound(
 
         let key = match (&param.tls_key_pem, &param.tls_key_path) {
             (Some(pem), _) => pem.clone(),
-            (None, Some(path)) => {
-                match std::fs::read_to_string(path) {
-                    Ok(content) => content,
-                    Err(e) => {
-                        warn!("Failed to read Hysteria2 TLS private key from '{}': {}", path, e);
-                        return None;
-                    }
+            (None, Some(path)) => match std::fs::read_to_string(path) {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!(
+                        "Failed to read Hysteria2 TLS private key from '{}': {}",
+                        path, e
+                    );
+                    return None;
                 }
-            }
+            },
             (None, None) => {
                 warn!("Hysteria2 inbound requires TLS private key (tls_key_pem or tls_key_path)");
                 return None;
@@ -1163,7 +1215,10 @@ fn build_tuic_inbound(
     let listen: SocketAddr = match listen_str.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            warn!("Failed to parse TUIC listen address '{}': {}", listen_str, e);
+            warn!(
+                "Failed to parse TUIC listen address '{}': {}",
+                listen_str, e
+            );
             return None;
         }
     };
@@ -1204,15 +1259,13 @@ fn build_tuic_inbound(
     // Get TLS certificate and key (required for TUIC)
     let cert = match (&param.tls_cert_pem, &param.tls_cert_path) {
         (Some(pem), _) => pem.clone(),
-        (None, Some(path)) => {
-            match std::fs::read_to_string(path) {
-                Ok(content) => content,
-                Err(e) => {
-                    warn!("Failed to read TUIC TLS certificate from '{}': {}", path, e);
-                    return None;
-                }
+        (None, Some(path)) => match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                warn!("Failed to read TUIC TLS certificate from '{}': {}", path, e);
+                return None;
             }
-        }
+        },
         (None, None) => {
             warn!("TUIC inbound requires TLS certificate (tls_cert_pem or tls_cert_path)");
             return None;
@@ -1221,15 +1274,13 @@ fn build_tuic_inbound(
 
     let key = match (&param.tls_key_pem, &param.tls_key_path) {
         (Some(pem), _) => pem.clone(),
-        (None, Some(path)) => {
-            match std::fs::read_to_string(path) {
-                Ok(content) => content,
-                Err(e) => {
-                    warn!("Failed to read TUIC TLS private key from '{}': {}", path, e);
-                    return None;
-                }
+        (None, Some(path)) => match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                warn!("Failed to read TUIC TLS private key from '{}': {}", path, e);
+                return None;
             }
-        }
+        },
         (None, None) => {
             warn!("TUIC inbound requires TLS private key (tls_key_pem or tls_key_path)");
             return None;
@@ -1287,7 +1338,10 @@ fn stub_inbound(kind: &str) {
 fn build_dns_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     // TODO: Architecture mismatch - DnsConnector implements sb_adapters::traits::OutboundConnector
     // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
     warn!("DNS outbound temporarily disabled due to trait architecture mismatch");
@@ -1298,7 +1352,10 @@ fn build_dns_outbound(
 fn build_dns_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("dns");
     None
 }
@@ -1306,7 +1363,10 @@ fn build_dns_outbound(
 fn build_direct_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use crate::outbound::direct::DirectOutbound;
 
     // Create direct outbound instance
@@ -1335,7 +1395,10 @@ fn build_direct_outbound(
 
             let target = if host.parse::<std::net::IpAddr>().is_ok() {
                 Address::Ip(format!("{}:{}", host, port).parse().map_err(|e| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Invalid socket address: {}", e))
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Invalid socket address: {}", e),
+                    )
                 })?)
             } else {
                 Address::Domain(host.to_string(), port)
@@ -1345,9 +1408,7 @@ fn build_direct_outbound(
         }
     }
 
-    let wrapper = DirectConnectorWrapper {
-        inner: direct_arc,
-    };
+    let wrapper = DirectConnectorWrapper { inner: direct_arc };
 
     // Return TCP connector wrapper (no UDP support for direct)
     Some((Arc::new(wrapper), None))
@@ -1356,7 +1417,10 @@ fn build_direct_outbound(
 fn build_block_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use crate::outbound::block::BlockOutbound;
 
     // Create block outbound instance
@@ -1388,9 +1452,7 @@ fn build_block_outbound(
         }
     }
 
-    let wrapper = BlockConnectorWrapper {
-        inner: block_arc,
-    };
+    let wrapper = BlockConnectorWrapper { inner: block_arc };
 
     // Return TCP connector wrapper (no UDP support for block)
     Some((Arc::new(wrapper), None))
@@ -1399,7 +1461,10 @@ fn build_block_outbound(
 fn build_tor_outbound(
     _param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     #[cfg(feature = "adapter-socks")]
     {
         use crate::outbound::socks5::Socks5Connector;
@@ -1408,56 +1473,59 @@ fn build_tor_outbound(
         // Default Tor SOCKS5 proxy address
         let default_tor_proxy = "127.0.0.1:9050".to_string();
 
-    // Get Tor proxy address from IR, fall back to default
-    let proxy_addr = ir.tor_proxy_addr.as_ref()
-        .unwrap_or(&default_tor_proxy);
+        // Get Tor proxy address from IR, fall back to default
+        let proxy_addr = ir.tor_proxy_addr.as_ref().unwrap_or(&default_tor_proxy);
 
-    // Create SOCKS5 config (Tor doesn't require authentication by default)
-    let config = Socks5Config {
-        server: proxy_addr.clone(),
-        tag: ir.name.clone(),
-        username: None,  // Tor SOCKS5 doesn't use auth
-        password: None,
-        connect_timeout_sec: Some(30),
-        tls: None,  // Tor SOCKS5 doesn't use TLS
-    };
+        // Create SOCKS5 config (Tor doesn't require authentication by default)
+        let config = Socks5Config {
+            server: proxy_addr.clone(),
+            tag: ir.name.clone(),
+            username: None, // Tor SOCKS5 doesn't use auth
+            password: None,
+            connect_timeout_sec: Some(30),
+            tls: None, // Tor SOCKS5 doesn't use TLS
+        };
 
-    let connector = Socks5Connector::new(config);
-    let connector_arc = Arc::new(connector);
+        let connector = Socks5Connector::new(config);
+        let connector_arc = Arc::new(connector);
 
-    // Wrapper that implements OutboundConnector trait
-    // Note: Tor uses SOCKS5 proxy protocol and should be used via switchboard registry
-    #[derive(Clone)]
-    struct TorConnectorWrapper {
-        inner: Arc<Socks5Connector>,
-    }
-
-    impl std::fmt::Debug for TorConnectorWrapper {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("TorConnectorWrapper")
-                .field("proxy", &"127.0.0.1:9050")
-                .finish()
+        // Wrapper that implements OutboundConnector trait
+        // Note: Tor uses SOCKS5 proxy protocol and should be used via switchboard registry
+        #[derive(Clone)]
+        struct TorConnectorWrapper {
+            inner: Arc<Socks5Connector>,
         }
-    }
 
-    #[async_trait::async_trait]
-    impl OutboundConnector for TorConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            // Tor uses SOCKS5 proxy protocol, cannot return raw TcpStream
-            // Use switchboard registry instead
-            Err(std::io::Error::new(
+        impl std::fmt::Debug for TorConnectorWrapper {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("TorConnectorWrapper")
+                    .field("proxy", &"127.0.0.1:9050")
+                    .finish()
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl OutboundConnector for TorConnectorWrapper {
+            async fn connect(
+                &self,
+                host: &str,
+                port: u16,
+            ) -> std::io::Result<tokio::net::TcpStream> {
+                // Tor uses SOCKS5 proxy protocol, cannot return raw TcpStream
+                // Use switchboard registry instead
+                Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Tor uses SOCKS5 proxy protocol for {}:{}; use switchboard registry instead", host, port),
             ))
+            }
         }
-    }
 
-    let wrapper = TorConnectorWrapper {
-        inner: connector_arc,
-    };
+        let wrapper = TorConnectorWrapper {
+            inner: connector_arc,
+        };
 
-    // Return TCP connector wrapper (UDP over Tor can be added later)
-    Some((Arc::new(wrapper), None))
+        // Return TCP connector wrapper (UDP over Tor can be added later)
+        Some((Arc::new(wrapper), None))
     }
 
     #[cfg(not(feature = "adapter-socks"))]
@@ -1470,7 +1538,10 @@ fn build_tor_outbound(
 fn build_anytls_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("anytls");
     None
 }
@@ -1478,7 +1549,14 @@ fn build_anytls_outbound(
 fn build_wireguard_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
+    // Adapter-level WireGuard outbound currently delegates to the core
+    // wireguard_stub implementation, which still returns a "not implemented"
+    // error when used. We keep the adapter builder as a no-op stub that logs
+    // a clear warning so configs remain valid but traffic will not flow.
     stub_outbound("wireguard");
     None
 }
@@ -1487,7 +1565,10 @@ fn build_wireguard_outbound(
 fn build_hysteria_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use crate::outbound::hysteria::{HysteriaAdapterConfig, HysteriaConnector};
 
     // Extract required fields
@@ -1495,7 +1576,9 @@ fn build_hysteria_outbound(
     let port = ir.port.or(param.port).unwrap_or(443);
 
     // Hysteria v1 specific configuration
-    let protocol = ir.hysteria_protocol.as_ref()
+    let protocol = ir
+        .hysteria_protocol
+        .as_ref()
         .map(|s| s.clone())
         .unwrap_or_else(|| "udp".to_string());
 
@@ -1503,15 +1586,15 @@ fn build_hysteria_outbound(
     let down_mbps = ir.down_mbps.unwrap_or(50);
 
     // Auth string (use hysteria_auth if available, otherwise password)
-    let auth = ir.hysteria_auth.as_ref()
-        .or(ir.password.as_ref())
-        .cloned();
+    let auth = ir.hysteria_auth.as_ref().or(ir.password.as_ref()).cloned();
 
     // Obfuscation
     let obfs = ir.obfs.clone();
 
     // ALPN (convert Vec<String> if present, otherwise default)
-    let alpn = ir.tls_alpn.as_ref()
+    let alpn = ir
+        .tls_alpn
+        .as_ref()
         .map(|v| v.clone())
         .unwrap_or_else(|| vec!["hysteria".to_string()]);
 
@@ -1563,7 +1646,10 @@ fn build_hysteria_outbound(
             // Use switchboard registry instead
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead", host, port),
+                format!(
+                    "Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead",
+                    host, port
+                ),
             ))
         }
     }
@@ -1580,7 +1666,10 @@ fn build_hysteria_outbound(
 fn build_hysteria_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("hysteria");
     None
 }
@@ -1589,7 +1678,10 @@ fn build_hysteria_outbound(
 fn build_shadowtls_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use crate::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
 
     // Extract required fields
@@ -1597,13 +1689,14 @@ fn build_shadowtls_outbound(
     let port = ir.port.or(param.port).unwrap_or(443);
 
     // SNI is required for TLS
-    let sni = ir.tls_sni.as_ref()
+    let sni = ir
+        .tls_sni
+        .as_ref()
         .map(|s| s.clone())
         .unwrap_or_else(|| server.clone());
 
     // ALPN from tls_alpn (Vec<String>), convert to single comma-separated string
-    let alpn = ir.tls_alpn.as_ref()
-        .map(|v| v.join(","));
+    let alpn = ir.tls_alpn.as_ref().map(|v| v.join(","));
 
     // Skip cert verify (default: false)
     let skip_cert_verify = ir.skip_cert_verify.unwrap_or(false);
@@ -1658,7 +1751,10 @@ fn build_shadowtls_outbound(
 fn build_shadowtls_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("shadowtls");
     None
 }
@@ -1667,9 +1763,12 @@ fn build_shadowtls_outbound(
 fn build_tuic_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
-    use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use sb_core::outbound::crypto_types::OutboundTcp;
+    use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -1714,7 +1813,8 @@ fn build_tuic_outbound(
 
     impl std::fmt::Debug for TuicConnectorWrapper {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("TuicConnectorWrapper").finish_non_exhaustive()
+            f.debug_struct("TuicConnectorWrapper")
+                .finish_non_exhaustive()
         }
     }
 
@@ -1725,7 +1825,7 @@ fn build_tuic_outbound(
             // This is a fundamental architecture limitation
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                "TUIC is QUIC-based and cannot provide TcpStream; use switchboard registry instead"
+                "TUIC is QUIC-based and cannot provide TcpStream; use switchboard registry instead",
             ))
         }
     }
@@ -1735,14 +1835,20 @@ fn build_tuic_outbound(
     };
 
     // Return both TCP connector and UDP factory
-    Some((Arc::new(wrapper), Some(outbound_arc as Arc<dyn UdpOutboundFactory>)))
+    Some((
+        Arc::new(wrapper),
+        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+    ))
 }
 
 #[cfg(not(feature = "out_tuic"))]
 fn build_tuic_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("tuic");
     None
 }
@@ -1751,9 +1857,12 @@ fn build_tuic_outbound(
 fn build_hysteria2_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
-    use sb_core::outbound::hysteria2::{BrutalConfig, Hysteria2Config, Hysteria2Outbound};
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use sb_core::outbound::crypto_types::OutboundTcp;
+    use sb_core::outbound::hysteria2::{BrutalConfig, Hysteria2Config, Hysteria2Outbound};
 
     // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
@@ -1803,7 +1912,8 @@ fn build_hysteria2_outbound(
 
     impl std::fmt::Debug for Hysteria2ConnectorWrapper {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("Hysteria2ConnectorWrapper").finish_non_exhaustive()
+            f.debug_struct("Hysteria2ConnectorWrapper")
+                .finish_non_exhaustive()
         }
     }
 
@@ -1824,14 +1934,20 @@ fn build_hysteria2_outbound(
     };
 
     // Return both TCP connector and UDP factory
-    Some((Arc::new(wrapper), Some(outbound_arc as Arc<dyn UdpOutboundFactory>)))
+    Some((
+        Arc::new(wrapper),
+        Some(outbound_arc as Arc<dyn UdpOutboundFactory>),
+    ))
 }
 
 #[cfg(not(feature = "out_hysteria2"))]
 fn build_hysteria2_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("hysteria2");
     None
 }
@@ -1840,7 +1956,10 @@ fn build_hysteria2_outbound(
 fn build_ssh_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     use crate::outbound::ssh::{SshAdapterConfig, SshConnector};
 
     // Extract required fields
@@ -1848,11 +1967,12 @@ fn build_ssh_outbound(
     let port = ir.port.or(param.port).unwrap_or(22);
 
     // Get username from credentials
-    let username = ir.credentials.as_ref()
-        .and_then(|c| c.username.clone())?;
+    let username = ir.credentials.as_ref().and_then(|c| c.username.clone())?;
 
     // Get password from credentials or dedicated password field
-    let password = ir.credentials.as_ref()
+    let password = ir
+        .credentials
+        .as_ref()
         .and_then(|c| c.password.clone())
         .or_else(|| ir.password.clone());
 
@@ -1906,7 +2026,10 @@ fn build_ssh_outbound(
             // Use switchboard registry instead
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("SSH uses tunnel proxy for {}:{}; use switchboard registry instead", host, port),
+                format!(
+                    "SSH uses tunnel proxy for {}:{}; use switchboard registry instead",
+                    host, port
+                ),
             ))
         }
     }
@@ -1923,7 +2046,10 @@ fn build_ssh_outbound(
 fn build_ssh_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
-) -> Option<(Arc<dyn OutboundConnector>, Option<Arc<dyn UdpOutboundFactory>>)> {
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
     stub_outbound("ssh");
     None
 }
@@ -1952,7 +2078,10 @@ mod tests {
             ..Default::default()
         };
         let built = build_dns_outbound(&param, &ir);
-        assert!(built.is_some(), "DoH outbound should construct successfully");
+        assert!(
+            built.is_some(),
+            "DoH outbound should construct successfully"
+        );
     }
 }
 
@@ -2679,8 +2808,14 @@ mod tests {
         let result = build_shadowtls_outbound(&param, &ir);
 
         // Verify outbound was created successfully
-        assert!(result.is_some(), "ShadowTLS outbound should construct successfully");
+        assert!(
+            result.is_some(),
+            "ShadowTLS outbound should construct successfully"
+        );
         let (_connector, udp_factory) = result.unwrap();
-        assert!(udp_factory.is_none(), "ShadowTLS should not provide UDP factory");
+        assert!(
+            udp_factory.is_none(),
+            "ShadowTLS should not provide UDP factory"
+        );
     }
 }

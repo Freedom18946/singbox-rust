@@ -88,7 +88,7 @@ async fn geosite_list(path: &PathBuf) -> Result<()> {
         .collect();
     entries.sort_by_key(|(_, n)| *n);
     for (cat, n) in entries {
-    println!("{cat} ({n})");
+        println!("{cat} ({n})");
     }
     Ok(())
 }

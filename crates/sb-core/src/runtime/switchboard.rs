@@ -669,6 +669,115 @@ impl SwitchboardBuilder {
                 ));
             }
 
+            OutboundType::Wireguard => {
+                #[cfg(feature = "out_wireguard")]
+                {
+                    use crate::outbound::wireguard_stub::{WireGuardConfig, WireGuardOutbound};
+                    use crate::outbound::crypto_types::{HostPort as Hp, OutboundTcp};
+
+                    // For the initial MVP, rely primarily on env for key material to avoid
+                    // hard-coding secrets into config. IR provides server/port.
+                    let server = ir
+                        .server
+                        .clone()
+                        .unwrap_or_else(|| std::env::var("SB_WIREGUARD_SERVER").unwrap_or_else(|_| "127.0.0.1".to_string()));
+                    let port = ir
+                        .port
+                        .or_else(|| std::env::var("SB_WIREGUARD_PORT").ok().and_then(|v| v.parse().ok()))
+                        .unwrap_or(51820);
+
+                    let private_key = std::env::var("SB_WIREGUARD_PRIVATE_KEY").map_err(|_| {
+                        AdapterError::InvalidConfig(
+                            "SB_WIREGUARD_PRIVATE_KEY env var is required for wireguard outbound"
+                                .into(),
+                        )
+                    })?;
+                    let public_key = std::env::var("SB_WIREGUARD_PUBLIC_KEY").unwrap_or_default();
+                    let peer_public_key =
+                        std::env::var("SB_WIREGUARD_PEER_PUBLIC_KEY").map_err(|_| {
+                            AdapterError::InvalidConfig(
+                                "SB_WIREGUARD_PEER_PUBLIC_KEY env var is required for wireguard outbound"
+                                    .into(),
+                            )
+                        })?;
+                    let allowed_ips = std::env::var("SB_WIREGUARD_ALLOWED_IPS")
+                        .ok()
+                        .map(|s| {
+                            s.split(',')
+                                .map(|v| v.trim().to_string())
+                                .filter(|v| !v.is_empty())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_else(|| vec!["0.0.0.0/0".to_string()]);
+                    let endpoint = std::env::var("SB_WIREGUARD_ENDPOINT").ok();
+                    let persistent_keepalive = std::env::var("SB_WIREGUARD_KEEPALIVE_SECS")
+                        .ok()
+                        .and_then(|v| v.parse::<u16>().ok());
+
+                    let cfg = WireGuardConfig {
+                        server,
+                        port,
+                        private_key,
+                        public_key,
+                        peer_public_key,
+                        allowed_ips,
+                        endpoint,
+                        persistent_keepalive,
+                    };
+
+                    let outbound = WireGuardOutbound::new(cfg)
+                        .map_err(|e| AdapterError::Other(anyhow::anyhow!(e).into()))?;
+
+                    #[derive(Debug, Clone)]
+                    struct WireGuardConnector {
+                        inner: std::sync::Arc<WireGuardOutbound>,
+                    }
+
+                    #[async_trait::async_trait]
+                    impl OutboundConnector for WireGuardConnector {
+                        async fn dial(
+                            &self,
+                            target: Target,
+                            _opts: DialOpts,
+                        ) -> AdapterResult<BoxedStream> {
+                            if target.kind != TransportKind::Tcp {
+                                return Err(AdapterError::UnsupportedProtocol(
+                                    "WireGuard outbound currently only supports TCP-like targets (stub)"
+                                        .into(),
+                                ));
+                            }
+                            let hp = Hp::new(target.host, target.port);
+                            let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
+                            Ok(Box::new(s))
+                        }
+
+                        fn name(&self) -> &'static str {
+                            "wireguard"
+                        }
+                    }
+
+                    let inner = std::sync::Arc::new(outbound);
+                    let conn = WireGuardConnector {
+                        inner: inner.clone(),
+                    };
+                    self.switchboard
+                        .register(ir.name.clone().unwrap_or_else(|| "wireguard".into()), conn)
+                        .map_err(|e| AdapterError::Other(e.into()))?;
+                    if let Some(ref name) = ir.name {
+                        let _ = self
+                            .switchboard
+                            .register_udp_factory(name.clone(), inner.clone());
+                    }
+                    return Ok(());
+                }
+                #[cfg(not(feature = "out_wireguard"))]
+                {
+                    return Err(AdapterError::UnsupportedProtocol(
+                        "WireGuard outbound requires out_wireguard feature".to_string(),
+                    ));
+                }
+            }
+
             OutboundType::Shadowtls => {
                 #[cfg(feature = "out_shadowtls")]
                 {
@@ -962,6 +1071,33 @@ mod tests {
         let udp = sw.list_udp_factories();
         assert!(udp.iter().any(|n| n == "tu1"));
         assert!(udp.iter().any(|n| n == "hy1"));
+    }
+
+    #[cfg(feature = "out_wireguard")]
+    #[test]
+    fn registers_udp_factory_for_wireguard_stub() {
+        use sb_config::ir::{ConfigIR, OutboundIR, OutboundType};
+
+        // Ensure required env vars are set for WireGuardConfig validation
+        std::env::set_var("SB_WIREGUARD_PRIVATE_KEY", "test-private-key");
+        std::env::set_var("SB_WIREGUARD_PUBLIC_KEY", "test-public-key");
+        std::env::set_var("SB_WIREGUARD_PEER_PUBLIC_KEY", "test-peer-public-key");
+
+        let mut ir = ConfigIR::default();
+        ir.outbounds.push(OutboundIR {
+            ty: OutboundType::Wireguard,
+            name: Some("wg1".into()),
+            server: Some("wg.example.com".into()),
+            port: Some(51820),
+            ..Default::default()
+        });
+
+        let sw = SwitchboardBuilder::from_config_ir(&ir).expect("switchboard");
+        let udp = sw.list_udp_factories();
+        assert!(
+            udp.iter().any(|n| n == "wg1"),
+            "WireGuard UDP factory should be registered for named outbound"
+        );
     }
 
     #[cfg(feature = "out_tuic")]

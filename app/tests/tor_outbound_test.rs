@@ -46,7 +46,10 @@ fn test_tor_outbound_registration() {
 
     // Verify that the builder is registered
     let builder = registry::get_outbound("tor");
-    assert!(builder.is_some(), "Tor outbound builder should be registered");
+    assert!(
+        builder.is_some(),
+        "Tor outbound builder should be registered"
+    );
 
     // Build the outbound
     let result = builder.unwrap()(&param, &ir);
@@ -54,11 +57,17 @@ fn test_tor_outbound_registration() {
 
     let (connector, udp_factory) = result.unwrap();
     // connector is Arc<dyn OutboundConnector>, not Option
-    assert!(udp_factory.is_none(), "Tor outbound should not have UDP factory (not yet implemented)");
+    assert!(
+        udp_factory.is_none(),
+        "Tor outbound should not have UDP factory (not yet implemented)"
+    );
 
     // Verify debug format works
     let debug_str = format!("{:?}", connector);
-    assert!(!debug_str.is_empty(), "Tor connector should have Debug implementation");
+    assert!(
+        !debug_str.is_empty(),
+        "Tor connector should have Debug implementation"
+    );
 }
 
 #[test]
@@ -70,7 +79,7 @@ fn test_tor_outbound_with_default_proxy() {
     let ir = OutboundIR {
         ty: OutboundType::Tor,
         name: Some("tor-default".to_string()),
-        tor_proxy_addr: None,  // Should use default
+        tor_proxy_addr: None, // Should use default
         ..Default::default()
     };
 
@@ -80,7 +89,10 @@ fn test_tor_outbound_with_default_proxy() {
     assert!(builder.is_some());
 
     let result = builder.unwrap()(&param, &ir);
-    assert!(result.is_some(), "Tor outbound should work with default proxy address");
+    assert!(
+        result.is_some(),
+        "Tor outbound should work with default proxy address"
+    );
 }
 
 #[test]
@@ -102,7 +114,10 @@ fn test_tor_outbound_with_custom_proxy() {
     assert!(builder.is_some());
 
     let result = builder.unwrap()(&param, &ir);
-    assert!(result.is_some(), "Tor outbound should work with custom proxy address");
+    assert!(
+        result.is_some(),
+        "Tor outbound should work with custom proxy address"
+    );
 }
 
 #[test]
@@ -127,5 +142,8 @@ fn test_tor_outbound_debug_format() {
     let (connector, _) = result.unwrap();
     // Verify that Debug formatting works
     let debug_str = format!("{:?}", connector);
-    assert!(!debug_str.is_empty(), "Tor connector should have Debug implementation");
+    assert!(
+        !debug_str.is_empty(),
+        "Tor connector should have Debug implementation"
+    );
 }

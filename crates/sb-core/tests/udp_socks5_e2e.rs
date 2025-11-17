@@ -1,6 +1,6 @@
+use sb_test_utils::socks5::start_mock_socks5;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::net::UdpSocket;
-use sb_test_utils::socks5::start_mock_socks5;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn e2e_udp_socks5_roundtrip() -> anyhow::Result<()> {

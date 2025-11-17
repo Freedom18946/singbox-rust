@@ -188,11 +188,10 @@ async fn test_dialer_wrapper_integration() {
                 let (client, _server) = tokio::io::duplex(64);
                 Ok(Box::new(client) as IoStream)
             }
-        }) as Pin<
-            Box<
-                dyn std::future::Future<Output = Result<IoStream, DialError>> + Send + 'static,
-            >,
-        >
+        })
+            as Pin<
+                Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send + 'static>,
+            >
     });
 
     let config = CircuitBreakerConfig {

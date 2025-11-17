@@ -3,9 +3,9 @@
 //! - Supports multiple `-C/--config-directory` directories (non-recursive)
 //! - `-w/--write` to write in-place; otherwise prints to stdout
 
-use anyhow::{Context, Result};
 use crate::cli::output;
 use crate::cli::Format as OutFormat;
+use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -113,9 +113,17 @@ fn format_one(path: &Path, write: bool, multi: bool) -> Result<()> {
             } else {
                 path.display().to_string()
             };
-            output::emit(OutFormat::Human, || head, &serde_json::json!({"path": path.display().to_string()}));
+            output::emit(
+                OutFormat::Human,
+                || head,
+                &serde_json::json!({"path": path.display().to_string()}),
+            );
         }
-        output::emit(OutFormat::Human, || format!("{formatted}\n"), &serde_json::json!({"formatted": val}));
+        output::emit(
+            OutFormat::Human,
+            || format!("{formatted}\n"),
+            &serde_json::json!({"formatted": val}),
+        );
     }
     Ok(())
 }

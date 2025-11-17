@@ -17,7 +17,10 @@ use std::net::TcpStream;
 /// ```
 pub fn get(host: &str, path: &str) -> String {
     let mut stream = TcpStream::connect(host).expect("Failed to connect");
-    let request = format!("GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", path, host);
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        path, host
+    );
     stream
         .write_all(request.as_bytes())
         .expect("Failed to write request");

@@ -27,7 +27,10 @@ fn main() -> Result<()> {
             print_help();
             Ok(())
         }
-        Some(cmd) => Err(anyhow!("未知子命令: {}\n运行 'cargo xtask help' 查看帮助", cmd)),
+        Some(cmd) => Err(anyhow!(
+            "未知子命令: {}\n运行 'cargo xtask help' 查看帮助",
+            cmd
+        )),
         None => {
             print_help();
             Ok(())
@@ -114,7 +117,11 @@ fn cmd_check_all() -> Result<()> {
         ("所有特性", vec!["--all-features"]),
         (
             "核心特性",
-            vec!["--no-default-features", "--features", "admin_debug,auth,rate_limit"],
+            vec![
+                "--no-default-features",
+                "--features",
+                "admin_debug,auth,rate_limit",
+            ],
         ),
     ];
 
@@ -175,7 +182,13 @@ fn cmd_e2e() -> Result<()> {
     info("测试: check 命令");
     let check = run_app_json(
         &app_bin,
-        &["check", "--config", "examples/e2e/minimal.yaml", "--format", "json"],
+        &[
+            "check",
+            "--config",
+            "examples/e2e/minimal.yaml",
+            "--format",
+            "json",
+        ],
     )?;
     if check.get("ok").and_then(|v| v.as_bool()) != Some(true) {
         bail!("check 命令失败: {}", check);

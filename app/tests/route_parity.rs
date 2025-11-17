@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 //! Route explain stability and replay guard tests
-//! 
+//!
 //! Ensures route JSON output maintains stable contract:
 //! - Fixed field set: dest, matched_rule, chain, outbound
 //! - With --with-trace: adds trace field without breaking existing fields
@@ -18,6 +18,12 @@ fn parse_json_output(output: &[u8]) -> Value {
     let json_start = output_str.find('{').expect("No JSON in output");
     let json_str = &output_str[json_start..];
     serde_json::from_str(json_str).expect("Failed to parse JSON")
+}
+
+fn write_config_json(contents: &serde_json::Value) -> tempfile::NamedTempFile {
+    let file = tempfile::NamedTempFile::new().expect("temp config");
+    std::fs::write(file.path(), serde_json::to_vec(contents).expect("serialize")).expect("write config");
+    file
 }
 
 #[cfg(feature = "router")]
@@ -49,12 +55,18 @@ fn route_explain_stable_fields_without_trace() {
 
     // Contract: must have exactly these fields (no trace)
     assert!(result.get("dest").is_some(), "missing 'dest' field");
-    assert!(result.get("matched_rule").is_some(), "missing 'matched_rule' field");
+    assert!(
+        result.get("matched_rule").is_some(),
+        "missing 'matched_rule' field"
+    );
     assert!(result.get("chain").is_some(), "missing 'chain' field");
     assert!(result.get("outbound").is_some(), "missing 'outbound' field");
 
     // Trace should NOT be present without --with-trace
-    assert!(result.get("trace").is_none(), "trace field should not be present without --with-trace");
+    assert!(
+        result.get("trace").is_none(),
+        "trace field should not be present without --with-trace"
+    );
 
     // Verify field types
     assert!(result["dest"].is_string());
@@ -93,10 +105,16 @@ fn route_explain_stable_fields_with_trace() {
 
     // Contract: must have all base fields plus trace
     assert!(result.get("dest").is_some(), "missing 'dest' field");
-    assert!(result.get("matched_rule").is_some(), "missing 'matched_rule' field");
+    assert!(
+        result.get("matched_rule").is_some(),
+        "missing 'matched_rule' field"
+    );
     assert!(result.get("chain").is_some(), "missing 'chain' field");
     assert!(result.get("outbound").is_some(), "missing 'outbound' field");
-    assert!(result.get("trace").is_some(), "missing 'trace' field with --with-trace");
+    assert!(
+        result.get("trace").is_some(),
+        "missing 'trace' field with --with-trace"
+    );
 
     // Verify field types
     assert!(result["dest"].is_string());
@@ -105,6 +123,127 @@ fn route_explain_stable_fields_with_trace() {
     assert!(result["outbound"].is_string());
     // Trace can be array or object depending on implementation
     assert!(result["trace"].is_array() || result["trace"].is_object());
+}
+
+#[cfg(feature = "router")]
+#[test]
+fn route_explain_domain_vs_ip_output_differs() {
+    let config = serde_json::json!({
+        "inbounds": [ { "type": "http", "listen": "127.0.0.1", "port": 18081 } ],
+        "outbounds": [
+            { "type": "direct", "name": "direct" },
+            { "type": "block", "name": "block" }
+        ],
+        "route": {
+            "rules": [
+                { "domain_suffix": ["example.com"], "outbound": "block" }
+            ],
+            "default": "direct"
+        }
+    });
+    let cfg = write_config_json(&config);
+
+    let domain_out = Command::cargo_bin("app")
+        .unwrap()
+        .args([
+            "route",
+            "-c",
+            cfg.path().to_str().unwrap(),
+            "--dest",
+            "example.com:443",
+            "--explain",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let domain_json = parse_json_output(&domain_out);
+    assert_eq!(domain_json["outbound"], "block");
+
+    let ip_out = Command::cargo_bin("app")
+        .unwrap()
+        .args([
+            "route",
+            "-c",
+            cfg.path().to_str().unwrap(),
+            "--dest",
+            "93.184.216.34:443",
+            "--explain",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let ip_json = parse_json_output(&ip_out);
+    assert_eq!(ip_json["outbound"], "direct");
+    assert_ne!(domain_json["matched_rule"], ip_json["matched_rule"]);
+}
+
+#[cfg(feature = "router")]
+#[test]
+fn route_explain_udp_output_contains_fields() {
+    let config = serde_json::json!({
+        "inbounds": [ { "type": "http", "listen": "127.0.0.1", "port": 18082 } ],
+        "outbounds": [
+            { "type": "direct", "name": "tcp-out" },
+            { "type": "block", "name": "udp-block" }
+        ],
+        "route": {
+            "rules": [ { "outbound": "tcp-out" } ],
+            "default": "tcp-out"
+        }
+    });
+    let cfg = write_config_json(&config);
+
+    let tcp_out = Command::cargo_bin("app")
+        .unwrap()
+        .args([
+            "route",
+            "-c",
+            cfg.path().to_str().unwrap(),
+            "--dest",
+            "example.com:80",
+            "--explain",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let tcp_json = parse_json_output(&tcp_out);
+    assert_eq!(tcp_json["outbound"], "tcp-out");
+
+    let udp_out = Command::cargo_bin("app")
+        .unwrap()
+        .args([
+            "route",
+            "-c",
+            cfg.path().to_str().unwrap(),
+            "--dest",
+            "example.com:80",
+            "--udp",
+            "--explain",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let udp_json = parse_json_output(&udp_out);
+    assert_eq!(udp_json["dest"], "example.com:80");
+    assert!(udp_json["matched_rule"].is_string());
+    assert!(udp_json["chain"].is_array());
+    assert_eq!(udp_json["outbound"], "tcp-out");
 }
 
 #[cfg(feature = "router")]
@@ -256,15 +395,15 @@ fn route_vector_direct_localhost() {
     let json_start = output_str.find('{').expect("No JSON in output");
     let json_str = &output_str[json_start..];
     let result: Value = serde_json::from_str(json_str).unwrap();
-    
+
     // Verify parity: outbound should be DIRECT (case-sensitive)
     assert_eq!(result["outbound"].as_str().unwrap(), "DIRECT");
     assert_eq!(result["dest"].as_str().unwrap(), "localhost:80");
-    
+
     // matched_rule should be 8-char hex ID
     let matched_rule = result["matched_rule"].as_str().unwrap();
     assert_eq!(matched_rule.len(), 8);
-    
+
     // chain should contain DIRECT
     let chain = result["chain"].as_array().unwrap();
     assert!(chain.iter().any(|v| v.as_str() == Some("DIRECT")));
@@ -297,7 +436,7 @@ fn route_vector_blackhole_ads() {
         .clone();
 
     let result: Value = parse_json_output(&out);
-    
+
     // Verify parity: outbound should be BLOCK
     assert_eq!(result["outbound"].as_str().unwrap(), "BLOCK");
     assert_eq!(result["dest"].as_str().unwrap(), "ads.example.com:443");
@@ -330,7 +469,7 @@ fn route_vector_blackhole_default_fallthrough() {
         .clone();
 
     let result: Value = parse_json_output(&out);
-    
+
     // Verify parity: should fallthrough to default (DIRECT)
     assert_eq!(result["outbound"].as_str().unwrap(), "DIRECT");
 }
@@ -362,11 +501,11 @@ fn route_vector_selector_rule_match() {
         .clone();
 
     let result: Value = parse_json_output(&out);
-    
+
     // Verify structure: outbound should be present and non-empty
     let outbound = result["outbound"].as_str().unwrap();
     assert!(!outbound.is_empty(), "outbound should not be empty");
-    
+
     // matched_rule should be stable 8-char ID
     assert_eq!(result["matched_rule"].as_str().unwrap().len(), 8);
 }
@@ -399,7 +538,7 @@ fn route_vector_geoip_cn() {
         .clone();
 
     let result: Value = parse_json_output(&out);
-    
+
     // Verify structure: should have valid routing decision
     assert!(result.get("outbound").is_some());
     assert!(result.get("matched_rule").is_some());
@@ -421,7 +560,13 @@ fn check_parity_valid_config() {
 
     Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", tmp.path().to_str().unwrap(), "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success();
 }
@@ -435,7 +580,13 @@ fn check_parity_invalid_config() {
 
     let output = Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", tmp.path().to_str().unwrap(), "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .failure()
         .get_output()
@@ -443,12 +594,15 @@ fn check_parity_invalid_config() {
         .clone();
 
     let result: Value = serde_json::from_slice(&output).unwrap();
-    
+
     // Check should return errors array with at least one error
     assert!(result.get("errors").is_some());
     let errors = result["errors"].as_array().unwrap();
-    assert!(!errors.is_empty(), "bad config should produce at least one error");
-    
+    assert!(
+        !errors.is_empty(),
+        "bad config should produce at least one error"
+    );
+
     // Each error should have code and message
     for error in errors {
         assert!(error.get("code").is_some(), "error should have code");
@@ -463,13 +617,19 @@ fn check_parity_type_mismatch() {
         "inbounds": [{ "type": "http", "listen": "127.0.0.1", "port": "not_a_number" }],
         "outbounds": [{ "type": "direct", "name": "direct" }]
     }"#;
-    
+
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), bad_type_config.as_bytes()).unwrap();
 
     Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", tmp.path().to_str().unwrap(), "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .failure();
 }
@@ -481,13 +641,19 @@ fn check_parity_missing_required_field() {
         "inbounds": [{ "type": "http", "listen": "127.0.0.1" }],
         "outbounds": []
     }"#;
-    
+
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), missing_field.as_bytes()).unwrap();
 
     Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", tmp.path().to_str().unwrap(), "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .failure();
 }
@@ -509,7 +675,7 @@ fn perf_smoke_route_explain_1k_iterations() {
     fs::write(tmp.path(), ROUTE_MIN_CONFIG.as_bytes()).unwrap();
 
     println!("[perf_smoke] Running 1000 route explain iterations...");
-    
+
     for i in 0..1000 {
         let out = Command::cargo_bin("app")
             .unwrap()
@@ -530,18 +696,18 @@ fn perf_smoke_route_explain_1k_iterations() {
             .clone();
 
         let result: Value = parse_json_output(&out);
-        
+
         // Verify output structure is stable across all iterations
         assert!(result.get("dest").is_some());
         assert!(result.get("matched_rule").is_some());
         assert!(result.get("chain").is_some());
         assert!(result.get("outbound").is_some());
-        
+
         if (i + 1) % 100 == 0 {
             println!("  ... {} iterations completed", i + 1);
         }
     }
-    
+
     println!("[perf_smoke] ✓ 1000 iterations completed successfully");
 }
 
@@ -550,9 +716,9 @@ fn perf_smoke_route_explain_1k_iterations() {
 fn perf_smoke_check_large_config() {
     // Smoke test: Check a large config (~1-5MB with repeated rules)
     // Verifies no OOM, no timeout (uses default TEST_TIMEOUT_SECS)
-    
+
     println!("[perf_smoke] Generating large config with 1000 rules...");
-    
+
     // Generate a config with 1000 domain rules
     let mut config = serde_json::json!({
         "log": { "level": "warn" },
@@ -566,30 +732,39 @@ fn perf_smoke_check_large_config() {
             "default": "DIRECT"
         }
     });
-    
+
     // Add 1000 rules with varying patterns
     for i in 0..1000 {
-        config["route"]["rules"].as_array_mut().unwrap().push(serde_json::json!({
-            "domain": [format!("domain{}.example.com", i)],
-            "outbound": if i % 2 == 0 { "DIRECT" } else { "BLOCK" }
-        }));
+        config["route"]["rules"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "domain": [format!("domain{}.example.com", i)],
+                "outbound": if i % 2 == 0 { "DIRECT" } else { "BLOCK" }
+            }));
     }
-    
+
     let config_str = serde_json::to_string_pretty(&config).unwrap();
     println!("[perf_smoke] Config size: {} bytes", config_str.len());
-    
+
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config_str.as_bytes()).unwrap();
 
     println!("[perf_smoke] Running check on large config...");
-    
+
     // Should complete without OOM or timeout
     Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", tmp.path().to_str().unwrap(), "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            tmp.path().to_str().unwrap(),
+            "--format",
+            "json",
+        ])
         .assert()
         .success();
-    
+
     println!("[perf_smoke] ✓ Large config check completed successfully");
 }
 
@@ -599,7 +774,7 @@ fn perf_smoke_check_large_config() {
 fn perf_smoke_route_explain_large_ruleset() {
     // Smoke test: Route explain with large ruleset (similar to check_large_config)
     println!("[perf_smoke] Testing route explain with 1000-rule config...");
-    
+
     let mut config = serde_json::json!({
         "log": { "level": "warn" },
         "inbounds": [{ "type": "http", "listen": "127.0.0.1", "port": 18081 }],
@@ -612,14 +787,17 @@ fn perf_smoke_route_explain_large_ruleset() {
             "default": "DIRECT"
         }
     });
-    
+
     for i in 0..1000 {
-        config["route"]["rules"].as_array_mut().unwrap().push(serde_json::json!({
-            "domain": [format!("rule{}.test.com", i)],
-            "outbound": "BLOCK"
-        }));
+        config["route"]["rules"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "domain": [format!("rule{}.test.com", i)],
+                "outbound": "BLOCK"
+            }));
     }
-    
+
     let config_str = serde_json::to_string(&config).unwrap();
     let tmp = tempfile::NamedTempFile::new().unwrap();
     fs::write(tmp.path(), config_str.as_bytes()).unwrap();
@@ -644,9 +822,9 @@ fn perf_smoke_route_explain_large_ruleset() {
         .clone();
 
     let result: Value = parse_json_output(&out);
-    
+
     // Should fallthrough to default after checking all 1000 rules
     assert_eq!(result["outbound"].as_str().unwrap(), "DIRECT");
-    
+
     println!("[perf_smoke] ✓ Route explain with 1000 rules completed");
 }

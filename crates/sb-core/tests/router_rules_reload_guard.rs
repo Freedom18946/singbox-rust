@@ -7,9 +7,7 @@ fn require_default_guard() {
     let e = router_build_index_from_str(txt, 1024).unwrap_err();
     match e {
         BuildError::Invalid(InvalidReason::MissingDefault) => {}
-        _ => panic!(
-            "Expected MissingDefault error when default rule is required"
-        ),
+        _ => panic!("Expected MissingDefault error when default rule is required"),
     }
     std::env::remove_var("SB_ROUTER_RULES_REQUIRE_DEFAULT");
 }

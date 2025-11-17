@@ -101,9 +101,7 @@ impl WindowsProcessMatcher {
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .output()
             .await
-            .map_err(|e| {
-                ProcessMatchError::SystemError(format!("tasklist failed: {e}"))
-            })?;
+            .map_err(|e| ProcessMatchError::SystemError(format!("tasklist failed: {e}")))?;
 
         if !output.status.success() {
             return Err(ProcessMatchError::ProcessNotFound);

@@ -100,7 +100,8 @@ fn test_ssh_outbound_with_private_key() {
             password: None, // No password
             ..Default::default()
         });
-        ir.ssh_private_key = Some("-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----".into());
+        ir.ssh_private_key =
+            Some("-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----".into());
 
         let param = OutboundParam {
             kind: "ssh".into(),

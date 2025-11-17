@@ -274,9 +274,7 @@ async fn handle_conn_impl(
                 fallback_connect(proxy, &target_host, target_port, &opts).await?
             }
         }
-        RDecision::Proxy(None) => {
-            fallback_connect(proxy, &target_host, target_port, &opts).await?
-        }
+        RDecision::Proxy(None) => fallback_connect(proxy, &target_host, target_port, &opts).await?,
         RDecision::Reject => return Err(anyhow!("vless: rejected by rules")),
     };
 

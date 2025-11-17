@@ -3,12 +3,12 @@
 ## Overview
 During WS-E Task 5 implementation (adapter path testing), multiple architectural mismatches were discovered between the IR (config), core, and adapter layers. While commit b856ff2 claimed to "fix(adapters): resolve trait architecture mismatch for 4 encrypted protocol outbounds", significant issues remain.
 
-## Status Summary (2025-11-11 深夜)
+## Status Summary (2025-11-11 深夜, 更新至 2025-11-16)
 - ✅ **Issue #1**: OutboundIR field mismatches — RESOLVED (Task 5.5, 2025-11-11 晚)
 - ✅ **Issue #1.5**: Feature gate mismatches — RESOLVED (2025-11-11 深夜)
-- ⚠️ **Issue #2**: Core config struct field mismatches — PARTIAL (Shadowsocks/Trojan still broken)
+- ✅ **Issue #2**: Core config struct field mismatches — RESOLVED（Shadowsocks/Trojan builder 现已与核心配置对齐）
 - ✅ **Issue #3**: HeaderEntry field access — RESOLVED (fields already public)
-- ⚠️ **Issue #4**: UDP factory trait implementation — MINOR (Shadowsocks/Trojan claims incorrect)
+- ✅ **Issue #4**: UDP factory trait implementation — RESOLVED（Shadowsocks/Trojan 不再错误宣称 UDP factory）
 - ⚠️ **Issue #5**: Type mismatches — PARTIAL (tls_alpn workaround in place, needs cleanup)
 - ✅ **New**: HTTP/SOCKS trait architecture mismatch — RESOLVED (2025-11-11 深夜, register.rs:134-282)
 
@@ -131,7 +131,7 @@ error[E0432]: unresolved import `sb_core::outbound::shadowsocks`
 
 ---
 
-### 2. Core Config Struct Field Mismatches
+### 2. Core Config Struct Field Mismatches — ✅ RESOLVED (2025-11-16)
 
 **Problem**: Adapter builders try to set fields that don't exist in core config structs.
 
@@ -157,7 +157,11 @@ tls_ca_pem: ir.tls_ca_pem.clone(),     // ✗ Field doesn't exist
 - `crates/sb-core/src/outbound/trojan.rs`
 - `crates/sb-adapters/src/register.rs`
 
-**Fix required**: Align core config structs with IR fields, or update builders to use correct field names.
+**Resolution** (2025-11-16):
+- `build_shadowsocks_outbound` 现使用 `ShadowsocksConfig::new(server, port, password, cipher)`，并将 `ir.method` 映射为 `ShadowsocksCipher`（默认 `aes-256-gcm`），不再向不存在的 `method/plugin/plugin_opts` 字段赋值。
+- `build_trojan_outbound` 现基于 `TrojanConfig::new(server, port, password, sni)` 构建，并通过 `with_alpn` / `with_skip_cert_verify` 注入 ALPN 与证书校验选项，移除了对不存在的 `tls_ca_paths`/`tls_ca_pem` 字段的访问。
+
+**Net effect**: Shadowsocks/Trojan 适配器 builder 与核心配置结构保持一致，可在开启相关 feature 时正常编译与实例化。
 
 ---
 
@@ -184,7 +188,7 @@ ir.grpc_metadata.iter().map(|e| (e.key.clone(), e.value.clone())) // ✗ no fiel
 
 ---
 
-### 4. UDP Factory Trait Implementation
+### 4. UDP Factory Trait Implementation — ✅ RESOLVED (2025-11-16)
 
 **Problem**: Builders incorrectly claim UDP factory support for protocols that don't implement `UdpOutboundFactory`.
 
@@ -202,34 +206,40 @@ ir.grpc_metadata.iter().map(|e| (e.key.clone(), e.value.clone())) // ✗ no fiel
 ```
 
 **Files affected**:
-- `crates/sb-adapters/src/register.rs:195, 275` (Shadowsocks/Trojan builders)
+- `crates/sb-adapters/src/register.rs:326-420`（Shadowsocks builder）
+- `crates/sb-adapters/src/register.rs:410-500`（Trojan builder）
 
-**Fix required**: Change return values to `None` for UDP factory (similar to d19cbc9 fix for VMess/VLESS).
+**Resolution** (2025-11-16):
+- Shadowsocks/Trojan adapter builders 现在返回 `(Arc<dyn OutboundConnector>, None)`，不再将 `ShadowsocksOutbound`/`TrojanOutbound` 伪装为 `UdpOutboundFactory`。
+- QUIC/UDP 型协议（TUIC/Hysteria2）仍由各自的 `UdpOutboundFactory` 实现负责；Shadowsocks/Trojan 的 UDP 能力继续通过核心路径和后续专用实现接入。
 
 ---
 
-### 5. Type Mismatches
+### 5. Type Mismatches — ✅ RESOLVED (2025-11-16)
 
-**Problem**: IR and core configs use incompatible types for the same semantic field.
+**Problem**: IR and core configs used incompatible types for the same semantic field.
 
-**tls_alpn**:
+**tls_alpn（历史问题）**：
 ```rust
-// In InboundIR (line 338)
+// 旧状态（已修复）
+// In InboundIR
 pub tls_alpn: Option<Vec<String>>,
 
-// In OutboundIR (line 427)
-pub tls_alpn: Option<String>,  // Expects comma-separated string
+// In OutboundIR
+pub tls_alpn: Option<String>,  // 旧实现：逗号分隔字符串
 
 // In core configs (VMess/VLESS)
 pub tls_alpn: Option<Vec<String>>,
 ```
 
-**Fix applied** (d19cbc9): Convert string to vec in builder:
-```rust
-tls_alpn: ir.tls_alpn.clone().map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
-```
+**Current state**：
+- `InboundIR::tls_alpn` 与 `OutboundIR::tls_alpn` 现均为 `Option<Vec<String>>`（`crates/sb-config/src/ir/mod.rs:420-525`）。  
+- `validator::v2::to_ir_v1` 支持字符串或数组输入，并统一解析为 `Vec<String>`（`crates/sb-config/src/validator/v2.rs:615-721, 903-934`）。  
+- ShadowTLS/TUIC/Hysteria2 等出站在需要时通过 `join(",")` 将 `Vec<String>` 显式折叠为传输层所需的 CSV 字符串（`crates/sb-adapters/src/outbound/mod.rs:260-283`、`crates/sb-core/src/runtime/switchboard.rs:933-985`）。  
 
-**Better fix**: Make OutboundIR.tls_alpn consistent with InboundIR (`Option<Vec<String>>`).
+**Net effect**：  
+- IR 与核心配置在 `tls_alpn` 语义上已完全对齐；适配器与运行时代码只需处理 `Vec<String>`，不再依赖隐式的字符串拆分/拼接。  
+- Issue #5 所描述的类型不一致现象不再存在，WS‑E Task 5 中关于 tls_alpn 的阻塞已解除。
 
 ---
 

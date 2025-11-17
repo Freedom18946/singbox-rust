@@ -93,8 +93,12 @@ impl LinuxProcessMatcher {
             // Skip index field (field 0)
             fields.next();
 
-            let Some(local_str) = fields.next() else { continue };
-            let Some(remote_str) = fields.next() else { continue };
+            let Some(local_str) = fields.next() else {
+                continue;
+            };
+            let Some(remote_str) = fields.next() else {
+                continue;
+            };
 
             // Parse local and remote addresses
             let local_addr = parse_proc_net_addr(local_str)?;
@@ -102,7 +106,9 @@ impl LinuxProcessMatcher {
 
             if local_addr == conn.local_addr && remote_addr == conn.remote_addr {
                 // Skip fields 3-8 to get to inode (field 9)
-                let Some(inode_str) = fields.nth(6) else { continue };
+                let Some(inode_str) = fields.nth(6) else {
+                    continue;
+                };
                 let inode = inode_str
                     .parse()
                     .map_err(|_| ProcessMatchError::SystemError("Invalid inode".to_string()))?;

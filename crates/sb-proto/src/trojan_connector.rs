@@ -38,10 +38,7 @@ impl<D: Dialer + Send + Sync + 'static> TrojanConnector<D> {
 
 #[async_trait]
 impl<D: Dialer + Send + Sync + 'static> OutboundConnector for TrojanConnector<D> {
-    async fn connect(
-        &self,
-        target: &Target,
-    ) -> Result<Box<dyn IoStream>, ProtoError> {
+    async fn connect(&self, target: &Target) -> Result<Box<dyn IoStream>, ProtoError> {
         let mut stream = self
             .dialer
             .connect(target.host(), target.port())

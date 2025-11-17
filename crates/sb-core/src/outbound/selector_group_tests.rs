@@ -371,4 +371,18 @@ mod tests {
         assert_eq!(tag, "proxy2");
         assert!(!*healthy);
     }
+
+    #[test]
+    fn proxy_health_marks_permanent_failure() {
+        use std::io;
+
+        let health = ProxyHealth::default();
+        assert!(health.is_healthy());
+
+        let err = io::Error::new(io::ErrorKind::Unsupported, "stub");
+        health.record_permanent_failure(&err);
+
+        assert!(health.is_permanently_failed());
+        assert!(!health.is_healthy());
+    }
 }

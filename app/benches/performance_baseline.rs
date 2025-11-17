@@ -52,7 +52,9 @@ fn bench_tcp_direct_throughput(c: &mut Criterion) {
 
     group.bench_function("direct_1mb", |b| {
         b.iter(|| {
-            let Ok(mut stream) = TcpStream::connect(addr) else { return; };
+            let Ok(mut stream) = TcpStream::connect(addr) else {
+                return;
+            };
             let data = vec![0xAB; 1024 * 1024]; // 1MB
 
             if stream.write_all(&data).is_err() {
@@ -108,7 +110,9 @@ fn bench_latency_echo(c: &mut Criterion) {
 
     group.bench_function("echo_small_payload", |b| {
         b.iter(|| {
-            let Ok(mut stream) = TcpStream::connect(addr) else { return; };
+            let Ok(mut stream) = TcpStream::connect(addr) else {
+                return;
+            };
             let data = b"Hello, World!"; // 13 bytes
 
             if stream.write_all(data).is_err() {
@@ -168,7 +172,9 @@ fn bench_concurrent_connections(c: &mut Criterion) {
                 .map(|_| {
                     let addr = addr;
                     thread::spawn(move || {
-                        let Ok(mut stream) = TcpStream::connect(addr) else { return; };
+                        let Ok(mut stream) = TcpStream::connect(addr) else {
+                            return;
+                        };
                         let data = b"test";
                         let _ = stream.write_all(data);
                         let mut received = [0u8; 4];

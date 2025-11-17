@@ -4,9 +4,8 @@
 //! metrics into the shared sb-metrics registry. They are only compiled when the
 //! `metrics` feature is enabled for sb-transport.
 
-
 use once_cell::sync::OnceCell;
-use prometheus::{IntCounterVec, Opts, GaugeVec};
+use prometheus::{GaugeVec, IntCounterVec, Opts};
 use std::collections::HashMap;
 use std::sync::Mutex;
 

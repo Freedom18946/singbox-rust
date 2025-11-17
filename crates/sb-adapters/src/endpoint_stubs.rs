@@ -23,7 +23,11 @@ impl Endpoint for StubEndpoint {
     }
 
     fn start(&self, _stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Err(format!("endpoint '{}' ({}) is not implemented in this build", self.tag, self.ty_str).into())
+        Err(format!(
+            "endpoint '{}' ({}) is not implemented in this build",
+            self.tag, self.ty_str
+        )
+        .into())
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

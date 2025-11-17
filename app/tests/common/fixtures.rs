@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 //! Test fixture loading utilities
 
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Get the path to the fixtures directory relative to the tests directory.
 ///
@@ -54,8 +54,7 @@ pub fn load_fixture(relative_path: impl AsRef<Path>) -> String {
 /// Panics if the file cannot be read or does not exist.
 pub fn load_fixture_bytes(relative_path: impl AsRef<Path>) -> Vec<u8> {
     let path = fixtures_dir().join(relative_path.as_ref());
-    fs::read(&path)
-        .unwrap_or_else(|e| panic!("Failed to load fixture at {:?}: {}", path, e))
+    fs::read(&path).unwrap_or_else(|e| panic!("Failed to load fixture at {:?}: {}", path, e))
 }
 
 /// Check if a fixture file exists.

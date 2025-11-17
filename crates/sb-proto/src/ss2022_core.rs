@@ -84,7 +84,11 @@ pub mod ss2022_core {
         // Simulated payload: target address
         let payload = format!("{}:{}", host, port);
         let payload_bytes = payload.as_bytes();
-        result.extend_from_slice(&u16::try_from(payload_bytes.len()).unwrap_or(0).to_be_bytes());
+        result.extend_from_slice(
+            &u16::try_from(payload_bytes.len())
+                .unwrap_or(0)
+                .to_be_bytes(),
+        );
         result.extend_from_slice(payload_bytes);
 
         // Placeholder salt and tag

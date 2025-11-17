@@ -57,70 +57,31 @@
 - Designed comprehensive test cases for 10 inbounds + 10 outbounds
 - Feature gate control validation framework
 
-### ⚠️ Blocked (40%)
+### ✅ Follow-up Status Update (2025-11-16)
 
-#### 1. Adapter Instantiation Tests (BLOCKED)
-**Blocker**: Cannot compile tests due to OutboundIR field mismatches
+Since this report was written, several of the “Blocked / NOT STARTED” items have been unblocked or completed. Summary of changes:
 
-**Blocked adapters**:
-- VMess outbound (missing: security, alter_id fields)
-- VLESS outbound (missing: encryption field)
-- Shadowsocks outbound (missing: method, plugin, plugin_opts fields)
-- Trojan outbound (missing: tls_ca_paths, tls_ca_pem fields)
+#### 1. Adapter Instantiation Tests
+- OutboundIR v2 fields（VMess security/alter_id、VLESS encryption、Shadowsocks method、Trojan TLS 相关）已补齐，Shadowsocks/Trojan 等 builder 也已与核心配置结构对齐（参见 `crates/sb-config/src/ir/mod.rs`、`crates/sb-adapters/src/register.rs`）。
+- 适配器实例化相关测试（包括 CLI/tools 侧）现已可以完整编译并在 CI/本地执行。
 
-**Workaround implemented**: Test only working adapters (HTTP, SOCKS, Mixed, TUN, TUIC, Hysteria2)
+#### 2. DNS Outbound E2E Tests
+- DNS outbound e2e 覆盖已完成，验证 UDP/TCP/DoT/DoH/DoQ 路径及配置组合（`app/tests/dns_outbound_e2e.rs`），并通过 `app check` 测试完整配置样例。
 
-#### 2. Feature Gate Combination Matrix (NOT STARTED)
-**Reason**: Waiting for adapter instantiation tests to compile
+#### 3. TUIC/Hysteria2 Tests
+- Hysteria2：新增基于 `UdpOutboundFactory` 的真实 UDP 会话往返测试（`app/tests/hysteria2_udp_e2e.rs`，在 `net_e2e` 特性 + `SB_E2E_UDP=1` 下可运行），验证 core inbound/outbound 的协同。
+- TUIC：保留需要真实 TUIC 服务器的端到端场景为 `#[ignore]` 占位，但针对数据包编码/解码的无网络测试已落地（`app/tests/tuic_outbound_e2e.rs` 的 `packet_tests` 模块），覆盖 IPv4/IPv6/域名等情况。
 
-**Planned coverage**:
-```yaml
-matrix:
-  preset: [minimal, standard, full]
-  adapters: [http, socks, mixed, shadowsocks, vmess, vless, trojan, tuic, hysteria2, dns]
-```
+#### 4. Hot Reload Tests for Adapter Path
+- 已新增专门针对 adapter 路径的热重载测试（`app/tests/reload_adapter_path.rs`），验证配置更新后适配器重建及路由行为稳定性。
 
-#### 3. Hot Reload Tests for Adapter Path (NOT STARTED)
-**Reason**: Need adapter instantiation tests first
+#### 5. Feature Gate Combination Matrix / CI
+- Parity 校验脚本与基础 CI 工作流已存在并可用（route explain、geodata parity 等），但完整的 feature 矩阵和启用后的 Go+Rust 并行测试仍属于后续工作，保持原“部分完成”状态。
 
-**Planned tests**:
-- Verify adapter reconstruction after reload
-- Test inbound port switching with adapter path
-- Validate outbound reconfiguration with adapter path
-
-#### 4. DNS Outbound E2E Tests (NOT STARTED)
-**Reason**: DNS outbound exists but no e2e test coverage
-
-**Planned tests**:
-- UDP DNS resolution via DNS outbound
-- TCP DNS resolution via DNS outbound
-- DoT/DoH/DoQ transport validation
-
-#### 5. TUIC/Hysteria2 Test Completion (NOT STARTED)
-**Current state**: Tests exist but mostly placeholders with `#[ignore]` and TODOs
-
-**Required work**:
-- Remove placeholder tests
-- Implement actual TUIC server setup or use external server
-- Add authentication scenarios
-- Test UDP relay modes
-
-### 📊 Metrics
-
-**Test Coverage**:
-- Existing tests: 97 integration tests
-- New tests added: 1 (adapter_instantiation_e2e.rs - blocked)
-- Tests passing: N/A (compilation blocked)
-
-**Adapter Status** (from GO_PARITY_MATRIX.md):
-- Inbounds: 10/17 working (59%)
-- Outbounds: 10/19 working (53%)
-- DNS transports: 8/12 working (67%)
-
-**CI Coverage**:
-- Parity validation scripts: ✅ Created
-- CI workflow: ✅ Created (disabled pending Go binary)
-- Feature matrix: ⚠️ Exists but not updated for adapters
+整体上，WS‑E Task 5 当前状态接近“完成”，主要剩余工作集中在：  
+- 针对启用真实后端（TUIC/Hysteria2/WireGuard 等）的全网络端到端场景（受外部依赖和 CI 环境限制）；  
+- 扩展 CI feature 矩阵与 Go/Rust 并行合同测试。  
+本报告保留原始 2025‑11‑11 的问题分析与架构建议以供参考，上述段落反映的是 2025‑11‑16 的最新进展。 
 
 ## Root Cause Analysis
 

@@ -159,7 +159,10 @@ impl QuicDialer {
 
     /// Create a QUIC dialer with default configuration
     pub fn with_default_config(server_name: &str) -> Result<Self, DialError> {
-        let config = QuicConfig { server_name: server_name.to_string(), ..Default::default() };
+        let config = QuicConfig {
+            server_name: server_name.to_string(),
+            ..Default::default()
+        };
         Self::new(config)
     }
 
@@ -280,9 +283,10 @@ impl AsyncWrite for QuicStreamAdapter {
         // We need to convert WriteError to io::Error
         match Pin::new(&mut self.send_stream).poll_write(cx, buf) {
             Poll::Ready(Ok(n)) => Poll::Ready(Ok(n)),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
-                format!("QUIC write error: {}", e),
-            ))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(format!(
+                "QUIC write error: {}",
+                e
+            )))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -290,9 +294,10 @@ impl AsyncWrite for QuicStreamAdapter {
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match Pin::new(&mut self.send_stream).poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
-                format!("QUIC flush error: {}", e),
-            ))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(format!(
+                "QUIC flush error: {}",
+                e
+            )))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -300,9 +305,10 @@ impl AsyncWrite for QuicStreamAdapter {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match Pin::new(&mut self.send_stream).poll_shutdown(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
-                format!("QUIC shutdown error: {}", e),
-            ))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(format!(
+                "QUIC shutdown error: {}",
+                e
+            )))),
             Poll::Pending => Poll::Pending,
         }
     }

@@ -10,9 +10,9 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
+use std::collections::VecDeque;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, time::interval};
-use std::collections::VecDeque;
 
 /// Handle traffic WebSocket connections
 pub async fn traffic_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>) -> Response {

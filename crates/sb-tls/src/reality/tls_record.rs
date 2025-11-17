@@ -241,22 +241,34 @@ impl ClientHello {
         Write::write_all(&mut buffer, &self.random)?;
 
         // Write session ID
-        write_u8(&mut buffer, u8::try_from(self.session_id.len()).unwrap_or(u8::MAX))?;
+        write_u8(
+            &mut buffer,
+            u8::try_from(self.session_id.len()).unwrap_or(u8::MAX),
+        )?;
         Write::write_all(&mut buffer, &self.session_id)?;
 
         // Write cipher suites
-        write_u16(&mut buffer, u16::try_from(self.cipher_suites.len() * 2).unwrap_or(u16::MAX))?;
+        write_u16(
+            &mut buffer,
+            u16::try_from(self.cipher_suites.len() * 2).unwrap_or(u16::MAX),
+        )?;
         for suite in &self.cipher_suites {
             write_u16(&mut buffer, *suite)?;
         }
 
         // Write compression methods
-        write_u8(&mut buffer, u8::try_from(self.compression_methods.len()).unwrap_or(u8::MAX))?;
+        write_u8(
+            &mut buffer,
+            u8::try_from(self.compression_methods.len()).unwrap_or(u8::MAX),
+        )?;
         Write::write_all(&mut buffer, &self.compression_methods)?;
 
         // Write extensions
         let extensions_data = self.serialize_extensions()?;
-        write_u16(&mut buffer, u16::try_from(extensions_data.len()).unwrap_or(u16::MAX))?;
+        write_u16(
+            &mut buffer,
+            u16::try_from(extensions_data.len()).unwrap_or(u16::MAX),
+        )?;
         Write::write_all(&mut buffer, &extensions_data)?;
 
         // Prepend handshake header
@@ -274,7 +286,10 @@ impl ClientHello {
 
         for ext in &self.extensions {
             write_u16(&mut buffer, ext.extension_type)?;
-            write_u16(&mut buffer, u16::try_from(ext.data.len()).unwrap_or(u16::MAX))?;
+            write_u16(
+                &mut buffer,
+                u16::try_from(ext.data.len()).unwrap_or(u16::MAX),
+            )?;
             Write::write_all(&mut buffer, &ext.data)?;
         }
 
@@ -354,7 +369,11 @@ impl TlsExtension {
     ) -> Self {
         let mut data = Vec::new();
         data.extend_from_slice(client_public_key);
-        data.extend_from_slice(&u16::try_from(short_id.len()).unwrap_or(u16::MAX).to_be_bytes());
+        data.extend_from_slice(
+            &u16::try_from(short_id.len())
+                .unwrap_or(u16::MAX)
+                .to_be_bytes(),
+        );
         data.extend_from_slice(short_id);
         data.extend_from_slice(auth_hash);
 

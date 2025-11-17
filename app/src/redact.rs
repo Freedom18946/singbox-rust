@@ -32,17 +32,21 @@ lazy_static! {
 pub fn redact_str(input: &str) -> String {
     let mut s = input.to_string();
     // key=value
-    s = KV_RE.replace_all(&s, |caps: &regex::Captures| {
-        format!("{}=***", &caps[1])
-    }).into_owned();
+    s = KV_RE
+        .replace_all(&s, |caps: &regex::Captures| format!("{}=***", &caps[1]))
+        .into_owned();
     // JSON fields
-    s = JSON_RE.replace_all(&s, |caps: &regex::Captures| {
-        format!("\"{}\": \"***\"", &caps[1])
-    }).into_owned();
+    s = JSON_RE
+        .replace_all(&s, |caps: &regex::Captures| {
+            format!("\"{}\": \"***\"", &caps[1])
+        })
+        .into_owned();
     // URL basic auth
-    s = URL_AUTH_RE.replace_all(&s, |caps: &regex::Captures| {
-        format!("{}{}:{}@", &caps[1], &caps[2], "***")
-    }).into_owned();
+    s = URL_AUTH_RE
+        .replace_all(&s, |caps: &regex::Captures| {
+            format!("{}{}:{}@", &caps[1], &caps[2], "***")
+        })
+        .into_owned();
     // Bearer
     s = BEARER_RE.replace_all(&s, "Bearer ***").into_owned();
     s
@@ -106,4 +110,3 @@ mod tests {
         assert!(r.contains("Bearer ***"));
     }
 }
-

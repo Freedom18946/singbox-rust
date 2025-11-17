@@ -1,0 +1,12 @@
+```console
+$ app route -c {fixtures}/minimal_good.json --dest example.com:443 --explain
+dest: example.com:443
+[..]outbound: direct
+
+$ app route -c {fixtures}/minimal_good.json --dest example.com:443 --explain --with-trace
+[..]trace[..]
+
+$ app route -c {fixtures}/minimal_good.json --dest example.com:53 --udp --explain
+dest: example.com:53
+[..]outbound: direct
+```

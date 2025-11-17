@@ -30,10 +30,10 @@
 
 pub mod cardinality; // Cardinality monitoring for label explosion prevention
 pub mod http; // HTTP 侧指标（入站/上游代理共用）
+pub mod inbound;
 pub mod server; // Metrics server implementation
 pub mod socks; // SOCKS 侧指标
-pub mod transfer; // 通用传输指标（带宽/字节数）
-pub mod inbound; // 入站统一错误指标
+pub mod transfer; // 通用传输指标（带宽/字节数） // 入站统一错误指标
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -64,7 +64,12 @@ fn guarded_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec
     })
 }
 
-fn guarded_histogram_vec(name: &str, help: &str, labels: &[&str], buckets: Vec<f64>) -> HistogramVec {
+fn guarded_histogram_vec(
+    name: &str,
+    help: &str,
+    labels: &[&str],
+    buckets: Vec<f64>,
+) -> HistogramVec {
     labels::ensure_allowed_labels(name, labels);
     let opts = HistogramOpts::new(name, help).buckets(buckets);
     #[allow(clippy::unwrap_used)]

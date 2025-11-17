@@ -106,8 +106,8 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::CircuitBreakerDialer;
+    use super::*;
     #[cfg(disabled_tests)]
     use std::sync::Arc;
 
@@ -154,7 +154,8 @@ mod tests {
                     Box<
                         dyn std::future::Future<
                                 Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
-                            > + Send + 'static,
+                            > + Send
+                            + 'static,
                     >,
                 >
         });
@@ -220,7 +221,8 @@ mod tests {
                     Box<
                         dyn std::future::Future<
                                 Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
-                            > + Send + 'static,
+                            > + Send
+                            + 'static,
                     >,
                 >
         });
@@ -262,7 +264,8 @@ mod tests {
                     Box<
                         dyn std::future::Future<
                                 Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
-                            > + Send + 'static,
+                            > + Send
+                            + 'static,
                     >,
                 >
         });

@@ -15,7 +15,14 @@ fn check_sarif_minimal_keys() {
 
     let out = Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", f.path().to_str().unwrap(), "--schema-v2-validate", "--format", "sarif"])
+        .args([
+            "check",
+            "-c",
+            f.path().to_str().unwrap(),
+            "--schema-v2-validate",
+            "--format",
+            "sarif",
+        ])
         .assert()
         .failure() // should be non-zero (code 2)
         .get_output()
@@ -24,11 +31,17 @@ fn check_sarif_minimal_keys() {
 
     let v: Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(v.get("version").and_then(|x| x.as_str()), Some("2.1.0"));
-    let runs = v.get("runs").and_then(|x| x.as_array()).expect("runs array");
+    let runs = v
+        .get("runs")
+        .and_then(|x| x.as_array())
+        .expect("runs array");
     assert!(!runs.is_empty());
     let run0 = &runs[0];
     assert!(run0.get("tool").is_some());
-    let results = run0.get("results").and_then(|x| x.as_array()).expect("results array");
+    let results = run0
+        .get("results")
+        .and_then(|x| x.as_array())
+        .expect("results array");
     assert!(!results.is_empty());
     let r0 = &results[0];
     assert!(r0.get("ruleId").is_some());

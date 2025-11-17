@@ -120,7 +120,10 @@ mod t_scaffold {
         assert_eq!(br.inbound_kinds.len(), 1);
         assert_eq!(br.inbound_kinds[0], "naive");
         let res = br.inbounds[0].serve();
-        assert!(res.is_err(), "naive inbound should not be supported under scaffold");
+        assert!(
+            res.is_err(),
+            "naive inbound should not be supported under scaffold"
+        );
     }
 }
 

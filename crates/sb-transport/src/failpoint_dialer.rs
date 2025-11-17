@@ -25,7 +25,9 @@ pub struct FailpointDialer<D: Dialer> {
 
 impl<D: Dialer> FailpointDialer<D> {
     /// Create a new failpoint dialer with default prefix
-    pub fn new(inner: D) -> Self { Self { inner } }
+    pub fn new(inner: D) -> Self {
+        Self { inner }
+    }
 }
 
 #[async_trait]

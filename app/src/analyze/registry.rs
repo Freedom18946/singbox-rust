@@ -14,7 +14,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
 
 /// builder 签名：输入 analyze 请求 JSON（或片段），返回补丁 JSON
 pub type BuilderFn = fn(&Value) -> Result<Value>;

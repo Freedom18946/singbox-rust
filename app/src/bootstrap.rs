@@ -219,10 +219,9 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                         token: token.clone(),
                                         password: ob.password.clone(),
                                         congestion_control: ob.congestion_control.clone(),
-                                        alpn: ob
-                                            .tls_alpn
-                                            .clone()
-                                            .or_else(|| ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw))),
+                                        alpn: ob.tls_alpn.clone().or_else(|| {
+                                            ob.alpn.as_ref().map(|raw| parse_alpn_tokens(raw))
+                                        }),
                                         skip_cert_verify: ob.skip_cert_verify.unwrap_or(false),
                                         sni: ob.tls_sni.clone(),
                                         tls_ca_paths: Vec::new(),

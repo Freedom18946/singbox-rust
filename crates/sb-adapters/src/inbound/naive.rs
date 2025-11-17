@@ -86,7 +86,7 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                                 debug!(%peer, error=%e, "naive: connection error");
                             }
                         }
-                        Err(e) => { 
+                        Err(e) => {
                             sb_core::metrics::http::record_error_display(&e);
                             sb_core::metrics::record_inbound_error_display("naive", &e);
                             warn!(%peer, error=%e, "naive: TLS handshake failed")
@@ -330,19 +330,24 @@ impl NaiveInboundAdapter {
     ///
     /// # Returns
     /// A boxed InboundService or an error if parameters are invalid.
-    pub fn new(param: &sb_core::adapter::InboundParam, router: Arc<router::RouterHandle>) -> Result<Box<dyn sb_core::adapter::InboundService>> {
+    pub fn new(
+        param: &sb_core::adapter::InboundParam,
+        router: Arc<router::RouterHandle>,
+    ) -> Result<Box<dyn sb_core::adapter::InboundService>> {
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
-        let listen: SocketAddr = listen_str.parse().map_err(|e| {
-            anyhow!("invalid listen address '{}': {}", listen_str, e)
-        })?;
+        let listen: SocketAddr = listen_str
+            .parse()
+            .map_err(|e| anyhow!("invalid listen address '{}': {}", listen_str, e))?;
 
         // Get TLS certificate and key (required for Naive)
         let (cert_pem, cert_path) = match (&param.tls_cert_pem, &param.tls_cert_path) {
             (Some(pem), _) => (Some(pem.clone()), None),
             (None, Some(path)) => (None, Some(path.clone())),
             (None, None) => {
-                return Err(anyhow!("Naive inbound requires TLS certificate (tls_cert_pem or tls_cert_path)"));
+                return Err(anyhow!(
+                    "Naive inbound requires TLS certificate (tls_cert_pem or tls_cert_path)"
+                ));
             }
         };
 
@@ -350,13 +355,18 @@ impl NaiveInboundAdapter {
             (Some(pem), _) => (Some(pem.clone()), None),
             (None, Some(path)) => (None, Some(path.clone())),
             (None, None) => {
-                return Err(anyhow!("Naive inbound requires TLS private key (tls_key_pem or tls_key_path)"));
+                return Err(anyhow!(
+                    "Naive inbound requires TLS private key (tls_key_pem or tls_key_path)"
+                ));
             }
         };
 
         // Create TLS configuration using sb-transport infrastructure
         // Naive requires HTTP/2 ALPN
-        let alpn = param.tls_alpn.clone().unwrap_or_else(|| vec!["h2".to_string()]);
+        let alpn = param
+            .tls_alpn
+            .clone()
+            .unwrap_or_else(|| vec!["h2".to_string()]);
 
         let standard_tls = sb_transport::tls::StandardTlsConfig {
             server_name: param.tls_server_name.clone(),
@@ -413,9 +423,9 @@ impl sb_core::adapter::InboundService for NaiveInboundAdapter {
             }
             Err(_) => {
                 // No tokio runtime, create one and block on it
-                let runtime = tokio::runtime::Runtime::new()
-                    .map_err(std::io::Error::other)?;
-                runtime.block_on(serve(config, stop_rx))
+                let runtime = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
+                runtime
+                    .block_on(serve(config, stop_rx))
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
             }
         }

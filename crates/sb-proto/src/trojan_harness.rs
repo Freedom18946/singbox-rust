@@ -53,7 +53,12 @@ pub struct ConnectReport {
 }
 
 /// Performs TCP-only connection and writes Trojan hello packet.
-async fn tcp_hello(host: &str, port: u16, password: &str, duration: Duration) -> Result<(), HarnessError> {
+async fn tcp_hello(
+    host: &str,
+    port: u16,
+    password: &str,
+    duration: Duration,
+) -> Result<(), HarnessError> {
     let dialer = TcpDialer;
     let mut stream = timeout(duration, dialer.connect(host, port))
         .await

@@ -80,7 +80,8 @@ async fn main() -> Result<()> {
     let dns_applied = apply_dns_env_from_config(&val);
 
     // 2.2) 如果未使用配置驱动 DNS，且用户要求 stub，则初始化轻量 stub
-    if !dns_applied && (args.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1")) {
+    if !dns_applied && (args.dns_from_env || std::env::var("DNS_STUB").ok().as_deref() == Some("1"))
+    {
         let ttl_secs: u64 = std::env::var("DNS_CACHE_TTL")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -94,7 +95,9 @@ async fn main() -> Result<()> {
     // 3.0) Debug: 打印每个 outbound 的推导传输链（便于诊断）。
     // 使用 tracing debug 级别输出；可用 RUST_LOG=sb_core::transport=debug 查看。
     let want_info = args.print_transport
-        || std::env::var("SB_TRANSPORT_PLAN").ok().is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+        || std::env::var("SB_TRANSPORT_PLAN")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
     for ob in &ir.outbounds {
         let name = ob.name.clone().unwrap_or_else(|| ob.ty_str().to_string());
         let kind = ob.ty_str();
@@ -330,14 +333,19 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
         }
     }
     let mut applied = false;
-    let dns = match doc.get("dns") { Some(v) => v, None => return false };
+    let dns = match doc.get("dns") {
+        Some(v) => v,
+        None => return false,
+    };
     // servers: [{ address: "udp://1.1.1.1" | "https://1.1.1.1/dns-query" | "dot://host:853" | "doq://host:853@name" | "system" | "rcode://..." }]
     if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
         // Build pool tokens (best-effort) and also map first usable server to SB_DNS_MODE* envs
         let mut pool_tokens: Vec<String> = Vec::new();
         let mut first_mode_set = false;
         for s in servers {
-            let Some(addr_raw) = s.get("address").and_then(|v| v.as_str()) else { continue };
+            let Some(addr_raw) = s.get("address").and_then(|v| v.as_str()) else {
+                continue;
+            };
             if addr_raw.starts_with("rcode://") {
                 // Skip block/rcode entries for upstream pool
                 continue;
@@ -345,7 +353,11 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
             // Normalize and push to pool tokens (for advanced pool resolver)
             if let Some(rest) = addr_raw.strip_prefix("udp://") {
                 // ensure port (default 53)
-                let token = if rest.contains(':') { format!("udp:{rest}") } else { format!("udp:{rest}:53") };
+                let token = if rest.contains(':') {
+                    format!("udp:{rest}")
+                } else {
+                    format!("udp:{rest}:53")
+                };
                 pool_tokens.push(token.clone());
                 if !first_mode_set {
                     set_if_unset("SB_DNS_MODE", "udp");
@@ -368,9 +380,16 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
                 }
                 continue;
             }
-            if let Some(rest) = addr_raw.strip_prefix("dot://").or_else(|| addr_raw.strip_prefix("tls://")) {
+            if let Some(rest) = addr_raw
+                .strip_prefix("dot://")
+                .or_else(|| addr_raw.strip_prefix("tls://"))
+            {
                 // ensure port (default 853)
-                let token = if rest.contains(':') { format!("dot:{rest}") } else { format!("dot:{rest}:853") };
+                let token = if rest.contains(':') {
+                    format!("dot:{rest}")
+                } else {
+                    format!("dot:{rest}:853")
+                };
                 pool_tokens.push(token.clone());
                 if !first_mode_set {
                     set_if_unset("SB_DNS_MODE", "dot");
@@ -381,7 +400,10 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
                 }
                 continue;
             }
-            if let Some(rest) = addr_raw.strip_prefix("doq://").or_else(|| addr_raw.strip_prefix("quic://")) {
+            if let Some(rest) = addr_raw
+                .strip_prefix("doq://")
+                .or_else(|| addr_raw.strip_prefix("quic://"))
+            {
                 // Syntax: doq://host:port[@sni]
                 let token = format!("doq:{rest}");
                 pool_tokens.push(token.clone());
@@ -456,16 +478,22 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
         let mut parts: Vec<String> = Vec::new();
         for (host, val) in hosts {
             let host = host.trim().to_ascii_lowercase();
-            if host.is_empty() { continue; }
+            if host.is_empty() {
+                continue;
+            }
             let mut ips: Vec<String> = Vec::new();
             match val {
                 serde_json::Value::String(s) => {
-                    if !s.trim().is_empty() { ips.push(s.trim().to_string()); }
+                    if !s.trim().is_empty() {
+                        ips.push(s.trim().to_string());
+                    }
                 }
                 serde_json::Value::Array(arr) => {
                     for it in arr {
                         if let Some(s) = it.as_str() {
-                            if !s.trim().is_empty() { ips.push(s.trim().to_string()); }
+                            if !s.trim().is_empty() {
+                                ips.push(s.trim().to_string());
+                            }
                         }
                     }
                 }
@@ -536,7 +564,11 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
             applied = true;
         }
         if let Some(v) = pool.get("he_order").and_then(|x| x.as_str()) {
-            let norm = if v.eq_ignore_ascii_case("AAAA_FIRST") { "AAAA_FIRST" } else { "A_FIRST" };
+            let norm = if v.eq_ignore_ascii_case("AAAA_FIRST") {
+                "AAAA_FIRST"
+            } else {
+                "A_FIRST"
+            };
             set_if_unset("SB_DNS_HE_ORDER", norm);
             applied = true;
         }
@@ -563,7 +595,11 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
 
     // cache controls
     if let Some(cache) = dns.get("cache").and_then(|v| v.as_object()) {
-        if cache.get("enable").and_then(|x| x.as_bool()).unwrap_or(false) {
+        if cache
+            .get("enable")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false)
+        {
             set_if_unset("SB_DNS_CACHE_ENABLE", "1");
             applied = true;
         }
@@ -581,12 +617,18 @@ fn apply_dns_env_from_config(doc: &serde_json::Value) -> bool {
 
 /// Parse integer seconds from number or from simple string (supports suffix s/m/h)
 fn num_or_string_secs(v: &serde_json::Value) -> Option<u64> {
-    if let Some(n) = v.as_u64() { return Some(n); }
+    if let Some(n) = v.as_u64() {
+        return Some(n);
+    }
     if let Some(s) = v.as_str() {
         let s = s.trim();
-        if s.is_empty() { return None; }
+        if s.is_empty() {
+            return None;
+        }
         // Try pure number-as-seconds
-        if let Ok(n) = s.parse::<u64>() { return Some(n); }
+        if let Ok(n) = s.parse::<u64>() {
+            return Some(n);
+        }
         // Simple suffix parsing
         let (num, suf) = s.split_at(s.len().saturating_sub(1));
         if let Ok(n) = num.parse::<u64>() {

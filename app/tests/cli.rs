@@ -37,11 +37,11 @@ fn cli_tests() {
         let _ = tx.send(());
     });
 
-    if rx
-        .recv_timeout(Duration::from_secs(timeout_secs))
-        .is_err()
-    {
-        eprintln!("cli trycmd tests timed out after {}s; aborting", timeout_secs);
+    if rx.recv_timeout(Duration::from_secs(timeout_secs)).is_err() {
+        eprintln!(
+            "cli trycmd tests timed out after {}s; aborting",
+            timeout_secs
+        );
         std::process::exit(101);
     }
 }

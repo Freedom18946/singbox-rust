@@ -6,7 +6,10 @@
 use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -15,9 +18,9 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::timeout;
 
+use sb_core::net::udp_nat_core::{UdpFlowKey, UdpNat};
 use sb_core::outbound::OutboundConnector;
 use sb_core::types::{ConnCtx, Endpoint, Host, Network};
-use sb_core::net::udp_nat_core::{UdpNat, UdpFlowKey};
 use sb_platform::tun::{AsyncTunDevice, TunConfig, TunError};
 
 /// Enhanced TUN configuration with packet forwarding capabilities
@@ -52,12 +55,24 @@ pub struct EnhancedTunConfig {
     pub buffer_size: usize,
 }
 
-fn default_mtu() -> u32 { 1500 }
-fn default_tcp_timeout() -> u64 { 30_000 }
-fn default_udp_timeout() -> u64 { 60_000 }
-fn default_max_tcp_connections() -> usize { 1024 }
-fn default_max_udp_sessions() -> usize { 2048 }
-fn default_buffer_size() -> usize { 65536 }
+fn default_mtu() -> u32 {
+    1500
+}
+fn default_tcp_timeout() -> u64 {
+    30_000
+}
+fn default_udp_timeout() -> u64 {
+    60_000
+}
+fn default_max_tcp_connections() -> usize {
+    1024
+}
+fn default_max_udp_sessions() -> usize {
+    2048
+}
+fn default_buffer_size() -> usize {
+    65536
+}
 
 impl Default for EnhancedTunConfig {
     fn default() -> Self {
@@ -116,8 +131,12 @@ impl Clone for TunStats {
         TunStats {
             packets_received: AtomicU64::new(self.packets_received.load(Ordering::Relaxed)),
             packets_sent: AtomicU64::new(self.packets_sent.load(Ordering::Relaxed)),
-            tcp_connections_opened: AtomicU64::new(self.tcp_connections_opened.load(Ordering::Relaxed)),
-            tcp_connections_closed: AtomicU64::new(self.tcp_connections_closed.load(Ordering::Relaxed)),
+            tcp_connections_opened: AtomicU64::new(
+                self.tcp_connections_opened.load(Ordering::Relaxed),
+            ),
+            tcp_connections_closed: AtomicU64::new(
+                self.tcp_connections_closed.load(Ordering::Relaxed),
+            ),
             udp_sessions_created: AtomicU64::new(self.udp_sessions_created.load(Ordering::Relaxed)),
             udp_sessions_expired: AtomicU64::new(self.udp_sessions_expired.load(Ordering::Relaxed)),
             bytes_received: AtomicU64::new(self.bytes_received.load(Ordering::Relaxed)),
@@ -159,10 +178,7 @@ pub struct ParsedPacket {
 
 impl EnhancedTunInbound {
     /// Create a new enhanced TUN inbound
-    pub fn new(
-        config: EnhancedTunConfig,
-        outbound: Arc<dyn OutboundConnector>,
-    ) -> Self {
+    pub fn new(config: EnhancedTunConfig, outbound: Arc<dyn OutboundConnector>) -> Self {
         let udp_nat = UdpNat::new(
             config.max_udp_sessions,
             Duration::from_millis(config.udp_timeout_ms),
@@ -228,7 +244,8 @@ impl EnhancedTunInbound {
                 udp_nat,
                 stats,
                 &mut shutdown_rx,
-            ).await
+            )
+            .await
         });
 
         // Start cleanup task for expired connections
@@ -313,12 +330,17 @@ impl EnhancedTunInbound {
         }
 
         let protocol = data[9];
-        let src_ip = IpAddr::V4(std::net::Ipv4Addr::from([data[12], data[13], data[14], data[15]]));
-        let dst_ip = IpAddr::V4(std::net::Ipv4Addr::from([data[16], data[17], data[18], data[19]]));
+        let src_ip = IpAddr::V4(std::net::Ipv4Addr::from([
+            data[12], data[13], data[14], data[15],
+        ]));
+        let dst_ip = IpAddr::V4(std::net::Ipv4Addr::from([
+            data[16], data[17], data[18], data[19],
+        ]));
 
         let (src_port, dst_port) = if data.len() >= ihl + 4 {
             match protocol {
-                6 | 17 => { // TCP or UDP
+                6 | 17 => {
+                    // TCP or UDP
                     let src_port = u16::from_be_bytes([data[ihl], data[ihl + 1]]);
                     let dst_port = u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
                     (Some(src_port), Some(dst_port))
@@ -356,7 +378,8 @@ impl EnhancedTunInbound {
 
         let (src_port, dst_port) = if data.len() >= 44 {
             match next_header {
-                6 | 17 => { // TCP or UDP
+                6 | 17 => {
+                    // TCP or UDP
                     let src_port = u16::from_be_bytes([data[40], data[41]]);
                     let dst_port = u16::from_be_bytes([data[42], data[43]]);
                     (Some(src_port), Some(dst_port))
@@ -400,7 +423,8 @@ impl EnhancedTunInbound {
         let dst_endpoint = Endpoint::new(Host::ip(packet.dst_ip), dst_port);
 
         match packet.protocol {
-            6 => { // TCP
+            6 => {
+                // TCP
                 Self::handle_tcp_packet(
                     packet,
                     src_addr,
@@ -409,9 +433,11 @@ impl EnhancedTunInbound {
                     tcp_connections,
                     stats,
                     config,
-                ).await;
+                )
+                .await;
             }
-            17 => { // UDP
+            17 => {
+                // UDP
                 Self::handle_udp_packet(
                     packet,
                     src_addr,
@@ -420,7 +446,8 @@ impl EnhancedTunInbound {
                     udp_nat,
                     stats,
                     config,
-                ).await;
+                )
+                .await;
             }
             _ => {
                 // For now, just log unsupported protocols
@@ -454,7 +481,8 @@ impl EnhancedTunInbound {
                     tcp_connections,
                     stats,
                     config,
-                ).await;
+                )
+                .await;
             }
         }
     }
@@ -480,8 +508,10 @@ impl EnhancedTunInbound {
         // Connect to outbound
         let outbound_stream = match timeout(
             Duration::from_millis(config.tcp_timeout_ms),
-            selected_outbound.connect_tcp(&ctx)
-        ).await {
+            selected_outbound.connect_tcp(&ctx),
+        )
+        .await
+        {
             Ok(Ok(stream)) => stream,
             Ok(Err(_e)) => {
                 // Failed to connect to outbound
@@ -532,7 +562,8 @@ impl EnhancedTunInbound {
                 outbound_stream,
                 &mut shutdown_rx,
                 &stats_clone,
-            ).await;
+            )
+            .await;
 
             if let Err(_e) = result {
                 // TCP tunnel ended with error
@@ -543,7 +574,9 @@ impl EnhancedTunInbound {
                 let mut connections = tcp_connections_clone.write().await;
                 connections.remove(&connection_id);
             }
-            stats_clone.tcp_connections_closed.fetch_add(1, Ordering::Relaxed);
+            stats_clone
+                .tcp_connections_closed
+                .fetch_add(1, Ordering::Relaxed);
 
             // TCP tunnel closed
         });
@@ -622,7 +655,8 @@ impl EnhancedTunInbound {
                 udp_nat,
                 stats,
                 config,
-            ).await;
+            )
+            .await;
         }
 
         // Forward UDP packet
@@ -645,14 +679,16 @@ impl EnhancedTunInbound {
             stats.udp_sessions_created.fetch_add(1, Ordering::Relaxed),
             Network::Udp,
             flow_key.src,
-            dst_endpoint.clone()
+            dst_endpoint.clone(),
         );
 
         // Connect to outbound
         let _udp_transport = match timeout(
             Duration::from_millis(config.tcp_timeout_ms),
-            outbound.connect_udp(&ctx)
-        ).await {
+            outbound.connect_udp(&ctx),
+        )
+        .await
+        {
             Ok(Ok(transport)) => transport,
             Ok(Err(_e)) => {
                 // Failed to create UDP connection
@@ -691,7 +727,9 @@ impl EnhancedTunInbound {
         }
 
         stats.packets_sent.fetch_add(1, Ordering::Relaxed);
-        stats.bytes_sent.fetch_add(payload.len() as u64, Ordering::Relaxed);
+        stats
+            .bytes_sent
+            .fetch_add(payload.len() as u64, Ordering::Relaxed);
 
         // In real implementation: forward payload to outbound UDP transport
         // Forwarded UDP packet
@@ -738,7 +776,9 @@ impl EnhancedTunInbound {
                     let mut nat = udp_nat.lock().await;
                     let expired_count = nat.evict_expired();
                     if expired_count > 0 {
-                        stats.udp_sessions_expired.fetch_add(expired_count as u64, Ordering::Relaxed);
+                        stats
+                            .udp_sessions_expired
+                            .fetch_add(expired_count as u64, Ordering::Relaxed);
                         // Cleaned up expired UDP sessions
                     }
                 }
@@ -819,18 +859,24 @@ mod tests {
         // Create a minimal IPv4 TCP packet
         let mut packet = vec![0u8; 40];
         packet[0] = 0x45; // Version 4, IHL 5
-        packet[9] = 6;    // TCP protocol
+        packet[9] = 6; // TCP protocol
         packet[12..16].copy_from_slice(&[192, 168, 1, 1]); // Source IP
-        packet[16..20].copy_from_slice(&[8, 8, 8, 8]);     // Dest IP
-        packet[20..22].copy_from_slice(&[0x1F, 0x90]);     // Source port 8080
-        packet[22..24].copy_from_slice(&[0x00, 0x50]);     // Dest port 80
+        packet[16..20].copy_from_slice(&[8, 8, 8, 8]); // Dest IP
+        packet[20..22].copy_from_slice(&[0x1F, 0x90]); // Source port 8080
+        packet[22..24].copy_from_slice(&[0x00, 0x50]); // Dest port 80
 
         let parsed = EnhancedTunInbound::parse_packet(&packet).unwrap();
 
         assert_eq!(parsed.version, 4);
         assert_eq!(parsed.protocol, 6);
-        assert_eq!(parsed.src_ip, IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 1)));
-        assert_eq!(parsed.dst_ip, IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)));
+        assert_eq!(
+            parsed.src_ip,
+            IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 1))
+        );
+        assert_eq!(
+            parsed.dst_ip,
+            IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8))
+        );
         assert_eq!(parsed.src_port, Some(8080));
         assert_eq!(parsed.dst_port, Some(80));
     }
@@ -840,12 +886,13 @@ mod tests {
         // Create a minimal IPv6 TCP packet
         let mut packet = vec![0u8; 60];
         packet[0] = 0x60; // Version 6
-        packet[6] = 6;    // Next header: TCP
+        packet[6] = 6; // Next header: TCP
 
         // Source IPv6: ::1
         packet[24..40].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         // Dest IPv6: 2001:db8::1
-        packet[8..24].copy_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        packet[8..24]
+            .copy_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
 
         packet[40..42].copy_from_slice(&[0x1F, 0x90]); // Source port 8080
         packet[42..44].copy_from_slice(&[0x00, 0x50]); // Dest port 80
@@ -878,8 +925,14 @@ mod tests {
         let tun_inbound = EnhancedTunInbound::new(config, outbound);
 
         // Increment some statistics
-        tun_inbound.stats.packets_received.fetch_add(5, Ordering::Relaxed);
-        tun_inbound.stats.bytes_sent.fetch_add(1024, Ordering::Relaxed);
+        tun_inbound
+            .stats
+            .packets_received
+            .fetch_add(5, Ordering::Relaxed);
+        tun_inbound
+            .stats
+            .bytes_sent
+            .fetch_add(1024, Ordering::Relaxed);
 
         let stats = tun_inbound.get_stats();
         assert_eq!(stats.packets_received, 5);

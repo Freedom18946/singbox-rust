@@ -49,10 +49,7 @@ fn test_direct_inbound_instantiation() {
         );
 
         let service = result.unwrap();
-        println!(
-            "✓ Direct inbound successfully instantiated: {:?}",
-            service
-        );
+        println!("✓ Direct inbound successfully instantiated: {:?}", service);
 
         // Verify the service has expected properties
         assert!(service.active_connections().is_some());

@@ -73,7 +73,8 @@ pub async fn dry_connect_test(p: &Profile, target: Option<&str>) -> String {
     let test_target = target.unwrap_or(DEFAULT_TEST_TARGET);
 
     for outbound in &p.outbounds {
-        let test_result = TestResult::from_outbound(&outbound.kind, &outbound.name, test_target).await;
+        let test_result =
+            TestResult::from_outbound(&outbound.kind, &outbound.name, test_target).await;
         let elapsed_str = test_result.elapsed_ms.to_string();
         let error_str = test_result.error_msg.as_deref().unwrap_or("");
 
@@ -148,7 +149,8 @@ pub async fn bindings_enhanced_minijson(
         let kind_lower = outbound.kind.to_lowercase();
 
         if test_connect {
-            let test_result = TestResult::from_outbound(&outbound.kind, &outbound.name, test_target).await;
+            let test_result =
+                TestResult::from_outbound(&outbound.kind, &outbound.name, test_target).await;
             let elapsed_str = test_result.elapsed_ms.to_string();
 
             let item = if let Some(err) = &test_result.error_msg {

@@ -71,20 +71,20 @@ pub async fn serve(cfg: TproxyConfig, mut stop_rx: mpsc::Receiver<()>) -> Result
         select! {
             _ = stop_rx.recv() => break,
             r = listener.accept() => {
-                let (cli, peer) = match r { 
-                    Ok(v) => v, 
-                    Err(e) => { 
-                        warn!(error=%e, "tproxy: accept error"); 
+                let (cli, peer) = match r {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(error=%e, "tproxy: accept error");
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("tproxy", &e);
-                        continue; 
-                    } 
+                        continue;
+                    }
                 };
                 tokio::spawn(async move {
-                    if let Err(e) = handle_conn(cli, peer).await { 
+                    if let Err(e) = handle_conn(cli, peer).await {
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("tproxy", &e);
-                        warn!(%peer, error=%e, "tproxy: session error"); 
+                        warn!(%peer, error=%e, "tproxy: session error");
                     }
                 });
             }

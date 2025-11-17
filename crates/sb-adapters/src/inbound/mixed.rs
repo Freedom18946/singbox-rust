@@ -147,7 +147,7 @@ async fn handle_mixed_conn(
             sb_core::metrics::http::record_error_display(&e);
             sb_core::metrics::record_inbound_error_display("mixed", &e);
             Err(e)
-        },
+        }
     }
 }
 

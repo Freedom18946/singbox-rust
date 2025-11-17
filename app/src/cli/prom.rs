@@ -88,7 +88,8 @@ pub fn main(a: PromArgs) -> Result<()> {
             json,
         } => {
             // We are already in a Tokio runtime (app main), so we can block_on safely.
-            tokio::runtime::Handle::current().block_on(scrape(url, filter, select, labels, jsonl, json))
+            tokio::runtime::Handle::current()
+                .block_on(scrape(url, filter, select, labels, jsonl, json))
         }
         PromCmd::Hist {
             url,
@@ -96,7 +97,9 @@ pub fn main(a: PromArgs) -> Result<()> {
             labels,
             group_by,
             format,
-        } => tokio::runtime::Handle::current().block_on(hist(metrics, url, labels, group_by, format)),
+        } => {
+            tokio::runtime::Handle::current().block_on(hist(metrics, url, labels, group_by, format))
+        }
     }
 }
 

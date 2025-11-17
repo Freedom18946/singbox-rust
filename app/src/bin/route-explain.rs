@@ -73,7 +73,11 @@ fn main() {
     let net = if proto == "udp" { "udp" } else { "tcp" };
     // 目的地优先级：--host | --sni | --ip 拼接端口
     let base_host = host_opt.or(sni).or_else(|| ip.map(|i| i.to_string()));
-    let dest = if let Some(h) = base_host { format!("{}:{}", h, port) } else { format!("{}:{}","",port) };
+    let dest = if let Some(h) = base_host {
+        format!("{}:{}", h, port)
+    } else {
+        format!("{}:{}", "", port)
+    };
 
     // ExplainEngine 需要完整 Config；此工具作为开发辅助，允许使用空 ConfigIR（默认 direct）
     let cfg = sb_config::Config::default();
@@ -84,7 +88,10 @@ fn main() {
         "dot" => {
             // 生成简化版 dot 输出（仅包含链路与命中规则）
             println!("digraph explain {{");
-            println!("  info [label=\"dest: {}\\noutbound: {}\\nrule:{}\"];", res.dest, res.outbound, res.matched_rule);
+            println!(
+                "  info [label=\"dest: {}\\noutbound: {}\\nrule:{}\"];",
+                res.dest, res.outbound, res.matched_rule
+            );
             for (idx, ch) in res.chain.iter().enumerate() {
                 println!("  c{idx} [label=\"{}\"];", ch);
                 if idx == 0 {

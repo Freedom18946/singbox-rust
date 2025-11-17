@@ -49,7 +49,9 @@ async fn test_monitoring_system_integration() -> anyhow::Result<()> {
 }
 
 /// Test traffic monitoring functionality
-async fn test_traffic_monitoring(monitoring: &sb_api::monitoring::MonitoringSystemHandle) -> anyhow::Result<()> {
+async fn test_traffic_monitoring(
+    monitoring: &sb_api::monitoring::MonitoringSystemHandle,
+) -> anyhow::Result<()> {
     // Subscribe to traffic updates
     let mut traffic_rx = monitoring.subscribe_traffic();
 
@@ -82,7 +84,9 @@ async fn test_traffic_monitoring(monitoring: &sb_api::monitoring::MonitoringSyst
 }
 
 /// Test connection monitoring functionality
-async fn test_connection_monitoring(monitoring: &sb_api::monitoring::MonitoringSystemHandle) -> anyhow::Result<()> {
+async fn test_connection_monitoring(
+    monitoring: &sb_api::monitoring::MonitoringSystemHandle,
+) -> anyhow::Result<()> {
     // Subscribe to connection updates
     let mut connection_rx = monitoring.subscribe_connections();
 
@@ -125,9 +129,15 @@ async fn test_connection_monitoring(monitoring: &sb_api::monitoring::MonitoringS
 
     // Verify connection update is received
     let connection_update = timeout(Duration::from_millis(6000), connection_rx.recv()).await;
-    assert!(connection_update.is_ok(), "Should receive connection update");
+    assert!(
+        connection_update.is_ok(),
+        "Should receive connection update"
+    );
 
-    let received_connection = match connection_update { Ok(Ok(c)) => c, _ => return Ok(()) };
+    let received_connection = match connection_update {
+        Ok(Ok(c)) => c,
+        _ => return Ok(()),
+    };
     assert_eq!(
         received_connection.id, connection_id,
         "Connection ID should match"
@@ -164,7 +174,9 @@ async fn test_connection_monitoring(monitoring: &sb_api::monitoring::MonitoringS
 }
 
 /// Test performance metrics functionality
-async fn test_performance_metrics(monitoring: &sb_api::monitoring::MonitoringSystemHandle) -> anyhow::Result<()> {
+async fn test_performance_metrics(
+    monitoring: &sb_api::monitoring::MonitoringSystemHandle,
+) -> anyhow::Result<()> {
     // Get performance metrics
     let metrics = monitoring.get_performance_metrics().await;
 
@@ -224,7 +236,10 @@ async fn test_clash_api_integration(
 ) -> anyhow::Result<()> {
     // Create Clash API server with monitoring
     let clash_server = ClashApiServer::with_monitoring(config.clone(), monitoring.clone());
-    assert!(clash_server.is_ok(), "Should create Clash API server with monitoring");
+    assert!(
+        clash_server.is_ok(),
+        "Should create Clash API server with monitoring"
+    );
     let server = clash_server?;
     let state = server.state();
 
@@ -255,7 +270,10 @@ async fn test_v2ray_api_integration(
 ) -> anyhow::Result<()> {
     // Create V2Ray API server with monitoring
     let v2ray_server = SimpleV2RayApiServer::with_monitoring(config.clone(), monitoring.clone());
-    assert!(v2ray_server.is_ok(), "Should create V2Ray API server with monitoring");
+    assert!(
+        v2ray_server.is_ok(),
+        "Should create V2Ray API server with monitoring"
+    );
     let server = v2ray_server?;
 
     // Test V2Ray stats operations with monitoring integration
@@ -293,7 +311,10 @@ async fn test_v2ray_api_integration(
     // Verify stats update is received
     let stats_update = timeout(Duration::from_millis(100), v2ray_stats_rx.recv()).await;
     assert!(stats_update.is_ok(), "Should receive V2Ray stats update");
-    let stat = match stats_update { Ok(Ok(s)) => s, _ => return Ok(()) };
+    let stat = match stats_update {
+        Ok(Ok(s)) => s,
+        _ => return Ok(()),
+    };
     assert_eq!(stat.name, "test_counter");
     assert_eq!(stat.value, 1000);
     Ok(())

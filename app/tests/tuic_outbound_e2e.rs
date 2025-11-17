@@ -10,9 +10,9 @@
 
 #[cfg(feature = "adapter-tuic")]
 mod tuic_tests {
-    use uuid::Uuid;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
+    use uuid::Uuid;
 
     /// Test TCP proxy through TUIC outbound
     #[tokio::test]
@@ -201,8 +201,8 @@ mod tuic_tests {
 // Packet encoding tests (don't require full TUIC implementation)
 #[cfg(feature = "adapter-tuic")]
 mod packet_tests {
-    use uuid::Uuid;
     use sb_adapters::OutboundConnector;
+    use uuid::Uuid;
 
     /// Test TUIC packet encoding/decoding
     #[tokio::test]

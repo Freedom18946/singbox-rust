@@ -9,9 +9,27 @@ use std::sync::LazyLock;
 static ALLOWED_LABEL_KEYS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
         // Common keys
-        "method", "status", "class", "kind", "result", "protocol", "cipher", "operation",
-        "outbound", "reason", "mode", "place", "shard", "state", "dir", "qtype",
-        "from_cache", "adapter", "category", "chan", "proxy",
+        "method",
+        "status",
+        "class",
+        "kind",
+        "result",
+        "protocol",
+        "cipher",
+        "operation",
+        "outbound",
+        "reason",
+        "mode",
+        "place",
+        "shard",
+        "state",
+        "dir",
+        "qtype",
+        "from_cache",
+        "adapter",
+        "category",
+        "chan",
+        "proxy",
     ])
 });
 
@@ -25,4 +43,3 @@ pub fn ensure_allowed_labels(metric: &str, labels: &[&str]) {
         }
     }
 }
-

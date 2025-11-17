@@ -23,7 +23,11 @@ impl Service for StubService {
     }
 
     fn start(&self, _stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Err(format!("service '{}' ({}) is not implemented in this build", self.tag, self.ty_str).into())
+        Err(format!(
+            "service '{}' ({}) is not implemented in this build",
+            self.tag, self.ty_str
+        )
+        .into())
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -34,10 +38,7 @@ impl Service for StubService {
 /// Build a Resolved service stub.
 ///
 /// Returns `Some` and logs a warning that Resolved is not implemented.
-pub fn build_resolved_service(
-    ir: &ServiceIR,
-    _ctx: &ServiceContext,
-) -> Option<Arc<dyn Service>> {
+pub fn build_resolved_service(ir: &ServiceIR, _ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
     let tag = ir.tag.as_deref().unwrap_or("resolved");
     tracing::warn!(
         service_type = "resolved",
@@ -55,10 +56,7 @@ pub fn build_resolved_service(
 /// Build a SSM API service stub.
 ///
 /// Returns `Some` and logs a warning that SSM API is not implemented.
-pub fn build_ssmapi_service(
-    ir: &ServiceIR,
-    _ctx: &ServiceContext,
-) -> Option<Arc<dyn Service>> {
+pub fn build_ssmapi_service(ir: &ServiceIR, _ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
     let tag = ir.tag.as_deref().unwrap_or("ssmapi");
     tracing::warn!(
         service_type = "ssmapi",
@@ -76,10 +74,7 @@ pub fn build_ssmapi_service(
 /// Build a DERP service stub.
 ///
 /// Returns `Some` and logs a warning that DERP is not implemented.
-pub fn build_derp_service(
-    ir: &ServiceIR,
-    _ctx: &ServiceContext,
-) -> Option<Arc<dyn Service>> {
+pub fn build_derp_service(ir: &ServiceIR, _ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
     let tag = ir.tag.as_deref().unwrap_or("derp");
     tracing::warn!(
         service_type = "derp",

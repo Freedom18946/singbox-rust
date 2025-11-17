@@ -136,10 +136,7 @@ pub fn basic_verify<P: AsRef<Path>>(p: P) -> Result<serde_json::Value> {
     kv.truncate(5);
 
     // 旧格式（向后兼容）
-    let modes: serde_json::Value = kv
-        .iter()
-        .map(|(k, v)| serde_json::json!({k: *v}))
-        .collect();
+    let modes: serde_json::Value = kv.iter().map(|(k, v)| serde_json::json!({k: *v})).collect();
 
     // 新格式（更清晰）
     let head8_top = kv
@@ -200,7 +197,7 @@ pub fn replay_decode<P: AsRef<Path>>(
         let f = item?;
 
         if matches!(f.dir, FrameDir::Rx) {
-            frames += 1;  // 只计数 RX 帧
+            frames += 1; // 只计数 RX 帧
 
             // 用 tail8/head8 还原一个最小切片（与 loopback 生成规则解耦）
             // 这里不做真实反序列化，只校验 decode_ack 的容错能力

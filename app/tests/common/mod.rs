@@ -15,6 +15,6 @@
 //! use common::http::get;
 //! ```
 
-pub mod workspace;
-pub mod http;
 pub mod fixtures;
+pub mod http;
+pub mod workspace;

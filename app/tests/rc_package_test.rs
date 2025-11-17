@@ -304,7 +304,7 @@ fn test_rc_package_integration() {
 
     if !sb_version_exists {
         let build_output = Command::new("cargo")
-        .args(["build", "--bin", "sb-version"])
+            .args(["build", "--bin", "sb-version"])
             .output()
             .expect("Failed to build sb-version");
 

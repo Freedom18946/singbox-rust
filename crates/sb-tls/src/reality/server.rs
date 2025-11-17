@@ -159,7 +159,9 @@ impl RealityAcceptor {
 
         // Read TLS record header (5 bytes)
         let mut header_buf = [0u8; 5];
-        stream.read_exact(&mut header_buf).await.map_err(|e| RealityError::HandshakeFailed(format!("Failed to read TLS record header: {e}")))?;
+        stream.read_exact(&mut header_buf).await.map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to read TLS record header: {e}"))
+        })?;
 
         let content_type = ContentType::try_from(header_buf[0])
             .map_err(|e| RealityError::HandshakeFailed(format!("Invalid content type: {e}")))?;
@@ -186,8 +188,9 @@ impl RealityAcceptor {
             .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read handshake: {e}")))?;
 
         // Parse ClientHello
-        let client_hello = ClientHello::parse(&handshake_data)
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {e}")))?;
+        let client_hello = ClientHello::parse(&handshake_data).map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {e}"))
+        })?;
 
         debug!(
             "Parsed ClientHello: version=0x{:04x}, {} extensions",
@@ -207,9 +210,10 @@ impl RealityAcceptor {
             .find_extension(ExtensionType::RealityAuth as u16)
             .ok_or_else(|| RealityError::AuthFailed("No REALITY auth extension".to_string()))?;
 
-        let (client_public_key, short_id, auth_hash) = reality_ext
-            .parse_reality_auth()
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {e}")))?;
+        let (client_public_key, short_id, auth_hash) =
+            reality_ext.parse_reality_auth().map_err(|e| {
+                RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {e}"))
+            })?;
 
         debug!(
             "REALITY auth: public_key={}, short_id={}, auth_hash={}",
@@ -242,8 +246,10 @@ impl RealityAcceptor {
 
         // Generate a temporary self-signed certificate
         // In a production implementation, this would be derived from the shared secret
-        let cert = rcgen::generate_simple_self_signed(vec![server_name.to_string()])
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to generate certificate: {e}")))?;
+        let cert =
+            rcgen::generate_simple_self_signed(vec![server_name.to_string()]).map_err(|e| {
+                RealityError::HandshakeFailed(format!("Failed to generate certificate: {e}"))
+            })?;
 
         let cert_der = CertificateDer::from(cert.cert.der().to_vec());
 
@@ -255,7 +261,9 @@ impl RealityAcceptor {
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(vec![cert_der], key_der)
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to create TLS config: {e}")))?;
+            .map_err(|e| {
+                RealityError::HandshakeFailed(format!("Failed to create TLS config: {e}"))
+            })?;
 
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
 
@@ -314,10 +322,14 @@ pub enum RealityConnection {
 
 impl RealityConnection {
     /// Check if this is a proxy connection
-    pub const fn is_proxy(&self) -> bool { matches!(self, Self::Proxy(_)) }
+    pub const fn is_proxy(&self) -> bool {
+        matches!(self, Self::Proxy(_))
+    }
 
     /// Check if this is a fallback connection
-    pub const fn is_fallback(&self) -> bool { matches!(self, Self::Fallback { .. }) }
+    pub const fn is_fallback(&self) -> bool {
+        matches!(self, Self::Fallback { .. })
+    }
 
     /// Handle the connection based on type
     ///

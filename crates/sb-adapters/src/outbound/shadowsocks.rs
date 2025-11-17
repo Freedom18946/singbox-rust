@@ -388,8 +388,7 @@ impl ShadowsocksStream {
         };
 
         // Build target address payload
-        let addr_payload = ShadowsocksStream::encode_target_address(&target, &resolve_mode)
-            .await?;
+        let addr_payload = ShadowsocksStream::encode_target_address(&target, &resolve_mode).await?;
 
         // Encrypt and send initial payload
         ss_stream.send_encrypted_data(&addr_payload).await?;
@@ -398,10 +397,7 @@ impl ShadowsocksStream {
         Ok(ss_stream)
     }
 
-    async fn encode_target_address(
-        target: &Target,
-        resolve_mode: &ResolveMode,
-    ) -> Result<Vec<u8>> {
+    async fn encode_target_address(target: &Target, resolve_mode: &ResolveMode) -> Result<Vec<u8>> {
         let mut payload = Vec::new();
 
         // Determine target address based on resolve mode
@@ -880,9 +876,7 @@ mod tests {
     async fn test_udp_socket_address_encoding_ipv4() {
         use crate::traits::TransportKind;
 
-        let socket = Arc::new(
-            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
-        );
+        let socket = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
 
         let udp_socket =
             ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
@@ -902,9 +896,7 @@ mod tests {
     async fn test_udp_socket_address_encoding_domain() {
         use crate::traits::TransportKind;
 
-        let socket = Arc::new(
-            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
-        );
+        let socket = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
 
         let udp_socket =
             ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
@@ -924,9 +916,7 @@ mod tests {
     async fn test_udp_packet_encryption_decryption() {
         use crate::traits::TransportKind;
 
-        let socket = Arc::new(
-            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
-        );
+        let socket = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
 
         let udp_socket =
             ShadowsocksUdpSocket::new(socket, CipherMethod::ChaCha20Poly1305, vec![0u8; 32])
@@ -951,9 +941,7 @@ mod tests {
     #[cfg(feature = "adapter-shadowsocks")]
     #[tokio::test]
     async fn test_parse_address_length() {
-        let socket = Arc::new(
-            tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap()
-        );
+        let socket = Arc::new(tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap());
 
         let udp_socket =
             ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();

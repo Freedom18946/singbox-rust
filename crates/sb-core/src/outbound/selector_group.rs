@@ -8,7 +8,8 @@
 //! - Graceful degradation when proxies fail
 
 use crate::adapter::OutboundConnector;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::io;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
@@ -62,6 +63,8 @@ pub struct ProxyHealth {
     pub consecutive_fails: AtomicUsize,
     pub last_check: Mutex<Option<Instant>>,
     pub active_connections: AtomicUsize,
+    permanent_failure: AtomicBool,
+    last_error: Mutex<Option<String>>,
 }
 
 impl Default for ProxyHealth {
@@ -72,6 +75,8 @@ impl Default for ProxyHealth {
             consecutive_fails: AtomicUsize::new(0),
             last_check: Mutex::new(None),
             active_connections: AtomicUsize::new(0),
+            permanent_failure: AtomicBool::new(false),
+            last_error: Mutex::new(None),
         }
     }
 }
@@ -83,6 +88,10 @@ impl ProxyHealth {
         self.consecutive_fails.store(0, Ordering::Relaxed);
         if let Ok(mut last) = self.last_check.lock() {
             *last = Some(Instant::now());
+        }
+        self.permanent_failure.store(false, Ordering::Relaxed);
+        if let Ok(mut last_err) = self.last_error.lock() {
+            *last_err = None;
         }
     }
 
@@ -96,12 +105,38 @@ impl ProxyHealth {
         }
     }
 
+    fn record_failure_with_error(&self, err: &io::Error) {
+        self.record_failure();
+        if let Ok(mut msg) = self.last_error.lock() {
+            *msg = Some(err.to_string());
+        }
+    }
+
+    pub(crate) fn record_permanent_failure(&self, err: &io::Error) {
+        self.permanent_failure.store(true, Ordering::Relaxed);
+        *self.is_alive.write() = false;
+        self.consecutive_fails.store(usize::MAX, Ordering::Relaxed);
+        if let Ok(mut last) = self.last_check.lock() {
+            *last = Some(Instant::now());
+        }
+        if let Ok(mut msg) = self.last_error.lock() {
+            *msg = Some(err.to_string());
+        }
+    }
+
     pub fn is_healthy(&self) -> bool {
+        if self.permanent_failure.load(Ordering::Relaxed) {
+            return false;
+        }
         *self.is_alive.read()
     }
 
     pub fn get_rtt_ms(&self) -> u64 {
         self.last_rtt_ms.load(Ordering::Relaxed)
+    }
+
+    pub fn is_permanently_failed(&self) -> bool {
+        self.permanent_failure.load(Ordering::Relaxed)
     }
 }
 
@@ -239,7 +274,10 @@ impl SelectorGroup {
                 selector = %self.name,
                 "no healthy proxies, trying all members"
             );
-            return self.members.first();
+            return self
+                .members
+                .iter()
+                .find(|m| !m.health.is_permanently_failed());
         }
 
         // Find the one with lowest RTT
@@ -260,8 +298,15 @@ impl SelectorGroup {
         if self.members.is_empty() {
             return None;
         }
-        let idx = self.round_robin_index.fetch_add(1, Ordering::Relaxed);
-        self.members.get(idx % self.members.len())
+        for _ in 0..self.members.len() {
+            let idx = self.round_robin_index.fetch_add(1, Ordering::Relaxed);
+            if let Some(member) = self.members.get(idx % self.members.len()) {
+                if !member.health.is_permanently_failed() {
+                    return Some(member);
+                }
+            }
+        }
+        None
     }
 
     /// Select by least active connections
@@ -270,16 +315,25 @@ impl SelectorGroup {
             .iter()
             .filter(|m| m.health.is_healthy())
             .min_by_key(|m| m.health.active_connections.load(Ordering::Relaxed))
-            .or_else(|| self.members.first())
+            .or_else(|| {
+                self.members
+                    .iter()
+                    .find(|m| !m.health.is_permanently_failed())
+            })
     }
 
     /// Random selection
     fn select_random(&self) -> Option<&ProxyMember> {
-        if self.members.is_empty() {
+        let available: Vec<_> = self
+            .members
+            .iter()
+            .filter(|m| !m.health.is_permanently_failed())
+            .collect();
+        if available.is_empty() {
             return None;
         }
-        let idx = fastrand::usize(0..self.members.len());
-        self.members.get(idx)
+        let idx = fastrand::usize(0..available.len());
+        available.get(idx).copied()
     }
 
     /// Start background health checking (for `URLTest` mode)
@@ -309,6 +363,9 @@ impl SelectorGroup {
         let timeout = self.test_timeout;
 
         for member in &self.members {
+            if member.health.is_permanently_failed() {
+                continue;
+            }
             let tag = member.tag.clone();
             let health = member.health.clone();
             let url = url.clone();
@@ -327,12 +384,21 @@ impl SelectorGroup {
                         sb_metrics::set_proxy_select_score(&tag, rtt_ms as f64);
                     }
                     Err(e) => {
-                        health.record_failure();
-                        tracing::debug!(
-                            proxy = %tag,
-                            error = %e,
-                            "health check failed"
-                        );
+                        if e.kind() == io::ErrorKind::Unsupported {
+                            health.record_permanent_failure(&e);
+                            tracing::warn!(
+                                proxy = %tag,
+                                error = %e,
+                                "health check disabled for selector member (unsupported outbound)"
+                            );
+                        } else {
+                            health.record_failure_with_error(&e);
+                            tracing::debug!(
+                                proxy = %tag,
+                                error = %e,
+                                "health check failed"
+                            );
+                        }
                     }
                 }
             });
@@ -393,13 +459,23 @@ impl OutboundConnector for SelectorGroup {
                 sb_metrics::set_proxy_select_score(&self.name, elapsed_ms as f64);
             }
             Err(e) => {
-                member.health.record_failure();
-                tracing::warn!(
-                    selector = %self.name,
-                    proxy = %member.tag,
-                    error = %e,
-                    "connect failed"
-                );
+                if e.kind() == io::ErrorKind::Unsupported {
+                    member.health.record_permanent_failure(e);
+                    tracing::warn!(
+                        selector = %self.name,
+                        proxy = %member.tag,
+                        error = %e,
+                        "selector member permanently disabled (unsupported outbound)"
+                    );
+                } else {
+                    member.health.record_failure_with_error(e);
+                    tracing::warn!(
+                        selector = %self.name,
+                        proxy = %member.tag,
+                        error = %e,
+                        "connect failed"
+                    );
+                }
             }
         }
 
@@ -424,9 +500,7 @@ async fn health_check(url: &str, timeout: Duration) -> std::io::Result<u64> {
     let result = tokio::time::timeout(timeout, async {
         let mut stream = TcpStream::connect((host.as_str(), port)).await?;
 
-        let request = format!(
-            "HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-        );
+        let request = format!("HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         stream.write_all(request.as_bytes()).await?;
@@ -486,9 +560,7 @@ async fn health_check_via(
         }
 
         // For HTTP, send a HEAD request
-        let req = format!(
-            "HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-        );
+        let req = format!("HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         stream.write_all(req.as_bytes()).await?;
 
@@ -557,7 +629,8 @@ mod tests {
 
     #[test]
     fn test_parse_url() {
-        let (host, port, https, path) = parse_test_url("http://www.google.com/generate_204").unwrap();
+        let (host, port, https, path) =
+            parse_test_url("http://www.google.com/generate_204").unwrap();
         assert_eq!(host, "www.google.com");
         assert_eq!(port, 80);
         assert!(!https);

@@ -41,7 +41,14 @@ fn check_ok_warn_bad_with_exit_codes() {
     // ok
     let ok_out = Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", okf.path().to_str().unwrap(), "--schema-v2-validate", "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            okf.path().to_str().unwrap(),
+            "--schema-v2-validate",
+            "--format",
+            "json",
+        ])
         .output()
         .unwrap();
     assert!(ok_out.status.success());
@@ -55,10 +62,14 @@ fn check_ok_warn_bad_with_exit_codes() {
     let warn_out = Command::cargo_bin("app")
         .unwrap()
         .args([
-            "check", "-c", warnf.path().to_str().unwrap(),
+            "check",
+            "-c",
+            warnf.path().to_str().unwrap(),
             "--schema-v2-validate",
-            "--allow-unknown", "/",
-            "--format", "json"
+            "--allow-unknown",
+            "/",
+            "--format",
+            "json",
         ])
         .output()
         .unwrap();
@@ -71,7 +82,14 @@ fn check_ok_warn_bad_with_exit_codes() {
     // bad: expect exit code 2
     let bad_out = Command::cargo_bin("app")
         .unwrap()
-        .args(["check", "-c", badf.path().to_str().unwrap(), "--schema-v2-validate", "--format", "json"])
+        .args([
+            "check",
+            "-c",
+            badf.path().to_str().unwrap(),
+            "--schema-v2-validate",
+            "--format",
+            "json",
+        ])
         .output()
         .unwrap();
     assert_eq!(bad_out.status.code(), Some(2));

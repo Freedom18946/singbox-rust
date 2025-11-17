@@ -81,15 +81,18 @@ impl TlsConnector for StandardTlsConnector {
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         // Apply ALPN if configured
-        let config = self.alpn_protocols.as_ref().map_or_else(|| self.config.clone(), |alpn| {
-            let mut c = (*self.config).clone();
-            c.alpn_protocols.clone_from(alpn);
-            Arc::new(c)
-        });
+        let config = self.alpn_protocols.as_ref().map_or_else(
+            || self.config.clone(),
+            |alpn| {
+                let mut c = (*self.config).clone();
+                c.alpn_protocols.clone_from(alpn);
+                Arc::new(c)
+            },
+        );
 
         // Parse server name
-        let server_name = ServerName::try_from(server_name.to_string())
-            .map_err(io::Error::other)?;
+        let server_name =
+            ServerName::try_from(server_name.to_string()).map_err(io::Error::other)?;
 
         // Connect
         let connector = RustlsConnector::from(config);

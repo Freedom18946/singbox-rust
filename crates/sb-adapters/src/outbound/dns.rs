@@ -376,9 +376,10 @@ impl tokio::io::AsyncWrite for DoqStreamWrapper {
                     return std::task::Poll::Ready(Ok(()));
                 }
                 Err(e) => {
-                    return std::task::Poll::Ready(Err(std::io::Error::other(
-                        format!("DoQ query failed: {}", e),
-                    )));
+                    return std::task::Poll::Ready(Err(std::io::Error::other(format!(
+                        "DoQ query failed: {}",
+                        e
+                    ))));
                 }
             }
         }
@@ -464,9 +465,10 @@ impl tokio::io::AsyncWrite for DohStreamWrapper {
                     return std::task::Poll::Ready(Ok(()));
                 }
                 Err(e) => {
-                    return std::task::Poll::Ready(Err(std::io::Error::other(
-                        format!("DoH query failed: {}", e),
-                    )));
+                    return std::task::Poll::Ready(Err(std::io::Error::other(format!(
+                        "DoH query failed: {}",
+                        e
+                    ))));
                 }
             }
         }

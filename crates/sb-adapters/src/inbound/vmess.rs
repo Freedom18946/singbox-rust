@@ -255,9 +255,7 @@ async fn handle_conn(
                 fallback_connect(proxy, &target_host, target_port, &opts).await?
             }
         }
-        RDecision::Proxy(None) => {
-            fallback_connect(proxy, &target_host, target_port, &opts).await?
-        }
+        RDecision::Proxy(None) => fallback_connect(proxy, &target_host, target_port, &opts).await?,
         RDecision::Reject => return Err(anyhow!("vmess: rejected by rules")),
     };
 

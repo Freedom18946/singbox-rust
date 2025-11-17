@@ -59,10 +59,8 @@ async fn test_udp_transport_construction() {
 async fn test_dot_transport_construction() {
     // Test that DoT transport can be constructed
     let server = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 853);
-    let transport = sb_core::dns::transport::DotTransport::new(
-        server,
-        "cloudflare-dns.com".to_string(),
-    );
+    let transport =
+        sb_core::dns::transport::DotTransport::new(server, "cloudflare-dns.com".to_string());
 
     assert_eq!(transport.name(), "dot");
 }
@@ -71,9 +69,8 @@ async fn test_dot_transport_construction() {
 #[tokio::test]
 async fn test_doh_transport_construction() -> Result<()> {
     // Test that DoH transport can be constructed
-    let transport = sb_core::dns::transport::DohTransport::new(
-        "https://dns.google/dns-query".to_string(),
-    )?;
+    let transport =
+        sb_core::dns::transport::DohTransport::new("https://dns.google/dns-query".to_string())?;
 
     assert_eq!(transport.name(), "doh");
     Ok(())
@@ -84,10 +81,8 @@ async fn test_doh_transport_construction() -> Result<()> {
 async fn test_doq_transport_construction() -> Result<()> {
     // Test that DoQ transport can be constructed
     let server = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(9, 9, 9, 9)), 853);
-    let transport = sb_core::dns::transport::DoqTransport::new(
-        server,
-        "dns.quad9.net".to_string(),
-    )?;
+    let transport =
+        sb_core::dns::transport::DoqTransport::new(server, "dns.quad9.net".to_string())?;
 
     assert_eq!(transport.name(), "doq");
     Ok(())
@@ -173,14 +168,21 @@ fn test_transport_names_unique() {
     let names = vec!["udp", "dot", "doh"];
     let unique_names: HashSet<_> = names.iter().collect();
 
-    assert_eq!(names.len(), unique_names.len(), "Transport names must be unique");
+    assert_eq!(
+        names.len(),
+        unique_names.len(),
+        "Transport names must be unique"
+    );
 }
 
 #[cfg(feature = "dns_doh3")]
 #[test]
 fn test_doh3_feature_enabled() {
     // Simple test to verify the dns_doh3 feature is working
-    assert!(cfg!(feature = "dns_doh3"), "dns_doh3 feature should be enabled for this test");
+    assert!(
+        cfg!(feature = "dns_doh3"),
+        "dns_doh3 feature should be enabled for this test"
+    );
 }
 
 // Integration test with real DNS server (marked as ignored by default)
@@ -199,7 +201,11 @@ async fn test_udp_real_query() -> Result<()> {
     assert!(response.len() >= 12, "DNS response too short");
 
     // Check response flags indicate success
-    assert_eq!(response[3] & 0x0F, 0x00, "DNS query should succeed (RCODE=0)");
+    assert_eq!(
+        response[3] & 0x0F,
+        0x00,
+        "DNS query should succeed (RCODE=0)"
+    );
 
     Ok(())
 }
@@ -223,7 +229,11 @@ async fn test_doh3_real_query() -> Result<()> {
     assert!(response.len() >= 12, "DNS response too short");
 
     // Check response flags indicate success
-    assert_eq!(response[3] & 0x0F, 0x00, "DNS query should succeed (RCODE=0)");
+    assert_eq!(
+        response[3] & 0x0F,
+        0x00,
+        "DNS query should succeed (RCODE=0)"
+    );
 
     Ok(())
 }

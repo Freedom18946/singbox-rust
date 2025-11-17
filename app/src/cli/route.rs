@@ -1,7 +1,7 @@
+use crate::cli::{output, Format};
 use anyhow::{Context, Result};
 use clap::Parser;
 use sb_core::routing::ExplainEngine;
-use crate::cli::{output, Format};
 
 #[derive(Parser, Debug, Clone)]
 pub struct RouteArgs {
@@ -45,7 +45,12 @@ pub fn run(args: RouteArgs) -> Result<()> {
 
         output::emit(
             args.format,
-            || format!("{} → {} (rule={})", result.dest, result.outbound, result.matched_rule),
+            || {
+                format!(
+                    "{} → {} (rule={})",
+                    result.dest, result.outbound, result.matched_rule
+                )
+            },
             &result,
         );
     } else {

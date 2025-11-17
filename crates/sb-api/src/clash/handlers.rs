@@ -962,7 +962,10 @@ pub async fn get_dns_query(
         }
     };
 
-    let query_type = params.get("type").map(std::string::String::as_str).unwrap_or("A");
+    let query_type = params
+        .get("type")
+        .map(std::string::String::as_str)
+        .unwrap_or("A");
 
     // Validate query type
     let valid_types = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "PTR"];
@@ -1494,22 +1497,20 @@ pub async fn test_script(
 
     // Validate required fields for testing
     let script_code = match obj.get("script") {
-        Some(s) if s.is_string() => {
-            match s.as_str() {
-                Some(code) if !code.is_empty() => code,
-                _ => {
-                    log::warn!("Script field is empty");
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({
-                            "error": "Missing field",
-                            "message": "Field 'script' is required and must be a non-empty string"
-                        })),
-                    )
-                        .into_response();
-                }
+        Some(s) if s.is_string() => match s.as_str() {
+            Some(code) if !code.is_empty() => code,
+            _ => {
+                log::warn!("Script field is empty");
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "error": "Missing field",
+                        "message": "Field 'script' is required and must be a non-empty string"
+                    })),
+                )
+                    .into_response();
             }
-        }
+        },
         _ => {
             log::warn!("Missing or invalid 'script' field in test request");
             return (

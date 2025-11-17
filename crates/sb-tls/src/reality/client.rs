@@ -6,8 +6,8 @@ use super::tls_record::{ClientHello, ContentType, HandshakeType, TlsExtension};
 use super::{RealityError, RealityResult};
 use crate::TlsConnector;
 use async_trait::async_trait;
-use std::io;
 use rand::RngCore; // needed for thread_rng().fill_bytes
+use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -39,7 +39,9 @@ impl RealityConnector {
         config.validate().map_err(RealityError::InvalidConfig)?;
 
         // Parse public key for authentication
-        let _public_key_bytes = config.public_key_bytes().map_err(RealityError::InvalidConfig)?;
+        let _public_key_bytes = config
+            .public_key_bytes()
+            .map_err(RealityError::InvalidConfig)?;
 
         // Create client auth (we generate ephemeral private key, only need server's public key)
         let auth = RealityAuth::generate();
@@ -130,7 +132,9 @@ impl RealityConnector {
 
         // Step 4: Perform TLS handshake with forged SNI
         let server_name = rustls_pki_types::ServerName::try_from(self.config.server_name.clone())
-            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid server name: {e:?}")))?;
+            .map_err(|e| {
+            RealityError::HandshakeFailed(format!("Invalid server name: {e:?}"))
+        })?;
 
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
 
@@ -175,7 +179,12 @@ struct RealityClientStream<S> {
 }
 
 impl<S> RealityClientStream<S> {
-    const fn new(inner: S, client_public_key: [u8; 32], short_id: Vec<u8>, auth_hash: [u8; 32]) -> Self {
+    const fn new(
+        inner: S,
+        client_public_key: [u8; 32],
+        short_id: Vec<u8>,
+        auth_hash: [u8; 32],
+    ) -> Self {
         Self {
             inner,
             client_public_key,
@@ -214,7 +223,10 @@ impl<S> RealityClientStream<S> {
 
         // Parse ClientHello
         let mut client_hello = ClientHello::parse(handshake_data).map_err(|e| {
-            io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse ClientHello: {e}"))
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to parse ClientHello: {e}"),
+            )
         })?;
 
         debug!("Intercepted ClientHello, injecting REALITY auth extension");
@@ -225,15 +237,22 @@ impl<S> RealityClientStream<S> {
         client_hello.extensions.push(reality_ext);
 
         // Serialize modified ClientHello
-        let modified_handshake = client_hello
-            .serialize()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Failed to serialize ClientHello: {e}")))?;
+        let modified_handshake = client_hello.serialize().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to serialize ClientHello: {e}"),
+            )
+        })?;
 
         // Build new TLS record
         let mut result = Vec::new();
         result.push(ContentType::Handshake as u8);
         result.extend_from_slice(&version.to_be_bytes());
-        result.extend_from_slice(&u16::try_from(modified_handshake.len()).unwrap_or(u16::MAX).to_be_bytes()); // clamp: record length field is u16
+        result.extend_from_slice(
+            &u16::try_from(modified_handshake.len())
+                .unwrap_or(u16::MAX)
+                .to_be_bytes(),
+        ); // clamp: record length field is u16
         result.extend_from_slice(&modified_handshake);
 
         // Append any remaining data after the first record

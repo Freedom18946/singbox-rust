@@ -98,6 +98,9 @@ default = [
     "dns_doh",
     "dns_dot",
     "dns_doq",
+    "dns_dhcp",
+    "dns_resolved",
+    "dns_tailscale",
     "tls_rustls",
 ]
 
@@ -115,8 +118,11 @@ dns_doh            = ["dns_udp"]
 dns_doh3           = ["dns_udp", "tls_rustls", "dep:h3", "dep:h3-quinn"]
 dns_dot            = ["dns_udp", "tls_rustls"]
 dns_doq            = ["dns_udp", "tls_rustls"]
+dns_dhcp           = []
 dns_http           = []
 dns_udp            = []
+dns_resolved       = []
+dns_tailscale      = []
 dsl_analyze        = []
 dsl_derive         = []
 dsl_plus           = []

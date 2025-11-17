@@ -39,7 +39,13 @@ mod route_explain_tests {
             .clone();
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert!(v.get("dest").and_then(|x| x.as_str()).is_some());
-        assert_eq!(v.get("matched_rule").and_then(|x| x.as_str()).unwrap().len(), 8);
+        assert_eq!(
+            v.get("matched_rule")
+                .and_then(|x| x.as_str())
+                .unwrap()
+                .len(),
+            8
+        );
         assert!(v.get("chain").and_then(|x| x.as_array()).is_some());
         assert!(v.get("outbound").and_then(|x| x.as_str()).is_some());
     }
@@ -67,6 +73,12 @@ mod route_explain_tests {
             .clone();
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert!(v.get("trace").is_some());
-        assert_eq!(v.get("matched_rule").and_then(|x| x.as_str()).unwrap().len(), 8);
+        assert_eq!(
+            v.get("matched_rule")
+                .and_then(|x| x.as_str())
+                .unwrap()
+                .len(),
+            8
+        );
     }
 }

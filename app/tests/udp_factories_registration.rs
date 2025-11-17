@@ -1,6 +1,6 @@
+use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
-use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType};
 
 fn base_ir() -> ConfigIR {
     let mut ir = ConfigIR::default();

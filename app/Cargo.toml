@@ -41,7 +41,7 @@ observe = ["router", "sb-metrics"]
 out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
 ssh = ["sb-core/out_ssh"]
-tools = ["sb-core", "reqwest"]
+tools = ["sb-core", "reqwest", "router", "adapters"]
 tools_http3 = ["reqwest/http3"]
 reqwest_unstable = []
 
@@ -336,7 +336,7 @@ criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
-sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "tls_reality", "transport_ech", "transport_mux"] }
+sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "tls_reality", "transport_ech", "transport_mux"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 

@@ -67,7 +67,11 @@ impl TestServer {
     }
 
     /// Make a POST request with JSON body
-    async fn post(&self, path: &str, body: serde_json::Value) -> Result<reqwest::Response, reqwest::Error> {
+    async fn post(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<reqwest::Response, reqwest::Error> {
         self.client
             .post(format!("{}{}", self.base_url, path))
             .json(&body)
@@ -76,7 +80,11 @@ impl TestServer {
     }
 
     /// Make a PUT request with JSON body
-    async fn put(&self, path: &str, body: serde_json::Value) -> Result<reqwest::Response, reqwest::Error> {
+    async fn put(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<reqwest::Response, reqwest::Error> {
         self.client
             .put(format!("{}{}", self.base_url, path))
             .json(&body)
@@ -85,7 +93,11 @@ impl TestServer {
     }
 
     /// Make a PATCH request with JSON body
-    async fn patch(&self, path: &str, body: serde_json::Value) -> Result<reqwest::Response, reqwest::Error> {
+    async fn patch(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<reqwest::Response, reqwest::Error> {
         self.client
             .patch(format!("{}{}", self.base_url, path))
             .json(&body)
