@@ -5,10 +5,10 @@
 //! 3) Never break userspace：任何加载失败均不切换现行索引
 
 // 重要：确保 engine 子模块对外可见，供 sb-core/src/lib.rs 重导出使用
+pub mod dns;
 pub mod dns_bridge;
 pub mod dns_integration;
 pub mod engine;
-pub mod dns;
 pub mod geo;
 pub mod hot_reload;
 pub mod hot_reload_cli;

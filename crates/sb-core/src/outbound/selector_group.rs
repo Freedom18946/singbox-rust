@@ -7,7 +7,7 @@
 //! - Health checking with configurable test URL and interval
 //! - Graceful degradation when proxies fail
 
-use crate::adapter::OutboundConnector;
+use crate::adapter::{OutboundConnector, UdpOutboundFactory};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -33,7 +33,8 @@ pub enum SelectMode {
 pub struct ProxyMember {
     pub tag: String,
     pub connector: Arc<dyn OutboundConnector>,
-    health: Arc<ProxyHealth>,
+    pub udp_factory: Option<Arc<dyn UdpOutboundFactory>>,
+    pub health: Arc<ProxyHealth>,
 }
 
 impl std::fmt::Debug for ProxyMember {
@@ -41,15 +42,21 @@ impl std::fmt::Debug for ProxyMember {
         f.debug_struct("ProxyMember")
             .field("tag", &self.tag)
             .field("health", &self.health)
+            .field("udp_supported", &self.udp_factory.is_some())
             .finish()
     }
 }
 
 impl ProxyMember {
-    pub fn new(tag: impl Into<String>, connector: Arc<dyn OutboundConnector>) -> Self {
+    pub fn new(
+        tag: impl Into<String>,
+        connector: Arc<dyn OutboundConnector>,
+        udp_factory: Option<Arc<dyn UdpOutboundFactory>>,
+    ) -> Self {
         Self {
             tag: tag.into(),
             connector,
+            udp_factory,
             health: Arc::new(ProxyHealth::default()),
         }
     }
@@ -82,7 +89,7 @@ impl Default for ProxyHealth {
 }
 
 impl ProxyHealth {
-    fn record_success(&self, rtt_ms: u64) {
+    pub fn record_success(&self, rtt_ms: u64) {
         *self.is_alive.write() = true;
         self.last_rtt_ms.store(rtt_ms, Ordering::Relaxed);
         self.consecutive_fails.store(0, Ordering::Relaxed);
@@ -247,7 +254,7 @@ impl SelectorGroup {
     }
 
     /// Select the best proxy based on mode
-    async fn select_best(&self) -> Option<&ProxyMember> {
+    pub async fn select_best(&self) -> Option<&ProxyMember> {
         match self.mode {
             SelectMode::Manual => {
                 let selected = self.selected.read().await.clone();
@@ -382,6 +389,7 @@ impl SelectorGroup {
                         );
                         // Update score gauge with observed RTT (lower is better)
                         sb_metrics::set_proxy_select_score(&tag, rtt_ms as f64);
+                        sb_metrics::inc_health_check(&tag, "ok");
                     }
                     Err(e) => {
                         if e.kind() == io::ErrorKind::Unsupported {
@@ -391,6 +399,7 @@ impl SelectorGroup {
                                 error = %e,
                                 "health check disabled for selector member (unsupported outbound)"
                             );
+                            sb_metrics::inc_health_check(&tag, "unsupported");
                         } else {
                             health.record_failure_with_error(&e);
                             tracing::debug!(
@@ -398,6 +407,11 @@ impl SelectorGroup {
                                 error = %e,
                                 "health check failed"
                             );
+                            if e.kind() == io::ErrorKind::TimedOut {
+                                sb_metrics::inc_health_check(&tag, "timeout");
+                            } else {
+                                sb_metrics::inc_health_check(&tag, "fail");
+                            }
                         }
                     }
                 }
@@ -435,10 +449,11 @@ impl OutboundConnector for SelectorGroup {
         })?;
 
         // Track active connection
-        member
+        let count = member
             .health
             .active_connections
             .fetch_add(1, Ordering::Relaxed);
+        sb_metrics::set_active_connections(&member.tag, (count + 1) as i64);
 
         let start = Instant::now();
         let result = member.connector.connect(host, port).await;
@@ -480,63 +495,14 @@ impl OutboundConnector for SelectorGroup {
         }
 
         // Decrement connection counter when dropped (handled by caller)
-        member
+        // Decrement connection counter when dropped (handled by caller)
+        let count = member
             .health
             .active_connections
             .fetch_sub(1, Ordering::Relaxed);
+        sb_metrics::set_active_connections(&member.tag, (count - 1) as i64);
 
         result
-    }
-}
-
-/// Perform a health check against a URL
-async fn health_check(url: &str, timeout: Duration) -> std::io::Result<u64> {
-    let start = Instant::now();
-
-    // Parse URL to extract host and port
-    let (host, port, _use_https, path) = parse_test_url(url)?;
-
-    // Perform HTTP HEAD request
-    let result = tokio::time::timeout(timeout, async {
-        let mut stream = TcpStream::connect((host.as_str(), port)).await?;
-
-        let request = format!("HEAD {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        stream.write_all(request.as_bytes()).await?;
-
-        // Read response (just check for HTTP/1.x 2xx or 3xx or 204)
-        let mut buf = [0u8; 1024];
-        let n = stream.read(&mut buf).await?;
-
-        if n > 12 {
-            let response = std::str::from_utf8(&buf[..n]).unwrap_or("");
-            if response.starts_with("HTTP/1.") {
-                // Check status code
-                if let Some(code_str) = response.split_whitespace().nth(1) {
-                    if let Ok(code) = code_str.parse::<u16>() {
-                        if (200..400).contains(&code) {
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
-
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "invalid http response",
-        ))
-    })
-    .await;
-
-    match result {
-        Ok(Ok(())) => Ok(start.elapsed().as_millis() as u64),
-        Ok(Err(e)) => Err(e),
-        Err(_) => Err(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "health check timeout",
-        )),
     }
 }
 

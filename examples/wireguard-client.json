@@ -1,0 +1,53 @@
+{
+  "log": {
+    "level": "info",
+    "output": "stdout"
+  },
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "wg_client",
+      "wireguard_system": false,
+      "wireguard_name": "wg-singbox",
+      "wireguard_mtu": 1420,
+      "wireguard_address": [
+        "10.66.66.2/24"
+      ],
+      "wireguard_private_key": "REPLACE_WITH_YOUR_PRIVATE_KEY",
+      "wireguard_listen_port": 0,
+      "wireguard_peers": [
+        {
+          "public_key": "REPLACE_WITH_PEER_PUBLIC_KEY",
+          "address": "vpn.example.com",
+          "port": 51820,
+          "allowed_ips": [
+            "0.0.0.0/0"
+          ],
+          "persistent_keepalive_interval": 25
+        }
+      ]
+    }
+  ],
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 1080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "outbound": "direct"
+      }
+    ],
+    "final": "direct"
+  }
+}

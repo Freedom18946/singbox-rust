@@ -1,0 +1,16 @@
+Benchmark Run Information
+=========================
+Date: Fri Nov 21 02:07:23 CST 2025
+Hostname: MacBook-Pro.local
+OS: Darwin 25.1.0
+Architecture: arm64
+CPU: Apple M1
+CPU Cores: 8
+Memory: 16 GB
+
+Rust toolchain:
+rustc 1.90.0 (1159e78c4 2025-09-14)
+cargo 1.90.0 (840b83a10 2025-07-30)
+
+Go toolchain:
+go version go1.25.4 darwin/arm64

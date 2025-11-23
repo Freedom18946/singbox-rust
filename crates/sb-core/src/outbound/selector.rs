@@ -206,7 +206,10 @@ impl crate::adapter::OutboundConnector for Selector {
             Err(e) => {
                 self.on_result(&mem.name, t0.elapsed().as_millis(), false);
                 Err(last_err.unwrap_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!("all members failed, last: {e}"))
+                    std::io::Error::new(
+                        std::io::ErrorKind::ConnectionRefused,
+                        format!("all members failed, last: {e}"),
+                    )
                 }))
             }
         }

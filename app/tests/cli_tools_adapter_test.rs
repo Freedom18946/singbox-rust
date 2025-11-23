@@ -194,11 +194,7 @@ fn tools_connect_unknown_outbound_error() {
 }
 
 #[test]
-#[cfg(all(
-    feature = "tools",
-    feature = "adapters",
-    feature = "adapter-shadowsocks"
-))]
+#[cfg(all(feature = "tools", feature = "adapters", feature = "adapters",))]
 fn tools_connect_shadowsocks_adapter() {
     // Verify Shadowsocks adapter can be loaded (if feature enabled)
     let mut config_json = serde_json::json!({

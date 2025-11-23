@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 
 use crate::dns::transport::DnsTransport;
-use crate::metrics::dns::{record_error_display, record_query, record_rtt, DnsErrorClass, DnsQueryType};
+use crate::metrics::dns::{
+    record_error, record_error_display, record_query, record_rtt, DnsErrorClass, DnsQueryType,
+};
 
 /// Enhanced UDP DNS transport with metrics and error handling
 pub struct EnhancedUdpTransport {
@@ -157,6 +159,7 @@ impl DnsTransport for EnhancedUdpTransport {
                         return Ok(response);
                     }
                     Err(e) => {
+                        record_error(Self::classify_error(&e));
                         last_error = Some(e);
 
                         if attempt < self.retries {
@@ -164,8 +167,10 @@ impl DnsTransport for EnhancedUdpTransport {
                                 "DNS query failed, retrying: server={}, attempt={}, error={}",
                                 server,
                                 attempt,
-                                last_error
-                                    .as_ref().map_or_else(|| "unknown".into(), std::string::ToString::to_string)
+                                last_error.as_ref().map_or_else(
+                                    || "unknown".into(),
+                                    std::string::ToString::to_string
+                                )
                             );
 
                             // Brief delay before retry
@@ -175,8 +180,10 @@ impl DnsTransport for EnhancedUdpTransport {
                                 "DNS query failed after {} retries: server={}, error={}",
                                 self.retries,
                                 server,
-                                last_error
-                                    .as_ref().map_or_else(|| "unknown".into(), std::string::ToString::to_string)
+                                last_error.as_ref().map_or_else(
+                                    || "unknown".into(),
+                                    std::string::ToString::to_string
+                                )
                             );
                         }
                     }

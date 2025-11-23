@@ -1,0 +1,59 @@
+{
+    "log": {
+        "level": "info",
+        "output": "stdout"
+    },
+    "endpoints": [
+        {
+            "type": "wireguard",
+            "tag": "wg_dualstack",
+            "wireguard_system": false,
+            "wireguard_name": "wg-dual",
+            "wireguard_mtu": 1420,
+            "wireguard_address": [
+                "10.88.88.2/24",
+                "fd00:cafe:beef::2/64"
+            ],
+            "wireguard_private_key": "REPLACE_WITH_YOUR_PRIVATE_KEY",
+            "wireguard_listen_port": 0,
+            "wireguard_peers": [
+                {
+                    "public_key": "REPLACE_WITH_PEER_PUBLIC_KEY",
+                    "address": "2001:db8::1",
+                    "port": 51820,
+                    "allowed_ips": [
+                        "0.0.0.0/0",
+                        "::/0"
+                    ],
+                    "persistent_keepalive_interval": 25
+                }
+            ]
+        }
+    ],
+    "dns": {
+        "servers": [
+            {
+                "address": "1.1.1.1",
+                "tag": "cloudflare-v4"
+            },
+            {
+                "address": "2606:4700:4700::1111",
+                "tag": "cloudflare-v6"
+            }
+        ]
+    },
+    "inbounds": [
+        {
+            "type": "mixed",
+            "tag": "proxy",
+            "listen": "::",
+            "listen_port": 1080
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ]
+}

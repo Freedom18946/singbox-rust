@@ -94,10 +94,7 @@ fn ruleset_match_bool_output() {
 #[test]
 fn ruleset_compile_and_convert_roundtrip() {
     let json_in = write_ruleset_file();
-    let srs_out = Builder::new()
-        .suffix(".srs")
-        .tempfile()
-        .expect("temp srs");
+    let srs_out = Builder::new().suffix(".srs").tempfile().expect("temp srs");
     let json_out = Builder::new()
         .suffix(".json")
         .tempfile()
@@ -185,10 +182,7 @@ fn ruleset_merge_combines_inputs() {
 #[test]
 fn ruleset_upgrade_sets_target_version() {
     let json_in = write_ruleset_file();
-    let srs_in = Builder::new()
-        .suffix(".srs")
-        .tempfile()
-        .expect("srs input");
+    let srs_in = Builder::new().suffix(".srs").tempfile().expect("srs input");
     let upgraded = Builder::new()
         .suffix(".json")
         .tempfile()

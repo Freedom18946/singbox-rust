@@ -28,6 +28,7 @@ pub mod doq;
 pub mod dot;
 pub mod enhanced_client;
 pub mod fakeip;
+pub mod global;
 pub mod hosts;
 #[cfg(feature = "dns_http")]
 pub mod http_client;
@@ -42,7 +43,6 @@ pub mod stub;
 pub mod system;
 pub mod transport;
 pub mod upstream;
-pub mod global;
 
 #[cfg(test)]
 mod integration_tests;
@@ -952,7 +952,10 @@ async fn query_one(
                         }
                     }
                 }
-                ttl = min_ttl.map_or_else(|| Duration::from_secs(60), |s| Duration::from_secs(u64::from(s)));
+                ttl = min_ttl.map_or_else(
+                    || Duration::from_secs(60),
+                    |s| Duration::from_secs(u64::from(s)),
+                );
                 #[cfg(feature="metrics")]
                 ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>format!("doq://{}@{}", _sa, _sni), "kind"=>"doq").increment(1);
             }

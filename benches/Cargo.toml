@@ -1,0 +1,65 @@
+[package]
+name = "sb-benches"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[lib]
+name = "sb_benches"
+path = "src/lib.rs"
+
+[[bench]]
+name = "socks5_throughput"
+harness = false
+
+[[bench]]
+name = "shadowsocks_throughput"
+harness = false
+
+[[bench]]
+name = "vmess_throughput"
+harness = false
+
+[[bench]]
+name = "dns_performance"
+harness = false
+
+[[bench]]
+name = "protocol_comprehensive"
+harness = false
+
+[[bench]]
+name = "resource_usage"
+harness = false
+
+[[bench]]
+name = "aead_crypto"
+harness = false
+
+[dependencies]
+# Core dependencies
+sb-core = { path = "../crates/sb-core", features = ["router", "dns_udp", "dns_doh", "dns_dot", "dns_doq"] }
+sb-adapters = { path = "../crates/sb-adapters", default-features = false }
+sb-config = { path = "../crates/sb-config" }
+sb-types = { path = "../crates/sb-types" }
+
+# Async runtime
+tokio = { workspace = true, features = ["full", "test-util"] }
+async-trait = { workspace = true }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
+
+# Crypto (for real AEAD benchmarks)
+aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
+
+# Utilities
+bytes = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = "0.3"
+rand = "0.8"
+
+[dev-dependencies]
+tempfile = { workspace = true }

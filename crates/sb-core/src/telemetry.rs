@@ -6,7 +6,10 @@ pub mod error_class;
 
 #[inline]
 pub fn err_kind(e: &io::Error) -> &'static str {
-    use io::ErrorKind::{TimedOut, ConnectionRefused, ConnectionReset, ConnectionAborted, BrokenPipe, AddrInUse, AddrNotAvailable, NotFound, InvalidInput};
+    use io::ErrorKind::{
+        AddrInUse, AddrNotAvailable, BrokenPipe, ConnectionAborted, ConnectionRefused,
+        ConnectionReset, InvalidInput, NotFound, TimedOut,
+    };
     match e.kind() {
         TimedOut => "timeout",
         ConnectionRefused => "refused",

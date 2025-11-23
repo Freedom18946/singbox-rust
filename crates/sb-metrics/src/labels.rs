@@ -30,6 +30,7 @@ static ALLOWED_LABEL_KEYS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "category",
         "chan",
         "proxy",
+        "tag",
     ])
 });
 

@@ -83,12 +83,15 @@ impl ExplainEngine {
 
     /// Explain routing for a destination with an explicit network ("tcp"|"udp").
     /// Protocol defaults to "socks" for explain purposes.
-    pub fn explain_with_network(&self, dest: &str, network: &str, with_trace: bool) -> ExplainResult {
+    pub fn explain_with_network(
+        &self,
+        dest: &str,
+        network: &str,
+        with_trace: bool,
+    ) -> ExplainResult {
         // 解析 host:port
         let (host, port) = if let Some((h, p)) = dest.rsplit_once(':') {
-            let parsed_port = p
-                .parse::<u16>()
-                .unwrap_or(0);
+            let parsed_port = p.parse::<u16>().unwrap_or(0);
             (h.to_string(), parsed_port)
         } else {
             (dest.to_string(), 0)

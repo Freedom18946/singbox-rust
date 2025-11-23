@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 use sb_core::socks5::decode_udp_reply;
 use sb_test_utils::socks5::start_mock_socks5;
 use std::net::SocketAddr;

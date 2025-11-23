@@ -502,14 +502,7 @@ fn test_stub_adapter_warnings() {
     sb_adapters::register_all();
 
     // Test stub inbounds (these should be registered but return warnings)
-    let stub_inbounds = vec![
-        "naive",
-        "shadowtls",
-        "hysteria",
-        "hysteria2",
-        "tuic",
-        "anytls",
-    ];
+    let stub_inbounds = vec!["naive", "shadowtls", "hysteria", "hysteria2", "tuic"];
 
     for stub_type in stub_inbounds {
         println!("Testing stub inbound: {}", stub_type);

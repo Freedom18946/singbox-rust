@@ -1,0 +1,34 @@
+{
+    "schema_version": 2,
+    "inbounds": [
+        {
+            "type": "socks",
+            "listen": "127.0.0.1:1080"
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "name": "my_direct"
+        },
+        {
+            "type": "block",
+            "name": "block"
+        }
+    ],
+    "rules": [
+        {
+            "domain_suffix": [
+                "google.com"
+            ],
+            "outbound": "my_direct"
+        },
+        {
+            "ip_cidr": [
+                "8.8.8.8/32"
+            ],
+            "outbound": "direct"
+        }
+    ],
+    "default_outbound": "block"
+}

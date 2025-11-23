@@ -8,7 +8,7 @@ pub struct NetClass {
 }
 
 pub fn classify_io(e: &std::io::Error) -> NetClass {
-    use std::io::ErrorKind::{TimedOut, ConnectionRefused};
+    use std::io::ErrorKind::{ConnectionRefused, TimedOut};
     match e.kind() {
         TimedOut => NetClass {
             code: IssueCode::UpstreamTimeout,

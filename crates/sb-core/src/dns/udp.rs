@@ -33,10 +33,10 @@ pub fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
         out.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT(41)
         out.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=UDP payload size
         out.extend_from_slice(&0u32.to_be_bytes()); // TTL (extended RCODE/flags)=0
-        // Build ECS option
+                                                    // Build ECS option
         let mut opt = Vec::with_capacity(8 + addr_bytes.len());
         opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE = 8 (Client Subnet)
-        // ECS data: FAMILY(2) + SOURCE(1) + SCOPE(1) + ADDRESS (ceil(src/8))
+                                                    // ECS data: FAMILY(2) + SOURCE(1) + SCOPE(1) + ADDRESS (ceil(src/8))
         let addr_len = addr_bytes.len() as u16;
         let data_len = 4u16 + addr_len; // 2+1+1 + addr
         opt.extend_from_slice(&data_len.to_be_bytes()); // OPTION-LENGTH
@@ -54,8 +54,14 @@ pub fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
 fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
     let s = std::env::var("SB_DNS_CLIENT_SUBNET").ok()?;
     let s = s.trim();
-    if s.is_empty() { return None; }
-    let (ip_str, prefix_opt) = if let Some((a, p)) = s.split_once('/') { (a, p.parse::<u8>().ok()) } else { (s, None) };
+    if s.is_empty() {
+        return None;
+    }
+    let (ip_str, prefix_opt) = if let Some((a, p)) = s.split_once('/') {
+        (a, p.parse::<u8>().ok())
+    } else {
+        (s, None)
+    };
     if let Ok(ipv4) = ip_str.parse::<std::net::Ipv4Addr>() {
         let prefix = prefix_opt.unwrap_or(24).min(32);
         let mut b = ipv4.octets();
@@ -77,7 +83,9 @@ fn mask_prefix(bytes: &mut [u8], prefix: u8) {
     let full = (prefix / 8) as usize;
     let rem = (prefix % 8) as usize;
     if full < bytes.len() {
-        for i in full+1..bytes.len() { bytes[i] = 0; }
+        for i in full + 1..bytes.len() {
+            bytes[i] = 0;
+        }
         if rem > 0 {
             let mask = (!0u8) << (8 - rem);
             bytes[full] &= mask;

@@ -159,15 +159,17 @@ impl UdpTransport for DirectUdpTransport {
             }
         };
 
-        self.socket.send_to(buf, addr).await.map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP send failed: {e}"))
-        })
+        self.socket
+            .send_to(buf, addr)
+            .await
+            .map_err(|e| SbError::network(ErrorClass::Connection, format!("UDP send failed: {e}")))
     }
 
     async fn recv_from(&self, buf: &mut [u8]) -> SbResult<(usize, SocketAddr)> {
-        self.socket.recv_from(buf).await.map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP recv failed: {e}"))
-        })
+        self.socket
+            .recv_from(buf)
+            .await
+            .map_err(|e| SbError::network(ErrorClass::Connection, format!("UDP recv failed: {e}")))
     }
 }
 

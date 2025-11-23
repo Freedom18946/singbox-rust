@@ -27,11 +27,17 @@ pub struct AdapterInboundContext<'a> {
     pub _phantom: std::marker::PhantomData<&'a ()>,
 }
 
+/// Context passed to outbound adapter builders so they can access the bridge (for Selector/URLTest).
+pub struct AdapterOutboundContext {
+    pub bridge: Arc<Bridge>,
+}
+
 type InboundBuilder =
     fn(&InboundParam, &AdapterInboundContext<'_>) -> Option<Arc<dyn InboundService>>;
 type OutboundBuilder = fn(
     &OutboundParam,
     &sb_config::ir::OutboundIR,
+    &AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -66,4 +72,10 @@ pub fn get_inbound(kind: &str) -> Option<InboundBuilder> {
 pub fn get_outbound(kind: &str) -> Option<OutboundBuilder> {
     let g = OUTBOUND_REG.read().unwrap();
     g.get(kind).copied()
+}
+
+/// List all registered outbound kinds (for testing).
+pub fn list_registered_outbounds() -> Vec<String> {
+    let g = OUTBOUND_REG.read().unwrap();
+    g.keys().map(|k| k.to_string()).collect()
 }

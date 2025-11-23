@@ -308,6 +308,73 @@ mod adapter {
     });
 }
 
+// ===================== Selector/URLTest Metrics =====================
+/// Selector and URLTest metrics
+mod selector {
+    use super::{IntCounterVec, LazyLock, REGISTRY};
+    use prometheus::IntGaugeVec;
+
+    /// Health check total counter
+    /// labels: proxy, status = {"ok", "fail", "timeout", "unsupported"}
+    pub static HEALTH_CHECK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = super::guarded_counter_vec(
+            "selector_health_check_total",
+            "Selector health check attempts total",
+            &["proxy", "status"],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    /// Active connections gauge per proxy
+    /// labels: proxy
+    pub static ACTIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+        let vec = IntGaugeVec::new(
+            prometheus::Opts::new(
+                "selector_active_connections",
+                "Active connections per proxy",
+            ),
+            &["proxy"],
+        )
+        .unwrap();
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    /// Failover total counter
+    /// labels: selector, from, to
+    pub static FAILOVER_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = super::guarded_counter_vec(
+            "selector_failover_total",
+            "Selector failover events total",
+            &["selector", "from", "to"],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+}
+
+/// Record health check result
+pub fn inc_health_check(proxy: &str, status: &str) {
+    selector::HEALTH_CHECK_TOTAL
+        .with_label_values(&[proxy, status])
+        .inc();
+}
+
+/// Set active connections for a proxy
+pub fn set_active_connections(proxy: &str, count: i64) {
+    selector::ACTIVE_CONNECTIONS
+        .with_label_values(&[proxy])
+        .set(count);
+}
+
+/// Record failover event
+pub fn inc_failover(selector: &str, from: &str, to: &str) {
+    selector::FAILOVER_TOTAL
+        .with_label_values(&[selector, from, to])
+        .inc();
+}
+
 /// Record adapter dial attempt result
 pub fn inc_adapter_dial_total(adapter: &str, result: &str) {
     adapter::DIAL_TOTAL
@@ -356,6 +423,124 @@ pub fn record_adapter_dial(
         Err(e) => classify_adapter_error(e),
     };
     inc_adapter_dial_total(adapter, result_label);
+}
+
+// ===================== DERP Service Metrics =====================
+/// DERP service metrics: connections, relays, HTTP/STUN activity.
+mod derp {
+    use super::{guarded_counter_vec, guarded_histogram_vec, LazyLock, REGISTRY};
+    use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec, Opts};
+
+    pub static CONNECTION_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = guarded_counter_vec(
+            "derp_connection_total",
+            "DERP client connection attempts",
+            &["tag", "result"],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    pub static ACTIVE_CLIENTS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+        super::labels::ensure_allowed_labels("derp_clients", &["tag"]);
+        let gauge = IntGaugeVec::new(Opts::new("derp_clients", "Active DERP clients"), &["tag"])
+            .unwrap_or_else(|_| {
+                #[allow(clippy::unwrap_used)]
+                IntGaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["tag"]).unwrap()
+            });
+        REGISTRY.register(Box::new(gauge.clone())).ok();
+        gauge
+    });
+
+    pub static RELAY_PACKETS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = guarded_counter_vec(
+            "derp_relay_packets_total",
+            "DERP packets relayed",
+            &["tag", "result"],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    pub static RELAY_BYTES_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = guarded_counter_vec("derp_relay_bytes_total", "DERP bytes relayed", &["tag"]);
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    pub static HTTP_REQUEST_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = guarded_counter_vec(
+            "derp_http_requests_total",
+            "DERP HTTP stub requests",
+            &["tag", "status"],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    pub static STUN_REQUEST_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let vec = guarded_counter_vec(
+            "derp_stun_requests_total",
+            "DERP STUN request handling",
+            &["tag", "result"],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+
+    pub static CLIENT_LIFETIME_SECONDS: LazyLock<HistogramVec> = LazyLock::new(|| {
+        let vec = guarded_histogram_vec(
+            "derp_client_lifetime_seconds",
+            "DERP client session lifetime (seconds)",
+            &["tag"],
+            vec![0.1, 0.5, 1.0, 5.0, 30.0, 120.0, 600.0, 1800.0, 3600.0],
+        );
+        REGISTRY.register(Box::new(vec.clone())).ok();
+        vec
+    });
+}
+
+/// Record DERP client connection attempt
+pub fn inc_derp_connection(tag: &str, result: &str) {
+    derp::CONNECTION_TOTAL
+        .with_label_values(&[tag, result])
+        .inc();
+}
+
+/// Set active DERP clients gauge
+pub fn set_derp_clients(tag: &str, count: i64) {
+    derp::ACTIVE_CLIENTS.with_label_values(&[tag]).set(count);
+}
+
+/// Record DERP relay attempt (counts packets and bytes on success)
+pub fn inc_derp_relay(tag: &str, result: &str, bytes: Option<u64>) {
+    derp::RELAY_PACKETS_TOTAL
+        .with_label_values(&[tag, result])
+        .inc();
+    if let Some(b) = bytes {
+        derp::RELAY_BYTES_TOTAL.with_label_values(&[tag]).inc_by(b);
+    }
+}
+
+/// Record DERP HTTP stub request by status code
+pub fn inc_derp_http(tag: &str, status: &str) {
+    derp::HTTP_REQUEST_TOTAL
+        .with_label_values(&[tag, status])
+        .inc();
+}
+
+/// Record DERP STUN handling result
+pub fn inc_derp_stun(tag: &str, result: &str) {
+    derp::STUN_REQUEST_TOTAL
+        .with_label_values(&[tag, result])
+        .inc();
+}
+
+/// Observe a DERP client session lifetime in seconds
+pub fn observe_derp_client_lifetime(tag: &str, seconds: f64) {
+    derp::CLIENT_LIFETIME_SECONDS
+        .with_label_values(&[tag])
+        .observe(seconds.max(0.0));
 }
 
 // ===================== SOCKS Inbound Metrics =====================
@@ -725,5 +910,33 @@ mod tests {
             .unwrap();
         let resp2 = metrics_http(req2).await.unwrap();
         assert_eq!(resp2.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn derp_metrics_export() {
+        // Emit a handful of DERP metrics and ensure they surface in the exporter.
+        inc_derp_connection("unit", "ok");
+        inc_derp_connection("unit", "rate_limited");
+        inc_derp_relay("unit", "ok", Some(42));
+        inc_derp_http("unit", "200");
+        inc_derp_stun("unit", "ok");
+        observe_derp_client_lifetime("unit", 1.5);
+        set_derp_clients("unit", 3);
+
+        let text = export_prometheus();
+        for needle in [
+            "derp_connection_total",
+            "derp_relay_packets_total",
+            "derp_relay_bytes_total",
+            "derp_http_requests_total",
+            "derp_stun_requests_total",
+            "derp_client_lifetime_seconds_bucket",
+            "derp_clients",
+        ] {
+            assert!(
+                text.contains(needle),
+                "export should contain {needle}, got:\n{text}"
+            );
+        }
     }
 }

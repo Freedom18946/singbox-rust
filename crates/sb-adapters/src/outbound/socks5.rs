@@ -4,13 +4,27 @@
 //! It implements the SOCKS5 protocol as defined in RFC 1928.
 
 use crate::outbound::prelude::*;
-use crate::traits::{OutboundDatagram, ResolveMode};
+#[cfg(feature = "socks-udp")]
+use crate::traits::OutboundDatagram;
+use crate::traits::ResolveMode;
 use anyhow::Context;
 use std::net::{IpAddr, SocketAddr};
+#[cfg(feature = "socks-udp")]
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, UdpSocket};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
+#[cfg(feature = "socks-udp")]
+use tokio::net::UdpSocket;
+#[cfg(feature = "socks-udp")]
+#[cfg(feature = "socks-udp")]
 use tokio::sync::Mutex;
+
+#[cfg(feature = "socks-tls")]
+use rustls_pki_types::ServerName;
+#[cfg(feature = "socks-tls")]
+use tokio_rustls::{rustls::ClientConfig, TlsConnector};
+#[cfg(feature = "socks-tls")]
+use std::sync::Arc;
 
 use sb_config::outbound::Socks5Config;
 
@@ -18,6 +32,7 @@ use sb_config::outbound::Socks5Config;
 #[derive(Debug, Clone)]
 pub struct Socks5Connector {
     config: Socks5Config,
+    use_tls: bool,
     #[cfg(feature = "transport_ech")]
     #[allow(dead_code)]
     ech_config: Option<sb_tls::EchClientConfig>,
@@ -41,6 +56,32 @@ impl Socks5Connector {
 
         Self {
             config,
+            use_tls: false,
+            #[cfg(feature = "transport_ech")]
+            ech_config,
+        }
+    }
+
+    /// Create a connector with TLS support
+    #[cfg(feature = "socks-tls")]
+    pub fn with_tls(config: Socks5Config) -> Self {
+        #[cfg(feature = "transport_ech")]
+        let ech_config = config
+            .tls
+            .as_ref()
+            .and_then(|tls| tls.ech.as_ref())
+            .filter(|ech| ech.enabled)
+            .map(|ech| sb_tls::EchClientConfig {
+                enabled: ech.enabled,
+                config: ech.config.clone(),
+                config_list: None,
+                pq_signature_schemes_enabled: ech.pq_signature_schemes_enabled,
+                dynamic_record_sizing_disabled: ech.dynamic_record_sizing_disabled,
+            });
+
+        Self {
+            config,
+            use_tls: true,
             #[cfg(feature = "transport_ech")]
             ech_config,
         }
@@ -57,6 +98,25 @@ impl Socks5Connector {
                 connect_timeout_sec: Some(30),
                 tls: None,
             },
+            use_tls: false,
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
+        }
+    }
+
+    /// Create a TLS connector with no authentication
+    #[cfg(feature = "socks-tls")]
+    pub fn no_auth_tls(server: impl Into<String>) -> Self {
+        Self {
+            config: Socks5Config {
+                server: server.into(),
+                tag: None,
+                username: None,
+                password: None,
+                connect_timeout_sec: Some(30),
+                tls: None,
+            },
+            use_tls: true,
             #[cfg(feature = "transport_ech")]
             ech_config: None,
         }
@@ -77,6 +137,29 @@ impl Socks5Connector {
                 connect_timeout_sec: Some(30),
                 tls: None,
             },
+            use_tls: false,
+            #[cfg(feature = "transport_ech")]
+            ech_config: None,
+        }
+    }
+
+    /// Create a TLS connector with username/password authentication
+    #[cfg(feature = "socks-tls")]
+    pub fn with_auth_tls(
+        server: impl Into<String>,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
+        Self {
+            config: Socks5Config {
+                server: server.into(),
+                tag: None,
+                username: Some(username.into()),
+                password: Some(password.into()),
+                connect_timeout_sec: Some(30),
+                tls: None,
+            },
+            use_tls: true,
             #[cfg(feature = "transport_ech")]
             ech_config: None,
         }
@@ -153,14 +236,67 @@ impl OutboundConnector for Socks5Connector {
                         })
                         .map_err(|e| AdapterError::Other(e.to_string()))?;
 
-                // Perform SOCKS5 handshake
-                self.socks5_handshake(&mut stream, opts.connect_timeout)
-                    .await?;
+                if self.use_tls {
+                    #[cfg(not(feature = "socks-tls"))]
+                    return Err(AdapterError::NotImplemented { what: "socks-tls" });
 
-                // Send CONNECT request
-                self.socks5_connect(&mut stream, &target, &opts).await?;
+                    #[cfg(feature = "socks-tls")]
+                    {
+                        // Create TLS config
+                        let root_store = tokio_rustls::rustls::RootCertStore {
+                            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+                        };
 
-                Ok(stream)
+                        let config = ClientConfig::builder()
+                            .with_root_certificates(root_store)
+                            .with_no_client_auth();
+
+                        let connector = TlsConnector::from(Arc::new(config));
+
+                        // Parse host for SNI
+                        let host = self
+                            .config
+                            .server
+                            .split(':')
+                            .next()
+                            .ok_or(AdapterError::InvalidConfig("Invalid proxy server address"))?;
+
+                        let server_name = ServerName::try_from(host)
+                            .map_err(|_| {
+                                AdapterError::InvalidConfig("Invalid server name for TLS")
+                            })?
+                            .to_owned();
+
+                        // Perform TLS handshake
+                        let mut tls_stream = tokio::time::timeout(
+                            opts.connect_timeout,
+                            connector.connect(server_name, stream),
+                        )
+                        .await
+                        .with_context(|| format!("TLS handshake timeout with SOCKS5 proxy {}", host))
+                        .map_err(|e| AdapterError::Other(e.to_string()))?
+                        .with_context(|| format!("TLS handshake failed with SOCKS5 proxy {}", host))
+                        .map_err(|e| AdapterError::Other(e.to_string()))?;
+
+                        // Perform SOCKS5 handshake over TLS
+                        self.socks5_handshake_generic(&mut tls_stream, opts.connect_timeout)
+                            .await?;
+
+                        // Send CONNECT request over TLS
+                        self.socks5_connect_generic(&mut tls_stream, &target, &opts).await?;
+
+                        Ok(Box::new(tls_stream) as BoxedStream)
+                    }
+                } else {
+                    // Perform SOCKS5 handshake
+                    self.socks5_handshake(&mut stream, opts.connect_timeout)
+                        .await?;
+
+                    // Send CONNECT request
+                    self.socks5_connect(&mut stream, &target, &opts).await?;
+
+                    Ok(Box::new(stream) as BoxedStream)
+                }
             }
             .await;
 
@@ -479,6 +615,18 @@ impl OutboundDatagram for SocksUdp {
 impl Socks5Connector {
     /// Perform SOCKS5 initial handshake and authentication
     async fn socks5_handshake(&self, stream: &mut TcpStream, timeout: Duration) -> Result<()> {
+        self.socks5_handshake_generic(stream, timeout).await
+    }
+
+    /// Generic SOCKS5 handshake for any AsyncRead + AsyncWrite stream
+    async fn socks5_handshake_generic<S>(
+        &self,
+        stream: &mut S,
+        timeout: Duration,
+    ) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + ?Sized,
+    {
         // Step 1: Send version and authentication methods
         // Prefer offering both "no-auth" and "user/pass" when credentials are present
         // so the server can select the most permissive method it supports.
@@ -525,7 +673,7 @@ impl Socks5Connector {
             }
             0x02 => {
                 // Username/password authentication required
-                self.socks5_auth(stream, timeout).await
+                self.socks5_auth_generic(stream, timeout).await
             }
             0xFF => Err(AdapterError::Protocol(
                 "No acceptable authentication methods".to_string(),
@@ -539,6 +687,17 @@ impl Socks5Connector {
 
     /// Perform username/password authentication
     async fn socks5_auth(&self, stream: &mut TcpStream, timeout: Duration) -> Result<()> {
+        self.socks5_auth_generic(stream, timeout).await
+    }
+
+    async fn socks5_auth_generic<S>(
+        &self,
+        stream: &mut S,
+        timeout: Duration,
+    ) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + ?Sized,
+    {
         let (username, password) =
             match (self.config.username.as_ref(), self.config.password.as_ref()) {
                 (Some(u), Some(p)) => (u, p),
@@ -772,6 +931,18 @@ impl Socks5Connector {
         target: &Target,
         opts: &DialOpts,
     ) -> Result<()> {
+        self.socks5_connect_generic(stream, target, opts).await
+    }
+
+    async fn socks5_connect_generic<S>(
+        &self,
+        stream: &mut S,
+        target: &Target,
+        opts: &DialOpts,
+    ) -> Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + ?Sized,
+    {
         // Build CONNECT request
         let mut request = vec![0x05, 0x01, 0x00]; // VER, CMD=CONNECT, RSV
 

@@ -8,7 +8,6 @@ use crate::traits::ResolveMode;
 use anyhow::Context;
 use base64::prelude::*;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
@@ -468,6 +467,7 @@ impl HttpProxyConnector {
     }
 
     /// Send HTTP CONNECT request on a generic stream (works with both TCP and TLS)
+    #[allow(dead_code)]
     async fn http_connect_generic(
         &self,
         stream: &mut BoxedStream,

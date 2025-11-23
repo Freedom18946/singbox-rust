@@ -55,6 +55,15 @@ cargo xtask check-all
 - 所有特性构建
 - 关键特性组合（TUN、admin、metrics 等）
 
+#### `feature-matrix`
+运行 CLI/DNS/adapter 的特性矩阵（共 32 种组合），等价于 `scripts/test_feature_gates.sh`
+
+```bash
+cargo xtask feature-matrix
+```
+
+输出会列出每个包/特性组合的 `cargo check` 结果，适合在本地或 CI 验证 feature gate 连通性。
+
 ### 🧪 测试
 
 #### `e2e`

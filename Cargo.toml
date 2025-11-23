@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "app",
+  "benches",
   "crates/sb-adapters",
   "crates/sb-admin-contract",
   "crates/sb-core",
@@ -75,10 +76,8 @@ tempfile = "3"
 futures = "0.3"
 async-trait = "0.1"
 hex = "0.4"
-webpki-roots = "0.26"
 tracing = "0.1"
 bytes = "1"
-base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 once_cell = "1"
 prometheus = "0.13"

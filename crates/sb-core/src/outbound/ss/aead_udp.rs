@@ -64,7 +64,9 @@ impl Outbound for SsAeadUdp {
                         self.config.cipher.name(),
                     );
                     // Count as a connect duration sample as well for UDP path
-                    crate::metrics::outbound::record_connect_duration(t0.elapsed().as_millis() as f64);
+                    crate::metrics::outbound::record_connect_duration(
+                        t0.elapsed().as_millis() as f64
+                    );
                 }
             }
             Err(e) => {
@@ -109,10 +111,17 @@ impl Outbound for SsAeadUdp {
                                 (&buf[..n], t)
                             } else {
                                 match parse_ss_addr(&buf[..n]) {
-                                    Ok((taddr, off)) if off <= n => (&buf[off..n], match taddr {
-                                        super::super::types::TargetAddr::Ip(sa) => super::super::types::TargetAddr::Ip(sa),
-                                        super::super::types::TargetAddr::Domain(d, p) => super::super::types::TargetAddr::Domain(d, p),
-                                    }),
+                                    Ok((taddr, off)) if off <= n => (
+                                        &buf[off..n],
+                                        match taddr {
+                                            super::super::types::TargetAddr::Ip(sa) => {
+                                                super::super::types::TargetAddr::Ip(sa)
+                                            }
+                                            super::super::types::TargetAddr::Domain(d, p) => {
+                                                super::super::types::TargetAddr::Domain(d, p)
+                                            }
+                                        },
+                                    ),
                                     _ => {
                                         // Drop invalid packet silently
                                         #[cfg(feature = "metrics")]
@@ -164,26 +173,24 @@ impl Outbound for SsAeadUdp {
                 let mut buf = vec![0u8; 64 * 1024];
                 loop {
                     match aead.inner.recv(&mut buf).await {
-                        Ok(n) => {
-                            match aead.decapsulate_udp_packet(&buf[..n]) {
-                                Ok((data_len, _dst)) => {
-                                    if let Err(_e) = lb_send.send(&buf[..data_len]).await {
-                                        #[cfg(feature = "metrics")]
-                                        crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                            "app_send",
-                                            aead.config.cipher.name(),
-                                        );
-                                    }
-                                }
-                                Err(_e) => {
+                        Ok(n) => match aead.decapsulate_udp_packet(&buf[..n]) {
+                            Ok((data_len, _dst)) => {
+                                if let Err(_e) = lb_send.send(&buf[..data_len]).await {
                                     #[cfg(feature = "metrics")]
                                     crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                        "decrypt",
+                                        "app_send",
                                         aead.config.cipher.name(),
                                     );
                                 }
                             }
-                        }
+                            Err(_e) => {
+                                #[cfg(feature = "metrics")]
+                                crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                    "decrypt",
+                                    aead.config.cipher.name(),
+                                );
+                            }
+                        },
                         Err(_e) => {
                             #[cfg(feature = "metrics")]
                             crate::metrics::outbound::record_ss_stream_error_with_cipher(
@@ -282,11 +289,11 @@ impl SsAeadUdpSocket {
         payload.extend_from_slice(data);
 
         // Encrypt payload
-        let t0 = std::time::Instant::now();
+        let _t0 = std::time::Instant::now();
         let encrypted_payload = encrypt_aead(&payload, &subkey, 0, &self.config.cipher)?;
         #[cfg(feature = "metrics")]
         {
-            let ms = t0.elapsed().as_millis() as f64;
+            let ms = _t0.elapsed().as_millis() as f64;
             crate::metrics::outbound::record_ss_aead_op_duration(
                 ms,
                 self.config.cipher.name(),
@@ -318,11 +325,11 @@ impl SsAeadUdpSocket {
         let subkey = derive_subkey(&self.config.master_key, salt, HashAlgorithm::Sha1);
 
         // Decrypt payload
-        let t0 = std::time::Instant::now();
+        let _t0 = std::time::Instant::now();
         let payload = decrypt_aead(encrypted_payload, &subkey, 0, &self.config.cipher)?;
         #[cfg(feature = "metrics")]
         {
-            let ms = t0.elapsed().as_millis() as f64;
+            let ms = _t0.elapsed().as_millis() as f64;
             crate::metrics::outbound::record_ss_aead_op_duration(
                 ms,
                 self.config.cipher.name(),
@@ -343,7 +350,9 @@ impl SsAeadUdpSocket {
 
     // Convert to UdpSocket for compatibility (this is a simplification)
     #[allow(dead_code)]
-    fn into_udp_socket(self) -> UdpSocket { unreachable!("not used after bridging implementation") }
+    fn into_udp_socket(self) -> UdpSocket {
+        unreachable!("not used after bridging implementation")
+    }
 }
 
 /// Decrypt AEAD data (reuse from TCP module with import)

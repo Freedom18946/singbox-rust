@@ -21,7 +21,7 @@ use std::{
 };
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
-use crate::dns::transport::DnsTransport;
+use crate::dns::transport::{DnsTransport, LocalTransport};
 
 // Helper: parse EDNS0 Client Subnet from env (global default)
 fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
@@ -213,7 +213,10 @@ fn parse_nameserver_addr(token: &str) -> Option<SocketAddr> {
     None
 }
 
-pub(crate) fn parse_tailscale_spec(spec: &str, tag: Option<&str>) -> Result<(String, Vec<SocketAddr>)> {
+pub(crate) fn parse_tailscale_spec(
+    spec: &str,
+    tag: Option<&str>,
+) -> Result<(String, Vec<SocketAddr>)> {
     let mut raw = Vec::new();
 
     if let Some(rest) = spec.strip_prefix("tailscale://") {
@@ -808,9 +811,8 @@ impl DnsUpstream for StaticMultiUpstream {
                 }
             }
         }
-        Err(last_error.unwrap_or_else(|| {
-            anyhow::anyhow!("all upstream members failed for {}", self.name)
-        }))
+        Err(last_error
+            .unwrap_or_else(|| anyhow::anyhow!("all upstream members failed for {}", self.name)))
     }
 
     fn name(&self) -> &str {
@@ -1411,6 +1413,27 @@ mod tests {
         assert!(upstream.health_check().await);
     }
 
+    #[tokio::test]
+    async fn local_upstream_resolves_localhost() {
+        let upstream = LocalUpstream::new(None);
+        let answer = upstream
+            .query("localhost", RecordType::A)
+            .await
+            .expect("local upstream should resolve localhost");
+
+        assert!(answer.ips.iter().any(|ip| ip.is_ipv4()));
+        assert_eq!(upstream.name(), "local");
+        assert!(answer.ttl > Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn local_upstream_uses_tag_in_name() {
+        let upstream = LocalUpstream::new(Some("home"));
+        assert_eq!(upstream.name(), "local::home");
+        // Ensure it still functions
+        assert!(upstream.query("localhost", RecordType::A).await.is_ok());
+    }
+
     #[test]
     fn test_query_packet_building() {
         let server = SocketAddr::from((Ipv4Addr::new(8, 8, 8, 8), 53));
@@ -1922,10 +1945,24 @@ impl Doh3Upstream {
     }
 }
 
+/// Load a TTL in seconds from the first non-empty environment variable in `candidates`.
+/// Falls back to `default_secs` when none are set or parsing fails.
+fn ttl_from_env(candidates: &[&str], default_secs: u64) -> Duration {
+    for var in candidates {
+        if let Ok(raw) = std::env::var(var) {
+            if let Ok(secs) = raw.trim().parse::<u64>() {
+                return Duration::from_secs(secs);
+            }
+        }
+    }
+
+    Duration::from_secs(default_secs)
+}
+
 #[async_trait]
 impl DnsUpstream for Doh3Upstream {
     async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
-        let _ = (&self.server, &self.timeout);
+        let _ = (&self.server, &self.server_name, &self.path, &self.timeout);
         #[cfg(feature = "dns_doh3")]
         {
             self.query_doh3(domain, record_type).await
@@ -1994,12 +2031,7 @@ pub struct SystemUpstream {
 impl SystemUpstream {
     /// 创建新的系统解析器上游
     pub fn new() -> Self {
-        let default_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_SYSTEM_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(60),
-        );
+        let default_ttl = ttl_from_env(&["SB_DNS_SYSTEM_TTL_S"], 60);
 
         Self {
             default_ttl,
@@ -2045,5 +2077,87 @@ impl DnsUpstream for SystemUpstream {
     async fn health_check(&self) -> bool {
         // 系统解析器通常总是可用的
         true
+    }
+}
+
+/// Local DNS upstream backed by the system resolver, with a DNS wire-format
+/// fallback for environments that expect the `local` transport.
+pub struct LocalUpstream {
+    name: String,
+    transport: LocalTransport,
+    helper: UdpUpstream,
+    fallback: SystemUpstream,
+    ttl: Duration,
+}
+
+impl LocalUpstream {
+    pub fn new(tag: Option<&str>) -> Self {
+        let name = tag
+            .map(|t| format!("local::{t}"))
+            .unwrap_or_else(|| "local".to_string());
+
+        // Helper upstream only constructs/parses DNS wire packets; address is unused.
+        let helper = UdpUpstream::new(SocketAddr::from((Ipv4Addr::LOCALHOST, 53))).with_retries(0);
+
+        Self {
+            name,
+            transport: LocalTransport::new(),
+            helper,
+            fallback: SystemUpstream::new(),
+            ttl: ttl_from_env(&["SB_DNS_LOCAL_TTL_S", "SB_DNS_SYSTEM_TTL_S"], 60),
+        }
+    }
+
+    async fn query_local(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        let packet = self
+            .helper
+            .build_query_packet(domain, record_type)
+            .context("build local DNS query packet")?;
+        let response = self
+            .transport
+            .query(&packet)
+            .await
+            .context("local DNS transport failed")?;
+        let mut answer = self
+            .helper
+            .parse_response(&response, record_type)
+            .context("parse local DNS response")?;
+        answer.ttl = self.ttl;
+        Ok(answer)
+    }
+}
+
+impl Default for LocalUpstream {
+    fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+#[async_trait]
+impl DnsUpstream for LocalUpstream {
+    async fn query(&self, domain: &str, record_type: RecordType) -> Result<DnsAnswer> {
+        match self.query_local(domain, record_type).await {
+            Ok(answer) => Ok(answer),
+            Err(err) => {
+                tracing::debug!(
+                    target: "sb_core::dns::local",
+                    %domain,
+                    ?record_type,
+                    error = %err,
+                    "local DNS query failed, falling back to system",
+                );
+                let mut fallback = self.fallback.query(domain, record_type).await?;
+                fallback.ttl = self.ttl;
+                Ok(fallback)
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        self.query("localhost", RecordType::A).await.is_ok()
     }
 }

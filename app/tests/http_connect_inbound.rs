@@ -1,9 +1,11 @@
 #![allow(clippy::manual_flatten, clippy::assertions_on_constants)]
-use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
+use sb_config::ir::{ConfigIR, InboundType, OutboundType};
+use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
 use sb_core::runtime::switchboard::SwitchboardBuilder;
 use sb_core::runtime::Runtime;
+use serde_json::json;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -137,33 +139,26 @@ fn http_connect_end2end_direct() {
     };
     let http_addr = l.local_addr().unwrap();
     drop(l);
-    let ir = ConfigIR {
-        inbounds: vec![InboundIR {
-            ty: InboundType::Http,
-            listen: http_addr.ip().to_string(),
-            port: http_addr.port(),
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
+    let config = json!({
+        "inbounds": [{
+            "type": "http",
+            "tag": "http-in",
+            "listen": http_addr.ip().to_string(),
+            "listen_port": http_addr.port()
         }],
-        outbounds: vec![OutboundIR {
-            ty: OutboundType::Direct,
-            name: Some("direct".into()),
-            ..Default::default()
+        "outbounds": [{
+            "type": "direct",
+            "tag": "direct"
         }],
-        route: RouteIR {
-            rules: vec![RuleIR {
-                domain: vec!["*".into()],
-                outbound: Some("direct".into()),
-                ..Default::default()
+        "route": {
+            "rules": [{
+                "domain": ["*"],
+                "outbound": "direct"
             }],
-            default: Some("direct".into()),
-        },
-        ntp: None,
-        dns: None,
-    };
+            "default": "direct"
+        }
+    });
+    let ir: ConfigIR = to_ir_v1(&config);
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());
     let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();

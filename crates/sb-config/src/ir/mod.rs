@@ -217,6 +217,16 @@ pub struct TrojanUserIR {
     pub password: String,
 }
 
+/// AnyTLS user configuration for multi-user inbound.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AnyTlsUserIR {
+    /// Optional user name for logging/routing purposes.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// User password.
+    pub password: String,
+}
+
 /// Hysteria2 user configuration for multi-user inbound.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Hysteria2UserIR {
@@ -329,6 +339,14 @@ pub struct InboundIR {
     /// Trojan multi-user configuration.
     #[serde(default)]
     pub users_trojan: Option<Vec<TrojanUserIR>>,
+
+    // Protocol-specific fields (AnyTLS)
+    /// AnyTLS multi-user configuration.
+    #[serde(default)]
+    pub users_anytls: Option<Vec<AnyTlsUserIR>>,
+    /// Optional AnyTLS padding scheme lines (each entry corresponds to a rule row).
+    #[serde(default)]
+    pub anytls_padding: Option<Vec<String>>,
 
     // Protocol-specific fields (Hysteria2)
     /// Hysteria2 multi-user configuration.
@@ -641,6 +659,38 @@ pub struct OutboundIR {
     #[serde(default)]
     pub connect_timeout_sec: Option<u32>,
 
+    // WireGuard-specific options (outbound)
+    /// Use existing system interface (equivalent to Go's `system_interface`).
+    #[serde(default)]
+    pub wireguard_system_interface: Option<bool>,
+    /// Preferred interface name when binding to an existing system interface.
+    #[serde(default)]
+    pub wireguard_interface: Option<String>,
+    /// Optional list of local addresses (CIDR) associated with the interface.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wireguard_local_address: Vec<String>,
+    /// Preferred IPv4 source address (overrides derived local_address/env).
+    #[serde(default)]
+    pub wireguard_source_v4: Option<String>,
+    /// Preferred IPv6 source address (overrides derived local_address/env).
+    #[serde(default)]
+    pub wireguard_source_v6: Option<String>,
+    /// Allowed IP list for the interface (used when env vars not supplied).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wireguard_allowed_ips: Vec<String>,
+    /// Private key material (base64). Optional when provided via env vars.
+    #[serde(default)]
+    pub wireguard_private_key: Option<String>,
+    /// Remote peer public key.
+    #[serde(default)]
+    pub wireguard_peer_public_key: Option<String>,
+    /// Optional pre-shared key.
+    #[serde(default)]
+    pub wireguard_pre_shared_key: Option<String>,
+    /// Optional persistent keep-alive interval (seconds).
+    #[serde(default)]
+    pub wireguard_persistent_keepalive: Option<u16>,
+
     // Tor-specific fields
     /// Tor SOCKS5 proxy address (default: 127.0.0.1:9050).
     #[serde(default)]
@@ -668,6 +718,11 @@ pub struct OutboundIR {
     pub test_tolerance_ms: Option<u64>,
     #[serde(default)]
     pub interrupt_exist_connections: Option<bool>,
+
+    // AnyTLS-specific fields
+    /// Optional AnyTLS padding scheme lines.
+    #[serde(default)]
+    pub anytls_padding: Option<Vec<String>>,
 }
 
 /// HTTP header entry (for gRPC metadata or HTTP Upgrade headers).
@@ -967,6 +1022,9 @@ pub struct ServiceIR {
     /// DERP: Mesh PSK file path
     #[serde(default)]
     pub derp_mesh_psk_file: Option<String>,
+    /// DERP: Server key file path (generated if doesn't exist)
+    #[serde(default)]
+    pub derp_server_key_path: Option<String>,
     /// DERP: Enable STUN
     #[serde(default)]
     pub derp_stun_enabled: Option<bool>,
@@ -1468,6 +1526,39 @@ mod tests {
         assert_eq!(peer.port, Some(51820));
         assert_eq!(peer.public_key, Some("peer-pubkey".to_string()));
         assert_eq!(peer.allowed_ips, Some(vec!["0.0.0.0/0".to_string()]));
+    }
+
+    #[test]
+    fn wireguard_outbound_serialization() {
+        let mut ir = OutboundIR {
+            ty: OutboundType::Wireguard,
+            name: Some("wg-out".to_string()),
+            ..Default::default()
+        };
+        ir.wireguard_interface = Some("wg0".to_string());
+        ir.wireguard_local_address = vec!["10.0.0.2/32".to_string(), "fd00::2/64".to_string()];
+        ir.wireguard_allowed_ips = vec!["0.0.0.0/0".to_string()];
+        ir.wireguard_persistent_keepalive = Some(25);
+
+        let json = serde_json::to_value(&ir).unwrap();
+        assert_eq!(json.get("ty").unwrap(), "wireguard");
+        assert_eq!(json.get("wireguard_interface").unwrap(), "wg0");
+        let local = json
+            .get("wireguard_local_address")
+            .and_then(|v| v.as_array())
+            .expect("local addresses");
+        assert_eq!(local.len(), 2);
+        assert_eq!(local[0], "10.0.0.2/32");
+        let allowed = json
+            .get("wireguard_allowed_ips")
+            .and_then(|v| v.as_array())
+            .expect("allowed ips");
+        assert_eq!(allowed[0], "0.0.0.0/0");
+
+        let roundtrip: OutboundIR = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtrip.wireguard_interface.as_deref(), Some("wg0"));
+        assert_eq!(roundtrip.wireguard_local_address.len(), 2);
+        assert_eq!(roundtrip.wireguard_persistent_keepalive, Some(25));
     }
 }
 

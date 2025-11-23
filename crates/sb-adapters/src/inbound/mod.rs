@@ -56,6 +56,9 @@ pub mod hysteria;
 #[cfg(feature = "adapter-hysteria2")]
 pub mod hysteria2;
 
+#[cfg(feature = "adapter-anytls")]
+pub mod anytls;
+
 /// Router connector module for TUN devices.
 #[cfg(feature = "tun")]
 pub mod router_connector;

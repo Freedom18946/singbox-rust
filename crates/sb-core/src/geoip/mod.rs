@@ -110,8 +110,7 @@ pub fn lookup_with_metrics(ip: IpAddr, country_code: &str) -> bool {
     }
     #[cfg(not(feature = "metrics"))]
     {
-        service()
-            .is_some_and(|s| s.is_country(ip, country_code))
+        service().is_some_and(|s| s.is_country(ip, country_code))
     }
 }
 

@@ -743,8 +743,8 @@ mod protocol_constants_tests {
 #[cfg(feature = "out_tuic")]
 mod contract_tests {
     use super::*;
-    use crate::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
     use crate::adapter::UdpOutboundFactory;
+    use crate::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
     // Contract (ignored): requires a reachable TUIC QUIC server
     // Run manually with a local TUIC server on 127.0.0.1:8443

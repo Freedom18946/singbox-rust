@@ -33,12 +33,16 @@ pub fn redact_str(input: &str) -> String {
     let mut s = input.to_string();
     // key=value
     s = KV_RE
-        .replace_all(&s, |caps: &regex::Captures| format!("{}=***", &caps[1]))
+        .replace_all(&s, |caps: &regex::Captures| {
+            let redacted = redact_kv(&caps[1], &caps[2]);
+            format!("{}={}", &caps[1], redacted)
+        })
         .into_owned();
     // JSON fields
     s = JSON_RE
         .replace_all(&s, |caps: &regex::Captures| {
-            format!("\"{}\": \"***\"", &caps[1])
+            let redacted = redact_kv(&caps[1], &caps[2]);
+            format!("\"{}\": \"{}\"", &caps[1], redacted)
         })
         .into_owned();
     // URL basic auth

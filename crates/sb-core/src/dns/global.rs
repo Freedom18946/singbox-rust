@@ -28,4 +28,3 @@ pub fn get() -> Option<Arc<dyn Resolver>> {
     let lock = cell();
     lock.read().unwrap().as_ref().cloned()
 }
-

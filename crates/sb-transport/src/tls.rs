@@ -1729,6 +1729,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: None,
             key_path: None,
+            cert_pem: None,
+            key_pem: None,
         });
 
         let json = serde_json::to_string(&config).unwrap();
@@ -1897,6 +1899,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: Some("/path/to/cert.pem".to_string()),
             key_path: Some("/path/to/key.pem".to_string()),
+            cert_pem: None,
+            key_pem: None,
         };
 
         assert_eq!(config.server_name, Some("example.com".to_string()));
@@ -2249,6 +2253,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: Some("/cert.pem".to_string()),
             key_path: Some("/key.pem".to_string()),
+            cert_pem: None,
+            key_pem: None,
         });
 
         let json = serde_json::to_string(&original).unwrap();
@@ -2294,6 +2300,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: None,
             key_path: None,
+            cert_pem: None,
+            key_pem: None,
         });
 
         let cloned = original.clone();
@@ -2441,6 +2449,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: None,
             key_path: None,
+            cert_pem: None,
+            key_pem: None,
         });
 
         let transport = TlsTransport::new(config);
@@ -2466,6 +2476,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: Some("/cert.pem".to_string()),
             key_path: Some("/key.pem".to_string()),
+            cert_pem: None,
+            key_pem: None,
         };
 
         assert!(valid_config.server_name.is_some());
@@ -2479,6 +2491,8 @@ mod tls_transport_tests {
             insecure: false,
             cert_path: Some("/cert.pem".to_string()),
             key_path: None, // Missing
+            cert_pem: None,
+            key_pem: None,
         };
 
         assert!(invalid_config.cert_path.is_some());

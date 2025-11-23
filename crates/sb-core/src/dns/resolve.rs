@@ -749,21 +749,25 @@ mod tests {
         // Domain labels > 63 chars should fail in DNS protocol
         let long_label = "a".repeat(64);
         let host = format!("{}.example.com", long_label);
-        
+
         // Should fail (either protocol validation or resolution failure)
         let result = resolve_all(&host, 443).await;
-        assert!(result.is_err() || result.as_ref().is_ok_and(|v| v.is_empty()), 
-                "should reject or fail to resolve domain with label > 63 chars");
+        assert!(
+            result.is_err() || result.as_ref().is_ok_and(|v| v.is_empty()),
+            "should reject or fail to resolve domain with label > 63 chars"
+        );
     }
 
     #[tokio::test]
     async fn test_system_resolve_invalid_host() {
         // Resolve an invalid/non-existent domain
         let result = system_resolve("invalid-domain-that-should-not-exist-12345.local", 443).await;
-        
+
         // Should fail (either no addresses or IO error)
-        assert!(result.is_err() || result.unwrap().is_empty(), 
-                "invalid domain should fail or return empty");
+        assert!(
+            result.is_err() || result.unwrap().is_empty(),
+            "invalid domain should fail or return empty"
+        );
     }
 
     #[test]

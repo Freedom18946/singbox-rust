@@ -116,12 +116,12 @@ async fn test_udp_upstream_real_query() -> Result<()> {
 
     // Should have at least one IP address
     assert!(
-        !answer.addrs.is_empty(),
+        !answer.ips.is_empty(),
         "DNS query should return at least one address"
     );
 
     // Addresses should be valid IPv4 or IPv6
-    for addr in answer.addrs {
+    for addr in answer.ips {
         assert!(matches!(addr, IpAddr::V4(_) | IpAddr::V6(_)));
     }
 
@@ -144,13 +144,13 @@ async fn test_doh3_upstream_real_query() -> Result<()> {
 
     // Should have at least one IP address
     assert!(
-        !answer.addrs.is_empty(),
+        !answer.ips.is_empty(),
         "DNS query should return at least one address"
     );
 
     // Should resolve to 1.1.1.1
     let has_cloudflare = answer
-        .addrs
+        .ips
         .iter()
         .any(|addr| matches!(addr, IpAddr::V4(v4) if v4.octets() == [1, 1, 1, 1]));
     assert!(has_cloudflare, "one.one.one.one should resolve to 1.1.1.1");
@@ -198,15 +198,15 @@ async fn test_doh_vs_doh3_consistency() -> Result<()> {
         .await?;
 
     // Both should return 1.1.1.1
-    assert!(!doh_answer.addrs.is_empty());
-    assert!(!doh3_answer.addrs.is_empty());
+    assert!(!doh_answer.ips.is_empty());
+    assert!(!doh3_answer.ips.is_empty());
 
     let doh_has_cloudflare = doh_answer
-        .addrs
+        .ips
         .iter()
         .any(|addr| matches!(addr, IpAddr::V4(v4) if v4.octets() == [1, 1, 1, 1]));
     let doh3_has_cloudflare = doh3_answer
-        .addrs
+        .ips
         .iter()
         .any(|addr| matches!(addr, IpAddr::V4(v4) if v4.octets() == [1, 1, 1, 1]));
 

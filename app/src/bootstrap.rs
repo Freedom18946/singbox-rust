@@ -430,7 +430,11 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         match existing.get(&member) {
                             Some(impl_ref) => {
                                 if let Some(conn) = to_adapter_connector(impl_ref) {
-                                    group_members.push(GroupMember::new(member.clone(), conn));
+                                    group_members.push(GroupMember::new(
+                                        member.clone(),
+                                        conn,
+                                        None,
+                                    ));
                                 } else {
                                     tracing::warn!(
                                         member=%member,
@@ -477,7 +481,11 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         match existing.get(&member) {
                             Some(impl_ref) => {
                                 if let Some(conn) = to_adapter_connector(impl_ref) {
-                                    group_members.push(GroupMember::new(member.clone(), conn));
+                                    group_members.push(GroupMember::new(
+                                        member.clone(),
+                                        conn,
+                                        None,
+                                    ));
                                 } else {
                                     tracing::warn!(
                                         member=%member,
@@ -1153,7 +1161,13 @@ mod tests {
                 assert_eq!(cfg.port, 443);
                 assert_eq!(cfg.token, "secret-token");
                 assert_eq!(cfg.congestion_control.as_deref(), Some("bbr"));
-                assert_eq!(cfg.alpn.as_deref(), Some("h3"));
+                assert_eq!(
+                    cfg.alpn
+                        .as_ref()
+                        .and_then(|v| v.first())
+                        .map(String::as_str),
+                    Some("h3")
+                );
                 assert!(cfg.skip_cert_verify);
                 assert!(matches!(
                     cfg.udp_relay_mode,

@@ -11,6 +11,7 @@ pub trait DnsTransport: Send + Sync {
 }
 
 pub mod enhanced_udp;
+pub mod local;
 pub mod tcp;
 mod udp;
 
@@ -24,6 +25,7 @@ pub mod doq;
 pub mod dot;
 
 pub use enhanced_udp::EnhancedUdpTransport;
+pub use local::LocalTransport;
 pub use tcp::TcpTransport;
 pub use udp::{UdpTransport, UdpUpstream};
 

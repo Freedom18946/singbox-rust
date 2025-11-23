@@ -737,7 +737,8 @@ impl UdpOutboundFactory for Hysteria2Outbound {
         let this = self.clone();
         Box::pin(async move {
             #[cfg(feature = "metrics")]
-            metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "stage"=>"attempt").increment(1);
+            metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "stage"=>"attempt")
+                .increment(1);
             let conn = match this.get_connection().await {
                 Ok(c) => c,
                 Err(e) => {
@@ -818,7 +819,8 @@ impl Hysteria2UdpSession {
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("udp_quic_send_total", "proto"=>"hysteria2").increment(1);
-            metrics::counter!("udp_quic_send_bytes_total", "proto"=>"hysteria2").increment(data.len() as u64);
+            metrics::counter!("udp_quic_send_bytes_total", "proto"=>"hysteria2")
+                .increment(data.len() as u64);
         }
 
         Ok(())
@@ -913,7 +915,8 @@ impl Hysteria2UdpSession {
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("udp_quic_recv_total", "proto"=>"hysteria2").increment(1);
-            metrics::counter!("udp_quic_recv_bytes_total", "proto"=>"hysteria2").increment(payload.len() as u64);
+            metrics::counter!("udp_quic_recv_bytes_total", "proto"=>"hysteria2")
+                .increment(payload.len() as u64);
         }
 
         // Check bandwidth limits
@@ -935,7 +938,10 @@ impl Hysteria2UdpSession {
 #[async_trait::async_trait]
 impl UdpOutboundSession for Hysteria2UdpSession {
     async fn send_to(&self, data: &[u8], host: &str, port: u16) -> io::Result<()> {
-        let target = HostPort { host: host.to_string(), port };
+        let target = HostPort {
+            host: host.to_string(),
+            port,
+        };
         self.send_udp(data, &target).await
     }
 
@@ -950,22 +956,17 @@ impl OutboundTcp for Hysteria2Outbound {
     type IO = crate::outbound::quic::io::QuicBidiStream;
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
-        use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_success,
-        };
+        use crate::metrics::outbound::{record_connect_attempt, record_connect_success};
 
         record_connect_attempt(crate::outbound::OutboundKind::Hysteria2);
 
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
 
         // Get or create QUIC connection with pooling
         let connection = match self.get_connection().await {
             Ok(conn) => conn,
             Err(e) => {
-                crate::metrics::record_outbound_error(
-                    crate::outbound::OutboundKind::Direct,
-                    &e,
-                );
+                crate::metrics::record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
                 #[cfg(feature = "metrics")]
                 {
@@ -981,10 +982,7 @@ impl OutboundTcp for Hysteria2Outbound {
         let (send_stream, recv_stream) = match self.create_tcp_tunnel(&connection, target).await {
             Ok(streams) => streams,
             Err(e) => {
-                crate::metrics::record_outbound_error(
-                    crate::outbound::OutboundKind::Direct,
-                    &e,
-                );
+                crate::metrics::record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
                 #[cfg(feature = "metrics")]
                 {
@@ -1128,11 +1126,16 @@ impl crate::adapter::OutboundConnector for Hysteria2Outbound {
             Err(e) => {
                 #[cfg(feature = "metrics")]
                 {
-                    use crate::metrics::outbound::{record_connect_error, OutboundErrorClass, OutboundKind};
+                    use crate::metrics::outbound::{
+                        record_connect_error, OutboundErrorClass, OutboundKind,
+                    };
                     record_connect_error(OutboundKind::Hysteria2, OutboundErrorClass::Handshake);
                     metrics::counter!("hysteria2_connect_total", "result" => "error").increment(1);
                 }
-                return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    e,
+                ));
             }
         };
 
@@ -1145,10 +1148,15 @@ impl crate::adapter::OutboundConnector for Hysteria2Outbound {
         // Perform Hysteria2 handshake and authentication
         let mut hysteria2_stream = super::quic::io::QuicBidiStream::new(send_stream, recv_stream);
         // Hysteria2 protocol: Send authentication and target request
-        if let Err(e) = self.hysteria2_handshake(&mut hysteria2_stream, host, port).await {
+        if let Err(e) = self
+            .hysteria2_handshake(&mut hysteria2_stream, host, port)
+            .await
+        {
             #[cfg(feature = "metrics")]
             {
-                use crate::metrics::outbound::{record_connect_error, OutboundErrorClass, OutboundKind};
+                use crate::metrics::outbound::{
+                    record_connect_error, OutboundErrorClass, OutboundKind,
+                };
                 record_connect_error(OutboundKind::Hysteria2, OutboundErrorClass::Handshake);
                 metrics::counter!("hysteria2_connect_total", "result" => "error").increment(1);
             }
@@ -1157,7 +1165,9 @@ impl crate::adapter::OutboundConnector for Hysteria2Outbound {
 
         #[cfg(feature = "metrics")]
         {
-            use crate::metrics::outbound::{record_connect_duration, record_connect_success, OutboundKind};
+            use crate::metrics::outbound::{
+                record_connect_duration, record_connect_success, OutboundKind,
+            };
             record_connect_success(OutboundKind::Hysteria2);
             record_connect_duration(t0.elapsed().as_millis() as f64);
             metrics::counter!("hysteria2_connect_total", "result" => "ok").increment(1);

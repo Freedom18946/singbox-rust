@@ -1,8 +1,8 @@
 //! Mixed inbound: Detects SOCKS5 vs HTTP CONNECT and dispatches accordingly.
 //! Minimal implementation using existing per-connection handlers.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -24,7 +24,9 @@ pub(crate) struct Engine {
 
 #[cfg(not(feature = "router"))]
 impl Engine {
-    fn new(cfg: sb_config::ir::ConfigIR) -> Self { Self { cfg } }
+    fn new(cfg: sb_config::ir::ConfigIR) -> Self {
+        Self { cfg }
+    }
 }
 
 #[derive(Debug)]
@@ -57,13 +59,25 @@ impl MixedInbound {
     }
 
     #[cfg(feature = "router")]
-    pub fn with_engine(mut self, eng: EngineX<'static>) -> Self { self.engine = Some(eng); self }
+    pub fn with_engine(mut self, eng: EngineX<'static>) -> Self {
+        self.engine = Some(eng);
+        self
+    }
     #[cfg(not(feature = "router"))]
-    pub fn with_engine(mut self, eng: Engine) -> Self { self.engine = Some(eng); self }
+    pub fn with_engine(mut self, eng: Engine) -> Self {
+        self.engine = Some(eng);
+        self
+    }
 
-    pub fn with_bridge(mut self, br: Arc<Bridge>) -> Self { self.bridge = Some(br); self }
+    pub fn with_bridge(mut self, br: Arc<Bridge>) -> Self {
+        self.bridge = Some(br);
+        self
+    }
 
-    pub fn with_sniff(mut self, enabled: bool) -> Self { self.sniff_enabled = enabled; self }
+    pub fn with_sniff(mut self, enabled: bool) -> Self {
+        self.sniff_enabled = enabled;
+        self
+    }
 
     pub fn with_basic_auth(mut self, user: Option<String>, pass: Option<String>) -> Self {
         self.basic_user = user;
@@ -77,7 +91,9 @@ impl MixedInbound {
         tracing::info!(target = "sb_core::inbound::mixed", %addr, "mixed inbound listening");
 
         loop {
-            if self.shutdown.load(Ordering::Relaxed) { break; }
+            if self.shutdown.load(Ordering::Relaxed) {
+                break;
+            }
             match tokio::time::timeout(Duration::from_millis(1000), listener.accept()).await {
                 Err(_) => continue,
                 Ok(Err(e)) => {
@@ -103,7 +119,7 @@ impl MixedInbound {
 }
 
 async fn handle_conn(
-    mut cli: TcpStream,
+    cli: TcpStream,
     eng: &EngineX<'static>,
     br: &Bridge,
     http_auth: Option<(String, String)>,
@@ -135,7 +151,10 @@ impl InboundService for MixedInbound {
             let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
             self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
-        let br = self.bridge.clone().unwrap_or_else(|| Arc::new(Bridge::new()));
+        let br = self
+            .bridge
+            .clone()
+            .unwrap_or_else(|| Arc::new(Bridge::new()));
 
         match tokio::runtime::Handle::try_current() {
             Ok(h) => h.block_on(self.serve_async(eng, br)),
@@ -146,6 +165,7 @@ impl InboundService for MixedInbound {
         }
     }
 
-    fn request_shutdown(&self) { self.shutdown.store(true, Ordering::Relaxed); }
+    fn request_shutdown(&self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+    }
 }
-

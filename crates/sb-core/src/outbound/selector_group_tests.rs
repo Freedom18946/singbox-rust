@@ -68,6 +68,7 @@ mod tests {
         ProxyMember {
             tag: tag.to_string(),
             connector: Arc::new(MockConnector::new(tag, delay_ms)),
+            udp_factory: None,
             health: Arc::new(ProxyHealth::default()),
         }
     }

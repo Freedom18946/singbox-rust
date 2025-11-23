@@ -82,7 +82,15 @@ pub fn build_tailscale_endpoint(
 /// This should be called during adapter initialization to register
 /// WireGuard and Tailscale endpoint stubs.
 pub fn register_endpoint_stubs() {
+    #[cfg(feature = "adapter-wireguard-endpoint")]
+    sb_core::endpoint::register_endpoint(
+        EndpointType::Wireguard,
+        crate::endpoint::wireguard::build_wireguard_endpoint,
+    );
+
+    #[cfg(not(feature = "adapter-wireguard-endpoint"))]
     sb_core::endpoint::register_endpoint(EndpointType::Wireguard, build_wireguard_endpoint);
+
     sb_core::endpoint::register_endpoint(EndpointType::Tailscale, build_tailscale_endpoint);
 }
 

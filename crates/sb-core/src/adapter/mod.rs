@@ -7,10 +7,12 @@
 //!
 //! sb-adapters provides concrete implementations; sb-core defines interfaces and bridging logic.
 
+use crate::endpoint::{endpoint_registry, Endpoint, EndpointContext};
+use crate::service::{service_registry, Service, ServiceContext};
 use sb_config::ir::Credentials;
-use std::sync::Arc;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
@@ -75,7 +77,9 @@ pub trait UdpOutboundSession: Send + Sync + std::fmt::Debug + 'static {
 
 /// Factory that creates UDP outbound sessions (per SOCKS UDP association).
 pub trait UdpOutboundFactory: Send + Sync + std::fmt::Debug + 'static {
-    fn open_session(&self) -> std::pin::Pin<
+    fn open_session(
+        &self,
+    ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
     >;
 }
@@ -96,6 +100,12 @@ pub struct InboundParam {
     pub override_port: Option<u16>,
     /// Network mode: "tcp", "udp", or "tcp,udp" (both)
     pub network: Option<String>,
+    /// AnyTLS users (multi-user configuration)
+    pub users_anytls: Option<Vec<AnyTlsUserParam>>,
+    /// Single user password (fallback)
+    pub password: Option<String>,
+    /// AnyTLS padding scheme rows.
+    pub anytls_padding: Option<Vec<String>>,
 
     // TLS configuration (for inbounds that need TLS)
     /// Path to TLS certificate file (PEM format)
@@ -144,6 +154,13 @@ pub struct InboundParam {
     pub hysteria_recv_window_conn: Option<u64>,
     /// Hysteria v1 QUIC receive window for stream
     pub hysteria_recv_window: Option<u64>,
+}
+
+/// AnyTLS user parameters passed to the adapter layer.
+#[derive(Clone, Debug)]
+pub struct AnyTlsUserParam {
+    pub name: Option<String>,
+    pub password: String,
 }
 
 /// Outbound construction parameters (derived from IR).
@@ -208,7 +225,7 @@ pub trait OutboundFactory: Send + Sync {
 ///
 /// The bridge is assembled from IR configuration and serves as the central registry
 /// for all protocol handlers. It supports adapter-first fallback to scaffold implementations.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Bridge {
     pub inbounds: Vec<Arc<dyn InboundService>>,
     /// Inbound protocol kinds aligned with `inbounds` indices
@@ -217,6 +234,10 @@ pub struct Bridge {
     pub outbounds: Vec<(String, String, Arc<dyn OutboundConnector>)>,
     /// UDP outbound factories by name
     pub udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>>,
+    /// Endpoints (WireGuard, Tailscale, etc.)
+    pub endpoints: Vec<Arc<dyn Endpoint>>,
+    /// Background services (Resolved, DERP, SSM API, etc.)
+    pub services: Vec<Arc<dyn Service>>,
 }
 
 impl Bridge {
@@ -227,6 +248,8 @@ impl Bridge {
             inbound_kinds: vec![],
             outbounds: vec![],
             udp_factories: HashMap::new(),
+            endpoints: vec![],
+            services: vec![],
         }
     }
 
@@ -280,8 +303,14 @@ impl Bridge {
 
                         let mut srv = MixedInbound::new(inbound.listen.clone(), inbound.port);
                         if let Some(creds) = &inbound.basic_auth {
-                            let user = creds.username.clone().or_else(|| creds.username_env.clone());
-                            let pass = creds.password.clone().or_else(|| creds.password_env.clone());
+                            let user = creds
+                                .username
+                                .clone()
+                                .or_else(|| creds.username_env.clone());
+                            let pass = creds
+                                .password
+                                .clone()
+                                .or_else(|| creds.password_env.clone());
                             srv = srv.with_basic_auth(user, pass);
                         }
                         srv = srv.with_sniff(inbound.sniff);
@@ -312,7 +341,9 @@ impl Bridge {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
                             "redirect",
                             "requires Linux iptables REDIRECT and adapter integration",
-                            Some("Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string()),
+                            Some(
+                                "Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string(),
+                            ),
                         );
                         Arc::new(msg) as Arc<dyn InboundService>
                     }
@@ -320,7 +351,9 @@ impl Bridge {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
                             "tproxy",
                             "requires Linux IP_TRANSPARENT and adapter integration",
-                            Some("Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string()),
+                            Some(
+                                "Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string(),
+                            ),
                         );
                         Arc::new(msg) as Arc<dyn InboundService>
                     }
@@ -369,9 +402,7 @@ impl Bridge {
             let kind = outbound.ty_str().to_string();
 
             let connector = match outbound.ty {
-                sb_config::ir::OutboundType::Direct => {
-                    direct_connector_fallback()
-                }
+                sb_config::ir::OutboundType::Direct => direct_connector_fallback(),
                 sb_config::ir::OutboundType::Block => {
                     #[cfg(feature = "scaffold")]
                     {
@@ -397,7 +428,8 @@ impl Bridge {
                             .unwrap_or((None, None));
                         let server = outbound.server.clone().unwrap_or_default();
                         let port = outbound.port.unwrap_or(8080);
-                        Arc::new(HttpUp::new(server, port, user, pass)) as Arc<dyn OutboundConnector>
+                        Arc::new(HttpUp::new(server, port, user, pass))
+                            as Arc<dyn OutboundConnector>
                     }
                     #[cfg(not(feature = "scaffold"))]
                     {
@@ -416,7 +448,8 @@ impl Bridge {
                             .unwrap_or((None, None));
                         let server = outbound.server.clone().unwrap_or_default();
                         let port = outbound.port.unwrap_or(1080);
-                        Arc::new(SocksUp::new(server, port, user, pass)) as Arc<dyn OutboundConnector>
+                        Arc::new(SocksUp::new(server, port, user, pass))
+                            as Arc<dyn OutboundConnector>
                     }
                     #[cfg(not(feature = "scaffold"))]
                     {
@@ -464,12 +497,8 @@ impl Bridge {
                     // For now, fall back to direct
                     direct_connector_fallback()
                 }
-                sb_config::ir::OutboundType::Shadowsocks => {
-                    direct_connector_fallback()
-                }
-                sb_config::ir::OutboundType::UrlTest => {
-                    direct_connector_fallback()
-                }
+                sb_config::ir::OutboundType::Shadowsocks => direct_connector_fallback(),
+                sb_config::ir::OutboundType::UrlTest => direct_connector_fallback(),
                 sb_config::ir::OutboundType::Shadowtls => {
                     // Adapter-provided in sb-adapters; core bridge falls back to direct
                     direct_connector_fallback()
@@ -554,12 +583,36 @@ impl Bridge {
                     // Fallback to direct in this adapter path
                     direct_connector_fallback()
                 }
-                _ => {
-                    direct_connector_fallback()
-                }
+                _ => direct_connector_fallback(),
             };
 
             bridge.add_outbound(name, kind, connector);
+        }
+
+        // Build endpoints from IR
+        for endpoint_ir in &ir.endpoints {
+            let ctx = EndpointContext::default();
+            if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
+                bridge.add_endpoint(endpoint);
+            } else {
+                tracing::warn!(
+                    "Failed to build endpoint: {}",
+                    endpoint_ir.tag.as_deref().unwrap_or("unknown")
+                );
+            }
+        }
+
+        // Build services from IR
+        for service_ir in &ir.services {
+            let ctx = ServiceContext::default();
+            if let Some(service) = service_registry().build(service_ir, &ctx) {
+                bridge.add_service(service);
+            } else {
+                tracing::warn!(
+                    "Failed to build service: {}",
+                    service_ir.tag.as_deref().unwrap_or("unknown")
+                );
+            }
         }
 
         Ok(bridge)
@@ -579,6 +632,16 @@ impl Bridge {
     /// Registers an outbound connector with name and kind.
     pub fn add_outbound(&mut self, name: String, kind: String, ob: Arc<dyn OutboundConnector>) {
         self.outbounds.push((name, kind, ob));
+    }
+
+    /// Registers a VPN endpoint instance.
+    pub fn add_endpoint(&mut self, ep: Arc<dyn Endpoint>) {
+        self.endpoints.push(ep);
+    }
+
+    /// Registers a background service instance.
+    pub fn add_service(&mut self, svc: Arc<dyn Service>) {
+        self.services.push(svc);
     }
 
     /// Registers an UDP outbound factory with name.
@@ -621,7 +684,10 @@ impl Bridge {
 
     /// Gets inbound kind for index, or "unknown" if missing
     pub fn inbound_kind_at(&self, idx: usize) -> &str {
-        self.inbound_kinds.get(idx).map(|s| s.as_str()).unwrap_or("unknown")
+        self.inbound_kinds
+            .get(idx)
+            .map(|s| s.as_str())
+            .unwrap_or("unknown")
     }
 
     /// Alias for `find_outbound` - finds an outbound connector by name.
@@ -633,5 +699,21 @@ impl Bridge {
 impl Default for Bridge {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for Bridge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bridge")
+            .field("inbounds", &format!("{} services", self.inbounds.len()))
+            .field("inbound_kinds", &self.inbound_kinds)
+            .field("outbounds", &format!("{} connectors", self.outbounds.len()))
+            .field(
+                "udp_factories",
+                &format!("{} factories", self.udp_factories.len()),
+            )
+            .field("endpoints", &format!("{} endpoints", self.endpoints.len()))
+            .field("services", &format!("{} services", self.services.len()))
+            .finish()
     }
 }

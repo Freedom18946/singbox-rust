@@ -80,9 +80,7 @@ impl OutboundTcp for ShadowTlsOutbound {
     type IO = TlsStream<TcpStream>;
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
-        use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_success,
-        };
+        use crate::metrics::outbound::{record_connect_attempt, record_connect_success};
         use crate::metrics::record_outbound_error;
 
         record_connect_attempt(crate::outbound::OutboundKind::ShadowTls);

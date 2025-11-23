@@ -138,8 +138,9 @@ impl DnsClient {
     }
     async fn cache_put(&self, host: String, addrs: Vec<IpAddr>, ttl: Option<u32>, negative: bool) {
         let mut map = self.inner.cache.write().await;
-        let ttl = ttl
-            .map_or(self.inner.ttl_default, |s| Duration::from_secs(u64::from(s)));
+        let ttl = ttl.map_or(self.inner.ttl_default, |s| {
+            Duration::from_secs(u64::from(s))
+        });
         map.insert(
             host,
             CacheEntry {

@@ -120,7 +120,8 @@ impl DirectForward {
                             tracing::debug!(error=%e, "direct inbound TCP: session error");
                         }
                         active.fetch_sub(1, Ordering::Relaxed);
-                        let sum = active.load(Ordering::Relaxed) + udp_count.load(Ordering::Relaxed);
+                        let sum =
+                            active.load(Ordering::Relaxed) + udp_count.load(Ordering::Relaxed);
                         crate::metrics::inbound::set_active_connections("direct", sum);
                     });
                 }

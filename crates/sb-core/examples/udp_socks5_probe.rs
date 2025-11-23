@@ -1,6 +1,7 @@
 use std::net::ToSocketAddrs;
 use tokio::net::UdpSocket;
 
+#[cfg(feature = "scaffold")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Args: <dst-host> <dst-port> <hex-payload>
@@ -29,6 +30,11 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     println!("sent {} bytes via SOCKS5 relay", n);
     Ok(())
+}
+
+#[cfg(not(feature = "scaffold"))]
+fn main() {
+    eprintln!("udp_socks5_probe requires the `scaffold` feature");
 }
 
 fn decode_hex(s: &str) -> Option<Vec<u8>> {

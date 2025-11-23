@@ -1,8 +1,8 @@
 //! Async HTTP/1.1 CONNECT inbound (scaffold).
 //! - Optional Basic auth via (username,password)
 //! - Route decision via Engine; outbound resolved by Bridge (adapter优先)
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -129,10 +129,10 @@ pub(crate) async fn handle(
     if method != "CONNECT" || !target.contains(':') {
         cli.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n")
             .await?;
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "only CONNECT supported",
-            ));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "only CONNECT supported",
+        ));
     }
 
     // 2) 解析头
@@ -189,7 +189,11 @@ pub(crate) async fn handle(
             sniff_host: Some(&host),
             // For HTTP CONNECT control plane, we don't have stream bytes yet.
             // When sniff is enabled, we can still hint ALPN as http/1.1.
-            sniff_alpn: if sniff_enabled { Some("http/1.1") } else { None },
+            sniff_alpn: if sniff_enabled {
+                Some("http/1.1")
+            } else {
+                None
+            },
         };
         eng.decide(&input, false)
     };
@@ -306,7 +310,9 @@ impl HttpConnect {
         );
 
         loop {
-            if self.shutdown.load(Ordering::Relaxed) { break; }
+            if self.shutdown.load(Ordering::Relaxed) {
+                break;
+            }
             match tokio::time::timeout(Duration::from_millis(1000), listener.accept()).await {
                 Err(_) => continue,
                 Ok(Err(e)) => {
@@ -359,8 +365,7 @@ impl InboundService for HttpConnect {
             }
             Err(_) => {
                 // No tokio runtime, create one
-                let runtime = tokio::runtime::Runtime::new()
-                    .map_err(std::io::Error::other)?;
+                let runtime = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
                 runtime.block_on(self.do_serve_async(eng, br))
             }
         }

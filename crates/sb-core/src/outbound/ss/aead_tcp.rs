@@ -75,7 +75,7 @@ impl SsAeadTcp {
 #[async_trait]
 impl Outbound for SsAeadTcp {
     async fn tcp_connect(&self, req: TcpConnectRequest) -> anyhow::Result<tokio::net::TcpStream> {
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
 
         // Step 1: Connect to Shadowsocks server
         let mut tcp =
@@ -111,12 +111,12 @@ impl Outbound for SsAeadTcp {
             outbound_handshake("shadowsocks", "error", Some(err_kind(e)));
         })?;
 
-        let elapsed = start.elapsed();
+        let _elapsed = _start.elapsed();
         outbound_handshake("shadowsocks", "ok", None);
         metrics::record_shadowsocks_connect_success();
 
         #[cfg(feature = "metrics")]
-        if let Ok(ms) = u64::try_from(elapsed.as_millis()) {
+        if let Ok(ms) = u64::try_from(_elapsed.as_millis()) {
             metrics::handshake_duration_histogram()
                 .with_label_values(&["shadowsocks"])
                 .observe(ms as f64);
@@ -153,7 +153,8 @@ impl Outbound for SsAeadTcp {
                         break;
                     }
                     Ok(n) => {
-                        let enc_res = encrypt_aead_chunk(&buf[..n], &subkey_w, write_nonce, &cipher_w);
+                        let enc_res =
+                            encrypt_aead_chunk(&buf[..n], &subkey_w, write_nonce, &cipher_w);
                         if let Ok(enc) = enc_res {
                             if ss_w.write_all(&enc).await.is_err() {
                                 break;
@@ -174,7 +175,9 @@ impl Outbound for SsAeadTcp {
             let tag = cipher_r.tag_size();
             let mut len_buf = vec![0u8; 2 + tag];
             loop {
-                if let Err(_) = ss_r.read_exact(&mut len_buf).await { break; }
+                if let Err(_) = ss_r.read_exact(&mut len_buf).await {
+                    break;
+                }
                 let plain_len = match decrypt_aead(&len_buf, &subkey_r, read_nonce, &cipher_r)
                     .and_then(|v| {
                         if v.len() >= 2 {
@@ -188,12 +191,21 @@ impl Outbound for SsAeadTcp {
                 };
 
                 let mut payload = vec![0u8; plain_len + tag];
-                if let Err(_) = ss_r.read_exact(&mut payload).await { break; }
-                let plain = match decrypt_aead(&payload, &subkey_r, read_nonce.wrapping_add(1), &cipher_r) {
+                if let Err(_) = ss_r.read_exact(&mut payload).await {
+                    break;
+                }
+                let plain = match decrypt_aead(
+                    &payload,
+                    &subkey_r,
+                    read_nonce.wrapping_add(1),
+                    &cipher_r,
+                ) {
                     Ok(v) => v,
                     Err(_) => break,
                 };
-                if ls_w.write_all(&plain).await.is_err() { break; }
+                if ls_w.write_all(&plain).await.is_err() {
+                    break;
+                }
                 read_nonce = read_nonce.wrapping_add(2);
             }
             let _ = ls_w.shutdown().await;

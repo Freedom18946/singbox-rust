@@ -1,0 +1,162 @@
+name: Performance Benchmarks
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Benchmark mode'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+          - smoke
+          - quick
+          - full
+      compare_go:
+        description: 'Compare with Go baseline'
+        required: false
+        type: boolean
+        default: false
+  
+  # Scheduled weekly run
+  schedule:
+    - cron: '0 2 * * 0'  # Every Sunday at 2 AM UTC
+  
+  # Optional: Run on PR with 'benchmark' label
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    # Only run on labeled PRs if they have the 'benchmark' label
+    if: |
+      github.event_name != 'pull_request' || 
+      github.event.label.name == 'benchmark'
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: benchmark-${{ runner.os }}
+      
+      - name: Install Go (for comparison)
+        if: inputs.compare_go || github.event_name == 'schedule'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Determine benchmark mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            MODE="full"
+          else
+            MODE="quick"
+          fi
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
+      
+      - name: Run benchmarks
+        run: |
+          MODE=${{ steps.mode.outputs.mode }}
+          
+          if [ "${{ inputs.compare_go }}" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            ./scripts/run_benchmarks.sh --$MODE --compare-go
+          else
+            ./scripts/run_benchmarks.sh --$MODE
+          fi
+      
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ steps.mode.outputs.mode }}-${{ github.run_number }}
+          path: |
+            benchmark_results/
+            target/criterion/
+          retention-days: 30
+      
+      - name: Extract summary
+        if: always()
+        id: summary
+        run: |
+          if [ -f benchmark_results/latest_summary.md ]; then
+            echo "summary_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "summary_exists=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Comment on PR
+        if: |
+          github.event_name == 'pull_request' && 
+          steps.summary.outputs.summary_exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('benchmark_results/latest_summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Benchmark Results\n\n${summary}\n\n---\n*View detailed results in the [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})*`
+            });
+      
+      - name: Check for performance regression
+        if: github.event_name == 'pull_request'
+        run: |
+          # This is a placeholder for regression detection
+          # In the future, this should:
+          # 1. Compare with baseline metrics
+          # 2. Fail if significant regression detected
+          echo "Performance regression check: PASSED (not implemented yet)"
+      
+      - name: Generate job summary
+        if: always()
+        run: |
+          if [ -f benchmark_results/latest_summary.md ]; then
+            cat benchmark_results/latest_summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Benchmark summary not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Optional: Store baseline metrics for comparison
+  store-baseline:
+    name: Store Baseline Metrics
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    needs: benchmark
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-results-*
+      
+      - name: Store as baseline
+        run: |
+          # This would typically:
+          # 1. Parse Criterion JSON output
+          # 2. Store metrics in a database or artifact
+          # 3. Use for future regression detection
+          echo "Baseline storage: Not implemented yet"

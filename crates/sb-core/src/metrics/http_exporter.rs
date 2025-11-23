@@ -23,7 +23,10 @@ fn handle_conn(mut s: TcpStream) -> std::io::Result<()> {
 }
 
 fn classify_err(e: &std::io::Error) -> &'static str {
-    use std::io::ErrorKind::{AddrInUse, AddrNotAvailable, PermissionDenied, ConnectionRefused, ConnectionAborted, ConnectionReset, NotConnected, TimedOut, WouldBlock, Interrupted, BrokenPipe};
+    use std::io::ErrorKind::{
+        AddrInUse, AddrNotAvailable, BrokenPipe, ConnectionAborted, ConnectionRefused,
+        ConnectionReset, Interrupted, NotConnected, PermissionDenied, TimedOut, WouldBlock,
+    };
     match e.kind() {
         AddrInUse | AddrNotAvailable | PermissionDenied => "bind",
         ConnectionRefused | ConnectionAborted | ConnectionReset | NotConnected => "conn",

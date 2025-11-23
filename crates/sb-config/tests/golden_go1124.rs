@@ -60,10 +60,12 @@ fn golden_gui_sample_ir_equivalence() {
 
 #[test]
 fn golden_dns_address_https_rcode_ir_equivalence() {
-    let ir_in =
-        ir_from_str(include_str!("golden/go1124/dns_address_https_rcode_input.json"));
-    let ir_out =
-        ir_from_str(include_str!("golden/go1124/dns_address_https_rcode_output.json"));
+    let ir_in = ir_from_str(include_str!(
+        "golden/go1124/dns_address_https_rcode_input.json"
+    ));
+    let ir_out = ir_from_str(include_str!(
+        "golden/go1124/dns_address_https_rcode_output.json"
+    ));
     // For this case Go drops the unused rcode server in the pretty-printed
     // output. We assert that strategy and rules match, and that all servers
     // referenced by rules are present in both IRs.
@@ -88,23 +90,14 @@ fn golden_dns_address_https_rcode_ir_equivalence() {
 
 #[test]
 fn golden_dns_block_ref_ir_equivalence() {
-    let ir_in = ir_from_str(include_str!(
-        "golden/go1124/dns_block_ref_input.json"
-    ));
-    let ir_out = ir_from_str(include_str!(
-        "golden/go1124/dns_block_ref_output.json"
-    ));
-    assert_eq!(
-        ir_in, ir_out,
-        "dns_block_ref input/output IR should match"
-    );
+    let ir_in = ir_from_str(include_str!("golden/go1124/dns_block_ref_input.json"));
+    let ir_out = ir_from_str(include_str!("golden/go1124/dns_block_ref_output.json"));
+    assert_eq!(ir_in, ir_out, "dns_block_ref input/output IR should match");
 }
 
 #[test]
 fn golden_dns_no_ref_keep_all_ir_equivalence() {
-    let ir_in = ir_from_str(include_str!(
-        "golden/go1124/dns_no_ref_keep_all_input.json"
-    ));
+    let ir_in = ir_from_str(include_str!("golden/go1124/dns_no_ref_keep_all_input.json"));
     let ir_out = ir_from_str(include_str!(
         "golden/go1124/dns_no_ref_keep_all_output.json"
     ));
@@ -116,10 +109,12 @@ fn golden_dns_no_ref_keep_all_ir_equivalence() {
 
 #[test]
 fn golden_inbound_empty_users_drop_ir_equivalence() {
-    let ir_in =
-        ir_from_str(include_str!("golden/go1124/inbound_empty_users_drop_input.json"));
-    let ir_out =
-        ir_from_str(include_str!("golden/go1124/inbound_empty_users_drop_output.json"));
+    let ir_in = ir_from_str(include_str!(
+        "golden/go1124/inbound_empty_users_drop_input.json"
+    ));
+    let ir_out = ir_from_str(include_str!(
+        "golden/go1124/inbound_empty_users_drop_output.json"
+    ));
     assert_eq!(
         ir_in, ir_out,
         "inbound_empty_users_drop input/output IR should match"
@@ -130,8 +125,5 @@ fn golden_inbound_empty_users_drop_ir_equivalence() {
 fn golden_ntp_enabled_ir_equivalence() {
     let ir_in = ir_from_str(include_str!("golden/go1124/ntp_enabled_input.json"));
     let ir_out = ir_from_str(include_str!("golden/go1124/ntp_enabled_output.json"));
-    assert_eq!(
-        ir_in, ir_out,
-        "ntp_enabled input/output IR should match"
-    );
+    assert_eq!(ir_in, ir_out, "ntp_enabled input/output IR should match");
 }

@@ -14,7 +14,8 @@ impl Default for NtpConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            server: std::env::var("SB_NTP_SERVER").unwrap_or_else(|_| "time.google.com:123".to_string()),
+            server: std::env::var("SB_NTP_SERVER")
+                .unwrap_or_else(|_| "time.google.com:123".to_string()),
             interval: Duration::from_secs(
                 std::env::var("SB_NTP_INTERVAL_S")
                     .ok()
@@ -36,7 +37,9 @@ pub struct NtpService {
 }
 
 impl NtpService {
-    pub fn new(cfg: NtpConfig) -> Self { Self { cfg } }
+    pub fn new(cfg: NtpConfig) -> Self {
+        Self { cfg }
+    }
 
     /// Spawn background task to periodically measure NTP offset and export metrics/logs.
     pub fn spawn(self) -> Option<tokio::task::JoinHandle<()>> {
@@ -81,7 +84,9 @@ pub fn ntp_offset_once(server: &str, timeout: Duration) -> Result<f64> {
     sock.send_to(&pkt, server)?;
     let mut buf = [0u8; 1500];
     let (n, _from) = sock.recv_from(&mut buf)?;
-    if n < 48 { anyhow::bail!("short NTP packet"); }
+    if n < 48 {
+        anyhow::bail!("short NTP packet");
+    }
     let t0 = ntp_now_seconds();
     let offset = compute_ntp_offset(t0, &buf[..n]);
     Ok(offset)
@@ -110,7 +115,7 @@ fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
     let t2 = ntp_ts_to_f64(t2_sec, t2_frac);
     // Assume originate timestamp (T1) ~= T2 - (T3 - T2) for minimal packets (approximation)
     let t1 = t2; // Simplification; accurate implementations would echo originate timestamp
-    // Offset calculation: ((T2 - T1) + (T3 - T0)) / 2
+                 // Offset calculation: ((T2 - T1) + (T3 - T0)) / 2
     ((t2 - t1) + (t3 - t0_ntp_seconds)) / 2.0
 }
 
@@ -137,4 +142,3 @@ mod tests {
         assert!(off > 0.0 && off < 0.2, "offset={off}");
     }
 }
-

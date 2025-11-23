@@ -4,8 +4,10 @@
 //! via async channels while maintaining service availability.
 
 use crate::adapter::Bridge;
+use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine;
+use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context, Result};
 use sb_config::ir::diff::Diff;
 use std::sync::Arc;
@@ -116,58 +118,70 @@ impl Supervisor {
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
-        {
+        let (inbounds, endpoints, services, bridge_for_health, _ntp_cfg) = {
             let state_guard = state.read().await;
-            for inbound in &state_guard.bridge.inbounds {
-                let ib = inbound.clone();
-                tokio::task::spawn_blocking(move || {
-                    if let Err(e) = ib.serve() {
-                        tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
-                    }
-                });
-            }
+            (
+                state_guard.bridge.inbounds.clone(),
+                state_guard.bridge.endpoints.clone(),
+                state_guard.bridge.services.clone(),
+                state_guard.bridge.clone(),
+                state_guard.current_ir.ntp.clone(),
+            )
+        };
 
-            // Optional health task
-            if std::env::var("SB_HEALTH_ENABLE").is_ok() {
-                let health_bridge = state_guard.bridge.clone();
-                let tok = cancel.clone();
-                let health_handle = tokio::spawn(async move {
-                    spawn_health_task_async(health_bridge, tok).await;
-                });
-                drop(state_guard);
-                state.write().await.health = Some(health_handle);
-            }
-            #[cfg(feature = "service_ntp")]
-            {
-                // Spawn NTP service if enabled in config
-                let mut sw = state.write().await;
-                if let Some(ntp_cfg) = &sw.current_ir.ntp {
-                    if ntp_cfg.enabled {
-                        let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
-                            (Some(s), Some(p)) => format!("{s}:{p}"),
-                            (Some(s), None) => {
-                                if s.contains(':') { s.clone() } else { format!("{s}:123") }
+        for inbound in &inbounds {
+            let ib = inbound.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = ib.serve() {
+                    tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
+                }
+            });
+        }
+
+        start_endpoints(&endpoints);
+        start_services(&services);
+
+        // Optional health task
+        if std::env::var("SB_HEALTH_ENABLE").is_ok() {
+            let health_bridge = bridge_for_health.clone();
+            let tok = cancel.clone();
+            let health_handle = tokio::spawn(async move {
+                spawn_health_task_async(health_bridge, tok).await;
+            });
+            state.write().await.health = Some(health_handle);
+        }
+        #[cfg(feature = "service_ntp")]
+        {
+            // Spawn NTP service if enabled in config
+            let mut sw = state.write().await;
+            if let Some(ntp_cfg) = _ntp_cfg {
+                if ntp_cfg.enabled {
+                    let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
+                        (Some(s), Some(p)) => format!("{s}:{p}"),
+                        (Some(s), None) => {
+                            if s.contains(':') {
+                                s.clone()
+                            } else {
+                                format!("{s}:123")
                             }
-                            (None, Some(p)) => format!("time.google.com:{p}"),
-                            (None, None) => crate::services::ntp::NtpConfig::default().server,
-                        };
-                        let interval = std::time::Duration::from_millis(
-                            ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
-                        );
-                        let timeout = std::time::Duration::from_millis(
-                            ntp_cfg.timeout_ms.unwrap_or(1500),
-                        );
-                        let ntp = crate::services::ntp::NtpService::new(
-                            crate::services::ntp::NtpConfig {
-                                enabled: true,
-                                server,
-                                interval,
-                                timeout,
-                            },
-                        )
+                        }
+                        (None, Some(p)) => format!("time.google.com:{p}"),
+                        (None, None) => crate::services::ntp::NtpConfig::default().server,
+                    };
+                    let interval = std::time::Duration::from_millis(
+                        ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
+                    );
+                    let timeout =
+                        std::time::Duration::from_millis(ntp_cfg.timeout_ms.unwrap_or(1500));
+                    let ntp =
+                        crate::services::ntp::NtpService::new(crate::services::ntp::NtpConfig {
+                            enabled: true,
+                            server,
+                            interval,
+                            timeout,
+                        })
                         .spawn();
-                        sw.ntp = ntp;
-                    }
+                    sw.ntp = ntp;
                 }
             }
         }
@@ -213,20 +227,26 @@ impl Supervisor {
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
-        {
+        let (inbounds, endpoints, services) = {
             let state_guard = state.read().await;
-            for inbound in &state_guard.bridge.inbounds {
-                let ib = inbound.clone();
-                tokio::task::spawn_blocking(move || {
-                    if let Err(e) = ib.serve() {
-                        tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
-                    }
-                });
-            }
+            (
+                state_guard.bridge.inbounds.clone(),
+                state_guard.bridge.endpoints.clone(),
+                state_guard.bridge.services.clone(),
+            )
+        };
 
-            // Optional health task
-            // (implementation would be similar to router version but without engine)
+        for inbound in &inbounds {
+            let ib = inbound.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = ib.serve() {
+                    tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
+                }
+            });
         }
+
+        start_endpoints(&endpoints);
+        start_services(&services);
 
         // Event loop (simplified for non-router case)
         let state_clone = Arc::clone(&state);
@@ -331,12 +351,16 @@ impl Supervisor {
         new_ir: sb_config::ir::ConfigIR,
     ) -> Result<()> {
         // Step 0: Ask old inbounds to stop accepting (best-effort)
-        {
+        let (old_endpoints, old_services) = {
             let state_guard = state.read().await;
             for ib in &state_guard.bridge.inbounds {
                 ib.request_shutdown();
             }
-        }
+            (
+                state_guard.bridge.endpoints.clone(),
+                state_guard.bridge.services.clone(),
+            )
+        };
 
         // Give old listeners a short grace to release ports
         let grace_ms = std::env::var("SB_INBOUND_RELOAD_GRACE_MS")
@@ -365,6 +389,8 @@ impl Supervisor {
 
         // Start new inbound listeners
         let new_bridge_arc = Arc::new(new_bridge);
+        let new_endpoints = new_bridge_arc.endpoints.clone();
+        let new_services = new_bridge_arc.services.clone();
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -373,6 +399,8 @@ impl Supervisor {
                 }
             });
         }
+        start_endpoints(&new_endpoints);
+        start_services(&new_services);
 
         // Update state atomically
         {
@@ -410,7 +438,11 @@ impl Supervisor {
                         let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
                             (Some(s), Some(p)) => format!("{s}:{p}"),
                             (Some(s), None) => {
-                                if s.contains(':') { s.clone() } else { format!("{s}:123") }
+                                if s.contains(':') {
+                                    s.clone()
+                                } else {
+                                    format!("{s}:123")
+                                }
                             }
                             (None, Some(p)) => format!("time.google.com:{p}"),
                             (None, None) => crate::services::ntp::NtpConfig::default().server,
@@ -418,9 +450,8 @@ impl Supervisor {
                         let interval = std::time::Duration::from_millis(
                             ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
                         );
-                        let timeout = std::time::Duration::from_millis(
-                            ntp_cfg.timeout_ms.unwrap_or(1500),
-                        );
+                        let timeout =
+                            std::time::Duration::from_millis(ntp_cfg.timeout_ms.unwrap_or(1500));
                         let ntp = crate::services::ntp::NtpService::new(
                             crate::services::ntp::NtpConfig {
                                 enabled: true,
@@ -436,6 +467,9 @@ impl Supervisor {
             }
         }
 
+        stop_endpoints(&old_endpoints);
+        stop_services(&old_services);
+
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
 
         Ok(())
@@ -448,12 +482,16 @@ impl Supervisor {
         new_ir: sb_config::ir::ConfigIR,
     ) -> Result<()> {
         // Step 0: Ask old inbounds to stop accepting (best-effort)
-        {
+        let (old_endpoints, old_services) = {
             let state_guard = state.read().await;
             for ib in &state_guard.bridge.inbounds {
                 ib.request_shutdown();
             }
-        }
+            (
+                state_guard.bridge.endpoints.clone(),
+                state_guard.bridge.services.clone(),
+            )
+        };
 
         // Give old listeners a short grace to release ports
         let grace_ms = std::env::var("SB_INBOUND_RELOAD_GRACE_MS")
@@ -469,6 +507,8 @@ impl Supervisor {
 
         // Start new inbound listeners
         let new_bridge_arc = Arc::new(new_bridge);
+        let new_endpoints = new_bridge_arc.endpoints.clone();
+        let new_services = new_bridge_arc.services.clone();
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -477,6 +517,8 @@ impl Supervisor {
                 }
             });
         }
+        start_endpoints(&new_endpoints);
+        start_services(&new_services);
 
         // Update state atomically
         {
@@ -501,6 +543,9 @@ impl Supervisor {
                 state_guard.health = Some(health_handle);
             }
         }
+
+        stop_endpoints(&old_endpoints);
+        stop_services(&old_services);
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully (no router)");
 
@@ -562,6 +607,14 @@ impl Supervisor {
             .as_millis();
         let shutdown_success = Instant::now() < deadline;
 
+        let (endpoints, services) = {
+            let guard = state.read().await;
+            (
+                guard.bridge.endpoints.clone(),
+                guard.bridge.services.clone(),
+            )
+        };
+
         // Cleanup state
         {
             let mut state_guard = state.write().await;
@@ -569,6 +622,9 @@ impl Supervisor {
                 health.abort();
             }
         }
+
+        stop_endpoints(&endpoints);
+        stop_services(&services);
 
         // Log shutdown completion
         let shutdown_json = serde_json::json!({
@@ -656,6 +712,112 @@ pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationTo
     .ok();
 }
 
+fn has_async_runtime() -> bool {
+    tokio::runtime::Handle::try_current().is_ok()
+}
+
+/// Start all endpoints through their lifecycle stages. Uses best-effort logging on failure.
+pub(crate) fn start_endpoints(endpoints: &[Arc<dyn Endpoint>]) {
+    if endpoints.is_empty() {
+        return;
+    }
+    if !has_async_runtime() {
+        tracing::warn!(
+            target: "sb_core::runtime",
+            count = endpoints.len(),
+            "skipping endpoint start: no Tokio runtime available"
+        );
+        return;
+    }
+
+    for ep in endpoints {
+        for stage in [
+            EndpointStage::Initialize,
+            EndpointStage::Start,
+            EndpointStage::PostStart,
+            EndpointStage::Started,
+        ] {
+            if let Err(e) = ep.start(stage) {
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    endpoint = ep.endpoint_type(),
+                    tag = ep.tag(),
+                    ?stage,
+                    error = %e,
+                    "endpoint start failed"
+                );
+                break;
+            }
+        }
+    }
+}
+
+/// Stop all endpoints (best-effort).
+pub(crate) fn stop_endpoints(endpoints: &[Arc<dyn Endpoint>]) {
+    for ep in endpoints {
+        if let Err(e) = ep.close() {
+            tracing::warn!(
+                target: "sb_core::runtime",
+                endpoint = ep.endpoint_type(),
+                tag = ep.tag(),
+                error = %e,
+                "failed to stop endpoint"
+            );
+        }
+    }
+}
+
+/// Start all background services through their lifecycle stages. Uses best-effort logging on failure.
+pub(crate) fn start_services(services: &[Arc<dyn Service>]) {
+    if services.is_empty() {
+        return;
+    }
+    if !has_async_runtime() {
+        tracing::warn!(
+            target: "sb_core::runtime",
+            count = services.len(),
+            "skipping service start: no Tokio runtime available"
+        );
+        return;
+    }
+
+    for svc in services {
+        for stage in [
+            ServiceStage::Initialize,
+            ServiceStage::Start,
+            ServiceStage::PostStart,
+            ServiceStage::Started,
+        ] {
+            if let Err(e) = svc.start(stage) {
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    service = svc.service_type(),
+                    tag = svc.tag(),
+                    ?stage,
+                    error = %e,
+                    "service start failed"
+                );
+                break;
+            }
+        }
+    }
+}
+
+/// Stop all background services (best-effort).
+pub(crate) fn stop_services(services: &[Arc<dyn Service>]) {
+    for svc in services {
+        if let Err(e) = svc.close() {
+            tracing::warn!(
+                target: "sb_core::runtime",
+                service = svc.service_type(),
+                tag = svc.tag(),
+                error = %e,
+                "failed to stop service"
+            );
+        }
+    }
+}
+
 #[cfg(feature = "router")]
 impl Engine<'_> {
     /// Create engine from IR configuration
@@ -677,5 +839,128 @@ impl Bridge {
         // This should use existing bridge construction logic
         // For now, create a minimal bridge
         Self::new_from_config(ir).context("failed to create bridge from config")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    #[derive(Clone)]
+    struct DummyEndpoint {
+        stages: Arc<Mutex<Vec<EndpointStage>>>,
+        closes: Arc<AtomicUsize>,
+        tag: &'static str,
+    }
+
+    impl DummyEndpoint {
+        fn new(tag: &'static str) -> Self {
+            Self {
+                stages: Arc::new(Mutex::new(Vec::new())),
+                closes: Arc::new(AtomicUsize::new(0)),
+                tag,
+            }
+        }
+    }
+
+    impl Endpoint for DummyEndpoint {
+        fn endpoint_type(&self) -> &str {
+            "dummy-endpoint"
+        }
+
+        fn tag(&self) -> &str {
+            self.tag
+        }
+
+        fn start(
+            &self,
+            stage: EndpointStage,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.stages.lock().unwrap().push(stage);
+            Ok(())
+        }
+
+        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.closes.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[derive(Clone)]
+    struct DummyService {
+        stages: Arc<Mutex<Vec<ServiceStage>>>,
+        closes: Arc<AtomicUsize>,
+        tag: &'static str,
+    }
+
+    impl DummyService {
+        fn new(tag: &'static str) -> Self {
+            Self {
+                stages: Arc::new(Mutex::new(Vec::new())),
+                closes: Arc::new(AtomicUsize::new(0)),
+                tag,
+            }
+        }
+    }
+
+    impl Service for DummyService {
+        fn service_type(&self) -> &str {
+            "dummy-service"
+        }
+
+        fn tag(&self) -> &str {
+            self.tag
+        }
+
+        fn start(
+            &self,
+            stage: ServiceStage,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.stages.lock().unwrap().push(stage);
+            Ok(())
+        }
+
+        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.closes.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn start_stop_endpoints_runs_all_stages() {
+        let ep = Arc::new(DummyEndpoint::new("ep1"));
+        start_endpoints(&[ep.clone()]);
+        let stages = ep.stages.lock().unwrap().clone();
+        assert_eq!(
+            stages,
+            vec![
+                EndpointStage::Initialize,
+                EndpointStage::Start,
+                EndpointStage::PostStart,
+                EndpointStage::Started
+            ]
+        );
+        stop_endpoints(&[ep.clone()]);
+        assert_eq!(ep.closes.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn start_stop_services_runs_all_stages() {
+        let svc = Arc::new(DummyService::new("svc1"));
+        start_services(&[svc.clone()]);
+        let stages = svc.stages.lock().unwrap().clone();
+        assert_eq!(
+            stages,
+            vec![
+                ServiceStage::Initialize,
+                ServiceStage::Start,
+                ServiceStage::PostStart,
+                ServiceStage::Started
+            ]
+        );
+        stop_services(&[svc.clone()]);
+        assert_eq!(svc.closes.load(Ordering::SeqCst), 1);
     }
 }

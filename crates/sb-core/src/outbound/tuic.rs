@@ -6,11 +6,11 @@
 #[cfg(feature = "out_tuic")]
 use async_trait::async_trait;
 #[cfg(feature = "out_tuic")]
-use std::sync::Arc;
-#[cfg(feature = "out_tuic")]
 use std::io;
 #[cfg(feature = "out_tuic")]
 use std::net::SocketAddr;
+#[cfg(feature = "out_tuic")]
+use std::sync::Arc;
 
 #[cfg(feature = "out_tuic")]
 use super::quic::common::QuicConfig;
@@ -160,17 +160,38 @@ impl TuicOutbound {
             }
         }
 
-        let max_retries = std::env::var("SB_TUIC_MAX_RETRIES").ok().and_then(|v| v.parse().ok()).unwrap_or(3).min(8);
-        let base_ms = std::env::var("SB_TUIC_BACKOFF_MS_BASE").ok().and_then(|v| v.parse().ok()).unwrap_or(200u64);
-        let cap_ms = std::env::var("SB_TUIC_BACKOFF_MS_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(2_000u64);
+        let max_retries = std::env::var("SB_TUIC_MAX_RETRIES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3)
+            .min(8);
+        let base_ms = std::env::var("SB_TUIC_BACKOFF_MS_BASE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(200u64);
+        let cap_ms = std::env::var("SB_TUIC_BACKOFF_MS_MAX")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2_000u64);
 
         let server_addr: SocketAddr = format!("{}:{}", self.config.server, self.config.port)
             .parse()
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("Invalid server address: {}", e)))?;
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Invalid server address: {}", e),
+                )
+            })?;
         let quinn_config = self.create_quinn_config()?;
         let server_name = if self.config.server.parse::<std::net::IpAddr>().is_ok() {
-            if self.quic_config.allow_insecure { "localhost" } else { &self.config.server }
-        } else { &self.config.server };
+            if self.quic_config.allow_insecure {
+                "localhost"
+            } else {
+                &self.config.server
+            }
+        } else {
+            &self.config.server
+        };
 
         let mut attempt = 0u32;
         loop {
@@ -186,7 +207,9 @@ impl TuicOutbound {
                 Err(e) => {
                     #[cfg(feature = "metrics")]
                     metrics::counter!("tuic_connect_retries_total", "result"=>"fail").increment(1);
-                    if attempt >= max_retries { return Err(io::Error::other(format!("QUIC connection failed: {}", e))); }
+                    if attempt >= max_retries {
+                        return Err(io::Error::other(format!("QUIC connection failed: {}", e)));
+                    }
                     let exp = attempt.saturating_sub(1).min(8);
                     let mut delay = base_ms.saturating_mul(1u64 << exp);
                     delay = delay.min(cap_ms);
@@ -527,7 +550,7 @@ impl OutboundTcp for TuicOutbound {
 
         record_connect_attempt(crate::outbound::OutboundKind::Tuic);
 
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
 
         // Get or create pooled QUIC connection
         let connection = match self.get_connection().await {
@@ -544,10 +567,20 @@ impl OutboundTcp for TuicOutbound {
         };
 
         // Open a stream and perform TUIC handshake, then return wrapped stream
-        let (send_stream, recv_stream) = connection.open_bi().await.map_err(|e| io::Error::other(format!("Failed to open bi stream: {}", e)))?;
-        let mut quic_stream = crate::outbound::quic::io::QuicBidiStream::new(send_stream, recv_stream);
-        if let Err(e) = self.tuic_handshake(&mut quic_stream, &target.host, target.port).await {
-            record_outbound_error(crate::outbound::OutboundKind::Direct, &io::Error::other(e.to_string()));
+        let (send_stream, recv_stream) = connection
+            .open_bi()
+            .await
+            .map_err(|e| io::Error::other(format!("Failed to open bi stream: {}", e)))?;
+        let mut quic_stream =
+            crate::outbound::quic::io::QuicBidiStream::new(send_stream, recv_stream);
+        if let Err(e) = self
+            .tuic_handshake(&mut quic_stream, &target.host, target.port)
+            .await
+        {
+            record_outbound_error(
+                crate::outbound::OutboundKind::Direct,
+                &io::Error::other(e.to_string()),
+            );
             return Err(io::Error::other("TUIC handshake failed"));
         }
 
@@ -709,11 +742,16 @@ impl crate::adapter::OutboundConnector for TuicOutbound {
             Err(e) => {
                 #[cfg(feature = "metrics")]
                 {
-                    use crate::metrics::outbound::{record_connect_error, OutboundErrorClass, OutboundKind};
+                    use crate::metrics::outbound::{
+                        record_connect_error, OutboundErrorClass, OutboundKind,
+                    };
                     record_connect_error(OutboundKind::Tuic, OutboundErrorClass::Handshake);
                     metrics::counter!("tuic_connect_total", "result" => "error").increment(1);
                 }
-                return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, e));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    e,
+                ));
             }
         };
 
@@ -729,7 +767,9 @@ impl crate::adapter::OutboundConnector for TuicOutbound {
         if let Err(e) = self.tuic_handshake(&mut tuic_stream, host, port).await {
             #[cfg(feature = "metrics")]
             {
-                use crate::metrics::outbound::{record_connect_error, OutboundErrorClass, OutboundKind};
+                use crate::metrics::outbound::{
+                    record_connect_error, OutboundErrorClass, OutboundKind,
+                };
                 record_connect_error(OutboundKind::Tuic, OutboundErrorClass::Handshake);
                 metrics::counter!("tuic_connect_total", "result" => "error").increment(1);
             }
@@ -738,7 +778,9 @@ impl crate::adapter::OutboundConnector for TuicOutbound {
 
         #[cfg(feature = "metrics")]
         {
-            use crate::metrics::outbound::{record_connect_duration, record_connect_success, OutboundKind};
+            use crate::metrics::outbound::{
+                record_connect_duration, record_connect_success, OutboundKind,
+            };
             record_connect_success(OutboundKind::Tuic);
             record_connect_duration(t0.elapsed().as_millis() as f64);
             metrics::counter!("tuic_connect_total", "result" => "ok").increment(1);
@@ -798,7 +840,8 @@ impl TuicUdpTransport {
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("udp_quic_send_total", "proto"=>"tuic").increment(1);
-            metrics::counter!("udp_quic_send_bytes_total", "proto"=>"tuic").increment(data.len() as u64);
+            metrics::counter!("udp_quic_send_bytes_total", "proto"=>"tuic")
+                .increment(data.len() as u64);
         }
         Ok(data.len())
     }
@@ -823,7 +866,8 @@ impl TuicUdpTransport {
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("udp_quic_recv_total", "proto"=>"tuic").increment(1);
-            metrics::counter!("udp_quic_recv_bytes_total", "proto"=>"tuic").increment(data.len() as u64);
+            metrics::counter!("udp_quic_recv_bytes_total", "proto"=>"tuic")
+                .increment(data.len() as u64);
         }
         Ok((data, host, port))
     }
@@ -909,16 +953,19 @@ impl UdpOutboundFactory for TuicOutbound {
         let this = self.clone();
         Box::pin(async move {
             #[cfg(feature = "metrics")]
-            metrics::counter!("udp_session_open_total", "proto"=>"tuic", "stage"=>"attempt").increment(1);
+            metrics::counter!("udp_session_open_total", "proto"=>"tuic", "stage"=>"attempt")
+                .increment(1);
             let sess = match this.create_udp_transport().await {
                 Ok(s) => {
                     #[cfg(feature = "metrics")]
-                    metrics::counter!("udp_session_open_total", "proto"=>"tuic", "result"=>"ok").increment(1);
+                    metrics::counter!("udp_session_open_total", "proto"=>"tuic", "result"=>"ok")
+                        .increment(1);
                     s
                 }
                 Err(e) => {
                     #[cfg(feature = "metrics")]
-                    metrics::counter!("udp_session_open_total", "proto"=>"tuic", "result"=>"error").increment(1);
+                    metrics::counter!("udp_session_open_total", "proto"=>"tuic", "result"=>"error")
+                        .increment(1);
                     return Err(e);
                 }
             };

@@ -50,7 +50,8 @@ impl Stat {
         self.rtt_ema = if self.rtt_ema == 0.0 {
             ms
         } else {
-            cfg.alpha_rtt.mul_add(ms, (1.0 - cfg.alpha_rtt) * self.rtt_ema)
+            cfg.alpha_rtt
+                .mul_add(ms, (1.0 - cfg.alpha_rtt) * self.rtt_ema)
         };
         self.last_seen = Instant::now();
     }
@@ -145,7 +146,9 @@ impl P3Selector {
                 _ => {}
             }
         }
-        let (pick, pick_sc) = if let Some(v) = best { v } else {
+        let (pick, pick_sc) = if let Some(v) = best {
+            v
+        } else {
             let fallback = self
                 .last_pick
                 .clone()

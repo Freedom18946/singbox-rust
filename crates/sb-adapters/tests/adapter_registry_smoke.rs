@@ -80,32 +80,26 @@ fn test_dns_feature_enabled() {
 }
 
 #[test]
-#[cfg(feature = "out_tuic")]
+#[cfg(all(feature = "adapter-tuic", feature = "out_tuic"))]
 fn test_tuic_feature_enabled() {
     // If this compiles, the out_tuic feature is working
     assert!(true, "TUIC outbound feature is enabled");
 }
 
 #[test]
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
 fn test_hysteria2_feature_enabled() {
     // If this compiles, the out_hysteria2 feature is working
     assert!(true, "Hysteria2 outbound feature is enabled");
 }
 
-/// Test that all documented inbounds are accounted for
+/// Test that the documented inbound count stays in sync with the parity matrix
 #[test]
 fn test_documented_inbound_count() {
-    // According to GO_PARITY_MATRIX.md:
-    // - 10 complete inbounds: http, socks, mixed, shadowsocks, vmess, trojan, vless, tun, redirect, tproxy
-    // - 6 stub inbounds: naive, shadowtls, hysteria, hysteria2, tuic, anytls
-    // - 1 missing: direct
-    // Total: 17 inbound types
-
-    // This is a documentation test - just verify we're aware of the count
-    let total_inbound_types = 17;
+    // GO_PARITY_MATRIX.md tracks inbound parity coverage (currently 17 types with AnyTLS implemented).
+    let documented_total = 17;
     assert_eq!(
-        total_inbound_types, 17,
+        documented_total, 17,
         "Expected 17 inbound types per GO_PARITY_MATRIX.md"
     );
 }

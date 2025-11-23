@@ -26,7 +26,7 @@ async fn resolve_target_local(target: UdpTargetAddr) -> Result<SocketAddr> {
 /// UDP 发送错误分类（稳定口径）
 /// `返回：timeout/refused/unreachable/peer_closed/other`
 fn classify_udp_error(e: &io::Error) -> &'static str {
-    use io::ErrorKind::{TimedOut, ConnectionRefused, ConnectionReset, BrokenPipe};
+    use io::ErrorKind::{BrokenPipe, ConnectionRefused, ConnectionReset, TimedOut};
     match e.kind() {
         TimedOut => "timeout",
         ConnectionRefused => "refused",
@@ -46,8 +46,8 @@ fn classify_udp_error(e: &io::Error) -> &'static str {
 #[inline]
 fn classify_io_error(e: &std::io::Error) -> &'static str {
     match e.raw_os_error() {
-        Some(110) => "timeout",                 // ETIMEDOUT
-        Some(111) => "refused",                 // ECONNREFUSED
+        Some(110) => "timeout",           // ETIMEDOUT
+        Some(111) => "refused",           // ECONNREFUSED
         Some(101 | 113) => "unreachable", // ENETUNREACH/EHOSTUNREACH
         Some(32 | 104) => "peer_closed",  // EPIPE/ECONNRESET
         _ => "other",

@@ -319,7 +319,8 @@ mod tests {
 
     #[test]
     fn histogram_repeated_buckets_ignored_after_first() {
-        let h1 = get_or_register_histogram_vec("t_hist", "help", &["class"], Some(vec![1.0, 2.0, 5.0]));
+        let h1 =
+            get_or_register_histogram_vec("t_hist", "help", &["class"], Some(vec![1.0, 2.0, 5.0]));
         let h2 = get_or_register_histogram_vec("t_hist", "help", &["class"], None);
         assert_eq!(h1 as *const HistogramVec, h2 as *const HistogramVec);
     }

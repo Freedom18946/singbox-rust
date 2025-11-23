@@ -506,7 +506,9 @@ fn handle_reload(
         .as_millis() as u64;
 
     // Check if supervisor is available
-    let supervisor = if let Some(s) = supervisor { s } else {
+    let supervisor = if let Some(s) = supervisor {
+        s
+    } else {
         let error_obj = serde_json::json!({
             "event": "reload",
             "ok": false,
@@ -522,7 +524,9 @@ fn handle_reload(
     };
 
     // Parse request body
-    let body = if let Ok(b) = read_body(cli, headers) { b } else {
+    let body = if let Ok(b) = read_body(cli, headers) {
+        b
+    } else {
         let error_obj = serde_json::json!({
             "event": "reload",
             "ok": false,
@@ -537,7 +541,9 @@ fn handle_reload(
         return write_json(cli, 400, &body);
     };
 
-    let request: serde_json::Value = if let Ok(v) = serde_json::from_slice(&body) { v } else {
+    let request: serde_json::Value = if let Ok(v) = serde_json::from_slice(&body) {
+        v
+    } else {
         let error_obj = serde_json::json!({
             "event": "reload",
             "ok": false,
@@ -629,7 +635,9 @@ fn handle_reload(
         return write_json(cli, 400, &body);
     };
 
-    let ir = if let Some(ir) = new_ir { ir } else {
+    let ir = if let Some(ir) = new_ir {
+        ir
+    } else {
         let error_obj = serde_json::json!({
             "event": "reload",
             "ok": false,
@@ -707,7 +715,8 @@ pub fn spawn_admin(
     let l = TcpListener::bind(listen)?;
     let addr = l
         .local_addr()
-        .ok().map_or_else(|| listen.to_string(), |a| a.to_string());
+        .ok()
+        .map_or_else(|| listen.to_string(), |a| a.to_string());
     crate::log::log(
         crate::log::Level::Info,
         "admin http listening",

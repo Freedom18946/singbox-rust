@@ -7,17 +7,23 @@
 
 use crate::adapter::registry;
 use crate::adapter::{
-    Bridge, InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
+    AnyTlsUserParam, Bridge, InboundParam, InboundService, OutboundConnector, OutboundParam,
+    UdpOutboundFactory,
 };
+use crate::endpoint::{endpoint_registry, EndpointContext};
+#[allow(unused_imports)]
 use crate::outbound::selector::Selector;
+#[allow(unused_imports)]
 use crate::outbound::selector_group::{ProxyMember, SelectorGroup};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
 use crate::router::{router_build_index_from_str, RouterHandle};
+use crate::service::{service_registry, ServiceContext};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType};
+use sb_config::ir::{ConfigIR, InboundIR, OutboundIR, OutboundType};
 use std::sync::Arc;
+#[allow(unused_imports)]
 use std::time::Instant;
 
 /// Environment variable to force adapter selection strategy
@@ -109,6 +115,7 @@ fn scaffold_builder(
 fn scaffold_outbound_builder(
     p: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -201,20 +208,33 @@ fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
 
 /// Converts inbound IR to adapter parameter.
 fn to_inbound_param(ib: &InboundIR) -> InboundParam {
-    // Serialize Hysteria2 users to JSON if present
-    let users_hysteria2 = ib.users_hysteria2.as_ref().map(|users| {
-        serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
+    let users_anytls = ib.users_anytls.as_ref().map(|users| {
+        users
+            .iter()
+            .map(|user| AnyTlsUserParam {
+                name: user.name.clone(),
+                password: user.password.clone(),
+            })
+            .collect()
     });
+
+    // Serialize Hysteria2 users to JSON if present
+    let users_hysteria2 = ib
+        .users_hysteria2
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
 
     // Serialize TUIC users to JSON if present
-    let users_tuic = ib.users_tuic.as_ref().map(|users| {
-        serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
-    });
+    let users_tuic = ib
+        .users_tuic
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
 
     // Serialize Hysteria v1 users to JSON if present
-    let users_hysteria = ib.users_hysteria.as_ref().map(|users| {
-        serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string())
-    });
+    let users_hysteria = ib
+        .users_hysteria
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
 
     InboundParam {
         kind: ib.ty.ty_str().to_string(),
@@ -226,6 +246,9 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         override_host: ib.override_host.clone(),
         override_port: ib.override_port,
         network: ib.network.clone(),
+        users_anytls,
+        password: ib.password.clone(),
+        anytls_padding: ib.anytls_padding.clone(),
         tls_cert_path: ib.tls_cert_path.clone(),
         tls_key_path: ib.tls_key_path.clone(),
         tls_cert_pem: ib.tls_cert_pem.clone(),
@@ -278,9 +301,10 @@ fn to_outbound_param(ob: &OutboundIR) -> (String, OutboundParam) {
             token: ob.token.clone(),
             password: ob.password.clone(),
             congestion_control: ob.congestion_control.clone(),
-            alpn: ob.alpn.clone().or_else(|| {
-                ob.tls_alpn.as_ref().map(|v| v.join(","))
-            }),
+            alpn: ob
+                .alpn
+                .clone()
+                .or_else(|| ob.tls_alpn.as_ref().map(|v| v.join(","))),
             skip_cert_verify: ob.skip_cert_verify,
             udp_relay_mode: ob.udp_relay_mode.clone(),
             udp_over_stream: ob.udp_over_stream,
@@ -310,12 +334,14 @@ fn try_adapter_inbound(
 }
 
 /// Attempts to create an outbound connector using the adapter registry (when feature enabled).
-/// Placeholder: returns `None` until `sb-adapters` is wired here. Kept signature consistent
-/// with scaffold path by returning `Option<BuiltOutbound>`.
-fn try_adapter_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutbound> {
+/// Supplies adapter builders with runtime context (bridge) so they can resolve dependencies.
+fn try_adapter_outbound(p: &OutboundParam, ob: &OutboundIR, br: &Bridge) -> Option<BuiltOutbound> {
     Lazy::force(&REGISTER_SCAFFOLD_OUTBOUNDS);
     if let Some(builder) = registry::get_outbound(&p.kind) {
-        if let Some((tcp, udp)) = builder(p, ob) {
+        let ctx = registry::AdapterOutboundContext {
+            bridge: Arc::new(br.clone()),
+        };
+        if let Some((tcp, udp)) = builder(p, ob, &ctx) {
             return Some(BuiltOutbound { tcp, udp });
         }
     }
@@ -688,8 +714,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
 
                             // 6) Pump plaintext<->ciphertext in background with proper AEAD framing
                             let (mut ss_tcp_r, mut ss_tcp_w) = ss_tcp.into_split();
-                            let cipher_name_w = self.cipher.name().to_string();
-                            let cipher_name_r = cipher_name_w.clone();
+                            let _cipher_name = self.cipher.name().to_string();
 
                             // Writer: ls_r -> ss_tcp_w (encrypt)
                             let cipher_w = self.cipher.clone();
@@ -715,26 +740,26 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                             #[cfg(feature = "metrics")]
                                             if enc_res.is_ok() {
                                                 let ms = start.elapsed().as_millis() as f64;
-                                                crate::metrics::outbound::record_ss_aead_op_duration(ms, &cipher_name_w, "tcp_encrypt");
+                                                crate::metrics::outbound::record_ss_aead_op_duration(ms, &_cipher_name, "tcp_encrypt");
                                             }
                                             if let Ok(enc) = enc_res {
                                                 #[cfg(feature = "metrics")]
-                                                    crate::metrics::outbound::record_ss_encrypt_bytes_with_cipher(n as u64, &cipher_name_w);
+                                                    crate::metrics::outbound::record_ss_encrypt_bytes_with_cipher(n as u64, &_cipher_name);
                                                 if ss_tcp_w.write_all(&enc).await.is_err() {
                                                     #[cfg(feature = "metrics")]
-                                                    crate::metrics::outbound::record_ss_stream_error_with_cipher("write", &cipher_name_w);
+                                                    crate::metrics::outbound::record_ss_stream_error_with_cipher("write", &_cipher_name);
                                                     break;
                                                 }
                                                 write_nonce = write_nonce.wrapping_add(2);
                                             } else {
                                                 #[cfg(feature = "metrics")]
-                                                crate::metrics::outbound::record_ss_stream_error_with_cipher("encrypt", &cipher_name_w);
+                                                crate::metrics::outbound::record_ss_stream_error_with_cipher("encrypt", &_cipher_name);
                                                 break;
                                             }
                                         }
                                         Err(_) => {
                                             #[cfg(feature = "metrics")]
-                                            crate::metrics::outbound::record_ss_stream_error_with_cipher("local_read", &cipher_name_w);
+                                            crate::metrics::outbound::record_ss_stream_error_with_cipher("local_read", &_cipher_name);
                                             break;
                                         }
                                     }
@@ -1042,11 +1067,8 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                 );
                                 // Fallback: try TLS-only if SNI/ALPN present, otherwise plain TCP
                                 let tls_sni = self.ob_ir.tls_sni.clone();
-                                let tls_alpn_csv = self
-                                    .ob_ir
-                                    .tls_alpn
-                                    .as_ref()
-                                    .map(|v| v.join(","));
+                                let tls_alpn_csv =
+                                    self.ob_ir.tls_alpn.as_ref().map(|v| v.join(","));
                                 let base = sb_transport::TransportBuilder::tcp();
                                 let fb_tls = crate::runtime::transport::map::tls_override_from_ob(
                                     &self.ob_ir,
@@ -1240,11 +1262,8 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                     "vmess transport connect failed; attempting fallback"
                                 );
                                 let tls_sni = self.ob_ir.tls_sni.clone();
-                                let tls_alpn_csv = self
-                                    .ob_ir
-                                    .tls_alpn
-                                    .as_ref()
-                                    .map(|v| v.join(","));
+                                let tls_alpn_csv =
+                                    self.ob_ir.tls_alpn.as_ref().map(|v| v.join(","));
                                 let base = sb_transport::TransportBuilder::tcp();
                                 let fb_tls = crate::runtime::transport::map::tls_override_from_ob(
                                     &self.ob_ir,
@@ -1754,17 +1773,14 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                     server,
                     port,
                     sni,
-                    alpn: ob
-                        .tls_alpn
-                        .clone()
-                        .or_else(|| {
-                            p.alpn.as_ref().map(|raw| {
-                                raw.split(',')
-                                    .map(|x| x.trim().to_string())
-                                    .filter(|x| !x.is_empty())
-                                    .collect::<Vec<String>>()
-                            })
-                        }),
+                    alpn: ob.tls_alpn.clone().or_else(|| {
+                        p.alpn.as_ref().map(|raw| {
+                            raw.split(',')
+                                .map(|x| x.trim().to_string())
+                                .filter(|x| !x.is_empty())
+                                .collect::<Vec<String>>()
+                        })
+                    }),
                     skip_cert_verify: p.skip_cert_verify.unwrap_or(false),
                 };
                 if cfg.skip_cert_verify {
@@ -1926,16 +1942,21 @@ fn try_create_ssh_outbound(_p: &OutboundParam) -> Option<Arc<dyn OutboundConnect
 /// Helper: assembles basic outbounds (non-selector) into the bridge.
 ///
 /// Iterates through config outbounds, attempts to create connectors via adapter or scaffold,
-/// and registers them in the bridge.
+/// and registers them in the bridge. Skips Selector/URLTest which are assembled in second pass.
 fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
     for ob in &cfg.outbounds {
+        // Skip selector/urltest in first pass - they need all other outbounds registered first
+        if ob.ty == OutboundType::Selector || ob.ty == OutboundType::UrlTest {
+            continue;
+        }
+
         let (name, p) = to_outbound_param(ob);
         let kind = p.kind.clone();
         let forced = want_adapter();
 
         let inst: Option<BuiltOutbound> = match forced {
             Some(true) => {
-                let inst = try_adapter_outbound(&p, ob);
+                let inst = try_adapter_outbound(&p, ob, br);
                 if inst.is_none() {
                     tracing::warn!(
                         target: "sb_core::adapter",
@@ -1947,7 +1968,7 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
                 inst.or_else(|| try_scaffold_outbound(&p, ob))
             }
             Some(false) => try_scaffold_outbound(&p, ob),
-            None => try_adapter_outbound(&p, ob).or_else(|| try_scaffold_outbound(&p, ob)),
+            None => try_adapter_outbound(&p, ob, br).or_else(|| try_scaffold_outbound(&p, ob)),
         };
 
         if let Some(o) = inst {
@@ -2056,7 +2077,10 @@ fn maybe_wrap_with_cb(name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn 
 }
 
 #[cfg(not(feature = "v2ray_transport"))]
-fn maybe_wrap_with_cb(_name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn OutboundConnector> {
+fn maybe_wrap_with_cb(
+    _name: &str,
+    inner: Arc<dyn OutboundConnector>,
+) -> Arc<dyn OutboundConnector> {
     // Circuit breaker requires v2ray_transport feature
     inner
 }
@@ -2064,87 +2088,126 @@ fn maybe_wrap_with_cb(_name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn
 /// Helper: assembles selector outbounds with resolved members.
 ///
 /// Second-pass processing to bind selector members after basic outbounds are registered.
+/// Now uses adapter registry to allow sb-adapters to handle selector/urltest logic.
 fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
     for ob in &cfg.outbounds {
-        if ob.ty == OutboundType::Selector {
-            let name = ob.name.clone().unwrap_or_else(|| "selector".into());
-            let members = ob.members.clone().unwrap_or_default();
-            let mut resolved = Vec::new();
+        if ob.ty == OutboundType::Selector || ob.ty == OutboundType::UrlTest {
+            let (name, p) = to_outbound_param(ob);
+            let kind = p.kind.clone();
+            let forced = want_adapter();
 
-            for m in members {
-                if let Some(conn) = br.find_outbound(&m) {
-                    resolved.push(crate::outbound::selector::Member {
-                        name: m.clone(),
-                        conn,
-                    });
-                } else {
-                    // Member missing: skip. Preflight warns; runtime falls back to direct or errors.
-                    tracing::warn!(
-                        target: "sb_core::adapter",
-                        selector = %name,
-                        missing_member = %m,
-                        "selector member not found, skipping"
-                    );
+            let inst: Option<BuiltOutbound> = match forced {
+                Some(true) => {
+                    let inst = try_adapter_outbound(&p, ob, br);
+                    if inst.is_none() {
+                        tracing::warn!(
+                            target: "sb_core::adapter",
+                            outbound = %name,
+                            kind = %p.kind,
+                            "adapter path unavailable for selector/urltest; falling back to scaffold"
+                        );
+                    }
+                    inst.or_else(|| try_scaffold_selector(ob, br))
                 }
-            }
+                Some(false) => try_scaffold_selector(ob, br),
+                None => try_adapter_outbound(&p, ob, br).or_else(|| try_scaffold_selector(ob, br)),
+            };
 
-            if !resolved.is_empty() {
-                let sel = Selector::new(name.clone(), resolved);
-                br.add_outbound(name, "selector".into(), Arc::new(sel));
-            }
-        } else if ob.ty == OutboundType::UrlTest {
-            // URLTest selector using modern SelectorGroup with background health checks
-            let name = ob.name.clone().unwrap_or_else(|| "urltest".into());
-            let members = ob.members.clone().unwrap_or_default();
-            let mut proxies = Vec::new();
-
-            for m in members {
-                if let Some(conn) = br.find_outbound(&m) {
-                    proxies.push(ProxyMember::new(m.clone(), conn));
-                } else {
-                    tracing::warn!(
-                        target: "sb_core::adapter",
-                        selector = %name,
-                        missing_member = %m,
-                        "urltest member not found, skipping"
-                    );
+            if let Some(o) = inst {
+                let tcp = maybe_wrap_with_cb(name.as_str(), o.tcp);
+                br.add_outbound(name.clone(), kind, tcp);
+                if let Some(udp_f) = o.udp {
+                    br.add_outbound_udp_factory(name, udp_f);
                 }
-            }
-
-            if !proxies.is_empty() {
-                // Configure test URL and intervals from IR (with sensible defaults)
-                let test_url = ob
-                    .test_url
-                    .clone()
-                    .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string());
-                let interval =
-                    std::time::Duration::from_millis(ob.test_interval_ms.unwrap_or(10_000));
-                let timeout = std::time::Duration::from_millis(ob.test_timeout_ms.unwrap_or(1_500));
-                let tol = ob.test_tolerance_ms.unwrap_or(50);
-
-                let group = SelectorGroup::new_urltest(
-                    name.clone(),
-                    proxies,
-                    test_url,
-                    interval,
-                    timeout,
-                    tol,
-                );
-                let group = Arc::new(group);
-                // Start background health checks only if a Tokio runtime is available
-                if tokio::runtime::Handle::try_current().is_ok() {
-                    group.clone().start_health_check();
-                } else {
-                    tracing::debug!(
-                        target: "sb_core::adapter",
-                        selector = %name,
-                        "urltest group built without runtime; health check not started"
-                    );
-                }
-                br.add_outbound(name, "urltest".into(), group);
             }
         }
     }
+}
+
+/// Fallback scaffold implementation for Selector/URLTest when adapter is unavailable.
+/// This keeps the existing hardcoded logic as a fallback.
+#[cfg(feature = "scaffold")]
+fn try_scaffold_selector(ob: &OutboundIR, br: &Bridge) -> Option<BuiltOutbound> {
+    if ob.ty == OutboundType::Selector {
+        let name = ob.name.clone().unwrap_or_else(|| "selector".into());
+        let members = ob.members.clone().unwrap_or_default();
+        let mut resolved = Vec::new();
+
+        for m in members {
+            if let Some(conn) = br.find_outbound(&m) {
+                resolved.push(crate::outbound::selector::Member {
+                    name: m.clone(),
+                    conn,
+                });
+            } else {
+                tracing::warn!(
+                    target: "sb_core::adapter",
+                    selector = %name,
+                    missing_member = %m,
+                    "selector member not found, skipping"
+                );
+            }
+        }
+
+        if !resolved.is_empty() {
+            let sel = Selector::new(name.clone(), resolved);
+            return Some(BuiltOutbound {
+                tcp: Arc::new(sel),
+                udp: None,
+            });
+        }
+    } else if ob.ty == OutboundType::UrlTest {
+        let name = ob.name.clone().unwrap_or_else(|| "urltest".into());
+        let members = ob.members.clone().unwrap_or_default();
+        let mut proxies = Vec::new();
+
+        for m in members {
+            if let Some(conn) = br.find_outbound(&m) {
+                let udp_factory = br.find_udp_factory(&m);
+                proxies.push(ProxyMember::new(m.clone(), conn, udp_factory));
+            } else {
+                tracing::warn!(
+                    target: "sb_core::adapter",
+                    selector = %name,
+                    missing_member = %m,
+                    "urltest member not found, skipping"
+                );
+            }
+        }
+
+        if !proxies.is_empty() {
+            let test_url = ob
+                .test_url
+                .clone()
+                .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string());
+            let interval = std::time::Duration::from_millis(ob.test_interval_ms.unwrap_or(10_000));
+            let timeout = std::time::Duration::from_millis(ob.test_timeout_ms.unwrap_or(1_500));
+            let tol = ob.test_tolerance_ms.unwrap_or(50);
+
+            let group =
+                SelectorGroup::new_urltest(name.clone(), proxies, test_url, interval, timeout, tol);
+            let group = Arc::new(group);
+            if tokio::runtime::Handle::try_current().is_ok() {
+                group.clone().start_health_check();
+            } else {
+                tracing::debug!(
+                    target: "sb_core::adapter",
+                    selector = %name,
+                    "urltest group built without runtime; health check not started"
+                );
+            }
+            return Some(BuiltOutbound {
+                tcp: group,
+                udp: None,
+            });
+        }
+    }
+    None
+}
+
+#[cfg(not(feature = "scaffold"))]
+fn try_scaffold_selector(_ob: &OutboundIR, _br: &Bridge) -> Option<BuiltOutbound> {
+    None
 }
 
 /// Assembles IR configuration into a Bridge (with router feature enabled).
@@ -2201,6 +2264,34 @@ pub fn build_bridge<'a>(cfg: &'a ConfigIR, engine: crate::routing::engine::Engin
         }
     }
 
+    // Step 4: Endpoints
+    for endpoint_ir in &cfg.endpoints {
+        let ctx = EndpointContext::default();
+        if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
+            br.add_endpoint(endpoint);
+        } else {
+            tracing::warn!(
+                target: "sb_core::adapter",
+                endpoint = %endpoint_ir.tag.as_deref().unwrap_or("unknown"),
+                "endpoint builder not found"
+            );
+        }
+    }
+
+    // Step 5: Services
+    for service_ir in &cfg.services {
+        let ctx = ServiceContext::default();
+        if let Some(service) = service_registry().build(service_ir, &ctx) {
+            br.add_service(service);
+        } else {
+            tracing::warn!(
+                target: "sb_core::adapter",
+                service = %service_ir.tag.as_deref().unwrap_or("unknown"),
+                "service builder not found"
+            );
+        }
+    }
+
     br
 }
 
@@ -2246,6 +2337,34 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: ()) -> Bridge {
 
         if let Some(i) = inst {
             br.add_inbound_with_kind(p.kind.as_str(), i);
+        }
+    }
+
+    // Step 4: Endpoints
+    for endpoint_ir in &cfg.endpoints {
+        let ctx = EndpointContext::default();
+        if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
+            br.add_endpoint(endpoint);
+        } else {
+            tracing::warn!(
+                target: "sb_core::adapter",
+                endpoint = %endpoint_ir.tag.as_deref().unwrap_or("unknown"),
+                "endpoint builder not found"
+            );
+        }
+    }
+
+    // Step 5: Services
+    for service_ir in &cfg.services {
+        let ctx = ServiceContext::default();
+        if let Some(service) = service_registry().build(service_ir, &ctx) {
+            br.add_service(service);
+        } else {
+            tracing::warn!(
+                target: "sb_core::adapter",
+                service = %service_ir.tag.as_deref().unwrap_or("unknown"),
+                "service builder not found"
+            );
         }
     }
 

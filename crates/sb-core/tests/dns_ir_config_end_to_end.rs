@@ -48,7 +48,11 @@ async fn dns_ir_hosts_overlay_and_engine_presence() {
     assert_eq!(resolver2.name(), "dns_rule_engine");
 }
 
-#[cfg(all(feature = "dns_dhcp", feature = "dns_resolved", feature = "dns_tailscale"))]
+#[cfg(all(
+    feature = "dns_dhcp",
+    feature = "dns_resolved",
+    feature = "dns_tailscale"
+))]
 #[tokio::test]
 async fn dns_ir_builds_with_dhcp_resolved_tailscale_servers() {
     struct EnvGuard {
@@ -77,7 +81,10 @@ async fn dns_ir_builds_with_dhcp_resolved_tailscale_servers() {
     // Prepare synthetic resolv.conf files for DHCP/resolved upstream discovery.
     let mut dhcp_file = NamedTempFile::new().unwrap();
     writeln!(dhcp_file, "nameserver 127.0.0.1").unwrap();
-    let _dhcp_env = EnvGuard::set("SB_DNS_DHCP_RESOLV_CONF", dhcp_file.path().to_str().unwrap());
+    let _dhcp_env = EnvGuard::set(
+        "SB_DNS_DHCP_RESOLV_CONF",
+        dhcp_file.path().to_str().unwrap(),
+    );
 
     let mut resolved_file = NamedTempFile::new().unwrap();
     writeln!(resolved_file, "nameserver 127.0.0.53").unwrap();

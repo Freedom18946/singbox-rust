@@ -409,6 +409,12 @@ async fn geodata_update(
 
     // Download helper
     async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
+        if let Some(path) = file_url_to_path(url) {
+            return fs::read(&path)
+                .await
+                .with_context(|| format!("read {}", path.display()));
+        }
+
         let rsp = client
             .get(url)
             .send()
@@ -499,6 +505,19 @@ async fn geodata_update(
     );
     eprintln!("manifest: {}", manifest_path.display());
     Ok(())
+}
+
+fn file_url_to_path(url: &str) -> Option<PathBuf> {
+    let raw = url.strip_prefix("file://")?;
+    #[cfg(windows)]
+    let cleaned = if raw.starts_with('/') && raw.chars().nth(2) == Some(':') {
+        &raw[1..]
+    } else {
+        raw
+    };
+    #[cfg(not(windows))]
+    let cleaned = raw;
+    Some(PathBuf::from(cleaned))
 }
 
 // Return current time in NTP seconds (seconds since 1900-01-01 with fractional part)

@@ -5,8 +5,8 @@
 
 #[cfg(feature = "v2ray_transport")]
 pub mod map {
-    use sb_transport::TransportBuilder;
     use sb_config::ir::OutboundIR;
+    use sb_transport::TransportBuilder;
 
     /// Apply transport layers to the given `TransportBuilder` based on IR-like fields.
     ///
@@ -73,76 +73,76 @@ pub mod map {
             "applying transport layers"
         );
         for layer in &chain_buf {
-                match layer.to_ascii_lowercase().as_str() {
-                    "tls" => {
-                        // Prefer provided TLS config override, otherwise global effective
-                        let cfg = tls_cfg_override
-                            .clone()
-                            .unwrap_or_else(crate::tls::global::get_effective);
-                        let alpn = alpn_from_ir.clone().or_else(|| {
-                            if want_h2 {
-                                Some(vec![b"h2".to_vec()])
-                            } else {
-                                None
-                            }
-                        });
-                        builder = builder.tls(cfg, tls_sni.map(ToOwned::to_owned), alpn);
-                        saw_tls = true;
-                    }
-                    "ws" => {
-                        let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
-                        if let Some(p) = ws_path {
-                            ws_cfg.path = p.to_string();
+            match layer.to_ascii_lowercase().as_str() {
+                "tls" => {
+                    // Prefer provided TLS config override, otherwise global effective
+                    let cfg = tls_cfg_override
+                        .clone()
+                        .unwrap_or_else(crate::tls::global::get_effective);
+                    let alpn = alpn_from_ir.clone().or_else(|| {
+                        if want_h2 {
+                            Some(vec![b"h2".to_vec()])
+                        } else {
+                            None
                         }
-                        if let Some(h) = ws_host {
-                            ws_cfg.headers.push(("Host".into(), h.to_string()));
-                        }
-                        builder = builder.websocket(ws_cfg);
-                    }
-                    "h2" | "http2" => {
-                        let mut h2_cfg = sb_transport::http2::Http2Config::default();
-                        if let Some(p) = h2_path {
-                            h2_cfg.path = p.to_string();
-                        }
-                        if let Some(h) = h2_host {
-                            h2_cfg.host = h.to_string();
-                        }
-                        builder = builder.http2(h2_cfg);
-                    }
-                    "httpupgrade" | "http_upgrade" => {
-                        let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
-                        if let Some(p) = http_upgrade_path {
-                            cfg.path = p.to_string();
-                        }
-                        if !http_upgrade_headers.is_empty() {
-                            cfg.headers = http_upgrade_headers.to_vec();
-                        }
-                        builder = builder.http_upgrade(cfg);
-                    }
-                    "grpc" => {
-                        let mut cfg = sb_transport::grpc::GrpcConfig::default();
-                        if let Some(s) = grpc_service {
-                            cfg.service_name = s.to_string();
-                        }
-                        if let Some(m) = grpc_method {
-                            cfg.method_name = m.to_string();
-                        }
-                        if let Some(a) = grpc_authority {
-                            cfg.server_name = Some(a.to_string());
-                        }
-                        if !grpc_metadata.is_empty() {
-                            cfg.metadata = grpc_metadata.to_vec();
-                        }
-                        // Enable TLS when TLS appears explicitly or SNI/ALPN suggests TLS
-                        cfg.enable_tls = saw_tls || tls_sni.is_some() || tls_alpn_csv.is_some();
-                        builder = builder.grpc(cfg);
-                    }
-                    "mux" | "multiplex" => {
-                        let cfg = sb_transport::multiplex::MultiplexConfig::default();
-                        builder = builder.multiplex(cfg);
-                    }
-                    _ => {}
+                    });
+                    builder = builder.tls(cfg, tls_sni.map(ToOwned::to_owned), alpn);
+                    saw_tls = true;
                 }
+                "ws" => {
+                    let mut ws_cfg = sb_transport::websocket::WebSocketConfig::default();
+                    if let Some(p) = ws_path {
+                        ws_cfg.path = p.to_string();
+                    }
+                    if let Some(h) = ws_host {
+                        ws_cfg.headers.push(("Host".into(), h.to_string()));
+                    }
+                    builder = builder.websocket(ws_cfg);
+                }
+                "h2" | "http2" => {
+                    let mut h2_cfg = sb_transport::http2::Http2Config::default();
+                    if let Some(p) = h2_path {
+                        h2_cfg.path = p.to_string();
+                    }
+                    if let Some(h) = h2_host {
+                        h2_cfg.host = h.to_string();
+                    }
+                    builder = builder.http2(h2_cfg);
+                }
+                "httpupgrade" | "http_upgrade" => {
+                    let mut cfg = sb_transport::httpupgrade::HttpUpgradeConfig::default();
+                    if let Some(p) = http_upgrade_path {
+                        cfg.path = p.to_string();
+                    }
+                    if !http_upgrade_headers.is_empty() {
+                        cfg.headers = http_upgrade_headers.to_vec();
+                    }
+                    builder = builder.http_upgrade(cfg);
+                }
+                "grpc" => {
+                    let mut cfg = sb_transport::grpc::GrpcConfig::default();
+                    if let Some(s) = grpc_service {
+                        cfg.service_name = s.to_string();
+                    }
+                    if let Some(m) = grpc_method {
+                        cfg.method_name = m.to_string();
+                    }
+                    if let Some(a) = grpc_authority {
+                        cfg.server_name = Some(a.to_string());
+                    }
+                    if !grpc_metadata.is_empty() {
+                        cfg.metadata = grpc_metadata.to_vec();
+                    }
+                    // Enable TLS when TLS appears explicitly or SNI/ALPN suggests TLS
+                    cfg.enable_tls = saw_tls || tls_sni.is_some() || tls_alpn_csv.is_some();
+                    builder = builder.grpc(cfg);
+                }
+                "mux" | "multiplex" => {
+                    let cfg = sb_transport::multiplex::MultiplexConfig::default();
+                    builder = builder.multiplex(cfg);
+                }
+                _ => {}
+            }
         }
 
         builder
@@ -209,23 +209,19 @@ pub mod map {
         // SB_TRANSPORT_SNI_FALLBACK (default: enabled).
         fn looks_like_domain(s: &str) -> bool {
             // A minimal heuristic: has a dot and not a valid IPv4/IPv6 literal
-            (s.contains('.') && s.parse::<std::net::IpAddr>().is_err())
+            s.contains('.') && s.parse::<std::net::IpAddr>().is_err()
         }
         let sni_fallback_enabled = std::env::var("SB_TRANSPORT_SNI_FALLBACK")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(true);
         let h2_hint = ob.h2_path.is_some() || ob.h2_host.is_some();
         let grpc_hint = ob.grpc_service.is_some() || ob.grpc_method.is_some();
-        let computed_tls_sni: Option<&str> = if ob.tls_sni.is_none()
-            && sni_fallback_enabled
-            && (h2_hint || grpc_hint)
-        {
-            ob.server
-                .as_deref()
-                .filter(|s| looks_like_domain(s))
-        } else {
-            ob.tls_sni.as_deref()
-        };
+        let computed_tls_sni: Option<&str> =
+            if ob.tls_sni.is_none() && sni_fallback_enabled && (h2_hint || grpc_hint) {
+                ob.server.as_deref().filter(|s| looks_like_domain(s))
+            } else {
+                ob.tls_sni.as_deref()
+            };
         let alpn_csv = ob.tls_alpn.as_ref().map(|v| v.join(","));
         apply_layers(
             TransportBuilder::tcp(),
@@ -286,7 +282,13 @@ pub mod map {
         let ws_hint = ob.ws_path.is_some() || ob.ws_host.is_some();
         let h2_hint = ob.h2_path.is_some() || ob.h2_host.is_some();
 
-        let starts = |pfx: &[&str]| primary.iter().map(|s| s.as_str()).take(pfx.len()).eq(pfx.iter().copied());
+        let starts = |pfx: &[&str]| {
+            primary
+                .iter()
+                .map(|s| s.as_str())
+                .take(pfx.len())
+                .eq(pfx.iter().copied())
+        };
 
         if starts(&["tls", "ws"]) && h2_hint {
             plans.push(vec!["tls".into(), "h2".into()]);
@@ -307,9 +309,7 @@ pub mod map {
 
     /// Build a TLS config override for an outbound if it specifies skip-verify,
     /// client cert, or custom CA; otherwise return None and use the global config.
-    pub fn tls_override_from_ob(
-        ob: &OutboundIR,
-    ) -> Option<std::sync::Arc<rustls::ClientConfig>> {
+    pub fn tls_override_from_ob(ob: &OutboundIR) -> Option<std::sync::Arc<rustls::ClientConfig>> {
         use rustls::{ClientConfig, RootCertStore};
         use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
@@ -330,7 +330,9 @@ pub mod map {
             if let Ok(bytes) = std::fs::read(path) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
                 for item in rustls_pemfile::certs(&mut rd) {
-                    if let Ok(der) = item { let _ = roots.add(der); }
+                    if let Ok(der) = item {
+                        let _ = roots.add(der);
+                    }
                 }
             }
         }
@@ -338,7 +340,9 @@ pub mod map {
         for pem in &ob.tls_ca_pem {
             let mut rd = std::io::BufReader::new(pem.as_bytes());
             for item in rustls_pemfile::certs(&mut rd) {
-                if let Ok(der) = item { let _ = roots.add(der); }
+                if let Ok(der) = item {
+                    let _ = roots.add(der);
+                }
             }
         }
 
@@ -346,19 +350,29 @@ pub mod map {
         let config = ClientConfig::builder().with_root_certificates(roots);
 
         // Client cert (optional)
-        let certs: Option<Vec<CertificateDer<'static>>> = if let Some(pem) = ob.tls_client_cert_pem.as_ref() {
-            let mut rd = std::io::BufReader::new(pem.as_bytes());
-            let v = rustls_pemfile::certs(&mut rd).collect::<Result<Vec<_>, _>>().ok();
-            v
-        } else if let Some(path) = ob.tls_client_cert_path.as_ref() {
-            if let Ok(bytes) = std::fs::read(path) {
-                let mut rd = std::io::BufReader::new(&bytes[..]);
-                let v = rustls_pemfile::certs(&mut rd).collect::<Result<Vec<_>, _>>().ok();
+        let certs: Option<Vec<CertificateDer<'static>>> =
+            if let Some(pem) = ob.tls_client_cert_pem.as_ref() {
+                let mut rd = std::io::BufReader::new(pem.as_bytes());
+                let v = rustls_pemfile::certs(&mut rd)
+                    .collect::<Result<Vec<_>, _>>()
+                    .ok();
                 v
-            } else { None }
-        } else { None };
+            } else if let Some(path) = ob.tls_client_cert_path.as_ref() {
+                if let Ok(bytes) = std::fs::read(path) {
+                    let mut rd = std::io::BufReader::new(&bytes[..]);
+                    let v = rustls_pemfile::certs(&mut rd)
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok();
+                    v
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
-        let key: Option<PrivateKeyDer<'static>> = if let Some(pem) = ob.tls_client_key_pem.as_ref() {
+        let key: Option<PrivateKeyDer<'static>> = if let Some(pem) = ob.tls_client_key_pem.as_ref()
+        {
             // Parse from owned buffer and collect to break any borrow ties
             let bytes = pem.as_bytes();
             let mut rd = std::io::BufReader::new(bytes);
@@ -391,8 +405,12 @@ pub mod map {
                         .collect::<Vec<_>>();
                     rsa.pop().map(PrivateKeyDer::Pkcs1)
                 }
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let mut client = if let (Some(chain), Some(k)) = (certs, key) {
             ClientConfig::builder()
@@ -435,7 +453,8 @@ pub mod map {
         #[test]
         fn override_when_ca_inline_present() {
             let mut ob = sb_config::ir::OutboundIR::default();
-            ob.tls_ca_pem = vec!["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into()];
+            ob.tls_ca_pem =
+                vec!["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into()];
             let ov = tls_override_from_ob(&ob);
             assert!(ov.is_some());
         }
@@ -443,8 +462,10 @@ pub mod map {
         #[test]
         fn override_when_client_inline_present() {
             let mut ob = sb_config::ir::OutboundIR::default();
-            ob.tls_client_cert_pem = Some("-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into());
-            ob.tls_client_key_pem = Some("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----".into());
+            ob.tls_client_cert_pem =
+                Some("-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into());
+            ob.tls_client_key_pem =
+                Some("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----".into());
             let ov = tls_override_from_ob(&ob);
             assert!(ov.is_some());
         }
@@ -567,7 +588,10 @@ pub mod map {
                 None,
                 &[],
             );
-            assert_eq!(chain, vec!["tls".to_string(), "ws".to_string(), "grpc".to_string()]);
+            assert_eq!(
+                chain,
+                vec!["tls".to_string(), "ws".to_string(), "grpc".to_string()]
+            );
         }
 
         #[test]
@@ -576,7 +600,7 @@ pub mod map {
             let chain = derive_chain(
                 None,
                 Some("example.com"), // sni present implies TLS
-                None,                 // no explicit ALPN
+                None,                // no explicit ALPN
                 None,
                 None,
                 Some("/h2"),

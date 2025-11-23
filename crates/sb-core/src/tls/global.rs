@@ -52,7 +52,11 @@ fn effective() -> Arc<ClientConfig> {
 fn default_config() -> Arc<ClientConfig> {
     let mut roots = RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    Arc::new(ClientConfig::builder().with_root_certificates(roots).with_no_client_auth())
+    Arc::new(
+        ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
 }
 
 /// Build client config from optional IR certificate settings.
@@ -70,11 +74,15 @@ fn build_config(cert: Option<&sb_config::ir::CertificateIR>) -> Arc<ClientConfig
                             Ok(der) => {
                                 let _ = roots.add(der);
                             }
-                            Err(e) => tracing::warn!(target: "sb_core::tls", file=%path, error=%e, "failed to parse CA PEM item"),
+                            Err(e) => {
+                                tracing::warn!(target: "sb_core::tls", file=%path, error=%e, "failed to parse CA PEM item")
+                            }
                         }
                     }
                 }
-                Err(e) => tracing::warn!(target: "sb_core::tls", file=%path, error=%e, "failed to read CA file"),
+                Err(e) => {
+                    tracing::warn!(target: "sb_core::tls", file=%path, error=%e, "failed to read CA file")
+                }
             }
         }
         // Load inline PEM blocks
@@ -82,18 +90,28 @@ fn build_config(cert: Option<&sb_config::ir::CertificateIR>) -> Arc<ClientConfig
             let mut rd = std::io::BufReader::new(pem.as_bytes());
             for item in rustls_pemfile::certs(&mut rd) {
                 match item {
-                    Ok(der) => { let _ = roots.add(der); }
-                    Err(e) => tracing::warn!(target: "sb_core::tls", "failed to parse inline CA PEM item: {}", e),
+                    Ok(der) => {
+                        let _ = roots.add(der);
+                    }
+                    Err(e) => {
+                        tracing::warn!(target: "sb_core::tls", "failed to parse inline CA PEM item: {}", e)
+                    }
                 }
             }
         }
     }
 
-    Arc::new(ClientConfig::builder().with_root_certificates(roots).with_no_client_auth())
+    Arc::new(
+        ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
 }
 
 /// Get effective config (override if set) — used by transport mapping
-pub fn get_effective() -> Arc<ClientConfig> { effective() }
+pub fn get_effective() -> Arc<ClientConfig> {
+    effective()
+}
 
 /// Build a base RootCertStore from webpki roots and current top-level IR certificate settings.
 pub fn base_root_store() -> RootCertStore {
@@ -114,7 +132,9 @@ pub fn base_root_store() -> RootCertStore {
         for pem in &ir.ca_pem {
             let mut rd = std::io::BufReader::new(pem.as_bytes());
             for item in rustls_pemfile::certs(&mut rd) {
-                if let Ok(der) = item { let _ = roots.add(der); }
+                if let Ok(der) = item {
+                    let _ = roots.add(der);
+                }
             }
         }
     }

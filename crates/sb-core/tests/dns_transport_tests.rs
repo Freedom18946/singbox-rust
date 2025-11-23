@@ -5,6 +5,7 @@
 use anyhow::Result;
 use sb_core::dns::transport::DnsTransport;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::Duration;
 
 /// Helper function to build a simple DNS query packet for A record
 fn build_dns_query(domain: &str, record_type: u16) -> Vec<u8> {
@@ -49,7 +50,11 @@ fn build_dns_query(domain: &str, record_type: u16) -> Vec<u8> {
 async fn test_udp_transport_construction() {
     // Test that UDP transport can be constructed
     let server = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53);
-    let transport = sb_core::dns::transport::UdpTransport::new(server);
+    let upstream = sb_core::dns::transport::UdpUpstream {
+        addr: server,
+        timeout: Duration::from_millis(5000),
+    };
+    let transport = sb_core::dns::transport::UdpTransport::new(upstream);
 
     assert_eq!(transport.name(), "udp");
 }
@@ -60,7 +65,8 @@ async fn test_dot_transport_construction() {
     // Test that DoT transport can be constructed
     let server = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 853);
     let transport =
-        sb_core::dns::transport::DotTransport::new(server, "cloudflare-dns.com".to_string());
+        sb_core::dns::transport::DotTransport::new(server, "cloudflare-dns.com".to_string())
+            .expect("DoT transport should construct");
 
     assert_eq!(transport.name(), "dot");
 }
@@ -192,7 +198,11 @@ fn test_doh3_feature_enabled() {
 async fn test_udp_real_query() -> Result<()> {
     // Test against Google Public DNS
     let server = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53);
-    let transport = sb_core::dns::transport::UdpTransport::new(server);
+    let upstream = sb_core::dns::transport::UdpUpstream {
+        addr: server,
+        timeout: Duration::from_millis(5000),
+    };
+    let transport = sb_core::dns::transport::UdpTransport::new(upstream);
 
     let query = build_dns_query("dns.google", 1); // A record
     let response = transport.query(&query).await?;

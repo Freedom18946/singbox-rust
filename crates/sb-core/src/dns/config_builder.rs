@@ -3,7 +3,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::{resolver::DnsResolver, rule_engine::{DnsRuleEngine, DnsRoutingRule}, DnsUpstream, Resolver};
+use super::{
+    resolver::DnsResolver,
+    rule_engine::{DnsRoutingRule, DnsRuleEngine},
+    DnsUpstream, Resolver,
+};
 
 /// Build a DNS resolver from sb-config IR (DnsIR).
 ///
@@ -32,17 +36,20 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
     };
     if !upstreams.contains_key(&default_tag) {
         // Add system upstream as fallback when default not found
-        upstreams.insert(default_tag.clone(), Arc::new(super::upstream::SystemUpstream::new()));
+        upstreams.insert(
+            default_tag.clone(),
+            Arc::new(super::upstream::SystemUpstream::new()),
+        );
     }
 
     // 2) If rules defined, build rule engine
     if !dns.rules.is_empty() {
         let mut routing_rules: Vec<DnsRoutingRule> = Vec::new();
-    for r in &dns.rules {
-        if r.server.trim().is_empty() {
-            continue;
-        }
-        let rs = build_ruleset_from_rule(r);
+        for r in &dns.rules {
+            if r.server.trim().is_empty() {
+                continue;
+            }
+            let rs = build_ruleset_from_rule(r);
             routing_rules.push(DnsRoutingRule {
                 rule_set: rs,
                 upstream_tag: r.server.clone(),
@@ -62,11 +69,18 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
     Ok(overlay)
 }
 
-fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
+/// Build a single DNS upstream from address string (e.g., udp://, doh3://, system, local).
+/// Exposed for integration tests and CLI validation.
+pub fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
     let a = addr.trim();
-    if a.is_empty() { return Ok(None); }
+    if a.is_empty() {
+        return Ok(None);
+    }
     if a.eq_ignore_ascii_case("system") {
         return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
+    }
+    if a.eq_ignore_ascii_case("local") || a.starts_with("local://") {
+        return Ok(Some(Arc::new(super::upstream::LocalUpstream::new(None))));
     }
     if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
         return Ok(Some(build_dhcp_dns_upstream(a, None)?));
@@ -85,21 +99,34 @@ fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
         let up = super::upstream::DohUpstream::new(a.to_string())?;
         return Ok(Some(Arc::new(up)));
     }
-    if let Some(rest) = a.strip_prefix("dot://").or_else(|| a.strip_prefix("tls://")) {
+    if let Some(rest) = a
+        .strip_prefix("dot://")
+        .or_else(|| a.strip_prefix("tls://"))
+    {
         let (host, port) = split_host_port(rest, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
         let up = super::upstream::DotUpstream::new(sa, host.to_string());
         return Ok(Some(Arc::new(up)));
     }
-    if let Some(rest) = a.strip_prefix("doq://").or_else(|| a.strip_prefix("quic://")) {
-        let (hp, sni) = if let Some((h, s)) = rest.split_once('@') { (h, Some(s.to_string())) } else { (rest, None) };
+    if let Some(rest) = a
+        .strip_prefix("doq://")
+        .or_else(|| a.strip_prefix("quic://"))
+    {
+        let (hp, sni) = if let Some((h, s)) = rest.split_once('@') {
+            (h, Some(s.to_string()))
+        } else {
+            (rest, None)
+        };
         let (host, port) = split_host_port(hp, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
         let sni = sni.unwrap_or_else(|| host.to_string());
         let up = super::upstream::DoqUpstream::new(sa, sni);
         return Ok(Some(Arc::new(up)));
     }
-    if let Some(rest) = a.strip_prefix("doh3://").or_else(|| a.strip_prefix("h3://")) {
+    if let Some(rest) = a
+        .strip_prefix("doh3://")
+        .or_else(|| a.strip_prefix("h3://"))
+    {
         // Format: doh3://host:port/path or h3://host:port/path
         let (host_port, path) = if let Some((hp, p)) = rest.split_once('/') {
             (hp, format!("/{}", p))
@@ -114,12 +141,23 @@ fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
     Ok(None)
 }
 
-fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option<Arc<dyn DnsUpstream>>> {
+/// Build a DNS upstream from a full server IR entry.
+/// Exposed for integration tests and CLI validation.
+pub fn build_upstream_from_server(
+    srv: &sb_config::ir::DnsServerIR,
+) -> Result<Option<Arc<dyn DnsUpstream>>> {
     // Prefer detailed builder for DoT/DoQ when extras are present
     let a = srv.address.trim();
-    if a.is_empty() { return Ok(None); }
+    if a.is_empty() {
+        return Ok(None);
+    }
     if a.eq_ignore_ascii_case("system") {
         return Ok(Some(Arc::new(super::upstream::SystemUpstream::new())));
+    }
+    if a.eq_ignore_ascii_case("local") || a.starts_with("local://") {
+        return Ok(Some(Arc::new(super::upstream::LocalUpstream::new(Some(
+            &srv.tag,
+        )))));
     }
     if a.eq_ignore_ascii_case("dhcp") || a.starts_with("dhcp://") {
         return Ok(Some(build_dhcp_dns_upstream(a, Some(&srv.tag))?));
@@ -132,7 +170,8 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
     }
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
-        let up = super::upstream::UdpUpstream::new(sa).with_client_subnet(srv.client_subnet.clone());
+        let up =
+            super::upstream::UdpUpstream::new(sa).with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
     if a.starts_with("https://") || a.starts_with("http://") {
@@ -140,7 +179,10 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
-    if let Some(rest) = a.strip_prefix("dot://").or_else(|| a.strip_prefix("tls://")) {
+    if let Some(rest) = a
+        .strip_prefix("dot://")
+        .or_else(|| a.strip_prefix("tls://"))
+    {
         let (host, port) = split_host_port(rest, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
         let sni = srv.sni.clone().unwrap_or_else(|| host.to_string());
@@ -154,11 +196,22 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
-    if let Some(rest) = a.strip_prefix("doq://").or_else(|| a.strip_prefix("quic://")) {
-        let (hp, sni_param) = if let Some((h, s)) = rest.split_once('@') { (h, Some(s.to_string())) } else { (rest, None) };
+    if let Some(rest) = a
+        .strip_prefix("doq://")
+        .or_else(|| a.strip_prefix("quic://"))
+    {
+        let (hp, sni_param) = if let Some((h, s)) = rest.split_once('@') {
+            (h, Some(s.to_string()))
+        } else {
+            (rest, None)
+        };
         let (host, port) = split_host_port(hp, 853)?;
         let sa = format!("{host}:{port}").parse::<std::net::SocketAddr>()?;
-        let sni = srv.sni.clone().or(sni_param).unwrap_or_else(|| host.to_string());
+        let sni = srv
+            .sni
+            .clone()
+            .or(sni_param)
+            .unwrap_or_else(|| host.to_string());
         let mut up = super::upstream::DoqUpstream::new_with_tls(
             sa,
             sni,
@@ -169,7 +222,10 @@ fn build_upstream_from_server(srv: &sb_config::ir::DnsServerIR) -> Result<Option
         up = up.with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
-    if let Some(rest) = a.strip_prefix("doh3://").or_else(|| a.strip_prefix("h3://")) {
+    if let Some(rest) = a
+        .strip_prefix("doh3://")
+        .or_else(|| a.strip_prefix("h3://"))
+    {
         // Format: doh3://host:port/path or h3://host:port/path
         let (host_port, path) = if let Some((hp, p)) = rest.split_once('/') {
             (hp, format!("/{}", p))
@@ -210,9 +266,9 @@ fn build_dhcp_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn Dn
 #[cfg(feature = "dns_tailscale")]
 fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
     let (name, addrs) = super::upstream::parse_tailscale_spec(spec, tag)?;
-    Ok(Arc::new(
-        super::upstream::StaticMultiUpstream::new(name, addrs),
-    ))
+    Ok(Arc::new(super::upstream::StaticMultiUpstream::new(
+        name, addrs,
+    )))
 }
 
 #[cfg(not(feature = "dns_tailscale"))]
@@ -299,6 +355,48 @@ mod tests {
     }
 
     #[test]
+    fn resolver_supports_local_alias() {
+        let mut ir = sb_config::ir::DnsIR::default();
+        ir.servers.push(sb_config::ir::DnsServerIR {
+            tag: "loc".into(),
+            address: "local".into(),
+            sni: None,
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: None,
+            client_subnet: None,
+        });
+        let res = resolver_from_ir(&ir);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn build_upstream_returns_local_impl() {
+        let upstream = build_upstream("local")
+            .expect("local upstream builder should not error")
+            .expect("local upstream should be built");
+
+        assert_eq!(upstream.name(), "local");
+    }
+
+    #[test]
+    fn build_upstream_from_server_sets_local_tag_name() {
+        let upstream = build_upstream_from_server(&sb_config::ir::DnsServerIR {
+            tag: "loc-tag".into(),
+            address: "local://".into(),
+            sni: None,
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: None,
+            client_subnet: None,
+        })
+        .expect("local upstream should be buildable")
+        .expect("local upstream should not be None");
+
+        assert_eq!(upstream.name(), "local::loc-tag");
+    }
+
+    #[test]
     fn hydrate_dns_ir_reads_env_values() {
         let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
         let _timeout = EnvGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
@@ -378,14 +476,20 @@ fn maybe_wrap_hosts_overlay(
     for h in &dns.hosts {
         let mut ips = Vec::new();
         for s in &h.ips {
-            if let Ok(ip) = s.parse::<IpAddr>() { ips.push(ip); }
+            if let Ok(ip) = s.parse::<IpAddr>() {
+                ips.push(ip);
+            }
         }
         if !ips.is_empty() {
             map.insert(h.domain.to_ascii_lowercase(), ips);
         }
     }
     let ttl = std::time::Duration::from_secs(dns.hosts_ttl_s.unwrap_or(300));
-    Arc::new(HostsOverlayResolver { map, ttl, inner: base })
+    Arc::new(HostsOverlayResolver {
+        map,
+        ttl,
+        inner: base,
+    })
 }
 
 struct HostsOverlayResolver {
@@ -410,30 +514,71 @@ impl Resolver for HostsOverlayResolver {
         self.inner.resolve(domain).await
     }
 
-    fn name(&self) -> &str { "hosts_overlay" }
+    fn name(&self) -> &str {
+        "hosts_overlay"
+    }
 }
 
 fn apply_env_from_ir(dns: &sb_config::ir::DnsIR) {
     fn set_if_unset(k: &str, v: &str) {
-        if std::env::var(k).is_err() { std::env::set_var(k, v); }
+        if std::env::var(k).is_err() {
+            std::env::set_var(k, v);
+        }
     }
-    if let Some(ms) = dns.timeout_ms { set_if_unset("SB_DNS_UDP_TIMEOUT_MS", &ms.to_string()); set_if_unset("SB_DNS_DOT_TIMEOUT_MS", &ms.to_string()); set_if_unset("SB_DNS_DOH_TIMEOUT_MS", &ms.to_string()); set_if_unset("SB_DNS_DOQ_TIMEOUT_MS", &ms.to_string()); }
-    if let Some(s) = dns.ttl_default_s { set_if_unset("SB_DNS_DEFAULT_TTL_S", &s.to_string()); }
-    if let Some(s) = dns.ttl_min_s { set_if_unset("SB_DNS_MIN_TTL_S", &s.to_string()); }
-    if let Some(s) = dns.ttl_max_s { set_if_unset("SB_DNS_MAX_TTL_S", &s.to_string()); }
-    if let Some(s) = dns.ttl_neg_s { set_if_unset("SB_DNS_NEG_TTL_S", &s.to_string()); }
-    if dns.fakeip_enabled.unwrap_or(false) { set_if_unset("SB_DNS_FAKEIP_ENABLE", "1"); }
-    if let Some(v) = dns.fakeip_v4_base.as_ref() { set_if_unset("SB_FAKEIP_V4_BASE", v); }
-    if let Some(v) = dns.fakeip_v4_mask { set_if_unset("SB_FAKEIP_V4_MASK", &v.to_string()); }
-    if let Some(v) = dns.fakeip_v6_base.as_ref() { set_if_unset("SB_FAKEIP_V6_BASE", v); }
-    if let Some(v) = dns.fakeip_v6_mask { set_if_unset("SB_FAKEIP_V6_MASK", &v.to_string()); }
-    if let Some(v) = dns.pool_strategy.as_ref() { set_if_unset("SB_DNS_POOL_STRATEGY", v); }
-    if let Some(v) = dns.pool_race_window_ms { set_if_unset("SB_DNS_RACE_WINDOW_MS", &v.to_string()); }
-    if let Some(v) = dns.pool_he_race_ms { set_if_unset("SB_DNS_HE_RACE_MS", &v.to_string()); }
-    if let Some(v) = dns.pool_he_order.as_ref() { set_if_unset("SB_DNS_HE_ORDER", v); }
-    if let Some(v) = dns.pool_max_inflight { set_if_unset("SB_DNS_POOL_MAX_INFLIGHT", &v.to_string()); }
-    if let Some(v) = dns.pool_per_host_inflight { set_if_unset("SB_DNS_PER_HOST_INFLIGHT", &v.to_string()); }
-    if let Some(v) = dns.client_subnet.as_ref() { set_if_unset("SB_DNS_CLIENT_SUBNET", v); }
+    if let Some(ms) = dns.timeout_ms {
+        set_if_unset("SB_DNS_UDP_TIMEOUT_MS", &ms.to_string());
+        set_if_unset("SB_DNS_DOT_TIMEOUT_MS", &ms.to_string());
+        set_if_unset("SB_DNS_DOH_TIMEOUT_MS", &ms.to_string());
+        set_if_unset("SB_DNS_DOQ_TIMEOUT_MS", &ms.to_string());
+    }
+    if let Some(s) = dns.ttl_default_s {
+        set_if_unset("SB_DNS_DEFAULT_TTL_S", &s.to_string());
+    }
+    if let Some(s) = dns.ttl_min_s {
+        set_if_unset("SB_DNS_MIN_TTL_S", &s.to_string());
+    }
+    if let Some(s) = dns.ttl_max_s {
+        set_if_unset("SB_DNS_MAX_TTL_S", &s.to_string());
+    }
+    if let Some(s) = dns.ttl_neg_s {
+        set_if_unset("SB_DNS_NEG_TTL_S", &s.to_string());
+    }
+    if dns.fakeip_enabled.unwrap_or(false) {
+        set_if_unset("SB_DNS_FAKEIP_ENABLE", "1");
+    }
+    if let Some(v) = dns.fakeip_v4_base.as_ref() {
+        set_if_unset("SB_FAKEIP_V4_BASE", v);
+    }
+    if let Some(v) = dns.fakeip_v4_mask {
+        set_if_unset("SB_FAKEIP_V4_MASK", &v.to_string());
+    }
+    if let Some(v) = dns.fakeip_v6_base.as_ref() {
+        set_if_unset("SB_FAKEIP_V6_BASE", v);
+    }
+    if let Some(v) = dns.fakeip_v6_mask {
+        set_if_unset("SB_FAKEIP_V6_MASK", &v.to_string());
+    }
+    if let Some(v) = dns.pool_strategy.as_ref() {
+        set_if_unset("SB_DNS_POOL_STRATEGY", v);
+    }
+    if let Some(v) = dns.pool_race_window_ms {
+        set_if_unset("SB_DNS_RACE_WINDOW_MS", &v.to_string());
+    }
+    if let Some(v) = dns.pool_he_race_ms {
+        set_if_unset("SB_DNS_HE_RACE_MS", &v.to_string());
+    }
+    if let Some(v) = dns.pool_he_order.as_ref() {
+        set_if_unset("SB_DNS_HE_ORDER", v);
+    }
+    if let Some(v) = dns.pool_max_inflight {
+        set_if_unset("SB_DNS_POOL_MAX_INFLIGHT", &v.to_string());
+    }
+    if let Some(v) = dns.pool_per_host_inflight {
+        set_if_unset("SB_DNS_PER_HOST_INFLIGHT", &v.to_string());
+    }
+    if let Some(v) = dns.client_subnet.as_ref() {
+        set_if_unset("SB_DNS_CLIENT_SUBNET", v);
+    }
 }
 
 fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
@@ -444,8 +589,9 @@ fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
             .or_else(|| env_u64("SB_DNS_TIMEOUT_MS"))
             .or_else(|| env_u64("SB_DNS_DOH_TIMEOUT_MS"))
     });
-    hydrated.ttl_default_s =
-        hydrated.ttl_default_s.or_else(|| env_u64("SB_DNS_DEFAULT_TTL_S"));
+    hydrated.ttl_default_s = hydrated
+        .ttl_default_s
+        .or_else(|| env_u64("SB_DNS_DEFAULT_TTL_S"));
     hydrated.ttl_min_s = hydrated.ttl_min_s.or_else(|| env_u64("SB_DNS_MIN_TTL_S"));
     hydrated.ttl_max_s = hydrated.ttl_max_s.or_else(|| env_u64("SB_DNS_MAX_TTL_S"));
     hydrated.ttl_neg_s = hydrated.ttl_neg_s.or_else(|| env_u64("SB_DNS_NEG_TTL_S"));
@@ -469,15 +615,18 @@ fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
     if hydrated.pool_strategy.is_none() {
         hydrated.pool_strategy = env_string("SB_DNS_POOL_STRATEGY");
     }
-    hydrated.pool_race_window_ms =
-        hydrated.pool_race_window_ms.or_else(|| env_u64("SB_DNS_RACE_WINDOW_MS"));
-    hydrated.pool_he_race_ms =
-        hydrated.pool_he_race_ms.or_else(|| env_u64("SB_DNS_HE_RACE_MS"));
+    hydrated.pool_race_window_ms = hydrated
+        .pool_race_window_ms
+        .or_else(|| env_u64("SB_DNS_RACE_WINDOW_MS"));
+    hydrated.pool_he_race_ms = hydrated
+        .pool_he_race_ms
+        .or_else(|| env_u64("SB_DNS_HE_RACE_MS"));
     if hydrated.pool_he_order.is_none() {
         hydrated.pool_he_order = env_string("SB_DNS_HE_ORDER");
     }
-    hydrated.pool_max_inflight =
-        hydrated.pool_max_inflight.or_else(|| env_u64("SB_DNS_POOL_MAX_INFLIGHT"));
+    hydrated.pool_max_inflight = hydrated
+        .pool_max_inflight
+        .or_else(|| env_u64("SB_DNS_POOL_MAX_INFLIGHT"));
     hydrated.pool_per_host_inflight = hydrated
         .pool_per_host_inflight
         .or_else(|| env_u64("SB_DNS_PER_HOST_INFLIGHT"));
@@ -520,8 +669,12 @@ fn env_string(key: &str) -> Option<String> {
     }
 }
 
-fn build_ruleset_from_rule(r: &sb_config::ir::DnsRuleIR) -> std::sync::Arc<crate::router::ruleset::RuleSet> {
-    use crate::router::ruleset::{DefaultRule, DomainRule, IpPrefixTree, Rule, RuleSet, RuleSetFormat, RuleSetSource};
+fn build_ruleset_from_rule(
+    r: &sb_config::ir::DnsRuleIR,
+) -> std::sync::Arc<crate::router::ruleset::RuleSet> {
+    use crate::router::ruleset::{
+        DefaultRule, DomainRule, IpPrefixTree, Rule, RuleSet, RuleSetFormat, RuleSetSource,
+    };
     use std::path::PathBuf;
     use std::sync::Arc as StdArc;
     use std::time::SystemTime;

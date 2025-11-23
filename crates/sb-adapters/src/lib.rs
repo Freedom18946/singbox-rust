@@ -140,8 +140,14 @@ pub mod register;
 /// Endpoint stub implementations (WireGuard, Tailscale).
 pub mod endpoint_stubs;
 
+/// Endpoint implementations.
+pub mod endpoint;
+
 /// Service stub implementations (Resolved, DERP, SSM).
 pub mod service_stubs;
+
+/// Service implementations.
+pub mod service;
 
 /// Utility functions and helpers.
 ///

@@ -13,19 +13,37 @@ use std::sync::LazyLock;
 static ALLOWED_LABEL_KEYS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     HashSet::from([
         // HTTP
-        "method", "status", "class",
+        "method",
+        "status",
+        "class",
         // Outbound
-        "kind", "result", "protocol", "cipher", "operation",
+        "kind",
+        "result",
+        "protocol",
+        "cipher",
+        "operation",
         // Selector / URLTest / misc
-        "outbound", "reason", "mode", "place",
+        "outbound",
+        "reason",
+        "mode",
+        "place",
         // UDP / NAT
-        "shard", "state", "dir",
+        "shard",
+        "state",
+        "dir",
         // DNS
-        "qtype", "from_cache",
+        "qtype",
+        "from_cache",
         // sb-metrics (shared conventions)
-        "adapter", "category", "chan", "proxy",
+        "adapter",
+        "category",
+        "chan",
+        "proxy",
+        "tag",
         // Protocol/algorithm staging (QUIC CC, session open state)
-        "algorithm", "proto", "stage",
+        "algorithm",
+        "proto",
+        "stage",
     ])
 });
 

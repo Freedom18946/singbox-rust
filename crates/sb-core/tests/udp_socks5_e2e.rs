@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 use sb_test_utils::socks5::start_mock_socks5;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::net::UdpSocket;

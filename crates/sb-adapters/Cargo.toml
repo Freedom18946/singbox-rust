@@ -19,7 +19,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net", "time", "fs"] }
 tracing = "0.1"
 tun2socks = { version = "0.1.10", optional = true }
-tun = { version = "0.8", optional = true }
+tun = { version = "0.8", optional = true, features = ["async"] }
 libc = "0.2"
 
 # VMess protocol dependencies
@@ -36,7 +36,12 @@ quinn = { version = "0.11", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "tls12", "ring"] }
 rustls-pki-types = { version = "1", optional = true }
 rustls-pemfile = { version = "2.0", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
 webpki-roots = { version = "0.26", optional = true }
+
+# WireGuard userspace implementation
+boringtun = { git = "https://github.com/cloudflare/boringtun", branch = "master", optional = true }
+
 
 # 可选：通用 metrics 宏（仅当启用 feature=metrics 时编译）
 metrics = { version = "0.23", optional = true }
@@ -71,6 +76,11 @@ http = { version = "0.2", optional = true }
 
 # Constant-time comparison for authentication
 subtle = "2.5"
+anytls-rs = { version = "0.5.4", optional = true }
+
+# D-Bus support for systemd-resolved service (Linux only)
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "3.15", features = ["blocking"], optional = true }
 
 # Windows-only dependencies
 [target.'cfg(windows)'.dependencies]
@@ -118,6 +128,17 @@ dns_doq = ["sb-core/dns_doq"]
 e2e = []
 # TUIC protocol support
 tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile"]
+# Router-aware adapters rely on sb-core routing infrastructure
+router = ["sb-core/router"]
+
+# sb-core outbound feature mirrors to keep adapter cfg(feature = "out_*") checks working.
+out_ss = ["sb-core/out_ss"]
+out_trojan = ["sb-core/out_trojan"]
+out_vmess = ["sb-core/out_vmess"]
+out_vless = ["sb-core/out_vless"]
+out_wireguard = ["sb-core/out_wireguard"]
+out_tuic = ["sb-core/out_tuic"]
+out_hysteria2 = ["sb-core/out_hysteria2"]
 
 # Go parity adapter feature gates
 adapter-socks = []
@@ -125,15 +146,18 @@ socks-udp = ["adapter-socks"]
 socks-bind = ["adapter-socks"]
 adapter-http = []
 http-tls = ["adapter-http", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls"]
-adapter-shadowsocks = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/serde", "sb-core/out_ss"]
-adapter-trojan = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "sb-core/out_trojan"]
-adapter-vmess = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "sb-core/out_vmess"]
-adapter-vless = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "sb-core/out_vless"]
+socks-tls = ["adapter-socks", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls", "dep:rustls-pki-types"]
+adapter-shadowsocks = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/serde", "out_ss"]
+adapter-trojan = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "out_trojan"]
+adapter-vmess = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "out_vmess"]
+adapter-vless = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "out_vless"]
 adapter-hysteria = ["sb-core/out_hysteria"]
-adapter-hysteria2 = ["sb-core/out_hysteria2"]
+adapter-hysteria2 = ["out_hysteria2"]
 adapter-shadowtls = ["shadowtls", "dep:sb-transport", "sb-transport/transport_tls", "sb-core/out_shadowtls"]
 adapter-ssh = ["sb-core/out_ssh"]
-adapter-tuic = ["tuic", "sb-core/out_tuic"]
+adapter-tuic = ["tuic", "out_tuic"]
+adapter-wireguard = ["out_wireguard"]
+adapter-wireguard-endpoint = ["dep:boringtun", "dep:tun"]
 adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 adapter-dns = []
 adapter-tun = ["tun"]
@@ -157,6 +181,15 @@ transport_h2 = ["dep:sb-transport", "sb-transport/transport_h2"]
 
 # Feature alias for sb-transport dependency detection
 sb-transport = ["dep:sb-transport"]
+adapter-anytls = ["dep:anytls-rs", "dep:tokio-rustls", "dep:rustls", "dep:rustls-pemfile", "dep:rustls-native-certs", "dep:webpki-roots"]
+
+# Service implementations
+service_resolved = ["dep:zbus", "sb-core/service_resolved"]
+service_ssmapi = ["sb-core/service_ssmapi"]
+service_derp = ["sb-core/service_derp"]
+tsnet = []
+libtailscale = []
+
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disabled_test_temporarily)'] }

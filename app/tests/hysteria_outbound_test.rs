@@ -2,7 +2,14 @@
 
 use sb_adapters::register_all;
 use sb_config::ir::{OutboundIR, OutboundType};
-use sb_core::adapter::{registry, OutboundParam};
+use sb_core::adapter::{registry, Bridge, OutboundParam};
+use std::sync::Arc;
+
+fn ctx() -> registry::AdapterOutboundContext {
+    registry::AdapterOutboundContext {
+        bridge: Arc::new(Bridge::new()),
+    }
+}
 
 /// Test that Hysteria v1 outbound can be instantiated with minimal config
 #[test]
@@ -33,7 +40,7 @@ fn test_hysteria_outbound_registration() {
         "Hysteria v1 builder should be registered"
     );
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Hysteria v1 outbound should be registered and buildable"
@@ -68,7 +75,7 @@ fn test_hysteria_with_obfuscation() {
     let builder = registry::get_outbound("hysteria");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Hysteria v1 with obfuscation should build"
@@ -101,7 +108,7 @@ fn test_hysteria_with_quic_windows() {
     };
 
     let builder = registry::get_outbound("hysteria");
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Hysteria v1 with QUIC windows should build"
@@ -135,7 +142,7 @@ fn test_hysteria_with_alpn_sni() {
     };
 
     let builder = registry::get_outbound("hysteria");
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Hysteria v1 with ALPN and SNI should build"
@@ -163,7 +170,7 @@ fn test_hysteria_with_defaults() {
     };
 
     let builder = registry::get_outbound("hysteria");
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Hysteria v1 should build with default values"
@@ -193,7 +200,7 @@ fn test_hysteria_with_password_fallback() {
     };
 
     let builder = registry::get_outbound("hysteria");
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Hysteria v1 should accept password as auth fallback"

@@ -71,11 +71,7 @@ fn end2end_via_selector() {
             ty: InboundType::Socks,
             listen: socks_addr.ip().to_string(),
             port: socks_addr.port(),
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![
             OutboundIR {
@@ -102,9 +98,9 @@ fn end2end_via_selector() {
                 ..Default::default()
             }],
             default: Some("S".into()),
+            ..Default::default()
         },
-        ntp: None,
-        dns: None,
+        ..Default::default()
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

@@ -80,7 +80,7 @@ pub mod ssh_stub;
 #[cfg(feature = "out_tuic")]
 pub mod tuic;
 #[cfg(feature = "out_wireguard")]
-pub mod wireguard_stub;
+pub mod wireguard;
 
 // Performance optimizations for P0 protocols
 pub mod optimizations;
@@ -239,7 +239,7 @@ pub enum OutboundImpl {
     #[cfg(feature = "out_hysteria2")]
     Hysteria2(hysteria2::Hysteria2Config),
     #[cfg(feature = "out_wireguard")]
-    WireGuard(wireguard_stub::WireGuardConfig),
+    WireGuard(wireguard::WireGuardConfig),
     #[cfg(feature = "out_ssh")]
     Ssh(ssh_stub::SshConfig),
     /// Generic trait-based connector (e.g., `SelectorGroup`)
@@ -855,7 +855,7 @@ async fn http_connect(cfg: &HttpProxyConfig, ep: Endpoint) -> io::Result<TcpStre
     };
 
     match timeout(HANDSHAKE_TIMEOUT, async {
-        use Endpoint::{Ip, Domain};
+        use Endpoint::{Domain, Ip};
         let host_port = match ep {
             Ip(sa) => format!(
                 "{}:{}",
@@ -1140,7 +1140,7 @@ async fn hysteria2_connect(
 
 #[cfg(feature = "out_wireguard")]
 async fn wireguard_connect(
-    cfg: &wireguard_stub::WireGuardConfig,
+    cfg: &wireguard::WireGuardConfig,
     ep: Endpoint,
 ) -> io::Result<TcpStream> {
     use crypto_types::{HostPort, OutboundTcp};
@@ -1150,7 +1150,7 @@ async fn wireguard_connect(
         Endpoint::Domain(host, port) => HostPort::new(host, port),
     };
 
-    let outbound = wireguard_stub::WireGuardOutbound::new(cfg.clone())
+    let outbound = wireguard::WireGuardOutbound::new(cfg.clone())
         .map_err(|e| io::Error::other(format!("WireGuard setup failed: {}", e)))?;
 
     outbound.connect(&target).await

@@ -1,7 +1,7 @@
 //! Async SOCKS5 server: no auth, CONNECT (TCP) and UDP ASSOCIATE (minimal).
 //! feature = "scaffold"
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -160,7 +160,9 @@ pub(crate) async fn handle_conn(
             // Outbound UDP session created lazily on demand
             let mut udp_sess: Option<Arc<dyn crate::adapter::UdpOutboundSession>> = None;
             loop {
-                let Ok((n, src)) = relay.recv_from(&mut buf).await else { break };
+                let Ok((n, src)) = relay.recv_from(&mut buf).await else {
+                    break;
+                };
 
                 let from_client = match client_ep {
                     None => {
@@ -173,36 +175,62 @@ pub(crate) async fn handle_conn(
 
                 if from_client {
                     // Parse SOCKS5 UDP request: RSV(2)=0, FRAG(1)=0, ATYP, DST.ADDR, DST.PORT, DATA
-                    if n < 4 { continue; }
-                    if buf[0] != 0 || buf[1] != 0 || buf[2] != 0 { continue; }
+                    if n < 4 {
+                        continue;
+                    }
+                    if buf[0] != 0 || buf[1] != 0 || buf[2] != 0 {
+                        continue;
+                    }
                     let mut p = 3usize;
-                    let atyp = buf[p]; p += 1;
+                    let atyp = buf[p];
+                    p += 1;
                     let dst_host = match atyp {
-                        0x01 => { // IPv4
-                            if p + 4 > n { continue; }
-                            let ip = std::net::Ipv4Addr::new(buf[p], buf[p+1], buf[p+2], buf[p+3]);
+                        0x01 => {
+                            // IPv4
+                            if p + 4 > n {
+                                continue;
+                            }
+                            let ip =
+                                std::net::Ipv4Addr::new(buf[p], buf[p + 1], buf[p + 2], buf[p + 3]);
                             p += 4;
                             ip.to_string()
                         }
-                        0x03 => { // Domain
-                            if p >= n { continue; }
-                            let ln = buf[p] as usize; p += 1;
-                            if p + ln > n { continue; }
-                            let s = std::str::from_utf8(&buf[p..p+ln]).unwrap_or("").to_string();
+                        0x03 => {
+                            // Domain
+                            if p >= n {
+                                continue;
+                            }
+                            let ln = buf[p] as usize;
+                            p += 1;
+                            if p + ln > n {
+                                continue;
+                            }
+                            let s = std::str::from_utf8(&buf[p..p + ln])
+                                .unwrap_or("")
+                                .to_string();
                             p += ln;
                             s
                         }
-                        0x04 => { // IPv6
-                            if p + 16 > n { continue; }
+                        0x04 => {
+                            // IPv6
+                            if p + 16 > n {
+                                continue;
+                            }
                             let mut o = [0u8; 16];
-                            o.copy_from_slice(&buf[p..p+16]); p += 16;
+                            o.copy_from_slice(&buf[p..p + 16]);
+                            p += 16;
                             std::net::Ipv6Addr::from(o).to_string()
                         }
                         _ => continue,
                     };
-                    if p + 2 > n { continue; }
-                    let dst_port = u16::from_be_bytes([buf[p], buf[p+1]]); p += 2;
-                    if p > n { continue; }
+                    if p + 2 > n {
+                        continue;
+                    }
+                    let dst_port = u16::from_be_bytes([buf[p], buf[p + 1]]);
+                    p += 2;
+                    if p > n {
+                        continue;
+                    }
                     let payload = &buf[p..n];
 
                     #[cfg(feature = "metrics")]
@@ -223,7 +251,12 @@ pub(crate) async fn handle_conn(
                     };
                     #[cfg(not(feature = "router"))]
                     let d = {
-                        let input = Input { host: dst_host.clone(), port: dst_port, network: "udp".to_string(), protocol: "socks".to_string() };
+                        let input = Input {
+                            host: dst_host.clone(),
+                            port: dst_port,
+                            network: "udp".to_string(),
+                            protocol: "socks".to_string(),
+                        };
                         eng.decide(&input, false)
                     };
                     let out_name = d.outbound;
@@ -242,7 +275,8 @@ pub(crate) async fn handle_conn(
                                                 match sess_c.recv_from().await {
                                                     Ok((data, src_addr)) => {
                                                         // Wrap and forward to client
-                                                        let mut pkt = Vec::with_capacity(data.len() + 10);
+                                                        let mut pkt =
+                                                            Vec::with_capacity(data.len() + 10);
                                                         pkt.extend_from_slice(&[0x00, 0x00, 0x00]); // RSV RSV FRAG
                                                         match src_addr.ip() {
                                                             std::net::IpAddr::V4(v4) => {
@@ -254,7 +288,9 @@ pub(crate) async fn handle_conn(
                                                                 pkt.extend_from_slice(&v6.octets());
                                                             }
                                                         }
-                                                        pkt.extend_from_slice(&src_addr.port().to_be_bytes());
+                                                        pkt.extend_from_slice(
+                                                            &src_addr.port().to_be_bytes(),
+                                                        );
                                                         pkt.extend_from_slice(&data);
                                                         let _ = relay_c.send_to(&pkt, ep).await;
                                                     }
@@ -266,7 +302,11 @@ pub(crate) async fn handle_conn(
                                     udp_sess = Some(sess);
                                 }
                                 Err(e) => {
-                                    tracing::warn!("open udp session failed for outbound '{}': {}", out_name, e);
+                                    tracing::warn!(
+                                        "open udp session failed for outbound '{}': {}",
+                                        out_name,
+                                        e
+                                    );
                                 }
                             }
                         }
@@ -299,7 +339,9 @@ pub(crate) async fn handle_conn(
                                         .ok()
                                         .into_iter()
                                         .flatten();
-                                    let addr = it.next().unwrap_or_else(|| std::net::SocketAddr::from(([0, 0, 0, 0], dst_port)));
+                                    let addr = it.next().unwrap_or_else(|| {
+                                        std::net::SocketAddr::from(([0, 0, 0, 0], dst_port))
+                                    });
                                     sock.connect(addr).await.ok();
                                     Arc::new(sock)
                                 }
@@ -377,7 +419,8 @@ pub(crate) async fn handle_conn(
     }
     if reqh[1] != 0x01 {
         // Only CONNECT and UDP ASSOCIATE supported minimally
-        cli.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        cli.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
         return Err(std::io::Error::other("unsupported SOCKS5 command"));
     }
 
@@ -416,7 +459,8 @@ pub(crate) async fn handle_conn(
 
     // SOCKS5 规范通常在成功连接目标后再回包；为嗅探 ALPN/SNI，这里采用“乐观回包→快速读取首包→建立上游→回放首包”的策略。
     // 1) 立即回包成功（bound addr 使用 0.0.0.0:0）
-    cli.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+    cli.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
 
     // 2) 可选嗅探：快速读取客户端首包（不阻塞）
     let mut sniff_host_opt: Option<String> = None;
@@ -424,7 +468,9 @@ pub(crate) async fn handle_conn(
     let mut first_payload = Vec::new();
     if sniff_enabled {
         let mut buf = [0u8; 1024];
-        if let Ok(Ok(n)) = tokio::time::timeout(std::time::Duration::from_millis(150), cli.read(&mut buf)).await {
+        if let Ok(Ok(n)) =
+            tokio::time::timeout(std::time::Duration::from_millis(150), cli.read(&mut buf)).await
+        {
             if n > 0 {
                 first_payload.extend_from_slice(&buf[..n]);
                 if let Some(info) = crate::routing::sniff::sniff_tls_client_hello(&first_payload) {
@@ -548,7 +594,9 @@ impl Socks5 {
         log::log(Level::Info, "socks5 listening (async)", &[("addr", &addr)]);
 
         loop {
-            if self.shutdown.load(Ordering::Relaxed) { break; }
+            if self.shutdown.load(Ordering::Relaxed) {
+                break;
+            }
             match tokio::time::timeout(Duration::from_millis(1000), listener.accept()).await {
                 Err(_) => continue,
                 Ok(Err(e)) => {
@@ -560,7 +608,10 @@ impl Socks5 {
                     let active = self.active.clone();
                     active.fetch_add(1, Ordering::Relaxed);
                     // metrics: report updated active count
-                    crate::metrics::inbound::set_active_connections("socks", active.load(Ordering::Relaxed));
+                    crate::metrics::inbound::set_active_connections(
+                        "socks",
+                        active.load(Ordering::Relaxed),
+                    );
                     let eng_clone = eng.clone();
                     let br_clone = br.clone();
                     let sniff = self.sniff_enabled;
@@ -569,7 +620,10 @@ impl Socks5 {
                             tracing::debug!(target: "sb_core::inbound::socks5", error = %e, "connection handler failed");
                         }
                         active.fetch_sub(1, Ordering::Relaxed);
-                        crate::metrics::inbound::set_active_connections("socks", active.load(Ordering::Relaxed));
+                        crate::metrics::inbound::set_active_connections(
+                            "socks",
+                            active.load(Ordering::Relaxed),
+                        );
                     });
                 }
             }
@@ -606,8 +660,7 @@ impl InboundService for Socks5 {
             }
             Err(_) => {
                 // No tokio runtime, create one
-                let runtime = tokio::runtime::Runtime::new()
-                    .map_err(std::io::Error::other)?;
+                let runtime = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
                 runtime.block_on(self.do_serve_async(eng, br))
             }
         }

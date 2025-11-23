@@ -1,4 +1,6 @@
+#[allow(unused_imports)]
 use parking_lot::Mutex;
+#[allow(unused_imports)]
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Once};
@@ -71,6 +73,13 @@ pub fn register_all() {
         }
         {
             let _ = registry::register_outbound("shadowtls", build_shadowtls_outbound);
+        }
+        // Selector group outbounds (core functionality, always available)
+        {
+            let _ = registry::register_outbound("selector", build_selector_outbound);
+        }
+        {
+            let _ = registry::register_outbound("urltest", build_urltest_outbound);
         }
 
         #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
@@ -151,10 +160,56 @@ pub fn register_all() {
     });
 }
 
+fn build_tls_config(ir: &OutboundIR) -> Option<sb_config::outbound::TlsConfig> {
+    use sb_config::outbound::{EchConfig, RealityConfig, TlsConfig};
+
+    // Check if any TLS fields are present
+    let has_tls = ir.tls_sni.is_some()
+        || ir.tls_alpn.is_some()
+        || ir.skip_cert_verify.is_some()
+        || !ir.tls_ca_paths.is_empty()
+        || !ir.tls_ca_pem.is_empty()
+        || ir.tls_client_cert_path.is_some()
+        || ir.tls_client_key_path.is_some()
+        || ir.tls_client_cert_pem.is_some()
+        || ir.tls_client_key_pem.is_some()
+        || ir.reality_enabled.unwrap_or(false)
+        || ir.alpn.is_some(); // explicit alpn override
+
+    if !has_tls {
+        return None;
+    }
+
+    let reality = if ir.reality_enabled.unwrap_or(false) {
+        Some(RealityConfig {
+            enabled: true,
+            public_key: ir.reality_public_key.clone().unwrap_or_default(),
+            short_id: ir.reality_short_id.clone(),
+            server_name: ir.reality_server_name.clone().unwrap_or_default(),
+        })
+    } else {
+        None
+    };
+
+    // ECH is not yet fully exposed in OutboundIR in the version I saw, 
+    // but TlsConfig has it. If IR doesn't have it, we leave it None.
+    let ech: Option<EchConfig> = None;
+
+    Some(TlsConfig {
+        enabled: true,
+        sni: ir.tls_sni.clone(),
+        alpn: ir.tls_alpn.as_ref().map(|v| v.join(",")).or(ir.alpn.clone()),
+        insecure: ir.skip_cert_verify.unwrap_or(false),
+        reality,
+        ech,
+    })
+}
+
 #[cfg(feature = "adapter-http")]
 fn build_http_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -177,22 +232,36 @@ fn build_http_outbound(
         .unwrap_or((None, None));
 
     // Build config
+    let tls = build_tls_config(ir);
     let cfg = HttpProxyConfig {
         server: server_addr,
         tag: ir.name.clone(),
         username,
         password,
         connect_timeout_sec: Some(30),
-        tls: None, // TODO: Add TLS support from IR
+        tls: tls.clone(),
     };
 
     // Create connector
-    let connector = HttpProxyConnector::new(cfg);
+    let connector = if tls.map(|t| t.enabled).unwrap_or(false) {
+        #[cfg(feature = "http-tls")]
+        {
+            HttpProxyConnector::with_tls(cfg)
+        }
+        #[cfg(not(feature = "http-tls"))]
+        {
+            warn!("HTTP outbound TLS configured but http-tls feature is disabled");
+            HttpProxyConnector::new(cfg)
+        }
+    } else {
+        HttpProxyConnector::new(cfg)
+    };
     let connector_arc = Arc::new(connector);
 
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct HttpConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<HttpProxyConnector>,
     }
 
@@ -230,6 +299,7 @@ fn build_http_outbound(
 fn build_http_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -241,6 +311,7 @@ fn build_http_outbound(
 fn build_socks_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -263,22 +334,36 @@ fn build_socks_outbound(
         .unwrap_or((None, None));
 
     // Build config
+    let tls = build_tls_config(ir);
     let cfg = Socks5Config {
         server: server_addr,
         tag: ir.name.clone(),
         username,
         password,
         connect_timeout_sec: Some(30),
-        tls: None, // TODO: Add TLS support from IR
+        tls: tls.clone(),
     };
 
     // Create connector
-    let connector = Socks5Connector::new(cfg);
+    let connector = if tls.map(|t| t.enabled).unwrap_or(false) {
+        #[cfg(feature = "socks-tls")]
+        {
+            Socks5Connector::with_tls(cfg)
+        }
+        #[cfg(not(feature = "socks-tls"))]
+        {
+            warn!("SOCKS5 outbound TLS configured but socks-tls feature is disabled");
+            Socks5Connector::new(cfg)
+        }
+    } else {
+        Socks5Connector::new(cfg)
+    };
     let connector_arc = Arc::new(connector);
 
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct Socks5ConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<Socks5Connector>,
     }
 
@@ -316,6 +401,7 @@ fn build_socks_outbound(
 fn build_socks_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -327,11 +413,11 @@ fn build_socks_outbound(
 fn build_shadowsocks_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::crypto_types::OutboundTcp;
     use sb_core::outbound::shadowsocks::{
         ShadowsocksCipher, ShadowsocksConfig, ShadowsocksOutbound,
     };
@@ -348,7 +434,7 @@ fn build_shadowsocks_outbound(
         .unwrap_or("aes-256-gcm")
         .to_ascii_lowercase();
     let cipher = match method.as_str() {
-        "chacha20-poly1305" | "chacha20-ietf-poly1305" => ShadowsocksCipher::ChaCha20Poly1305,
+        "chacha20-poly1305" | "chacha20-ietf-poly1305" => ShadowsocksCipher::Chacha20Poly1305,
         _ => ShadowsocksCipher::Aes256Gcm,
     };
 
@@ -362,6 +448,7 @@ fn build_shadowsocks_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct ShadowsocksConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<ShadowsocksOutbound>,
     }
 
@@ -374,11 +461,7 @@ fn build_shadowsocks_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for ShadowsocksConnectorWrapper {
-        async fn connect(
-            &self,
-            _host: &str,
-            _port: u16,
-        ) -> std::io::Result<tokio::net::TcpStream> {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Shadowsocks uses encrypted stream; adapter path should use switchboard instead.
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -400,6 +483,7 @@ fn build_shadowsocks_outbound(
 fn build_shadowsocks_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -411,11 +495,11 @@ fn build_shadowsocks_outbound(
 fn build_trojan_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::crypto_types::OutboundTcp;
     use sb_core::outbound::trojan::{TrojanConfig, TrojanOutbound};
 
     // Extract required fields
@@ -428,18 +512,14 @@ fn build_trojan_outbound(
     let mut cfg = TrojanConfig::new(server.clone(), port, password, sni);
 
     // Optional ALPN list (tls_alpn or legacy alpn CSV)
-    if let Some(alpn) = ir
-        .tls_alpn
-        .clone()
-        .or_else(|| {
-            ir.alpn.as_ref().map(|raw| {
-                raw.split(',')
-                    .map(|x| x.trim().to_string())
-                    .filter(|x| !x.is_empty())
-                    .collect::<Vec<_>>()
-            })
+    if let Some(alpn) = ir.tls_alpn.clone().or_else(|| {
+        ir.alpn.as_ref().map(|raw| {
+            raw.split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect::<Vec<_>>()
         })
-    {
+    }) {
         cfg = cfg.with_alpn(alpn);
     }
 
@@ -455,6 +535,7 @@ fn build_trojan_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct TrojanConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<TrojanOutbound>,
     }
 
@@ -467,11 +548,7 @@ fn build_trojan_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for TrojanConnectorWrapper {
-        async fn connect(
-            &self,
-            _host: &str,
-            _port: u16,
-        ) -> std::io::Result<tokio::net::TcpStream> {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Trojan uses encrypted stream; adapter path should use switchboard instead.
             Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -492,6 +569,7 @@ fn build_trojan_outbound(
 fn build_trojan_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -503,11 +581,11 @@ fn build_trojan_outbound(
 fn build_vmess_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::crypto_types::OutboundTcp;
     use sb_core::outbound::vmess::{VmessConfig, VmessOutbound};
 
     // Extract required fields
@@ -556,6 +634,7 @@ fn build_vmess_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct VmessConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<VmessOutbound>,
     }
 
@@ -568,7 +647,7 @@ fn build_vmess_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for VmessConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // VMess uses encrypted stream, cannot return TcpStream directly
             // Use switchboard registry instead
             Err(std::io::Error::new(
@@ -590,6 +669,7 @@ fn build_vmess_outbound(
 fn build_vmess_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -601,11 +681,11 @@ fn build_vmess_outbound(
 fn build_vless_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::crypto_types::OutboundTcp;
     use sb_core::outbound::vless::{VlessConfig, VlessOutbound};
 
     // Extract required fields
@@ -651,6 +731,7 @@ fn build_vless_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct VlessConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<VlessOutbound>,
     }
 
@@ -663,7 +744,7 @@ fn build_vless_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for VlessConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // VLESS uses encrypted stream, cannot return TcpStream directly
             // Use switchboard registry instead
             Err(std::io::Error::new(
@@ -685,6 +766,7 @@ fn build_vless_outbound(
 fn build_vless_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -693,11 +775,12 @@ fn build_vless_outbound(
 }
 
 #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
+#[allow(dead_code)]
 fn build_http_inbound(
     param: &InboundParam,
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::http::HttpProxyConfig;
+    use crate::inbound::http::HttpProxyConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
     let cfg = HttpProxyConfig {
@@ -709,122 +792,53 @@ fn build_http_inbound(
     Some(Arc::new(HttpInboundAdapter::new(cfg)))
 }
 
-#[cfg(not(all(feature = "adapter-http", feature = "http", feature = "router")))]
-fn build_http_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    None
-}
-
 #[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
-fn build_shadowsocks_inbound(
-    param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
-
-    let listen = parse_listen_addr(&param.listen, param.port)?;
-    let cfg = ShadowsocksInboundConfig {
-        listen,
-        method: param.name.clone().unwrap_or_else(|| "aes-256-gcm".into()),
-        password: param.password.clone().unwrap_or_else(|| "password".into()),
-        router: ctx.router.clone(),
-        multiplex: None,
-        transport_layer: None,
-    };
-    Some(Arc::new(ShadowsocksInboundAdapter::new(cfg)))
-}
-
-#[cfg(not(all(feature = "adapter-shadowsocks", feature = "router")))]
+#[allow(dead_code)]
 fn build_shadowsocks_inbound(
     _param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
+    stub_inbound("shadowsocks");
     None
 }
 
 #[cfg(all(feature = "adapter-vmess", feature = "router"))]
-fn build_vmess_inbound(
-    param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::vmess::VmessInboundConfig;
-    let listen = parse_listen_addr(&param.listen, param.port)?;
-    let cfg = VmessInboundConfig {
-        listen,
-        uuid: param.uuid.clone()?.parse().ok()?,
-        security: param
-            .credentials
-            .as_ref()
-            .and_then(|c| c.password.clone())
-            .unwrap_or_else(|| "aes-128-gcm".into()),
-        router: ctx.router.clone(),
-        multiplex: None,
-        transport_layer: None,
-    };
-    Some(Arc::new(VmessInboundAdapter::new(cfg)))
-}
-
-#[cfg(not(all(feature = "adapter-vmess", feature = "router")))]
+#[allow(dead_code)]
 fn build_vmess_inbound(
     _param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
+    stub_inbound("vmess");
     None
 }
 
 #[cfg(all(feature = "adapter-vless", feature = "router"))]
-fn build_vless_inbound(
-    param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::vless::VlessInboundConfig;
-    let listen = parse_listen_addr(&param.listen, param.port)?;
-    let cfg = VlessInboundConfig {
-        listen,
-        uuid: param.uuid.clone()?.parse().ok()?,
-        flow: None,
-        encryption: Some("none".into()),
-        router: ctx.router.clone(),
-        multiplex: None,
-        transport_layer: None,
-    };
-    Some(Arc::new(VlessInboundAdapter::new(cfg)))
-}
-
-#[cfg(not(all(feature = "adapter-vless", feature = "router")))]
+#[allow(dead_code)]
 fn build_vless_inbound(
     _param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
+    stub_inbound("vless");
     None
 }
 
 #[cfg(all(feature = "adapter-trojan", feature = "router"))]
+#[allow(dead_code)]
 fn build_trojan_inbound(
     _param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::trojan::TrojanInboundConfig;
-    let cfg = TrojanInboundConfig::default();
-    Some(Arc::new(TrojanInboundAdapter::new(cfg)))
-}
-
-#[cfg(not(all(feature = "adapter-trojan", feature = "router")))]
-fn build_trojan_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
+    stub_inbound("trojan");
     None
 }
 
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
+#[allow(dead_code)]
 fn build_socks_inbound(
     param: &InboundParam,
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::socks::SocksInboundConfig;
+    use crate::inbound::socks::SocksInboundConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
     let cfg = SocksInboundConfig {
@@ -832,7 +846,7 @@ fn build_socks_inbound(
         udp_bind: None,
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
-        udp_nat_ttl: Duration::from_secs(60),
+        udp_nat_ttl: std::time::Duration::from_secs(60),
     };
     Some(Arc::new(SocksInboundAdapter::new(cfg)))
 }
@@ -843,11 +857,12 @@ fn build_socks_inbound(
     feature = "mixed",
     feature = "router"
 ))]
+#[allow(dead_code)]
 fn build_mixed_inbound(
     param: &InboundParam,
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::mixed::MixedInboundConfig;
+    use crate::inbound::mixed::MixedInboundConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
     let cfg = MixedInboundConfig {
@@ -858,27 +873,6 @@ fn build_mixed_inbound(
         tls: None,
     };
     Some(Arc::new(MixedInboundAdapter::new(cfg)))
-}
-
-#[cfg(not(all(
-    feature = "adapter-http",
-    feature = "adapter-socks",
-    feature = "mixed",
-    feature = "router"
-)))]
-fn build_mixed_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    None
-}
-
-#[cfg(not(all(feature = "adapter-socks", feature = "socks", feature = "router")))]
-fn build_socks_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    None
 }
 
 fn build_naive_inbound(
@@ -899,6 +893,7 @@ fn build_naive_inbound(
     }
     #[cfg(not(feature = "adapter-naive"))]
     {
+        let _ = (param, ctx);
         stub_inbound("naive");
         None
     }
@@ -969,6 +964,7 @@ fn build_shadowtls_inbound(
     }
     #[cfg(not(feature = "adapter-shadowtls"))]
     {
+        let _ = (param, ctx);
         stub_inbound("shadowtls");
         None
     }
@@ -1197,6 +1193,7 @@ fn build_hysteria2_inbound(
     }
     #[cfg(not(feature = "adapter-hysteria2"))]
     {
+        let _ = param;
         stub_inbound("hysteria2");
         None
     }
@@ -1308,13 +1305,29 @@ fn build_tuic_inbound(
 }
 
 fn build_anytls_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("anytls");
-    None
+    #[cfg(feature = "adapter-anytls")]
+    {
+        use crate::inbound::anytls::AnyTlsInboundAdapter;
+        match AnyTlsInboundAdapter::new(param, ctx.router.clone(), ctx.outbounds.clone()) {
+            Ok(adapter) => Some(Arc::from(adapter)),
+            Err(e) => {
+                warn!("Failed to build AnyTLS inbound: {}", e);
+                None
+            }
+        }
+    }
+    #[cfg(not(feature = "adapter-anytls"))]
+    {
+        let _ = (param, ctx);
+        stub_inbound("anytls");
+        None
+    }
 }
 
+#[allow(dead_code)]
 fn build_direct_inbound(
     param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
@@ -1331,27 +1344,94 @@ fn build_direct_inbound(
 }
 
 fn stub_inbound(kind: &str) {
-    warn!(target: "sb_adapters::register", inbound=%kind, "adapter inbound not implemented yet; falling back to scaffold");
+    warn!(target: "crate::register", inbound=%kind, "adapter inbound not implemented yet; falling back to scaffold");
 }
 
 #[cfg(feature = "adapter-dns")]
 fn build_dns_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // TODO: Architecture mismatch - DnsConnector implements sb_adapters::traits::OutboundConnector
-    // but this function needs sb_core::adapter::OutboundConnector. Needs adapter wrapper or trait unification.
-    warn!("DNS outbound temporarily disabled due to trait architecture mismatch");
-    None
+    use crate::outbound::dns::{DnsConfig, DnsConnector, DnsTransport};
+
+    // Extract required fields
+    let server = match ir.server.as_ref().or(param.server.as_ref()) {
+        Some(s) => s.parse().ok(),
+        None => None,
+    };
+    
+    let server = match server {
+        Some(s) => s,
+        None => {
+            warn!("DNS outbound requires a valid IP address for server");
+            return None;
+        }
+    };
+
+    let transport = match ir.dns_transport.as_deref() {
+        Some("tcp") => DnsTransport::Tcp,
+        Some("dot") => DnsTransport::DoT,
+        Some("doh") => DnsTransport::DoH,
+        Some("doq") => DnsTransport::DoQ,
+        _ => DnsTransport::Udp,
+    };
+
+    let config = DnsConfig {
+        server,
+        port: ir.port.or(param.port),
+        transport,
+        timeout: std::time::Duration::from_millis(
+            ir.dns_timeout_ms
+                .or(ir.connect_timeout_sec.map(|s| (s as u64) * 1000))
+                .unwrap_or(5000),
+        ),
+        tls_server_name: ir.tls_sni.clone(),
+        query_timeout: std::time::Duration::from_millis(ir.dns_query_timeout_ms.unwrap_or(3000)),
+        enable_edns0: ir.dns_enable_edns0.unwrap_or(true),
+        edns0_buffer_size: ir.dns_edns0_buffer_size.unwrap_or(1232),
+        doh_url: ir.dns_doh_url.clone(),
+    };
+
+    let connector = Arc::new(DnsConnector::new(config));
+
+    // Wrapper connector that implements sb_core::adapter::OutboundConnector
+    #[derive(Clone)]
+    struct DnsConnectorWrapper {
+        #[allow(dead_code)]
+        inner: Arc<DnsConnector>,
+    }
+
+    impl std::fmt::Debug for DnsConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("DnsConnectorWrapper")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for DnsConnectorWrapper {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "DNS outbound does not support generic TCP connections; use it for DNS resolution only",
+            ))
+        }
+    }
+
+    let wrapper = DnsConnectorWrapper { inner: connector };
+
+    Some((Arc::new(wrapper), None))
 }
 
 #[cfg(not(feature = "adapter-dns"))]
 fn build_dns_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1363,6 +1443,7 @@ fn build_dns_outbound(
 fn build_direct_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1417,6 +1498,7 @@ fn build_direct_outbound(
 fn build_block_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1461,6 +1543,7 @@ fn build_block_outbound(
 fn build_tor_outbound(
     _param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1493,6 +1576,7 @@ fn build_tor_outbound(
         // Note: Tor uses SOCKS5 proxy protocol and should be used via switchboard registry
         #[derive(Clone)]
         struct TorConnectorWrapper {
+            #[allow(dead_code)]
             inner: Arc<Socks5Connector>,
         }
 
@@ -1537,26 +1621,106 @@ fn build_tor_outbound(
 
 fn build_anytls_outbound(
     _param: &OutboundParam,
-    _ir: &OutboundIR,
+    ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    stub_outbound("anytls");
-    None
+    #[cfg(feature = "adapter-anytls")]
+    {
+        use crate::outbound::anytls::AnyTlsConnector;
+        match AnyTlsConnector::try_from(ir) {
+            Ok(connector) => Some((Arc::new(connector), None)),
+            Err(e) => {
+                warn!("Failed to build AnyTLS outbound: {}", e);
+                None
+            }
+        }
+    }
+    #[cfg(not(feature = "adapter-anytls"))]
+    {
+        let _ = ir;
+        stub_outbound("anytls");
+        None
+    }
 }
 
+#[cfg(all(feature = "adapter-wireguard", feature = "out_wireguard"))]
+fn build_wireguard_outbound(
+    _param: &OutboundParam,
+    ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
+    use sb_core::outbound::crypto_types::{HostPort, OutboundTcp};
+    use sb_core::outbound::wireguard::{WireGuardConfig, WireGuardOutbound};
+
+    let cfg = match WireGuardConfig::from_ir(ir) {
+        Ok(cfg) => cfg,
+        Err(msg) => {
+            warn!(
+                target: "wireguard",
+                "failed to build WireGuard config: {}",
+                msg
+            );
+            return None;
+        }
+    };
+
+    let outbound = match WireGuardOutbound::new(cfg) {
+        Ok(outbound) => outbound,
+        Err(err) => {
+            warn!(
+                target: "wireguard",
+                "failed to initialize WireGuard outbound: {}",
+                err
+            );
+            return None;
+        }
+    };
+
+    let shared = Arc::new(outbound);
+
+    #[derive(Clone)]
+    struct WireGuardAdapterConnector {
+        inner: Arc<WireGuardOutbound>,
+    }
+
+    impl std::fmt::Debug for WireGuardAdapterConnector {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("WireGuardAdapterConnector")
+                .finish_non_exhaustive()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for WireGuardAdapterConnector {
+        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            let hp = HostPort::new(host.to_string(), port);
+            self.inner.connect(&hp).await
+        }
+    }
+
+    let connector = WireGuardAdapterConnector {
+        inner: shared.clone(),
+    };
+    let udp: Arc<dyn UdpOutboundFactory> = shared.clone();
+
+    Some((Arc::new(connector), Some(udp)))
+}
+
+#[cfg(not(all(feature = "adapter-wireguard", feature = "out_wireguard")))]
 fn build_wireguard_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    // Adapter-level WireGuard outbound currently delegates to the core
-    // wireguard_stub implementation, which still returns a "not implemented"
-    // error when used. We keep the adapter builder as a no-op stub that logs
-    // a clear warning so configs remain valid but traffic will not flow.
     stub_outbound("wireguard");
     None
 }
@@ -1565,6 +1729,7 @@ fn build_wireguard_outbound(
 fn build_hysteria_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1629,6 +1794,7 @@ fn build_hysteria_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct HysteriaConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<HysteriaConnector>,
     }
 
@@ -1666,6 +1832,7 @@ fn build_hysteria_outbound(
 fn build_hysteria_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1678,6 +1845,7 @@ fn build_hysteria_outbound(
 fn build_shadowtls_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1717,6 +1885,7 @@ fn build_shadowtls_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct ShadowTlsConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<ShadowTlsConnector>,
     }
 
@@ -1751,6 +1920,7 @@ fn build_shadowtls_outbound(
 fn build_shadowtls_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1759,15 +1929,15 @@ fn build_shadowtls_outbound(
     None
 }
 
-#[cfg(feature = "out_tuic")]
+#[cfg(all(feature = "adapter-tuic", feature = "out_tuic"))]
 fn build_tuic_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::crypto_types::OutboundTcp;
     use sb_core::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
     // Extract required fields
@@ -1791,7 +1961,11 @@ fn build_tuic_outbound(
         token,
         password: ir.password.clone(),
         congestion_control: ir.congestion_control.clone(),
-        alpn: ir.alpn.clone().or_else(|| ir.tls_alpn.clone()),
+        alpn: ir
+            .alpn
+            .as_ref()
+            .map(|s| vec![s.clone()])
+            .or_else(|| ir.tls_alpn.clone()),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
         sni: ir.tls_sni.clone(),
         tls_ca_paths: ir.tls_ca_paths.clone(),
@@ -1808,6 +1982,7 @@ fn build_tuic_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct TuicConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<TuicOutbound>,
     }
 
@@ -1820,7 +1995,7 @@ fn build_tuic_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for TuicConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // TUIC is QUIC-based, cannot return TcpStream directly
             // This is a fundamental architecture limitation
             Err(std::io::Error::new(
@@ -1841,10 +2016,11 @@ fn build_tuic_outbound(
     ))
 }
 
-#[cfg(not(feature = "out_tuic"))]
+#[cfg(not(all(feature = "adapter-tuic", feature = "out_tuic")))]
 fn build_tuic_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1853,15 +2029,15 @@ fn build_tuic_outbound(
     None
 }
 
-#[cfg(feature = "out_hysteria2")]
+#[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
 fn build_hysteria2_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
 )> {
-    use sb_core::outbound::crypto_types::OutboundTcp;
     use sb_core::outbound::hysteria2::{BrutalConfig, Hysteria2Config, Hysteria2Outbound};
 
     // Extract required fields
@@ -1907,6 +2083,7 @@ fn build_hysteria2_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct Hysteria2ConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<Hysteria2Outbound>,
     }
 
@@ -1919,7 +2096,7 @@ fn build_hysteria2_outbound(
 
     #[async_trait::async_trait]
     impl OutboundConnector for Hysteria2ConnectorWrapper {
-        async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Hysteria2 is QUIC-based, cannot return TcpStream directly
             // This is a fundamental architecture limitation
             Err(std::io::Error::new(
@@ -1940,10 +2117,11 @@ fn build_hysteria2_outbound(
     ))
 }
 
-#[cfg(not(feature = "out_hysteria2"))]
+#[cfg(not(all(feature = "adapter-hysteria2", feature = "out_hysteria2")))]
 fn build_hysteria2_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -1956,6 +2134,7 @@ fn build_hysteria2_outbound(
 fn build_ssh_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -2009,6 +2188,7 @@ fn build_ssh_outbound(
     // Wrapper connector that implements sb_core::adapter::OutboundConnector
     #[derive(Clone)]
     struct SshConnectorWrapper {
+        #[allow(dead_code)]
         inner: Arc<SshConnector>,
     }
 
@@ -2046,6 +2226,7 @@ fn build_ssh_outbound(
 fn build_ssh_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
 ) -> Option<(
     Arc<dyn OutboundConnector>,
     Option<Arc<dyn UdpOutboundFactory>>,
@@ -2055,7 +2236,7 @@ fn build_ssh_outbound(
 }
 
 fn stub_outbound(kind: &str) {
-    warn!(target: "sb_adapters::register", outbound=%kind, "adapter outbound not implemented yet; falling back to scaffold");
+    warn!(target: "crate::register", outbound=%kind, "adapter outbound not implemented yet; falling back to scaffold");
 }
 
 #[cfg(all(test, feature = "adapter-dns"))]
@@ -2086,14 +2267,15 @@ mod tests {
 }
 
 #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
+#[derive(Debug)]
 struct HttpInboundAdapter {
-    cfg: sb_adapters::inbound::http::HttpProxyConfig,
+    cfg: crate::inbound::http::HttpProxyConfig,
     stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
 impl HttpInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::http::HttpProxyConfig) -> Self {
+    fn new(cfg: crate::inbound::http::HttpProxyConfig) -> Self {
         Self {
             cfg,
             stop_tx: Mutex::new(None),
@@ -2115,7 +2297,7 @@ impl InboundService for HttpInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            sb_adapters::inbound::http::serve_http(cfg, rx, None)
+            crate::inbound::http::serve_http(cfg, rx, None)
                 .await
                 .map_err(io::Error::other)
         });
@@ -2132,14 +2314,15 @@ impl InboundService for HttpInboundAdapter {
 }
 
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
+#[derive(Debug)]
 struct SocksInboundAdapter {
-    cfg: sb_adapters::inbound::socks::SocksInboundConfig,
+    cfg: crate::inbound::socks::SocksInboundConfig,
     stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
 impl SocksInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::socks::SocksInboundConfig) -> Self {
+    fn new(cfg: crate::inbound::socks::SocksInboundConfig) -> Self {
         Self {
             cfg,
             stop_tx: Mutex::new(None),
@@ -2161,7 +2344,7 @@ impl InboundService for SocksInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            sb_adapters::inbound::socks::serve_socks(cfg, rx, None)
+            crate::inbound::socks::serve_socks(cfg, rx, None)
                 .await
                 .map_err(io::Error::other)
         });
@@ -2177,6 +2360,7 @@ impl InboundService for SocksInboundAdapter {
     }
 }
 
+#[allow(dead_code)]
 fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
     listen
         .parse()
@@ -2186,175 +2370,31 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
 
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
 struct TunInboundAdapter {
-    inner: sb_adapters::inbound::tun::TunInbound,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+    inner: crate::inbound::tun::TunInbound,
 }
 
-#[cfg(all(feature = "adapter-vmess", feature = "router"))]
-struct VmessInboundAdapter {
-    cfg: sb_adapters::inbound::vmess::VmessInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
-
-#[cfg(all(feature = "adapter-vmess", feature = "router"))]
-impl VmessInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::vmess::VmessInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-vmess", feature = "router"))]
-impl InboundService for VmessInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            sb_adapters::inbound::vmess::serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-vless", feature = "router"))]
-struct VlessInboundAdapter {
-    cfg: sb_adapters::inbound::vless::VlessInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
-
-#[cfg(all(feature = "adapter-vless", feature = "router"))]
-impl VlessInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::vless::VlessInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-vless", feature = "router"))]
-impl InboundService for VlessInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            sb_adapters::inbound::vless::serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
+#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
+impl std::fmt::Debug for TunInboundAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TunInboundAdapter").finish_non_exhaustive()
     }
 }
 
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
 impl TunInboundAdapter {
-    fn new(inner: sb_adapters::inbound::tun::TunInbound) -> Self {
-        Self {
-            inner,
-            stop_tx: Mutex::new(None),
-        }
+    fn new(inner: crate::inbound::tun::TunInbound) -> Self {
+        Self { inner }
     }
 }
 
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
 impl InboundService for TunInboundAdapter {
     fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock();
-            *guard = Some(tx);
-        }
-        let inbound = self.inner.clone();
-        let res = rt.block_on(async move {
-            tokio::select! {
-                biased;
-                _ = rx.recv() => Ok(()),
-                r = inbound.run() => r,
-            }
-        });
-        let _ = self.stop_tx.lock().take();
-        res
+        self.inner.serve()
     }
 
     fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-trojan", feature = "router"))]
-struct TrojanInboundAdapter {
-    cfg: sb_adapters::inbound::trojan::TrojanInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
-
-#[cfg(all(feature = "adapter-trojan", feature = "router"))]
-impl TrojanInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::trojan::TrojanInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-trojan", feature = "router"))]
-impl InboundService for TrojanInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            sb_adapters::inbound::trojan::serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
+        tracing::debug!("tun inbound adapter does not support async shutdown yet");
     }
 }
 
@@ -2410,8 +2450,9 @@ impl InboundService for ShadowTlsInboundAdapter {
     feature = "mixed",
     feature = "router"
 ))]
+#[derive(Debug)]
 struct MixedInboundAdapter {
-    cfg: sb_adapters::inbound::mixed::MixedInboundConfig,
+    cfg: crate::inbound::mixed::MixedInboundConfig,
     stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
@@ -2422,7 +2463,7 @@ struct MixedInboundAdapter {
     feature = "router"
 ))]
 impl MixedInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::mixed::MixedInboundConfig) -> Self {
+    fn new(cfg: crate::inbound::mixed::MixedInboundConfig) -> Self {
         Self {
             cfg,
             stop_tx: Mutex::new(None),
@@ -2449,50 +2490,7 @@ impl InboundService for MixedInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            sb_adapters::inbound::mixed::serve_mixed(cfg, rx, None)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
-struct ShadowsocksInboundAdapter {
-    cfg: sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
-
-#[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
-impl ShadowsocksInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
-impl InboundService for ShadowsocksInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            sb_adapters::inbound::shadowsocks::serve(cfg, rx)
+            crate::inbound::mixed::serve_mixed(cfg, rx, None)
                 .await
                 .map_err(io::Error::other)
         });
@@ -2511,71 +2509,43 @@ impl InboundService for ShadowsocksInboundAdapter {
 // ========== TUN Inbound ==========
 
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
+#[allow(dead_code)]
 fn build_tun_inbound(
     _param: &InboundParam,
     ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
+    use crate::inbound::tun::{TunInbound, TunInboundConfig};
 
     let cfg = TunInboundConfig::default();
     let inbound = TunInbound::new(cfg, ctx.router.clone());
     Some(Arc::new(TunInboundAdapter::new(inbound)))
 }
 
-#[cfg(not(all(feature = "adapter-tun", feature = "tun", feature = "router")))]
-fn build_tun_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    None
-}
-
-#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-impl InboundService for TunInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        self.inner.serve()
-    }
-
-    fn request_shutdown(&self) {
-        if let Ok(mut guard) = self.stop_tx.lock() {
-            if let Some(tx) = guard.take() {
-                let _ = tx.try_send(());
-            }
-        }
-    }
-}
-
 // ========== Redirect Inbound (Linux only) ==========
 
 #[cfg(all(target_os = "linux", feature = "router"))]
+#[allow(dead_code)]
 fn build_redirect_inbound(
     param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::redirect::RedirectConfig;
+    use crate::inbound::redirect::RedirectConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
     let cfg = RedirectConfig { listen };
     Some(Arc::new(RedirectInboundAdapter::new(cfg)))
 }
 
-#[cfg(not(all(target_os = "linux", feature = "router")))]
-fn build_redirect_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    None
-}
-
 #[cfg(all(target_os = "linux", feature = "router"))]
+#[derive(Debug)]
 struct RedirectInboundAdapter {
-    cfg: sb_adapters::inbound::redirect::RedirectConfig,
+    cfg: crate::inbound::redirect::RedirectConfig,
     stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(target_os = "linux", feature = "router"))]
 impl RedirectInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::redirect::RedirectConfig) -> Self {
+    fn new(cfg: crate::inbound::redirect::RedirectConfig) -> Self {
         Self {
             cfg,
             stop_tx: Mutex::new(None),
@@ -2594,7 +2564,7 @@ impl InboundService for RedirectInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            sb_adapters::inbound::redirect::serve(cfg, rx)
+            crate::inbound::redirect::serve(cfg, rx)
                 .await
                 .map_err(io::Error::other)
         });
@@ -2613,34 +2583,28 @@ impl InboundService for RedirectInboundAdapter {
 // ========== TProxy Inbound (Linux only) ==========
 
 #[cfg(all(target_os = "linux", feature = "router"))]
+#[allow(dead_code)]
 fn build_tproxy_inbound(
     param: &InboundParam,
     _ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    use sb_adapters::inbound::tproxy::TproxyConfig;
+    use crate::inbound::tproxy::TproxyConfig;
 
     let listen = parse_listen_addr(&param.listen, param.port)?;
     let cfg = TproxyConfig { listen };
     Some(Arc::new(TproxyInboundAdapter::new(cfg)))
 }
 
-#[cfg(not(all(target_os = "linux", feature = "router")))]
-fn build_tproxy_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    None
-}
-
 #[cfg(all(target_os = "linux", feature = "router"))]
+#[derive(Debug)]
 struct TproxyInboundAdapter {
-    cfg: sb_adapters::inbound::tproxy::TproxyConfig,
+    cfg: crate::inbound::tproxy::TproxyConfig,
     stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
 }
 
 #[cfg(all(target_os = "linux", feature = "router"))]
 impl TproxyInboundAdapter {
-    fn new(cfg: sb_adapters::inbound::tproxy::TproxyConfig) -> Self {
+    fn new(cfg: crate::inbound::tproxy::TproxyConfig) -> Self {
         Self {
             cfg,
             stop_tx: Mutex::new(None),
@@ -2659,7 +2623,7 @@ impl InboundService for TproxyInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            sb_adapters::inbound::tproxy::serve(cfg, rx)
+            crate::inbound::tproxy::serve(cfg, rx)
                 .await
                 .map_err(io::Error::other)
         });
@@ -2749,6 +2713,8 @@ mod tests {
             flow: None,
             users_vless: None,
             users_trojan: None,
+            users_anytls: None,
+            anytls_padding: None,
             users_hysteria2: Some(vec![Hysteria2UserIR {
                 name: "test_user".to_string(),
                 password: "test_password".to_string(),
@@ -2818,4 +2784,27 @@ mod tests {
             "ShadowTLS should not provide UDP factory"
         );
     }
+}
+
+// Selector and URLTest builders
+fn build_selector_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+    ctx: &registry::AdapterOutboundContext,
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
+    crate::outbound::selector::build_selector_outbound(param, ir, ctx)
+}
+
+fn build_urltest_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+    ctx: &registry::AdapterOutboundContext,
+) -> Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)> {
+    crate::outbound::urltest::build_urltest_outbound(param, ir, ctx)
 }

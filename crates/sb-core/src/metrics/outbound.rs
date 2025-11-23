@@ -335,7 +335,10 @@ pub fn register_comprehensive_metrics() {
     );
     describe_counter!("ss_udp_send_total", "Shadowsocks UDP send packets");
     describe_counter!("ss_udp_recv_total", "Shadowsocks UDP recv packets");
-    describe_counter!("ss_decrypt_bytes_total", "Shadowsocks decrypted bytes (TCP)");
+    describe_counter!(
+        "ss_decrypt_bytes_total",
+        "Shadowsocks decrypted bytes (TCP)"
+    );
     describe_counter!(
         "ss_stream_error_total",
         "Shadowsocks stream errors by reason"

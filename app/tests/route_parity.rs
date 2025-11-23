@@ -22,7 +22,11 @@ fn parse_json_output(output: &[u8]) -> Value {
 
 fn write_config_json(contents: &serde_json::Value) -> tempfile::NamedTempFile {
     let file = tempfile::NamedTempFile::new().expect("temp config");
-    std::fs::write(file.path(), serde_json::to_vec(contents).expect("serialize")).expect("write config");
+    std::fs::write(
+        file.path(),
+        serde_json::to_vec(contents).expect("serialize"),
+    )
+    .expect("write config");
     file
 }
 
@@ -586,6 +590,7 @@ fn check_parity_invalid_config() {
             tmp.path().to_str().unwrap(),
             "--format",
             "json",
+            "--schema-v2-validate",
         ])
         .assert()
         .failure()
@@ -595,9 +600,13 @@ fn check_parity_invalid_config() {
 
     let result: Value = serde_json::from_slice(&output).unwrap();
 
-    // Check should return errors array with at least one error
-    assert!(result.get("errors").is_some());
-    let errors = result["errors"].as_array().unwrap();
+    // Check should return issues array with at least one error
+    assert!(result.get("issues").is_some());
+    let issues = result["issues"].as_array().unwrap();
+    let errors: Vec<_> = issues
+        .iter()
+        .filter(|i| i.get("level").and_then(|l| l.as_str()) == Some("error"))
+        .collect();
     assert!(
         !errors.is_empty(),
         "bad config should produce at least one error"
@@ -629,6 +638,7 @@ fn check_parity_type_mismatch() {
             tmp.path().to_str().unwrap(),
             "--format",
             "json",
+            "--schema-v2-validate",
         ])
         .assert()
         .failure();
@@ -653,6 +663,7 @@ fn check_parity_missing_required_field() {
             tmp.path().to_str().unwrap(),
             "--format",
             "json",
+            "--schema-v2-validate",
         ])
         .assert()
         .failure();

@@ -8,11 +8,51 @@ const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_URLTEST_TOLERANCE_MS: u64 = 50;
 
 fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
-    value.and_then(|v| v.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|x| x.as_str().map(|s| s.to_string()))
-            .collect()
-    })
+    match value? {
+        Value::Array(arr) => {
+            let collected: Vec<String> = arr
+                .iter()
+                .filter_map(|x| match x {
+                    Value::String(s) => {
+                        let trimmed = s.trim();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed.to_string())
+                        }
+                    }
+                    Value::Object(obj) => obj
+                        .get("value")
+                        .or_else(|| obj.get("address"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
+                    _ => None,
+                })
+                .collect();
+            if collected.is_empty() {
+                None
+            } else {
+                Some(collected)
+            }
+        }
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(vec![trimmed.to_string()])
+            }
+        }
+        Value::Object(obj) => obj
+            .get("value")
+            .or_else(|| obj.get("address"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|s| vec![s]),
+        _ => None,
+    }
 }
 
 fn parse_seconds_field_to_millis(value: Option<&Value>) -> Option<u64> {
@@ -318,9 +358,32 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
             }
         }
     }
-    // 2) inbounds required/type checks（节选）
+    // 2) inbounds type and structure validation
+    if let Some(inbounds_val) = doc.get("inbounds") {
+        if !inbounds_val.is_array() {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                "/inbounds",
+                "inbounds must be an array",
+                "use []",
+            ));
+        }
+    }
     if let Some(arr) = doc.get("inbounds").and_then(|v| v.as_array()) {
         for (i, ib) in arr.iter().enumerate() {
+            // Each inbound must be an object
+            if !ib.is_object() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    &format!("/inbounds/{}", i),
+                    "inbound item must be an object",
+                    "use {}",
+                ));
+                continue;
+            }
+
             // required: type (always required)
             if ib.get("type").is_none() {
                 issues.push(emit_issue(
@@ -329,6 +392,14 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     &format!("/inbounds/{}/type", i),
                     "missing required field",
                     "add it",
+                ));
+            } else if !ib.get("type").unwrap().is_string() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    &format!("/inbounds/{}/type", i),
+                    "type must be a string",
+                    "use string value",
                 ));
             }
 
@@ -344,7 +415,7 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                 ));
             }
 
-            // additionalProperties=false (V2 允许的字段)
+            // additionalProperties=false (V2 allowed fields)
             if let Some(map) = ib.as_object() {
                 for k in map.keys() {
                     match k.as_str() {
@@ -364,6 +435,65 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                             ));
                         }
                     }
+                }
+            }
+        }
+    }
+    // 3) outbounds type and structure validation
+    if let Some(outbounds_val) = doc.get("outbounds") {
+        if !outbounds_val.is_array() {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                "/outbounds",
+                "outbounds must be an array",
+                "use []",
+            ));
+        }
+    }
+    if let Some(arr) = doc.get("outbounds").and_then(|v| v.as_array()) {
+        for (i, ob) in arr.iter().enumerate() {
+            // Each outbound must be an object
+            if !ob.is_object() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    &format!("/outbounds/{}", i),
+                    "outbound item must be an object",
+                    "use {}",
+                ));
+                continue;
+            }
+
+            // type is required
+            if ob.get("type").is_none() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::MissingRequired,
+                    &format!("/outbounds/{}/type", i),
+                    "missing required field",
+                    "add it",
+                ));
+            } else if !ob.get("type").unwrap().is_string() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    &format!("/outbounds/{}/type", i),
+                    "type must be a string",
+                    "use string value",
+                ));
+            }
+
+            // tag/name should be string if present
+            if let Some(tag_val) = ob.get("tag") {
+                if !tag_val.is_string() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/outbounds/{}/tag", i),
+                        "tag must be a string",
+                        "use string value",
+                    ));
                 }
             }
         }
@@ -460,6 +590,8 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 flow: None,
                 users_vless: None,
                 users_trojan: None,
+                users_anytls: None,
+                anytls_padding: None,
                 transport: None,
                 ws_path: None,
                 ws_host: None,
@@ -728,6 +860,17 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 hysteria_auth: None,
                 hysteria_recv_window_conn: None,
                 hysteria_recv_window: None,
+                wireguard_system_interface: None,
+                wireguard_interface: None,
+                wireguard_local_address: Vec::new(),
+                wireguard_source_v4: None,
+                wireguard_source_v6: None,
+                wireguard_allowed_ips: Vec::new(),
+                wireguard_private_key: None,
+                wireguard_peer_public_key: None,
+                wireguard_pre_shared_key: None,
+                wireguard_persistent_keepalive: None,
+                anytls_padding: extract_string_list(o.get("anytls_padding")),
             };
 
             if let Some(transport_val) = o.get("transport") {
@@ -856,6 +999,99 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     .map(|x| x as usize);
                 ob.ssh_compression = o.get("compression").and_then(|v| v.as_bool());
                 ob.ssh_keepalive_interval = o.get("keepalive_interval").and_then(|v| v.as_u64());
+            }
+
+            if matches!(ob.ty, crate::ir::OutboundType::Wireguard) {
+                if ob.wireguard_system_interface.is_none() {
+                    ob.wireguard_system_interface =
+                        o.get("system_interface").and_then(|v| v.as_bool());
+                }
+                if ob.wireguard_interface.is_none() {
+                    ob.wireguard_interface = o
+                        .get("wireguard_interface")
+                        .or_else(|| o.get("interface_name"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.wireguard_local_address.is_empty() {
+                    if let Some(list) = extract_string_list(
+                        o.get("wireguard_local_address")
+                            .or_else(|| o.get("local_address")),
+                    ) {
+                        ob.wireguard_local_address = list;
+                    }
+                }
+                if ob.wireguard_allowed_ips.is_empty() {
+                    if let Some(list) = extract_string_list(o.get("allowed_ips")) {
+                        ob.wireguard_allowed_ips = list;
+                    }
+                }
+                if ob.wireguard_private_key.is_none() {
+                    ob.wireguard_private_key = o
+                        .get("private_key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.wireguard_peer_public_key.is_none() {
+                    ob.wireguard_peer_public_key = o
+                        .get("peer_public_key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.wireguard_pre_shared_key.is_none() {
+                    ob.wireguard_pre_shared_key = o
+                        .get("pre_shared_key")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.wireguard_source_v4.is_none() {
+                    ob.wireguard_source_v4 = o
+                        .get("wireguard_source_v4")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.wireguard_source_v6.is_none() {
+                    ob.wireguard_source_v6 = o
+                        .get("wireguard_source_v6")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                }
+                if ob.wireguard_persistent_keepalive.is_none() {
+                    ob.wireguard_persistent_keepalive = o
+                        .get("persistent_keepalive_interval")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|x| u16::try_from(x).ok());
+                }
+
+                if ob.wireguard_allowed_ips.is_empty() || ob.wireguard_peer_public_key.is_none() {
+                    if let Some(peers) = o.get("peers").and_then(|v| v.as_array()) {
+                        if let Some(peer) = peers.first() {
+                            if ob.wireguard_allowed_ips.is_empty() {
+                                if let Some(list) = extract_string_list(peer.get("allowed_ips")) {
+                                    ob.wireguard_allowed_ips = list;
+                                }
+                            }
+                            if ob.wireguard_peer_public_key.is_none() {
+                                ob.wireguard_peer_public_key = peer
+                                    .get("public_key")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                            }
+                            if ob.wireguard_pre_shared_key.is_none() {
+                                ob.wireguard_pre_shared_key = peer
+                                    .get("pre_shared_key")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                            }
+                            if ob.wireguard_persistent_keepalive.is_none() {
+                                ob.wireguard_persistent_keepalive = peer
+                                    .get("persistent_keepalive_interval")
+                                    .and_then(|v| v.as_u64())
+                                    .and_then(|x| u16::try_from(x).ok());
+                            }
+                        }
+                    }
+                }
             }
 
             // Parse connect_timeout for all outbound types
@@ -1189,8 +1425,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
                     // Accept both legacy `address: "<proto>://..."` and
                     // go1.12.4-style `{ "type": "...", "server": "..." }` shapes.
-                    let address = if let Some(addr) =
-                        map.get("address").and_then(|v| v.as_str()).map(|s| s.trim().to_string())
+                    let address = if let Some(addr) = map
+                        .get("address")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_string())
                     {
                         addr
                     } else if let Some(ty) = map
@@ -1605,7 +1843,9 @@ mod tests {
         });
 
         let ir = to_ir_v1(&json);
-        let exp = ir.experimental.expect("experimental block should be present");
+        let exp = ir
+            .experimental
+            .expect("experimental block should be present");
         assert_eq!(exp["feature_flag"], serde_json::json!(true));
         assert_eq!(exp["nested"]["value"], serde_json::json!(42));
     }

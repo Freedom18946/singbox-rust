@@ -191,17 +191,17 @@ impl OutboundTcp for TrojanOutbound {
     type IO = tokio_rustls::client::TlsStream<tokio::net::TcpStream>;
 
     async fn connect(&self, target: &HostPort) -> std::io::Result<Self::IO> {
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
 
         // Step 1: TCP connect to Trojan server
         let tcp = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
             .await
-            .inspect_err(|e| {
+            .inspect_err(|_e| {
                 #[cfg(feature = "metrics")]
                 crate::telemetry::outbound_connect(
                     "trojan",
                     "error",
-                    Some(crate::telemetry::err_kind(e)),
+                    Some(crate::telemetry::err_kind(_e)),
                 );
             })?;
 
@@ -222,13 +222,13 @@ impl OutboundTcp for TrojanOutbound {
         // Step 3: Trojan protocol handshake
         let handshake_result = self.perform_trojan_handshake(&mut tls_stream, target).await;
 
-        let elapsed = start.elapsed();
+        let _elapsed = _start.elapsed();
         match handshake_result {
             Ok(()) => {
                 #[cfg(feature = "metrics")]
                 {
                     crate::telemetry::outbound_handshake("trojan", "ok", None);
-                    if let Ok(ms) = u64::try_from(elapsed.as_millis()) {
+                    if let Ok(ms) = u64::try_from(_elapsed.as_millis()) {
                         crate::metrics::outbound::handshake_duration_histogram()
                             .with_label_values(&["trojan"])
                             .observe(ms as f64);

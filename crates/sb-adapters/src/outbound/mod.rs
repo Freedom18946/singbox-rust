@@ -34,6 +34,8 @@ pub(crate) fn span_dial(adapter: &'static str, target: &crate::traits::Target) -
 }
 
 // Feature-gated adapter modules
+#[cfg(feature = "adapter-anytls")]
+pub mod anytls;
 #[cfg(feature = "adapter-dns")]
 pub mod dns;
 #[cfg(feature = "adapter-http")]
@@ -58,6 +60,9 @@ pub mod tuic;
 pub mod vless;
 #[cfg(feature = "adapter-vmess")]
 pub mod vmess;
+// Selector group adapters (always available since they're core functionality)
+pub mod selector;
+pub mod urltest;
 
 // Re-export traits for easy access
 pub use crate::traits::*;

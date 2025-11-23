@@ -59,24 +59,28 @@ mod tests {
     async fn test_pipeline_success() {
         let inbound = MockInbound { should_fail: false };
         let pipeline = Pipeline::new(inbound);
-        
+
         let result = pipeline.run().await;
-        assert!(result.is_ok(), "pipeline should succeed with successful inbound");
+        assert!(
+            result.is_ok(),
+            "pipeline should succeed with successful inbound"
+        );
     }
 
     #[tokio::test]
     async fn test_pipeline_failure_propagation() {
         let inbound = MockInbound { should_fail: true };
         let pipeline = Pipeline::new(inbound);
-        
+
         let result = pipeline.run().await;
         assert!(result.is_err(), "pipeline should propagate inbound errors");
-        
+
         if let Err(e) = result {
             let msg = e.to_string();
             assert!(
                 msg.contains("inbound serve failed"),
-                "error should mention inbound failure: {}", msg
+                "error should mention inbound failure: {}",
+                msg
             );
         }
     }

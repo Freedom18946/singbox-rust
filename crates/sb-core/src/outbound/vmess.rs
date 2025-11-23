@@ -134,8 +134,10 @@ impl VmessOutbound {
         // Prepare authentication header: timestamp + legacy HMAC + nonce + req_tag
         let mut auth_header = Vec::new();
         auth_header.extend_from_slice(&timestamp.to_be_bytes());
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(self.config.id.as_bytes())
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("HMAC error: {}", e)))?;
+        let mut mac =
+            <Hmac<Sha256> as Mac>::new_from_slice(self.config.id.as_bytes()).map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidInput, format!("HMAC error: {}", e))
+            })?;
         mac.update(&timestamp.to_be_bytes());
         let legacy = mac.finalize().into_bytes();
         auth_header.extend_from_slice(&legacy[..16]);
@@ -167,7 +169,9 @@ impl VmessOutbound {
 
         tokio::time::timeout(write_timeout, stream.write_all(&encrypted_request))
             .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "VMess request write timeout"))??;
+            .map_err(|_| {
+                io::Error::new(io::ErrorKind::TimedOut, "VMess request write timeout")
+            })??;
 
         // Read and validate response tag
         let mut response_tag = [0u8; 16];
@@ -177,12 +181,7 @@ impl VmessOutbound {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(500),
         );
-        match tokio::time::timeout(
-            resp_timeout,
-            stream.read_exact(&mut response_tag),
-        )
-        .await
-        {
+        match tokio::time::timeout(resp_timeout, stream.read_exact(&mut response_tag)).await {
             Err(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
@@ -236,7 +235,12 @@ impl VmessOutbound {
         key
     }
 
-    fn encrypt_request(&self, plaintext: &[u8], key: &[u8; 16], nonce_bytes: &[u8]) -> io::Result<Vec<u8>> {
+    fn encrypt_request(
+        &self,
+        plaintext: &[u8],
+        key: &[u8; 16],
+        nonce_bytes: &[u8],
+    ) -> io::Result<Vec<u8>> {
         match self.config.security.as_str() {
             "aes-128-gcm" => {
                 let cipher = Aes128Gcm::new_from_slice(key)
@@ -340,7 +344,11 @@ impl VmessOutbound {
             .and_then(|v| v.parse::<u8>().ok())
             .unwrap_or(15)
             .min(15);
-        let padding_len = if max_pad == 0 { 0 } else { fastrand::u8(0..=max_pad) };
+        let padding_len = if max_pad == 0 {
+            0
+        } else {
+            fastrand::u8(0..=max_pad)
+        };
         request.push(padding_len);
         if padding_len > 0 {
             let padding: Vec<u8> = (0..padding_len).map(|_| fastrand::u8(..)).collect();
@@ -433,7 +441,13 @@ mod tests {
         let key = [1u8; 16];
         let nonce0 = 0u64;
         let plain = b"hello vmess";
-        let ct_len = vmess_encrypt_aead("aes-128-gcm", &key, nonce0, &(plain.len() as u16).to_be_bytes()).unwrap();
+        let ct_len = vmess_encrypt_aead(
+            "aes-128-gcm",
+            &key,
+            nonce0,
+            &(plain.len() as u16).to_be_bytes(),
+        )
+        .unwrap();
         let pt_len = vmess_decrypt_aead("aes-128-gcm", &key, nonce0, &ct_len).unwrap();
         assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
         let ct = vmess_encrypt_aead("aes-128-gcm", &key, nonce0 + 1, plain).unwrap();
@@ -446,7 +460,13 @@ mod tests {
         let key = [2u8; 16];
         let nonce0 = 7u64;
         let plain = b"hello chacha";
-        let ct_len = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0, &(plain.len() as u16).to_be_bytes()).unwrap();
+        let ct_len = vmess_encrypt_aead(
+            "chacha20-poly1305",
+            &key,
+            nonce0,
+            &(plain.len() as u16).to_be_bytes(),
+        )
+        .unwrap();
         let pt_len = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0, &ct_len).unwrap();
         assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
         let ct = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0 + 1, plain).unwrap();
@@ -461,14 +481,12 @@ impl OutboundTcp for VmessOutbound {
     type IO = TcpStream;
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
-        use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_success,
-        };
+        use crate::metrics::outbound::{record_connect_attempt, record_connect_success};
         use crate::metrics::record_outbound_error;
 
         record_connect_attempt(crate::outbound::OutboundKind::Vmess);
 
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
 
         // Connect to VMess server
         let mut stream =
@@ -493,11 +511,11 @@ impl OutboundTcp for VmessOutbound {
             Err(e) => {
                 record_outbound_error(crate::outbound::OutboundKind::Direct, &e);
 
-            #[cfg(feature = "metrics")]
-            {
-                use metrics::counter;
-                counter!("vmess_connect_total", "result" => "handshake_fail").increment(1);
-            }
+                #[cfg(feature = "metrics")]
+                {
+                    use metrics::counter;
+                    counter!("vmess_connect_total", "result" => "handshake_fail").increment(1);
+                }
 
                 return Err(e);
             }
@@ -527,16 +545,37 @@ impl OutboundTcp for VmessOutbound {
             let mut buf = vec![0u8; 32 * 1024];
             loop {
                 match ls_r.read(&mut buf).await {
-                    Ok(0) => { let _ = ss_w.shutdown().await; break; }
+                    Ok(0) => {
+                        let _ = ss_w.shutdown().await;
+                        break;
+                    }
                     Ok(n) => {
                         // frame length
-                        if let Ok(enc_len) = vmess_encrypt_aead(&cipher_w, &key_w, write_nonce, &(n as u16).to_be_bytes()) {
-                            if ss_w.write_all(&enc_len).await.is_err() { break; }
-                        } else { break; }
+                        if let Ok(enc_len) = vmess_encrypt_aead(
+                            &cipher_w,
+                            &key_w,
+                            write_nonce,
+                            &(n as u16).to_be_bytes(),
+                        ) {
+                            if ss_w.write_all(&enc_len).await.is_err() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
                         // frame payload
-                        if let Ok(enc_payload) = vmess_encrypt_aead(&cipher_w, &key_w, write_nonce.wrapping_add(1), &buf[..n]) {
-                            if ss_w.write_all(&enc_payload).await.is_err() { break; }
-                        } else { break; }
+                        if let Ok(enc_payload) = vmess_encrypt_aead(
+                            &cipher_w,
+                            &key_w,
+                            write_nonce.wrapping_add(1),
+                            &buf[..n],
+                        ) {
+                            if ss_w.write_all(&enc_payload).await.is_err() {
+                                break;
+                            }
+                        } else {
+                            break;
+                        }
                         write_nonce = write_nonce.wrapping_add(2);
                     }
                     Err(_) => break,
@@ -552,21 +591,34 @@ impl OutboundTcp for VmessOutbound {
             let tag = 16usize; // AEAD tag size for both ciphers here
             let mut len_buf = vec![0u8; 2 + tag];
             loop {
-                if let Err(_) = ss_r.read_exact(&mut len_buf).await { break; }
+                if let Err(_) = ss_r.read_exact(&mut len_buf).await {
+                    break;
+                }
                 let len_plain = match vmess_decrypt_aead(&cipher_r, &key_r, read_nonce, &len_buf) {
                     Ok(v) => v,
                     Err(_) => break,
                 };
-                if len_plain.len() < 2 { break; }
+                if len_plain.len() < 2 {
+                    break;
+                }
                 let plain_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
 
                 let mut payload = vec![0u8; plain_len + tag];
-                if let Err(_) = ss_r.read_exact(&mut payload).await { break; }
-                let plain = match vmess_decrypt_aead(&cipher_r, &key_r, read_nonce.wrapping_add(1), &payload) {
+                if let Err(_) = ss_r.read_exact(&mut payload).await {
+                    break;
+                }
+                let plain = match vmess_decrypt_aead(
+                    &cipher_r,
+                    &key_r,
+                    read_nonce.wrapping_add(1),
+                    &payload,
+                ) {
                     Ok(v) => v,
                     Err(_) => break,
                 };
-                if ls_w.write_all(&plain).await.is_err() { break; }
+                if ls_w.write_all(&plain).await.is_err() {
+                    break;
+                }
                 read_nonce = read_nonce.wrapping_add(2);
             }
             let _ = ls_w.shutdown().await;
@@ -586,7 +638,7 @@ impl OutboundTcp for VmessOutbound {
             };
 
             record_connect_total(Proto::Vmess, ResultTag::Ok);
-            record_handshake_duration(Proto::Vmess, start.elapsed().as_millis() as f64);
+            record_handshake_duration(Proto::Vmess, _start.elapsed().as_millis() as f64);
 
             use metrics::counter;
             counter!("vmess_connect_total", "result" => "ok", "cipher" => cipher_type.as_str())
@@ -636,11 +688,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
             port: ctx.dst.port,
         };
 
-        let alpn_csv = self
-            .config
-            .tls_alpn
-            .as_ref()
-            .map(|v| v.join(","));
+        let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
         let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
         let builder = crate::runtime::transport::map::apply_layers(
             TransportBuilder::tcp(),

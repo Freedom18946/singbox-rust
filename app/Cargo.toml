@@ -82,6 +82,14 @@ adapter-hysteria = ["sb-core/out_hysteria"]
 adapter-hysteria2 = ["sb-core/out_hysteria2"]
 adapter-ssh = ["sb-core/out_ssh"]
 adapter-tuic = ["sb-core/out_tuic"]
+v2ray_transport = ["sb-core/v2ray_transport"]
+adapter-naive = ["sb-adapters/adapter-naive"]
+shadowsocks = ["sb-adapters/adapter-shadowsocks"]
+vmess = ["sb-adapters/adapter-vmess"]
+dns_dhcp = ["sb-core/dns_dhcp"]
+dns_resolved = ["sb-core/dns_resolved"]
+dns_tailscale = ["sb-core/dns_tailscale"]
+adapter-wireguard-endpoint = ["sb-adapters/adapter-wireguard-endpoint"]
 
 # Internal gating to include sb-adapters powered inbounds in bootstrap
 adapters = [
@@ -99,6 +107,9 @@ adapters = [
     "sb-adapters/adapter-hysteria2",
     "sb-adapters/adapter-tuic",
     "sb-adapters/adapter-shadowtls",
+    "sb-adapters/adapter-anytls",
+    "sb-adapters/adapter-wireguard",
+    "sb-adapters/adapter-wireguard-endpoint",
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",
@@ -117,6 +128,9 @@ full    = [
 ]
 scaffold = ["sb-core/scaffold"]
 service_ntp = ["sb-core/service_ntp"]
+service_resolved = ["sb-core/service_resolved"]
+service_ssmapi   = ["sb-core/service_ssmapi"]
+service_derp     = ["sb-core/service_derp", "sb-adapters/service_derp"]
 
 ## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
 [[bin]]
@@ -339,6 +353,8 @@ sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
 sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "tls_reality", "transport_ech", "transport_mux"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
+async-trait = "0.1"
+sb-metrics = { path = "../crates/sb-metrics" }
 
 [build-dependencies]
 chrono = { workspace = true }

@@ -31,8 +31,9 @@ fn golden_basic_ir_json_roundtrip() {
 
 #[test]
 fn golden_dns_address_https_rcode_ir_json_roundtrip() {
-    let ir =
-        ir_from_str(include_str!("golden/go1124/dns_address_https_rcode_input.json"));
+    let ir = ir_from_str(include_str!(
+        "golden/go1124/dns_address_https_rcode_input.json"
+    ));
     let json = serde_json::to_value(&ir).expect("serialize IR to JSON");
     let ir2 = sb_config::validator::v2::to_ir_v1(&json);
     let ir = strip_dns_rule_priority(ir);
@@ -45,9 +46,7 @@ fn golden_dns_address_https_rcode_ir_json_roundtrip() {
 
 #[test]
 fn golden_dns_block_ref_ir_json_roundtrip() {
-    let ir = ir_from_str(include_str!(
-        "golden/go1124/dns_block_ref_input.json"
-    ));
+    let ir = ir_from_str(include_str!("golden/go1124/dns_block_ref_input.json"));
     let json = serde_json::to_value(&ir).expect("serialize IR to JSON");
     let ir2 = sb_config::validator::v2::to_ir_v1(&json);
     let ir = strip_dns_rule_priority(ir);
@@ -60,9 +59,7 @@ fn golden_dns_block_ref_ir_json_roundtrip() {
 
 #[test]
 fn golden_dns_no_ref_keep_all_ir_json_roundtrip() {
-    let ir = ir_from_str(include_str!(
-        "golden/go1124/dns_no_ref_keep_all_input.json"
-    ));
+    let ir = ir_from_str(include_str!("golden/go1124/dns_no_ref_keep_all_input.json"));
     let json = serde_json::to_value(&ir).expect("serialize IR to JSON");
     let ir2 = sb_config::validator::v2::to_ir_v1(&json);
     let ir = strip_dns_rule_priority(ir);
@@ -75,9 +72,7 @@ fn golden_dns_no_ref_keep_all_ir_json_roundtrip() {
 
 #[test]
 fn golden_ntp_enabled_ir_json_roundtrip() {
-    let ir = ir_from_str(include_str!(
-        "golden/go1124/ntp_enabled_input.json"
-    ));
+    let ir = ir_from_str(include_str!("golden/go1124/ntp_enabled_input.json"));
     let json = serde_json::to_value(&ir).expect("serialize IR to JSON");
     let ir2 = sb_config::validator::v2::to_ir_v1(&json);
     let ir = strip_dns_rule_priority(ir);

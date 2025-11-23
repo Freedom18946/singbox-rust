@@ -1,0 +1,76 @@
+{
+    "log": {
+        "level": "info",
+        "output": "stdout"
+    },
+    "endpoints": [
+        {
+            "type": "wireguard",
+            "tag": "wg_psk",
+            "wireguard_system": false,
+            "wireguard_name": "wg-secure",
+            "wireguard_mtu": 1420,
+            "wireguard_address": [
+                "10.99.99.2/24"
+            ],
+            "wireguard_private_key": "REPLACE_WITH_YOUR_PRIVATE_KEY",
+            "wireguard_listen_port": 0,
+            "wireguard_udp_timeout": "5m",
+            "wireguard_workers": 4,
+            "wireguard_peers": [
+                {
+                    "public_key": "REPLACE_WITH_PEER_PUBLIC_KEY",
+                    "pre_shared_key": "REPLACE_WITH_YOUR_PSK",
+                    "address": "secure-vpn.example.com",
+                    "port": 51820,
+                    "allowed_ips": [
+                        "10.0.0.0/8",
+                        "172.16.0.0/12",
+                        "192.168.0.0/16"
+                    ],
+                    "persistent_keepalive_interval": 25
+                }
+            ]
+        }
+    ],
+    "dns": {
+        "servers": [
+            {
+                "address": "1.1.1.1"
+            }
+        ]
+    },
+    "inbounds": [
+        {
+            "type": "socks",
+            "tag": "socks-in",
+            "listen": "127.0.0.1",
+            "listen_port": 1080
+        },
+        {
+            "type": "http",
+            "tag": "http-in",
+            "listen": "127.0.0.1",
+            "listen_port": 1081
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "ip_cidr": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16"
+                ],
+                "outbound": "direct"
+            }
+        ],
+        "final": "direct"
+    }
+}

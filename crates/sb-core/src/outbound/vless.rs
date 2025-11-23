@@ -96,7 +96,7 @@ impl VlessOutbound {
         target: &HostPort,
         stream: &mut S,
     ) -> io::Result<()> {
-        let t0 = std::time::Instant::now();
+        let _t0 = std::time::Instant::now();
         // Send VLESS request header
         let request = self.encode_vless_request(target);
         stream.write_all(&request).await?;
@@ -206,10 +206,13 @@ mod tests {
             ..Default::default()
         };
         let outbound = VlessOutbound::new(cfg).unwrap();
-        let hp = HostPort { host: "example.com".into(), port: 80 };
+        let hp = HostPort {
+            host: "example.com".into(),
+            port: 80,
+        };
         let req = outbound.encode_vless_request(&hp);
         assert_eq!(req[0], 0x01); // version
-        // additional length is 0 when no TLV
+                                  // additional length is 0 when no TLV
         assert_eq!(req[17], 0x00);
     }
 
@@ -224,7 +227,10 @@ mod tests {
             ..Default::default()
         };
         let outbound = VlessOutbound::new(cfg).unwrap();
-        let hp = HostPort { host: "example.com".into(), port: 80 };
+        let hp = HostPort {
+            host: "example.com".into(),
+            port: 80,
+        };
         let req = outbound.encode_vless_request(&hp);
         assert_eq!(req[0], 0x01);
         assert!(req[17] > 0); // additional has content
@@ -251,11 +257,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
         };
 
         // Use unified IR→Builder mapping (no env overrides)
-        let alpn_csv = self
-            .config
-            .tls_alpn
-            .as_ref()
-            .map(|v| v.join(","));
+        let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
 
         let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
         let builder = crate::runtime::transport::map::apply_layers(
@@ -297,15 +299,13 @@ impl OutboundTcp for VlessOutbound {
     type IO = TcpStream;
 
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
-        use crate::metrics::outbound::{
-            record_connect_attempt, record_connect_success,
-        };
+        use crate::metrics::outbound::{record_connect_attempt, record_connect_success};
         use crate::metrics::record_outbound_error;
         use crate::metrics::{record_connect_error, OutboundErrorClass};
 
         record_connect_attempt(crate::outbound::OutboundKind::Vless);
 
-        let start = std::time::Instant::now();
+        let _start = std::time::Instant::now();
 
         // Connect to VLESS server
         let mut stream =

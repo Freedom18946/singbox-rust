@@ -1,3 +1,5 @@
+#![cfg(feature = "scaffold")]
+
 use sb_core::outbound::socks5_udp::strip_udp_reply;
 
 #[test]

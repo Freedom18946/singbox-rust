@@ -77,7 +77,9 @@ impl TlsClient {
                 negotiated_alpn: None,
             };
         }
-        let stream = if let Some(s) = stream { s } else {
+        let stream = if let Some(s) = stream {
+            s
+        } else {
             let fallback = error.unwrap_or(NetClass {
                 code: crate::error_map::IssueCode::TlsHandshakeProtocol,
                 class: "proto",

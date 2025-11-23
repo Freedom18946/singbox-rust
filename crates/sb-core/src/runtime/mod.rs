@@ -3,6 +3,7 @@ use crate::adapter::Bridge;
 use crate::health;
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine;
+use crate::runtime::supervisor::{start_endpoints, start_services};
 #[cfg(feature = "router")]
 use sb_config::ir::ConfigIR;
 use std::sync::Arc;
@@ -88,6 +89,10 @@ impl<'a> Runtime<'a> {
             });
             self.workers.push(h);
         }
+        let endpoints = self.bridge.endpoints.clone();
+        let services = self.bridge.services.clone();
+        start_endpoints(&endpoints);
+        start_services(&services);
         self
     }
     /// 可选启用健康探测

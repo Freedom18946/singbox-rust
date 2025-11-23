@@ -8,13 +8,13 @@
 
 pub mod dns;
 pub mod dns_v2;
+pub mod error_class;
 pub mod geoip;
 pub mod http;
 pub mod http_exporter;
-pub mod labels;
-pub mod error_class;
-pub mod label_guard;
 pub mod inbound;
+pub mod label_guard;
+pub mod labels;
 pub mod outbound;
 pub mod udp;
 pub mod udp_v2;
@@ -87,8 +87,8 @@ pub use http::{
 
 pub use outbound::{
     record_connect_attempt, record_connect_duration as record_outbound_duration,
-    record_connect_error, record_connect_failure, record_connect_success, OutboundErrorClass,
-    OutboundKind, set_circuit_state as set_outbound_circuit_state,
+    record_connect_error, record_connect_failure, record_connect_success,
+    set_circuit_state as set_outbound_circuit_state, OutboundErrorClass, OutboundKind,
 };
 
 pub use udp::{
@@ -106,7 +106,9 @@ pub use dns::{
 };
 
 pub use error_class::{classify_display as classify_error, record_outbound_error, ErrorClass};
-pub use inbound::{record_error as record_inbound_error, record_error_display as record_inbound_error_display};
+pub use inbound::{
+    record_error as record_inbound_error, record_error_display as record_inbound_error_display,
+};
 
 #[cfg(test)]
 mod tests {

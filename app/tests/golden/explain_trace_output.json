@@ -1,0 +1,11 @@
+{
+    "dest": "example.com:443",
+    "outbound": "direct",
+    "matched_rule": "example.com",
+    "chain": [
+        "domain_suffix:[example.com]"
+    ],
+    "trace": [
+        "match rule[0] domain_suffix:[example.com] => direct"
+    ]
+}

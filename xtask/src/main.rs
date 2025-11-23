@@ -23,6 +23,7 @@ fn main() -> Result<()> {
         Some("bench") => cmd_bench(),
         Some("ci") => cmd_ci(),
         Some("preflight") => cmd_preflight(),
+        Some("feature-matrix") => cmd_feature_matrix(),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
             Ok(())
@@ -50,6 +51,7 @@ fn print_help() {
     fmt              格式化所有代码
     clippy           运行 clippy 检查
     check-all        检查所有特性组合
+    feature-matrix   构建 CLI/DNS/adapter 特性矩阵
 
   测试:
     e2e              端到端测试流程
@@ -134,6 +136,363 @@ fn cmd_check_all() -> Result<()> {
 
     success("所有特性组合检查通过");
     Ok(())
+}
+
+fn cmd_feature_matrix() -> Result<()> {
+    section("特性组合矩阵");
+
+    let cases = build_feature_matrix_cases();
+    let total = cases.len();
+    let mut failures = Vec::new();
+
+    for (idx, case) in cases.iter().enumerate() {
+        info(&format!(
+            "[{}/{}] {} — {}",
+            idx + 1,
+            total,
+            case.package,
+            case.name
+        ));
+        info(&format!("    {}", describe_case(case)));
+
+        match run_feature_case(case) {
+            Ok(_) => success("通过"),
+            Err(err) => {
+                warn(&format!("失败: {}", err));
+                failures.push((case.name, err.to_string()));
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        success("特性矩阵全部通过");
+        Ok(())
+    } else {
+        warn("以下特性组合失败：");
+        for (name, err) in &failures {
+            warn(&format!("- {}: {}", name, err));
+        }
+        bail!("共有 {} 个矩阵项目失败", failures.len());
+    }
+}
+
+fn build_feature_matrix_cases() -> Vec<MatrixCase> {
+    use MatrixCommand::Check;
+    let mut cases = Vec::new();
+
+    // App presets
+    cases.push(
+        MatrixCase::new("app", "Minimal CLI", Check)
+            .with_no_default()
+            .with_features(&["minimal"]),
+    );
+    cases.push(
+        MatrixCase::new("app", "Router preset", Check)
+            .with_no_default()
+            .with_features(&["router"]),
+    );
+    cases.push(
+        MatrixCase::new("app", "Observe preset", Check)
+            .with_no_default()
+            .with_features(&["observe"]),
+    );
+    cases.push(
+        MatrixCase::new("app", "Full preset", Check)
+            .with_no_default()
+            .with_features(&["full"]),
+    );
+
+    // sb-core DNS transport combinations
+    cases.push(
+        MatrixCase::new("sb-core", "DNS UDP only", Check)
+            .with_no_default()
+            .with_features(&["dns_udp"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "DNS DoH only", Check)
+            .with_no_default()
+            .with_features(&["dns_doh", "dns_udp"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "DNS DoT only", Check)
+            .with_no_default()
+            .with_features(&["dns_dot"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "DNS DoQ only", Check)
+            .with_no_default()
+            .with_features(&["dns_doq", "dns_udp"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "DNS DoH3 only", Check)
+            .with_no_default()
+            .with_features(&["dns_doh3", "dns_udp"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "All DNS transports", Check)
+            .with_no_default()
+            .with_features(&["dns_udp", "dns_doh", "dns_dot", "dns_doq", "dns_doh3"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "DNS transports + TLS", Check)
+            .with_no_default()
+            .with_features(&[
+                "dns_udp",
+                "dns_doh",
+                "dns_dot",
+                "dns_doq",
+                "dns_doh3",
+                "tls_rustls",
+            ]),
+    );
+
+    // sb-core QUIC / outbound features
+    cases.push(
+        MatrixCase::new("sb-core", "TUIC outbound core", Check)
+            .with_no_default()
+            .with_features(&["out_tuic", "out_quic", "tls_rustls"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "Hysteria2 outbound core", Check)
+            .with_no_default()
+            .with_features(&["out_hysteria2", "out_quic", "tls_rustls"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "ShadowTLS outbound", Check)
+            .with_no_default()
+            .with_features(&["out_shadowtls", "tls_rustls"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-core", "WireGuard outbound", Check)
+            .with_no_default()
+            .with_features(&["out_wireguard"]),
+    );
+
+    // sb-adapters protocol adapters
+    cases.push(
+        MatrixCase::new("sb-adapters", "HTTP adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-http"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "SOCKS adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-socks"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "Shadowsocks adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-shadowsocks"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "Trojan adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-trojan"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "VMess adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-vmess"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "VLESS adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-vless"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "Naive adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-naive"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "ShadowTLS adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-shadowtls"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "Hysteria adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-hysteria"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "Hysteria2 adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-hysteria2"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "TUIC adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-tuic"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "WireGuard adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-wireguard"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "DNS adapter", Check)
+            .with_no_default()
+            .with_features(&["adapter-dns"]),
+    );
+
+    // sb-adapters combinations
+    cases.push(
+        MatrixCase::new("sb-adapters", "HTTP + SOCKS adapters", Check)
+            .with_no_default()
+            .with_features(&["adapter-http", "adapter-socks"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "Encrypted proxy set", Check)
+            .with_no_default()
+            .with_features(&[
+                "adapter-shadowsocks",
+                "adapter-trojan",
+                "adapter-vmess",
+                "adapter-vless",
+            ]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "DNS DoH + HTTP adapter", Check)
+            .with_no_default()
+            .with_features(&["dns_doh", "adapter-http"]),
+    );
+    cases.push(
+        MatrixCase::new("sb-adapters", "All DNS + core adapters", Check)
+            .with_no_default()
+            .with_features(&[
+                "dns_udp",
+                "dns_doh",
+                "dns_dot",
+                "dns_doq",
+                "adapter-http",
+                "adapter-socks",
+                "adapter-shadowsocks",
+            ]),
+    );
+
+    cases
+}
+
+fn describe_case(case: &MatrixCase) -> String {
+    let mut parts = Vec::new();
+    if case.no_default_features {
+        parts.push("--no-default-features".to_string());
+    }
+    if case.all_features {
+        parts.push("--all-features".to_string());
+    }
+    if !case.features.is_empty() {
+        parts.push(format!("--features {}", case.features.join(",")));
+    }
+    if !case.extra_args.is_empty() {
+        parts.push(case.extra_args.join(" ").to_string());
+    }
+    if parts.is_empty() {
+        "default feature set".to_string()
+    } else {
+        parts.join(" ")
+    }
+}
+
+fn run_feature_case(case: &MatrixCase) -> Result<()> {
+    let mut args = Vec::new();
+    args.push(case.command.as_str().to_string());
+    args.push("-p".into());
+    args.push(case.package.to_string());
+
+    if case.no_default_features {
+        args.push("--no-default-features".into());
+    }
+    if case.all_features {
+        args.push("--all-features".into());
+    }
+    if !case.features.is_empty() {
+        args.push("--features".into());
+        args.push(case.features.join(","));
+    }
+    for extra in case.extra_args {
+        args.push((*extra).to_string());
+    }
+
+    let mut cmd = Command::new("cargo");
+    for arg in &args {
+        cmd.arg(arg);
+    }
+
+    let status = cmd
+        .status()
+        .with_context(|| format!("执行 cargo {} 失败", args.join(" ")))?;
+    if !status.success() {
+        bail!(
+            "退出码 {}",
+            status
+                .code()
+                .map_or_else(|| "unknown".into(), |c| c.to_string())
+        );
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum MatrixCommand {
+    Check,
+    Build,
+    Test,
+}
+
+impl MatrixCommand {
+    fn as_str(&self) -> &'static str {
+        match self {
+            MatrixCommand::Check => "check",
+            MatrixCommand::Build => "build",
+            MatrixCommand::Test => "test",
+        }
+    }
+}
+
+struct MatrixCase {
+    package: &'static str,
+    name: &'static str,
+    command: MatrixCommand,
+    no_default_features: bool,
+    all_features: bool,
+    features: &'static [&'static str],
+    extra_args: &'static [&'static str],
+}
+
+impl MatrixCase {
+    const fn new(package: &'static str, name: &'static str, command: MatrixCommand) -> Self {
+        Self {
+            package,
+            name,
+            command,
+            no_default_features: false,
+            all_features: false,
+            features: &[],
+            extra_args: &[],
+        }
+    }
+
+    fn with_no_default(mut self) -> Self {
+        self.no_default_features = true;
+        self
+    }
+
+    fn with_all_features(mut self) -> Self {
+        self.all_features = true;
+        self
+    }
+
+    fn with_features(mut self, features: &'static [&'static str]) -> Self {
+        self.features = features;
+        self
+    }
+
+    #[allow(dead_code)]
+    fn with_extra_args(mut self, args: &'static [&'static str]) -> Self {
+        self.extra_args = args;
+        self
+    }
 }
 
 // ============================================================================

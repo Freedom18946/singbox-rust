@@ -38,16 +38,25 @@ async fn main() -> Result<()> {
         .context("build switchboard")?;
 
     if args.print_transport {
-        if let Some(ob) = ir
-            .outbounds
-            .iter()
-            .find(|o| o.name.as_deref() == Some(args.outbound.as_str()))
+        #[cfg(feature = "v2ray_transport")]
         {
-            #[cfg(feature = "v2ray_transport")]
+            if let Some(ob) = ir
+                .outbounds
+                .iter()
+                .find(|o| o.name.as_deref() == Some(args.outbound.as_str()))
             {
                 let chain = sb_core::runtime::transport::map::chain_from_ir(ob);
                 eprintln!("transport_chain={}", chain.join(","));
+            } else {
+                eprintln!("outbound not found: {}", args.outbound);
             }
+        }
+        #[cfg(not(feature = "v2ray_transport"))]
+        {
+            eprintln!(
+                "transport chain inspection requires the `v2ray_transport` feature. \
+                 Re-run with `--features v2ray_transport`."
+            );
         }
     }
 

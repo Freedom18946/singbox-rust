@@ -68,7 +68,11 @@ pub fn classify_str(msg_lower: &str) -> ErrorClass {
         ErrorClass::Auth
     } else if s.contains("protocol") || s.contains("invalid") || s.contains("decode") {
         ErrorClass::Protocol
-    } else if s.contains("io") || s.contains("connection") || s.contains("refused") || s.contains("unreachable") {
+    } else if s.contains("io")
+        || s.contains("connection")
+        || s.contains("refused")
+        || s.contains("unreachable")
+    {
         ErrorClass::Io
     } else {
         ErrorClass::Other
@@ -87,10 +91,7 @@ pub fn classify_display(e: &dyn Display) -> ErrorClass {
 }
 
 /// Convenience: record outbound connect error using unified classification.
-pub fn record_outbound_error(
-    kind: super::outbound::OutboundKind,
-    err: &dyn Display,
-) {
+pub fn record_outbound_error(kind: super::outbound::OutboundKind, err: &dyn Display) {
     let ec = classify_display(err);
     let mapped = match ec {
         ErrorClass::Timeout => super::outbound::OutboundErrorClass::Timeout,
@@ -131,4 +132,3 @@ mod tests {
         assert_eq!(classify_display(&e), ErrorClass::Auth);
     }
 }
-

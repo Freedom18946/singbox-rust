@@ -12,7 +12,11 @@ pub struct UnsupportedInbound {
 
 impl UnsupportedInbound {
     pub fn new(kind: impl Into<String>, reason: impl Into<String>, hint: Option<String>) -> Self {
-        Self { kind: kind.into(), reason: reason.into(), hint }
+        Self {
+            kind: kind.into(),
+            reason: reason.into(),
+            hint,
+        }
     }
 }
 

@@ -250,7 +250,10 @@ impl OutboundSwitchboard {
     }
 
     /// Get a UDP factory by name
-    pub fn get_udp_factory(&self, name: &str) -> Option<Arc<dyn crate::adapter::UdpOutboundFactory>> {
+    pub fn get_udp_factory(
+        &self,
+        name: &str,
+    ) -> Option<Arc<dyn crate::adapter::UdpOutboundFactory>> {
         self.udp_registry.get(name).cloned()
     }
 
@@ -339,6 +342,7 @@ impl SwitchboardBuilder {
     }
 
     /// Try to register a connector from outbound IR
+    #[allow(unreachable_code)]
     fn try_register_from_ir(&mut self, ir: &sb_config::ir::OutboundIR) -> AdapterResult<()> {
         use sb_config::ir::OutboundType;
 
@@ -348,8 +352,8 @@ impl SwitchboardBuilder {
             OutboundType::Ssh => {
                 #[cfg(feature = "out_ssh")]
                 {
-                    use crate::outbound::ssh_stub::{SshConfig, SshOutbound};
                     use crate::outbound::crypto_types::{HostPort as Hp, OutboundTcp};
+                    use crate::outbound::ssh_stub::{SshConfig, SshOutbound};
 
                     // Map IR → SSH config
                     let server = ir
@@ -366,7 +370,9 @@ impl SwitchboardBuilder {
                         .map(|c| (c.username.clone().unwrap_or_default(), c.password.clone()))
                         .unwrap_or((String::new(), None));
                     if username.is_empty() {
-                        return Err(AdapterError::InvalidConfig("ssh.credentials.username is required"));
+                        return Err(AdapterError::InvalidConfig(
+                            "ssh.credentials.username is required",
+                        ));
                     }
 
                     // Inline private key: prefer `ssh_private_key`, else try to read from `ssh_private_key_path`.
@@ -400,27 +406,41 @@ impl SwitchboardBuilder {
                     let outbound = SshOutbound::new(cfg)
                         .map_err(|e| AdapterError::Other(anyhow::anyhow!(e).into()))?;
                     #[derive(Debug, Clone)]
-                    struct SshConn { inner: std::sync::Arc<SshOutbound> }
+                    struct SshConn {
+                        inner: std::sync::Arc<SshOutbound>,
+                    }
                     #[async_trait::async_trait]
                     impl OutboundConnector for SshConn {
-                        async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+                        async fn dial(
+                            &self,
+                            target: Target,
+                            _opts: DialOpts,
+                        ) -> AdapterResult<BoxedStream> {
                             if target.kind != TransportKind::Tcp {
-                                return Err(AdapterError::UnsupportedProtocol("SSH only supports TCP".into()));
+                                return Err(AdapterError::UnsupportedProtocol(
+                                    "SSH only supports TCP".into(),
+                                ));
                             }
                             let hp = Hp::new(target.host, target.port);
                             let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
                             Ok(Box::new(s))
                         }
-                        fn name(&self) -> &'static str { "ssh" }
+                        fn name(&self) -> &'static str {
+                            "ssh"
+                        }
                     }
-                    let conn = SshConn { inner: std::sync::Arc::new(outbound) };
+                    let conn = SshConn {
+                        inner: std::sync::Arc::new(outbound),
+                    };
                     self.switchboard
                         .register(ir.name.clone().unwrap_or_else(|| "ssh".into()), conn)
                         .map_err(|e| AdapterError::Other(e.into()))?;
                 }
                 #[cfg(not(feature = "out_ssh"))]
                 {
-                    return Err(AdapterError::UnsupportedProtocol("SSH feature not enabled".into()));
+                    return Err(AdapterError::UnsupportedProtocol(
+                        "SSH feature not enabled".into(),
+                    ));
                 }
             }
             OutboundType::Http => {
@@ -453,7 +473,9 @@ impl SwitchboardBuilder {
                                 .map_err(AdapterError::Io)?;
                             Ok(Box::new(s))
                         }
-                        fn name(&self) -> &'static str { "http" }
+                        fn name(&self) -> &'static str {
+                            "http"
+                        }
                     }
 
                     let (user, pass) = ir
@@ -461,14 +483,17 @@ impl SwitchboardBuilder {
                         .as_ref()
                         .map(|c| (c.username.clone(), c.password.clone()))
                         .unwrap_or((None, None));
-                    let server = ir.server.clone().ok_or(AdapterError::InvalidConfig(
-                        "http.server is required",
-                    ))?;
-                    let port = ir.port.ok_or(AdapterError::InvalidConfig(
-                        "http.port is required",
-                    ))?;
+                    let server = ir
+                        .server
+                        .clone()
+                        .ok_or(AdapterError::InvalidConfig("http.server is required"))?;
+                    let port = ir
+                        .port
+                        .ok_or(AdapterError::InvalidConfig("http.port is required"))?;
                     let up = crate::outbound::http_upstream::HttpUp::new(server, port, user, pass);
-                    let conn = HttpConnector { inner: std::sync::Arc::new(up) };
+                    let conn = HttpConnector {
+                        inner: std::sync::Arc::new(up),
+                    };
                     self.switchboard
                         .register(name.to_string(), conn)
                         .map_err(|e| AdapterError::Other(e.into()))?;
@@ -516,7 +541,8 @@ impl SwitchboardBuilder {
                         ) -> AdapterResult<BoxedStream> {
                             if target.kind != TransportKind::Tcp {
                                 return Err(AdapterError::UnsupportedProtocol(
-                                    "SOCKS upstream does not support UDP (use UDP associate path)".into(),
+                                    "SOCKS upstream does not support UDP (use UDP associate path)"
+                                        .into(),
                                 ));
                             }
                             let s = self
@@ -526,7 +552,9 @@ impl SwitchboardBuilder {
                                 .map_err(AdapterError::Io)?;
                             Ok(Box::new(s))
                         }
-                        fn name(&self) -> &'static str { "socks" }
+                        fn name(&self) -> &'static str {
+                            "socks"
+                        }
                     }
 
                     let (user, pass) = ir
@@ -534,14 +562,18 @@ impl SwitchboardBuilder {
                         .as_ref()
                         .map(|c| (c.username.clone(), c.password.clone()))
                         .unwrap_or((None, None));
-                    let server = ir.server.clone().ok_or(AdapterError::InvalidConfig(
-                        "socks.server is required",
-                    ))?;
-                    let port = ir.port.ok_or(AdapterError::InvalidConfig(
-                        "socks.port is required",
-                    ))?;
-                    let up = crate::outbound::socks_upstream::SocksUp::new(server, port, user, pass);
-                    let conn = SocksConnector { inner: std::sync::Arc::new(up) };
+                    let server = ir
+                        .server
+                        .clone()
+                        .ok_or(AdapterError::InvalidConfig("socks.server is required"))?;
+                    let port = ir
+                        .port
+                        .ok_or(AdapterError::InvalidConfig("socks.port is required"))?;
+                    let up =
+                        crate::outbound::socks_upstream::SocksUp::new(server, port, user, pass);
+                    let conn = SocksConnector {
+                        inner: std::sync::Arc::new(up),
+                    };
                     self.switchboard
                         .register(name.to_string(), conn)
                         .map_err(|e| AdapterError::Other(e.into()))?;
@@ -588,28 +620,37 @@ impl SwitchboardBuilder {
                 #[cfg(feature = "out_tuic")]
                 {
                     if let Some(cfg) = tuic_from_ir(ir)? {
-                        use crate::outbound::crypto_types::OutboundTcp;
-
                         #[derive(Debug, Clone)]
                         struct TuicConnector {
                             inner: std::sync::Arc<crate::outbound::tuic::TuicOutbound>,
                         }
                         #[async_trait::async_trait]
                         impl OutboundConnector for TuicConnector {
-                            async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+                            async fn dial(
+                                &self,
+                                target: Target,
+                                _opts: DialOpts,
+                            ) -> AdapterResult<BoxedStream> {
                                 if target.kind != TransportKind::Tcp {
-                                    return Err(AdapterError::UnsupportedProtocol("TUIC UDP not implemented in switchboard".into()));
+                                    return Err(AdapterError::UnsupportedProtocol(
+                                        "TUIC UDP not implemented in switchboard".into(),
+                                    ));
                                 }
-                                let hp = crate::outbound::types::HostPort::new(target.host, target.port);
+                                let hp =
+                                    crate::outbound::types::HostPort::new(target.host, target.port);
                                 let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
                                 Ok(Box::new(s))
                             }
-                            fn name(&self) -> &'static str { "tuic" }
+                            fn name(&self) -> &'static str {
+                                "tuic"
+                            }
                         }
                         let inner = crate::outbound::tuic::TuicOutbound::new(cfg)
                             .map_err(|e| AdapterError::Other(e.into()))?;
                         let inner = std::sync::Arc::new(inner);
-                        let conn = TuicConnector { inner: inner.clone() };
+                        let conn = TuicConnector {
+                            inner: inner.clone(),
+                        };
                         self.switchboard
                             .register(ir.name.clone().unwrap_or_else(|| "tuic".into()), conn)
                             .map_err(|e| AdapterError::Other(e.into()))?;
@@ -631,28 +672,37 @@ impl SwitchboardBuilder {
                 #[cfg(feature = "out_hysteria2")]
                 {
                     if let Some(cfg) = hysteria2_from_ir(ir)? {
-                        use crate::outbound::crypto_types::OutboundTcp;
-
                         #[derive(Debug, Clone)]
                         struct Hy2Connector {
                             inner: std::sync::Arc<crate::outbound::hysteria2::Hysteria2Outbound>,
                         }
                         #[async_trait::async_trait]
                         impl OutboundConnector for Hy2Connector {
-                            async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+                            async fn dial(
+                                &self,
+                                target: Target,
+                                _opts: DialOpts,
+                            ) -> AdapterResult<BoxedStream> {
                                 if target.kind != TransportKind::Tcp {
-                                    return Err(AdapterError::UnsupportedProtocol("Hysteria2 UDP not implemented in switchboard".into()));
+                                    return Err(AdapterError::UnsupportedProtocol(
+                                        "Hysteria2 UDP not implemented in switchboard".into(),
+                                    ));
                                 }
-                                let hp = crate::outbound::types::HostPort::new(target.host, target.port);
+                                let hp =
+                                    crate::outbound::types::HostPort::new(target.host, target.port);
                                 let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
                                 Ok(Box::new(s))
                             }
-                            fn name(&self) -> &'static str { "hysteria2" }
+                            fn name(&self) -> &'static str {
+                                "hysteria2"
+                            }
                         }
                         let inner = crate::outbound::hysteria2::Hysteria2Outbound::new(cfg)
                             .map_err(|e| AdapterError::Other(e.into()))?;
                         let inner = std::sync::Arc::new(inner);
-                        let conn = Hy2Connector { inner: inner.clone() };
+                        let conn = Hy2Connector {
+                            inner: inner.clone(),
+                        };
                         self.switchboard
                             .register(ir.name.clone().unwrap_or_else(|| "hysteria2".into()), conn)
                             .map_err(|e| AdapterError::Other(e.into()))?;
@@ -672,58 +722,13 @@ impl SwitchboardBuilder {
             OutboundType::Wireguard => {
                 #[cfg(feature = "out_wireguard")]
                 {
-                    use crate::outbound::wireguard_stub::{WireGuardConfig, WireGuardOutbound};
                     use crate::outbound::crypto_types::{HostPort as Hp, OutboundTcp};
+                    use crate::outbound::wireguard::{WireGuardConfig, WireGuardOutbound};
 
-                    // For the initial MVP, rely primarily on env for key material to avoid
-                    // hard-coding secrets into config. IR provides server/port.
-                    let server = ir
-                        .server
-                        .clone()
-                        .unwrap_or_else(|| std::env::var("SB_WIREGUARD_SERVER").unwrap_or_else(|_| "127.0.0.1".to_string()));
-                    let port = ir
-                        .port
-                        .or_else(|| std::env::var("SB_WIREGUARD_PORT").ok().and_then(|v| v.parse().ok()))
-                        .unwrap_or(51820);
-
-                    let private_key = std::env::var("SB_WIREGUARD_PRIVATE_KEY").map_err(|_| {
-                        AdapterError::InvalidConfig(
-                            "SB_WIREGUARD_PRIVATE_KEY env var is required for wireguard outbound"
-                                .into(),
-                        )
+                    let cfg = WireGuardConfig::from_ir(ir).map_err(|msg| {
+                        error!(target: "wireguard", error = %msg, "failed to build wireguard config");
+                        AdapterError::InvalidConfig("wireguard config error")
                     })?;
-                    let public_key = std::env::var("SB_WIREGUARD_PUBLIC_KEY").unwrap_or_default();
-                    let peer_public_key =
-                        std::env::var("SB_WIREGUARD_PEER_PUBLIC_KEY").map_err(|_| {
-                            AdapterError::InvalidConfig(
-                                "SB_WIREGUARD_PEER_PUBLIC_KEY env var is required for wireguard outbound"
-                                    .into(),
-                            )
-                        })?;
-                    let allowed_ips = std::env::var("SB_WIREGUARD_ALLOWED_IPS")
-                        .ok()
-                        .map(|s| {
-                            s.split(',')
-                                .map(|v| v.trim().to_string())
-                                .filter(|v| !v.is_empty())
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_else(|| vec!["0.0.0.0/0".to_string()]);
-                    let endpoint = std::env::var("SB_WIREGUARD_ENDPOINT").ok();
-                    let persistent_keepalive = std::env::var("SB_WIREGUARD_KEEPALIVE_SECS")
-                        .ok()
-                        .and_then(|v| v.parse::<u16>().ok());
-
-                    let cfg = WireGuardConfig {
-                        server,
-                        port,
-                        private_key,
-                        public_key,
-                        peer_public_key,
-                        allowed_ips,
-                        endpoint,
-                        persistent_keepalive,
-                    };
 
                     let outbound = WireGuardOutbound::new(cfg)
                         .map_err(|e| AdapterError::Other(anyhow::anyhow!(e).into()))?;
@@ -742,8 +747,7 @@ impl SwitchboardBuilder {
                         ) -> AdapterResult<BoxedStream> {
                             if target.kind != TransportKind::Tcp {
                                 return Err(AdapterError::UnsupportedProtocol(
-                                    "WireGuard outbound currently only supports TCP-like targets (stub)"
-                                        .into(),
+                                    "WireGuard outbound currently only supports TCP targets".into(),
                                 ));
                             }
                             let hp = Hp::new(target.host, target.port);
@@ -782,8 +786,6 @@ impl SwitchboardBuilder {
                 #[cfg(feature = "out_shadowtls")]
                 {
                     if let Some(cfg) = shadowtls_from_ir(ir)? {
-                        use crate::outbound::crypto_types::OutboundTcp;
-
                         #[derive(Clone)]
                         struct StlConnector {
                             inner: std::sync::Arc<crate::outbound::shadowtls::ShadowTlsOutbound>,
@@ -797,19 +799,30 @@ impl SwitchboardBuilder {
 
                         #[async_trait::async_trait]
                         impl OutboundConnector for StlConnector {
-                            async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+                            async fn dial(
+                                &self,
+                                target: Target,
+                                _opts: DialOpts,
+                            ) -> AdapterResult<BoxedStream> {
                                 if target.kind != TransportKind::Tcp {
-                                    return Err(AdapterError::UnsupportedProtocol("ShadowTLS only supports TCP".into()));
+                                    return Err(AdapterError::UnsupportedProtocol(
+                                        "ShadowTLS only supports TCP".into(),
+                                    ));
                                 }
-                                let hp = crate::outbound::types::HostPort::new(target.host, target.port);
+                                let hp =
+                                    crate::outbound::types::HostPort::new(target.host, target.port);
                                 let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
                                 Ok(Box::new(s))
                             }
-                            fn name(&self) -> &'static str { "shadowtls" }
+                            fn name(&self) -> &'static str {
+                                "shadowtls"
+                            }
                         }
                         let inner = crate::outbound::shadowtls::ShadowTlsOutbound::new(cfg)
                             .map_err(|e| AdapterError::Other(e.into()))?;
-                        let conn = StlConnector { inner: std::sync::Arc::new(inner) };
+                        let conn = StlConnector {
+                            inner: std::sync::Arc::new(inner),
+                        };
                         self.switchboard
                             .register(ir.name.clone().unwrap_or_else(|| "shadowtls".into()), conn)
                             .map_err(|e| AdapterError::Other(e.into()))?;
@@ -823,8 +836,7 @@ impl SwitchboardBuilder {
 
             OutboundType::Selector | OutboundType::UrlTest => {
                 return Err(AdapterError::UnsupportedProtocol(
-                    "Selector/urltest outbounds are handled via bridge/registry"
-                        .to_string(),
+                    "Selector/urltest outbounds are handled via bridge/registry".to_string(),
                 ));
             }
 
@@ -844,36 +856,68 @@ impl SwitchboardBuilder {
 
                     #[async_trait::async_trait]
                     impl OutboundConnector for SsConnector {
-                        async fn dial(&self, target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
+                        async fn dial(
+                            &self,
+                            target: Target,
+                            _opts: DialOpts,
+                        ) -> AdapterResult<BoxedStream> {
                             if target.kind != TransportKind::Tcp {
-                                return Err(AdapterError::UnsupportedProtocol("Shadowsocks UDP via switchboard not implemented".into()));
+                                return Err(AdapterError::UnsupportedProtocol(
+                                    "Shadowsocks UDP via switchboard not implemented".into(),
+                                ));
                             }
-                            let hp = crate::outbound::crypto_types::HostPort::new(target.host, target.port);
+                            let hp = crate::outbound::crypto_types::HostPort::new(
+                                target.host,
+                                target.port,
+                            );
                             let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
                             Ok(Box::new(s))
                         }
-                        fn name(&self) -> &'static str { "shadowsocks" }
+                        fn name(&self) -> &'static str {
+                            "shadowsocks"
+                        }
                     }
 
-                    use crate::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksCipher, ShadowsocksOutbound};
                     use crate::outbound::crypto_types::OutboundTcp;
-                    let server = ir.server.clone().ok_or(AdapterError::InvalidConfig("shadowsocks.server is required"))?;
-                    let port = ir.port.ok_or(AdapterError::InvalidConfig("shadowsocks.port is required"))?;
-                    let password = ir.password.clone().ok_or(AdapterError::InvalidConfig("shadowsocks.password is required"))?;
-                    let cipher = match ir.method.as_deref().unwrap_or("aes-256-gcm").to_ascii_lowercase().as_str() {
+                    use crate::outbound::shadowsocks::{
+                        ShadowsocksCipher, ShadowsocksConfig, ShadowsocksOutbound,
+                    };
+                    let server = ir.server.clone().ok_or(AdapterError::InvalidConfig(
+                        "shadowsocks.server is required",
+                    ))?;
+                    let port = ir
+                        .port
+                        .ok_or(AdapterError::InvalidConfig("shadowsocks.port is required"))?;
+                    let password = ir.password.clone().ok_or(AdapterError::InvalidConfig(
+                        "shadowsocks.password is required",
+                    ))?;
+                    let cipher = match ir
+                        .method
+                        .as_deref()
+                        .unwrap_or("aes-256-gcm")
+                        .to_ascii_lowercase()
+                        .as_str()
+                    {
                         "chacha20-poly1305" => ShadowsocksCipher::Chacha20Poly1305,
                         _ => ShadowsocksCipher::Aes256Gcm,
                     };
                     let cfg = ShadowsocksConfig::new(server, port, password, cipher);
                     let inner = ShadowsocksOutbound::new(cfg);
-                    let conn = SsConnector { inner: std::sync::Arc::new(inner) };
+                    let conn = SsConnector {
+                        inner: std::sync::Arc::new(inner),
+                    };
                     self.switchboard
-                        .register(ir.name.clone().unwrap_or_else(|| "shadowsocks".into()), conn)
+                        .register(
+                            ir.name.clone().unwrap_or_else(|| "shadowsocks".into()),
+                            conn,
+                        )
                         .map_err(|e| AdapterError::Other(e.into()))?;
                 }
                 #[cfg(not(feature = "out_ss"))]
                 {
-                    return Err(AdapterError::UnsupportedProtocol("Shadowsocks feature not enabled".into()));
+                    return Err(AdapterError::UnsupportedProtocol(
+                        "Shadowsocks feature not enabled".into(),
+                    ));
                 }
             }
 
@@ -905,15 +949,24 @@ impl Default for SwitchboardBuilder {
 // -----------------------------------------------------------------------------
 
 #[cfg(feature = "out_tuic")]
-fn tuic_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<crate::outbound::tuic::TuicConfig>> {
+fn tuic_from_ir(
+    ir: &sb_config::ir::OutboundIR,
+) -> AdapterResult<Option<crate::outbound::tuic::TuicConfig>> {
     use crate::outbound::tuic::{TuicConfig, UdpRelayMode};
-    let server = match &ir.server { Some(s) if !s.is_empty() => s.clone(), _ => return Ok(None) };
-    let port = ir.port.ok_or(AdapterError::InvalidConfig("tuic.port is required"))?;
+    let server = match &ir.server {
+        Some(s) if !s.is_empty() => s.clone(),
+        _ => return Ok(None),
+    };
+    let port = ir
+        .port
+        .ok_or(AdapterError::InvalidConfig("tuic.port is required"))?;
     let uuid = ir
         .uuid
         .as_ref()
         .ok_or(AdapterError::InvalidConfig("tuic.uuid is required"))
-        .and_then(|u| uuid::Uuid::parse_str(u).map_err(|_| AdapterError::InvalidConfig("tuic.uuid invalid")))?;
+        .and_then(|u| {
+            uuid::Uuid::parse_str(u).map_err(|_| AdapterError::InvalidConfig("tuic.uuid invalid"))
+        })?;
     let token = ir
         .token
         .as_ref()
@@ -942,13 +995,25 @@ fn tuic_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<crate::o
 }
 
 #[cfg(feature = "out_hysteria2")]
-fn hysteria2_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<crate::outbound::hysteria2::Hysteria2Config>> {
+fn hysteria2_from_ir(
+    ir: &sb_config::ir::OutboundIR,
+) -> AdapterResult<Option<crate::outbound::hysteria2::Hysteria2Config>> {
     use crate::outbound::hysteria2::{BrutalConfig, Hysteria2Config};
-    let server = match &ir.server { Some(s) if !s.is_empty() => s.clone(), _ => return Ok(None) };
-    let port = ir.port.ok_or(AdapterError::InvalidConfig("hysteria2.port is required"))?;
-    let password = ir.password.clone().ok_or(AdapterError::InvalidConfig("hysteria2.password is required"))?;
+    let server = match &ir.server {
+        Some(s) if !s.is_empty() => s.clone(),
+        _ => return Ok(None),
+    };
+    let port = ir
+        .port
+        .ok_or(AdapterError::InvalidConfig("hysteria2.port is required"))?;
+    let password = ir.password.clone().ok_or(AdapterError::InvalidConfig(
+        "hysteria2.password is required",
+    ))?;
     let brutal = match (ir.brutal_up_mbps, ir.brutal_down_mbps) {
-        (Some(up), Some(down)) => Some(BrutalConfig { up_mbps: up, down_mbps: down }),
+        (Some(up), Some(down)) => Some(BrutalConfig {
+            up_mbps: up,
+            down_mbps: down,
+        }),
         _ => None,
     };
     let alpn_list = ir.tls_alpn.clone();
@@ -972,32 +1037,37 @@ fn hysteria2_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<cra
 }
 
 #[cfg(feature = "out_shadowtls")]
-fn shadowtls_from_ir(ir: &sb_config::ir::OutboundIR) -> AdapterResult<Option<crate::outbound::shadowtls::ShadowTlsConfig>> {
+fn shadowtls_from_ir(
+    ir: &sb_config::ir::OutboundIR,
+) -> AdapterResult<Option<crate::outbound::shadowtls::ShadowTlsConfig>> {
     use crate::outbound::shadowtls::ShadowTlsConfig;
-    let server = match &ir.server { Some(s) if !s.is_empty() => s.clone(), _ => return Ok(None) };
-    let port = ir.port.ok_or(AdapterError::InvalidConfig("shadowtls.port is required"))?;
+    let server = match &ir.server {
+        Some(s) if !s.is_empty() => s.clone(),
+        _ => return Ok(None),
+    };
+    let port = ir
+        .port
+        .ok_or(AdapterError::InvalidConfig("shadowtls.port is required"))?;
     let sni = ir.tls_sni.clone().unwrap_or(server.clone());
     Ok(Some(ShadowTlsConfig {
         server,
         port,
         sni,
-        alpn: ir
-            .tls_alpn
-            .clone()
-            .or_else(|| {
-                ir.alpn.as_ref().map(|raw| {
-                    raw.split(',')
-                        .map(|x| x.trim().to_string())
-                        .filter(|x| !x.is_empty())
-                        .collect::<Vec<String>>()
-                })
-            }),
+        alpn: ir.tls_alpn.clone().or_else(|| {
+            ir.alpn.as_ref().map(|raw| {
+                raw.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect::<Vec<String>>()
+            })
+        }),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
     }))
 }
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     #[cfg(feature = "scaffold")]
@@ -1075,13 +1145,11 @@ mod tests {
 
     #[cfg(feature = "out_wireguard")]
     #[test]
-    fn registers_udp_factory_for_wireguard_stub() {
+    fn registers_udp_factory_for_wireguard() {
         use sb_config::ir::{ConfigIR, OutboundIR, OutboundType};
 
         // Ensure required env vars are set for WireGuardConfig validation
-        std::env::set_var("SB_WIREGUARD_PRIVATE_KEY", "test-private-key");
-        std::env::set_var("SB_WIREGUARD_PUBLIC_KEY", "test-public-key");
-        std::env::set_var("SB_WIREGUARD_PEER_PUBLIC_KEY", "test-peer-public-key");
+        std::env::set_var("SB_WIREGUARD_INTERFACE", "wg-test");
 
         let mut ir = ConfigIR::default();
         ir.outbounds.push(OutboundIR {
@@ -1404,7 +1472,9 @@ impl OutboundConnector for TrojanConnector {
                 .build()
                 .connect(this.server.as_str(), this.port)
                 .await
-                .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+                .map_err(|e| {
+                    AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e)))
+                })?;
             let hp = Hp::new(target.host.clone(), target.port);
             crate::outbound::trojan::TrojanOutbound::handshake_on(&this.password, &hp, &mut *s)
                 .await
@@ -1435,7 +1505,10 @@ impl OutboundConnector for TrojanConnector {
                 ob.http_upgrade_headers = self
                     .http_upgrade_headers
                     .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
                     .collect();
                 ob.grpc_service = self.grpc_service.clone();
                 ob.grpc_method = self.grpc_method.clone();
@@ -1443,7 +1516,10 @@ impl OutboundConnector for TrojanConnector {
                 ob.grpc_metadata = self
                     .grpc_metadata
                     .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
                     .collect();
 
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
@@ -1462,7 +1538,8 @@ impl OutboundConnector for TrojanConnector {
                         "reason"=>"primary_failed",
                         "mode"=>mode.clone(),
                         "result"=>"attempt"
-                    ).increment(1);
+                    )
+                    .increment(1);
                     if let Ok(s) = attempt(self, &target, Some(&alt)).await {
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
@@ -1470,7 +1547,8 @@ impl OutboundConnector for TrojanConnector {
                             "reason"=>"primary_failed",
                             "mode"=>mode,
                             "result"=>"ok"
-                        ).increment(1);
+                        )
+                        .increment(1);
                         return Ok(s);
                     }
                     #[cfg(feature = "metrics")]
@@ -1479,7 +1557,8 @@ impl OutboundConnector for TrojanConnector {
                         "reason"=>"primary_failed",
                         "mode"=>mode,
                         "result"=>"fail"
-                    ).increment(1);
+                    )
+                    .increment(1);
                 }
                 Err(e)
             }
@@ -1580,7 +1659,9 @@ impl OutboundConnector for VlessConnector {
                 .build()
                 .connect(this.server.as_str(), this.port)
                 .await
-                .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+                .map_err(|e| {
+                    AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e)))
+                })?;
             let id = uuid::Uuid::parse_str(&this.uuid)
                 .map_err(|_| AdapterError::InvalidConfig("vless uuid parse"))?;
             let cfg = VlessConfig {
@@ -1591,8 +1672,8 @@ impl OutboundConnector for VlessConnector {
                 encryption: Some("none".into()),
                 ..Default::default()
             };
-            let outbound = VlessOutbound::new(cfg)
-                .map_err(|_| AdapterError::InvalidConfig("vless config"))?;
+            let outbound =
+                VlessOutbound::new(cfg).map_err(|_| AdapterError::InvalidConfig("vless config"))?;
             let hp = Hp::new(target.host.clone(), target.port);
             outbound
                 .do_handshake_on(&hp, &mut *s)
@@ -1607,7 +1688,9 @@ impl OutboundConnector for VlessConnector {
                 let enabled = std::env::var("SB_TRANSPORT_FALLBACK")
                     .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                     .unwrap_or(true);
-                if !enabled { return Err(e); }
+                if !enabled {
+                    return Err(e);
+                }
                 let mut ob = sb_config::ir::OutboundIR::default();
                 ob.transport = self.transport.clone();
                 ob.ws_path = self.ws_path.clone();
@@ -1620,7 +1703,10 @@ impl OutboundConnector for VlessConnector {
                 ob.http_upgrade_headers = self
                     .http_upgrade_headers
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
                     .collect();
                 ob.grpc_service = self.grpc_service.clone();
                 ob.grpc_method = self.grpc_method.clone();
@@ -1628,7 +1714,10 @@ impl OutboundConnector for VlessConnector {
                 ob.grpc_metadata = self
                     .grpc_metadata
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
                     .collect();
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {
@@ -1639,7 +1728,8 @@ impl OutboundConnector for VlessConnector {
                         "reason"=>"primary_failed",
                         "mode"=>alt.join("->"),
                         "result"=>"attempt"
-                    ).increment(1);
+                    )
+                    .increment(1);
                     if let Ok(s) = attempt(self, &target, Some(&alt)).await {
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
@@ -1647,7 +1737,8 @@ impl OutboundConnector for VlessConnector {
                             "reason"=>"primary_failed",
                             "mode"=>alt.join("->"),
                             "result"=>"ok"
-                        ).increment(1);
+                        )
+                        .increment(1);
                         return Ok(s);
                     }
                     #[cfg(feature = "metrics")]
@@ -1656,7 +1747,8 @@ impl OutboundConnector for VlessConnector {
                         "reason"=>"primary_failed",
                         "mode"=>alt.join("->"),
                         "result"=>"fail"
-                    ).increment(1);
+                    )
+                    .increment(1);
                 }
                 Err(e)
             }
@@ -1703,7 +1795,9 @@ impl OutboundConnector for VmessConnector {
                 .build()
                 .connect(this.server.as_str(), this.port)
                 .await
-                .map_err(|e| AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e))))?;
+                .map_err(|e| {
+                    AdapterError::Other(anyhow::anyhow!(format!("transport dial failed: {}", e)))
+                })?;
             // Build outbound and perform handshake for each attempt
             let id = uuid::Uuid::parse_str(&this.uuid)
                 .map_err(|_| AdapterError::InvalidConfig("vmess uuid parse"))?;
@@ -1731,7 +1825,9 @@ impl OutboundConnector for VmessConnector {
                 let enabled = std::env::var("SB_TRANSPORT_FALLBACK")
                     .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                     .unwrap_or(true);
-                if !enabled { return Err(e); }
+                if !enabled {
+                    return Err(e);
+                }
                 let mut ob = sb_config::ir::OutboundIR::default();
                 ob.transport = self.transport.clone();
                 ob.ws_path = self.ws_path.clone();
@@ -1744,7 +1840,10 @@ impl OutboundConnector for VmessConnector {
                 ob.http_upgrade_headers = self
                     .http_upgrade_headers
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
                     .collect();
                 ob.grpc_service = self.grpc_service.clone();
                 ob.grpc_method = self.grpc_method.clone();
@@ -1752,7 +1851,10 @@ impl OutboundConnector for VmessConnector {
                 ob.grpc_metadata = self
                     .grpc_metadata
                     .iter()
-                    .map(|(k,v)| sb_config::ir::HeaderEntry { key: k.clone(), value: v.clone() })
+                    .map(|(k, v)| sb_config::ir::HeaderEntry {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
                     .collect();
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {
@@ -1764,7 +1866,8 @@ impl OutboundConnector for VmessConnector {
                         "reason"=>"primary_failed",
                         "mode"=>mode.clone(),
                         "result"=>"attempt"
-                    ).increment(1);
+                    )
+                    .increment(1);
                     if let Ok(s) = attempt(self, &target, Some(&alt)).await {
                         #[cfg(feature = "metrics")]
                         metrics::counter!(
@@ -1772,7 +1875,8 @@ impl OutboundConnector for VmessConnector {
                             "reason"=>"primary_failed",
                             "mode"=>mode,
                             "result"=>"ok"
-                        ).increment(1);
+                        )
+                        .increment(1);
                         return Ok(s);
                     }
                     #[cfg(feature = "metrics")]
@@ -1781,7 +1885,8 @@ impl OutboundConnector for VmessConnector {
                         "reason"=>"primary_failed",
                         "mode"=>mode,
                         "result"=>"fail"
-                    ).increment(1);
+                    )
+                    .increment(1);
                 }
                 Err(e)
             }
