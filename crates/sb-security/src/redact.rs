@@ -1,7 +1,14 @@
-//! Credential redaction utilities for secure logging
+//! # Credential Redaction Utilities (凭证脱敏工具)
 //!
 //! This module provides functions to safely redact sensitive information
 //! from log messages, preventing credential leakage in log files.
+//! 本模块提供从日志消息中安全脱敏敏感信息的功能，防止凭证在日志文件中泄露。
+//!
+//! ## Usage Context (使用场景)
+//!
+//! - **Logging**: Wrap sensitive data in `RedactedString` before logging. (日志记录：在记录前将敏感数据包装在 `RedactedString` 中)
+//! - **Error Reporting**: Ensure secrets don't appear in error traces. (错误报告：确保机密信息不会出现在错误堆栈中)
+//! - **Display**: Safe `Display` implementation for sensitive types. (显示：为敏感类型提供安全的 `Display` 实现)
 
 use std::fmt;
 

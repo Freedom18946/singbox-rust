@@ -35,6 +35,7 @@ fn test_resolved_service_creation() {
         derp_stun_listen_port: None,
         derp_tls_cert_path: None,
         derp_tls_key_path: None,
+        derp_server_key_path: None,
     };
 
     let ctx = ServiceContext::default();
@@ -46,7 +47,7 @@ fn test_resolved_service_creation() {
     assert_eq!(service.tag(), "test-resolved");
 }
 
-#[cfg(all(target_os = "linux", feature = "service-resolved"))]
+#[cfg(all(target_os = "linux", feature = "service_resolved"))]
 #[tokio::test]
 async fn test_resolved_service_lifecycle() {
     use tokio::time::{sleep, Duration};
@@ -75,6 +76,7 @@ async fn test_resolved_service_lifecycle() {
         derp_stun_listen_port: None,
         derp_tls_cert_path: None,
         derp_tls_key_path: None,
+        derp_server_key_path: None,
     };
 
     let ctx = ServiceContext::default();
@@ -112,7 +114,7 @@ async fn test_resolved_service_lifecycle() {
     }
 }
 
-#[cfg(all(target_os = "linux", feature = "service-resolved"))]
+#[cfg(all(target_os = "linux", feature = "service_resolved"))]
 #[tokio::test]
 #[ignore = "requires systemd-resolved and may need elevated permissions"]
 async fn test_resolved_dns_query() {
@@ -145,6 +147,7 @@ async fn test_resolved_dns_query() {
         derp_stun_listen_port: None,
         derp_tls_cert_path: None,
         derp_tls_key_path: None,
+        derp_server_key_path: None,
     };
 
     let ctx = ServiceContext::default();
@@ -250,6 +253,7 @@ fn test_resolved_service_stub_on_unsupported_platform() {
         derp_stun_listen_port: None,
         derp_tls_cert_path: None,
         derp_tls_key_path: None,
+        derp_server_key_path: None,
     };
 
     let ctx = ServiceContext::default();
@@ -257,7 +261,7 @@ fn test_resolved_service_stub_on_unsupported_platform() {
 
     assert!(service.is_some(), "Stub service should always be built");
 
-    #[cfg(not(all(target_os = "linux", feature = "service-resolved")))]
+    #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
     {
         // On unsupported platforms, starting should fail with helpful error
         let service = service.unwrap();

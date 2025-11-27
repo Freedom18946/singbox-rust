@@ -1,4 +1,13 @@
 //! Clash API server implementation
+//! Clash API 服务器实现
+//!
+//! # Strategic Role / 战略角色
+//!
+//! This module implements the HTTP server that mimics the Clash API.
+//! It allows singbox-rust to be managed by any Clash-compatible dashboard (e.g., Yacd, Metacubexd).
+//!
+//! 本模块实现了模拟 Clash API 的 HTTP 服务器。
+//! 它允许 singbox-rust 被任何兼容 Clash 的仪表盘（例如 Yacd, Metacubexd）管理。
 
 use crate::managers::{ConnectionManager, DnsResolver, ProviderManager};
 use crate::{
@@ -17,6 +26,10 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 
 /// Clash API server state shared across handlers
+/// 跨处理程序共享的 Clash API 服务器状态
+///
+/// Holds references to all the core managers needed to service API requests.
+/// 持有服务 API 请求所需的所有核心管理器的引用。
 #[derive(Clone)]
 pub struct ApiState {
     /// Configuration for the API server
@@ -95,6 +108,10 @@ impl ApiState {
 }
 
 /// Clash API server
+/// Clash API 服务器
+///
+/// The main entry point for the API service. It sets up the Axum router and binds to the listening address.
+/// API 服务的主要入口点。它设置 Axum 路由器并绑定到监听地址。
 pub struct ClashApiServer {
     state: ApiState,
     listen_addr: SocketAddr,

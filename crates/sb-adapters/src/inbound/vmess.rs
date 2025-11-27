@@ -1,17 +1,29 @@
 //! VMess AEAD inbound (TCP) server implementation
+//! VMess AEAD 入站 (TCP) 服务端实现
 //!
 //! Minimal VMess server supporting:
+//! 最小化 VMess 服务端，支持：
 //! - UUID-based authentication (HMAC validation)
+//! - 基于 UUID 的认证 (HMAC 验证)
 //! - AEAD encryption (AES-128-GCM, ChaCha20-Poly1305)
+//! - AEAD 加密 (AES-128-GCM, ChaCha20-Poly1305)
 //! - Target address parsing and routing
+//! - 目标地址解析和路由
 //! - Bidirectional encrypted relay
+//! - 双向加密转发
 //!
 //! Protocol flow:
+//! 协议流程：
 //! 1. Client sends auth header: timestamp (8 bytes) + HMAC(UUID, timestamp) (16 bytes)
+//! 1. 客户端发送认证头：时间戳 (8 字节) + HMAC(UUID, 时间戳) (16 字节)
 //! 2. Server validates HMAC
+//! 2. 服务端验证 HMAC
 //! 3. Client sends encrypted request (target address + security type + padding)
+//! 3. 客户端发送加密请求 (目标地址 + 安全类型 + 填充)
 //! 4. Server sends response tag (16 bytes)
+//! 4. 服务端发送响应标签 (16 字节)
 //! 5. Bidirectional encrypted relay
+//! 5. 双向加密转发
 
 use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce as AesNonce};
 use anyhow::{anyhow, Result};
@@ -45,9 +57,12 @@ pub struct VmessInboundConfig {
     pub security: String, // "aes-128-gcm" or "chacha20-poly1305"
     pub router: Arc<router::RouterHandle>,
     /// Optional Multiplex configuration
+    /// 可选的多路复用配置
     pub multiplex: Option<sb_transport::multiplex::MultiplexServerConfig>,
     /// V2Ray transport layer configuration (WebSocket, gRPC, HTTPUpgrade)
     /// If None, defaults to TCP
+    /// V2Ray 传输层配置 (WebSocket, gRPC, HTTPUpgrade)
+    /// 如果为 None，默认为 TCP
     pub transport_layer: Option<crate::transport_config::TransportConfig>,
 }
 
@@ -68,6 +83,7 @@ impl SecurityMethod {
 }
 
 // VMess protocol constants
+// VMess 协议常量
 const AUTH_HEADER_LEN: usize = 24; // 8 bytes timestamp + 16 bytes HMAC
 const RESPONSE_TAG_LEN: usize = 16;
 
@@ -76,6 +92,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         .ok_or_else(|| anyhow!("Unsupported VMess security: {}", cfg.security))?;
 
     // Create listener based on transport configuration (defaults to TCP if not specified)
+    // 根据传输配置创建监听器 (如果未指定则默认为 TCP)
     let transport = cfg.transport_layer.clone().unwrap_or_default();
     let listener = transport.create_inbound_listener(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
@@ -91,6 +108,8 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     // Note: Multiplex support for VMess inbound is configured but not yet fully implemented
     // VMess protocol has its own encryption layer, and multiplex integration would require
     // careful coordination with the VMess protocol state machine
+    // 注意：VMess 入站的多路复用支持已配置，但尚未完全实现
+    // VMess 协议有自己的加密层，多路复用集成需要与 VMess 协议状态机仔细协调
     if cfg.multiplex.is_some() {
         warn!("Multiplex configuration present but not yet fully implemented for VMess inbound");
     }
@@ -101,7 +120,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
             _ = stop_rx.recv() => break,
             _ = hb.tick() => { debug!("vmess: accept-loop heartbeat"); }
             r = listener.accept() => {
-                let mut stream = match r {
+                let (mut stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vmess: accept error");
@@ -115,6 +134,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
                 tokio::spawn(async move {
                     // Use &mut *stream to dereference Box<dyn InboundStream>
+                    // 使用 &mut *stream 解引用 Box<dyn InboundStream>
                     if let Err(e) = handle_conn_stream(&cfg_clone, security_clone, &mut *stream).await {
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("vmess", &e);
@@ -129,6 +149,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 }
 
 // Helper function to handle connections from generic streams (trait objects)
+// 处理来自通用流 (trait 对象) 连接的辅助函数
 async fn handle_conn_stream(
     cfg: &VmessInboundConfig,
     security: SecurityMethod,
@@ -143,6 +164,7 @@ async fn handle_conn(
     cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
 ) -> Result<()> {
     // Step 1: Read and validate authentication header
+    // 步骤 1: 读取并验证认证头
     let mut auth_header = [0u8; AUTH_HEADER_LEN];
     cli.read_exact(&mut auth_header).await?;
 
@@ -150,6 +172,7 @@ async fn handle_conn(
     let received_hmac = &auth_header[8..];
 
     // Validate timestamp (within 2 minutes)
+    // 验证时间戳 (2 分钟内)
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -159,6 +182,7 @@ async fn handle_conn(
     }
 
     // Validate HMAC
+    // 验证 HMAC
     let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(cfg.uuid.as_bytes())
         .map_err(|e| anyhow!("HMAC init error: {}", e))?;
     mac.update(&auth_header[..8]); // Hash timestamp only
@@ -171,22 +195,26 @@ async fn handle_conn(
     debug!("vmess: authentication successful");
 
     // Step 2: Read encrypted request
+    // 步骤 2: 读取加密请求
     let request_key = generate_request_key(&cfg.uuid);
     let encrypted_request = read_encrypted_request(cli).await?;
     let request = decrypt_request(&security, &request_key, &encrypted_request)?;
 
     // Step 3: Parse request
+    // 步骤 3: 解析请求
     let (target_host, target_port, _request_security) = parse_vmess_request(&request)?;
 
     debug!(host=%target_host, port=%target_port, "vmess: parsed target");
 
     // Step 4: Send response tag
+    // 步骤 4: 发送响应标签
     let response_key = generate_response_key(&cfg.uuid);
     let response_tag = generate_response_tag(&request_key, &response_key)?;
     debug_assert_eq!(response_tag.len(), RESPONSE_TAG_LEN);
     cli.write_all(&response_tag).await?;
 
     // Step 5: Router decision
+    // 步骤 5: 路由决策
     let mut decision = RDecision::Direct;
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
@@ -209,6 +237,7 @@ async fn handle_conn(
     }
 
     // Step 6: Connect to upstream
+    // 步骤 6: 连接上游
     let proxy = default_proxy();
     let opts = ConnectOpts::default();
     let mut upstream = match decision {
@@ -218,6 +247,7 @@ async fn handle_conn(
             if let Some(reg) = registry::global() {
                 if let Some(_pool) = reg.pools.get(&name) {
                     // Use a dummy peer address for pool selection (transport layer abstraction means we don't have the real peer)
+                    // 使用虚拟对等地址进行池选择 (传输层抽象意味着我们没有真正的对等端)
                     let dummy_peer = SocketAddr::from(([0, 0, 0, 0], 0));
                     if let Some(ep) = sel.select(
                         &name,
@@ -262,6 +292,9 @@ async fn handle_conn(
     // Step 7: Bidirectional relay
     // Note: VMess AEAD encryption/decryption is handled in the protocol layer
     // The stream here is already decrypted by the VMess protocol handler
+    // 步骤 7: 双向转发
+    // 注意：VMess AEAD 加密/解密在协议层处理
+    // 这里的流已经被 VMess 协议处理程序解密
     let _ = tokio::io::copy_bidirectional(cli, &mut upstream).await;
 
     Ok(())
@@ -306,6 +339,7 @@ fn generate_response_key(uuid: &Uuid) -> [u8; 16] {
 
 fn generate_response_tag(request_key: &[u8; 16], response_key: &[u8; 16]) -> Result<[u8; 16]> {
     // Simplified response tag generation
+    // 简化的响应标签生成
     let mut hasher = Sha256::new();
     hasher.update(request_key);
     hasher.update(response_key);
@@ -320,10 +354,13 @@ async fn read_encrypted_request(
 ) -> Result<Vec<u8>> {
     // Read nonce (12 bytes) + encrypted data
     // For AES-128-GCM: nonce (12) + ciphertext + tag (16)
+    // 读取 nonce (12 字节) + 加密数据
+    // 对于 AES-128-GCM: nonce (12) + 密文 + tag (16)
     let mut nonce = [0u8; 12];
     r.read_exact(&mut nonce).await?;
 
     // Read ciphertext + tag (variable length, max 512 bytes for request)
+    // 读取密文 + tag (可变长度，请求最大 512 字节)
     let mut encrypted = vec![0u8; 512];
     let n = r.read(&mut encrypted).await?;
     encrypted.truncate(n);

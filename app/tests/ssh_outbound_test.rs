@@ -1,7 +1,5 @@
 //! Test for SSH outbound adapter registration and instantiation.
 
-use sb_config::ir::{Credentials, OutboundIR, OutboundType};
-use sb_core::adapter::OutboundParam;
 
 #[test]
 fn test_ssh_outbound_registration() {

@@ -102,6 +102,7 @@ fn sni_drives_routing_decision() {
             protocol: "tun",
             sniff_host: None,
             sniff_alpn: None,
+            sniff_protocol: None,
         },
         false,
     );

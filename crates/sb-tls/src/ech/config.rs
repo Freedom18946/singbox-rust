@@ -5,11 +5,14 @@
 use serde::{Deserialize, Serialize};
 
 /// ECH keypair (X25519 for HPKE)
+/// ECH 密钥对 (用于 HPKE 的 X25519)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EchKeypair {
     /// Private key (32 bytes, base64 encoded in config)
+    /// 私钥（32 字节，在配置中进行 base64 编码）
     pub private_key: Vec<u8>,
     /// Public key (32 bytes, base64 encoded in config)
+    /// 公钥（32 字节，在配置中进行 base64 编码）
     pub public_key: Vec<u8>,
 }
 
@@ -24,9 +27,12 @@ impl EchKeypair {
     }
 
     /// Create from base64-encoded strings (sing-box format)
+    /// 从 base64 编码的字符串创建（sing-box 格式）
     ///
     /// # Errors
+    /// # 错误
     /// Returns error if base64 decoding fails or key lengths are invalid
+    /// 如果 base64 解码失败或密钥长度无效，则返回错误
     pub fn from_base64(private_b64: &str, public_b64: &str) -> Result<Self, super::EchError> {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::STANDARD;
@@ -76,26 +82,33 @@ impl EchKeypair {
 }
 
 /// ECH client configuration
+/// ECH 客户端配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EchClientConfig {
     /// Enable ECH
+    /// 启用 ECH
     #[serde(default)]
     pub enabled: bool,
 
     /// ECH configuration list (base64 encoded)
+    /// ECH 配置列表（base64 编码）
     /// This is typically obtained from DNS TXT records or server configuration
+    /// 这通常从 DNS TXT 记录或服务器配置中获取
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
 
     /// ECH configuration list (raw bytes)
+    /// ECH 配置列表（原始字节）
     #[serde(skip)]
     pub config_list: Option<Vec<u8>>,
 
     /// Enable post-quantum signature schemes
+    /// 启用后量子签名方案
     #[serde(default)]
     pub pq_signature_schemes_enabled: bool,
 
     /// Dynamic record sizing hint
+    /// 动态记录大小提示
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_record_sizing_disabled: Option<bool>,
 }
@@ -153,17 +166,21 @@ impl EchClientConfig {
 }
 
 /// ECH server configuration
+/// ECH 服务端配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EchServerConfig {
     /// Enable ECH
+    /// 启用 ECH
     #[serde(default)]
     pub enabled: bool,
 
     /// Server keypair for ECH
+    /// ECH 服务端密钥对
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keypair: Option<EchKeypair>,
 
     /// ECH configuration to advertise (base64 encoded)
+    /// 要通告的 ECH 配置（base64 编码）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
 }

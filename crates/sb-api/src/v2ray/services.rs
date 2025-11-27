@@ -1,4 +1,13 @@
 //! V2Ray API gRPC service implementations
+//! V2Ray API gRPC 服务实现
+//!
+//! # Strategic Role / 战略角色
+//!
+//! Implements the specific logic for each V2Ray gRPC service. These services map V2Ray's
+//! protobuf definitions to singbox-rust's internal managers.
+//!
+//! 实现每个 V2Ray gRPC 服务的具体逻辑。这些服务将 V2Ray 的 protobuf 定义映射到
+//! singbox-rust 的内部管理器。
 
 use crate::v2ray::generated::*;
 use sb_core::inbound::InboundManager;
@@ -54,6 +63,10 @@ where
 }
 
 /// Stats service implementation
+/// 统计服务实现
+///
+/// Handles traffic statistics queries. Used by dashboards to show real-time traffic data.
+/// 处理流量统计查询。被仪表盘用于显示实时流量数据。
 pub struct StatsServiceImpl {
     stats: Arc<Mutex<HashMap<String, i64>>>,
 }
@@ -172,7 +185,11 @@ impl StatsService for StatsServiceImpl {
 }
 
 /// Handler service implementation for managing inbound/outbound proxies
-/// Handler service implementation with inbound/outbound management
+/// Handler service implementation for managing inbound/outbound proxies
+/// 用于管理入站/出站代理的处理程序服务实现
+///
+/// Allows dynamic addition/removal/modification of inbounds and outbounds at runtime.
+/// 允许在运行时动态添加/删除/修改入站和出站。
 pub struct HandlerServiceImpl {
     inbound_manager: InboundManager,
     outbound_manager: OutboundManager,
@@ -341,6 +358,10 @@ impl HandlerService for HandlerServiceImpl {
 }
 
 /// Router service implementation for routing management
+/// 用于路由管理的路由服务实现
+///
+/// Provides capabilities to test routing rules and subscribe to routing decisions.
+/// 提供测试路由规则和订阅路由决策的能力。
 pub struct RouterServiceImpl {
     routing_broadcast: broadcast::Sender<RoutingContext>,
 }
@@ -406,6 +427,10 @@ impl RoutingService for RouterServiceImpl {
 }
 
 /// Logger service implementation for log management
+/// 用于日志管理的日志服务实现
+///
+/// Allows clients to stream logs via gRPC.
+/// 允许客户端通过 gRPC 流式传输日志。
 pub struct LoggerServiceImpl {
     log_broadcast: broadcast::Sender<LogEntry>,
 }

@@ -1,73 +1,106 @@
 //! Core handshake traits and deterministic helpers (offline-only).
 //!
+//! # Purpose / 目的
+//!
+//! Only used for shape/length/reproducibility verification, no real encryption or IO.
 //! 仅用于 shape/长度/可复现性校验，不做真实加密或 IO。
 //!
-//! # 设计目标
-//! - 提供确定性的握手模拟（基于 seed 的可重现性）
-//! - 支持多种协议的握手接口抽象
-//! - 离线测试和协议验证
+//! # Design Goals / 设计目标
+//!
+//! - **Deterministic Handshake Simulation**: Reproducibility based on seeds.
+//! - **Protocol Abstraction**: Unified interface for different protocols.
+//! - **Offline Verification**: Test without network.
+//!
+//! - **确定性握手模拟**: 基于 seed 的可重现性。
+//! - **协议抽象**: 支持多种协议的握手接口抽象。
+//! - **离线测试和协议验证**: 无需网络即可测试。
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// 统一的握手接口（alpha）
+/// Unified Handshake Interface (Alpha) / 统一的握手接口（Alpha）
+///
+/// This trait defines the two key stages of a protocol handshake:
+/// 1. Client initialization message encoding.
+/// 2. Server acknowledgement message decoding and verification.
 ///
 /// 此 trait 定义了协议握手的两个关键阶段：
-/// 1. 客户端初始化消息编码
-/// 2. 服务端确认消息解码验证
+/// 1. 客户端初始化消息编码。
+/// 2. 服务端确认消息解码验证。
 ///
-/// # 实现要求
-/// - `encode_init` 必须是确定性的（相同 seed 产生相同输出）
-/// - `decode_ack` 只做结构/长度校验，不做真实解密
+/// # Implementation Requirements / 实现要求
+///
+/// - `encode_init` MUST be deterministic (same seed produces same output).
+/// - `decode_ack` SHOULD only verify structure/length, not real decryption.
+///
+/// - `encode_init` 必须是确定性的（相同 seed 产生相同输出）。
+/// - `decode_ack` 只做结构/长度校验，不做真实解密。
 pub trait Handshake {
-    /// 依据 proto 上下文与 seed 生成首发报文（deterministic）
+    /// Generate initial packet based on proto context and seed (deterministic).
+    /// 依据 proto 上下文与 seed 生成首发报文（deterministic）。
     ///
-    /// # 参数
-    /// - `seed`: 用于生成确定性随机数据的种子
+    /// # Arguments / 参数
     ///
-    /// # 返回
-    /// 初始化握手消息的字节序列
+    /// - `seed`: Seed for deterministic random data generation. / 用于生成确定性随机数据的种子。
+    ///
+    /// # Returns / 返回
+    ///
+    /// Byte sequence of the initialization handshake message.
+    /// 初始化握手消息的字节序列。
     #[must_use]
     fn encode_init(&self, seed: u64) -> Vec<u8>;
 
-    /// 校验并解析对端 ACK（这里仅做结构/长度校验）
+    /// Verify and parse peer ACK (Structure/Length check only).
+    /// 校验并解析对端 ACK（这里仅做结构/长度校验）。
     ///
-    /// # 参数
-    /// - `ack`: 服务端返回的确认消息
+    /// # Arguments / 参数
     ///
-    /// # 错误
-    /// 当消息格式不符合协议规范时返回错误
+    /// - `ack`: Acknowledgement message returned by the server. / 服务端返回的确认消息。
+    ///
+    /// # Errors / 错误
+    ///
+    /// Returns error if message format does not match protocol specification.
+    /// 当消息格式不符合协议规范时返回错误。
     fn decode_ack(&self, ack: &[u8]) -> Result<()>;
 }
 
-/// 伪混淆器接口（alpha）
+/// Pseudo-Obfuscator Interface (Alpha) / 伪混淆器接口（Alpha）
 ///
+/// Used for traffic obfuscation simulation in test scenarios, providing NO real encryption protection.
 /// 用于测试场景中的流量混淆模拟，不提供真实的加密保护。
 pub trait Obfuscator {
-    /// 对数据进行就地混淆/解混淆
+    /// Obfuscate/De-obfuscate data in-place.
+    /// 对数据进行就地混淆/解混淆。
     ///
-    /// # 参数
-    /// - `inout`: 需要处理的数据（原地修改）
+    /// # Arguments / 参数
+    ///
+    /// - `inout`: Data to be processed (modified in-place). / 需要处理的数据（原地修改）。
     fn apply(&mut self, inout: &mut [u8]);
 }
 
-/// 统一输入（不含 IO）
+/// Unified Input (No IO) / 统一输入（不含 IO）
 ///
-/// 协议握手所需的基本上下文信息
+/// Basic context information required for protocol handshake.
+/// 协议握手所需的基本上下文信息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtoCtx {
-    /// 目标主机名或 IP
+    /// Target hostname or IP. / 目标主机名或 IP。
     pub host: String,
-    /// 目标端口
+    /// Target port. / 目标端口。
     pub port: u16,
 }
 
-/// 简单 xorshift64* PRNG（与 CLI 保持一致）
+/// Simple xorshift64* PRNG (Consistent with CLI) / 简单 xorshift64* PRNG（与 CLI 保持一致）
+///
+/// This is a fast pseudo-random number generator for test scenarios.
+/// **NOTE**: Not suitable for cryptographic scenarios, only for deterministic test data generation.
 ///
 /// 这是一个快速的伪随机数生成器，用于测试场景。
 /// **注意**：不适用于加密场景，仅用于确定性测试数据生成。
 ///
-/// # 算法
-/// 使用 xorshift64* 算法，周期为 2^64 - 1
+/// # Algorithm / 算法
+///
+/// Uses xorshift64* algorithm with a period of 2^64 - 1.
+/// 使用 xorshift64* 算法，周期为 2^64 - 1。
 #[inline]
 #[must_use]
 pub fn xorshift64star(mut x: u64) -> u64 {
@@ -77,8 +110,10 @@ pub fn xorshift64star(mut x: u64) -> u64 {
     x.wrapping_mul(0x2545_F491_4F6C_DD1D)
 }
 
-/// 从 seed 派生固定长度字节（用于占位字段）
+/// Derive fixed-length bytes from seed (for placeholder fields).
+/// 从 seed 派生固定长度字节（用于占位字段）。
 ///
+/// Uses `xorshift64star` PRNG to generate deterministic byte sequences.
 /// 使用 `xorshift64star` PRNG 生成确定性的字节序列。
 ///
 /// # 参数

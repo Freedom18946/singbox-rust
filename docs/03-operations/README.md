@@ -500,6 +500,72 @@ perf report
 
 See [Troubleshooting Guide](../01-user-guide/troubleshooting.md).
 
+### P0 Protocol Troubleshooting
+
+**REALITY TLS**:
+
+- **Authentication failures**: Verify `public_key` and `short_id` match server configuration. Use `sing-box generate reality-keypair` to generate compatible keys.
+- **Handshake errors**: Ensure `server_name` matches a valid target domain. REALITY requires a real target server for fallback.
+- **Config validation**: Public key must be 64 hex characters, short_id must be 0-16 hex characters.
+
+**ECH (Encrypted Client Hello)**:
+
+- **Config format**: ECH config must be base64-encoded ECHConfigList. Generate with `sing-box generate ech-keypair`.
+- **Handshake failures**: Verify server supports ECH. Check `pq_signature_schemes_enabled` if using post-quantum crypto.
+- **SNI encryption**: ECH encrypts SNI in ClientHello. Verify with packet capture if needed.
+
+**Hysteria v1/v2**:
+
+- **Connection failures**: Check `up_mbps` and `down_mbps` settings. Hysteria requires bandwidth configuration.
+- **Authentication errors**: Verify password/obfs settings match server. Hysteria v2 uses password auth, v1 uses obfs.
+- **UDP relay issues**: Ensure `udp: true` is set on inbound. Check NAT table capacity with metrics.
+- **Salamander obfuscation** (v2): Password must match on both client and server for obfuscation to work.
+
+**SSH Outbound**:
+
+- **Host key verification failures**: Add server to `known_hosts` or set `host_key_verification: false` (insecure).
+- **Authentication errors**: Verify username/password or private key path. Check key permissions (should be 600).
+- **Private key format**: Supports OpenSSH and PEM formats. Use `private_key_passphrase` for encrypted keys.
+- **Connection pooling**: Adjust `connection_pool_size` (default 5) based on concurrent connection needs.
+
+**TUIC**:
+
+- **UUID format**: Must be valid UUID v4 format (e.g., `550e8400-e29b-41d4-a716-446655440000`).
+- **Congestion control**: Supports `cubic`, `new_reno`, `bbr`. Match server configuration.
+- **UDP over stream**: Set `udp_over_stream: true` to tunnel UDP over TCP streams.
+- **Zero-RTT**: Enable `zero_rtt_handshake: true` for faster connection establishment (less secure).
+
+**General TLS Issues**:
+
+- **Certificate verification**: Use `skip_cert_verify: true` only for testing. Production should use valid certificates.
+- **ALPN negotiation**: Specify `alpn` array (e.g., `["h2", "http/1.1"]`) to match server requirements.
+- **SNI**: Set `sni` field to match server certificate. Required for most TLS configurations.
+
+### Probe a layered outbound (VMess/VLESS/Trojan)
+
+Build with router and enable desired sb-core features:
+
+```
+cargo run -p app --features "router,sb-core/out_vmess,sb-core/out_vless,sb-core/out_trojan,sb-core/v2ray_transport" --bin probe-outbound -- \
+  --config config.yaml --outbound my-vmess --target example.com:80
+```
+
+Config example (VMess with TLS+WebSocket):
+
+```yaml
+schema_version: 2
+outbounds:
+  - type: vmess
+    name: my-vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    transport: [tls, ws]
+    ws_path: /ws
+    ws_host: cdn.example.com
+    tls_sni: cdn.example.com
+```
+
 ---
 
 ## Backup and Recovery

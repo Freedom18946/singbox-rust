@@ -233,11 +233,11 @@ impl ClientRegistry {
     pub fn unregister_mesh_peer(&self, peer_key: &PublicKey) {
         let mut peers = self.mesh_peers.write();
         peers.remove(peer_key);
-        
+
         // Also remove all remote clients associated with this peer
         let mut remote = self.remote_clients.write();
         remote.retain(|_, p| p != peer_key);
-        
+
         tracing::info!(service = "derp", peer = ?peer_key, "Mesh peer unregistered");
     }
 

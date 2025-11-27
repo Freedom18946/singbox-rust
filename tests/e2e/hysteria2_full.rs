@@ -10,10 +10,20 @@
 #[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
 mod tests {
     use std::net::SocketAddr;
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
     use tokio::time::timeout;
+    use sb_core::outbound::OutboundRegistryHandle;
+    use sb_core::router;
+
+    fn handles() -> (Arc<router::RouterHandle>, Arc<OutboundRegistryHandle>) {
+        (
+            Arc::new(router::RouterHandle::from_env()),
+            Arc::new(OutboundRegistryHandle::default()),
+        )
+    }
 
     /// Test TCP proxy through Hysteria2 inbound → outbound chain
     #[tokio::test]
@@ -65,6 +75,7 @@ mod tests {
     #[ignore] // Requires running server
     async fn test_hysteria2_auth_success() {
         use sb_adapters::inbound::hysteria2::{Hysteria2Inbound, Hysteria2InboundConfig, Hysteria2UserConfig};
+        let (router, outbounds) = handles();
 
         let config = Hysteria2InboundConfig {
             listen: "127.0.0.1:0".parse().unwrap(),
@@ -76,6 +87,8 @@ mod tests {
             congestion_control: Some("bbr".to_string()),
             salamander: None,
             obfs: None,
+            router,
+            outbounds,
         };
 
         // Note: This test requires valid TLS certificates
@@ -100,6 +113,7 @@ mod tests {
     #[ignore] // Requires running server
     async fn test_hysteria2_with_obfuscation() {
         use sb_adapters::inbound::hysteria2::{Hysteria2InboundConfig, Hysteria2UserConfig};
+        let (router, outbounds) = handles();
 
         let config = Hysteria2InboundConfig {
             listen: "127.0.0.1:0".parse().unwrap(),
@@ -111,6 +125,8 @@ mod tests {
             congestion_control: Some("bbr".to_string()),
             salamander: Some("test_salamander".to_string()),
             obfs: Some("test_obfs".to_string()),
+            router,
+            outbounds,
         };
 
         // Verify obfuscation config is accepted
@@ -123,6 +139,7 @@ mod tests {
     #[ignore] // Requires running server
     async fn test_hysteria2_congestion_control() {
         let algorithms = vec!["bbr", "cubic", "new_reno"];
+        let (router, outbounds) = handles();
 
         for algo in algorithms {
             use sb_adapters::inbound::hysteria2::{Hysteria2InboundConfig, Hysteria2UserConfig};
@@ -137,6 +154,8 @@ mod tests {
                 congestion_control: Some(algo.to_string()),
                 salamander: None,
                 obfs: None,
+                router: router.clone(),
+                outbounds: outbounds.clone(),
             };
 
             assert_eq!(config.congestion_control, Some(algo.to_string()));
@@ -260,6 +279,7 @@ mod tests {
     #[test]
     fn test_hysteria2_config_validation() {
         use sb_adapters::inbound::hysteria2::{Hysteria2InboundConfig, Hysteria2UserConfig};
+        let (router, outbounds) = handles();
 
         // Valid config
         let config = Hysteria2InboundConfig {
@@ -272,6 +292,8 @@ mod tests {
             congestion_control: Some("bbr".to_string()),
             salamander: None,
             obfs: None,
+            router,
+            outbounds,
         };
 
         assert_eq!(config.listen.port(), 443);

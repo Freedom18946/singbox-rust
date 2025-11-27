@@ -1,3 +1,21 @@
+//! Configuration Validation Engine / 配置校验引擎
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module implements the **Static Analysis Engine** for configuration files.
+//! 本模块实现了配置文件的 **静态分析引擎**。
+//!
+//! ## Validation Workflow / 校验工作流
+//! 1. **Parse / 解析**: Load JSON/YAML into a generic `Value` tree.
+//! 2. **Schema Check / 模式检查**: Validate against the formal V2 schema (structure, types).
+//! 3. **Logic Check / 逻辑检查**: Validate business rules (e.g., "rule must have an action").
+//! 4. **Report / 报告**: Generate structured reports (Human/JSON/SARIF).
+//!
+//! ## Strategic Features / 战略特性
+//! - **Fingerprinting / 指纹识别**: Calculates a stable hash of the normalized config to detect semantic changes.
+//!   计算归一化配置的稳定哈希，以检测语义变化。
+//! - **Semantic Diff / 语义差异**: Compares configurations logically rather than textually, ignoring formatting noise.
+//!   在逻辑上而非文本上比较配置，忽略格式噪音。
+
 use anyhow::{Context, Result};
 use serde_json::Value;
 use sha2::{Digest, Sha256};

@@ -1,8 +1,23 @@
-//! HTTP 侧指标（入站/上游代理共用）。不绑定具体实现，供 app / inbound / outbound 自由调用。
+//! HTTP side metrics (shared by inbound/upstream proxy).
+//! HTTP 侧指标（入站/上游代理共用）。
 //!
-//! ## 设计原则
-//! - 低耦合：调用��只负责把事件打点进来，不依赖具体 HTTP 栈。
-//! - 标签控制：核心使用无标签 Counter/Gauge；少量场景用 `*_vec`，避免高基数炸表。
+//! Decoupled from specific implementation, free to be called by app / inbound / outbound.
+//! 不绑定具体实现，供 app / inbound / outbound 自由调用。
+//!
+//! ## Strategic Logic / 战略逻辑
+//! HTTP metrics are critical for understanding Layer 7 traffic patterns.
+//! This module is designed to be **framework-agnostic**, meaning it can be used by `hyper`, `reqwest`, or any other HTTP client/server.
+//! This future-proofs the metrics system against underlying network stack changes.
+//!
+//! HTTP 指标对于理解第 7 层流量模式至关重要。
+//! 本模块设计为**框架无关**，意味着它可以被 `hyper`、`reqwest` 或任何其他 HTTP 客户端/服务器使用。
+//! 这使得指标系统能够适应底层网络栈的未来变化。
+//!
+//! ## Design Principles / 设计原则
+//! - **Low Coupling**: Caller only reports events, no dependency on specific HTTP stack.
+//!   - **低耦合**：调用方只负责把事件打点进来，不依赖具体 HTTP 栈。
+//! - **Label Control**: Core metrics use label-free Counter/Gauge; limited use of `*_vec` to avoid high cardinality explosion.
+//!   - **标签控制**：核心使用无标签 Counter/Gauge；少量场景用 `*_vec`，避免高基数炸表。
 //!
 //! ## 使用示例
 //! ```rust

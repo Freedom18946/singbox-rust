@@ -1,6 +1,11 @@
-//! R90: 从 Profile 导出出站绑定（最小）：name→kind
-//! R97: 绑定导出 behind features（由 lib.rs 控制导出）
-//! R134: 订阅出站绑定增强（dry connect）
+//! R90: Export outbound bindings from Profile (minimal): name -> kind.
+//! [Chinese] R90: 从 Profile 导出出站绑定（最小）：name→kind。
+//!
+//! R97: Binding export behind features (controlled by lib.rs).
+//! [Chinese] R97: 绑定导出 behind features（由 lib.rs 控制导出）。
+//!
+//! R134: Subscription outbound binding enhancement (dry connect).
+//! [Chinese] R134: 订阅出站绑定增强（dry connect）。
 use crate::model::Profile;
 
 #[cfg(feature = "subs_bindings_dry")]
@@ -24,7 +29,8 @@ const DNS_DELAY_DIRECT_MS: u64 = 5;
 
 pub fn bindings_minijson(p: &Profile) -> String {
     use sb_core::router::minijson::{obj, Val};
-    // 输出形如：{"outbounds":[{"name":"a","kind":"trojan"},...]}
+    // Output format: {"outbounds":[{"name":"a","kind":"trojan"},...]}
+    // [Chinese] 输出形如：{"outbounds":[{"name":"a","kind":"trojan"},...]}
     let mut items = Vec::with_capacity(p.outbounds.len());
     for o in &p.outbounds {
         let k = o.kind.to_lowercase();
@@ -64,7 +70,8 @@ impl TestResult {
     }
 }
 
-/// R134: 干运行连接测试（仅解析+DNS，无实际连接）
+/// R134: Dry run connectivity test (DNS resolution only, no actual connection).
+/// [Chinese] R134: 干运行连接测试（仅解析+DNS，无实际连接）。
 #[cfg(feature = "subs_bindings_dry")]
 pub async fn dry_connect_test(p: &Profile, target: Option<&str>) -> String {
     use sb_core::router::minijson::{obj, Val};
@@ -94,18 +101,22 @@ pub async fn dry_connect_test(p: &Profile, target: Option<&str>) -> String {
 
 #[cfg(feature = "subs_bindings_dry")]
 async fn dry_connect_single(kind: &str, _name: &str, target: &str) -> Result<(), String> {
-    // DNS 解析测试（无实际连接）
+    // DNS resolution test (no actual connection)
+    // [Chinese] DNS 解析测试（无实际连接）
     let dns_start = Instant::now();
 
-    // 模拟根据出站类型进行不同的检查
+    // Simulate checks based on outbound type
+    // [Chinese] 模拟根据出站类型进行不同的检查
     match kind.to_lowercase().as_str() {
         "trojan" | "shadowsocks" | "ss" => {
-            // 对于加密代理，检查是否支持
+            // For encrypted proxies, check if supported
+            // [Chinese] 对于加密代理，检查是否支持
             if target.is_empty() {
                 return Err("empty target".to_string());
             }
 
-            // 模拟 DNS 解析延迟
+            // Simulate DNS delay
+            // [Chinese] 模拟 DNS 解析延迟
             tokio::time::sleep(std::time::Duration::from_millis(DNS_DELAY_ENCRYPTED_MS)).await;
 
             let dns_elapsed = dns_start.elapsed().as_millis();
@@ -116,24 +127,28 @@ async fn dry_connect_single(kind: &str, _name: &str, target: &str) -> Result<(),
             Ok(())
         }
         "direct" => {
-            // 直连类型，简单检查
+            // Direct connection, simple check
+            // [Chinese] 直连类型，简单检查
             if target.contains("localhost") || target.contains("127.0.0.1") {
                 Ok(())
             } else {
-                // 模拟轻量级检查
+                // Simulate lightweight check
+                // [Chinese] 模拟轻量级检查
                 tokio::time::sleep(std::time::Duration::from_millis(DNS_DELAY_DIRECT_MS)).await;
                 Ok(())
             }
         }
         "block" | "reject" => {
-            // 阻断类型，直接返回成功（逻辑上的阻断）
+            // Block type, return success directly (logical block)
+            // [Chinese] 阻断类型，直接返回成功（逻辑上的阻断）
             Ok(())
         }
         _ => Err(format!("unsupported outbound kind: {kind}")),
     }
 }
 
-/// 增强的绑定信息（包含连接状态）
+/// Enhanced binding info (includes connection status).
+/// [Chinese] 增强的绑定信息（包含连接状态）。
 #[cfg(feature = "subs_bindings_dry")]
 pub async fn bindings_enhanced_minijson(
     p: &Profile,

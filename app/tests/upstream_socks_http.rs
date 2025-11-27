@@ -191,6 +191,7 @@ fn outbound_scaffold_socks_and_http_connect() {
             basic_auth: None,
             override_host: None,
             override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![
             OutboundIR {
@@ -224,6 +225,7 @@ fn outbound_scaffold_socks_and_http_connect() {
         },
         ntp: None,
         dns: None,
+        ..Default::default()
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone());

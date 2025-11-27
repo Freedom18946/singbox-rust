@@ -1,4 +1,13 @@
 //! V2Ray API server implementation
+//! V2Ray API 服务器实现
+//!
+//! # Strategic Role / 战略角色
+//!
+//! Implements the gRPC-based V2Ray API. This allows singbox-rust to be controlled by
+//! tools designed for V2Ray (e.g., v2ray-core's own tools, or third-party managers).
+//!
+//! 实现基于 gRPC 的 V2Ray API。这允许 singbox-rust 被为 V2Ray 设计的工具
+//! （例如 v2ray-core 自己的工具或第三方管理器）控制。
 
 use crate::{error::ApiResult, types::ApiConfig};
 
@@ -10,6 +19,10 @@ mod grpc_impl {
     use tonic::transport::Server;
 
     /// V2Ray API server with gRPC services
+    /// 带有 gRPC 服务的 V2Ray API 服务器
+    ///
+    /// Hosts the standard V2Ray gRPC services: Stats, Handler, Router, and Logger.
+    /// 托管标准的 V2Ray gRPC 服务：Stats（统计）、Handler（处理程序）、Router（路由）和 Logger（日志）。
     pub struct V2RayApiServer {
         config: ApiConfig,
         stats_service: Arc<StatsServiceImpl>,

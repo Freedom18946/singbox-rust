@@ -1,5 +1,8 @@
-//! R74: 订阅转换 JSON 视图（无需 serde，复用 sb-core/minijson）
-//! R97: 视图功能 behind features（由 lib.rs 控制导出）
+//! R74: Subscription conversion JSON view (no serde, reuses sb-core/minijson).
+//! [Chinese] R74: 订阅转换 JSON 视图（无需 serde，复用 sb-core/minijson）。
+//!
+//! R97: View functionality behind features (controlled by lib.rs).
+//! [Chinese] R97: 视图功能 behind features（由 lib.rs 控制导出）。
 use crate::model::Profile;
 use sb_core::router::minijson::{arr_str, obj, Val};
 
@@ -38,8 +41,14 @@ fn build_count_json(pairs: &[(impl AsRef<str>, u64)]) -> String {
     result
 }
 
+/// Generates a lightweight JSON view of the profile for UI display.
+/// [Chinese] 生成用于 UI 展示的 Profile 轻量级 JSON 视图。
+///
+/// Includes statistics (rule count, outbound count), hashes, and sample rules.
+/// [Chinese] 包含统计信息（规则数、出站数）、哈希值和示例规则。
 pub fn view_minijson(p: &Profile) -> String {
-    // 构造可复现的 rules/outbounds 文本再做 hash
+    // Construct reproducible rules/outbounds text for hashing
+    // [Chinese] 构造可复现的 rules/outbounds 文本再做 hash
     let estimated_rules_capacity = p.rules.len() * 50;
     let mut rules_join = String::with_capacity(estimated_rules_capacity);
     for (i, r) in p.rules.iter().enumerate() {
@@ -73,7 +82,8 @@ pub fn view_minijson(p: &Profile) -> String {
         .collect();
     let sample_rules_json = arr_str(&sample_rules_vec);
 
-    // R82/R87: kinds_count histogram (统一使用 BTreeMap 保证顺序)
+    // R82/R87: kinds_count histogram (Use BTreeMap to ensure order)
+    // [Chinese] R82/R87: kinds_count 直方图（统一使用 BTreeMap 保证顺序）
     let mut kind_map: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
     for ob in &p.outbounds {
         *kind_map.entry(&ob.kind).or_insert(0) += 1;

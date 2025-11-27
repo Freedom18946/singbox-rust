@@ -419,5 +419,5 @@ All examples are provided under the same license as singbox-rust.
 
 ---
 
-**Last Updated**: 2025-10-18  
+**Last Updated**: 2025-11-23  
 **Examples Version**: v0.2.0+

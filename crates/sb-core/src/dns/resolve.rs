@@ -592,8 +592,20 @@ async fn resolve_cached_qtype(
 
     // 命中缓存
     if let Some(answer) = cache.get(&cache_key) {
+        // Log "cached" event similar to Go
+        tracing::info!(
+            "cached {} {} {} {}",
+            host,
+            format!("{:?}", qtype_key), // QType debug format is usually A or AAAA
+            answer.rcode.as_str(),
+            answer.ttl.as_secs()
+        );
+
         #[cfg(feature = "metrics")]
-        metrics::counter!("dns_cache_hit_total").increment(1);
+        metrics::counter!(
+            "dns_cache_hit_total",
+            "rcode" => answer.rcode.as_str().to_string()
+        ).increment(1);
         return Ok(answer
             .ips
             .into_iter()

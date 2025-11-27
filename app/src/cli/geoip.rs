@@ -4,6 +4,18 @@
     clippy::unused_async
 )]
 //! `GeoIP` tooling subcommand (parity with sing-box `geoip`)
+//! `GeoIP` 工具子命令（与 sing-box `geoip` 对齐）
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module manages **IP-based Location Data**.
+//! 本模块管理 **基于 IP 的地理位置数据**。
+//!
+//! ## Strategic Features / 战略特性
+//! - **Dual Format Support / 双格式支持**:
+//!   - **MMDB**: Industry standard, fast binary lookups (MaxMind).
+//!   - **Text**: Simple, human-readable fallback.
+//! - **Rule Extraction / 规则提取**: Can "compile" country data into rule-sets for the router, enabling efficient country-based routing.
+//!   可以将国家数据“编译”为路由器的规则集，从而实现高效的基于国家的路由。
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};

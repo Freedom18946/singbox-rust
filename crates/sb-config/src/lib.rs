@@ -1,46 +1,29 @@
 //! Configuration parsing and validation for SingBox
+//! SingBox 的配置解析和校验
 //!
-//! This crate provides comprehensive configuration management:
+//! # Global Strategic Logic / 全局战略逻辑
+//! This crate acts as the **Configuration Engine** for the application.
+//! 本 crate 充当应用程序的 **配置引擎**。
 //!
-//! ## Core Features
+//! ## Strategic Workflow / 战略工作流
+//! `Raw Text (JSON/YAML)` -> `Parse` -> `Migrate (V1->V2)` -> `Validate (Schema)` -> `Intermediate Representation (IR)`
+//! `原始文本 (JSON/YAML)` -> `解析` -> `迁移 (V1->V2)` -> `校验 (模式)` -> `中间表示 (IR)`
 //!
-//! - **Multi-format support**: JSON, YAML parsing
-//! - **Schema versioning**: V1 and V2 format support with automatic migration
-//! - **Validation**: JSON schema-based validation with detailed error reporting
-//! - **Normalization**: Convert configs to canonical forms
-//! - **Intermediate Representation (IR)**: [`ir::ConfigIR`] - strongly-typed internal format
+//! ## Strategic Features / 战略特性
+//! - **Multi-Format / 多格式**: Supports both JSON (machine-friendly) and YAML (human-friendly).
+//!   支持 JSON（机器友好）和 YAML（人类友好）。
+//! - **Automatic Migration / 自动迁移**: Seamlessly upgrades legacy V1 configs to the V2 schema, ensuring backward compatibility without user intervention.
+//!   无缝将旧版 V1 配置升级到 V2 模式，确保无需用户干预的向后兼容性。
+//! - **Strong Validation / 强校验**: Uses a rigorous schema to catch errors early, preventing runtime failures due to misconfiguration.
+//!   使用严格的模式尽早捕获错误，防止因配置错误导致的运行时故障。
 //!
-//! ## Key Modules
-//!
-//! - [`model`]: External configuration model (deprecated, use [`ir::ConfigIR`])
-//! - [`ir`]: Strongly-typed intermediate representation
-//! - [`validator`]: Schema validation (V1 and V2)
-//! - [`compat`]: V1→V2 migration logic
-//! - [`present`]: Config→IR conversion (canonical transformer)
-//! - [`subscribe`]: Subscription URL support
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use sb_config::Config;
-//!
-//! // Load and validate config
-//! let config = Config::load("config.yaml")?;
-//!
-//! // Convert to IR for internal use
-//! let ir = sb_config::present::to_ir(&config)?;
-//! # let _ = ir; // doctest: suppress unused var warning
-//! # Ok::<(), anyhow::Error>(())
-//! ```
-//!
-//! ## Migration Path
-//!
-//! V1 configs are automatically migrated to V2:
-//! - `tag` → `name`
-//! - `listen` + `listen_port` → `listen:"IP:PORT"`
-//! - Rule format updates
-//!
-//! See [`compat::migrate_to_v2`] for details.
+//! ## Key Modules / 关键模块
+//! - [`ir`]: **Intermediate Representation** - The strongly-typed, canonical form of configuration used internally.
+//!   **中间表示** - 内部使用的强类型、规范化配置形式。
+//! - [`validator`]: **Validation Logic** - Enforces schema constraints and business rules.
+//!   **校验逻辑** - 强制执行模式约束和业务规则。
+//! - [`compat`]: **Migration Layer** - Handles the transformation from legacy formats.
+//!   **迁移层** - 处理从旧格式的转换。
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -72,19 +55,31 @@ pub mod validator;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Schema version (2 by default)
+    /// 模式版本（默认为 2）
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
+    /// Inbound list.
+    /// 入站列表。
     #[serde(default)]
     pub inbounds: Vec<Inbound>,
+    /// Outbound list.
+    /// 出站列表。
     #[serde(default)]
     pub outbounds: Vec<Outbound>,
+    /// Routing rules.
+    /// 路由规则。
     #[serde(default)]
     pub rules: Vec<Rule>,
-    /// 可选的兜底出站（指向某个命名出站）；若未指定则使用 Direct
+    /// Optional default outbound (points to a named outbound); uses Direct if unspecified.
+    /// 可选的兜底出站（指向某个命名出站）；若未指定则使用 Direct。
     #[serde(default)]
     pub default_outbound: Option<String>,
+    /// Raw JSON value (preserved for partial parsing/debugging).
+    /// 原始 JSON 值（保留用于部分解析/调试）。
     #[serde(skip)]
     raw: Value,
+    /// Intermediate Representation (IR) of the config.
+    /// 配置的中间表示 (IR)。
     #[serde(skip)]
     ir: crate::ir::ConfigIR,
 }
@@ -105,6 +100,8 @@ impl Default for Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+/// Minimal inbound definition for legacy support.
+/// 用于旧版支持的最小入站定义。
 pub enum Inbound {
     #[serde(rename = "http")]
     Http { listen: String },
@@ -114,6 +111,8 @@ pub enum Inbound {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+/// Minimal outbound definition for legacy support.
+/// 用于旧版支持的最小出站定义。
 pub enum Outbound {
     #[serde(rename = "direct")]
     Direct { name: String },

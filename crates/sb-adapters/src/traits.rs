@@ -1,13 +1,15 @@
 //! Unified traits and interfaces for all adapters.
+//! 所有适配器的统一 trait 和接口。
 //!
 //! This module defines the core abstractions used throughout the adapter layer:
+//! 本模块定义了整个适配器层使用的核心抽象：
 //!
-//! - [`OutboundConnector`]: Trait for outbound proxy adapters
-//! - [`OutboundDatagram`]: Trait for UDP-based connections
-//! - [`Target`]: Specification of connection destination
-//! - [`RetryPolicy`]: Configurable retry with exponential backoff
-//! - [`DialOpts`]: Connection options (timeouts, retry, DNS mode)
-//! - [`ResolveMode`]: DNS resolution strategy (local vs remote)
+//! - [`OutboundConnector`]: Trait for outbound proxy adapters (出站代理适配器的 Trait)
+//! - [`OutboundDatagram`]: Trait for UDP-based connections (基于 UDP 连接的 Trait)
+//! - [`Target`]: Specification of connection destination (连接目标的规范)
+//! - [`RetryPolicy`]: Configurable retry with exponential backoff (带指数退避的可配置重试策略)
+//! - [`DialOpts`]: Connection options (timeouts, retry, DNS mode) (连接选项：超时、重试、DNS 模式)
+//! - [`ResolveMode`]: DNS resolution strategy (local vs remote) (DNS 解析策略：本地 vs 远程)
 
 use crate::error::Result;
 use async_trait::async_trait;
@@ -16,6 +18,7 @@ use std::any::Any;
 use std::{fmt::Debug, fmt::Display, str::FromStr, time::Duration};
 
 /// Retry policy for connection attempts with exponential backoff and jitter.
+/// 连接尝试的重试策略，包含指数退避和抖动。
 ///
 /// # Examples
 ///
@@ -33,15 +36,19 @@ use std::{fmt::Debug, fmt::Display, str::FromStr, time::Duration};
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
     /// Maximum number of retry attempts (0 = no retries).
+    /// 最大重试次数（0 = 不重试）。
     pub max_retries: u32,
 
     /// Base delay in milliseconds for exponential backoff.
+    /// 指数退避的基础延迟（毫秒）。
     pub base_delay_ms: u64,
 
     /// Jitter factor (0.0 - 1.0) to add randomness to delays.
+    /// 抖动因子 (0.0 - 1.0)，用于向延迟添加随机性。
     pub jitter: f32,
 
     /// Maximum delay cap in milliseconds.
+    /// 最大延迟上限（毫秒）。
     pub max_delay_ms: u64,
 }
 
@@ -189,12 +196,15 @@ impl RetryPolicy {
 }
 
 /// DNS resolution mode for proxy connections.
+/// 代理连接的 DNS 解析模式。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveMode {
     /// Resolve domain names locally and send IP addresses to the proxy.
+    /// 在本地解析域名，并将 IP 地址发送给代理。
     Local,
 
     /// Send domain names to the proxy for remote resolution.
+    /// 将域名发送给代理进行远程解析。
     Remote,
 }
 
@@ -242,20 +252,26 @@ impl clap::ValueEnum for ResolveMode {
 }
 
 /// Dial options for connection requests.
+/// 连接请求的拨号选项。
 ///
 /// Configures timeouts, retry behavior, and DNS resolution mode for outbound connections.
+/// 配置出站连接的超时、重试行为和 DNS 解析模式。
 #[derive(Debug, Clone)]
 pub struct DialOpts {
     /// Connection establishment timeout.
+    /// 连接建立超时。
     pub connect_timeout: Duration,
 
     /// Read operation timeout.
+    /// 读取操作超时。
     pub read_timeout: Duration,
 
     /// Retry policy for failed connection attempts.
+    /// 失败连接尝试的重试策略。
     pub retry_policy: RetryPolicy,
 
     /// DNS resolution mode (local or remote).
+    /// DNS 解析模式（本地或远程）。
     pub resolve_mode: ResolveMode,
 }
 
@@ -307,27 +323,35 @@ impl DialOpts {
 }
 
 /// Transport type for connection requests.
+/// 连接请求的传输类型。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportKind {
     /// TCP connection.
+    /// TCP 连接。
     Tcp,
 
     /// UDP connection.
+    /// UDP 连接。
     Udp,
 }
 
 /// Connection target specification.
+/// 连接目标规范。
 ///
 /// Specifies the destination host, port, and transport protocol for a connection.
+/// 指定连接的目标主机、端口和传输协议。
 #[derive(Debug, Clone)]
 pub struct Target {
     /// Target hostname or IP address.
+    /// 目标主机名或 IP 地址。
     pub host: String,
 
     /// Target port number.
+    /// 目标端口号。
     pub port: u16,
 
     /// Transport protocol (TCP or UDP).
+    /// 传输协议（TCP 或 UDP）。
     pub kind: TransportKind,
 }
 
@@ -356,21 +380,29 @@ impl Target {
 }
 
 /// Boxed async stream for connections.
+/// 用于连接的装箱异步流。
 ///
 /// Temporary abstraction over `AsyncRead + AsyncWrite` traits.
+/// `AsyncRead + AsyncWrite` trait 的临时抽象。
 pub type BoxedStream = Box<dyn AsyncStream>;
 
 /// Combined trait for async read + write + unpin + send + sync.
+/// 异步读 + 写 + Unpin + Send + Sync 的组合 trait。
 pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
 /// Blanket implementation for any type that implements the required traits.
+/// 为实现所需 trait 的任何类型提供的覆盖实现。
 impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
 /// Converts a transport `IoStream` to `BoxedStream`.
+/// 将传输层 `IoStream` 转换为 `BoxedStream`。
 ///
 /// This function bridges `sb-transport` (which uses `AsyncReadWrite` trait)
 /// and `sb-adapters` (which uses `AsyncStream` trait). Both traits have identical
 /// bounds, so this is a safe zero-cost conversion via a wrapper struct.
+/// 此函数桥接 `sb-transport`（使用 `AsyncReadWrite` trait）和 `sb-adapters`
+/// （使用 `AsyncStream` trait）。两个 trait 具有相同的边界，因此这是通过包装结构体
+/// 进行的安全零成本转换。
 #[cfg(feature = "sb-transport")]
 #[must_use]
 pub fn from_transport_stream(stream: sb_transport::dialer::IoStream) -> BoxedStream {
@@ -420,8 +452,10 @@ impl tokio::io::AsyncWrite for TransportStreamAdapter {
 }
 
 /// Helper trait to enable downcasting from trait objects.
+/// 启用从 trait 对象向下转型的辅助 trait。
 pub trait DynDowncast: Any {
     /// Returns `self` as `&dyn Any` for downcasting.
+    /// 返回 `self` 作为 `&dyn Any` 以便向下转型。
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -432,71 +466,90 @@ impl<T: Any> DynDowncast for T {
 }
 
 /// Lightweight UDP abstraction for outbound datagram connections.
+/// 出站数据报连接的轻量级 UDP 抽象。
 ///
 /// Provides a packet-level interface for UDP-based proxy protocols
 /// without breaking the existing `dial()` API.
+/// 为基于 UDP 的代理协议提供数据包级接口，而不破坏现有的 `dial()` API。
 #[async_trait]
 pub trait OutboundDatagram: DynDowncast + Send + Sync + Debug {
     /// Sends data to the remote target.
+    /// 发送数据到远程目标。
     ///
     /// # Errors
     ///
     /// Returns an error if the send operation fails.
+    /// 如果发送操作失败，则返回错误。
     async fn send_to(&self, payload: &[u8]) -> Result<usize>;
 
     /// Receives data from the remote target.
+    /// 从远程目标接收数据。
     ///
     /// # Errors
     ///
     /// Returns an error if the receive operation fails.
+    /// 如果接收操作失败，则返回错误。
     async fn recv_from(&self, buf: &mut [u8]) -> Result<usize>;
 
     /// Closes the datagram connection.
+    /// 关闭数据报连接。
     ///
     /// Default implementation does nothing (stateless UDP).
+    /// 默认实现不执行任何操作（无状态 UDP）。
     ///
     /// # Errors
     ///
     /// Returns an error if the close operation fails.
+    /// 如果关闭操作失败，则返回错误。
     async fn close(&self) -> Result<()> {
         Ok(())
     }
 }
 
 /// Unified outbound connector trait for all adapters.
+/// 所有适配器的统一出站连接器 trait。
 ///
 /// This trait defines the interface for client-side proxy adapters
 /// that establish outbound connections to remote servers.
+/// 此 trait 定义了建立到远程服务器的出站连接的客户端代理适配器的接口。
 #[async_trait]
 pub trait OutboundConnector: Send + Sync + Debug {
     /// Initializes the connector (loads certificates, resolves DNS, etc.).
+    /// 初始化连接器（加载证书、解析 DNS 等）。
     ///
     /// Called once before the connector is used. Default implementation does nothing.
+    /// 在使用连接器之前调用一次。默认实现不执行任何操作。
     ///
     /// # Errors
     ///
     /// Returns an error if initialization fails.
+    /// 如果初始化失败，则返回错误。
     async fn start(&self) -> Result<()> {
         Ok(())
     }
 
     /// Establishes a connection to the target.
+    /// 建立到目标的连接。
     ///
     /// # Errors
     ///
     /// Returns an error if the connection fails or times out.
+    /// 如果连接失败或超时，则返回错误。
     async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream>;
 
     /// Returns the connector type/name for logging and metrics.
+    /// 返回用于日志记录和指标的连接器类型/名称。
     fn name(&self) -> &'static str {
         "unknown"
     }
 }
 
 /// Checks if an error is retryable.
+/// 检查错误是否可重试。
 ///
 /// Network and I/O errors are generally retryable, while protocol and
 /// authentication errors are not.
+/// 网络和 I/O 错误通常是可重试的，而协议和认证错误则不可重试。
 ///
 /// # Examples
 ///
@@ -550,10 +603,12 @@ pub fn is_retryable_error(error: &crate::error::AdapterError) -> bool {
 }
 
 /// Retries a future with exponential backoff and jitter.
+/// 使用指数退避和抖动重试 future。
 ///
 /// # Errors
 ///
 /// Returns the last error encountered if all retry attempts fail.
+/// 如果所有重试尝试都失败，则返回最后遇到的错误。
 pub async fn with_retry<F, Fut, T>(retry_policy: &RetryPolicy, mut operation: F) -> Result<T>
 where
     F: FnMut() -> Fut,
@@ -597,10 +652,12 @@ where
 }
 
 /// Retries a future with exponential backoff, jitter, and adapter metrics.
+/// 使用指数退避、抖动和适配器指标重试 future。
 ///
 /// # Errors
 ///
 /// Returns the last error encountered if all retry attempts fail.
+/// 如果所有重试尝试都失败，则返回最后遇到的错误。
 #[cfg(feature = "metrics")]
 pub async fn with_adapter_retry<F, Fut, T>(
     retry_policy: &RetryPolicy,

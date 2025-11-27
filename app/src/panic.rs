@@ -1,3 +1,20 @@
+//! Panic Handling and Crash Reporting
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module implements the **Last Resort Error Handling** mechanism.
+//! It captures panic information, writes it to disk, and ensures critical debug data is preserved.
+//!
+//! 本模块实现了 **最后手段错误处理** 机制。
+//! 它捕获 panic 信息，将其写入磁盘，并确保保留关键调试数据。
+//!
+//! ## Strategic Features / 战略特性
+//! - **Crash Logging / 崩溃日志**: Automatically saves panic details (stack trace, thread name, git SHA) to `target/crash`.
+//!   自动保存 panic 详情（堆栈跟踪、线程名称、git SHA）到 `target/crash`。
+//! - **Trace ID Correlation / 追踪 ID 关联**: If enabled, correlates the crash with the current trace ID for distributed debugging.
+//!   如果启用，将崩溃与当前追踪 ID 关联，以便进行分布式调试。
+//! - **Log Rotation / 日志轮转**: Automatically cleans up old crash logs to prevent disk exhaustion.
+//!   自动清理旧的崩溃日志以防止磁盘耗尽。
+
 use std::backtrace::Backtrace;
 use std::fmt::Write as _;
 use std::path::Path;

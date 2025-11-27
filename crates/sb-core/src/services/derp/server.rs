@@ -395,7 +395,20 @@ impl DerpService {
             }
         };
 
-        let mut prefixed_stream = PrefixedStream::new(stream, initial_data);
+        // Consume the handshake line so it's not echoed to the peer
+        let handshake_len = prefix
+            .iter()
+            .position(|&b| b == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(prefix.len());
+        
+        let remaining_data = if handshake_len < prefix.len() {
+            prefix[handshake_len..].to_vec()
+        } else {
+            Vec::new()
+        };
+
+        let mut prefixed_stream = PrefixedStream::new(stream, remaining_data);
 
         if let Err(e) = Self::validate_token(&handshake, mesh_psk.as_deref()) {
             let _ = prefixed_stream
@@ -533,13 +546,7 @@ impl DerpService {
 
             // Check for mesh upgrade
             if path == "/derp/mesh" {
-                Self::write_response(
-                    &mut stream,
-                    "101 Switching Protocols",
-                    "",
-                    false,
-                )
-                .await?;
+                Self::write_response(&mut stream, "101 Switching Protocols", "", false).await?;
                 return Ok(Some(stream));
             }
         }
@@ -676,9 +683,15 @@ impl DerpService {
                         tracing::debug!(service = "derp", src = ?client_key, dst = ?dst_key, error = %e, "Failed to relay packet");
                     }
                 }
-                DerpFrame::ForwardPacket { src_key, dst_key, packet } => {
+                DerpFrame::ForwardPacket {
+                    src_key,
+                    dst_key,
+                    packet,
+                } => {
                     if is_mesh_peer {
-                        if let Err(e) = client_registry.handle_forward_packet(&src_key, &dst_key, packet) {
+                        if let Err(e) =
+                            client_registry.handle_forward_packet(&src_key, &dst_key, packet)
+                        {
                             tracing::debug!(service = "derp", src = ?src_key, dst = ?dst_key, error = %e, "Failed to handle forwarded packet");
                         }
                     } else {
@@ -798,8 +811,12 @@ impl DerpService {
                                 tracing::warn!(service = "derp", peer = %peer_addr_str, response = %response, "Mesh handshake failed");
                             }
                         }
-                        Ok(_) => tracing::warn!(service = "derp", peer = %peer_addr_str, "Mesh handshake closed"),
-                        Err(e) => tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh handshake read error"),
+                        Ok(_) => {
+                            tracing::warn!(service = "derp", peer = %peer_addr_str, "Mesh handshake closed")
+                        }
+                        Err(e) => {
+                            tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh handshake read error")
+                        }
                     }
                 }
                 Err(e) => {
@@ -1041,7 +1058,11 @@ impl Service for DerpService {
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match stage {
             StartStage::Initialize => {
-                tracing::debug!(service = "derp", tag = self.tag.as_ref(), "Initialize stage");
+                tracing::debug!(
+                    service = "derp",
+                    tag = self.tag.as_ref(),
+                    "Initialize stage"
+                );
                 Ok(())
             }
             StartStage::Start => {
@@ -1107,7 +1128,8 @@ impl Service for DerpService {
 
                     let stun_shutdown = shutdown.clone();
                     let stun_handle = tokio::spawn(async move {
-                        if let Err(e) = Self::run_stun_server(udp_socket, stun_shutdown, tag).await {
+                        if let Err(e) = Self::run_stun_server(udp_socket, stun_shutdown, tag).await
+                        {
                             tracing::error!(service = "derp", error = %e, "STUN server failed");
                         }
                     });
@@ -1156,7 +1178,11 @@ impl Service for DerpService {
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        tracing::info!(service = "derp", tag = self.tag.as_ref(), "Closing DERP service");
+        tracing::info!(
+            service = "derp",
+            tag = self.tag.as_ref(),
+            "Closing DERP service"
+        );
 
         self.running.store(false, Ordering::SeqCst);
         self.shutdown_notify.notify_waiters();

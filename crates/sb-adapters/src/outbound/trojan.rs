@@ -85,6 +85,9 @@ pub struct TrojanConfig {
     /// SNI for TLS handshake
     #[serde(default)]
     pub sni: Option<String>,
+    /// Optional ALPN protocols to advertise
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
     /// Skip certificate verification
     #[serde(default)]
     pub skip_cert_verify: bool,
@@ -158,7 +161,7 @@ impl TrojanConnector {
         use tokio_rustls::{rustls::ClientConfig, TlsConnector};
 
         // Create TLS config
-        let tls_config = if config.skip_cert_verify {
+        let mut tls_config = if config.skip_cert_verify {
             // Disable certificate verification (insecure, for testing only)
             ClientConfig::builder()
                 .dangerous()
@@ -173,6 +176,13 @@ impl TrojanConnector {
                 .with_root_certificates(root_store)
                 .with_no_client_auth()
         };
+
+        // Advertise ALPN if provided
+        if let Some(alpn) = &config.alpn {
+            if !alpn.is_empty() {
+                tls_config.alpn_protocols = alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
+            }
+        }
 
         let connector = TlsConnector::from(Arc::new(tls_config));
 
@@ -328,6 +338,7 @@ impl OutboundConnector for TrojanConnector {
             );
 
             // Step 1: Establish base connection via dialer (handles transport layer + multiplex)
+            println!("TrojanConnector: dialing transport...");
             let timeout = std::time::Duration::from_secs(config.connect_timeout_sec.unwrap_or(30));
 
             // Parse server address for host and port
@@ -370,6 +381,7 @@ impl OutboundConnector for TrojanConnector {
                 Box::new(tcp_stream) as BoxedStream
             };
 
+            println!("TrojanConnector: transport dialed. Performing TLS handshake...");
             // Step 2: Perform TLS handshake
             #[cfg(feature = "tls_reality")]
             let mut stream: BoxedStream = if let Some(ref reality_cfg) = config.reality {
@@ -404,6 +416,7 @@ impl OutboundConnector for TrojanConnector {
                 Box::new(tls_stream)
             };
 
+            println!("TrojanConnector: TLS handshake done. Performing Trojan handshake...");
             // Step 3: Perform Trojan handshake
 
             // Trojan request format:
@@ -450,6 +463,7 @@ impl OutboundConnector for TrojanConnector {
             stream.write_all(&request).await.map_err(AdapterError::Io)?;
             stream.flush().await.map_err(AdapterError::Io)?;
 
+            println!("TrojanConnector: Trojan handshake done. Connection ready.");
             // Trojan doesn't send a response for CONNECT, connection is ready
             Ok(Box::new(stream) as BoxedStream)
         }
@@ -643,6 +657,7 @@ mod tests {
             password: "test-password".to_string(),
             connect_timeout_sec: Some(30),
             sni: Some("example.com".to_string()),
+            alpn: None,
             skip_cert_verify: false,
             transport_layer: TransportConfig::default(),
             #[cfg(feature = "tls_reality")]

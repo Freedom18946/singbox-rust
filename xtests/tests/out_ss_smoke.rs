@@ -162,7 +162,8 @@ mod shadowsocks_stub_tests {
         let result = outbound.connect(&target).await;
         assert!(result.is_err(), "Stub implementation should fail");
 
-        let error = result.unwrap_err();
+        assert!(result.is_err(), "Stub implementation should fail");
+        let error = result.err().unwrap();
         assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
     }
 }

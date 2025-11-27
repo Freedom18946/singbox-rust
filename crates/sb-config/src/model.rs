@@ -1,7 +1,15 @@
 //! Legacy data model (deprecated).
+//! 旧版数据模型（已弃用）。
 //!
-//! This module is retained for backward compatibility. New code should use
-//! the strongly-typed IR from [`crate::ir`] instead.
+//! # Global Strategic Logic / 全局战略逻辑
+//! **DEPRECATED / 已弃用**: This module contains legacy types retained solely for backward compatibility.
+//! **已弃用**: 本模块包含仅为向后兼容而保留的旧类型。
+//!
+//! ## Strategic Direction / 战略方向
+//! - **Do Not Use / 请勿使用**: New code should strictly use the **Intermediate Representation (IR)** defined in [`crate::ir`].
+//!   新代码应严格使用 [`crate::ir`] 中定义的 **中间表示 (IR)**。
+//! - **Migration / 迁移**: This module acts as a temporary bridge. Logic here is being phased out in favor of the strongly-typed `ir` module.
+//!   本模块充当临时桥梁。此处的逻辑正逐步淘汰，转而支持强类型的 `ir` 模块。
 
 use serde::{Deserialize, Serialize};
 

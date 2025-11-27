@@ -1,5 +1,7 @@
 //! VMess offline encode/ack (deterministic, placeholder implementation)
 //!
+//! Provides deterministic handshake test stub for VMess protocol.
+//! No real encryption, only for shape/length/reproducibility verification.
 //! 提供 VMess 协议的确定性握手测试桩。
 //! 不做真实加密，仅用于 shape/长度/可复现性校验。
 
@@ -7,8 +9,9 @@ use crate::handshake::{derive_bytes, Handshake, ProtoCtx};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// VMess 协议测试桩
+/// VMess Protocol Test Stub / VMess 协议测试桩
 ///
+/// Generates deterministic handshake messages for offline testing.
 /// 生成确定性的握手消息，用于离线测试。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vmess {

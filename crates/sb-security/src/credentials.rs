@@ -1,20 +1,24 @@
-//! Constant-time credential verification
+//! # Constant-Time Credential Verification (常量时间凭证验证)
 //!
 //! This module provides timing-attack resistant credential comparison using
 //! the `subtle` crate's constant-time operations.
+//! 本模块利用 `subtle` crate 的常量时间操作，提供抵抗时序攻击的凭证比较功能。
 //!
-//! ## Security Rationale
+//! ## Security Rationale (安全原理)
 //!
 //! Standard string comparison (`==`) returns as soon as it finds a mismatch,
 //! which can leak information about the expected value through timing analysis:
-//! - Correct first char: takes longer to fail
-//! - Wrong first char: fails immediately
-//! - Attacker can measure time differences to brute-force credentials
+//! 标准字符串比较 (`==`) 一旦发现不匹配就会立即返回，这可能通过时间分析泄露预期值的信息：
 //!
-//! ## Solution
+//! - Correct first char: takes longer to fail (首字符正确：失败所需时间更长)
+//! - Wrong first char: fails immediately (首字符错误：立即失败)
+//! - **Risk**: Attacker can measure time differences to brute-force credentials. (**风险**：攻击者可以通过测量时间差来暴力破解凭证)
+//!
+//! ## Solution (解决方案)
 //!
 //! Use `subtle::ConstantTimeEq` which always compares all bytes regardless of
 //! matches/mismatches, preventing timing attacks.
+//! 使用 `subtle::ConstantTimeEq`，无论匹配与否，始终比较所有字节，从而防止时序攻击。
 //!
 //! ## Usage
 //!

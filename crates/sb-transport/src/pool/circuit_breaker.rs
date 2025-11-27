@@ -1,7 +1,14 @@
-//! Circuit breaker dialer wrapper
+//! # Circuit Breaker Dialer Wrapper / 熔断器拨号器包装器
 //!
 //! Provides a dialer wrapper that implements circuit breaker pattern
 //! to protect against cascading failures in outbound connections.
+//! 提供一个实现熔断器模式的拨号器包装器，以防止出站连接中的级联故障。
+//!
+//! ## Strategic Relevance / 战略关联
+//! - **Fault Tolerance**: Isolates failing upstream services to prevent system-wide degradation.
+//!   **容错**: 隔离故障的上游服务，以防止系统范围的降级。
+//! - **Automatic Recovery**: Periodically tests failing services to automatically restore connectivity when they recover.
+//!   **自动恢复**: 定期测试故障服务，以便在它们恢复时自动恢复连接。
 
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerDecision};
 use crate::dialer::{DialError, Dialer, IoStream};
@@ -10,6 +17,7 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 /// Dialer wrapper that implements circuit breaker pattern
+/// 实现熔断器模式的拨号器包装器
 pub struct CircuitBreakerDialer<D: Dialer> {
     inner: D,
     circuit_breaker: Arc<CircuitBreaker>,
@@ -26,6 +34,7 @@ impl<D: Dialer + Clone> Clone for CircuitBreakerDialer<D> {
 
 impl<D: Dialer> CircuitBreakerDialer<D> {
     /// Create a new circuit breaker dialer with the given outbound name
+    /// 使用给定的出站名称创建一个新的熔断器拨号器
     pub fn new(inner: D, outbound_name: String, config: CircuitBreakerConfig) -> Self {
         Self {
             inner,
@@ -34,6 +43,7 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
     }
 
     /// Create with configuration from environment variables
+    /// 使用环境变量中的配置创建
     pub fn from_env(inner: D, outbound_name: String) -> Self {
         Self {
             inner,
@@ -42,6 +52,7 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
     }
 
     /// Get reference to the circuit breaker for monitoring/admin
+    /// 获取熔断器的引用以进行监控/管理
     pub fn circuit_breaker(&self) -> &CircuitBreaker {
         &self.circuit_breaker
     }
@@ -51,11 +62,13 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // Check if circuit breaker allows the request
+        // 检查熔断器是否允许请求
         match self.circuit_breaker.allow_request().await {
             CircuitBreakerDecision::Allow => {
                 trace!("Circuit breaker allowing connection to {}:{}", host, port);
 
                 // Attempt the connection
+                // 尝试连接
                 let start = std::time::Instant::now();
                 match self.inner.connect(host, port).await {
                     Ok(stream) => {
@@ -85,6 +98,7 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                 warn!("Circuit breaker rejecting connection to {}:{}", host, port);
 
                 // Return specific error indicating circuit breaker rejection (via io::Error -> DialError)
+                // 返回指示熔断器拒绝的特定错误（通过 io::Error -> DialError）
                 Err(std::io::Error::other("circuit breaker open - request rejected").into())
             }
         }
@@ -93,6 +107,7 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
 
 impl<D: Dialer> CircuitBreakerDialer<D> {
     /// Check if an error represents a timeout condition
+    /// 检查错误是否代表超时情况
     fn is_timeout_error(&self, error: &DialError) -> bool {
         match error {
             DialError::Other(msg) if msg.contains("timeout") => true,

@@ -1,8 +1,13 @@
-//! Router rules: 编译化索引 + 原子热重载 + 规则 Lint/越界计数 + 可观测
-//! 设计原则：
-//! 1) 读路径无锁：Arc<RouterIndex> 快照原子替换
-//! 2) 数据结构简单可预期：HashMap + 按长度/前缀降序 Vec
-//! 3) Never break userspace：任何加载失败均不切换现行索引
+//! Router rules: Compiled Index + Atomic Hot Reload + Rule Lint/Limit + Observability
+//! 路由规则：编译化索引 + 原子热重载 + 规则 Lint/越界计数 + 可观测
+//!
+//! Design Principles / 设计原则:
+//! 1) Lock-free read path: `Arc<RouterIndex>` atomic snapshot replacement.
+//!    读路径无锁：`Arc<RouterIndex>` 快照原子替换。
+//! 2) Simple and predictable data structures: HashMap + Vec (descending length/prefix).
+//!    数据结构简单可预期：HashMap + 按长度/前缀降序 Vec。
+//! 3) Never break userspace: Any load failure prevents switching the active index.
+//!    绝不破坏用户空间：任何加载失败均不切换现行索引。
 
 // 重要：确保 engine 子模块对外可见，供 sb-core/src/lib.rs 重导出使用
 pub mod dns;
@@ -93,7 +98,8 @@ pub use self::hot_reload_cli::{
 };
 pub use crate::outbound::RouteTarget;
 
-/// Route decision result for hot reload compatibility
+/// Route decision result for hot reload compatibility.
+/// 热重载兼容的路由决策结果。
 #[derive(Debug, Clone)]
 pub struct RouteDecision {
     pub target: String,
@@ -106,7 +112,8 @@ impl RouteDecision {
     }
 }
 
-/// Route context for routing decisions
+/// Route context for routing decisions.
+/// 路由决策的路由上下文。
 #[derive(Debug, Clone)]
 pub struct RouteCtx<'a> {
     pub host: Option<&'a str>,
@@ -158,36 +165,48 @@ fn set_gauge(name: &'static str, v: f64) {
 #[derive(Clone, Debug)]
 pub struct RouterIndex {
     pub exact: HashMap<String, &'static str>,
-    /// suffix 使用不含前导点的域名片段，按长度降序匹配
+    /// Suffix uses domain fragments without leading dots, sorted by length descending.
+    /// suffix 使用不含前导点的域名片段，按长度降序匹配。
     pub suffix: Vec<(String, &'static str)>,
-    /// suffix 精确尾段直查索引：key=去前导点的后缀（如 "example.com"）
+    /// Suffix exact match index: key = suffix without leading dot (e.g., "example.com").
+    /// suffix 精确尾段直查索引：key=去前导点的后缀（如 "example.com"）。
+    /// Note: This is a "stricter" suffix (based on label boundaries) for fast hits; non-boundary matches are still covered by `suffix` linear scan.
     /// 注意：这是一种"更严格"的后缀（基于标签边界），用于快速命中；非边界匹配仍由 `suffix` 线扫兜底保障旧语义。
     pub suffix_map: HashMap<String, &'static str>,
-    /// 端口精确匹配：key=目的端口（0-65535），命中即用
+    /// Port exact match: key = destination port (0-65535).
+    /// 端口精确匹配：key=目的端口（0-65535），命中即用。
     pub port_rules: HashMap<u16, &'static str>,
-    /// 端口区间（first-wins，保持插入顺序）
+    /// Port ranges (first-wins, insertion order preserved).
+    /// 端口区间（first-wins，保持插入顺序）。
     pub port_ranges: Vec<(u16, u16, &'static str)>,
-    /// 传输层默认：tcp/udp 两个可选优先级（在未命中 host/IP/port 时尝试）
+    /// Transport layer default: tcp/udp optional priority (tried when host/IP/port not matched).
+    /// 传输层默认：tcp/udp 两个可选优先级（在未命中 host/IP/port 时尝试）。
     pub transport_tcp: Option<&'static str>,
     pub transport_udp: Option<&'static str>,
-    /// IPv4/IPv6 CIDR，按前缀长度降序匹配
+    /// IPv4/IPv6 CIDR, sorted by prefix length descending.
+    /// IPv4/IPv6 CIDR，按前缀长度降序匹配。
     pub cidr4: Vec<(Ipv4Net, &'static str)>,
     pub cidr6: Vec<(Ipv6Net, &'static str)>,
-    /// CIDR 桶化索引：按前缀长度分桶，加速最长前缀匹配（构建期生成，读路径只读）
-    pub cidr4_buckets: Vec<Vec<(Ipv4Net, &'static str)>>, // 33 个桶，索引即掩码长度 0..=32
-    pub cidr6_buckets: Vec<Vec<(Ipv6Net, &'static str)>>, // 129 个桶，索引即掩码长度 0..=128
-    /// GeoIP CC → decision（例如 CN→direct / !CN→proxy），简单数组遍历
+    /// CIDR bucket index: bucketed by prefix length to accelerate longest prefix match (generated at build time, read-only at runtime).
+    /// CIDR 桶化索引：按前缀长度分桶，加速最长前缀匹配（构建期生成，读路径只读）。
+    pub cidr4_buckets: Vec<Vec<(Ipv4Net, &'static str)>>, // 33 buckets, index is mask length 0..=32
+    pub cidr6_buckets: Vec<Vec<(Ipv6Net, &'static str)>>, // 129 buckets, index is mask length 0..=128
+    /// GeoIP CC -> decision (e.g., CN->direct / !CN->proxy), simple array traversal.
+    /// GeoIP CC → decision（例如 CN→direct / !CN→proxy），简单数组遍历。
     pub geoip_rules: Vec<(String, &'static str)>,
-    /// GeoSite category → decision（例如 google→proxy / ads→reject），简单数组遍历
+    /// GeoSite category -> decision (e.g., google->proxy / ads->reject), simple array traversal.
+    /// GeoSite category → decision（例如 google→proxy / ads→reject），简单数组遍历。
     pub geosite_rules: Vec<(String, &'static str)>,
     #[cfg(feature = "router_keyword")]
-    pub keyword_rules: Vec<(String, String)>, // 原始存储
+    pub keyword_rules: Vec<(String, String)>, // Original storage / 原始存储
     #[cfg(feature = "router_keyword")]
     pub keyword_idx: Option<crate::router::keyword::Index>,
     pub default: &'static str,
-    /// 构建代号（热重载成功 +1），仅用于可观测
+    /// Generation code (incremented on successful hot reload), for observability only.
+    /// 构建代号（热重载成功 +1），仅用于可观测。
     pub gen: u64,
-    /// 用于热重载"变更检测"的校验和（blake3 of 文本）
+    /// Checksum for hot reload "change detection" (blake3 of text).
+    /// 用于热重载"变更检测"的校验和（blake3 of 文本）。
     pub checksum: [u8; 32],
 }
 

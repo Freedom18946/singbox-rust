@@ -1,4 +1,5 @@
 //! Process runtime: hold Engine/Bridge, spawn inbounds, optional health task.
+//! 进程运行时：持有引擎/桥接器，生成入站，可选的健康任务。
 use crate::adapter::Bridge;
 use crate::health;
 #[cfg(feature = "router")]
@@ -12,6 +13,7 @@ use std::thread::{self, JoinHandle as ThreadJoinHandle};
 pub mod supervisor;
 pub mod switchboard;
 pub mod transport;
+pub mod runtime_health;
 
 #[cfg(feature = "router")]
 pub struct Runtime<'a> {
@@ -50,7 +52,8 @@ impl<'a> Runtime<'a> {
         }
     }
 
-    /// Create runtime from configuration IR
+    /// Create runtime from configuration IR.
+    /// 从配置 IR 创建运行时。
     pub fn from_config_ir(ir: &'a ConfigIR) -> crate::error::SbResult<Self> {
         let engine = Engine::new(ir);
         let bridge = Bridge::new_from_config(ir).map_err(|e| {
@@ -80,7 +83,8 @@ impl Runtime<'_> {
 }
 
 impl<'a> Runtime<'a> {
-    /// 启动所有入站（bridge 中已构造）
+    /// Start all inbounds (constructed in bridge).
+    /// 启动所有入站（bridge 中已构造）。
     pub fn start(mut self) -> Self {
         for ib in &self.bridge.inbounds {
             let i = ib.clone();
@@ -95,16 +99,19 @@ impl<'a> Runtime<'a> {
         start_services(&services);
         self
     }
-    /// 可选启用健康探测
+    /// Optionally enable health check task.
+    /// 可选启用健康探测。
     pub fn with_health(mut self) -> Self {
         let br = self.bridge.clone();
         let h = health::spawn_health_task(br);
         self.health = Some(h);
         self
     }
-    /// 简单的"软关闭"：当前仅中止后台线程（测试环境下调用）
+    /// Simple "soft shutdown": currently only aborts background threads (called in test environment).
+    /// 简单的"软关闭"：当前仅中止后台线程（测试环境下调用）。
     pub fn shutdown(self) {
-        // 现阶段不强杀线程；交由进程退出，或未来增加控制通道
+        // Currently does not forcibly kill threads; relies on process exit or future control channels.
+        // 现阶段不强杀线程；交由进程退出，或未来增加控制通道。
         let _ = self;
     }
     /// Helper: clone engine as 'static view (for admin thread usage).
@@ -164,12 +171,19 @@ impl<'a> Runtime<'a> {
 #[cfg(feature = "router")]
 impl<'a> Engine<'a> {
     /// Produce an Engine<'static> that references the same config (safe because config lives for process lifetime).
+    /// 生成引用相同配置的 Engine<'static>（安全，因为配置在进程生命周期内存在）。
     ///
     /// # Safety
     /// This is safe because the configuration is guaranteed to live for the entire process lifetime.
     /// The caller must ensure that the referenced ConfigIR outlives the returned Engine<'static>.
+    /// 这是安全的，因为配置保证在整个进程生命周期内存在。
+    /// 调用者必须确保引用的 ConfigIR 的生命周期长于返回的 Engine<'static>。
     pub fn clone_as_static(&self) -> Engine<'static> {
         // SAFETY:
+        // - Invariant: self.cfg points to valid ConfigIR, designed to have process lifetime.
+        // - Concurrency/Aliasing: Caller must ensure ConfigIR outlives returned Engine<'static>.
+        // - FFI/Platform Contract: Lifetime transmutation based on design guarantee, no memory layout change.
+        // 安全性：
         // - 不变量：self.cfg 指向有效的 ConfigIR，设计上具有进程生命周期
         // - 并发/别名：调用者必须确保 ConfigIR 的生命周期长于返回的 Engine<'static>
         // - FFI/平台契约：生命周期转换基于设计保证，不涉及内存布局变更

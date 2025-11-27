@@ -151,7 +151,7 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
 
         // Build layered transport via unified mapper. For Trojan, always pass SNI to imply TLS.
         let alpn_csv = self.config.alpn.as_ref().map(|v| v.join(","));
-        let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
+        let chain_opt = self.config.transport.as_deref();
         let builder = crate::runtime::transport::map::apply_layers(
             TransportBuilder::tcp(),
             chain_opt,

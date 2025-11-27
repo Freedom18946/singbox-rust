@@ -1,7 +1,13 @@
 //! Inbound adapters (server-side protocol implementations).
+//! 入站适配器（服务端协议实现）。
 //!
 //! This module provides server-side implementations for various proxy protocols,
 //! including HTTP, SOCKS, TUN, Shadowsocks, VMess, VLESS, Trojan, and more.
+//! 本模块提供各种代理协议的服务端实现，包括 HTTP, SOCKS, TUN, Shadowsocks, VMess,
+//! VLESS, Trojan 等。
+//!
+//! Each submodule corresponds to a specific protocol or inbound type.
+//! 每个子模块对应一个特定的协议或入站类型。
 
 #[cfg(feature = "http")]
 pub mod http;
@@ -60,6 +66,7 @@ pub mod hysteria2;
 pub mod anytls;
 
 /// Router connector module for TUN devices.
+/// TUN 设备的路由器连接器模块。
 #[cfg(feature = "tun")]
 pub mod router_connector;
 

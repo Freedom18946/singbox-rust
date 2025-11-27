@@ -1,22 +1,45 @@
-//! # sb-transport: 传输层抽象库
+//! # sb-transport: Transport Layer Abstraction Library / 传输层抽象库
 //!
-//! 这个 crate 提供了 singbox-rust 项目的传输层抽象，包括：
-//! - `dialer`: 网络连接拨号器抽象和实现
-//! - `tls`: TLS 连接包装器（需要 `transport_tls` feature）
-//! - `util`: 传输工具函数（如超时处理）
-//! - `mem`: 内存传输（用于测试）
+//! This crate provides the transport layer abstraction for the singbox-rust project, serving as the
+//! foundation for all network communication. It abstracts over various protocols (TCP, TLS, QUIC, etc.)
+//! to provide a unified interface for upper layers.
+//!
+//! 这个 crate 提供了 singbox-rust 项目的传输层抽象，作为所有网络通信的基础。
+//! 它对各种协议（TCP, TLS, QUIC 等）进行了抽象，为上层提供统一的接口。
+//!
+//! ## Strategic Relevance / 战略关联
+//! - **Core Abstraction**: Defines the `Dialer` trait, which is the contract used by `sb-outbound`
+//!   and other crates to establish connections without knowing the underlying protocol details.
+//!   **核心抽象**：定义了 `Dialer` trait，这是 `sb-outbound` 和其他 crate 用于建立连接的契约，
+//!   无需了解底层协议细节。
+//! - **Dependency Hub**: Centralizes dependencies on transport libraries like `tokio`, `rustls`, `quinn`,
+//!   ensuring consistent versions and configuration across the workspace.
+//!   **依赖中心**：集中管理 `tokio`, `rustls`, `quinn` 等传输库的依赖，确保工作区内版本和配置的一致性。
+//! - **Reliability Layer**: Integrates `circuit_breaker` and `retry` logic, providing a standard way
+//!   to handle network instability globally.
+//!   **可靠性层**：集成了 `circuit_breaker` 和 `retry` 逻辑，提供了一种全局处理网络不稳定的标准方式。
+//!
+//! ## Modules / 模块
+//! - `dialer`: Network connection dialer abstraction and implementation / 网络连接拨号器抽象和实现
+//! - `tls`: TLS connection wrapper (requires `transport_tls` feature) / TLS 连接包装器
+//! - `util`: Transport utility functions (e.g., timeout handling) / 传输工具函数
+//! - `mem`: In-memory transport (for testing) / 内存传输（用于测试）
 //!
 //! ## Features
-//! - `transport_tls`: 启用 TLS 支持，基于 rustls
+//! - `transport_tls`: Enable TLS support based on rustls / 启用 TLS 支持
 //!
-//! ## Design Philosophy
+//! ## Design Philosophy / 设计理念
+//! This library follows the design philosophy of singbox-rust:
 //! 该库遵循 singbox-rust 的设计理念：
-//! - **boring clarity**: 简单清晰的抽象
-//! - **never break userspace**: 保持向后兼容
-//! - **good taste**: 优雅的 API 设计
+//! - **boring clarity**: Simple and clear abstractions / 简单清晰的抽象
+//! - **never break userspace**: Backward compatibility / 保持向后兼容
+//! - **good taste**: Elegant API design / 优雅的 API 设计
 //!
-//! R96: 顶层模块导出和重新暴露
+//! R96: Top-level module exports and re-exposures / 顶层模块导出和重新暴露
 
+/// Network connection dialer module
+/// Provides `Dialer` trait and various dialer implementations
+///
 /// 网络连接拨号器模块
 /// 提供了 `Dialer` trait 和各种拨号器实现
 pub mod dialer;
@@ -28,6 +51,10 @@ pub mod pool {
 #[cfg(feature = "failpoints")]
 pub mod failpoint_dialer;
 
+/// TLS transport layer module
+/// Provides TLS connection wrapper based on rustls
+/// Only available when `transport_tls` feature is enabled
+///
 /// TLS 传输层模块
 /// 提供基于 rustls 的 TLS 连接包装器
 /// 仅在启用 `transport_tls` feature 时可用
@@ -37,57 +64,95 @@ pub mod tls;
 #[cfg(feature = "transport_tls")]
 pub mod tls_secure;
 
+/// WebSocket transport layer module
+/// Provides WebSocket connection wrapper based on tokio-tungstenite
+/// Only available when `transport_ws` feature is enabled
+///
 /// WebSocket 传输层模块
 /// 提供基于 tokio-tungstenite 的 WebSocket 连接包装器
 /// 仅在启用 `transport_ws` feature 时可用
 #[cfg(feature = "transport_ws")]
 pub mod websocket;
 
+/// HTTP/2 transport layer module
+/// Provides HTTP/2 connection wrapper based on h2
+/// Only available when `transport_h2` feature is enabled
+///
 /// HTTP/2 传输层模块
 /// 提供基于 h2 的 HTTP/2 连接包装器
 /// 仅在启用 `transport_h2` feature 时可用
 #[cfg(feature = "transport_h2")]
 pub mod http2;
 
+/// gRPC transport layer module
+/// Provides gRPC tunnel service based on tonic
+/// Only available when `transport_grpc` feature is enabled
+///
 /// gRPC 传输层模块
 /// 提供基于 tonic 的 gRPC tunnel 服务
 /// 仅在启用 `transport_grpc` feature 时可用
 #[cfg(feature = "transport_grpc")]
 pub mod grpc;
 
+/// Multiplex transport layer module
+/// Provides connection multiplexing based on yamux
+/// Only available when `transport_mux` feature is enabled
+///
 /// Multiplex 传输层模块
 /// 提供基于 yamux 的连接复用
 /// 仅在启用 `transport_mux` feature 时可用
 #[cfg(feature = "transport_mux")]
 pub mod multiplex;
 
+/// HTTPUpgrade transport layer module
+/// Establishes byte stream tunnel via HTTP/1.1 Upgrade
+///
 /// HTTPUpgrade 传输层模块
 /// 通过 HTTP/1.1 Upgrade 建立字节流隧道
 #[cfg(feature = "transport_httpupgrade")]
 pub mod httpupgrade;
 
+/// QUIC transport layer module
+/// Provides generic QUIC transport based on quinn
+/// Only available when `transport_quic` feature is enabled
+///
 /// QUIC 传输层模块
 /// 提供基于 quinn 的通用 QUIC 传输
 /// 仅在启用 `transport_quic` feature 时可用
 #[cfg(feature = "transport_quic")]
 pub mod quic;
 
+/// Transport utility module
+/// Provides common transport utility functions such as timeout handling
+///
 /// 传输工具模块
 /// 提供超时处理等通用传输工具函数
 pub mod util;
 
+/// Memory transport module
+/// Provides in-memory dialer implementation, mainly for testing
+///
 /// 内存传输模块
 /// 提供基于内存的拨号器实现，主要用于测试
 pub mod mem;
 
+/// Retry and backoff strategy module
+/// Provides unified retry policies to improve reliability of idempotent I/O operations
+///
 /// 重试和退避策略模块
 /// 提供统一的重试策略，用于提高幂等 I/O 操作的可靠性
 pub mod retry;
 
+/// Circuit breaker module
+/// Provides lightweight circuit breaker protection to prevent cascading failures
+///
 /// 熔断器模块
 /// 提供轻量级熔断保护，防止级联故障
 pub mod circuit_breaker;
 
+/// Resource pressure detection module
+/// Provides file descriptor and memory pressure detection and fallback strategies
+///
 /// 资源压力检测模块
 /// 提供文件描述符和内存压力检测与回退策略
 pub mod resource_pressure;
@@ -96,6 +161,9 @@ pub mod resource_pressure;
 #[cfg(feature = "metrics")]
 mod metrics_ext;
 
+/// Transport chain builder
+/// Provides convenient builder for composing TCP -> TLS -> WebSocket/HTTP2 layers
+///
 /// 传输链构建器
 /// 提供用于组合 TCP -> TLS -> WebSocket/HTTP2 等层的便捷构建器
 pub mod builder;

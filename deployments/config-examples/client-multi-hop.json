@@ -1,0 +1,59 @@
+{
+    "log": {
+        "level": "info"
+    },
+    "inbounds": [
+        {
+            "type": "socks",
+            "tag": "socks-in",
+            "listen": "127.0.0.1",
+            "listen_port": 1080
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "shadowsocks",
+            "tag": "ss-proxy",
+            "server": "your-server.com",
+            "server_port": 8388,
+            "method": "chacha20-poly1305",
+            "password": "YOUR_PASSWORD"
+        },
+        {
+            "type": "trojan",
+            "tag": "trojan-backup",
+            "server": "backup-server.com",
+            "server_port": 443,
+            "password": "YOUR_TROJAN_PASSWORD",
+            "tls": {
+                "enabled": true,
+                "server_name": "backup-server.com",
+                "alpn": [
+                    "h2",
+                    "http/1.1"
+                ]
+            }
+        },
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "geoip": "private",
+                "outbound": "direct"
+            },
+            {
+                "geosite": "cn",
+                "outbound": "direct"
+            },
+            {
+                "geosite": "category-ads-all",
+                "outbound": "block"
+            }
+        ],
+        "final": "ss-proxy"
+    }
+}

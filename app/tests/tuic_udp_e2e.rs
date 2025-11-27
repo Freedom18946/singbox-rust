@@ -9,6 +9,8 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use sb_adapters::inbound::tuic::{serve as tuic_serve, TuicInboundConfig, TuicUser};
+use sb_core::outbound::OutboundRegistryHandle;
+use sb_core::router;
 
 fn self_signed_cert() -> (String, String) {
     let mut params = rcgen::CertificateParams::new(vec!["localhost".into()]);
@@ -45,6 +47,8 @@ async fn tuic_udp_roundtrip() {
     let (cert_pem, key_pem) = self_signed_cert();
     let listen: SocketAddr = "127.0.0.1:48443".parse().unwrap();
     let (stop_tx, stop_rx) = mpsc::channel(1);
+    let router = Arc::new(router::RouterHandle::from_env());
+    let outbounds = Arc::new(OutboundRegistryHandle::default());
     let cfg = TuicInboundConfig {
         listen,
         users: vec![TuicUser {
@@ -54,6 +58,8 @@ async fn tuic_udp_roundtrip() {
         cert: cert_pem,
         key: key_pem,
         congestion_control: Some("bbr".into()),
+        router: router.clone(),
+        outbounds: outbounds.clone(),
     };
     tokio::spawn(async move {
         let _ = tuic_serve(cfg, stop_rx).await;

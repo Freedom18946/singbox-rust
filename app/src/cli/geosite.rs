@@ -1,5 +1,16 @@
 #![allow(clippy::unused_async)]
 //! Geosite tooling subcommand (parity with sing-box `geosite`)
+//! Geosite 工具子命令（与 sing-box `geosite` 对齐）
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module manages **Domain-based Categorization Data**.
+//! 本模块管理 **基于域名的分类数据**。
+//!
+//! ## Strategic Features / 战略特性
+//! - **Binary Optimization / 二进制优化**: Implements a custom binary format reader for high-performance lookups, avoiding the overhead of parsing massive text files at runtime.
+//!   实现自定义二进制格式读取器以进行高性能查找，避免在运行时解析大量文本的开销。
+//! - **Category Management / 分类管理**: Allows users to inspect, test, and export specific categories (e.g., "google", "cn") from the monolithic database.
+//!   允许用户从庞大的数据库中检查、测试和导出特定分类（例如 "google", "cn"）。
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};

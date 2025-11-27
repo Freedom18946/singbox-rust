@@ -121,6 +121,7 @@ fn test_sni_based_routing() {
             protocol: "tun",
             sniff_host: Some(&sni), // Provide sniffed SNI
             sniff_alpn: None,
+            sniff_protocol: None,
         },
         false,
     );
@@ -138,6 +139,7 @@ fn test_sni_based_routing() {
             protocol: "tun",
             sniff_host: None,
             sniff_alpn: None,
+            sniff_protocol: None,
         },
         false,
     );
@@ -185,6 +187,7 @@ fn test_alpn_based_routing() {
             protocol: "tun",
             sniff_host: None,
             sniff_alpn: Some(&alpn),
+            sniff_protocol: None,
         },
         false,
     );
@@ -228,6 +231,7 @@ fn test_combined_sni_and_alpn_routing() {
             protocol: "tun",
             sniff_host: Some(&sni),
             sniff_alpn: Some(&alpn),
+            sniff_protocol: None,
         },
         false,
     );
@@ -248,6 +252,7 @@ fn test_combined_sni_and_alpn_routing() {
             protocol: "tun",
             sniff_host: Some(&sni),
             sniff_alpn: Some(&alpn_http1),
+            sniff_protocol: None,
         },
         false,
     );

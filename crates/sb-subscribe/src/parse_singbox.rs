@@ -15,6 +15,13 @@ struct Route {
     rules: Vec<serde_json::Value>,
 }
 
+/// Maps a Sing-box JSON rule object to internal DSL lines.
+/// [Chinese] 将 Sing-box JSON 规则对象映射为内部 DSL 行。
+///
+/// Since a single Sing-box rule object can contain multiple criteria (domain, ip_cidr, etc.),
+/// this function flattens them into multiple DSL lines.
+/// [Chinese] 由于单个 Sing-box 规则对象可能包含多个条件（domain, ip_cidr 等），
+/// 此函数将它们展平为多行 DSL。
 fn map_rule(v: &serde_json::Value, use_keyword: bool, out: &mut Vec<String>) {
     let decision = v
         .get("outbound")
@@ -69,6 +76,8 @@ fn map_rule(v: &serde_json::Value, use_keyword: bool, out: &mut Vec<String>) {
     }
 }
 
+/// Parses a Sing-box JSON string into a Profile.
+/// [Chinese] 将 Sing-box JSON 字符串解析为 Profile。
 pub fn parse_with_mode(json: &str, use_keyword: bool) -> Result<Profile, SubsError> {
     let doc: SBoxDoc = serde_json::from_str(json).map_err(|e| SubsError::Parse(e.to_string()))?;
     let mut p = Profile::default();

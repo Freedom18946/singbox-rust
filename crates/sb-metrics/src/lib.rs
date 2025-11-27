@@ -1,25 +1,46 @@
+//! sb-metrics: Lightweight Prometheus Exporter + Unified Metrics Registry.
 //! sb-metrics: 轻量 Prometheus 导出器 + 统一指标注册。
 //!
-//! ## 使用方式
-//! - 默认不启动；设置 `SB_METRICS_ADDR=127.0.0.1:9090` 环境变量时自动监听。
-//! - 调用 `maybe_spawn_http_exporter_from_env()` 启动 metrics HTTP 服务器。
-//! - 访问 `http://127.0.0.1:9090/metrics` 获取 Prometheus 格式指标。
+//! ## Strategic Role / 战略定位
+//! This crate serves as the **central observability hub** for the entire sing-box ecosystem.
+//! It decouples metric definition (in `sb-core`, `sb-adapters`) from metric exposition (HTTP server).
+//! By using `LazyLock` and global statics, it allows any module to record metrics without passing context,
+//! while ensuring low overhead via `prometheus` crate's atomic counters.
 //!
-//! ## 指标类别
-//! - **路由指标** (`router`): 路由规则匹配计数
-//! - **出站指标** (`outbound`): 出站连接尝试、错误、延迟
-//! - **适配器指标** (`adapter`): SOCKS/HTTP 适配器 dial 统计
-//! - **入站指标** (`socks_in`): SOCKS 入站 TCP/UDP 连接
-//! - **传统指标** (`legacy`): UDP NAT、代理选择、健康检查等
+//! 本 crate 是 sing-box 生态系统的**核心观测枢纽**。
+//! 它将指标定义（在 `sb-core`、`sb-adapters` 中）与指标暴露（HTTP 服务器）解耦。
+//! 通过使用 `LazyLock` 和全局静态变量，它允许任何模块在不传递上下文的情况下记录指标，
+//! 同时通过 `prometheus` crate 的原子计数器确保低开销。
 //!
-//! ## 示例
+//! ## Usage / 使用方式
+//! - **Default**: Disabled by default. Set `SB_METRICS_ADDR=127.0.0.1:9090` env var to enable.
+//! - **Startup**: Call `maybe_spawn_http_exporter_from_env()` in `app` to start the HTTP server.
+//! - **Scrape**: Access `http://127.0.0.1:9090/metrics` to get Prometheus formatted metrics.
+//!
+//! - **默认**：默认不启动；设置 `SB_METRICS_ADDR=127.0.0.1:9090` 环境变量时自动监听。
+//! - **启动**：在 `app` 中调用 `maybe_spawn_http_exporter_from_env()` 启动 metrics HTTP 服务器。
+//! - **采集**：访问 `http://127.0.0.1:9090/metrics` 获取 Prometheus 格式指标。
+//!
+//! ## Metric Categories / 指标类别
+//! - **Router** (`router`): Rule matching counters. Critical for analyzing traffic distribution.
+//!   - **路由指标** (`router`): 路由规则匹配计数。对分析流量分布至关重要。
+//! - **Outbound** (`outbound`): Connection attempts, errors, latency. Vital for upstream health monitoring.
+//!   - **出站指标** (`outbound`): 出站连接尝试、错误、延迟。对上游健康监控至关重要。
+//! - **Adapter** (`adapter`): SOCKS/HTTP adapter dial stats. Used by `sb-adapters`.
+//!   - **适配器指标** (`adapter`): SOCKS/HTTP 适配器 dial 统计。由 `sb-adapters` 使用。
+//! - **Inbound** (`socks_in`, `http`): Inbound connection stats.
+//!   - **入站指标** (`socks_in`, `http`): 入站连接统计。
+//! - **Legacy** (`legacy`): UDP NAT, proxy selection, health checks.
+//!   - **传统指标** (`legacy`): UDP NAT、代理选择、健康检查等。
+//!
+//! ## Example / 示例
 //! ```rust
 //! use sb_metrics::{inc_router_match, inc_outbound_connect_attempt, observe_outbound_connect_seconds};
 //!
-//! // 记录路由匹配
+//! // Record router match / 记录路由匹配
 //! inc_router_match("domain_suffix", "direct");
 //!
-//! // 记录出站连接
+//! // Record outbound connection / 记录出站连接
 //! inc_outbound_connect_attempt("socks");
 //! observe_outbound_connect_seconds("socks", 0.123);
 //! ```
@@ -309,7 +330,7 @@ mod adapter {
 }
 
 // ===================== Selector/URLTest Metrics =====================
-/// Selector and URLTest metrics
+/// Selector and `URLTest` metrics
 mod selector {
     use super::{IntCounterVec, LazyLock, REGISTRY};
     use prometheus::IntGaugeVec;
@@ -329,6 +350,7 @@ mod selector {
     /// Active connections gauge per proxy
     /// labels: proxy
     pub static ACTIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+        super::labels::ensure_allowed_labels("active_connections", &["proxy"]);
         let vec = IntGaugeVec::new(
             prometheus::Opts::new(
                 "selector_active_connections",
@@ -336,7 +358,10 @@ mod selector {
             ),
             &["proxy"],
         )
-        .unwrap();
+        .unwrap_or_else(|_| {
+            #[allow(clippy::unwrap_used)]
+            IntGaugeVec::new(prometheus::Opts::new("dummy_gauge", "dummy"), &["proxy"]).unwrap()
+        });
         REGISTRY.register(Box::new(vec.clone())).ok();
         vec
     });

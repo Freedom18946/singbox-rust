@@ -11,6 +11,12 @@ struct ClashDoc {
     rules: Vec<String>,
 }
 
+/// Maps a Clash rule line to the internal DSL format.
+/// [Chinese] 将 Clash 规则行映射为内部 DSL 格式。
+///
+/// Handles various Clash rule types (DOMAIN, IP-CIDR, etc.) and converts them into
+/// the unified string representation used by `sb-core`.
+/// [Chinese] 处理各种 Clash 规则类型（DOMAIN, IP-CIDR 等）并将其转换为 `sb-core` 使用的统一字符串表示。
 fn map_rule(line: &str, use_keyword: bool) -> Option<String> {
     let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
     if parts.len() < 2 {
@@ -46,7 +52,8 @@ fn map_rule(line: &str, use_keyword: bool) -> Option<String> {
         "DST-PORT" => {
             if let Some((a, b)) = pat.split_once('-') {
                 if let (Ok(x), Ok(y)) = (a.parse::<u16>(), b.parse::<u16>()) {
-                    // 保留原始顺序，交由后续 Lint/Normalize 处理
+                    // Keep original order, let Lint/Normalize handle it later
+                    // [Chinese] 保留原始顺序，交由后续 Lint/Normalize 处理
                     return Some(format!("portrange:{}-{}={}", x, y, decision));
                 }
             }
@@ -61,6 +68,8 @@ fn map_rule(line: &str, use_keyword: bool) -> Option<String> {
     }
 }
 
+/// Parses a Clash YAML string into a Profile.
+/// [Chinese] 将 Clash YAML 字符串解析为 Profile。
 pub fn parse_with_mode(yaml: &str, use_keyword: bool) -> Result<Profile, SubsError> {
     let doc: ClashDoc = serde_yaml::from_str(yaml).map_err(|e| SubsError::Parse(e.to_string()))?;
     let mut p = Profile::default();
@@ -89,8 +98,11 @@ pub fn parse(yaml: &str) -> Result<Profile, SubsError> {
     parse_with_mode(yaml, false)
 }
 
-/// R71: 带 providers 的解析与合并（只读，providers 由上层提供）
-/// providers key 形如：ruleset:NAME / geosite:NAME，value 为该集合的文本（每行一条 Clash 规则）
+/// R71: Parsing and merging with providers (read-only, providers supplied by upper layer).
+/// [Chinese] R71: 带 providers 的解析与合并（只读，providers 由上层提供）。
+///
+/// Providers key format: `ruleset:NAME` / `geosite:NAME`, value is the text content of the set (one Clash rule per line).
+/// [Chinese] providers key 形如：ruleset:NAME / geosite:NAME，value 为该集合的文本（每行一条 Clash 规则）。
 pub fn parse_with_providers(
     yaml: &str,
     use_keyword: bool,
@@ -142,7 +154,8 @@ pub fn parse_with_providers(
                     _stats.applied_geosite += 1;
                 }
             } else {
-                // 无 providers 时保持兼容：退化为原有 GEOSITE→suffix 的单行
+                // Compatibility: fallback to GEOSITE->suffix single line if no provider found
+                // [Chinese] 无 providers 时保持兼容：退化为原有 GEOSITE→suffix 的单行
                 if let Some(mapped) = map_rule(&r, use_keyword) {
                     p.rules.push(RuleEntry { line: mapped });
                 } else {

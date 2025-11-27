@@ -1,12 +1,22 @@
 // crates/sb-core/src/outbound/mod.rs
-//! Outbound 抽象 & 注册表（P1.6）
+//! Outbound Abstraction & Registry (P1.6)
+//! Outbound 抽象与注册表 (P1.6)
 //!
-//! - 统一的连接/握手超时（默认 10s/10s）
-//! - Direct / SOCKS5 / HTTP CONNECT 出站增加可观测性指标：
+//! # Outbound Layer / 出站层
+//! The outbound layer handles the actual connection to the destination.
+//! 出站层处理到目的地的实际连接。
+//!
+//! ## Key Features / 关键特性
+//! - **Unified Connection/Handshake Timeout**: Default 10s/10s.
+//!   统一的连接/握手超时（默认 10s/10s）。
+//! - **Observability / 可观测性**: Metrics for Direct / SOCKS5 / HTTP CONNECT outbounds.
+//!   Direct / SOCKS5 / HTTP CONNECT 出站的指标。
 //!   - `sb_outbound_connect_total{kind="direct|socks5|http", result="ok|timeout|error"}`
 //!   - `sb_outbound_handshake_total{kind="socks5|http", result="ok|timeout|error"}`
-//! - Direct 成功后设置 `TCP_NODELAY`（keepalive 改为后续用 socket2/TcpSocket 实现）
+//! - **TCP Optimization**: `TCP_NODELAY` set after Direct success.
+//!   Direct 成功后设置 `TCP_NODELAY`。
 //!
+//! Data structures and external interfaces remain compatible: No changes needed for Router/Inbound side.
 //! 数据结构与对外接口保持不变：Router/Inbound 端无需改动。
 
 #[cfg(feature = "scaffold")]
@@ -34,13 +44,16 @@ pub mod udp_balancer;
 pub mod udp_direct;
 pub mod udp_proxy_glue;
 pub mod udp_socks5;
-// P3评分选择器
+// P3 Score Selector
+// P3 评分选择器
 #[cfg(feature = "selector_p3")]
 pub mod selector_p3;
+// Unified Feedback Entry (Selection/Dial Report)
 // 统一反馈入口（选择/拨号回报）
 #[cfg(feature = "selector_p3")]
 pub mod feedback;
-// 简化P3选择器
+// Simplified P3 Selector
+// 简化 P3 选择器
 pub mod p3_selector;
 
 // Encrypted outbound protocols
@@ -103,12 +116,16 @@ use tokio::{
     net::{lookup_host, TcpSocket, TcpStream},
     time::{timeout, Duration},
 };
+// Public dial utilities, allowing upper layers/callers to use them in-place without modifying outbound implementations
 // 公开拨号工具，便于上层/调用方在不改动出站实现的前提下就地使用
 pub use crate::net::dial::{
     dial_all, dial_hostport, dial_pref, dial_socketaddrs, per_attempt_timeout,
 };
 
-///（预备）出站便捷拨号包装：现在先提供 API，不直接替换现有实现。
+/// (Experimental) Outbound convenient dial wrapper: Currently provided as API, not directly replacing existing implementations.
+/// （预备）出站便捷拨号包装：现在先提供 API，不直接替换现有实现。
+///
+/// Example call: `let s = sb_core::outbound::connect("example.com", 443).await?;`
 /// 调用示例：`let s = sb_core::outbound::connect("example.com", 443).await?;`
 #[allow(dead_code)]
 pub async fn connect(host: &str, port: u16) -> std::io::Result<TcpStream> {

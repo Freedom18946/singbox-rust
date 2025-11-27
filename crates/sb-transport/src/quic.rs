@@ -1,17 +1,27 @@
-//! # QUIC Transport Layer
+//! # QUIC Transport Layer / QUIC 传输层
 //!
 //! This module provides generic QUIC transport implementation for singbox-rust, including:
-//! - `QuicDialer`: Client-side QUIC connection dialer
-//! - `QuicStream`: Wrapper for QUIC streams to implement AsyncReadWrite
-//! - 0-RTT support for low-latency connections
+//! 该模块提供 singbox-rust 的通用 QUIC 传输实现，包括：
+//! - `QuicDialer`: Client-side QUIC connection dialer / 客户端 QUIC 连接拨号器
+//! - `QuicStream`: Wrapper for QUIC streams to implement AsyncReadWrite / QUIC 流的包装器，用于实现 AsyncReadWrite
+//! - 0-RTT support for low-latency connections / 对低延迟连接的 0-RTT 支持
 //!
-//! ## Features
-//! - Generic QUIC transport using quinn
-//! - Bidirectional and unidirectional streams
-//! - 0-RTT connection establishment
-//! - Connection migration support
-//! - Configurable congestion control
-//! - TLS 1.3 integration
+//! ## Features / 特性
+//! - Generic QUIC transport using quinn / 使用 quinn 的通用 QUIC 传输
+//! - Bidirectional and unidirectional streams / 双向和单向流
+//! - 0-RTT connection establishment / 0-RTT 连接建立
+//! - Connection migration support / 连接迁移支持
+//! - Configurable congestion control / 可配置的拥塞控制
+//! - TLS 1.3 integration / TLS 1.3 集成
+//!
+//! ## Strategic Relevance / 战略关联
+//! - **Modern Transport Protocol**: Offers an alternative to TCP, leveraging UDP for improved performance,
+//!   reduced head-of-line blocking, and better handling of network changes.
+//!   **现代传输协议**：提供 TCP 的替代方案，利用 UDP 提高性能，减少队头阻塞，并更好地处理网络变化。
+//! - **Low Latency**: Supports 0-RTT, enabling faster connection establishment for subsequent connections.
+//!   **低延迟**：支持 0-RTT，为后续连接实现更快的连接建立。
+//! - **Enhanced Privacy**: Integrates with ECH for improved privacy by encrypting the initial handshake.
+//!   **增强隐私**：与 ECH 集成，通过加密初始握手来提高隐私性。
 //!
 //! ## Usage
 //! ```rust,no_run
@@ -44,26 +54,34 @@ use tracing::debug;
 #[cfg(feature = "transport_ech")]
 use sb_tls::EchConnector;
 
-/// QUIC configuration
+/// QUIC configuration / QUIC 配置
 #[derive(Debug, Clone)]
 pub struct QuicConfig {
     /// Server name for TLS SNI (required)
+    /// TLS SNI 的服务器名称（必需）
     pub server_name: String,
     /// ALPN protocols (default: empty)
+    /// ALPN 协议列表（默认：空）
     pub alpn_protocols: Vec<Vec<u8>>,
     /// Enable 0-RTT (default: false)
+    /// 启用 0-RTT（默认：false）
     pub enable_zero_rtt: bool,
     /// Keep-alive interval in seconds (default: 30)
+    /// 保活间隔（秒）（默认：30）
     pub keep_alive_interval: u64,
     /// Max idle timeout in seconds (default: 60)
+    /// 最大空闲超时（秒）（默认：60）
     pub max_idle_timeout: u64,
     /// Initial maximum data (default: 10MB)
+    /// 初始最大数据量（默认：10MB）
     pub initial_max_data: u64,
     /// Initial maximum stream data (default: 1MB)
+    /// 初始最大流数据量（默认：1MB）
     pub initial_max_stream_data_bidi_local: u64,
     pub initial_max_stream_data_bidi_remote: u64,
     pub initial_max_stream_data_uni: u64,
     /// ECH (Encrypted Client Hello) configuration (optional)
+    /// ECH (Encrypted Client Hello) 配置（可选）
     #[cfg(feature = "transport_ech")]
     pub ech_config: Option<sb_tls::EchClientConfig>,
 }
@@ -86,15 +104,17 @@ impl Default for QuicConfig {
     }
 }
 
-/// QUIC dialer
+/// QUIC dialer / QUIC 拨号器
 ///
 /// This dialer establishes QUIC connections and creates streams for communication.
+/// 该拨号器建立 QUIC 连接并创建用于通信的流。
 /// It supports:
-/// - QUIC protocol using quinn
-/// - 0-RTT for low-latency
-/// - Configurable transport parameters
-/// - TLS 1.3 with ALPN
-/// - ECH (Encrypted Client Hello) for QUIC
+/// 它支持：
+/// - QUIC protocol using quinn / 使用 quinn 的 QUIC 协议
+/// - 0-RTT for low-latency / 用于低延迟的 0-RTT
+/// - Configurable transport parameters / 可配置的传输参数
+/// - TLS 1.3 with ALPN / 带 ALPN 的 TLS 1.3
+/// - ECH (Encrypted Client Hello) for QUIC / 用于 QUIC 的 ECH (Encrypted Client Hello)
 pub struct QuicDialer {
     config: QuicConfig,
     endpoint: Arc<Endpoint>,
@@ -104,8 +124,10 @@ pub struct QuicDialer {
 
 impl QuicDialer {
     /// Create a new QUIC dialer with custom configuration
+    /// 使用自定义配置创建新的 QUIC 拨号器
     pub fn new(config: QuicConfig) -> Result<Self, DialError> {
         // Create ECH connector if ECH is configured
+        // 如果配置了 ECH，则创建 ECH 连接器
         #[cfg(feature = "transport_ech")]
         let ech_connector = if let Some(ref ech_cfg) = config.ech_config {
             if ech_cfg.enabled {
@@ -120,10 +142,12 @@ impl QuicDialer {
         };
 
         // Create quinn endpoint
+        // 创建 quinn 端点
         let mut endpoint = Endpoint::client("0.0.0.0:0".parse::<SocketAddr>().unwrap())
             .map_err(|e| DialError::Other(format!("Failed to create QUIC endpoint: {}", e)))?;
 
         // Build client configuration (handle platform verifier fallible API)
+        // 构建客户端配置（处理平台验证器可能失败的 API）
         let mut client_config = ClientConfig::try_with_platform_verifier()
             .map_err(|e| DialError::Other(format!("Failed to init QUIC client verifier: {}", e)))?;
 
@@ -131,8 +155,13 @@ impl QuicDialer {
         // ALPN protocols are now set through the crypto config
         // For now, we'll use the default configuration
         // To set custom ALPN, we would need to build a custom rustls config
+        // 注意：quinn 0.11 更改了 ALPN 配置
+        // ALPN 协议现在通过加密配置设置
+        // 目前，我们将使用默认配置
+        // 要设置自定义 ALPN，我们需要构建自定义 rustls 配置
 
         // Configure transport parameters
+        // 配置传输参数
         let mut transport_config = quinn::TransportConfig::default();
         transport_config.max_idle_timeout(Some(
             VarInt::from_u64(config.max_idle_timeout * 1000)
@@ -144,6 +173,9 @@ impl QuicDialer {
         // Note: quinn 0.11 has different API for stream settings
         // These are now configured differently or have default values
         // We'll use defaults for now
+        // 注意：quinn 0.11 具有不同的流设置 API
+        // 这些现在配置方式不同或具有默认值
+        // 我们目前使用默认值
 
         client_config.transport_config(Arc::new(transport_config));
 
@@ -167,6 +199,7 @@ impl QuicDialer {
     }
 
     /// Get or create a QUIC connection
+    /// 获取或创建 QUIC 连接
     async fn get_connection(&self, host: &str, port: u16) -> Result<Connection, DialError> {
         let server_addr = format!("{}:{}", host, port);
         let addr: SocketAddr = tokio::net::lookup_host(&server_addr)
@@ -178,9 +211,12 @@ impl QuicDialer {
 
         // Determine the server name for SNI
         // If ECH is enabled, we need to handle ECH-QUIC alignment
+        // 确定 SNI 的服务器名称
+        // 如果启用了 ECH，我们需要处理 ECH-QUIC 对齐
         #[cfg(feature = "transport_ech")]
         let server_name = if let Some(ref ech_connector) = self.ech_connector {
             // ECH is enabled - encrypt the real SNI
+            // ECH 已启用 - 加密真实的 SNI
             let ech_hello = ech_connector
                 .wrap_tls(host)
                 .map_err(|e| DialError::Other(format!("ECH encryption failed: {}", e)))?;
@@ -194,6 +230,10 @@ impl QuicDialer {
             // The encrypted inner ClientHello is embedded in the QUIC handshake
             // Note: Full ECH-QUIC integration requires custom QUIC crypto config
             // This is a simplified implementation showing the integration point
+            // 对于带 ECH 的 QUIC，我们使用外层 SNI（公共名称）
+            // 加密的内部 ClientHello 嵌入在 QUIC 握手中
+            // 注意：完整的 ECH-QUIC 集成需要自定义 QUIC 加密配置
+            // 这是一个展示集成点的简化实现
             ech_hello.outer_sni
         } else if !self.config.server_name.is_empty() {
             self.config.server_name.clone()
@@ -243,11 +283,13 @@ impl Dialer for QuicDialer {
     }
 }
 
-/// QUIC stream adapter
+/// QUIC stream adapter / QUIC 流适配器
 ///
 /// This adapter wraps quinn SendStream and RecvStream to implement
 /// `AsyncRead` and `AsyncWrite` traits, making it compatible with the
 /// `IoStream` type.
+/// 该适配器包装 quinn SendStream 和 RecvStream 以实现
+/// `AsyncRead` 和 `AsyncWrite` trait，使其与 `IoStream` 类型兼容。
 pub struct QuicStreamAdapter {
     send_stream: SendStream,
     recv_stream: RecvStream,

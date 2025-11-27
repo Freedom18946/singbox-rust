@@ -17,14 +17,14 @@ type EngineX<'a> = RouterEngine<'a>;
 type EngineX<'a> = Engine;
 
 #[cfg(not(feature = "router"))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Engine {
-    cfg: sb_config::ir::ConfigIR,
+    pub(crate) cfg: sb_config::ir::ConfigIR,
 }
 
 #[cfg(not(feature = "router"))]
 impl Engine {
-    fn new(cfg: sb_config::ir::ConfigIR) -> Self {
+    pub(crate) fn new(cfg: sb_config::ir::ConfigIR) -> Self {
         Self { cfg }
     }
 }
@@ -42,10 +42,14 @@ pub struct MixedInbound {
     basic_pass: Option<String>,
     sniff_enabled: bool,
     shutdown: Arc<AtomicBool>,
+    rate_limiter: Option<crate::net::tcp_rate_limit::TcpRateLimiter>,
 }
 
 impl MixedInbound {
     pub fn new(listen: String, port: u16) -> Self {
+        let rate_limiter = Some(crate::net::tcp_rate_limit::TcpRateLimiter::new(
+            crate::net::tcp_rate_limit::TcpRateLimitConfig::from_env(),
+        ));
         Self {
             listen,
             port,
@@ -55,6 +59,7 @@ impl MixedInbound {
             basic_pass: None,
             sniff_enabled: false,
             shutdown: Arc::new(AtomicBool::new(false)),
+            rate_limiter,
         }
     }
 
@@ -101,7 +106,15 @@ impl MixedInbound {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 }
-                Ok(Ok((socket, _))) => {
+                Ok(Ok((socket, peer_addr))) => {
+                    // Rate limit check
+                    if let Some(limiter) = &self.rate_limiter {
+                        if !limiter.allow_connection(peer_addr.ip()) {
+                            tracing::warn!(target = "sb_core::inbound::mixed", "Rate limit exceeded for {}", peer_addr.ip());
+                            continue;
+                        }
+                    }
+
                     let eng_c = eng.clone();
                     let br_c = br.clone();
                     let auth = self.basic_user.clone().zip(self.basic_pass.clone());
@@ -133,10 +146,24 @@ async fn handle_conn(
     };
     if n > 0 && probe[0] == 0x05 {
         // SOCKS5
-        return crate::inbound::socks5::handle_conn(cli, eng, br, sniff_enabled).await;
+        #[cfg(feature = "router")]
+        let socks_eng = eng;
+        #[cfg(not(feature = "router"))]
+        let socks_eng_val = crate::inbound::socks5::Engine::new(eng.cfg.clone());
+        #[cfg(not(feature = "router"))]
+        let socks_eng = &socks_eng_val;
+
+        return crate::inbound::socks5::handle_conn(cli, socks_eng, br, sniff_enabled).await;
     }
     // Treat as HTTP CONNECT if starts with 'C' or fallback to HTTP
-    return crate::inbound::http_connect::handle(cli, eng, br, http_auth, sniff_enabled).await;
+    #[cfg(feature = "router")]
+    let http_eng = eng;
+    #[cfg(not(feature = "router"))]
+    let http_eng_val = crate::inbound::http_connect::Engine::new(eng.cfg.clone());
+    #[cfg(not(feature = "router"))]
+    let http_eng = &http_eng_val;
+
+    return crate::inbound::http_connect::handle(cli, http_eng, br, http_auth, sniff_enabled).await;
 }
 
 impl InboundService for MixedInbound {

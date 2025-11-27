@@ -1,8 +1,12 @@
 //! V2Ray API implementation
+//! V2Ray API 实现
 //!
 //! This module provides V2Ray-compatible API services for managing
 //! and monitoring the proxy server. It supports both gRPC (when v2ray-api
 //! feature is enabled) and a simplified implementation (default).
+//!
+//! 本模块提供兼容 V2Ray 的 API 服务，用于管理和监控代理服务器。它支持 gRPC（当启用
+//! v2ray-api 特性时）和简化实现（默认）。
 
 #![warn(missing_docs)]
 // 该模块为 gRPC/协议壳，文档噪声在严格门禁下过高，先局部豁免，生产面向文档另行提供。

@@ -431,50 +431,6 @@ fn vmess_decrypt_aead(
     }
 }
 
-#[cfg(test)]
-#[cfg(feature = "out_vmess")]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vmess_aead_roundtrip_aes() {
-        let key = [1u8; 16];
-        let nonce0 = 0u64;
-        let plain = b"hello vmess";
-        let ct_len = vmess_encrypt_aead(
-            "aes-128-gcm",
-            &key,
-            nonce0,
-            &(plain.len() as u16).to_be_bytes(),
-        )
-        .unwrap();
-        let pt_len = vmess_decrypt_aead("aes-128-gcm", &key, nonce0, &ct_len).unwrap();
-        assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
-        let ct = vmess_encrypt_aead("aes-128-gcm", &key, nonce0 + 1, plain).unwrap();
-        let pt = vmess_decrypt_aead("aes-128-gcm", &key, nonce0 + 1, &ct).unwrap();
-        assert_eq!(pt, plain);
-    }
-
-    #[test]
-    fn test_vmess_aead_roundtrip_chacha() {
-        let key = [2u8; 16];
-        let nonce0 = 7u64;
-        let plain = b"hello chacha";
-        let ct_len = vmess_encrypt_aead(
-            "chacha20-poly1305",
-            &key,
-            nonce0,
-            &(plain.len() as u16).to_be_bytes(),
-        )
-        .unwrap();
-        let pt_len = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0, &ct_len).unwrap();
-        assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
-        let ct = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0 + 1, plain).unwrap();
-        let pt = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0 + 1, &ct).unwrap();
-        assert_eq!(pt, plain);
-    }
-}
-
 #[cfg(feature = "out_vmess")]
 #[async_trait]
 impl OutboundTcp for VmessOutbound {
@@ -591,7 +547,7 @@ impl OutboundTcp for VmessOutbound {
             let tag = 16usize; // AEAD tag size for both ciphers here
             let mut len_buf = vec![0u8; 2 + tag];
             loop {
-                if let Err(_) = ss_r.read_exact(&mut len_buf).await {
+                if (ss_r.read_exact(&mut len_buf).await).is_err() {
                     break;
                 }
                 let len_plain = match vmess_decrypt_aead(&cipher_r, &key_r, read_nonce, &len_buf) {
@@ -604,7 +560,7 @@ impl OutboundTcp for VmessOutbound {
                 let plain_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
 
                 let mut payload = vec![0u8; plain_len + tag];
-                if let Err(_) = ss_r.read_exact(&mut payload).await {
+                if (ss_r.read_exact(&mut payload).await).is_err() {
                     break;
                 }
                 let plain = match vmess_decrypt_aead(
@@ -689,7 +645,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
         };
 
         let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
-        let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
+        let chain_opt = self.config.transport.as_deref();
         let builder = crate::runtime::transport::map::apply_layers(
             TransportBuilder::tcp(),
             chain_opt,
@@ -720,6 +676,50 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
             .map_err(crate::error::SbError::from)?;
 
         Ok(stream)
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "out_vmess")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vmess_aead_roundtrip_aes() {
+        let key = [1u8; 16];
+        let nonce0 = 0u64;
+        let plain = b"hello vmess";
+        let ct_len = vmess_encrypt_aead(
+            "aes-128-gcm",
+            &key,
+            nonce0,
+            &(plain.len() as u16).to_be_bytes(),
+        )
+        .unwrap();
+        let pt_len = vmess_decrypt_aead("aes-128-gcm", &key, nonce0, &ct_len).unwrap();
+        assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
+        let ct = vmess_encrypt_aead("aes-128-gcm", &key, nonce0 + 1, plain).unwrap();
+        let pt = vmess_decrypt_aead("aes-128-gcm", &key, nonce0 + 1, &ct).unwrap();
+        assert_eq!(pt, plain);
+    }
+
+    #[test]
+    fn test_vmess_aead_roundtrip_chacha() {
+        let key = [2u8; 16];
+        let nonce0 = 7u64;
+        let plain = b"hello chacha";
+        let ct_len = vmess_encrypt_aead(
+            "chacha20-poly1305",
+            &key,
+            nonce0,
+            &(plain.len() as u16).to_be_bytes(),
+        )
+        .unwrap();
+        let pt_len = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0, &ct_len).unwrap();
+        assert_eq!(pt_len.as_slice(), &(plain.len() as u16).to_be_bytes());
+        let ct = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0 + 1, plain).unwrap();
+        let pt = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0 + 1, &ct).unwrap();
+        assert_eq!(pt, plain);
     }
 }
 

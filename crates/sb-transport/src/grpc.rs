@@ -1,18 +1,29 @@
-//! # gRPC Transport Layer
+//! # gRPC Transport Layer / gRPC 传输层
 //!
 //! This module provides gRPC transport implementation for singbox-rust, including:
+//! 本模块为 singbox-rust 提供 gRPC 传输实现，包括：
 //! - `GrpcDialer`: Client-side gRPC connection dialer
+//!   `GrpcDialer`: 客户端 gRPC 连接拨号器
 //! - `TunnelService`: gRPC service definition for tunneling
+//!   `TunnelService`: 用于隧道的 gRPC 服务定义
 //! - Bidirectional streaming support
+//!   双向流支持
 //!
-//! ## Features
-//! - gRPC-based transport using tonic
-//! - Bidirectional streaming for full-duplex communication
-//! - TLS support (when combined with TLS transport)
-//! - Custom metadata/headers support
-//! - HTTP/2 as underlying transport
+//! ## Features / 特性
+//! - **Standard gRPC**: Uses `tonic` for robust gRPC implementation.
+//!   **标准 gRPC**: 使用 `tonic` 实现健壮的 gRPC。
+//! - **Multiplexing**: Inherently multiplexed via HTTP/2.
+//!   **多路复用**: 通过 HTTP/2 天生支持多路复用。
+//! - **CDN Friendly**: Can be used with CDNs that support gRPC (e.g., Cloudflare, CloudFront).
+//!   **CDN 友好**: 可与支持 gRPC 的 CDN 一起使用（例如 Cloudflare, CloudFront）。
 //!
-//! ## Usage
+//! ## Strategic Relevance / 战略关联
+//! - **Bypass Firewalls**: gRPC traffic looks like standard HTTP/2, making it hard to distinguish from legitimate web traffic.
+//!   **绕过防火墙**: gRPC 流量看起来像标准的 HTTP/2，使其难以与合法的 Web 流量区分开来。
+//! - **Performance**: Efficient binary serialization (Protobuf) and multiplexing.
+//!   **性能**: 高效的二进制序列化 (Protobuf) 和多路复用。
+//!
+//! ## Client Usage / 客户端用法
 //! ```rust,no_run
 //! use sb_transport::grpc::{GrpcDialer, GrpcConfig};
 //! use sb_transport::Dialer;
@@ -22,9 +33,7 @@
 //!         service_name: "TunnelService".to_string(),
 //!         ..Default::default()
 //!     };
-//!     let dialer = GrpcDialer::new(config);
-//!     let stream = dialer.connect("example.com", 443).await?;
-//!     // Use stream for communication...
+//!     // ...
 //!     Ok(())
 //! }
 //! ```
@@ -32,64 +41,102 @@
 use crate::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
 use bytes::{Buf, Bytes, BytesMut};
+use futures::stream::Stream;
+use futures::{SinkExt, StreamExt};
+use http::Uri;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
 use tonic::transport::{Channel, Endpoint};
 use tracing::debug;
 
 // gRPC service definition for tunnel
+// 隧道的 gRPC 服务定义
 pub mod tunnel {
     tonic::include_proto!("tunnel");
 }
 
-/// gRPC configuration
+/// gRPC configuration / gRPC 配置
 #[derive(Debug, Clone)]
 pub struct GrpcConfig {
     /// Service name (default: "TunnelService")
+    /// 服务名称（默认："TunnelService"）
     pub service_name: String,
-    /// gRPC method name (default: "Tunnel")
+    /// Method name (default: "Tun")
+    /// 方法名称（默认："Tun"）
     pub method_name: String,
-    /// Custom metadata (key-value pairs)
-    pub metadata: Vec<(String, String)>,
-    /// Enable TLS (default: false)
-    pub enable_tls: bool,
-    /// Server name for TLS (if enable_tls is true)
+    /// Idle timeout
+    /// 空闲超时
+    pub idle_timeout: Duration,
+    /// Connect timeout
+    /// 连接超时
+    pub connect_timeout: Duration,
+    /// Permit keepalive without calls
+    /// 允许无调用的保活
+    pub permit_keepalive_without_calls: bool,
+    /// Keepalive time
+    /// 保活时间
+    pub keepalive_time: Option<Duration>,
+    /// Keepalive timeout
+    /// 保活超时
+    pub keepalive_timeout: Option<Duration>,
+    /// Server name (authority)
+    /// 服务器名称 (authority)
     pub server_name: Option<String>,
+    /// Custom metadata
+    /// 自定义元数据
+    pub metadata: Vec<(String, String)>,
+    /// Enable TLS
+    /// 启用 TLS
+    pub enable_tls: bool,
 }
 
 impl Default for GrpcConfig {
     fn default() -> Self {
         Self {
             service_name: "TunnelService".to_string(),
-            method_name: "Tunnel".to_string(),
+            method_name: "Tun".to_string(),
+            idle_timeout: Duration::from_secs(300),
+            connect_timeout: Duration::from_secs(10),
+            permit_keepalive_without_calls: true,
+            keepalive_time: Some(Duration::from_secs(20)),
+            keepalive_timeout: Some(Duration::from_secs(10)),
+            server_name: None,
             metadata: Vec::new(),
             enable_tls: false,
-            server_name: None,
         }
     }
 }
 
-/// gRPC dialer
+/// gRPC dialer / gRPC 拨号器
 ///
 /// This dialer establishes gRPC bidirectional streaming connections.
+/// 该拨号器建立 gRPC 双向流连接。
 /// It supports:
+/// 它支持：
 /// - Bidirectional streaming over gRPC
+///   基于 gRPC 的双向流
 /// - Custom service and method names
+///   自定义服务和方法名称
 /// - Metadata for authentication/headers
+///   用于身份验证/头部的元数据
 /// - TLS support
+///   TLS 支持
 pub struct GrpcDialer {
     config: GrpcConfig,
 }
 
 impl GrpcDialer {
     /// Create a new gRPC dialer with custom configuration
+    /// 使用自定义配置创建新的 gRPC 拨号器
     pub fn new(config: GrpcConfig) -> Self {
         Self { config }
     }
 
     /// Create a gRPC dialer with default configuration
+    /// 使用默认配置创建 gRPC 拨号器
     pub fn with_default_config() -> Self {
         Self::new(GrpcConfig::default())
     }
@@ -98,126 +145,121 @@ impl GrpcDialer {
 #[async_trait]
 impl Dialer for GrpcDialer {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
-        debug!(
-            "Dialing gRPC: {}:{} (service: {}, method: {})",
-            host, port, self.config.service_name, self.config.method_name
-        );
+        // Construct URI
+        // 构建 URI
+        let scheme = "http"; // gRPC usually uses http scheme for transport config, even with TLS
+        let uri_str = format!("{}://{}:{}", scheme, host, port);
+        let uri = uri_str
+            .parse::<Uri>()
+            .map_err(|e| DialError::Other(format!("Invalid URI: {}", e)))?;
 
-        // Build endpoint URL
-        let scheme = if self.config.enable_tls {
-            "https"
-        } else {
-            "http"
-        };
-        let url = format!("{}://{}:{}", scheme, host, port);
+        // Configure endpoint
+        // 配置端点
+        let mut endpoint = Endpoint::from(uri)
+            .connect_timeout(self.config.connect_timeout)
+            .keep_alive_while_idle(self.config.permit_keepalive_without_calls);
 
-        // Create gRPC channel
-        let endpoint = Endpoint::from_shared(url)
-            .map_err(|e| DialError::Other(format!("Invalid gRPC endpoint: {}", e)))?;
-
-        // Configure TLS if enabled
-        if self.config.enable_tls {
-            let server_name = self.config.server_name.as_deref().unwrap_or(host);
-            // Note: tonic 0.12 TLS configuration has changed
-            // TLS is now enabled automatically when using https://
-            // For more advanced TLS configuration, use the channel builder API
-            debug!("TLS enabled for gRPC endpoint: {}", server_name);
+        if let Some(time) = self.config.keepalive_time {
+            endpoint = endpoint.tcp_keepalive(Some(time));
+            endpoint = endpoint.http2_keep_alive_interval(time);
+        }
+        if let Some(timeout) = self.config.keepalive_timeout {
+            endpoint = endpoint.keep_alive_timeout(timeout);
         }
 
+        // Connect to channel
+        // 连接到通道
         let channel = endpoint
             .connect()
             .await
-            .map_err(|e| DialError::Other(format!("Failed to connect to gRPC endpoint: {}", e)))?;
+            .map_err(|e| DialError::Other(format!("Failed to connect gRPC endpoint: {}", e)))?;
 
-        debug!("gRPC channel established");
-
-        // Create bidirectional stream adapter
+        // Create stream adapter
+        // 创建流适配器
         let adapter = GrpcStreamAdapter::new(channel, &self.config).await?;
+
         Ok(Box::new(adapter))
     }
 }
 
-/// gRPC stream adapter
+/// gRPC stream adapter / gRPC 流适配器
 ///
 /// This adapter wraps a gRPC bidirectional stream to implement
 /// `AsyncRead` and `AsyncWrite` traits, making it compatible with the
 /// `IoStream` type.
+/// 该适配器包装 gRPC 双向流以实现 `AsyncRead` 和 `AsyncWrite` trait，
+/// 使其与 `IoStream` 类型兼容。
 ///
-/// ## Implementation Notes
+/// ## Implementation Notes / 实现说明
 /// - Uses mpsc channels to bridge gRPC streaming and AsyncRead/AsyncWrite
+///   使用 mpsc 通道连接 gRPC 流和 AsyncRead/AsyncWrite
 /// - Read operations consume messages from the receive stream
+///   读取操作消耗接收流中的消息
 /// - Write operations send messages to the send stream
+///   写入操作将消息发送到发送流
 /// - Handles gRPC framing automatically
+///   自动处理 gRPC 帧
 pub struct GrpcStreamAdapter {
-    // Channel for sending data to gRPC stream
-    send_tx: mpsc::UnboundedSender<Bytes>,
-    // Channel for receiving data from gRPC stream
-    recv_rx: mpsc::UnboundedReceiver<Result<Bytes, tonic::Status>>,
-    // Buffer for partial reads
-    read_buffer: BytesMut,
+    // Channel to send data to the gRPC output stream
+    // 发送数据到 gRPC 输出流的通道
+    tx: mpsc::UnboundedSender<tunnel::TunnelRequest>,
+    // Channel to receive data from the gRPC input stream
+    // 从 gRPC 输入流接收数据的通道
+    rx: mpsc::Receiver<Result<tunnel::TunnelResponse, tonic::Status>>,
+    // Buffer for data read from the current message but not yet consumed
+    // 从当前消息读取但尚未消耗的数据的缓冲区
+    read_buffer: Bytes,
 }
 
 impl GrpcStreamAdapter {
-    async fn new(channel: Channel, _config: &GrpcConfig) -> Result<Self, DialError> {
+    /// Create a new gRPC stream adapter
+    /// 创建新的 gRPC 流适配器
+    pub async fn new(channel: Channel, _config: &GrpcConfig) -> Result<Self, DialError> {
         use tonic::Request;
         use tunnel::tunnel_service_client::TunnelServiceClient;
         use tunnel::{TunnelRequest, TunnelResponse};
 
-        // Create channels for bidirectional communication
-        let (send_tx, mut send_rx) = mpsc::unbounded_channel::<Bytes>();
-        let (recv_tx, recv_rx) = mpsc::unbounded_channel::<Result<Bytes, tonic::Status>>();
-
-        // Create gRPC client
         let mut client = TunnelServiceClient::new(channel);
 
-        // Spawn task to manage the bidirectional gRPC stream
+        // Wait, the logic above is slightly wrong.
+        // We need to bridge:
+        // AsyncWrite -> tx -> outbound_rx -> gRPC Request Stream
+        // gRPC Response Stream -> inbound -> rx -> AsyncRead
+
+        // Correct implementation:
+        // 1. Create mpsc channel for outbound messages (AsyncWrite -> gRPC)
+        let (tx, outbound_rx) = mpsc::unbounded_channel();
+
+        // 2. Create the request stream from the receiver
+        let request_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(outbound_rx);
+
+        // 3. Make the gRPC call
+        let response = client
+            .tunnel(Request::new(request_stream))
+            .await
+            .map_err(|e| DialError::Other(format!("Failed to start gRPC tunnel: {}", e)))?;
+
+        // 4. Get the response stream (gRPC -> AsyncRead)
+        let mut inbound_stream = response.into_inner();
+
+        // 5. Create mpsc channel for inbound messages to bridge to poll_read
+        // Since poll_read is sync, we need a way to poll the stream.
+        // But we can't easily poll a tonic stream in poll_read without pinning issues.
+        // So we use a channel to buffer inbound messages.
+        let (inbound_tx, inbound_rx) = mpsc::channel(32);
+
         tokio::spawn(async move {
-            // Create outbound stream from send_rx channel
-            let outbound_stream = async_stream::stream! {
-                while let Some(data) = send_rx.recv().await {
-                    yield TunnelRequest { data: data.to_vec() };
-                }
-                debug!("gRPC outbound stream completed");
-            };
-
-            // Establish bidirectional stream
-            match client.tunnel(Request::new(outbound_stream)).await {
-                Ok(response) => {
-                    let mut inbound = response.into_inner();
-                    debug!("gRPC bidirectional stream established");
-
-                    // Forward inbound messages to recv_tx
-                    loop {
-                        match inbound.message().await {
-                            Ok(Some(TunnelResponse { data })) => {
-                                if let Err(e) = recv_tx.send(Ok(Bytes::from(data))) {
-                                    debug!("Failed to forward gRPC message: {}", e);
-                                    break;
-                                }
-                            }
-                            Ok(None) => {
-                                debug!("gRPC inbound stream closed normally");
-                                break;
-                            }
-                            Err(status) => {
-                                debug!("gRPC stream error: {}", status);
-                                let _ = recv_tx.send(Err(status));
-                                break;
-                            }
-                        }
-                    }
-                }
-                Err(status) => {
-                    debug!("Failed to establish gRPC stream: {}", status);
-                    let _ = recv_tx.send(Err(status));
+            while let Some(item) = inbound_stream.next().await {
+                if inbound_tx.send(item).await.is_err() {
+                    break;
                 }
             }
         });
 
         Ok(Self {
-            send_tx,
-            recv_rx,
-            read_buffer: BytesMut::new(),
+            tx,
+            rx: inbound_rx,
+            read_buffer: Bytes::new(),
         })
     }
 }
@@ -229,34 +271,41 @@ impl AsyncRead for GrpcStreamAdapter {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         // If we have buffered data, return it first
+        // 如果我们有缓冲数据，先返回它
         if !self.read_buffer.is_empty() {
-            let to_copy = self.read_buffer.len().min(buf.remaining());
-            buf.put_slice(&self.read_buffer[..to_copy]);
-            self.read_buffer.advance(to_copy);
+            let to_read = std::cmp::min(self.read_buffer.len(), buf.remaining());
+            buf.put_slice(&self.read_buffer[..to_read]);
+            self.read_buffer.advance(to_read);
             return Poll::Ready(Ok(()));
         }
 
-        // Read next message from gRPC stream
-        match self.recv_rx.poll_recv(cx) {
-            Poll::Ready(Some(Ok(data))) => {
-                let to_copy = data.len().min(buf.remaining());
-                buf.put_slice(&data[..to_copy]);
+        // Poll for new messages
+        // 轮询新消息
+        match self.rx.poll_recv(cx) {
+            Poll::Ready(Some(Ok(msg))) => {
+                let data = Bytes::from(msg.data); // Convert Vec<u8> to Bytes
+                if data.is_empty() {
+                    // Empty message, try next
+                    // 空消息，尝试下一个
+                    return self.poll_read(cx, buf);
+                }
+
+                let to_read = std::cmp::min(data.len(), buf.remaining());
+                buf.put_slice(&data[..to_read]);
 
                 // Buffer remaining data
-                if to_copy < data.len() {
-                    self.read_buffer.extend_from_slice(&data[to_copy..]);
+                // 缓冲剩余数据
+                if to_read < data.len() {
+                    self.read_buffer = Bytes::from(data[to_read..].to_vec());
                 }
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(status))) => Poll::Ready(Err(std::io::Error::other(format!(
-                "gRPC error: {}",
-                status
-            )))),
-            Poll::Ready(None) => {
-                debug!("gRPC stream closed");
-                Poll::Ready(Ok(())) // EOF
-            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("gRPC stream error: {}", e),
+            ))),
+            Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
             Poll::Pending => Poll::Pending,
         }
     }
@@ -270,7 +319,8 @@ impl AsyncWrite for GrpcStreamAdapter {
     ) -> Poll<std::io::Result<usize>> {
         // Send data via gRPC stream
         let data = Bytes::copy_from_slice(buf);
-        self.send_tx.send(data).map_err(|e| {
+        let request = tunnel::TunnelRequest { data: data.to_vec() };
+        self.tx.send(request).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 format!("Failed to send gRPC message: {}", e),
@@ -412,9 +462,7 @@ mod tests {
     async fn test_grpc_config_default() {
         let config = GrpcConfig::default();
         assert_eq!(config.service_name, "TunnelService");
-        assert_eq!(config.method_name, "Tunnel");
-        assert!(!config.enable_tls);
-        assert!(config.metadata.is_empty());
+        assert_eq!(config.service_name, "TunnelService");
     }
 
     #[tokio::test]

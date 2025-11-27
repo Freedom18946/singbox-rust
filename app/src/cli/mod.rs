@@ -1,3 +1,23 @@
+//! CLI Module / 命令行模块
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module acts as the **User Interface Layer** of the application.
+//! It is responsible for parsing user inputs, dispatching commands, and formatting outputs.
+//!
+//! 本模块充当应用程序的 **用户界面层**。
+//! 它负责解析用户输入、分发命令和格式化输出。
+//!
+//! ## Architectural Role / 架构角色
+//! - **Parser**: Uses `clap` to define and parse the command-line interface.
+//! - **Dispatcher**: Routes parsed commands to specific handlers (e.g., `run`, `check`, `route`).
+//! - **Facade**: Hides the complexity of the underlying core modules from the end user.
+//!
+//! ## Strategic Decision: Lint Relaxation / 战略决策：Lint 放宽
+//! CLI tools often require more flexible coding styles (e.g., printing to stdout, complex arguments).
+//! Therefore, we intentionally relax certain lints here to prioritize **Ergonomics** over strict purity.
+//! CLI 工具通常需要更灵活的编码风格（例如，打印到 stdout，复杂的参数）。
+//! 因此，我们在此有意放宽某些 lint，以优先考虑 **易用性** 而非严格的纯洁性。
+
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -59,6 +79,8 @@ pub mod bench;
 pub mod buildinfo;
 pub mod check;
 pub mod completion;
+#[cfg(feature = "router")]
+pub mod dns_cli;
 pub mod format;
 #[cfg(feature = "dev-cli")]
 pub mod fs_scan;
@@ -151,6 +173,9 @@ pub enum Commands {
     #[cfg(feature = "router")]
     /// Route explain and test
     Route(route::RouteArgs),
+    /// DNS tools (query/cache/upstream)
+    #[cfg(feature = "router")]
+    Dns(dns_cli::DnsArgs),
     /// Utility helpers (connect/fetch/synctime)
     #[cfg(feature = "tools")]
     Tools(tools::ToolsArgs),

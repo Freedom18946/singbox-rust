@@ -1,10 +1,23 @@
-//! Security utilities for SingBox
+//! # Security Utilities for SingBox (SingBox 安全工具库)
 //!
 //! This crate provides security-focused utilities including:
-//! - Credential redaction for logging
-//! - Secure key loading strategies
-//! - Memory-safe secret handling
-//! - Constant-time credential verification (timing-attack resistant)
+//! 本 crate 提供以安全为核心的工具，包括：
+//!
+//! - **Credential Redaction** (凭证脱敏): Safe logging of sensitive data. (用于日志的安全脱敏)
+//! - **Secure Key Loading** (安全密钥加载): Strategies for loading secrets from env/files. (从环境变量/文件加载密钥的策略)
+//! - **Memory Safety** (内存安全): `ZeroizeOnDrop` for clearing secrets from memory. (使用 `ZeroizeOnDrop` 清除内存中的密钥)
+//! - **Constant-Time Verification** (常量时间验证): Timing-attack resistant comparisons. (抵抗时序攻击的凭证比较)
+//!
+//! ## Strategic Role (战略角色)
+//!
+//! This crate serves as the **Security Primitive Layer** (安全原语层) for the entire SingBox ecosystem.
+//! It is designed to be used by:
+//! - `sb-config`: For securely loading sensitive configuration fields (keys, passwords).
+//! - `sb-api`: For verifying administrative credentials without timing leaks.
+//! - `sb-core` / `sb-adapters`: For ensuring sensitive data is redacted in logs.
+//!
+//! By centralizing these logic here, we ensure consistent security practices across all modules.
+//! 通过在此处集中管理这些逻辑，我们确保所有模块遵循一致的安全实践。
 //!
 //! # Examples
 //!

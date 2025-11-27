@@ -3,36 +3,48 @@
 use serde::{Deserialize, Serialize};
 
 /// REALITY client configuration
+/// REALITY 客户端配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealityClientConfig {
     /// Target domain to impersonate (e.g., "www.apple.com")
+    /// 要伪装的目标域名（例如 "www.apple.com"）
     pub target: String,
 
     /// Server name for SNI
+    /// 用于 SNI 的服务器名称
     pub server_name: String,
 
     /// Public key for authentication (hex-encoded X25519 public key)
+    /// 用于认证的公钥（十六进制编码的 X25519 公钥）
     pub public_key: String,
 
     /// Short ID for client identification (0-16 hex chars)
+    /// 用于客户端标识的 Short ID（0-16 个十六进制字符）
     /// Can be empty if server allows
+    /// 如果服务器允许，可以为空
     pub short_id: Option<String>,
 
     /// TLS fingerprint to emulate (default: "chrome")
+    /// 要模拟的 TLS 指纹（默认："chrome"）
     /// Options: chrome, firefox, safari, edge, ios
+    /// 选项：chrome, firefox, safari, edge, ios
     #[serde(default = "default_fingerprint")]
     pub fingerprint: String,
 
     /// ALPN protocols
+    /// ALPN 协议
     #[serde(default)]
     pub alpn: Vec<String>,
 }
 
 impl RealityClientConfig {
     /// Validate configuration
+    /// 验证配置
     ///
     /// # Errors
+    /// # 错误
     /// Returns an error if fields are invalid or malformed.
+    /// 如果字段无效或格式错误，则返回错误。
     pub fn validate(&self) -> Result<(), String> {
         // Validate target domain
         if self.target.is_empty() {
@@ -60,14 +72,18 @@ impl RealityClientConfig {
     }
 
     /// Get short ID as bytes
+    /// 获取 Short ID 的字节表示
     #[must_use]
     pub fn short_id_bytes(&self) -> Option<Vec<u8>> {
         self.short_id.as_ref().and_then(|s| hex::decode(s).ok())
     }
 
     /// Get public key as bytes
+    /// 获取公钥的字节表示
     /// # Errors
+    /// # 错误
     /// Returns an error when the public key is not valid hex or wrong length.
+    /// 当公钥不是有效的十六进制或长度错误时返回错误。
     pub fn public_key_bytes(&self) -> Result<[u8; 32], String> {
         let bytes =
             hex::decode(&self.public_key).map_err(|e| format!("invalid public key hex: {e}"))?;
@@ -79,36 +95,47 @@ impl RealityClientConfig {
 }
 
 /// REALITY server configuration
+/// REALITY 服务端配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealityServerConfig {
     /// Target domain to forward traffic to (e.g., "www.apple.com:443")
+    /// 要转发流量的目标域名（例如 "www.apple.com:443"）
     pub target: String,
 
     /// Accepted server names (SNI values)
+    /// 接受的服务器名称（SNI 值）
     pub server_names: Vec<String>,
 
     /// Private key for authentication (hex-encoded X25519 private key)
+    /// 用于认证的私钥（十六进制编码的 X25519 私钥）
     pub private_key: String,
 
     /// Accepted short IDs
+    /// 接受的 Short ID
     /// Empty vec means accept all
+    /// 空向量表示接受所有
     #[serde(default)]
     pub short_ids: Vec<String>,
 
     /// Maximum handshake time in seconds
+    /// 最大握手时间（秒）
     #[serde(default = "default_handshake_timeout")]
     pub handshake_timeout: u64,
 
     /// Fallback to target on auth failure
+    /// 认证失败时回退到目标
     #[serde(default = "default_true")]
     pub enable_fallback: bool,
 }
 
 impl RealityServerConfig {
     /// Validate configuration
+    /// 验证配置
     ///
     /// # Errors
+    /// # 错误
     /// Returns an error if fields are invalid or malformed.
+    /// 如果字段无效或格式错误，则返回错误。
     pub fn validate(&self) -> Result<(), String> {
         // Validate target
         if self.target.is_empty() {
@@ -139,8 +166,11 @@ impl RealityServerConfig {
     }
 
     /// Get private key as bytes
+    /// 获取私钥的字节表示
     /// # Errors
+    /// # 错误
     /// Returns an error when the private key is not valid hex or wrong length.
+    /// 当私钥不是有效的十六进制或长度错误时返回错误。
     pub fn private_key_bytes(&self) -> Result<[u8; 32], String> {
         let bytes =
             hex::decode(&self.private_key).map_err(|e| format!("invalid private key hex: {e}"))?;
@@ -151,6 +181,7 @@ impl RealityServerConfig {
     }
 
     /// Get short IDs as bytes
+    /// 获取 Short ID 的字节表示
     #[must_use]
     pub fn short_ids_bytes(&self) -> Vec<Vec<u8>> {
         self.short_ids
@@ -160,6 +191,7 @@ impl RealityServerConfig {
     }
 
     /// Check if a short ID is accepted
+    /// 检查是否接受 Short ID
     #[must_use]
     pub fn accepts_short_id(&self, short_id: &[u8]) -> bool {
         if self.short_ids.is_empty() {

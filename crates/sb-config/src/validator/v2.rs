@@ -276,7 +276,8 @@ fn resolve_cred(c: &mut Credentials) {
     }
 }
 
-/// 解析并归一化认证字段（ENV > 明文），避免下游重复判断
+/// Parse and normalize credentials (ENV > Plaintext), avoiding downstream duplicate checks.
+/// 解析并归一化认证字段（ENV > 明文），避免下游重复判断。
 fn normalize_credentials(ir: &mut ConfigIR) {
     for ob in &mut ir.outbounds {
         if let Some(c) = &mut ob.credentials {
@@ -290,17 +291,20 @@ fn normalize_credentials(ir: &mut ConfigIR) {
     }
 }
 
-/// 将内部错误统一转换为固定结构
+/// Convert internal errors to a unified structure.
+/// 将内部错误统一转换为固定结构。
 pub fn emit_issue(kind: &str, code: IssueCode, ptr: &str, msg: &str, hint: &str) -> Value {
     json!({"kind": kind, "code": code.as_str(), "ptr": ptr, "msg": msg, "hint": hint})
 }
 
+/// Lightweight schema validation (placeholder implementation): parses built-in schema, checks against field set for UnknownField/TypeMismatch/MissingRequired.
+/// Note: To avoid heavy dependencies, minimal necessary logic is implemented here; can be switched to jsonschema crate later while keeping output structure unchanged.
 /// 轻量 schema 校验（占位实现）：解析内置 schema，对照字段集做 UnknownField/TypeMismatch/MissingRequired
 /// 说明：为了不引入庞大依赖，这里实现最小必要逻辑；后续可切换 jsonschema crate，保持输出结构不变。
 ///
 /// # Arguments
-/// * `doc` - 待验证的 JSON 文档
-/// * `allow_unknown` - 是否将未知字段视为警告（true）而非错误（false）
+/// * `doc` - The JSON document to validate / 待验证的 JSON 文档
+/// * `allow_unknown` - Whether to treat unknown fields as warnings (true) instead of errors (false) / 是否将未知字段视为警告（true）而非错误（false）
 pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     let schema_text = include_str!("v2_schema.json");
     let schema: Value = match serde_json::from_str(schema_text) {
@@ -501,12 +505,14 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
     issues
 }
 
-/// 打包输出
+/// Pack output.
+/// 打包输出。
 pub fn pack_output(issues: Vec<Value>) -> Value {
     json!({ "issues": issues, "fingerprint": env!("CARGO_PKG_VERSION") })
 }
 
-/// 将 v1/v2 原始 JSON 转 IR（节选；v1 未知字段忽略但告警可选）
+/// Convert V1/V2 raw JSON to IR (excerpt; V1 unknown fields ignored but warning optional).
+/// 将 v1/v2 原始 JSON 转 IR（节选；v1 未知字段忽略但告警可选）。
 pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
     let mut ir = crate::ir::ConfigIR::default();
     if let Some(ins) = doc.get("inbounds").and_then(|v| v.as_array()) {
@@ -1325,41 +1331,43 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
     // Parse optional log block (top-level)
     if let Some(log) = doc.get("log").and_then(|v| v.as_object()) {
-        let mut l = crate::ir::LogIR::default();
-        l.level = log
-            .get("level")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        l.timestamp = log.get("timestamp").and_then(|v| v.as_bool());
-        // Non-standard extension for rust build: allow format override
-        l.format = log
-            .get("format")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let l = crate::ir::LogIR {
+            level: log
+                .get("level")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            timestamp: log.get("timestamp").and_then(|v| v.as_bool()),
+            // Non-standard extension for rust build: allow format override
+            format: log
+                .get("format")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        };
         ir.log = Some(l);
     }
 
     // Parse optional NTP block (top-level)
     if let Some(ntp) = doc.get("ntp").and_then(|v| v.as_object()) {
-        let mut n = crate::ir::NtpIR::default();
-        n.enabled = ntp
-            .get("enabled")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        n.server = ntp
-            .get("server")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        n.server_port = ntp
-            .get("server_port")
-            .and_then(|v| v.as_u64())
-            .and_then(|x| u16::try_from(x).ok());
-        // Support either interval (string like "30m") or interval_ms (number)
-        n.interval_ms = parse_seconds_field_to_millis(ntp.get("interval"))
-            .or_else(|| ntp.get("interval_ms").and_then(|v| v.as_u64()));
-        // Optional timeout_ms (number or duration string)
-        n.timeout_ms = parse_millis_field(ntp.get("timeout_ms"))
-            .or_else(|| parse_seconds_field_to_millis(ntp.get("timeout")));
+        let n = crate::ir::NtpIR {
+            enabled: ntp
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            server: ntp
+                .get("server")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            server_port: ntp
+                .get("server_port")
+                .and_then(|v| v.as_u64())
+                .and_then(|x| u16::try_from(x).ok()),
+            // Support either interval (string like "30m") or interval_ms (number)
+            interval_ms: parse_seconds_field_to_millis(ntp.get("interval"))
+                .or_else(|| ntp.get("interval_ms").and_then(|v| v.as_u64())),
+            // Optional timeout_ms (number or duration string)
+            timeout_ms: parse_millis_field(ntp.get("timeout_ms"))
+                .or_else(|| parse_seconds_field_to_millis(ntp.get("timeout"))),
+        };
         ir.ntp = Some(n);
     }
 
@@ -1405,13 +1413,15 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
 
     // Parse optional DNS block (top-level)
     if let Some(dns) = doc.get("dns").and_then(|v| v.as_object()) {
-        let mut dd = crate::ir::DnsIR::default();
-        // Global ECS/Client Subnet (string like "x.x.x.x/24" or "2001:db8::/56")
-        dd.client_subnet = dns
-            .get("client_subnet")
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+        let mut dd = crate::ir::DnsIR {
+            // Global ECS/Client Subnet (string like "x.x.x.x/24" or "2001:db8::/56")
+            client_subnet: dns
+                .get("client_subnet")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            ..Default::default()
+        };
         if let Some(servers) = dns.get("servers").and_then(|v| v.as_array()) {
             for s in servers {
                 if let Some(map) = s.as_object() {
@@ -1527,9 +1537,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     if server.is_empty() {
                         continue;
                     }
-                    let mut dr = crate::ir::DnsRuleIR::default();
-                    dr.server = server;
-                    dr.priority = Some(idx as u32 + 1);
+                    let mut dr = crate::ir::DnsRuleIR {
+                        server,
+                        priority: Some(idx as u32 + 1),
+                        ..Default::default()
+                    };
 
                     // Accept both array and single-string forms for match fields.
                     if let Some(ds_val) = obj.get("domain_suffix") {
@@ -1705,6 +1717,92 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             || !dd.hosts.is_empty()
         {
             ir.dns = Some(dd);
+        }
+    }
+
+    // Parse services
+    if let Some(services) = doc.get("services").and_then(|v| v.as_array()) {
+        for s in services {
+            let ty_str = s.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let ty = match ty_str {
+                "resolved" => crate::ir::ServiceType::Resolved,
+                "ssmapi" => crate::ir::ServiceType::Ssmapi,
+                "derp" => crate::ir::ServiceType::Derp,
+                _ => continue,
+            };
+
+            let mut service_ir = crate::ir::ServiceIR {
+                ty,
+                tag: s.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                ..Default::default()
+            };
+
+            service_ir.resolved_listen = s
+                .get("resolved_listen")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.resolved_listen_port = s
+                .get("resolved_listen_port")
+                .and_then(|v| v.as_u64())
+                .map(|x| x as u16);
+
+            service_ir.ssmapi_listen = s
+                .get("ssmapi_listen")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.ssmapi_listen_port = s
+                .get("ssmapi_listen_port")
+                .and_then(|v| v.as_u64())
+                .map(|x| x as u16);
+
+            service_ir.derp_listen = s
+                .get("derp_listen")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_listen_port = s
+                .get("derp_listen_port")
+                .and_then(|v| v.as_u64())
+                .map(|x| x as u16);
+            service_ir.derp_config_path = s
+                .get("derp_config_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_verify_client_endpoint =
+                extract_string_list(s.get("derp_verify_client_endpoint"));
+            service_ir.derp_verify_client_url =
+                extract_string_list(s.get("derp_verify_client_url"));
+            service_ir.derp_home = s
+                .get("derp_home")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_mesh_with = extract_string_list(s.get("derp_mesh_with"));
+            service_ir.derp_mesh_psk = s
+                .get("derp_mesh_psk")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_mesh_psk_file = s
+                .get("derp_mesh_psk_file")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_server_key_path = s
+                .get("derp_server_key_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_stun_enabled = s.get("derp_stun_enabled").and_then(|v| v.as_bool());
+            service_ir.derp_stun_listen_port = s
+                .get("derp_stun_listen_port")
+                .and_then(|v| v.as_u64())
+                .map(|x| x as u16);
+            service_ir.derp_tls_cert_path = s
+                .get("derp_tls_cert_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.derp_tls_key_path = s
+                .get("derp_tls_key_path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            ir.services.push(service_ir);
         }
     }
 

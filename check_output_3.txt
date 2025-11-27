@@ -1,0 +1,181 @@
+    Checking tokio-stream v0.1.17
+    Checking tonic v0.12.3
+    Checking sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+error[E0432]: unresolved import `yamux::Control`
+  --> crates/sb-transport/src/multiplex.rs:84:33
+   |
+84 | use yamux::{Config, Connection, Control, Mode};
+   |                                 ^^^^^^^ no `Control` in the root
+
+error[E0412]: cannot find type `Control` in crate `yamux`
+   --> crates/sb-transport/src/multiplex.rs:201:21
+    |
+201 |     control: yamux::Control,
+    |                     ^^^^^^^ not found in `yamux`
+
+error[E0412]: cannot find type `Control` in crate `yamux`
+   --> crates/sb-transport/src/multiplex.rs:209:28
+    |
+209 |     fn new(control: yamux::Control, closed: Arc<std::sync::atomic::AtomicBool>) -> Self {
+    |                            ^^^^^^^ not found in `yamux`
+
+warning: unused import: `Method`
+  --> crates/sb-transport/src/http2.rs:74:12
+   |
+74 | use http::{Method, Request, Uri};
+   |            ^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `BytesMut`
+  --> crates/sb-transport/src/grpc.rs:43:25
+   |
+43 | use bytes::{Buf, Bytes, BytesMut};
+   |                         ^^^^^^^^
+
+warning: unused import: `futures::stream::Stream`
+  --> crates/sb-transport/src/grpc.rs:44:5
+   |
+44 | use futures::stream::Stream;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `TunnelRequest` and `TunnelResponse`
+   --> crates/sb-transport/src/grpc.rs:204:22
+    |
+204 |         use tunnel::{TunnelRequest, TunnelResponse};
+    |                      ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/sb-transport/src/circuit_breaker.rs:27:5
+   |
+27 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> crates/sb-transport/src/grpc.rs:218:74
+    |
+218 |         let request_stream = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
+    |                              ------------------------------------------- ^^^^^^^^^^^ expected `Receiver<_>`, found `UnboundedReceiver<_>`
+    |                              |
+    |                              arguments to this function are incorrect
+    |
+    = note: expected struct `tokio::sync::mpsc::Receiver<_>`
+               found struct `tokio::sync::mpsc::UnboundedReceiver<_>`
+note: associated function defined here
+   --> /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-stream-0.1.17/src/wrappers/mpsc_bounded.rs:17:12
+    |
+ 17 |     pub fn new(recv: Receiver<T>) -> Self {
+    |            ^^^
+
+error[E0308]: mismatched types
+   --> crates/sb-transport/src/multiplex.rs:394:35
+    |
+394 |                         return Ok(conn.clone());
+    |                                -- ^^^^^^^^^^^^ expected `Arc<MultiplexConnection>`, found `MultiplexConnection`
+    |                                |
+    |                                arguments to this enum variant are incorrect
+    |
+    = note: expected struct `std::sync::Arc<MultiplexConnection>`
+               found struct `MultiplexConnection`
+help: the type constructed contains `MultiplexConnection` due to the type of the argument passed
+   --> crates/sb-transport/src/multiplex.rs:394:32
+    |
+394 |                         return Ok(conn.clone());
+    |                                ^^^------------^
+    |                                   |
+    |                                   this argument influences the type of `Ok`
+note: tuple variant defined here
+   --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/result.rs:552:5
+    |
+552 |     Ok(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^
+help: call `Into::into` on this expression to convert `MultiplexConnection` into `std::sync::Arc<MultiplexConnection>`
+    |
+394 |                         return Ok(conn.clone().into());
+    |                                               +++++++
+
+error[E0599]: no method named `control` found for struct `yamux::Connection` in the current scope
+   --> crates/sb-transport/src/multiplex.rs:406:34
+    |
+406 |         let control = connection.control();
+    |                                  ^^^^^^^ method not found in `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>`
+
+error[E0599]: the method `next` exists for struct `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>`, but its trait bounds were not satisfied
+   --> crates/sb-transport/src/multiplex.rs:413:44
+    |
+413 |             while let Some(_) = connection.next().await {
+    |                                            ^^^^ method cannot be called on `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>` due to unsatisfied trait bounds
+    |
+   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/yamux-0.13.7/src/connection.rs:80:1
+    |
+ 80 | pub struct Connection<T> {
+    | ------------------------ doesn't satisfy `_: StreamExt` or `_: Stream`
+    |
+    = note: the following trait bounds were not satisfied:
+            `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>: futures::Stream`
+            which is required by `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>: futures::StreamExt`
+
+error[E0308]: mismatched types
+    --> crates/sb-transport/src/multiplex.rs:426:30
+     |
+ 426 |             connections.push(mux_conn.clone());
+     |                         ---- ^^^^^^^^^^^^^^^^ expected `MultiplexConnection`, found `Arc<MultiplexConnection>`
+     |                         |
+     |                         arguments to this method are incorrect
+     |
+     = note: expected struct `MultiplexConnection`
+                found struct `std::sync::Arc<MultiplexConnection>`
+note: method defined here
+    --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs:2521:12
+     |
+2521 |     pub fn push(&mut self, value: T) {
+     |            ^^^^
+
+error[E0609]: no field `upgrade_protocol` on type `HttpUpgradeServerConfig`
+   --> crates/sb-transport/src/httpupgrade.rs:386:25
+    |
+386 |             self.config.upgrade_protocol
+    |                         ^^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available field is: `path`
+
+warning: unused import: `SinkExt`
+  --> crates/sb-transport/src/grpc.rs:45:15
+   |
+45 | use futures::{SinkExt, StreamExt};
+   |               ^^^^^^^
+
+warning: unused variable: `cx`
+   --> crates/sb-transport/src/http2.rs:381:48
+    |
+381 |     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+    |                                                ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: variable does not need to be mutable
+   --> crates/sb-transport/src/http2.rs:381:22
+    |
+381 |     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+    |                      ----^^^^
+    |                      |
+    |                      help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: unused variable: `error`
+   --> crates/sb-transport/src/retry.rs:265:35
+    |
+265 |     pub fn is_transient_dns_error(error: &DialError) -> bool {
+    |                                   ^^^^^ help: if this is intentional, prefix it with an underscore: `_error`
+
+warning: unused variable: `is_timeout`
+   --> crates/sb-transport/src/circuit_breaker.rs:399:36
+    |
+399 |     fn should_count_failure(&self, is_timeout: bool) -> bool {
+    |                                    ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_timeout`
+
+Some errors have detailed explanations: E0308, E0412, E0432, E0599, E0609.
+For more information about an error, try `rustc --explain E0308`.
+warning: `sb-transport` (lib) generated 10 warnings
+error: could not compile `sb-transport` (lib) due to 9 previous errors; 10 warnings emitted

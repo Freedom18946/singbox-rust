@@ -177,7 +177,7 @@ impl OutboundTcp for ShadowsocksOutbound {
             let tag = cipher_r.tag_size();
             let mut len_buf = vec![0u8; 2 + tag];
             loop {
-                if let Err(_) = ss_r.read_exact(&mut len_buf).await {
+                if (ss_r.read_exact(&mut len_buf).await).is_err() {
                     break;
                 }
                 let len_plain =
@@ -191,7 +191,7 @@ impl OutboundTcp for ShadowsocksOutbound {
                 let plain_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
 
                 let mut payload = vec![0u8; plain_len + tag];
-                if let Err(_) = ss_r.read_exact(&mut payload).await {
+                if (ss_r.read_exact(&mut payload).await).is_err() {
                     break;
                 }
                 let plain = match ss_decrypt_aead(

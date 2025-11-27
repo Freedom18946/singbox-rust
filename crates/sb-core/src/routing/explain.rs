@@ -104,6 +104,7 @@ impl ExplainEngine {
                 protocol: "socks",
                 sniff_host: None,
                 sniff_alpn: None,
+                sniff_protocol: None,
             },
             with_trace,
         );

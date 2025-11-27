@@ -1,0 +1,20 @@
+{
+  "log": {
+    "level": "error"
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "sys",
+        "address": "system"
+      }
+    ],
+    "hosts": [
+      {
+        "domain": "example.com",
+        "ips": ["1.2.3.4"]
+      }
+    ],
+    "hosts_ttl_s": 123
+  }
+}

@@ -2,7 +2,14 @@
 
 use sb_adapters::register_all;
 use sb_config::ir::{OutboundIR, OutboundType};
-use sb_core::adapter::{registry, OutboundParam};
+use sb_core::adapter::{registry, Bridge, OutboundParam};
+use std::sync::Arc;
+
+fn ctx() -> registry::AdapterOutboundContext {
+    registry::AdapterOutboundContext {
+        bridge: Arc::new(Bridge::new()),
+    }
+}
 
 // Initialize rustls crypto provider
 fn init_crypto() {
@@ -37,7 +44,7 @@ fn test_anytls_outbound_registration() {
     let builder = registry::get_outbound("anytls");
     assert!(builder.is_some(), "AnyTLS builder should be registered");
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "AnyTLS outbound should be registered and buildable"
@@ -69,7 +76,7 @@ fn test_anytls_with_padding() {
     let builder = registry::get_outbound("anytls");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "AnyTLS with padding should build");
 }
 
@@ -100,7 +107,7 @@ fn test_anytls_with_tls_config() {
     let builder = registry::get_outbound("anytls");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "AnyTLS with TLS config should build");
 }
 
@@ -129,7 +136,7 @@ fn test_anytls_skip_cert_verify() {
     let builder = registry::get_outbound("anytls");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "AnyTLS with skip_cert_verify should build"
@@ -158,7 +165,7 @@ fn test_anytls_missing_required_fields() {
     };
 
     let builder = registry::get_outbound("anytls").unwrap();
-    let result = builder(&param, &ir_no_server);
+    let result = builder(&param, &ir_no_server, &ctx());
     assert!(result.is_none(), "AnyTLS should fail without server");
 
     // Missing password
@@ -170,7 +177,7 @@ fn test_anytls_missing_required_fields() {
         ..Default::default()
     };
 
-    let result = builder(&param, &ir_no_password);
+    let result = builder(&param, &ir_no_password, &ctx());
     assert!(result.is_none(), "AnyTLS should fail without password");
 }
 
@@ -201,6 +208,6 @@ fn test_anytls_with_custom_ca() {
     let builder = registry::get_outbound("anytls");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "AnyTLS with custom CA should build");
 }

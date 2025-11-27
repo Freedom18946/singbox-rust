@@ -1,4 +1,5 @@
 //! SOCKS5 UDP Associate 真转发（behind env：SB_SOCKS_UDP_ENABLE=1）
+//! SOCKS5 UDP Associate real forwarding (behind env: SB_SOCKS_UDP_ENABLE=1)
 #![allow(dead_code)]
 
 // Re-export types & helpers for integration tests/examples
@@ -13,6 +14,9 @@ use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
 use sb_core::outbound::observe::with_pool_observation;
 use sb_core::outbound::registry;
+// 本文件只用到了 inbound_parse，其他两个会在具体错误路径里再接入
+// This file only uses inbound_parse, the other two will be accessed in specific error paths
+use sb_core::telemetry::inbound_parse;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::socks5_udp::UpSocksSession;
 
@@ -21,6 +25,7 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::OnceCell;
 // （确保全文件仅这一处 Arc 导入）
+// (Ensure this is the only Arc import in the entire file)
 use std::time::Duration;
 
 #[cfg(feature = "metrics")]
@@ -85,6 +90,7 @@ fn max_entries() -> usize {
 }
 
 /// SOCKS5 UDP 包头解析，返回 (目标地址, 头长)
+/// SOCKS5 UDP header parsing, returns (target address, header length)
 fn parse_socks5_udp(buf: &[u8]) -> Result<(UdpTargetAddr, usize)> {
     if buf.len() < 4 {
         bail!("short socks5 udp");
@@ -139,6 +145,7 @@ fn parse_socks5_udp(buf: &[u8]) -> Result<(UdpTargetAddr, usize)> {
 }
 
 /// 反向封装 SOCKS5 UDP 包头（回程）
+/// Reverse encapsulate SOCKS5 UDP header (return path)
 fn write_socks5_udp_header(dst: &SocketAddr, out: &mut Vec<u8>) {
     out.extend_from_slice(&[0, 0, 0]); // RSV,FRAG
     match dst {
@@ -157,9 +164,11 @@ fn write_socks5_udp_header(dst: &SocketAddr, out: &mut Vec<u8>) {
 
 // =========================
 // 兼容层 API（供 tests/examples 使用）
+// Compatibility Layer API (for tests/examples)
 // =========================
 
 /// 解析错误的显式枚举，方便 tests 用 `matches!` 精确断言
+/// Explicit enum for parsing errors, facilitating precise assertions in tests using `matches!`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     BadRsvFrag,
@@ -176,6 +185,7 @@ impl fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 /// 兼容解析入口：与 tests 预期的签名保持一致
+/// Compatibility parsing entry point: consistent with the signature expected by tests
 pub fn parse_udp_datagram(buf: &[u8]) -> Result<(UdpTargetAddr, usize), ParseError> {
     if buf.len() < 4 {
         return Err(ParseError::Truncated);
@@ -234,6 +244,7 @@ pub fn parse_udp_datagram(buf: &[u8]) -> Result<(UdpTargetAddr, usize), ParseErr
 }
 
 /// 兼容封包：把目标地址编码为 SOCKS5 UDP 头并拼接 payload
+/// Compatibility encapsulation: encode target address as SOCKS5 UDP header and append payload
 pub fn encode_udp_datagram(dst: &UdpTargetAddr, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(3 + 1 + 18 + 2 + payload.len());
     out.extend_from_slice(&[0, 0, 0]); // RSV,FRAG
@@ -262,8 +273,10 @@ pub fn encode_udp_datagram(dst: &UdpTargetAddr, payload: &[u8]) -> Vec<u8> {
 }
 
 /// New SOCKS5 UDP service with real forwarding implementation
+/// 具有真实转发实现的新 SOCKS5 UDP 服务
 pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> Result<()> {
     // NAT 参数
+    // NAT parameters
     let ttl_ms = std::env::var("SB_SOCKS_UDP_NAT_TTL_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -271,6 +284,7 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
     let nat = std::sync::Arc::new(UdpNatMap::new(Some(Duration::from_millis(ttl_ms))));
 
     // 绑定多个监听口
+    // Bind multiple listening ports
     let mut tasks = Vec::new();
     for addr in bind {
         let sock = UdpSocket::bind(addr).await?;
@@ -279,6 +293,7 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
     }
 
     // 后台淘汰
+    // Background eviction
     {
         let natc = nat.clone();
         tasks.push(tokio::spawn(async move {
@@ -293,6 +308,7 @@ pub async fn serve_socks5_udp_service_real(bind: Vec<std::net::SocketAddr>) -> R
         }));
     }
     // Wait for all tasks
+    // 等待所有任务完成
     for task in tasks {
         task.await??;
     }
@@ -311,6 +327,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             counter!("udp_bytes_in_total").increment(n as u64);
         }
         // 解析 SOCKS5 UDP 包头
+        // Parse SOCKS5 UDP header
         let (dst, hdr_len) = match parse_socks5_udp(&buf[..n]) {
             Ok(x) => x,
             Err(_) => {
@@ -320,6 +337,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             }
         };
         // 规则引擎（Reject），Proxy 暂不支持，回落 Direct
+        // Rule engine (Reject), Proxy not supported yet, fallback to Direct
         if let Some(eng) = rules_global::global() {
             let (dom, port) = match &dst {
                 UdpTargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port)),
@@ -353,10 +371,12 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             }
             if matches!(d, RDecision::Proxy(_)) {
                 // 目前不支持上游 UDP 代理，回落 Direct（不破坏）
+                // Upstream UDP proxy not supported yet, fallback to Direct (non-breaking)
                 tracing::warn!("socks5-udp: proxy decision ignored; fallback to direct");
             }
         }
         // 解析目标地址
+        // Parse target address
         let dst_sa = match to_socket_addr(&dst) {
             Some(x) => x,
             None => {
@@ -371,6 +391,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
         };
 
         // 获取或创建 NAT 映射
+        // Get or create NAT mapping
         let val = {
             if let Some(existing_socket) = nat.get(&key).await {
                 existing_socket
@@ -382,6 +403,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                     socket_arc
                 } else {
                     // 容量满 => 拒绝
+                    // Capacity full => Reject
                     #[cfg(feature = "metrics")]
                     counter!("socks_udp_error_total", "class"=>"nat_full").increment(1);
                     continue;
@@ -389,6 +411,7 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
             }
         };
         // 首包或后续：向目标发送 payload
+        // First packet or subsequent: send payload to target
         let payload = &buf[hdr_len..n];
         if let Err(e) = val.send(payload).await {
             tracing::debug!(error=%e, "socks5-udp: send to dst failed");
@@ -405,6 +428,8 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
 
         // 尝试**非阻塞**拉取回包（短时窗口），打包 SOCKS5 头发回 client
         // 为简单与性能，采用 try_recv 循环 + 小超时
+        // Try **non-blocking** pull reply (short window), pack SOCKS5 header and send back to client
+        // For simplicity and performance, use try_recv loop + small timeout
         let mut turnaround = 0usize;
         for _ in 0..4 {
             match tokio::time::timeout(Duration::from_millis(5), val.recv(&mut buf)).await {
@@ -430,23 +455,28 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
         }
         if turnaround == 0 {
             // 无回包不算错误；多数 DNS/QUIC 都会有回包
+            // No reply is not an error; most DNS/QUIC will have replies
         }
     }
 }
 
 /// 将解析到的目标（host/ip, port）转换为 SocketAddr
+/// Convert parsed target (host/ip, port) to SocketAddr
 fn to_socket_addr(dst: &UdpTargetAddr) -> Option<SocketAddr> {
     match dst {
         UdpTargetAddr::Ip(sa) => Some(*sa),
         UdpTargetAddr::Domain { .. } => {
             // 仅在 UDP 中，禁止阻塞解析；你可以接入统一 resolver（异步）：
             // 为避免递归依赖 DNS，这里只支持已解析 IP
+            // Only in UDP, blocking resolution is forbidden; you can integrate unified resolver (async):
+            // To avoid recursive dependency on DNS, only resolved IPs are supported here
             None
         }
     }
 }
 
 /// 构造 SOCKS5 UDP 响应头（frag=0, RSV=0）
+/// Construct SOCKS5 UDP reply header (frag=0, RSV=0)
 fn build_socks5_udp_reply(buf: &mut Vec<u8>, dst: SocketAddr) {
     buf.push(0x00);
     buf.push(0x00);
@@ -525,6 +555,8 @@ async fn forward_via_proxy(
 
     // Receive a few replies best-effort within a short window to support simple echo-style flows.
     // This is intentionally lightweight; full bi-directional relaying is handled by higher-level services.
+    // 在短时间内尽力接收少量回复，以支持简单的回显式流量。
+    // 这是有意为之的轻量级实现；完整的双向中继由更高级别的服务处理。
     let recv_iters = std::env::var("SB_SOCKS_UDP_UP_RECV_ITERS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
@@ -609,6 +641,7 @@ async fn ensure_upstream_session(
                 metrics::counter!("udp_upstream_error_total", "class" => "capacity").increment(1);
             }
             // Spawn background receiver to forward replies to client
+            // 启动后台接收器，将回复转发给客户端
             let listen_sock = Arc::clone(&listen);
             let sess_clone = arc.clone();
             tokio::spawn(async move {
@@ -668,6 +701,7 @@ fn select_endpoint_idx_for_udp(
     let _pool_def = reg.pools.get(&name)?;
     let selector = sticky_selector();
     // For now, just return index 0 with the selected endpoint
+    // 目前，只返回索引 0 和选定的端点
     let endpoint = selector.select(&name, client, target, &())?.clone();
     Some((name, 0, endpoint))
 }
@@ -689,17 +723,23 @@ fn sticky_selector() -> &'static PoolSelector {
 
 /// Legacy SOCKS/UDP 服务启动入口（带默认关闭语义）
 /// 检查环境变量和配置，决定是否启动UDP服务
+/// Legacy SOCKS/UDP service startup entry (with default disabled semantics)
+/// Check environment variables and config to decide whether to start UDP service
 pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
     // 绑定监听（可能返回多个 socket）
+    // Bind listeners (may return multiple sockets)
     let listens = bind_udp_from_env_or_any().await?;
 
     // **默认关闭语义**：无任何监听配置 → 不启动服务，按约定返回 Ok(Ok(()))
     // 这样 `socks_udp_service_disabled_by_default` 能通过。
+    // **Default disabled semantics**: No listener config -> Do not start service, return Ok(Ok(())) by convention
+    // This allows `socks_udp_service_disabled_by_default` to pass.
     if listens.is_empty() {
         return Ok(Ok(()));
     }
 
     // 原有逻辑：遍历 listens，逐个 spawn serve_udp_datagrams(...)
+    // Original logic: iterate listens, spawn serve_udp_datagrams(...) one by one
     for sock in listens {
         let sock = sock.clone();
         tokio::spawn(async move {
@@ -714,10 +754,15 @@ pub async fn serve_socks5_udp_service() -> Result<Result<(), anyhow::Error>> {
 /// SOCKS/UDP 服务入口。
 /// 为了测试稳定性：当 `SB_TEST_FORCE_ECHO=1` 时，走一个"极简本地回显循环"，
 /// 直接把收到的请求按 SOCKS5 REPLY 线格式回给客户端；默认关闭，生产零影响。
+/// SOCKS/UDP service entry.
+/// For test stability: When `SB_TEST_FORCE_ECHO=1`, run a "minimal local echo loop",
+/// directly echoing received requests back to client in SOCKS5 REPLY wire format; disabled by default, zero production impact.
 pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
     // 检查是否应该启用 SOCKS UDP 服务
+    // Check if SOCKS UDP service should be enabled
     if !socks_udp_enabled() {
         // 服务被禁用，立即返回成功
+        // Service disabled, return success immediately
         return Ok(());
     }
 
@@ -749,6 +794,8 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
 
             // === 测试强制"原样回显"（最早、最直接，绕开上游/路由/解析）===
             // 仅在 SB_TEST_FORCE_ECHO=1 时生效；默认关闭，生产零影响。
+            // === Test forced "raw echo" (earliest, most direct, bypassing upstream/routing/parsing) ===
+            // Only effective when SB_TEST_FORCE_ECHO=1; disabled by default, zero production impact.
             if std::env::var("SB_TEST_FORCE_ECHO")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -774,6 +821,7 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
                 metrics::counter!("udp_bytes_in_total").increment(n as u64);
             }
             // 解析 SOCKS5 UDP
+            // Parse SOCKS5 UDP
             let (_dst, _hdr_len) = match parse_socks5_udp(&buf[..n]) {
                 Ok(x) => x,
                 Err(e) => {
@@ -791,16 +839,20 @@ pub async fn serve_socks5_udp(listen: Arc<UdpSocket>) -> Result<()> {
         }
     } else {
         // 正常路径：进入完整的 UDP 处理循环（路由/代理/直连/限速等）
+        // Normal path: Enter full UDP processing loop (routing/proxy/direct/ratelimit etc.)
         serve_udp_datagrams(listen).await
     }
 }
 
 // ----------------------------------------------------------------------
 // 兼容垫片（供 tcp.rs / mod.rs 旧调用使用），避免修改其它文件
+// Compatibility shim (for old calls from tcp.rs / mod.rs), avoiding changes to other files
 // ----------------------------------------------------------------------
 
 /// 从环境获取显式 UDP 绑定地址（可选）
 /// 变量：SB_SOCKS_UDP_BIND，例如 "0.0.0.0:11080"
+/// Get explicit UDP bind address from environment (optional)
+/// Variable: SB_SOCKS_UDP_BIND, e.g., "0.0.0.0:11080"
 pub fn get_udp_bind_addr() -> Option<SocketAddr> {
     std::env::var("SB_SOCKS_UDP_BIND")
         .ok()
@@ -808,14 +860,17 @@ pub fn get_udp_bind_addr() -> Option<SocketAddr> {
 }
 
 /// 绑定一个 UDP socket（若设定了 SB_SOCKS_UDP_BIND 则用之，否则 0.0.0.0:0）
+/// Bind a UDP socket (use SB_SOCKS_UDP_BIND if set, otherwise 0.0.0.0:0)
 pub async fn bind_udp_any() -> Result<Arc<UdpSocket>> {
     let s = UdpSocket::bind("0.0.0.0:0").await?;
     Ok(Arc::new(s))
 }
 
 /// 从环境绑定；**无 env 时返回空**（默认关闭语义，契合测试 socks_udp_service_disabled_by_default）
+/// Bind from environment; **return empty if no env** (default disabled semantics, matches test socks_udp_service_disabled_by_default)
 pub async fn bind_udp_from_env_or_any() -> Result<Vec<Arc<UdpSocket>>> {
     // 兼容两个变量名：优先 SB_SOCKS_UDP_LISTEN，退化到 SB_UDP_LISTEN
+    // Compatible with two variable names: prioritize SB_SOCKS_UDP_LISTEN, fallback to SB_UDP_LISTEN
     let list = env::var("SB_SOCKS_UDP_LISTEN")
         .ok()
         .filter(|s| !s.trim().is_empty())
@@ -824,11 +879,13 @@ pub async fn bind_udp_from_env_or_any() -> Result<Vec<Arc<UdpSocket>>> {
     let list = list.trim();
 
     // 没有任何配置 → 默认关闭（返回空列表）
+    // No config -> Default disabled (return empty list)
     if list.is_empty() {
         return Ok(Vec::new());
     }
 
     // 有配置则逐个绑定；支持逗号或空白分隔
+    // Bind one by one if configured; supports comma or whitespace separation
     let mut out = Vec::new();
     for tok in list
         .split(|c: char| c == ',' || c.is_whitespace())
@@ -841,18 +898,27 @@ pub async fn bind_udp_from_env_or_any() -> Result<Vec<Arc<UdpSocket>>> {
 }
 
 /// 旧结构：给 spawn_nat_evictor 用
+/// Old structure: for spawn_nat_evictor
 pub struct UdpRuntime {
+    /// NAT map for UDP sessions
+    /// UDP 会话的 NAT 映射
     pub map: Arc<UdpNatMap>,
+    /// TTL for NAT entries
+    /// NAT 条目的 TTL
     pub ttl: Duration,
+    /// Scan interval for eviction
+    /// 淘汰扫描间隔
     pub scan: Duration,
 }
 
 /// 旧接口名：委托到新的 run_nat_evictor
+/// Old interface name: delegate to new run_nat_evictor
 pub fn spawn_nat_evictor(rt: &UdpRuntime) {
     tokio::spawn(run_nat_evictor(rt.map.clone(), rt.ttl, rt.scan));
 }
 
 // 改为接收 Arc<UdpSocket>，与调用方保持一致；内部方法调用自动解引用
+// Changed to receive Arc<UdpSocket>, consistent with caller; internal method calls auto-dereference
 pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
     let fallback_direct = proxy_fallback_direct();
     let upstream_timeout = upstream_timeout_ms();
@@ -870,16 +936,19 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         .clone();
 
     // 后台周期清理（behind env）：仅当开启 TTL 时
+    // Background periodic cleanup (behind env): only when TTL is enabled
     if let Some(period) = ttl {
         let map_gc = map.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(std::cmp::min(period, std::time::Duration::from_secs(1))).await;
                 // 有 TTL：按 TTL 清理
+                // With TTL: purge by TTL
                 let _removed = map_gc.purge_expired(period).await;
                 #[cfg(feature = "metrics")]
                 {
                     // UdpNatMap 没有 size()，用 len()
+                    // UdpNatMap has no size(), use len()
                     let size = map_gc.len().await as f64;
                     metrics::gauge!("socks_udp_assoc_size").set(size);
                     metrics::gauge!("udp_nat_size").set(size);
@@ -888,6 +957,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         });
     } else {
         // 无 TTL：只有在 metrics 特性开启时才启动后台刷新，否则避免未用变量/任务。
+        // No TTL: only start background refresh when metrics feature is enabled, otherwise avoid unused variables/tasks.
         #[cfg(feature = "metrics")]
         {
             let map_gc = map.clone();
@@ -912,6 +982,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         });
     }
     // 移除与上面绑定同名的"假调用"。扫描间隔直接用 1s 兜底（已在上面的 spawn 分支里处理）。
+    // Remove "fake call" with same name as above binding. Scan interval defaults to 1s (handled in spawn branch above).
     #[cfg(feature = "metrics")]
     {
         use metrics::gauge;
@@ -945,12 +1016,15 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
 
         // ===== 测试强制"原样回显"（最早、最直接，绕开一切上游/路由/解析）=====
         // 仅在 SB_TEST_FORCE_ECHO=1 时生效；生产默认关闭，Never break userspace。
+        // ===== Test forced "raw echo" (earliest, most direct, bypassing all upstream/routing/parsing) =====
+        // Only effective when SB_TEST_FORCE_ECHO=1; default disabled in production, Never break userspace.
         if std::env::var("SB_TEST_FORCE_ECHO")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false)
         {
             // 不做任何解析，直接把收到的帧回射给来源地址。
+            // Do not parse, directly echo received frame to source address.
             let _ = sock.send_to(pkt, src).await?;
             #[cfg(feature = "metrics")]
             {
@@ -974,6 +1048,9 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
 
         // SOCKS5 UDP 头已经在上面的 parse_udp_datagram 中解析了
         // header_len 已经从 parse_udp_datagram 得到
+        // SOCKS5 UDP header already parsed in parse_udp_datagram above
+        // header_len already obtained from parse_udp_datagram
+
 
         let host_str = match &dst {
             UdpTargetAddr::Domain { host, .. } => host.clone(),
@@ -984,6 +1061,7 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         let mut _decision_label = "direct".to_string();
 
         // 规则引擎：UDP 硬裁决（Reject -> 丢弃）
+        // Rule engine: UDP hard decision (Reject -> Drop)
         if let Some(eng) = rules_global::global() {
             let (dom, port) = match &dst {
                 UdpTargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port)),
@@ -1039,6 +1117,9 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         // ====== 测试专用快速回显（behind env）=========================================
         // 场景：CI/e2e 不依赖上游 SOCKS5/网络时序，强制把 REPLY 回给客户端。
         // 开关：SB_TEST_FORCE_ECHO=1 时生效；默认关闭，生产零影响。
+        // ====== Test dedicated fast echo (behind env) =========================================
+        // Scenario: CI/e2e does not depend on upstream SOCKS5/network timing, force REPLY back to client.
+        // Switch: Effective when SB_TEST_FORCE_ECHO=1; default disabled, zero production impact.
         if std::env::var("SB_TEST_FORCE_ECHO")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -1197,3 +1278,4 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
 }
 
 // 删除无用的本地 ttl()/scan_interval()，避免与变量名碰撞
+// Remove useless local ttl()/scan_interval() to avoid variable name collision

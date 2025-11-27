@@ -1,13 +1,17 @@
 //! HTTP proxy outbound implementation
+//! HTTP 代理出站实现
 //!
 //! This module provides HTTP CONNECT proxy support for outbound connections.
 //! It implements the HTTP CONNECT method as defined in RFC 7231 Section 4.3.6.
+//! 本模块为出站连接提供 HTTP CONNECT 代理支持。它实现了 RFC 7231 第 4.3.6 节定义的 HTTP CONNECT 方法。
 
 use crate::outbound::prelude::*;
 use crate::traits::ResolveMode;
 use anyhow::Context;
 use base64::prelude::*;
 use std::net::{IpAddr, SocketAddr};
+#[cfg(feature = "http-tls")]
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
@@ -19,6 +23,7 @@ use tokio_rustls::{rustls::ClientConfig, TlsConnector};
 use sb_config::outbound::HttpProxyConfig;
 
 /// HTTP proxy outbound connector
+/// HTTP 代理出站连接器
 #[derive(Debug, Clone)]
 pub struct HttpProxyConnector {
     config: HttpProxyConfig,
@@ -53,6 +58,7 @@ impl HttpProxyConnector {
     }
 
     /// Create a connector with TLS support
+    /// 创建支持 TLS 的连接器
     #[cfg(feature = "http-tls")]
     pub fn with_tls(config: HttpProxyConfig) -> Self {
         #[cfg(feature = "transport_ech")]
@@ -78,6 +84,7 @@ impl HttpProxyConnector {
     }
 
     /// Create a connector with no authentication
+    /// 创建无需认证的连接器
     pub fn no_auth(server: impl Into<String>) -> Self {
         Self {
             config: HttpProxyConfig {
@@ -95,6 +102,7 @@ impl HttpProxyConnector {
     }
 
     /// Create a TLS connector with no authentication
+    /// 创建无需认证的 TLS 连接器
     #[cfg(feature = "http-tls")]
     pub fn no_auth_tls(server: impl Into<String>) -> Self {
         Self {
@@ -113,6 +121,7 @@ impl HttpProxyConnector {
     }
 
     /// Create a connector with username/password authentication
+    /// 创建带用户名/密码认证的连接器
     pub fn with_auth(
         server: impl Into<String>,
         username: impl Into<String>,
@@ -134,6 +143,7 @@ impl HttpProxyConnector {
     }
 
     /// Create a TLS connector with username/password authentication
+    /// 创建带用户名/密码认证的 TLS 连接器
     #[cfg(feature = "http-tls")]
     pub fn with_auth_tls(
         server: impl Into<String>,
@@ -206,6 +216,7 @@ impl OutboundConnector for HttpProxyConnector {
                     #[cfg(feature = "http-tls")]
                     {
                         // Parse proxy server address (host:port)
+                        // 解析代理服务器地址 (host:port)
                         let proxy_url = if !self.config.server.contains("://") {
                             format!("https://{}", self.config.server)
                         } else {
@@ -227,6 +238,7 @@ impl OutboundConnector for HttpProxyConnector {
                         );
 
                         // Connect to proxy server with timeout
+                        // 连接到代理服务器（带超时）
                         let tcp_stream = tokio::time::timeout(
                             opts.connect_timeout,
                             TcpStream::connect(proxy_addr),
@@ -240,6 +252,7 @@ impl OutboundConnector for HttpProxyConnector {
                         .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                         // Create TLS config
+                        // 创建 TLS 配置
                         let root_store = tokio_rustls::rustls::RootCertStore {
                             roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
                         };
@@ -257,6 +270,7 @@ impl OutboundConnector for HttpProxyConnector {
                             .to_owned();
 
                         // Perform TLS handshake
+                        // 执行 TLS 握手
                         let tls_stream = tokio::time::timeout(
                             opts.connect_timeout,
                             connector.connect(server_name, tcp_stream),
@@ -268,6 +282,7 @@ impl OutboundConnector for HttpProxyConnector {
                         .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                         // Send HTTP CONNECT request over TLS
+                        // 通过 TLS 发送 HTTP CONNECT 请求
                         let mut boxed_stream = Box::new(tls_stream) as BoxedStream;
                         self.http_connect_generic(&mut boxed_stream, &target, &opts)
                             .await?;
@@ -277,6 +292,7 @@ impl OutboundConnector for HttpProxyConnector {
                     }
                 } else {
                     // Regular HTTP proxy
+                    // 普通 HTTP 代理
                     let proxy_addr: SocketAddr = self
                         .config
                         .server
@@ -300,6 +316,7 @@ impl OutboundConnector for HttpProxyConnector {
                             .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                     // Send HTTP CONNECT request
+                    // 发送 HTTP CONNECT 请求
                     self.http_connect(&mut stream, &target, &opts).await?;
 
                     // Return the connected stream
@@ -309,6 +326,7 @@ impl OutboundConnector for HttpProxyConnector {
             .await;
 
             // Record metrics for the dial attempt (both success and failure)
+            // 记录拨号尝试的指标（成功和失败）
             #[cfg(feature = "metrics")]
             {
                 let result = match &dial_result {
@@ -349,6 +367,7 @@ impl OutboundConnector for HttpProxyConnector {
 #[cfg(feature = "adapter-http")]
 impl HttpProxyConnector {
     /// Send HTTP CONNECT request and parse response
+    /// 发送 HTTP CONNECT 请求并解析响应
     async fn http_connect(
         &self,
         stream: &mut TcpStream,
@@ -356,14 +375,18 @@ impl HttpProxyConnector {
         opts: &DialOpts,
     ) -> Result<()> {
         // Determine target address based on resolve mode
+        // 根据解析模式确定目标地址
         let (connect_host, host_header) = match opts.resolve_mode {
             ResolveMode::Local => {
                 // Resolve locally first, but still send original hostname in Host header
+                // 先在本地解析，但在 Host 头部中仍发送原始主机名
                 if let Ok(ip) = target.host.parse::<IpAddr>() {
                     // Already an IP address
+                    // 已经是 IP 地址
                     (ip.to_string(), target.host.clone())
                 } else {
                     // Domain name - resolve locally
+                    // 域名 - 本地解析
                     match tokio::net::lookup_host((target.host.clone(), target.port)).await {
                         Ok(mut addrs) => {
                             if let Some(addr) = addrs.next() {
@@ -386,17 +409,20 @@ impl HttpProxyConnector {
             }
             ResolveMode::Remote => {
                 // Send original hostname to proxy for remote resolution
+                // 发送原始主机名给代理进行远程解析
                 (target.host.clone(), target.host.clone())
             }
         };
 
         // Build HTTP CONNECT request
+        // 构建 HTTP CONNECT 请求
         let mut request = format!(
             "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n",
             connect_host, target.port, host_header, target.port
         );
 
         // Add Proxy-Authorization header if credentials are provided
+        // 如果提供了凭据，添加 Proxy-Authorization 头部
         if let (Some(username), Some(password)) = (&self.config.username, &self.config.password) {
             let credentials = format!("{}:{}", username, password);
             let encoded = BASE64_STANDARD.encode(credentials.as_bytes());
@@ -404,9 +430,11 @@ impl HttpProxyConnector {
         }
 
         // Add Connection header and end request
+        // 添加 Connection 头部并结束请求
         request.push_str("Connection: keep-alive\r\n\r\n");
 
         // Send request with timeout
+        // 发送请求（带超时）
         tokio::time::timeout(opts.connect_timeout, stream.write_all(request.as_bytes()))
             .await
             .map_err(|_| {
@@ -417,6 +445,7 @@ impl HttpProxyConnector {
             })??;
 
         // Read and parse response
+        // 读取并解析响应
         let mut reader = BufReader::new(stream);
         let mut status_line = String::new();
 
@@ -430,6 +459,7 @@ impl HttpProxyConnector {
             })??;
 
         // Parse HTTP status line
+        // 解析 HTTP 状态行
         let parts: Vec<&str> = status_line.split_whitespace().collect();
         if parts.len() < 3 {
             return Err(AdapterError::Protocol(
@@ -447,6 +477,7 @@ impl HttpProxyConnector {
         }
 
         // Skip remaining headers until empty line
+        // 跳过剩余头部直到空行
         loop {
             let mut header_line = String::new();
             tokio::time::timeout(opts.connect_timeout, reader.read_line(&mut header_line))
@@ -467,6 +498,7 @@ impl HttpProxyConnector {
     }
 
     /// Send HTTP CONNECT request on a generic stream (works with both TCP and TLS)
+    /// 在通用流上发送 HTTP CONNECT 请求（适用于 TCP 和 TLS）
     #[allow(dead_code)]
     async fn http_connect_generic(
         &self,

@@ -66,14 +66,14 @@ fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
         let prefix = prefix_opt.unwrap_or(24).min(32);
         let mut b = ipv4.octets();
         mask_prefix(&mut b, prefix);
-        let addr_len = ((prefix as usize) + 7) / 8;
+        let addr_len = (prefix as usize).div_ceil(8);
         return Some((1, prefix, 0, b[..addr_len].to_vec()));
     }
     if let Ok(ipv6) = ip_str.parse::<std::net::Ipv6Addr>() {
         let prefix = prefix_opt.unwrap_or(56).min(128);
         let mut b = ipv6.octets();
         mask_prefix(&mut b, prefix);
-        let addr_len = ((prefix as usize) + 7) / 8;
+        let addr_len = (prefix as usize).div_ceil(8);
         return Some((2, prefix, 0, b[..addr_len].to_vec()));
     }
     None

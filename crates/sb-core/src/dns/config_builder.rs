@@ -63,7 +63,7 @@ pub fn resolver_from_ir(dns: &sb_config::ir::DnsIR) -> Result<Arc<dyn Resolver>>
     }
 
     // 3) No rules: use simple DnsResolver over all upstreams
-    let list: Vec<Arc<dyn DnsUpstream>> = upstreams.into_iter().map(|(_, v)| v).collect();
+    let list: Vec<Arc<dyn DnsUpstream>> = upstreams.into_values().collect();
     let base: Arc<dyn Resolver> = Arc::new(DnsResolver::new(list).with_name("dns_ir".to_string()));
     let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
     Ok(overlay)
@@ -266,9 +266,13 @@ fn build_dhcp_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn Dn
 #[cfg(feature = "dns_tailscale")]
 fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
     let (name, addrs) = super::upstream::parse_tailscale_spec(spec, tag)?;
-    Ok(Arc::new(super::upstream::StaticMultiUpstream::new(
-        name, addrs,
-    )))
+    if addrs.is_empty() {
+        Ok(Arc::new(super::upstream::TailscaleLocalUpstream::new(tag)))
+    } else {
+        Ok(Arc::new(super::upstream::StaticMultiUpstream::new(
+            name, addrs,
+        )))
+    }
 }
 
 #[cfg(not(feature = "dns_tailscale"))]
@@ -282,146 +286,6 @@ fn build_tailscale_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<d
 fn build_resolved_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
     let up = super::upstream::ResolvedUpstream::from_spec(spec, tag)?;
     Ok(Arc::new(up))
-}
-
-#[cfg(not(feature = "dns_resolved"))]
-fn build_resolved_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
-    Err(anyhow::anyhow!(
-        "resolved DNS upstream requires the `dns_resolved` feature; rebuild with `--features sb-core/dns_resolved`"
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct EnvGuard {
-        key: &'static str,
-        prev: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let prev = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, prev }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(prev) = &self.prev {
-                std::env::set_var(self.key, prev);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-
-    #[test]
-    fn resolver_builds_with_mixed_upstreams() {
-        let mut ir = sb_config::ir::DnsIR::default();
-        ir.servers.push(sb_config::ir::DnsServerIR {
-            tag: "sys".into(),
-            address: "system".into(),
-            sni: None,
-            ca_paths: vec![],
-            ca_pem: vec![],
-            skip_cert_verify: None,
-            client_subnet: None,
-        });
-        ir.servers.push(sb_config::ir::DnsServerIR {
-            tag: "dot1".into(),
-            address: "dot://1.1.1.1:853".into(),
-            sni: Some("cloudflare-dns.com".into()),
-            ca_paths: vec![],
-            ca_pem: vec![],
-            skip_cert_verify: Some(false),
-            client_subnet: None,
-        });
-        ir.servers.push(sb_config::ir::DnsServerIR {
-            tag: "doq1".into(),
-            address: "doq://1.0.0.1:853@one.one.one.one".into(),
-            sni: None,
-            ca_paths: vec![],
-            ca_pem: vec![],
-            skip_cert_verify: Some(false),
-            client_subnet: None,
-        });
-        ir.default = Some("sys".into());
-
-        let res = resolver_from_ir(&ir);
-        assert!(res.is_ok());
-    }
-
-    #[test]
-    fn resolver_supports_local_alias() {
-        let mut ir = sb_config::ir::DnsIR::default();
-        ir.servers.push(sb_config::ir::DnsServerIR {
-            tag: "loc".into(),
-            address: "local".into(),
-            sni: None,
-            ca_paths: vec![],
-            ca_pem: vec![],
-            skip_cert_verify: None,
-            client_subnet: None,
-        });
-        let res = resolver_from_ir(&ir);
-        assert!(res.is_ok());
-    }
-
-    #[test]
-    fn build_upstream_returns_local_impl() {
-        let upstream = build_upstream("local")
-            .expect("local upstream builder should not error")
-            .expect("local upstream should be built");
-
-        assert_eq!(upstream.name(), "local");
-    }
-
-    #[test]
-    fn build_upstream_from_server_sets_local_tag_name() {
-        let upstream = build_upstream_from_server(&sb_config::ir::DnsServerIR {
-            tag: "loc-tag".into(),
-            address: "local://".into(),
-            sni: None,
-            ca_paths: vec![],
-            ca_pem: vec![],
-            skip_cert_verify: None,
-            client_subnet: None,
-        })
-        .expect("local upstream should be buildable")
-        .expect("local upstream should not be None");
-
-        assert_eq!(upstream.name(), "local::loc-tag");
-    }
-
-    #[test]
-    fn hydrate_dns_ir_reads_env_values() {
-        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
-        let _timeout = EnvGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
-        let _fake = EnvGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
-        let _fake_v4 = EnvGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
-        let _fake_v4_mask = EnvGuard::set("SB_FAKEIP_V4_MASK", "15");
-        let _client = EnvGuard::set("SB_DNS_CLIENT_SUBNET", "1.2.3.0/24");
-
-        let hydrated = hydrate_dns_ir_from_env(&sb_config::ir::DnsIR::default());
-        assert_eq!(hydrated.timeout_ms, Some(2500));
-        assert_eq!(hydrated.ttl_default_s, Some(900));
-        assert_eq!(hydrated.fakeip_enabled, Some(true));
-        assert_eq!(hydrated.fakeip_v4_base.as_deref(), Some("198.18.0.0"));
-        assert_eq!(hydrated.fakeip_v4_mask, Some(15));
-        assert_eq!(hydrated.client_subnet.as_deref(), Some("1.2.3.0/24"));
-    }
-
-    #[test]
-    fn hydrate_dns_ir_does_not_override_ir_values() {
-        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
-        let mut ir = sb_config::ir::DnsIR::default();
-        ir.ttl_default_s = Some(120);
-        let hydrated = hydrate_dns_ir_from_env(&ir);
-        assert_eq!(hydrated.ttl_default_s, Some(120));
-    }
 }
 
 fn normalize_host_port(rest: &str, default_port: u16) -> Result<std::net::SocketAddr> {
@@ -460,6 +324,10 @@ impl Resolver for EngineResolver {
 
     fn name(&self) -> &str {
         "dns_rule_engine"
+    }
+
+    async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
+        self.engine.explain(domain).await
     }
 }
 
@@ -516,6 +384,27 @@ impl Resolver for HostsOverlayResolver {
 
     fn name(&self) -> &str {
         "hosts_overlay"
+    }
+
+    async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
+        let key = domain.to_ascii_lowercase();
+        if let Some(ips) = self.map.get(&key) {
+            return Ok(serde_json::json!({
+                "domain": domain,
+                "resolver": "hosts_overlay",
+                "decision": "hosts",
+                "ttl_secs": self.ttl.as_secs(),
+                "ips": ips,
+            }));
+        }
+
+        let inner = self.inner.explain(domain).await?;
+        Ok(serde_json::json!({
+            "domain": domain,
+            "resolver": "hosts_overlay",
+            "decision": "passthrough",
+            "inner": inner
+        }))
     }
 }
 
@@ -708,4 +597,189 @@ fn build_ruleset_from_rule(
         last_updated: SystemTime::now(),
         etag: None,
     })
+}
+
+#[cfg(not(feature = "dns_resolved"))]
+fn build_resolved_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    Err(anyhow::anyhow!(
+        "resolved DNS upstream requires the `dns_resolved` feature; rebuild with `--features sb-core/dns_resolved`"
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dns::DnsAnswer;
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(prev) = &self.prev {
+                std::env::set_var(self.key, prev);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    #[test]
+    fn resolver_builds_with_mixed_upstreams() {
+        let mut ir = sb_config::ir::DnsIR::default();
+        ir.servers.push(sb_config::ir::DnsServerIR {
+            tag: "sys".into(),
+            address: "system".into(),
+            sni: None,
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: None,
+            client_subnet: None,
+        });
+        ir.servers.push(sb_config::ir::DnsServerIR {
+            tag: "dot1".into(),
+            address: "dot://1.1.1.1:853".into(),
+            sni: Some("cloudflare-dns.com".into()),
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: Some(false),
+            client_subnet: None,
+        });
+        ir.servers.push(sb_config::ir::DnsServerIR {
+            tag: "doq1".into(),
+            address: "doq://1.0.0.1:853@one.one.one.one".into(),
+            sni: None,
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: Some(false),
+            client_subnet: None,
+        });
+        ir.default = Some("sys".into());
+
+        let res = resolver_from_ir(&ir);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn resolver_supports_local_alias() {
+        let mut ir = sb_config::ir::DnsIR::default();
+        ir.servers.push(sb_config::ir::DnsServerIR {
+            tag: "loc".into(),
+            address: "local".into(),
+            sni: None,
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: None,
+            client_subnet: None,
+        });
+        let res = resolver_from_ir(&ir);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn build_upstream_returns_local_impl() {
+        let upstream = build_upstream("local")
+            .expect("local upstream builder should not error")
+            .expect("local upstream should be built");
+
+        assert_eq!(upstream.name(), "local");
+    }
+
+    #[test]
+    fn build_upstream_from_server_sets_local_tag_name() {
+        let upstream = build_upstream_from_server(&sb_config::ir::DnsServerIR {
+            tag: "loc-tag".into(),
+            address: "local://".into(),
+            sni: None,
+            ca_paths: vec![],
+            ca_pem: vec![],
+            skip_cert_verify: None,
+            client_subnet: None,
+        })
+        .expect("local upstream should be buildable")
+        .expect("local upstream should not be None");
+
+        assert_eq!(upstream.name(), "local::loc-tag");
+    }
+
+    #[test]
+    fn hydrate_dns_ir_reads_env_values() {
+        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let _timeout = EnvGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
+        let _fake = EnvGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
+        let _fake_v4 = EnvGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
+        let _fake_v4_mask = EnvGuard::set("SB_FAKEIP_V4_MASK", "15");
+        let _client = EnvGuard::set("SB_DNS_CLIENT_SUBNET", "1.2.3.0/24");
+
+        let hydrated = hydrate_dns_ir_from_env(&sb_config::ir::DnsIR::default());
+        assert_eq!(hydrated.timeout_ms, Some(2500));
+        assert_eq!(hydrated.ttl_default_s, Some(900));
+        assert_eq!(hydrated.fakeip_enabled, Some(true));
+        assert_eq!(hydrated.fakeip_v4_base.as_deref(), Some("198.18.0.0"));
+        assert_eq!(hydrated.fakeip_v4_mask, Some(15));
+        assert_eq!(hydrated.client_subnet.as_deref(), Some("1.2.3.0/24"));
+    }
+
+    #[test]
+    fn hydrate_dns_ir_does_not_override_ir_values() {
+        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let mut ir = sb_config::ir::DnsIR::default();
+        ir.ttl_default_s = Some(120);
+        let hydrated = hydrate_dns_ir_from_env(&ir);
+        assert_eq!(hydrated.ttl_default_s, Some(120));
+    }
+
+    struct DummyResolver;
+
+    #[async_trait::async_trait]
+    impl Resolver for DummyResolver {
+        async fn resolve(&self, _domain: &str) -> Result<DnsAnswer> {
+            anyhow::bail!("not implemented")
+        }
+
+        fn name(&self) -> &str {
+            "dummy"
+        }
+
+        async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
+            Ok(serde_json::json!({
+                "resolver": "dummy",
+                "domain": domain
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn hosts_overlay_explain_reports_match_and_passthrough() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("example.com".to_string(), vec!["1.2.3.4".parse().unwrap()]);
+        let ttl = std::time::Duration::from_secs(123);
+        let overlay = HostsOverlayResolver {
+            map,
+            ttl,
+            inner: Arc::new(DummyResolver),
+        };
+
+        let matched = overlay.explain("example.com").await.unwrap();
+        assert_eq!(matched["decision"], serde_json::json!("hosts"));
+        assert_eq!(matched["ttl_secs"], serde_json::json!(123));
+        assert_eq!(matched["ips"][0], serde_json::json!("1.2.3.4"));
+
+        let passthrough = overlay.explain("other.com").await.unwrap();
+        assert_eq!(passthrough["decision"], serde_json::json!("passthrough"));
+        assert_eq!(
+            passthrough["inner"]["resolver"],
+            serde_json::json!("dummy")
+        );
+    }
 }

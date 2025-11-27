@@ -1,5 +1,8 @@
-//! R100: 将订阅文本聚合为 {dsl, view_json, bindings_json, hashes}（minijson）
-//! - 依赖：subs_full（内部启用 subs_view + subs_bindings），可选 subs_hash 计算 blake3
+//! R100: Aggregates subscription into {dsl, view_json, bindings_json, hashes} (minijson).
+//! [Chinese] R100: 将订阅文本聚合为 {dsl, view_json, bindings_json, hashes}（minijson）。
+//!
+//! - Dependencies: subs_full (internally enables subs_view + subs_bindings), optional subs_hash for blake3.
+//! [Chinese] - 依赖：subs_full（内部启用 subs_view + subs_bindings），可选 subs_hash 计算 blake3。
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 
@@ -51,7 +54,8 @@ fn b3_hex_opt(s: &str) -> Option<String> {
     }
 }
 
-/// 将 Profile -> DSL 文本（逐行拼接），可选 normalize
+/// Converts Profile to DSL text (line by line), optionally normalizing.
+/// [Chinese] 将 Profile -> DSL 文本（逐行拼接），可选 normalize。
 fn profile_to_dsl(p: &Profile, normalize: bool) -> String {
     let estimated_capacity = p.rules.len() * ESTIMATED_LINE_LENGTH;
     let mut s = String::with_capacity(estimated_capacity);
@@ -135,27 +139,36 @@ fn generate_bindings(prof: &Profile) -> String {
     }
 }
 
-/// 核心聚合：返回 minijson 对象字符串
+/// Core aggregation: returns a minijson object string.
+/// [Chinese] 核心聚合：返回 minijson 对象字符串。
+///
+/// Pipeline: Parse -> DSL -> View -> Bindings -> Hash -> JSON.
+/// [Chinese] 流程：解析 -> DSL -> 视图 -> 绑定 -> 哈希 -> JSON。
 pub fn convert_full_minijson(
     input: &str,
     format: &str,
     use_keyword: bool,
     normalize: bool,
 ) -> Result<String, String> {
-    // 1) 解析为 Profile
+    // 1) Parse to Profile
+    // [Chinese] 1) 解析为 Profile
     let prof = parse_profile(input, format, use_keyword)?;
 
-    // 2) 生成 DSL
+    // 2) Generate DSL
+    // [Chinese] 2) 生成 DSL
     let dsl = profile_to_dsl(&prof, normalize);
 
-    // 3) 视图与绑定
+    // 3) View and Bindings
+    // [Chinese] 3) 视图与绑定
     let view = generate_view(&prof);
     let bindings = generate_bindings(&prof);
 
-    // 4) 哈希（可选，缓存结果避免重复计算）
+    // 4) Hash (optional, cache result to avoid re-computation)
+    // [Chinese] 4) 哈希（可选，缓存结果避免重复计算）
     let hash_result = HashResult::new(b3_hex_opt(&dsl));
 
-    // 5) 拼装 minijson
+    // 5) Assemble minijson
+    // [Chinese] 5) 拼装 minijson
     Ok(obj([
         ("ok", Val::Bool(true)),
         ("format", Val::Str(format)),

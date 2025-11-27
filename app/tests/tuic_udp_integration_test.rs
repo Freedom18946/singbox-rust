@@ -10,13 +10,24 @@
 #[cfg(feature = "adapter-tuic")]
 mod tuic_tests {
     use sb_adapters::inbound::tuic::{TuicInboundConfig, TuicUser};
+    use sb_core::outbound::OutboundRegistryHandle;
+    use sb_core::router;
     use std::net::SocketAddr;
+    use std::sync::Arc;
     use uuid::Uuid;
+
+    fn handles() -> (Arc<router::RouterHandle>, Arc<OutboundRegistryHandle>) {
+        (
+            Arc::new(router::RouterHandle::from_env()),
+            Arc::new(OutboundRegistryHandle::default()),
+        )
+    }
 
     #[tokio::test]
     async fn test_tuic_config_creation() {
         // Test that TUIC configuration can be created with UDP support
         let bind_addr: SocketAddr = "127.0.0.1:18510".parse().unwrap();
+        let (router, outbounds) = handles();
 
         let users = vec![
             TuicUser {
@@ -35,6 +46,8 @@ mod tuic_tests {
             cert: "test_cert_pem".to_string(),
             key: "test_key_pem".to_string(),
             congestion_control: Some("bbr".to_string()),
+            router: router.clone(),
+            outbounds: outbounds.clone(),
         };
 
         // Verify configuration
@@ -51,6 +64,7 @@ mod tuic_tests {
             uuid: Uuid::new_v4(),
             token: "test_token".to_string(),
         }];
+        let (router, outbounds) = handles();
 
         // Test cubic
         let config_cubic = TuicInboundConfig {
@@ -59,6 +73,8 @@ mod tuic_tests {
             cert: "test_cert".to_string(),
             key: "test_key".to_string(),
             congestion_control: Some("cubic".to_string()),
+            router: router.clone(),
+            outbounds: outbounds.clone(),
         };
         assert_eq!(config_cubic.congestion_control.as_ref().unwrap(), "cubic");
 
@@ -69,6 +85,8 @@ mod tuic_tests {
             cert: "test_cert".to_string(),
             key: "test_key".to_string(),
             congestion_control: Some("bbr".to_string()),
+            router: router.clone(),
+            outbounds: outbounds.clone(),
         };
         assert_eq!(config_bbr.congestion_control.as_ref().unwrap(), "bbr");
 
@@ -79,6 +97,8 @@ mod tuic_tests {
             cert: "test_cert".to_string(),
             key: "test_key".to_string(),
             congestion_control: Some("new_reno".to_string()),
+            router: router.clone(),
+            outbounds: outbounds.clone(),
         };
         assert_eq!(
             config_new_reno.congestion_control.as_ref().unwrap(),
@@ -92,6 +112,8 @@ mod tuic_tests {
             cert: "test_cert".to_string(),
             key: "test_key".to_string(),
             congestion_control: None,
+            router,
+            outbounds,
         };
         assert!(config_default.congestion_control.is_none());
     }

@@ -1,7 +1,9 @@
 //! ECHConfigList parser
+//! ECHConfigList 解析器
 //!
 //! This module implements parsing of ECHConfigList structures according to
 //! the TLS Encrypted Client Hello specification.
+//! 此模块根据 TLS 加密客户端 Hello 规范实现 ECHConfigList 结构的解析。
 //!
 //! ## Wire Format
 //!
@@ -31,40 +33,53 @@
 use super::{EchError, EchResult, EchVersion, HpkeAead, HpkeKdf, HpkeKem};
 
 /// Parsed ECH configuration
+/// 解析后的 ECH 配置
 #[derive(Debug, Clone)]
 pub struct EchConfig {
     /// ECH version
+    /// ECH 版本
     pub version: EchVersion,
     /// Server public key (X25519)
+    /// 服务器公钥 (X25519)
     pub public_key: Vec<u8>,
     /// Supported cipher suites
+    /// 支持的密码套件
     pub cipher_suites: Vec<HpkeCipherSuite>,
     /// Maximum name length
+    /// 最大名称长度
     pub maximum_name_length: u8,
     /// Public name (SNI to use in outer ClientHello)
+    /// 公共名称（在外部 ClientHello 中使用的 SNI）
     pub public_name: String,
     /// Extensions (currently unused)
+    /// 扩展（当前未使用）
     pub extensions: Vec<u8>,
 }
 
 /// HPKE cipher suite
+/// HPKE 密码套件
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HpkeCipherSuite {
     /// Key Encapsulation Mechanism
+    /// 密钥封装机制
     pub kem: HpkeKem,
     /// Key Derivation Function
+    /// 密钥派生函数
     pub kdf: HpkeKdf,
     /// Authenticated Encryption with Associated Data
+    /// 带有相关数据的认证加密
     pub aead: HpkeAead,
 }
 
 impl HpkeCipherSuite {
     /// Create a new cipher suite
+    /// 创建新的密码套件
     pub fn new(kem: HpkeKem, kdf: HpkeKdf, aead: HpkeAead) -> Self {
         Self { kem, kdf, aead }
     }
 
     /// Default cipher suite: X25519 + HKDF-SHA256 + AES-128-GCM
+    /// 默认密码套件：X25519 + HKDF-SHA256 + AES-128-GCM
     pub fn default_suite() -> Self {
         Self {
             kem: HpkeKem::X25519HkdfSha256,
@@ -75,9 +90,11 @@ impl HpkeCipherSuite {
 }
 
 /// Parsed ECHConfigList
+/// 解析后的 ECHConfigList
 #[derive(Debug, Clone)]
 pub struct EchConfigList {
     /// List of ECH configurations
+    /// ECH 配置列表
     pub configs: Vec<EchConfig>,
 }
 
@@ -99,6 +116,7 @@ impl EchConfigList {
 }
 
 /// Parse ECHConfigList from bytes
+/// 从字节解析 ECHConfigList
 pub fn parse_ech_config_list(data: &[u8]) -> EchResult<EchConfigList> {
     let mut parser = Parser::new(data);
 
@@ -131,6 +149,7 @@ pub fn parse_ech_config_list(data: &[u8]) -> EchResult<EchConfigList> {
 }
 
 /// Parse a single ECHConfig
+/// 解析单个 ECHConfig
 fn parse_ech_config(parser: &mut Parser) -> EchResult<EchConfig> {
     // Read version (2 bytes)
     let version_u16 = parser.read_u16()?;
@@ -148,6 +167,7 @@ fn parse_ech_config(parser: &mut Parser) -> EchResult<EchConfig> {
 }
 
 /// Parse ECHConfigContents
+/// 解析 ECHConfigContents
 fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchResult<EchConfig> {
     // Read public key (variable length with 2-byte length prefix)
     let public_key = parser.read_length_prefixed_bytes()?;
@@ -185,6 +205,7 @@ fn parse_ech_config_contents(parser: &mut Parser, version: EchVersion) -> EchRes
 }
 
 /// Parse cipher suites
+/// 解析密码套件
 fn parse_cipher_suites(data: &[u8]) -> EchResult<Vec<HpkeCipherSuite>> {
     if !data.len().is_multiple_of(6) {
         return Err(EchError::ParseFailed(format!(
@@ -224,6 +245,7 @@ fn parse_cipher_suites(data: &[u8]) -> EchResult<Vec<HpkeCipherSuite>> {
 }
 
 /// Simple byte parser helper
+/// 简单的字节解析助手
 struct Parser<'a> {
     data: &'a [u8],
     pos: usize,

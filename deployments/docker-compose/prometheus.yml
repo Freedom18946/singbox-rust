@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'singbox-rust'
+    environment: 'production'
+
+scrape_configs:
+  # Trojan Server Metrics
+  - job_name: 'trojan-server'
+    static_configs:
+      - targets: ['trojan-server:9090']
+        labels:
+          service: 'trojan'
+          protocol: 'trojan'
+    
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Shadowsocks Server Metrics
+  - job_name: 'shadowsocks-server'
+    static_configs:
+      - targets: ['shadowsocks-server:9090']
+        labels:
+          service: 'shadowsocks'
+          protocol: 'shadowsocks'
+    
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Prometheus Self-Monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules (optional)
+rule_files:
+  # - 'alerts/*.yml'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']

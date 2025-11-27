@@ -470,6 +470,7 @@ fn handle(
                     protocol,
                     sniff_host: None,
                     sniff_alpn: None,
+                    sniff_protocol: None,
                 },
                 false,
             );

@@ -1,11 +1,21 @@
 //! Configurable logging pipeline with JSON/compact formats, sampling, and exit flush
+//! 可配置的日志管道，支持 JSON/紧凑格式、采样和退出刷新
 //!
-//! This module provides an enhanced logging system that supports:
-//! - Multiple output formats (JSON, compact)
-//! - Log level filtering
-//! - Sampling for high-frequency logs
-//! - Explicit flush on application exit
-//! - Environment-driven configuration
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module implements the **Observability Pipeline** for logs.
+//! 本模块实现了日志的 **可观测性管道**。
+//!
+//! ## Pipeline Architecture / 管道架构
+//! `Log Event` -> `Filter (Level)` -> `Sampler (Rate Limit)` -> `Formatter (JSON/Compact)` -> `Redactor (Privacy)` -> `Output (Stderr)`
+//! `日志事件` -> `过滤器 (级别)` -> `采样器 (速率限制)` -> `格式化器 (JSON/紧凑)` -> `脱敏器 (隐私)` -> `输出 (Stderr)`
+//!
+//! ## Strategic Features / 战略特性
+//! 1. **Sampling / 采样**: Prevents log flooding (e.g., during network storms) from degrading performance.
+//!    防止日志泛滥（例如在网络风暴期间）降低性能。
+//! 2. **Redaction / 脱敏**: Automatically masks sensitive data (like private keys or tokens) before output.
+//!    在输出前自动掩盖敏感数据（如私钥或令牌）。
+//! 3. **Graceful Flush / 优雅刷新**: Ensures logs are persisted even during crashes or forced exits.
+//!    确保即使在崩溃或强制退出期间也能持久化日志。
 
 use anyhow::{self, Result};
 use std::collections::HashMap;

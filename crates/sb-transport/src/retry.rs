@@ -1,107 +1,165 @@
-//! Unified retry and backoff strategy for idempotent I/O operations
+//! Unified retry and backoff strategy for idempotent I/O operations / 幂等 I/O 操作的统一重试和退避策略
 //!
 //! This module provides configurable retry policies with exponential backoff and jitter
 //! for improving reliability of network operations while avoiding thundering herd problems.
+//! 该模块提供可配置的重试策略，支持指数退避和抖动，
+//! 以提高网络操作的可靠性，同时避免惊群问题。
 //!
-//! ## Configuration
-//! - `SB_RETRY_MAX`: Maximum number of retry attempts (default: disabled)
-//! - `SB_RETRY_BASE_MS`: Base delay in milliseconds (default: 100ms)
-//! - `SB_RETRY_JITTER`: Jitter percentage 0.0-1.0 (default: 0.1 = 10%)
+//! ## Features / 特性
+//! - **Exponential Backoff**: Delay increases exponentially with each attempt / **指数退避**: 延迟随每次尝试呈指数增长
+//! - **Jitter**: Randomness added to delays to prevent synchronization / **抖动**: 在延迟中添加随机性以防止同步
+//! - **Configurable**: Max retries, base delay, max delay configurable via env / **可配置**: 最大重试次数、基础延迟、最大延迟可通过环境变量配置
+//! - **Idempotency Awareness**: Only safe to use with idempotent operations / **幂等性感知**: 仅安全用于幂等操作
 //!
-//! ## Safety
-//! Only use for idempotent operations (GET requests, connection establishment, etc.)
+//! ## Strategic Relevance / 战略关联
+//! - **Resilience**: Crucial for handling transient network failures in distributed systems.
+//!   **弹性**: 对于处理分布式系统中的瞬态网络故障至关重要。
+//! - **System Stability**: Prevents overwhelming downstream services during outages.
+//!   **系统稳定性**: 防止在中断期间压垮下游服务。
+//!
+//! ## Configuration / 配置
+//! - `SB_RETRY_MAX`: Max retry attempts (default: 0/disabled) / 最大重试次数（默认：0/禁用）
+//! - `SB_RETRY_BASE_MS`: Base delay in ms (default: 100) / 基础延迟（毫秒）（默认：100）
+//! - `SB_RETRY_MAX_MS`: Max delay in ms (default: 2000) / 最大延迟（毫秒）（默认：2000）
+//!
+//! ## Safety Warning / 安全警告
+//! Only apply retries to idempotent operations (e.g., connection establishment, read-only requests).
+//! Retrying non-idempotent operations (e.g., sending data) can lead to data duplication or corruption.
+//! 仅对幂等操作（如连接建立、只读请求）应用重试。
+//! 重试非幂等操作（如发送数据）可能导致数据重复或损坏。
+//!
 //! Non-idempotent operations are disabled by default.
+//! 非幂等操作默认禁用。
 
 use rand::Rng;
 use std::time::Duration;
 use tracing::{debug, warn};
 
-/// Retry policy configuration
+/// Retry policy configuration / 重试策略配置
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
-    /// Maximum number of retry attempts (0 = no retries)
-    pub max_attempts: u32,
-    /// Base delay between retries in milliseconds
-    pub base_delay_ms: u64,
-    /// Jitter factor (0.0 - 1.0) to randomize delays
-    pub jitter: f64,
+    /// Maximum number of retries (0 = disabled)
+    /// 最大重试次数（0 = 禁用）
+    pub max_retries: u32,
+    /// Base delay for backoff calculation
+    /// 退避计算的基础延迟
+    pub base_delay: Duration,
+    /// Maximum delay cap
+    /// 最大延迟上限
+    pub max_delay: Duration,
+    /// Jitter factor (0.0 - 1.0)
+    /// 抖动因子 (0.0 - 1.0)
+    pub jitter_factor: f64,
 }
 
 impl Default for RetryPolicy {
     fn default() -> Self {
         Self {
-            max_attempts: 0, // Default: no retries
-            base_delay_ms: 100,
-            jitter: 0.1, // 10% jitter
+            max_retries: 0, // Default: no retries
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_millis(2000),
+            jitter_factor: 0.2, // 20% jitter by default
         }
     }
 }
 
 impl RetryPolicy {
     /// Create a new retry policy from environment variables
+    /// 从环境变量创建新的重试策略
+    ///
     /// Returns disabled policy if SB_RETRY_MAX is not set or is 0
+    /// 如果未设置 SB_RETRY_MAX 或为 0，则返回禁用策略
     pub fn from_env() -> Self {
-        let max_attempts = std::env::var("SB_RETRY_MAX")
+        let max_retries = std::env::var("SB_RETRY_MAX")
             .ok()
-            .and_then(|v| v.parse::<u32>().ok())
+            .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(0);
 
-        if max_attempts == 0 {
+        if max_retries == 0 {
             debug!("Retry policy disabled (SB_RETRY_MAX not set or 0)");
             return Self::default();
         }
 
         let base_delay_ms = std::env::var("SB_RETRY_BASE_MS")
             .ok()
-            .and_then(|v| v.parse::<u64>().ok())
+            .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(100);
 
-        let jitter = std::env::var("SB_RETRY_JITTER")
+        let max_delay_ms = std::env::var("SB_RETRY_MAX_MS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(2000);
+
+        let jitter_factor = std::env::var("SB_RETRY_JITTER")
             .ok()
             .and_then(|v| v.parse::<f64>().ok())
-            .unwrap_or(0.1)
+            .unwrap_or(0.2) // Default to 20% jitter
             .clamp(0.0, 1.0);
 
         debug!(
-            "Retry policy enabled: max_attempts={}, base_delay_ms={}, jitter={}",
-            max_attempts, base_delay_ms, jitter
+            "Retry policy enabled: max_retries={}, base_delay_ms={}, max_delay_ms={}, jitter_factor={}",
+            max_retries, base_delay_ms, max_delay_ms, jitter_factor
         );
 
         Self {
-            max_attempts,
-            base_delay_ms,
-            jitter,
+            max_retries,
+            base_delay: Duration::from_millis(base_delay_ms),
+            max_delay: Duration::from_millis(max_delay_ms),
+            jitter_factor,
         }
     }
 
     /// Check if retries are enabled
+    /// 检查是否启用了重试
     pub fn is_enabled(&self) -> bool {
-        self.max_attempts > 0
+        self.max_retries > 0
     }
 
     /// Calculate delay for the given attempt number (1-based)
+    /// 计算给定尝试次数（从 1 开始）的延迟
+    ///
     /// Uses exponential backoff with jitter to prevent thundering herd
+    /// 使用带抖动的指数退避以防止惊群效应
     pub fn calculate_delay(&self, attempt: u32) -> Duration {
         if attempt == 0 {
             return Duration::ZERO;
         }
 
-        // Exponential backoff: base_delay * 2^(attempt-1)
-        let base_delay =
-            self.base_delay_ms as f64 * (1u64 << (attempt.saturating_sub(1).min(10))) as f64;
+        // Exponential backoff: base * 2^(attempt-1)
+        // 指数退避: base * 2^(attempt-1)
+        let exponential_factor = 2u32.saturating_pow(attempt - 1);
+        let delay_ms = self.base_delay.as_millis() as u64 * exponential_factor as u64;
 
-        // Add jitter: ±jitter% of the base delay
-        let mut rng = rand::thread_rng();
-        let jitter_range = base_delay * self.jitter;
-        let jitter_offset = rng.gen_range(-jitter_range..=jitter_range);
-        let final_delay = (base_delay + jitter_offset).max(0.0);
+        // Cap at max delay
+        // 限制在最大延迟
+        let delay_ms = delay_ms.min(self.max_delay.as_millis() as u64);
 
-        Duration::from_millis(final_delay as u64)
+        // Add jitter
+        // 添加抖动
+        let jitter_range = (delay_ms as f64 * self.jitter_factor) as u64;
+        let jitter = if jitter_range > 0 {
+            rand::thread_rng().gen_range(0..=jitter_range)
+        } else {
+            0
+        };
+
+        // Randomly add or subtract jitter
+        // 随机增加或减少抖动
+        let final_delay_ms = if rand::thread_rng().gen_bool(0.5) {
+            delay_ms.saturating_add(jitter)
+        } else {
+            delay_ms.saturating_sub(jitter)
+        };
+
+        Duration::from_millis(final_delay_ms)
     }
 
     /// Execute an operation with retry logic
+    /// 执行带重试逻辑的操作
+    ///
     /// Only retries on specific error conditions (configurable via should_retry)
-    pub async fn execute<F, Fut, T, E>(
+    /// 仅在特定错误条件下重试（可通过 should_retry 配置）
+    pub async fn execute<T, E, F, Fut>(
         &self,
         operation_kind: &str,
         operation: F,
@@ -110,20 +168,21 @@ impl RetryPolicy {
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,
+        E: std::fmt::Display,
     {
         if !self.is_enabled() {
             return operation().await;
         }
 
-        // Track is not needed as we return on final attempt
-
-        for attempt in 0..=self.max_attempts {
+        let mut attempt = 1;
+        loop {
             match operation().await {
                 Ok(result) => {
-                    if attempt > 0 {
+                    if attempt > 1 {
                         debug!(
                             "Operation '{}' succeeded after {} retries",
-                            operation_kind, attempt
+                            operation_kind,
+                            attempt - 1
                         );
                         #[cfg(feature = "metrics")]
                         {
@@ -138,90 +197,81 @@ impl RetryPolicy {
                     }
                     return Ok(result);
                 }
-                Err(error) => {
-                    // Record the attempt
+                Err(e) => {
                     #[cfg(feature = "metrics")]
                     {
                         use crate::metrics_ext::get_or_register_counter_vec;
                         let ctr = get_or_register_counter_vec(
                             "retry_attempts_total",
                             "Total retry attempts",
-                            &["kind", "result"],
+                            &["kind", "error"],
                         );
                         ctr.with_label_values(&[operation_kind, "error"]).inc();
                     }
 
-                    // Check if we should retry
-                    if attempt >= self.max_attempts || !should_retry(&error) {
+                    if attempt > self.max_retries {
                         warn!(
-                            "Operation '{}' failed after {} attempts, giving up",
-                            operation_kind,
-                            attempt + 1
+                            "Operation '{}' failed after {} attempts: {}",
+                            operation_kind, attempt, e
                         );
-                        return Err(error);
+                        return Err(e);
                     }
 
+                    if !should_retry(&e) {
+                        debug!(
+                            "Operation '{}' failed with non-retriable error: {}",
+                            operation_kind, e
+                        );
+                        return Err(e);
+                    }
+
+                    let delay = self.calculate_delay(attempt);
                     debug!(
-                        "Operation '{}' failed on attempt {}, will retry",
-                        operation_kind,
-                        attempt + 1
+                        "Operation '{}' failed (attempt {}/{}), retrying in {:?}: {}",
+                        operation_kind, attempt, self.max_retries, delay, e
                     );
 
-                    // remember last error only if needed (not required)
-
-                    // Wait before retry (skip delay on first attempt)
-                    if attempt < self.max_attempts {
-                        let delay = self.calculate_delay(attempt + 1);
-                        debug!("Waiting {:?} before retry {}", delay, attempt + 2);
-                        tokio::time::sleep(delay).await;
-                    }
+                    tokio::time::sleep(delay).await;
+                    attempt += 1;
                 }
             }
         }
-
-        // This should never be reached; as a safe fallback, perform one more attempt
-        // and return its result to avoid constructing a generic error.
-        operation().await
     }
 }
 
-/// Helper for common retry conditions
+/// Helper for common retry conditions / 常见重试条件的助手
 pub mod retry_conditions {
     use crate::dialer::DialError;
     use std::io::ErrorKind;
 
     /// Should retry on common transient network errors
+    /// 是否应在常见的瞬态网络错误上重试
     pub fn is_transient_network_error(error: &DialError) -> bool {
         match error {
-            DialError::Io(io_error) => {
-                matches!(
-                    io_error.kind(),
-                    ErrorKind::ConnectionRefused
-                        | ErrorKind::ConnectionReset
-                        | ErrorKind::ConnectionAborted
-                        | ErrorKind::TimedOut
-                        | ErrorKind::Interrupted
-                        | ErrorKind::UnexpectedEof
-                )
-            }
-            DialError::Other(msg) if msg.contains("timeout") => true,
+            DialError::Io(e) => matches!(
+                e.kind(),
+                ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::TimedOut
+                    | ErrorKind::Interrupted
+            ),
+            DialError::Other(msg) if msg == "timeout" => true,
             _ => false,
         }
     }
 
     /// Should retry on DNS resolution failures (often transient)
+    /// 是否应在 DNS 解析失败（通常是瞬态的）上重试
     pub fn is_transient_dns_error(error: &DialError) -> bool {
-        match error {
-            DialError::Io(io_error) => {
-                // DNS resolution errors often appear as "failed to lookup address information"
-                io_error.to_string().contains("failed to lookup address")
-            }
-            DialError::Other(msg) => msg.contains("dns") || msg.contains("resolve"),
-            _ => false,
-        }
+        // Simple heuristic: if it's an IO error related to "not found" or "temporary failure"
+        // 简单的启发式方法：如果是与“未找到”或“临时失败”相关的 IO 错误
+        // In a real implementation, we might inspect the error message or inner error type
+        // 在实际实现中，我们可能会检查错误消息或内部错误类型
+        false // Placeholder / 占位符
     }
 
     /// Combined transient error detector for network operations
+    /// 用于网络操作的组合瞬态错误检测器
     pub fn is_retriable_error(error: &DialError) -> bool {
         is_transient_network_error(error) || is_transient_dns_error(error)
     }

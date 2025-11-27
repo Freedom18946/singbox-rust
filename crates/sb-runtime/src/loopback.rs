@@ -1,19 +1,28 @@
 //! Loopback connector and frame logging for offline handshake testing
 //!
-//! 提供内存回环连接和会话日志记录功能，用于离线协议握手测试。
+//! 此 crate 提供协议握手的离线测试和验证工具，主要用于：
 //!
-//! # 主要组件
+//! # Main Components / 主要组件
 //!
-//! - [`LoopConn`][]: 内存回环连接，发送的数据会自动回显到接收队列
-//! - [`Frame`][]: 单个数据帧的元数据（时间戳、方向、长度、头尾字节）
-//! - [`SessionLog`][]: JSONL 格式的会话日志记录器
-//! - [`XorObfuscator`][]: 简单的 XOR 混淆器实现
+//! - [`LoopConn`][]: In-memory loopback connection, sent data is automatically echoed to receive queue.
+//! - [`Frame`][]: Metadata for a single data frame (timestamp, direction, length, head/tail bytes).
+//! - [`SessionLog`][]: JSONL format session logger.
+//! - [`XorObfuscator`][]: Simple XOR obfuscator implementation.
 //!
-//! # 设计思想
+//! - [`LoopConn`][]: 内存回环连接，发送的数据会自动回显到接收队列。
+//! - [`Frame`][]: 单个数据帧的元数据（时间戳、方向、长度、头尾字节）。
+//! - [`SessionLog`][]: JSONL 格式的会话日志记录器。
+//! - [`XorObfuscator`][]: 简单的 XOR 混淆器实现。
 //!
-//! - **零真实 IO**: 所有数据在内存中处理，不涉及网络 socket
-//! - **确定性**: 支持可选的混淆器，但测试结果可重现
-//! - **JSONL 日志**: 帧日志以 JSONL 格式存储，便于分析和回放
+//! # Design Philosophy / 设计思想
+//!
+//! - **Zero Real IO**: All data processed in memory, no network sockets involved.
+//! - **Determinism**: Supports optional obfuscators, but test results are reproducible.
+//! - **JSONL Logging**: Frame logs stored in JSONL format for easy analysis and replay.
+//!
+//! - **零真实 IO**: 所有数据在内存中处理，不涉及网络 socket。
+//! - **确定性**: 支持可选的混淆器，但测试结果可重现。
+//! - **JSONL 日志**: 帧日志以 JSONL 格式存储，便于分析和回放。
 
 use crate::handshake::{Handshake, Obfuscator};
 use anyhow::{anyhow, Result};
@@ -24,8 +33,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// 内存回环连接，自动回显发送的数据
+/// In-memory loopback connection, automatically echoes sent data.
+/// 内存回环连接，自动回显发送的数据。
 ///
+/// Data sent to the connection is stored in `tx_queue` and automatically echoed to `rx_queue`.
+/// Optional obfuscator is applied during echo.
 /// 发送到连接的数据会被存储在 `tx_queue` 中，并自动回显到 `rx_queue`。
 /// 可选的混淆器会在回显时应用。
 ///
@@ -151,8 +163,10 @@ impl std::fmt::Display for FrameDir {
     }
 }
 
-/// 带元数据的数据帧
+/// Data frame with metadata.
+/// 带元数据的数据帧。
 ///
+/// Records timestamp, direction, length, and hex representation of head/tail bytes for a single data transfer.
 /// 记录单个数据传输的时间戳、方向、长度和头尾字节的十六进制表示。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Frame {

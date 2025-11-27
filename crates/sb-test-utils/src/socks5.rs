@@ -1,11 +1,16 @@
 //! Mock SOCKS5 server implementation for testing
+//! 用于测试的 Mock SOCKS5 服务器实现
 //!
 //! Provides a minimal SOCKS5 proxy server that supports:
+//! 提供一个最小化的 SOCKS5 代理服务器，支持：
 //! - SOCKS5 handshake (no authentication)
+//!   SOCKS5 握手（无认证）
 //! - UDP ASSOCIATE command
+//!   UDP ASSOCIATE 命令
 //! - UDP packet echo functionality
+//!   UDP 数据包回显功能
 //!
-//! ## Example
+//! ## Example / 示例
 //!
 //! ```rust,no_run
 //! use sb_test_utils::socks5::start_mock_socks5;
@@ -15,25 +20,42 @@
 //!     let (tcp_addr, udp_addr) = start_mock_socks5().await.unwrap();
 //!
 //!     // Connect to TCP control address to establish association
+//!     // 连接到 TCP 控制地址以建立关联
 //!     // Send UDP packets to udp_addr
+//!     // 发送 UDP 数据包到 udp_addr
 //!     // Packets will be echoed back
+//!     // 数据包将被回显
 //! }
 //! ```
+//!
+//! ## Strategic Implementation Notes / 战略实施说明
+//!
+//! Unlike the full SOCKS5 implementation in `sb-inbound`, this mock server is designed specifically for
+//! testing *clients* (like `sb-outbound`'s SOCKS5 outbound). It simplifies the state machine to focus
+//! on verifying that clients correctly initiate connections and handle basic UDP relaying.
+//! 与 `sb-inbound` 中的完整 SOCKS5 实现不同，此 Mock 服务器专门设计用于测试 *客户端*（如 `sb-outbound` 的 SOCKS5 出站）。
+//! 它简化了状态机，专注于验证客户端是否正确发起连接并处理基本的 UDP 中继。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 
 /// Start a minimal SOCKS5 mock server.
+/// 启动一个最小化的 SOCKS5 Mock 服务器。
 ///
 /// The server supports:
+/// 该服务器支持：
 /// - SOCKS5 handshake (no authentication required)
+///   SOCKS5 握手（无需认证）
 /// - UDP ASSOCIATE command only
+///   仅支持 UDP ASSOCIATE 命令
 /// - UDP packet echo (sends back received payload)
+///   UDP 数据包回显（发回接收到的负载）
 ///
 /// Returns a tuple of (TCP control address, UDP relay address).
+/// 返回一个元组 (TCP 控制地址, UDP 中继地址)。
 ///
-/// # Example
+/// # Example / 示例
 ///
 /// ```rust,no_run
 /// # use sb_test_utils::socks5::start_mock_socks5;
@@ -44,9 +66,10 @@ use tokio::net::{TcpListener, UdpSocket};
 /// # }
 /// ```
 ///
-/// # Protocol Details
+/// # Protocol Details / 协议细节
 ///
 /// ## UDP Packet Format (SOCKS5 UDP REQUEST)
+/// ## UDP 数据包格式 (SOCKS5 UDP 请求)
 /// ```text
 /// +----+------+------+----------+----------+----------+
 /// |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
@@ -57,10 +80,12 @@ use tokio::net::{TcpListener, UdpSocket};
 ///
 /// The mock server extracts the DATA portion and echoes it back
 /// in a SOCKS5 UDP REPLY format.
+/// Mock 服务器提取 DATA 部分，并以 SOCKS5 UDP REPLY 格式将其回显。
 ///
-/// # Errors
+/// # Errors / 错误
 ///
 /// Returns an error if binding to TCP or UDP sockets fails.
+/// 如果绑定 TCP 或 UDP 套接字失败，则返回错误。
 pub async fn start_mock_socks5() -> anyhow::Result<(SocketAddr, SocketAddr)> {
     // Bind TCP control socket
     let tcp = TcpListener::bind(("127.0.0.1", 0)).await?;

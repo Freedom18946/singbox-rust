@@ -1,5 +1,5 @@
 #![allow(clippy::manual_flatten)]
-use sb_config::ir::{ConfigIR, InboundType, OutboundType};
+use sb_config::ir::ConfigIR;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;

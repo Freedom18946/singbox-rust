@@ -1,12 +1,16 @@
-//! R108: 订阅 Lint（纯离线），输出 minijson 报告。
-//! 检查项（最小闭环）：
-//! - empty_decision：决策为空
-//! - dup_rule：完全重复的 DSL 行
-//! - reversed_portrange：a-b 中 a>b
-//! - shadow_suffix_over_exact：suffix 覆盖 exact
-//! - unknown_outbound：规则引用的决策在 outbounds 不存在（best-effort）
+//! R108: Subscription Lint (purely offline), outputs minijson report.
+//! [Chinese] R108: 订阅 Lint（纯离线），输出 minijson 报告。
 //!
-//! 报告字段：{ok, format, mode, normalized, totals, issues:[{kind,line|detail}], can_autofix}
+//! Checks (minimal closure):
+//! [Chinese] 检查项（最小闭环）：
+//! - empty_decision: Decision is empty. / 决策为空。
+//! - dup_rule: Completely duplicate DSL line. / 完全重复的 DSL 行。
+//! - reversed_portrange: a-b where a>b. / a-b 中 a>b。
+//! - shadow_suffix_over_exact: suffix covers exact. / suffix 覆盖 exact。
+//! - unknown_outbound: Rule references a decision not present in outbounds (best-effort). / 规则引用的决策在 outbounds 不存在（best-effort）。
+//!
+//! Report fields: {ok, format, mode, normalized, totals, issues:[{kind,line|detail}], can_autofix}
+//! [Chinese] 报告字段：{ok, format, mode, normalized, totals, issues:[{kind,line|detail}], can_autofix}
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 use std::collections::{BTreeMap, BTreeSet};
@@ -73,17 +77,21 @@ pub fn lint_minijson(
     normalize: bool,
 ) -> Result<LintResult, String> {
     let p = parse_profile(input, format, use_keyword)?;
-    // 1) 构建 DSL
+    // 1) Build DSL
+    // [Chinese] 1) 构建 DSL
     let dsl = to_dsl(&p, normalize);
-    // 2) 逐行检查
+    // 2) Check line by line
+    // [Chinese] 2) 逐行检查
     let mut issues: Vec<String> = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut counters = Counters::default();
-    // outbounds 集合用于 unknown_outbound
+    // outbounds set for unknown_outbound check
+    // [Chinese] outbounds 集合用于 unknown_outbound
     let outs: BTreeSet<String> = p.outbounds.iter().map(|o| o.name.to_lowercase()).collect();
     for raw in dsl.lines().filter(|l| !l.trim().is_empty()) {
         let line = raw.trim();
-        // 空决策
+        // Empty decision
+        // [Chinese] 空决策
         if let Some(eq) = line.find('=') {
             if eq + 1 >= line.len() {
                 counters.empty_decision += 1;
@@ -93,14 +101,16 @@ pub fn lint_minijson(
                 ]));
             }
         } else {
-            // 没有 '=' 的行也记为 empty_decision（DSL 期望有 key=value）
+            // Line without '=' is also considered empty_decision (DSL expects key=value)
+            // [Chinese] 没有 '=' 的行也记为 empty_decision（DSL 期望有 key=value）
             counters.empty_decision += 1;
             issues.push(obj([
                 ("kind", Val::Str("empty_decision")),
                 ("line", Val::Str(line)),
             ]));
         }
-        // 重复行
+        // Duplicate rule
+        // [Chinese] 重复行
         if !seen.insert(line.to_string()) {
             counters.dup_rule += 1;
             issues.push(obj([
@@ -108,7 +118,8 @@ pub fn lint_minijson(
                 ("line", Val::Str(line)),
             ]));
         }
-        // 反向 portrange + unknown outbound
+        // Reversed portrange + unknown outbound
+        // [Chinese] 反向 portrange + unknown outbound
         if line.starts_with("portrange:") {
             if let Some((k, v)) = line.split_once('=') {
                 if let Some((_, r)) = k.split_once(':') {
@@ -145,7 +156,8 @@ pub fn lint_minijson(
             }
         }
     }
-    // 3) suffix 覆盖 exact（粗粒度：同 host）
+    // 3) suffix covers exact (coarse: same host)
+    // [Chinese] 3) suffix 覆盖 exact（粗粒度：同 host）
     let mut exact: BTreeMap<String, String> = BTreeMap::new();
     let mut suffix: BTreeSet<String> = BTreeSet::new();
     for line in dsl.lines() {
@@ -163,7 +175,8 @@ pub fn lint_minijson(
         }
     }
     for host in exact.keys() {
-        // host 以某个 suffix 结尾 → 认为被覆盖
+        // host ends with a suffix -> considered shadowed
+        // [Chinese] host 以某个 suffix 结尾 → 认为被覆盖
         if suffix.iter().any(|sfx| host.ends_with(sfx)) {
             counters.shadow += 1;
             issues.push(obj([
@@ -172,7 +185,8 @@ pub fn lint_minijson(
             ]));
         }
     }
-    // 4) 汇总
+    // 4) Summary
+    // [Chinese] 4) 汇总
     let totals_obj = obj([
         ("empty_decision", Val::NumU(counters.empty_decision)),
         ("dup_rule", Val::NumU(counters.dup_rule)),

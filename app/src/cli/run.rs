@@ -1,3 +1,18 @@
+//! Service Daemon / 服务守护进程
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module implements the **Main Service Loop** of the application.
+//! 本模块实现了应用程序的 **主服务循环**。
+//!
+//! ## Core Responsibilities / 核心职责
+//! 1. **Initialization / 初始化**: Sets up panic hooks, observability, and loads the initial configuration.
+//! 2. **Bootstrapping / 引导**: Invokes `app::bootstrap` to start the proxy runtime.
+//! 3. **Hot Reload / 热重载**: Monitors the configuration file for changes and reloads the runtime dynamically.
+//! 4. **Signal Handling / 信号处理**: Gracefully handles OS signals (Ctrl+C, SIGTERM) to ensure proper shutdown.
+//!
+//! ## Strategic Flow / 战略流程
+//! `CLI Args` -> `Config Load` -> `Bootstrap` -> `Event Loop (Watch/Signal)` -> `Shutdown`
+
 use anyhow::{Context, Result};
 use clap::Args;
 use std::{
@@ -60,6 +75,9 @@ fn file_mtime(path: &str) -> SystemTime {
 }
 
 pub async fn run(args: RunArgs) -> Result<()> {
+    // Global Panic Hook / 全局 Panic 钩子
+    // Ensures panics are logged to both stderr (for CLI users) and tracing (for log files/collectors).
+    // 确保 panic 同时记录到 stderr（供 CLI 用户使用）和 tracing（供日志文件/收集器使用）。
     std::panic::set_hook(Box::new(|info| {
         eprintln!("[PANIC] {info}"); // 兜底到 stderr
                                      // 如果你们全局已 init tracing，则同时打到 tracing：

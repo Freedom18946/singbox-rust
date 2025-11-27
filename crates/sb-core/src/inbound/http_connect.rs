@@ -34,7 +34,7 @@ struct Decision {
 
 #[cfg(not(feature = "router"))]
 impl Engine {
-    fn new(cfg: sb_config::ir::ConfigIR) -> Self {
+    pub(crate) fn new(cfg: sb_config::ir::ConfigIR) -> Self {
         Self { cfg }
     }
 
@@ -194,6 +194,7 @@ pub(crate) async fn handle(
             } else {
                 None
             },
+            sniff_protocol: Some("http"),
         };
         eng.decide(&input, false)
     };

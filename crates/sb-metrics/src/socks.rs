@@ -1,24 +1,36 @@
+//! SOCKS metrics module.
 //! SOCKS 指标模块。
 //!
-//! 提供 TCP/UDP 常用指标（连接、错误、NAT、数据包计数���。
+//! Provides common metrics for TCP/UDP (connections, errors, NAT, packet counts).
+//! Designed as "opt-in wiring": adapters can gradually adopt without breaking functionality.
+//! 提供 TCP/UDP 常用指标（连接、错误、NAT、数据包计数）。
 //! 设计为"可选接线"：适配器可以逐步引入，不会影响功能。
 //!
-//! ## 模块迁移说明
+//! ## Strategic Logic / 战略逻辑
+//! SOCKS is the baseline protocol for proxying.
+//! Accurate UDP NAT tracking (`UDP_NAT_SIZE`) is crucial for resource management in high-concurrency scenarios (e.g., gaming, voice chat).
+//!
+//! SOCKS 是代理的基准协议。
+//! 准确的 UDP NAT 跟踪 (`UDP_NAT_SIZE`) 对于高并发场景（例如游戏、语音聊天）中的资源管理至关重要。
+//!
+//! ## Migration Note / 迁移说明
 //! TCP connection metrics have been consolidated into `lib.rs::socks_in` module.
 //! Use `sb_metrics::inc_socks_tcp_conn()` from the parent module instead.
+//! TCP 连接指标已合并到 `lib.rs::socks_in` 模块中。
+//! 请改用父模块中的 `sb_metrics::inc_socks_tcp_conn()`。
 //!
-//! ## 使用示例
+//! ## Usage Example / 使用示例
 //! ```rust
 //! use sb_metrics::socks::{set_udp_nat_size, inc_udp_out, inc_udp_in, add_udp_nat_evictions};
 //!
-//! // 设置 NAT 表大小
+//! // Set NAT table size / 设置 NAT 表大小
 //! set_udp_nat_size(100);
 //!
-//! // 记录 UDP 包
+//! // Record UDP packets / 记录 UDP 包
 //! inc_udp_out();
 //! inc_udp_in();
 //!
-//! // 记录 NAT 淘汰
+//! // Record NAT evictions / 记录 NAT 淘汰
 //! add_udp_nat_evictions(5);
 //! ```
 

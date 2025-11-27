@@ -80,7 +80,7 @@ aho-corasick = "1.1"
 rustls-pki-types = "1.0"
 x509-parser = { version = "0.15", optional = true }
 humantime = "2.1"
-idna = { version = "0.5", optional = true }
+idna = { version = "1.0", optional = true }
 thrussh = { version = "0.35", optional = true }
 thrussh-keys = { version = "=0.22.1", optional = true }
 loom = { version = "0.7", optional = true }
@@ -121,10 +121,10 @@ dns_doh            = ["dns_udp"]
 dns_doh3           = ["dns_udp", "tls_rustls", "dep:h3", "dep:h3-quinn"]
 dns_dot            = ["dns_udp", "tls_rustls"]
 dns_doq            = ["dns_udp", "tls_rustls"]
-dns_dhcp           = []
+dns_dhcp           = ["dep:notify"]
 dns_http           = []
 dns_udp            = []
-dns_resolved       = []
+dns_resolved       = ["dep:notify"]
 dns_tailscale      = []
 dsl_analyze        = []
 dsl_derive         = []

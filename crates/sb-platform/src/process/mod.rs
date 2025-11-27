@@ -1,5 +1,30 @@
 //! Process matching for routing rules
 //!
+//! # 🇨🇳 模块说明 (Module Description)
+//!
+//! 本模块实现了**基于进程的流量识别 (Process-Based Traffic Identification)**。
+//! 它是 SingBox 路由引擎的重要输入源之一，允许用户根据发起网络连接的应用程序（如 Chrome, Spotify）
+//! 来制定精细化的路由规则（例如：所有 Chrome 流量走代理，Spotify 流量直连）。
+//!
+//! This module implements **Process-Based Traffic Identification**.
+//! It acts as a critical input source for the SingBox routing engine, allowing users to define
+//! granular routing rules based on the application initiating the network connection
+//! (e.g., route all Chrome traffic via proxy, bypass proxy for Spotify).
+//!
+//! ## 🚀 战略逻辑 (Strategic Logic)
+//!
+//! 1.  **多源信息融合 (Multi-Source Information Fusion)**:
+//!     -   结合五元组（源IP/端口, 目的IP/端口, 协议）与系统进程表，精确关联网络连接与本地进程。
+//!     -   Combines 5-tuple (Source IP/Port, Dest IP/Port, Protocol) with the system process table
+//!         to precisely correlate network connections with local processes.
+//!
+//! 2.  **性能与兼容性的平衡 (Balancing Performance & Compatibility)**:
+//!     -   **Fast Path**: 在支持的系统上（macOS/Windows + Feature Enabled），使用内核级 API 直接查询，开销极低。
+//!     -   **Slow Path**: 在不支持的系统或配置下，回退到解析 `lsof`/`netstat` 输出，确保功能可用性。
+//!
+//! 3.  **智能缓存 (Smart Caching)**:
+//!     -   内置 TTL 缓存机制，避免对同一连接频繁查询系统 API，降低 CPU 占用。
+//!
 //! This module provides cross-platform process identification capabilities
 //! for routing decisions based on process name and path.
 
@@ -81,6 +106,19 @@ struct CacheEntry {
 }
 
 /// Process matcher with platform-specific implementations
+///
+/// # 🇨🇳 核心组件 (Core Component)
+///
+/// `ProcessMatcher` 是本模块的对外统一入口。它封装了所有平台相关的差异，
+/// 并提供了一个统一的异步接口 `match_connection`。
+///
+/// `ProcessMatcher` is the unified public entry point for this module. It encapsulates
+/// all platform-specific differences and provides a single async interface `match_connection`.
+///
+/// ## 架构设计 (Architecture Design)
+///
+/// -   **Facade Pattern**: 用户只需与 `ProcessMatcher` 交互，无需关心底层是 Linux `/proc` 还是 Windows API。
+/// -   **Caching Layer**: 内部维护了一个 `RwLock<HashMap>` 缓存，自动处理过期失效。
 ///
 /// Provides cross-platform process matching with automatic caching.
 /// Uses platform-specific implementations under the hood:

@@ -88,6 +88,21 @@ pub enum ToolsCmd {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+    /// Lookup a domain using DNS
+    DnsLookup {
+        /// Domain to lookup
+        #[arg(value_name = "DOMAIN")]
+        domain: String,
+        /// DNS server address (e.g. udp://1.1.1.1)
+        #[arg(short = 's', long = "server")]
+        server: Option<String>,
+        /// Config file path (to use DNS config)
+        #[arg(short = 'c', long = "config")]
+        config: Option<PathBuf>,
+        /// Explain the query (show rule match)
+        #[arg(long)]
+        explain: bool,
+    },
 }
 
 pub async fn run(args: ToolsArgs) -> Result<()> {
@@ -117,6 +132,12 @@ pub async fn run(args: ToolsArgs) -> Result<()> {
             )
             .await
         }
+        ToolsCmd::DnsLookup {
+            domain,
+            server,
+            config,
+            explain,
+        } => dns_lookup(domain, server, config, explain).await,
     }
 }
 
@@ -622,4 +643,66 @@ async fn fetch_http3(url: String, output: Option<PathBuf>) -> Result<()> {
 #[cfg(not(feature = "tools_http3"))]
 async fn fetch_http3(_url: String, _output: Option<PathBuf>) -> Result<()> {
     anyhow::bail!("http3 fetch not built: recompile with --features tools_http3")
+}
+
+async fn dns_lookup(
+    domain: String,
+    server: Option<String>,
+    config: Option<PathBuf>,
+    explain: bool,
+) -> Result<()> {
+    use sb_core::dns::Resolver;
+
+    let resolver: Arc<dyn Resolver> = if let Some(s) = server {
+        // Build single upstream resolver
+        let up = sb_core::dns::config_builder::build_upstream(&s)?
+            .ok_or_else(|| anyhow::anyhow!("invalid upstream address: {}", s))?;
+        Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![up]))
+    } else if let Some(p) = config {
+        // Load from config
+        let raw = std::fs::read(&p).with_context(|| format!("read {}", p.display()))?;
+        let val: serde_json::Value = serde_json::from_slice(&raw).context("parse JSON config")?;
+        let ir = sb_config::validator::v2::to_ir_v1(&val);
+        if let Some(dns_ir) = ir.dns {
+            sb_core::dns::config_builder::resolver_from_ir(&dns_ir)?
+        } else {
+            // No DNS config, fallback to system
+            Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![Arc::new(
+                sb_core::dns::upstream::SystemUpstream::new(),
+            )]))
+        }
+    } else {
+        // Default to system
+        Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![Arc::new(
+            sb_core::dns::upstream::SystemUpstream::new(),
+        )]))
+    };
+
+    if explain {
+        let explanation = resolver.explain(&domain).await?;
+        let answer = resolver.resolve(&domain).await?;
+        let output = serde_json::json!({
+            "domain": domain,
+            "explain": explanation,
+            "answer": {
+                "ips": answer.ips,
+                "ttl_secs": answer.ttl.as_secs(),
+                "source": match answer.source {
+                    sb_core::dns::cache::Source::Static => "static",
+                    sb_core::dns::cache::Source::System => "system",
+                    sb_core::dns::cache::Source::Upstream => "upstream",
+                },
+                "rcode": answer.rcode.as_str(),
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    let answer = resolver.resolve(&domain).await?;
+    for ip in answer.ips {
+        println!("{}", ip);
+    }
+
+    Ok(())
 }

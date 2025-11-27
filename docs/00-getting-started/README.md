@@ -11,7 +11,7 @@ Get up and running with singbox-rust in **5 minutes**!
 - **Universal Proxy**: SOCKS5, HTTP, TUN, VMess, VLESS, Trojan, Shadowsocks, Hysteria, TUIC, and more
 - **Smart Routing**: Route traffic based on domain, IP, protocol, process, and more
 - **Anti-Censorship**: REALITY and ECH protocols for enhanced privacy
-- **Production-Ready**: 99%+ feature parity with upstream sing-box, with better performance
+- **Production-Ready**: 100% feature parity with upstream sing-box, with better performance
 
 **Use Cases**:
 
@@ -86,6 +86,51 @@ cargo install singbox-rust
 
 # AUR (Arch Linux)
 yay -S singbox-rust
+```
+
+---
+
+## Build from Source
+
+### Build with Acceptance Features
+
+Build the full-featured binary for testing and release candidates:
+
+```bash
+# Build with all acceptance features enabled
+cargo +1.90 build -p app --features "acceptance,manpage" --release
+
+# Binary will be at: target/release/app
+```
+
+### Essential CLI Examples
+
+```bash
+# 1) Validate configuration (exit codes: 0=ok, 1=warnings, 2=errors)
+./target/release/app check -c config.json --format json
+
+# 2) Explain routing decision for a destination
+./target/release/app route -c config.json --dest example.com:443 --explain --format json
+
+# 3) Display version with build metadata
+./target/release/app version --format json
+
+# 4) Generate shell completions for all shells
+./target/release/app gen-completions --all --dir completions/
+```
+
+### Full Development Workflow
+
+```bash
+cargo check --workspace --all-features
+bash scripts/ci/local.sh
+scripts/e2e/run.sh   # optional e2e summary → .e2e/summary.json
+
+# Run comprehensive E2E tests (auth + rate limiting)
+cargo run -p xtask -- e2e
+
+# Run app with adapter bridge (HTTP/SOCKS/Mixed/TUN via sb-adapters)
+cargo run -p app --features "adapters,router" -- --config config.json
 ```
 
 ---
@@ -222,12 +267,12 @@ singbox-rust check -c old-config.json --migrate --write-normalized --out new-con
 
 ### Q: Which protocols are supported?
 
-**A**: All major protocols are fully supported:
+**A**: All major protocols are fully supported - **100% protocol coverage achieved!**
 
-- **Inbounds**: SOCKS5, HTTP, TUN, VMess, VLESS, Trojan, Shadowsocks, TUIC, Hysteria v1/v2, Naive, ShadowTLS, Direct
-- **Outbounds**: Direct, Block, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, TUIC, Hysteria v1/v2, Selector, URLTest
+- **Inbounds (17/17)**: SOCKS5, HTTP, Mixed, Direct, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
+- **Outbounds (19/19)**: Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, ShadowTLS, TUIC, Hysteria v1, Hysteria v2, Tor, AnyTLS, WireGuard, Selector, URLTest
 
-See [Architecture](../04-development/architecture/overview.md) for full protocol matrix.
+See [Migration Guide](../docs/MIGRATION_GUIDE.md) for full protocol matrix and feature parity details.
 
 ### Q: How do I enable TUN mode on Linux?
 

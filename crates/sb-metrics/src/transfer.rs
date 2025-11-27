@@ -1,19 +1,29 @@
+//! Generic transfer metrics: accumulated bytes and simple throughput observation.
 //! 通用传输统计指标：累计字节数与简单吞吐观测。
 //!
+//! This module does not hook into specific protocols directly.
+//! It is designed for `inbound`/`outbound`/`pipeline` to report on the critical path.
 //! 该模块不直接挂接具体协议，供 inbound/outbound/pipeline 在关键路径上自行上报。
 //!
-//! ## 使用示例
+//! ## Strategic Logic / 战略逻辑
+//! Bandwidth usage (`bytes_up`/`bytes_down`) is the most fundamental metric for billing and capacity planning.
+//! Throughput observation (`throughput_bps`) helps in detecting network bottlenecks or throttling.
+//!
+//! 带宽使用量 (`bytes_up`/`bytes_down`) 是计费和容量规划的最基本指标。
+//! 吞吐量观测 (`throughput_bps`) 有助于检测网络瓶颈或限速。
+//!
+//! ## Usage Example / 使用示例
 //! ```rust
 //! use sb_metrics::transfer::{add_bytes, TxWindow};
 //!
-//! // 记录传输字节
+//! // Record transfer bytes / 记录传输字节
 //! add_bytes("up", "tcp", 1024);
 //! add_bytes("down", "udp", 2048);
 //!
-//! // 自动计时吞吐率
+//! // Auto-measure throughput / 自动计时吞吐率
 //! let mut window = TxWindow::start();
 //! window.add(4096);
-//! // Drop 时自动观测吞吐率
+//! // Throughput reported on Drop / Drop 时自动上报吞吐率
 //! ```
 
 use crate::labels::ensure_allowed_labels;

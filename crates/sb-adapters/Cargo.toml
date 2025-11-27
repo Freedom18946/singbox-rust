@@ -21,6 +21,7 @@ tracing = "0.1"
 tun2socks = { version = "0.1.10", optional = true }
 tun = { version = "0.8", optional = true, features = ["async"] }
 libc = "0.2"
+scopeguard = "1.2"
 
 # VMess protocol dependencies
 uuid = { version = "1.0", features = ["v4", "serde"] }

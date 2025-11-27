@@ -1,9 +1,21 @@
+//! # Concurrency Limiting Dialer / 并发限制拨号器
+//!
+//! This module provides a dialer wrapper that limits the number of concurrent connection attempts.
+//! 该模块提供了一个拨号器包装器，用于限制并发连接尝试的次数。
+//!
+//! ## Strategic Relevance / 战略关联
+//! - **Resource Protection**: Prevents the system from being overwhelmed by too many simultaneous connection attempts.
+//!   **资源保护**: 防止系统因过多的同时连接尝试而不堪重负。
+//! - **Stability**: Helps maintain stable performance under high load by smoothing out traffic spikes.
+//!   **稳定性**: 通过平滑流量峰值，帮助在高负载下保持稳定的性能。
+
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 use crate::dialer::{DialError, Dialer, IoStream};
 
 /// Dialer wrapper with concurrency limiting and queue timeout.
+/// 具有并发限制和队列超时的拨号器包装器。
 #[derive(Clone)]
 pub struct LimitedDialer<D: Dialer + Clone> {
     inner: D,
@@ -12,6 +24,8 @@ pub struct LimitedDialer<D: Dialer + Clone> {
 }
 
 impl<D: Dialer + Clone> LimitedDialer<D> {
+    /// Create a new limited dialer
+    /// 创建一个新的受限拨号器
     pub fn new(inner: D, max: usize, queue_ms: u64) -> Self {
         let max = max.max(1);
         Self {
@@ -21,6 +35,8 @@ impl<D: Dialer + Clone> LimitedDialer<D> {
         }
     }
 
+    /// Create with configuration from environment variables
+    /// 使用环境变量中的配置创建
     pub fn from_env(inner: D) -> Self {
         let max = std::env::var("SB_DIAL_MAX_CONCURRENCY")
             .ok()
@@ -37,6 +53,8 @@ impl<D: Dialer + Clone> LimitedDialer<D> {
 #[async_trait::async_trait]
 impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
+        // Acquire a permit from the semaphore
+        // 从信号量获取许可
         let permit = match tokio::time::timeout(
             std::time::Duration::from_millis(self.queue_ms),
             self.sem.acquire(),
@@ -47,6 +65,8 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
             Ok(Err(_)) => return Err(std::io::Error::from(std::io::ErrorKind::Interrupted).into()),
             Err(_elapsed) => return Err(DialError::Other("queue_timeout".into())),
         };
+        // Proceed with connection
+        // 继续连接
         let res = self.inner.connect(host, port).await;
         drop(permit); // release
         res

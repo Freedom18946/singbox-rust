@@ -41,6 +41,95 @@ Complete guide to configuring and using singbox-rust.
 
 ---
 
+## 🎯 Phase 1 Strategic Focus
+
+**⚠️ Production-Ready Core Protocols for Initial Deployment**
+
+This project's **Phase 1** release focuses exclusively on **Trojan** and **Shadowsocks** protocols for mature, production-ready deployment:
+
+- ✅ 🎯 **Trojan** (inbound + outbound) - Full TLS-based protocol with fallback support
+- ✅ 🎯 **Shadowsocks** (inbound + outbound) - All AEAD variants (AES-GCM, ChaCha20-Poly1305, AEAD-2022)
+
+**All other protocols** are **📦 OPTIONAL/SECONDARY features** requiring manual feature enablement:
+- VMess, VLESS, Hysteria (v1/v2), TUIC, AnyTLS, ShadowTLS
+- HTTP, SOCKS, Naive, SSH, Tor
+- Direct, Block, DNS, Mixed, TUN, Redirect, TProxy
+- **DERP service** (🧪 experimental), WireGuard/Tailscale endpoints
+- Advanced services (NTP, Resolved, SSMAPI)
+
+**To enable optional protocols**:
+```bash
+# Example: Enable VMess outbound
+cargo build --features "adapters,sb-adapters/adapter-vmess"
+
+# Example: Enable DERP service
+cargo build --features "service_derp"
+
+# Example: Enable multiple optional protocols
+cargo build --features "adapters,sb-adapters/adapter-vless,sb-adapters/adapter-hysteria2,service_derp"
+```
+
+---
+
+## Protocol Support
+
+### Inbound Protocols (17/17 Complete - 100%)
+
+**🎯 Phase 1 Core (Production-Ready)**:
+- **Shadowsocks**: AEAD ciphers with UDP relay (AES-GCM, ChaCha20-Poly1305, AEAD-2022)
+- **Trojan**: TLS-based protocol with fallback
+
+**📦 Optional (Feature-Gated)**:
+- **SOCKS5**: Full support with UDP relay and authentication
+- **HTTP/HTTPS**: HTTP proxy with CONNECT method
+- **Mixed**: Combined SOCKS5 + HTTP on single port
+- **Direct**: TCP/UDP forwarder with address override
+- **TUN**: Virtual network interface (macOS/Linux/Windows)
+- **Redirect**: Linux-only transparent proxy (iptables/nftables)
+- **TProxy**: Linux-only transparent proxy with original destination
+- **VMess**: V2Ray protocol with AEAD encryption
+- **VLESS**: Lightweight V2Ray protocol with REALITY/ECH support
+- **TUIC**: QUIC-based UDP-optimized protocol
+- **Hysteria v1**: High-performance QUIC with custom congestion control
+- **Hysteria v2**: Enhanced Hysteria with Salamander obfuscation
+- **Naive**: Chromium-based HTTP/2 proxy
+- **ShadowTLS**: TLS camouflage for Shadowsocks
+- **AnyTLS**: TLS-based protocol with multi-user authentication and padding
+
+### Outbound Protocols (19/19 Complete - 100%)
+
+**🎯 Phase 1 Core (Production-Ready)**:
+- **Shadowsocks**: Full cipher suite support (AES-GCM, ChaCha20-Poly1305, AEAD-2022)
+- **Trojan**: Trojan client with TLS
+
+**📦 Optional (Feature-Gated)**:
+- **Direct**: Direct connection to target
+- **Block**: Block connections
+- **DNS**: DNS query outbound
+- **SOCKS5**: SOCKS5 proxy client
+- **HTTP/HTTPS**: HTTP proxy client
+- **VMess**: V2Ray client with transport options
+- **VLESS**: VLESS client with REALITY/ECH
+- **TUIC**: QUIC-based client with UDP over stream
+- **Hysteria v1**: High-performance QUIC client
+- **Hysteria v2**: Enhanced Hysteria client
+- **ShadowTLS**: TLS SNI/ALPN configuration
+- **SSH**: SSH tunnel with key-based auth
+- **Tor**: SOCKS5 proxy over Tor daemon
+- **AnyTLS**: TLS-based client with session multiplexing
+- **WireGuard**: System interface binding (production: use kernel WireGuard)
+- **Selector**: Manual/auto outbound selection
+- **URLTest**: Health-check based selection
+
+### Advanced TLS Features
+
+- **REALITY**: X25519-based TLS camouflage with fallback proxy
+- **ECH (Encrypted Client Hello)**: HPKE-encrypted SNI for privacy
+- **Standard TLS**: Full TLS 1.2/1.3 with ALPN, SNI, certificate verification
+- **Certificate Management**: Custom CA, client certificates, skip verification
+
+---
+
 ## Quick Links
 
 ### I Want To...

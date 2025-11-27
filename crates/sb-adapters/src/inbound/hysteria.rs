@@ -180,8 +180,7 @@ impl sb_core::adapter::InboundService for HysteriaInbound {
                     });
                     Ok(())
                 }
-                Err(_) => Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(_) => Err(std::io::Error::other(
                     "No tokio runtime available",
                 )),
             }

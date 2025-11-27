@@ -1,14 +1,18 @@
 //! Strongly-typed intermediate representation (IR) for config and routing rules.
+//! 配置和路由规则的强类型中间表示 (IR)。
 //!
 //! Both V1 and V2 formats are converted to IR, which is then consumed by routing
 //! and adapter layers. Field naming aligns with Go sing-box; new fields extend
 //! without changing default behavior.
+//! V1 和 V2 格式都会被转换为 IR，然后由路由和适配器层消费。
+//! 字段命名与 Go sing-box 保持一致；新字段的扩展不会改变默认行为。
 
 use serde::{Deserialize, Serialize};
 
 pub mod diff;
 
 /// Authentication credentials with optional environment variable support.
+/// 带有可选环境变量支持的认证凭据。
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Credentials {
     /// Username (literal value).
@@ -26,42 +30,60 @@ pub struct Credentials {
 }
 
 /// Inbound proxy type.
+/// 入站代理类型。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InboundType {
     /// SOCKS5 proxy.
+    /// SOCKS5 代理。
     Socks,
     /// HTTP CONNECT proxy.
+    /// HTTP CONNECT 代理。
     Http,
     /// TUN device inbound.
+    /// TUN 设备入站。
     Tun,
     /// Mixed HTTP/SOCKS inbound.
+    /// 混合 HTTP/SOCKS 入站。
     Mixed,
     /// Linux REDIRECT (iptables REDIRECT based transparent proxy)
+    /// Linux REDIRECT (基于 iptables REDIRECT 的透明代理)
     Redirect,
     /// Linux TProxy (transparent proxy with IP_TRANSPARENT)
+    /// Linux TProxy (使用 IP_TRANSPARENT 的透明代理)
     Tproxy,
     /// Direct TCP/UDP forwarder with optional destination override.
+    /// 带有可选目标覆盖的直接 TCP/UDP 转发器。
     Direct,
     /// Shadowsocks proxy server.
+    /// Shadowsocks 代理服务器。
     Shadowsocks,
     /// VMess proxy server.
+    /// VMess 代理服务器。
     Vmess,
     /// VLESS proxy server.
+    /// VLESS 代理服务器。
     Vless,
     /// Trojan proxy server.
+    /// Trojan 代理服务器。
     Trojan,
     /// Naive proxy server (HTTP/2 CONNECT).
+    /// Naive 代理服务器 (HTTP/2 CONNECT)。
     Naive,
     /// ShadowTLS proxy server.
+    /// ShadowTLS 代理服务器。
     Shadowtls,
     /// AnyTLS-style protocol server.
+    /// AnyTLS 风格的协议服务器。
     Anytls,
     /// Hysteria v1 proxy server.
+    /// Hysteria v1 代理服务器。
     Hysteria,
     /// Hysteria v2 proxy server.
+    /// Hysteria v2 代理服务器。
     Hysteria2,
     /// TUIC proxy server.
+    /// TUIC 代理服务器。
     Tuic,
 }
 
@@ -92,49 +114,70 @@ impl InboundType {
 }
 
 /// Outbound proxy type.
+/// 出站代理类型。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum OutboundType {
     /// Direct connection (no proxy).
+    /// 直接连接（无代理）。
     #[default]
     Direct,
     /// HTTP proxy.
+    /// HTTP 代理。
     Http,
     /// SOCKS5 proxy.
+    /// SOCKS5 代理。
     Socks,
     /// Block connection.
+    /// 阻断连接。
     Block,
     /// Manual selector (user-selected proxy).
+    /// 手动选择器（用户选择的代理）。
     Selector,
     /// Shadowsocks proxy.
+    /// Shadowsocks 代理。
     Shadowsocks,
     /// ShadowTLS proxy.
+    /// ShadowTLS 代理。
     Shadowtls,
     /// Automatic selector based on URL test latency.
+    /// 基于 URL 测试延迟的自动选择器。
     UrlTest,
     /// Hysteria2 protocol.
+    /// Hysteria2 协议。
     Hysteria2,
     /// TUIC protocol.
+    /// TUIC 协议。
     Tuic,
     /// VLESS protocol.
+    /// VLESS 协议。
     Vless,
     /// VMess protocol.
+    /// VMess 协议。
     Vmess,
     /// Trojan protocol.
+    /// Trojan 协议。
     Trojan,
     /// SSH tunnel.
+    /// SSH 隧道。
     Ssh,
     /// DNS outbound (Go-only).
+    /// DNS 出站 (仅限 Go)。
     Dns,
     /// Tor outbound.
+    /// Tor 出站。
     Tor,
     /// AnyTLS/mtls outbound.
+    /// AnyTLS/mtls 出站。
     Anytls,
     /// Hysteria v1 outbound.
+    /// Hysteria v1 出站。
     Hysteria,
     /// WireGuard outbound.
+    /// WireGuard 出站。
     Wireguard,
     /// Tailscale outbound (stub).
+    /// Tailscale 出站 (存根)。
     Tailscale,
 }
 
@@ -278,202 +321,262 @@ pub struct MultiplexOptionsIR {
 }
 
 /// Inbound listener configuration.
+/// 入站监听器配置。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InboundIR {
     /// Inbound type.
+    /// 入站类型。
     pub ty: InboundType,
     /// Listen address (IP or hostname).
+    /// 监听地址（IP 或主机名）。
     pub listen: String,
     /// Listen port.
+    /// 监听端口。
     pub port: u16,
     /// Enable traffic sniffing.
+    /// 启用流量嗅探。
     #[serde(default)]
     pub sniff: bool,
     /// Enable UDP support.
+    /// 启用 UDP 支持。
     #[serde(default)]
     pub udp: bool,
     /// Basic authentication for HTTP inbound (optional).
+    /// HTTP 入站的基本认证（可选）。
     #[serde(default)]
     pub basic_auth: Option<Credentials>,
     /// Override destination host (for direct inbound).
+    /// 覆盖目标主机（用于直接入站）。
     #[serde(default)]
     pub override_host: Option<String>,
     /// Override destination port (for direct inbound).
+    /// 覆盖目标端口（用于直接入站）。
     #[serde(default)]
     pub override_port: Option<u16>,
 
     // Protocol-specific fields (Shadowsocks)
     /// Shadowsocks encryption method (e.g., "aes-256-gcm", "chacha20-poly1305").
+    /// Shadowsocks 加密方法（例如 "aes-256-gcm", "chacha20-poly1305"）。
     #[serde(default)]
     pub method: Option<String>,
     /// Shadowsocks password (single-user mode).
+    /// Shadowsocks 密码（单用户模式）。
     #[serde(default)]
     pub password: Option<String>,
     /// Shadowsocks multi-user configuration.
+    /// Shadowsocks 多用户配置。
     #[serde(default)]
     pub users_shadowsocks: Option<Vec<ShadowsocksUserIR>>,
     /// Network type for Shadowsocks (e.g., "tcp", "udp", "tcp,udp").
+    /// Shadowsocks 的网络类型（例如 "tcp", "udp", "tcp,udp"）。
     #[serde(default)]
     pub network: Option<String>,
 
     // Protocol-specific fields (VMess)
     /// VMess user UUID (single-user mode).
+    /// VMess 用户 UUID（单用户模式）。
     #[serde(default)]
     pub uuid: Option<String>,
     /// VMess alterId (legacy, usually 0).
+    /// VMess alterId（旧版，通常为 0）。
     #[serde(default)]
     pub alter_id: Option<u32>,
     /// VMess multi-user configuration.
+    /// VMess 多用户配置。
     #[serde(default)]
     pub users_vmess: Option<Vec<VmessUserIR>>,
 
     // Protocol-specific fields (VLESS)
     /// VLESS flow control (e.g., "xtls-rprx-vision").
+    /// VLESS 流控（例如 "xtls-rprx-vision"）。
     #[serde(default)]
     pub flow: Option<String>,
     /// VLESS multi-user configuration.
+    /// VLESS 多用户配置。
     #[serde(default)]
     pub users_vless: Option<Vec<VlessUserIR>>,
 
     // Protocol-specific fields (Trojan)
     /// Trojan multi-user configuration.
+    /// Trojan 多用户配置。
     #[serde(default)]
     pub users_trojan: Option<Vec<TrojanUserIR>>,
 
     // Protocol-specific fields (AnyTLS)
     /// AnyTLS multi-user configuration.
+    /// AnyTLS 多用户配置。
     #[serde(default)]
     pub users_anytls: Option<Vec<AnyTlsUserIR>>,
     /// Optional AnyTLS padding scheme lines (each entry corresponds to a rule row).
+    /// 可选的 AnyTLS 填充方案行（每条对应一个规则行）。
     #[serde(default)]
     pub anytls_padding: Option<Vec<String>>,
 
     // Protocol-specific fields (Hysteria2)
     /// Hysteria2 multi-user configuration.
+    /// Hysteria2 多用户配置。
     #[serde(default)]
     pub users_hysteria2: Option<Vec<Hysteria2UserIR>>,
     /// Hysteria2 congestion control algorithm (e.g., "bbr", "cubic", "brutal").
+    /// Hysteria2 拥塞控制算法（例如 "bbr", "cubic", "brutal"）。
     #[serde(default)]
     pub congestion_control: Option<String>,
     /// Hysteria2 Salamander obfuscation password.
+    /// Hysteria2 Salamander 混淆密码。
     #[serde(default)]
     pub salamander: Option<String>,
     /// Hysteria2 obfuscation key.
+    /// Hysteria2 混淆密钥。
     #[serde(default)]
     pub obfs: Option<String>,
     /// Hysteria2 Brutal congestion control upload limit (Mbps).
+    /// Hysteria2 Brutal 拥塞控制上传限制 (Mbps)。
     #[serde(default)]
     pub brutal_up_mbps: Option<u32>,
     /// Hysteria2 Brutal congestion control download limit (Mbps).
+    /// Hysteria2 Brutal 拥塞控制下载限制 (Mbps)。
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
 
     // Protocol-specific fields (TUIC)
     /// TUIC multi-user configuration.
+    /// TUIC 多用户配置。
     #[serde(default)]
     pub users_tuic: Option<Vec<TuicUserIR>>,
 
     // Protocol-specific fields (Hysteria v1)
     /// Hysteria v1 multi-user configuration.
+    /// Hysteria v1 多用户配置。
     #[serde(default)]
     pub users_hysteria: Option<Vec<HysteriaUserIR>>,
     /// Hysteria v1 protocol type ("udp", "wechat-video", "faketcp").
+    /// Hysteria v1 协议类型 ("udp", "wechat-video", "faketcp")。
     #[serde(default)]
     pub hysteria_protocol: Option<String>,
     /// Hysteria v1 obfuscation password.
+    /// Hysteria v1 混淆密码。
     #[serde(default)]
     pub hysteria_obfs: Option<String>,
     /// Hysteria v1 upload bandwidth (Mbps).
+    /// Hysteria v1 上传带宽 (Mbps)。
     #[serde(default)]
     pub hysteria_up_mbps: Option<u32>,
     /// Hysteria v1 download bandwidth (Mbps).
+    /// Hysteria v1 下载带宽 (Mbps)。
     #[serde(default)]
     pub hysteria_down_mbps: Option<u32>,
     /// Hysteria v1 QUIC receive window for connection.
+    /// Hysteria v1 连接的 QUIC 接收窗口。
     #[serde(default)]
     pub hysteria_recv_window_conn: Option<u64>,
     /// Hysteria v1 QUIC receive window for stream.
+    /// Hysteria v1 流的 QUIC 接收窗口。
     #[serde(default)]
     pub hysteria_recv_window: Option<u64>,
 
     // Transport and security options (V2Ray protocols)
     /// Transport layer chain (e.g., ["tls", "ws"] for WebSocket over TLS).
+    /// 传输层链（例如 ["tls", "ws"] 表示 WebSocket over TLS）。
     #[serde(default)]
     pub transport: Option<Vec<String>>,
     /// WebSocket path.
+    /// WebSocket 路径。
     #[serde(default)]
     pub ws_path: Option<String>,
     /// WebSocket Host header.
+    /// WebSocket Host 头。
     #[serde(default)]
     pub ws_host: Option<String>,
     /// HTTP/2 path.
+    /// HTTP/2 路径。
     #[serde(default)]
     pub h2_path: Option<String>,
     /// HTTP/2 Host header.
+    /// HTTP/2 Host 头。
     #[serde(default)]
     pub h2_host: Option<String>,
     /// gRPC service name.
+    /// gRPC 服务名称。
     #[serde(default)]
     pub grpc_service: Option<String>,
 
     // TLS options
     /// Enable TLS for this inbound.
+    /// 为此入站启用 TLS。
     #[serde(default)]
     pub tls_enabled: Option<bool>,
     /// Path to TLS certificate file (PEM format).
+    /// TLS 证书文件路径（PEM 格式）。
     #[serde(default)]
     pub tls_cert_path: Option<String>,
     /// Path to TLS private key file (PEM format).
+    /// TLS 私钥文件路径（PEM 格式）。
     #[serde(default)]
     pub tls_key_path: Option<String>,
     /// Inline TLS certificate (PEM format).
+    /// 内联 TLS 证书（PEM 格式）。
     #[serde(default)]
     pub tls_cert_pem: Option<String>,
     /// Inline TLS private key (PEM format).
+    /// 内联 TLS 私钥（PEM 格式）。
     #[serde(default)]
     pub tls_key_pem: Option<String>,
     /// TLS server name (SNI).
+    /// TLS 服务器名称 (SNI)。
     #[serde(default)]
     pub tls_server_name: Option<String>,
     /// TLS ALPN protocols.
+    /// TLS ALPN 协议。
     #[serde(default)]
     pub tls_alpn: Option<Vec<String>>,
 
     // Multiplex options
     /// Multiplex configuration for stream multiplexing.
+    /// 流多路复用的多路复用配置。
     #[serde(default)]
     pub multiplex: Option<MultiplexOptionsIR>,
 }
 
 /// Outbound proxy configuration.
+/// 出站代理配置。
 ///
 /// Supports multiple protocols (HTTP, SOCKS, Shadowsocks, VLESS, etc.)
 /// with protocol-specific fields marked as optional.
+/// 支持多种协议（HTTP, SOCKS, Shadowsocks, VLESS 等），
+/// 协议特定字段标记为可选。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct OutboundIR {
     pub ty: OutboundType,
     /// Server address (IP or hostname).
+    /// 服务器地址（IP 或主机名）。
     #[serde(default)]
     pub server: Option<String>,
     /// Server port.
+    /// 服务器端口。
     #[serde(default)]
     pub port: Option<u16>,
     /// UDP mode: `"passthrough"` or `"socks5-upstream"`.
+    /// UDP 模式：`"passthrough"` 或 `"socks5-upstream"`。
     #[serde(default)]
     pub udp: Option<String>,
     /// Named outbound (for selector/router references).
+    /// 命名出站（用于选择器/路由器引用）。
     #[serde(default)]
     pub name: Option<String>,
     /// Member outbound names (for selector/urltest).
+    /// 成员出站名称（用于选择器/urltest）。
     #[serde(default)]
     pub members: Option<Vec<String>>,
     /// Default member name for selector-like outbounds.
+    /// 选择器类出站的默认成员名称。
     #[serde(default)]
     pub default_member: Option<String>,
     /// Method identifier (e.g., Shadowsocks cipher).
+    /// 方法标识符（例如 Shadowsocks 加密）。
     #[serde(default)]
     pub method: Option<String>,
     /// Authentication credentials for upstream proxies (SOCKS/HTTP).
+    /// 上游代理（SOCKS/HTTP）的认证凭据。
     #[serde(default)]
     pub credentials: Option<Credentials>,
     /// VLESS-specific fields
@@ -482,14 +585,17 @@ pub struct OutboundIR {
     #[serde(default)]
     pub flow: Option<String>,
     /// VLESS encryption parameter (e.g., "none").
+    /// VLESS 加密参数（例如 "none"）。
     #[serde(default)]
     pub encryption: Option<String>,
 
     // VMess-specific fields
     /// VMess security/cipher (e.g., "aes-128-gcm", "chacha20-poly1305", "auto").
+    /// VMess 安全/加密（例如 "aes-128-gcm", "chacha20-poly1305", "auto"）。
     #[serde(default)]
     pub security: Option<String>,
     /// VMess alterId (legacy, usually 0).
+    /// VMess alterId（旧版，通常为 0）。
     #[serde(default)]
     pub alter_id: Option<u8>,
     #[serde(default)]
@@ -497,76 +603,99 @@ pub struct OutboundIR {
     #[serde(default)]
     pub packet_encoding: Option<String>,
     /// Transport nesting (e.g., ["tls","ws"]) for V2Ray-style transports
+    /// 传输层嵌套（例如 ["tls","ws"]）用于 V2Ray 风格的传输
     #[serde(default)]
     pub transport: Option<Vec<String>>,
     /// Protocol-specific congestion control (TUIC) or flow (VLESS)
+    /// 协议特定的拥塞控制 (TUIC) 或流控 (VLESS)
     #[serde(default)]
     pub congestion_control: Option<String>,
     /// TUIC authentication token
+    /// TUIC 认证令牌
     #[serde(default)]
     pub token: Option<String>,
     /// Optional WebSocket path and Host header override
+    /// 可选的 WebSocket 路径和 Host 头覆盖
     #[serde(default)]
     pub ws_path: Option<String>,
     #[serde(default)]
     pub ws_host: Option<String>,
     /// Optional HTTP/2 path and Host/authority override
+    /// 可选的 HTTP/2 路径和 Host/authority 覆盖
     #[serde(default)]
     pub h2_path: Option<String>,
     #[serde(default)]
     pub h2_host: Option<String>,
     /// Optional gRPC service name
+    /// 可选的 gRPC 服务名称
     #[serde(default)]
     pub grpc_service: Option<String>,
     /// Optional gRPC method name
+    /// 可选的 gRPC 方法名称
     #[serde(default)]
     pub grpc_method: Option<String>,
     /// Optional gRPC authority (host override)
+    /// 可选的 gRPC authority（主机覆盖）
     #[serde(default)]
     pub grpc_authority: Option<String>,
     /// Additional gRPC metadata headers
+    /// 额外的 gRPC 元数据头
     #[serde(default)]
     pub grpc_metadata: Vec<HeaderEntry>,
     /// Optional HTTP Upgrade path
+    /// 可选的 HTTP Upgrade 路径
     #[serde(default)]
     pub http_upgrade_path: Option<String>,
     /// Additional HTTP Upgrade headers
+    /// 额外的 HTTP Upgrade 头
     #[serde(default)]
     pub http_upgrade_headers: Vec<HeaderEntry>,
     /// Optional TLS SNI and ALPN list
+    /// 可选的 TLS SNI 和 ALPN 列表
     #[serde(default)]
     pub tls_sni: Option<String>,
     /// TLS ALPN list (Vec). Previously CSV string; standardized here.
+    /// TLS ALPN 列表 (Vec)。以前是 CSV 字符串；在此标准化。
     #[serde(default)]
     pub tls_alpn: Option<Vec<String>>,
     /// Optional DNS transport override for new dns outbound
+    /// 新 DNS 出站的可选 DNS 传输覆盖
     #[serde(default)]
     pub dns_transport: Option<String>,
     /// Optional TLS server name for DNS over TLS/DoQ
+    /// DNS over TLS/DoQ 的可选 TLS 服务器名称
     #[serde(default)]
     pub dns_tls_server_name: Option<String>,
     /// DNS data timeout (ms)
+    /// DNS 数据超时 (ms)
     #[serde(default)]
     pub dns_timeout_ms: Option<u64>,
     /// Per-query timeout (ms)
+    /// 单次查询超时 (ms)
     #[serde(default)]
     pub dns_query_timeout_ms: Option<u64>,
     /// Enable EDNS0 for DNS outbound
+    /// 为 DNS 出站启用 EDNS0
     #[serde(default)]
     pub dns_enable_edns0: Option<bool>,
     /// EDNS0 buffer size
+    /// EDNS0 缓冲区大小
     #[serde(default)]
     pub dns_edns0_buffer_size: Option<u16>,
     /// DoH URL override
+    /// DoH URL 覆盖
     #[serde(default)]
     pub dns_doh_url: Option<String>,
     /// Per-outbound TLS: additional CA files
+    /// 逐出站 TLS：额外的 CA 文件
     #[serde(default)]
     pub tls_ca_paths: Vec<String>,
     /// Per-outbound TLS: additional CA PEM blocks
+    /// 逐出站 TLS：额外的 CA PEM 块
     #[serde(default)]
     pub tls_ca_pem: Vec<String>,
     /// Per-outbound TLS: client certificate (path or inline PEM)
+    /// 逐出站 TLS：客户端证书（路径或内联 PEM）
     #[serde(default)]
     pub tls_client_cert_path: Option<String>,
     #[serde(default)]
@@ -576,51 +705,67 @@ pub struct OutboundIR {
     #[serde(default)]
     pub tls_client_key_pem: Option<String>,
     /// Explicit ALPN override for transports that do not use tls_alpn (e.g., TUIC)
+    /// 针对不使用 tls_alpn 的传输（例如 TUIC）的显式 ALPN 覆盖
     #[serde(default)]
     pub alpn: Option<String>,
     /// Whether to skip TLS certificate verification (TUIC)
+    /// 是否跳过 TLS 证书校验 (TUIC)
     #[serde(default)]
     pub skip_cert_verify: Option<bool>,
     /// UDP relay mode for TUIC ("native" | "quic")
+    /// TUIC 的 UDP 中继模式 ("native" | "quic")
     #[serde(default)]
     pub udp_relay_mode: Option<String>,
     /// Whether TUIC should tunnel UDP over stream
+    /// TUIC 是否应通过流隧道传输 UDP
     #[serde(default)]
     pub udp_over_stream: Option<bool>,
     /// Whether TUIC should attempt QUIC 0-RTT handshake (if supported)
+    /// TUIC 是否应尝试 QUIC 0-RTT 握手（如果支持）
     #[serde(default)]
     pub zero_rtt_handshake: Option<bool>,
     /// Optional upload bandwidth limit in Mbps (Hysteria2)
+    /// 可选的上传带宽限制 Mbps (Hysteria2)
     #[serde(default)]
     pub up_mbps: Option<u32>,
     /// Optional download bandwidth limit in Mbps (Hysteria2)
+    /// 可选的下载带宽限制 Mbps (Hysteria2)
     #[serde(default)]
     pub down_mbps: Option<u32>,
     /// Optional obfuscation key/mode (Hysteria2)
+    /// 可选的混淆密钥/模式 (Hysteria2)
     #[serde(default)]
     pub obfs: Option<String>,
     /// Optional Salamander fingerprint string (Hysteria2)
+    /// 可选的 Salamander 指纹字符串 (Hysteria2)
     #[serde(default)]
     pub salamander: Option<String>,
     /// Brutal congestion control upload limit (Hysteria2)
+    /// Brutal 拥塞控制上传限制 (Hysteria2)
     #[serde(default)]
     pub brutal_up_mbps: Option<u32>,
     /// Brutal congestion control download limit (Hysteria2)
+    /// Brutal 拥塞控制下载限制 (Hysteria2)
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
     /// Hysteria v1 protocol type ("udp", "wechat-video", "faketcp")
+    /// Hysteria v1 协议类型 ("udp", "wechat-video", "faketcp")
     #[serde(default)]
     pub hysteria_protocol: Option<String>,
     /// Hysteria v1 authentication string
+    /// Hysteria v1 认证字符串
     #[serde(default)]
     pub hysteria_auth: Option<String>,
     /// Hysteria v1 QUIC receive window for connection
+    /// Hysteria v1 连接的 QUIC 接收窗口
     #[serde(default)]
     pub hysteria_recv_window_conn: Option<u64>,
     /// Hysteria v1 QUIC receive window for stream
+    /// Hysteria v1 流的 QUIC 接收窗口
     #[serde(default)]
     pub hysteria_recv_window: Option<u64>,
     /// REALITY TLS configuration.
+    /// REALITY TLS 配置。
     #[serde(default)]
     pub reality_enabled: Option<bool>,
     #[serde(default)]
@@ -630,6 +775,7 @@ pub struct OutboundIR {
     #[serde(default)]
     pub reality_server_name: Option<String>,
     /// Trojan password.
+    /// Trojan 密码。
     #[serde(default)]
     pub password: Option<String>,
     // Shadowsocks plugin support
@@ -640,6 +786,7 @@ pub struct OutboundIR {
 
     // SSH-specific fields
     /// SSH private key content or file path (when `ssh_private_key_path` is not used).
+    /// SSH 私钥内容或文件路径（当未使用 `ssh_private_key_path` 时）。
     #[serde(default)]
     pub ssh_private_key: Option<String>,
     #[serde(default)]
@@ -661,53 +808,69 @@ pub struct OutboundIR {
 
     // WireGuard-specific options (outbound)
     /// Use existing system interface (equivalent to Go's `system_interface`).
+    /// 使用现有的系统接口（相当于 Go 的 `system_interface`）。
     #[serde(default)]
     pub wireguard_system_interface: Option<bool>,
     /// Preferred interface name when binding to an existing system interface.
+    /// 绑定到现有系统接口时的首选接口名称。
     #[serde(default)]
     pub wireguard_interface: Option<String>,
     /// Optional list of local addresses (CIDR) associated with the interface.
+    /// 与接口关联的可选本地地址列表 (CIDR)。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wireguard_local_address: Vec<String>,
     /// Preferred IPv4 source address (overrides derived local_address/env).
+    /// 首选 IPv4 源地址（覆盖派生的 local_address/env）。
     #[serde(default)]
     pub wireguard_source_v4: Option<String>,
     /// Preferred IPv6 source address (overrides derived local_address/env).
+    /// 首选 IPv6 源地址（覆盖派生的 local_address/env）。
     #[serde(default)]
     pub wireguard_source_v6: Option<String>,
     /// Allowed IP list for the interface (used when env vars not supplied).
+    /// 接口的允许 IP 列表（当未提供环境变量时使用）。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wireguard_allowed_ips: Vec<String>,
     /// Private key material (base64). Optional when provided via env vars.
+    /// 私钥材料 (base64)。通过环境变量提供时可选。
     #[serde(default)]
     pub wireguard_private_key: Option<String>,
     /// Remote peer public key.
+    /// 远程对等端公钥。
     #[serde(default)]
     pub wireguard_peer_public_key: Option<String>,
     /// Optional pre-shared key.
+    /// 可选的预共享密钥。
     #[serde(default)]
     pub wireguard_pre_shared_key: Option<String>,
     /// Optional persistent keep-alive interval (seconds).
+    /// 可选的持久保活间隔（秒）。
     #[serde(default)]
     pub wireguard_persistent_keepalive: Option<u16>,
 
     // Tor-specific fields
     /// Tor SOCKS5 proxy address (default: 127.0.0.1:9050).
+    /// Tor SOCKS5 代理地址（默认：127.0.0.1:9050）。
     #[serde(default)]
     pub tor_proxy_addr: Option<String>,
     /// Path to Tor executable (for embedded Tor support, future).
+    /// Tor 可执行文件路径（用于嵌入式 Tor 支持，未来）。
     #[serde(default)]
     pub tor_executable_path: Option<String>,
     /// Extra command-line arguments for Tor process.
+    /// Tor 进程的额外命令行参数。
     #[serde(default)]
     pub tor_extra_args: Option<Vec<String>>,
     /// Tor data directory for persistent state.
+    /// 用于持久状态的 Tor 数据目录。
     #[serde(default)]
     pub tor_data_directory: Option<String>,
     /// Torrc configuration options (key-value pairs).
+    /// Torrc 配置选项（键值对）。
     #[serde(default)]
     pub tor_options: Option<std::collections::HashMap<String, String>>,
     /// URLTest probe configuration
+    /// URLTest 探测配置
     #[serde(default)]
     pub test_url: Option<String>,
     #[serde(default)]
@@ -721,6 +884,7 @@ pub struct OutboundIR {
 
     // AnyTLS-specific fields
     /// Optional AnyTLS padding scheme lines.
+    /// 可选的 AnyTLS 填充方案行。
     #[serde(default)]
     pub anytls_padding: Option<Vec<String>>,
 }
@@ -735,78 +899,118 @@ pub struct HeaderEntry {
 }
 
 /// Routing rule intermediate representation.
+/// 路由规则中间表示。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct RuleIR {
     // Positive match conditions
     /// Domain exact match list.
+    /// 域名精确匹配列表。
     #[serde(default)]
     pub domain: Vec<String>,
     /// Geosite category list.
+    /// Geosite 分类列表。
     #[serde(default)]
     pub geosite: Vec<String>,
     /// GeoIP country code list.
+    /// GeoIP 国家代码列表。
     #[serde(default)]
     pub geoip: Vec<String>,
     /// IP CIDR list.
+    /// IP CIDR 列表。
     #[serde(default)]
     pub ipcidr: Vec<String>,
     /// Port or port range (e.g., `"80"`, `"80-90"`).
+    /// 端口或端口范围（例如 `"80"`, `"80-90"`）。
     #[serde(default)]
     pub port: Vec<String>,
     /// Process name list.
+    /// 进程名称列表。
     #[serde(default)]
     pub process: Vec<String>,
     /// Network type: `"tcp"` or `"udp"`.
+    /// 网络类型：`"tcp"` 或 `"udp"`。
     #[serde(default)]
     pub network: Vec<String>,
     /// Protocol list: `"http"`, `"socks"`, etc.
+    /// 协议列表：`"http"`, `"socks"` 等。
     #[serde(default)]
     pub protocol: Vec<String>,
     /// Sniffed ALPN protocols (e.g., `"h2"`, `"http/1.1"`, `"h3"`).
+    /// 嗅探到的 ALPN 协议（例如 `"h2"`, `"http/1.1"`, `"h3"`）。
     #[serde(default)]
     pub alpn: Vec<String>,
     /// Source address list.
+    /// 源地址列表。
     #[serde(default)]
     pub source: Vec<String>,
     /// Destination address list.
+    /// 目标地址列表。
     #[serde(default)]
     pub dest: Vec<String>,
     /// User-Agent pattern list.
+    /// User-Agent 模式列表。
     #[serde(default)]
     pub user_agent: Vec<String>,
 
     // Negative match conditions (exclusions)
     /// Exclude domains.
+    /// 排除域名。
     #[serde(default)]
     pub not_domain: Vec<String>,
     /// Exclude geosite categories.
+    /// 排除 Geosite 分类。
     #[serde(default)]
     pub not_geosite: Vec<String>,
     /// Exclude GeoIP countries.
+    /// 排除 GeoIP 国家。
     #[serde(default)]
     pub not_geoip: Vec<String>,
     /// Exclude IP CIDRs.
+    /// 排除 IP CIDR。
     #[serde(default)]
     pub not_ipcidr: Vec<String>,
     /// Exclude ports.
+    /// 排除端口。
     #[serde(default)]
     pub not_port: Vec<String>,
-    /// Exclude processes.
+    /// Exclude process names.
+    /// 排除进程名称。
     #[serde(default)]
     pub not_process: Vec<String>,
-    /// Exclude networks.
+    /// Exclude network types.
+    /// 排除网络类型。
     #[serde(default)]
     pub not_network: Vec<String>,
     /// Exclude protocols.
+    /// 排除协议。
     #[serde(default)]
     pub not_protocol: Vec<String>,
-    /// Exclude ALPN protocols.
+    /// Exclude ALPN.
+    /// 排除 ALPN。
     #[serde(default)]
     pub not_alpn: Vec<String>,
+    /// Exclude source addresses.
+    /// 排除源地址。
+    #[serde(default)]
+    pub not_source: Vec<String>,
+    /// Exclude destination addresses.
+    /// 排除目标地址。
+    #[serde(default)]
+    pub not_dest: Vec<String>,
+    /// Exclude User-Agent patterns.
+    /// 排除 User-Agent 模式。
+    #[serde(default)]
+    pub not_user_agent: Vec<String>,
 
-    /// Target outbound name.
+    // Actions
+    /// Target outbound tag.
+    /// 目标出站标签。
     #[serde(default)]
     pub outbound: Option<String>,
+    /// Invert match result.
+    /// 反转匹配结果。
+    #[serde(default)]
+    pub invert: bool,
 }
 
 /// Routing table configuration.
@@ -943,10 +1147,11 @@ pub struct WireGuardPeerIR {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Service type enumeration (Resolved, DERP, SSM, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ServiceType {
     /// systemd-resolved compatible DNS service
+    #[default]
     Resolved,
     /// Shadowsocks Manager API service
     #[serde(rename = "ssmapi")]
@@ -957,7 +1162,7 @@ pub enum ServiceType {
 }
 
 /// Service configuration IR.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ServiceIR {
     /// Service type.
     #[serde(rename = "type")]

@@ -1,9 +1,17 @@
-//! Transport chain builder
+//! # Transport Chain Builder / 传输链构建器
 //!
 //! Provides a simple builder to compose transport layers in order, e.g.:
+//! 提供一个简单的构建器来按顺序组合传输层，例如：
 //! TCP -> TLS -> WebSocket, or TCP -> TLS -> HTTP/2, etc.
+//! TCP -> TLS -> WebSocket，或 TCP -> TLS -> HTTP/2 等。
 //!
-//! Example:
+//! ## Strategic Relevance / 战略关联
+//! - **Composition**: Allows flexible composition of transport layers without complex nesting.
+//!   **组合**: 允许灵活组合传输层，而无需复杂的嵌套。
+//! - **Type Safety**: Ensures that layers are composed in a valid order (e.g., TLS wraps TCP).
+//!   **类型安全**: 确保层按有效顺序组合（例如，TLS 包装 TCP）。
+//!
+//! ## Example / 示例
 //! ```rust,no_run
 //! use std::sync::Arc;
 //! use sb_transport::builder::TransportBuilder;
@@ -24,18 +32,21 @@
 use crate::dialer::Dialer;
 
 /// Builder for composing transport layers into a single `Dialer`.
+/// 用于将传输层组合成单个 `Dialer` 的构建器。
 pub struct TransportBuilder {
     inner: Box<dyn Dialer>,
 }
 
 impl TransportBuilder {
     /// Start a builder from an existing dialer
+    /// 从现有的拨号器开始构建
     #[must_use]
     pub fn with_inner(inner: Box<dyn Dialer>) -> Self {
         Self { inner }
     }
 
     /// Start a builder from a TCP dialer
+    /// 从 TCP 拨号器开始构建
     #[must_use]
     pub fn tcp() -> Self {
         Self {
@@ -44,6 +55,7 @@ impl TransportBuilder {
     }
 
     /// Wrap with TLS layer (requires `transport_tls` feature)
+    /// 包装 TLS 层（需要 `transport_tls` 特性）
     #[cfg(feature = "transport_tls")]
     #[must_use]
     pub fn tls(
@@ -64,6 +76,7 @@ impl TransportBuilder {
     }
 
     /// Wrap with WebSocket layer (requires `transport_ws` feature)
+    /// 包装 WebSocket 层（需要 `transport_ws` 特性）
     #[cfg(feature = "transport_ws")]
     #[must_use]
     pub fn websocket(self, config: crate::websocket::WebSocketConfig) -> Self {
@@ -74,6 +87,7 @@ impl TransportBuilder {
     }
 
     /// Wrap with HTTP/2 layer (requires `transport_h2` feature)
+    /// 包装 HTTP/2 层（需要 `transport_h2` 特性）
     #[cfg(feature = "transport_h2")]
     #[must_use]
     pub fn http2(self, config: crate::http2::Http2Config) -> Self {
@@ -84,6 +98,7 @@ impl TransportBuilder {
     }
 
     /// Wrap with HTTPUpgrade layer (requires `transport_httpupgrade` feature)
+    /// 包装 HTTPUpgrade 层（需要 `transport_httpupgrade` 特性）
     #[cfg(feature = "transport_httpupgrade")]
     #[must_use]
     pub fn http_upgrade(self, config: crate::httpupgrade::HttpUpgradeConfig) -> Self {
@@ -94,6 +109,7 @@ impl TransportBuilder {
     }
 
     /// Wrap with Multiplex (yamux) layer (requires `transport_mux` feature)
+    /// 包装多路复用 (yamux) 层（需要 `transport_mux` 特性）
     #[cfg(feature = "transport_mux")]
     #[must_use]
     pub fn multiplex(self, config: crate::multiplex::MultiplexConfig) -> Self {
@@ -104,7 +120,10 @@ impl TransportBuilder {
     }
 
     /// Switch to gRPC transport (requires `transport_grpc` feature)
+    /// 切换到 gRPC 传输（需要 `transport_grpc` 特性）
+    ///
     /// Note: gRPC establishes its own HTTP/2 channel; previous layers are ignored.
+    /// 注意：gRPC 建立自己的 HTTP/2 通道；先前的层将被忽略。
     #[cfg(feature = "transport_grpc")]
     #[must_use]
     pub fn grpc(self, config: crate::grpc::GrpcConfig) -> Self {
@@ -115,6 +134,7 @@ impl TransportBuilder {
     }
 
     /// Return the composed dialer
+    /// 返回组合后的拨号器
     #[must_use]
     pub fn build(self) -> Box<dyn Dialer> {
         self.inner

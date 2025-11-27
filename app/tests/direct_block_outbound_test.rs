@@ -1,8 +1,14 @@
 // Test for Direct and Block outbound adapter registration
 use sb_adapters::register_all;
 use sb_config::ir::{OutboundIR, OutboundType};
-use sb_core::adapter::registry;
-use sb_core::adapter::OutboundParam;
+use sb_core::adapter::{registry, Bridge, OutboundParam};
+use std::sync::Arc;
+
+fn ctx() -> registry::AdapterOutboundContext {
+    registry::AdapterOutboundContext {
+        bridge: Arc::new(Bridge::new()),
+    }
+}
 
 #[test]
 fn test_direct_outbound_registration() {
@@ -31,7 +37,7 @@ fn test_direct_outbound_registration() {
         "Direct outbound builder should be registered"
     );
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Direct outbound should be buildable");
 
     let (connector, udp_factory) = result.unwrap();
@@ -69,7 +75,7 @@ fn test_block_outbound_registration() {
         "Block outbound builder should be registered"
     );
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Block outbound should be buildable");
 
     let (connector, udp_factory) = result.unwrap();
@@ -104,7 +110,7 @@ async fn test_direct_outbound_connect() {
     let builder = registry::get_outbound("direct");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some());
 
     let (connector, _) = result.unwrap();
@@ -156,7 +162,7 @@ async fn test_block_outbound_always_fails() {
     let builder = registry::get_outbound("block");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some());
 
     let (connector, _) = result.unwrap();

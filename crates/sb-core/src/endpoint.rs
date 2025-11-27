@@ -44,17 +44,13 @@ pub trait Endpoint: Send + Sync {
 }
 
 /// Context for building endpoints.
+#[derive(Default)]
 pub struct EndpointContext {
     // Placeholder for future router/bridge integration
     // pub router: Arc<RouterHandle>,
     // pub bridge: Arc<Bridge>,
 }
 
-impl Default for EndpointContext {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 /// Builder function signature for creating endpoints.
 pub type EndpointBuilder = fn(&EndpointIR, &EndpointContext) -> Option<Arc<dyn Endpoint>>;

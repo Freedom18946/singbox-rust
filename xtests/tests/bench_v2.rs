@@ -9,12 +9,10 @@ use std::{
 fn spawn_tcp_echo(addr: &str) {
     let l = TcpListener::bind(addr).unwrap();
     std::thread::spawn(move || {
-        for s in l.incoming() {
-            if let Ok(mut stream) = s {
-                let mut buf = [0u8; 64];
-                let _ = stream.read(&mut buf);
-                let _ = stream.write_all(&buf);
-            }
+        for mut stream in l.incoming().flatten() {
+            let mut buf = [0u8; 64];
+            let _ = stream.read(&mut buf);
+            let _ = stream.write_all(&buf);
         }
     });
 }

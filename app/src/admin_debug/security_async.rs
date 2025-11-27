@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use once_cell::sync::OnceCell;
 use std::net::IpAddr;
 use std::time::Instant;
-use trust_dns_resolver::{
+use hickory_resolver::{
     config::{ResolverConfig, ResolverOpts},
     TokioAsyncResolver,
 };

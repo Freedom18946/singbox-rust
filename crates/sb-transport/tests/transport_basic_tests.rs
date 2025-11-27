@@ -13,7 +13,7 @@ mod websocket_tests {
         assert_eq!(config.headers.len(), 0);
         assert_eq!(config.max_message_size, Some(64 * 1024 * 1024));
         assert_eq!(config.max_frame_size, Some(16 * 1024 * 1024));
-        assert_eq!(config.early_data, false);
+        assert!(!config.early_data);
     }
 
     #[test]
@@ -36,7 +36,7 @@ mod websocket_tests {
         assert_eq!(config.headers[0].0, "Host");
         assert_eq!(config.headers[0].1, "example.com");
         assert_eq!(config.max_message_size, Some(32 * 1024 * 1024));
-        assert_eq!(config.early_data, true);
+        assert!(config.early_data);
     }
 }
 

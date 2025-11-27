@@ -39,7 +39,17 @@ harness = false
 [dependencies]
 # Core dependencies
 sb-core = { path = "../crates/sb-core", features = ["router", "dns_udp", "dns_doh", "dns_dot", "dns_doq"] }
-sb-adapters = { path = "../crates/sb-adapters", default-features = false }
+sb-adapters = { path = "../crates/sb-adapters", default-features = false, features = [
+    "tls_reality", 
+    "adapter-trojan", 
+    "adapter-shadowsocks",
+    "adapter-socks",
+    "adapter-vmess",
+    "trojan",
+    "shadowsocks",
+    "socks",
+    "vmess"
+] }
 sb-config = { path = "../crates/sb-config" }
 sb-types = { path = "../crates/sb-types" }
 

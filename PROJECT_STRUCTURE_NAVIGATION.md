@@ -7,7 +7,7 @@
 > 3. 📋 基于本文档进行开发路径规划
 > 
 > **更新责任**: 任何修改项目结构的操作都必须同步更新本文档  
-> **最后更新**: 2025年11月23日（已对照当前仓库结构校验）
+> **最后更新**: 2025年11月26日（已对照当前仓库结构校验）
 
 ## 项目概述
 
@@ -21,13 +21,20 @@ singbox-rust/
 ├── 📁 .e2e/             # 端到端测试产物与摘要
 ├── 📁 .github/          # GitHub Actions 工作流
 ├── 📁 app/              # 主应用与多 bin CLI（feature 门控）
+├── 📁 benches/          # 基准测试工作区
+├── 📁 benchmark_results/# 基准测试结果
 ├── 📁 crates/           # 工作区各核心 crate 模块
+├── 📁 deployment/       # 部署配置与脚本
 ├── 📁 docs/             # 文档门户（00-.. 分区）
 ├── 📁 examples/         # 示例与配置
 ├── 📁 fuzz/             # 模糊测试
+├── 📁 go_fork_source/   # Go 参考实现源码
 ├── 📁 grafana/          # 监控看板
 ├── 📁 LICENSES/         # 依赖许可证
 ├── 📁 reports/          # 报告与基线
+│   ├── 📄 PERFORMANCE_REPORT.md
+│   ├── 📄 TEST_COVERAGE.md
+│   └── 📄 VERIFICATION_RECORD.md
 ├── 📁 scripts/          # CI、工具、场景脚本
 ├── 📁 tests/            # 测试（集成/E2E/配置/数据 等）
 ├── 📁 vendor/           # 供应商依赖覆盖（如 tun2socks）
@@ -136,6 +143,7 @@ docs/
 ├── 08-examples/          # 示例
 ├── archive/              # 历史归档
 ├── MIGRATION_GUIDE.md    # Go → Rust 迁移指南
+├── STATUS.md             # 项目状态与里程碑
 ├── DERP_USAGE.md         # DERP 服务使用指南
 ├── wireguard-endpoint-guide.md  # WireGuard 端点完整指南
 ├── wireguard-quickstart.md      # WireGuard 快速开始
@@ -202,8 +210,8 @@ scripts/
 - 项目规划: `NEXT_STEPS.md` - 下一步里程碑与工作流
 - Go 对齐矩阵: `GO_PARITY_MATRIX.md` - 与 sing-box 1.12.12 对齐状态
 - 迁移指南: `docs/MIGRATION_GUIDE.md` - Go → Rust 完整迁移路径
-- 性能基准: `BENCHMARKS.md` 与 `PERFORMANCE_REPORT.md`
-- 测试覆盖: `TEST_COVERAGE.md`
+- 性能基准: `BENCHMARKS.md` 与 `reports/PERFORMANCE_REPORT.md`
+- 测试覆盖: `reports/TEST_COVERAGE.md`
 - 安全文档: `SECURITY.md`
 - 变更日志: `CHANGELOG.md`
 - 文档入口: `docs/README.md` 与分区 `00-..` 目录

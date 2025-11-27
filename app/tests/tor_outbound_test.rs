@@ -4,8 +4,14 @@
 //! and can be instantiated with proper configuration.
 
 use sb_config::ir::{OutboundIR, OutboundType};
-use sb_core::adapter::registry;
-use sb_core::adapter::OutboundParam;
+use sb_core::adapter::{registry, Bridge, OutboundParam};
+use std::sync::Arc;
+
+fn ctx() -> registry::AdapterOutboundContext {
+    registry::AdapterOutboundContext {
+        bridge: Arc::new(Bridge::new()),
+    }
+}
 
 fn create_outbound_param(kind: &str, name: &str) -> OutboundParam {
     OutboundParam {
@@ -52,7 +58,7 @@ fn test_tor_outbound_registration() {
     );
 
     // Build the outbound
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Tor outbound should be buildable");
 
     let (connector, udp_factory) = result.unwrap();
@@ -88,7 +94,7 @@ fn test_tor_outbound_with_default_proxy() {
     let builder = registry::get_outbound("tor");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Tor outbound should work with default proxy address"
@@ -113,7 +119,7 @@ fn test_tor_outbound_with_custom_proxy() {
     let builder = registry::get_outbound("tor");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(
         result.is_some(),
         "Tor outbound should work with custom proxy address"
@@ -136,7 +142,7 @@ fn test_tor_outbound_debug_format() {
     let builder = registry::get_outbound("tor");
     assert!(builder.is_some());
 
-    let result = builder.unwrap()(&param, &ir);
+    let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some());
 
     let (connector, _) = result.unwrap();

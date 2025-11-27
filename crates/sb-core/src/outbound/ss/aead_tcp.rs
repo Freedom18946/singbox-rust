@@ -175,7 +175,7 @@ impl Outbound for SsAeadTcp {
             let tag = cipher_r.tag_size();
             let mut len_buf = vec![0u8; 2 + tag];
             loop {
-                if let Err(_) = ss_r.read_exact(&mut len_buf).await {
+                if (ss_r.read_exact(&mut len_buf).await).is_err() {
                     break;
                 }
                 let plain_len = match decrypt_aead(&len_buf, &subkey_r, read_nonce, &cipher_r)
@@ -191,7 +191,7 @@ impl Outbound for SsAeadTcp {
                 };
 
                 let mut payload = vec![0u8; plain_len + tag];
-                if let Err(_) = ss_r.read_exact(&mut payload).await {
+                if (ss_r.read_exact(&mut payload).await).is_err() {
                     break;
                 }
                 let plain = match decrypt_aead(

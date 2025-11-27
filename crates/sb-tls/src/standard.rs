@@ -10,13 +10,20 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsConnector as RustlsConnector;
 
 /// Standard TLS 1.3 connector
+/// 标准 TLS 1.3 连接器
 ///
 /// This connector provides standard TLS 1.3 connections using rustls.
+/// 此连接器使用 rustls 提供标准 TLS 1.3 连接。
 /// It supports:
+/// 它支持：
 /// - TLS 1.3 protocol
+/// - TLS 1.3 协议
 /// - SNI (Server Name Indication)
+/// - SNI (服务器名称指示)
 /// - ALPN (Application Layer Protocol Negotiation)
+/// - ALPN (应用层协议协商)
 /// - Custom root certificates
+/// - 自定义根证书
 pub struct StandardTlsConnector {
     config: Arc<ClientConfig>,
     alpn_protocols: Option<Vec<Vec<u8>>>,
@@ -24,9 +31,12 @@ pub struct StandardTlsConnector {
 
 impl StandardTlsConnector {
     /// Create a new standard TLS connector with default configuration
+    /// 创建具有默认配置的新标准 TLS 连接器
     ///
     /// # Errors
+    /// # 错误
     /// Returns an error if the TLS client configuration cannot be constructed.
+    /// 如果无法构建 TLS 客户端配置，则返回错误。
     pub fn new() -> TlsResult<Self> {
         let root_store = RootCertStore::empty();
 
@@ -45,6 +55,7 @@ impl StandardTlsConnector {
     }
 
     /// Create connector with custom root certificates
+    /// 创建具有自定义根证书的连接器
     #[must_use]
     pub fn with_root_store(root_store: RootCertStore) -> Self {
         let config = ClientConfig::builder()
@@ -58,6 +69,7 @@ impl StandardTlsConnector {
     }
 
     /// Set ALPN protocols
+    /// 设置 ALPN 协议
     #[must_use]
     pub fn with_alpn(mut self, alpn: Vec<Vec<u8>>) -> Self {
         self.alpn_protocols = Some(alpn);

@@ -1,0 +1,41 @@
+{
+    "log": {
+        "level": "info",
+        "timestamp": true
+    },
+    "inbounds": [
+        {
+            "type": "shadowsocks",
+            "tag": "ss-in",
+            "listen": "0.0.0.0",
+            "listen_port": 8388,
+            "method": "chacha20-poly1305",
+            "password": "CHANGE_THIS_SECURE_PASSWORD",
+            "network": "tcp"
+        },
+        {
+            "type": "shadowsocks",
+            "tag": "ss-udp-in",
+            "listen": "0.0.0.0",
+            "listen_port": 8388,
+            "method": "chacha20-poly1305",
+            "password": "CHANGE_THIS_SECURE_PASSWORD",
+            "network": "udp"
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route": {
+        "rules": [
+            {
+                "geoip": "cn",
+                "outbound": "direct"
+            }
+        ],
+        "final": "direct"
+    }
+}

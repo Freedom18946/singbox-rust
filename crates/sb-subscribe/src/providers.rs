@@ -1,4 +1,5 @@
-//! R140: RULE-SET/GEOSITE Provider 缓存（内存只读）
+//! R140: RULE-SET/GEOSITE Provider cache (in-memory read-only).
+//! [Chinese] R140: RULE-SET/GEOSITE Provider 缓存（内存只读）。
 #[cfg(feature = "subs_ruleset_cache")]
 #[allow(clippy::module_inception)]
 pub mod providers {
@@ -35,11 +36,14 @@ pub mod providers {
         }
     }
 
-    /// 解析带 provider 支持的规则（占位实现）
+    /// Parse rules with provider support (placeholder implementation).
+    /// [Chinese] 解析带 provider 支持的规则（占位实现）。
     pub fn parse_with_providers(text: &str, provider: &mut MemoryProvider) -> String {
-        // 简单实现：检查是否包含 provider 引用
+        // Simple implementation: check if contains provider reference
+        // [Chinese] 简单实现：检查是否包含 provider 引用
         if text.contains("provider:") {
-            // 模拟查找和展开
+            // Simulate lookup and expansion
+            // [Chinese] 模拟查找和展开
             let _stats = provider.stats();
             format!("// Provider-expanded from {} chars\n{}", text.len(), text)
         } else {

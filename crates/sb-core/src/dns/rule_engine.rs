@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use super::{DnsAnswer, DnsUpstream, RecordType};
 use crate::router::ruleset::matcher::{MatchContext, RuleMatcher};
-use crate::router::ruleset::RuleSet;
+use crate::router::ruleset::{RuleSet, RuleSetFormat, RuleSetSource};
 
 /// DNS routing decision cache key
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -25,6 +25,23 @@ struct RoutingCacheKey {
 struct RoutingDecision {
     /// Upstream server tag to use
     upstream_tag: String,
+    /// Matched rule metadata (None when using default)
+    matched_rule: Option<MatchedRuleInfo>,
+    /// Whether the decision came from cache
+    from_cache: bool,
+}
+
+#[derive(Debug, Clone)]
+struct MatchedRuleInfo {
+    upstream_tag: String,
+    priority: u32,
+    source: RuleSetSource,
+    format: RuleSetFormat,
+}
+
+struct CompiledRule {
+    rule: DnsRoutingRule,
+    matcher: RuleMatcher,
 }
 
 /// DNS routing rule configuration
@@ -41,9 +58,7 @@ pub struct DnsRoutingRule {
 /// DNS Rule Engine with Rule-Set routing
 pub struct DnsRuleEngine {
     /// Routing rules (sorted by priority)
-    rules: Vec<DnsRoutingRule>,
-    /// Rule matchers (cached)
-    matchers: HashMap<String, RuleMatcher>,
+    rules: Vec<CompiledRule>,
     /// Upstream servers by tag
     upstreams: HashMap<String, Arc<dyn DnsUpstream>>,
     /// Default upstream tag (fallback)
@@ -63,12 +78,14 @@ impl DnsRuleEngine {
         let mut sorted_rules = rules;
         sorted_rules.sort_by_key(|r| r.priority);
 
-        // Create matchers for each rule-set
-        let mut matchers = HashMap::new();
-        for rule in &sorted_rules {
-            let tag = rule.upstream_tag.clone();
-            matchers.insert(tag, RuleMatcher::new(rule.rule_set.clone()));
-        }
+        // Compile matchers for each rule-set, preserving priority order
+        let rules = sorted_rules
+            .into_iter()
+            .map(|rule| CompiledRule {
+                matcher: RuleMatcher::new(rule.rule_set.clone()),
+                rule,
+            })
+            .collect();
 
         // Create routing cache (10k entries)
         let cache = Arc::new(parking_lot::Mutex::new(lru::LruCache::new(
@@ -76,8 +93,7 @@ impl DnsRuleEngine {
         )));
 
         Self {
-            rules: sorted_rules,
-            matchers,
+            rules,
             upstreams,
             default_upstream_tag,
             cache,
@@ -109,6 +125,44 @@ impl DnsRuleEngine {
         upstream.query(domain, record_type).await
     }
 
+    /// Explain routing decision for a domain
+    pub async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
+        let decision = self.route_domain(domain);
+
+        let matched_rule = decision.matched_rule.as_ref().map(|m| {
+            let source = match &m.source {
+                RuleSetSource::Local(path) => serde_json::json!({
+                    "type": "local",
+                    "path": path
+                }),
+                RuleSetSource::Remote(url) => serde_json::json!({
+                    "type": "remote",
+                    "url": url
+                }),
+            };
+            serde_json::json!({
+                "upstream": m.upstream_tag,
+                "priority": m.priority,
+                "rule_set": {
+                    "source": source,
+                    "format": match m.format {
+                        RuleSetFormat::Binary => "binary",
+                        RuleSetFormat::Source => "source",
+                    }
+                }
+            })
+        }).unwrap_or_else(|| serde_json::Value::Null);
+
+        Ok(serde_json::json!({
+            "domain": domain,
+            "resolver": "dns_rule_engine",
+            "upstream": decision.upstream_tag,
+            "decision": if decision.matched_rule.is_some() { "rule" } else { "default" },
+            "cache": if decision.from_cache { "hit" } else { "miss" },
+            "matched_rule": matched_rule
+        }))
+    }
+
     /// Determine which upstream to use for a domain
     fn route_domain(&self, domain: &str) -> RoutingDecision {
         // Check cache first
@@ -119,9 +173,15 @@ impl DnsRuleEngine {
         {
             let mut cache = self.cache.lock();
             if let Some(decision) = cache.get(&cache_key) {
-                return decision.clone();
+                #[cfg(feature = "metrics")]
+                metrics::counter!("dns_rule_cache_hit_total").increment(1);
+                let mut decision = decision.clone();
+                decision.from_cache = true;
+                return decision;
             }
         }
+        #[cfg(feature = "metrics")]
+        metrics::counter!("dns_rule_cache_miss_total").increment(1);
 
         // Match against rules (in priority order)
         let ctx = MatchContext {
@@ -135,32 +195,47 @@ impl DnsRuleEngine {
             source_port: None,
         };
 
-        for rule in &self.rules {
-            if let Some(matcher) = self.matchers.get(&rule.upstream_tag) {
-                if matcher.matches(&ctx) {
-                    let decision = RoutingDecision {
-                        upstream_tag: rule.upstream_tag.clone(),
-                    };
+        for compiled in &self.rules {
+            if compiled.matcher.matches(&ctx) {
+                let matched_rule = MatchedRuleInfo {
+                    upstream_tag: compiled.rule.upstream_tag.clone(),
+                    priority: compiled.rule.priority,
+                    source: compiled.rule.rule_set.source.clone(),
+                    format: compiled.rule.rule_set.format,
+                };
+                let decision = RoutingDecision {
+                    upstream_tag: compiled.rule.upstream_tag.clone(),
+                    matched_rule: Some(matched_rule),
+                    from_cache: false,
+                };
 
-                    // Cache decision
-                    let mut cache = self.cache.lock();
-                    cache.put(cache_key, decision.clone());
+                // Cache decision
+                let mut cache = self.cache.lock();
+                cache.put(cache_key, decision.clone());
 
-                    tracing::debug!(
-                        "DNS rule matched: domain={}, upstream={}, rule_set={:?}",
-                        domain,
-                        decision.upstream_tag,
-                        rule.rule_set.source
-                    );
+                tracing::debug!(
+                    "DNS rule matched: domain={}, upstream={}, rule_set={:?}",
+                    domain,
+                    decision.upstream_tag,
+                    compiled.rule.rule_set.source
+                );
 
-                    return decision;
-                }
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "dns_rule_match_total",
+                    "upstream" => decision.upstream_tag.clone(),
+                    "matched" => "true"
+                ).increment(1);
+
+                return decision;
             }
         }
 
         // No rule matched, use default upstream
         let decision = RoutingDecision {
             upstream_tag: self.default_upstream_tag.clone(),
+            matched_rule: None,
+            from_cache: false,
         };
 
         // Cache decision
@@ -172,6 +247,13 @@ impl DnsRuleEngine {
             domain,
             decision.upstream_tag
         );
+
+        #[cfg(feature = "metrics")]
+        metrics::counter!(
+            "dns_rule_match_total",
+            "upstream" => decision.upstream_tag.clone(),
+            "matched" => "false"
+        ).increment(1);
 
         decision
     }
@@ -449,5 +531,68 @@ mod tests {
         engine.clear_cache();
         let (cache_len, _) = engine.cache_stats();
         assert_eq!(cache_len, 0);
+    }
+
+    #[tokio::test]
+    async fn explain_reports_rule_and_cache_hit() {
+        let rule = Rule::Default(DefaultRule {
+            domain_suffix: vec!["google.com".to_string()],
+            ..Default::default()
+        });
+
+        let ruleset = Arc::new(RuleSet {
+            source: crate::router::ruleset::RuleSetSource::Local(std::path::PathBuf::from(
+                "google.srs",
+            )),
+            format: RuleSetFormat::Binary,
+            version: 1,
+            rules: vec![rule],
+            #[cfg(feature = "suffix_trie")]
+            domain_trie: Arc::new(Default::default()),
+            #[cfg(not(feature = "suffix_trie"))]
+            domain_suffixes: Arc::new(vec![]),
+            ip_tree: Arc::new(Default::default()),
+            last_updated: SystemTime::now(),
+            etag: None,
+        });
+
+        let routing_rule = DnsRoutingRule {
+            rule_set: ruleset,
+            upstream_tag: "google_dns".to_string(),
+            priority: 10,
+        };
+
+        let mut upstreams = HashMap::new();
+        upstreams.insert(
+            "google_dns".to_string(),
+            Arc::new(MockUpstream {
+                tag: "google_dns".to_string(),
+            }) as Arc<dyn DnsUpstream>,
+        );
+        upstreams.insert(
+            "default_dns".to_string(),
+            Arc::new(MockUpstream {
+                tag: "default_dns".to_string(),
+            }) as Arc<dyn DnsUpstream>,
+        );
+
+        let engine = DnsRuleEngine::new(vec![routing_rule], upstreams, "default_dns".to_string());
+
+        let first = engine.explain("www.google.com").await.unwrap();
+        assert_eq!(first["upstream"], serde_json::json!("google_dns"));
+        assert_eq!(first["decision"], serde_json::json!("rule"));
+        assert_eq!(first["cache"], serde_json::json!("miss"));
+        assert_eq!(first["matched_rule"]["priority"], serde_json::json!(10));
+        assert_eq!(
+            first["matched_rule"]["rule_set"]["source"]["type"],
+            serde_json::json!("local")
+        );
+
+        let cached = engine.explain("www.google.com").await.unwrap();
+        assert_eq!(cached["cache"], serde_json::json!("hit"));
+
+        let fallback = engine.explain("example.org").await.unwrap();
+        assert_eq!(fallback["decision"], serde_json::json!("default"));
+        assert!(fallback["matched_rule"].is_null());
     }
 }

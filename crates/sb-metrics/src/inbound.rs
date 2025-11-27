@@ -1,7 +1,17 @@
 //! Inbound metrics: unified error counter per protocol with class labels.
+//! 入站指标：每个协议的统一错误计数器，带有分类标签。
+//!
+//! ## Strategic Logic / 战略逻辑
+//! Inbound errors are the first line of defense for diagnosing connectivity issues.
+//! By standardizing error classification (timeout, dns, tls, etc.) across all protocols (HTTP, SOCKS, Mixed),
+//! we enable **cross-protocol health comparison**.
+//!
+//! 入站错误是诊断连接问题的第一道防线。
+//! 通过在所有协议（HTTP、SOCKS、Mixed）中标准化错误分类（超时、DNS、TLS 等），
+//! 我们实现了**跨协议健康对比**。
 use crate::{guarded_counter_vec, IntCounterVec, LazyLock, REGISTRY};
 
-/// inbound_error_total{protocol,class}
+/// `inbound_error_total{protocol,class`}
 pub static INBOUND_ERROR_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     let v = guarded_counter_vec(
         "inbound_error_total",
@@ -12,7 +22,7 @@ pub static INBOUND_ERROR_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
     v
 });
 
-/// Increment inbound_error_total with explicit class label
+/// Increment `inbound_error_total` with explicit class label
 pub fn record_error(protocol: &str, class: &str) {
     INBOUND_ERROR_TOTAL
         .with_label_values(&[protocol, class])

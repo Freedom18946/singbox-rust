@@ -2,6 +2,11 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
+> **🚀 Production Ready**: 100% Protocol Parity with upstream sing-box 1.12.12.
+> See [Project Status](docs/STATUS.md) for detailed feature matrix and milestones.
+
+---
+
 ## 🚨 重要：项目导航权威文档
 
 **⚠️ 开发者必读：在开始任何开发工作之前，请务必阅读并验证 [`PROJECT_STRUCTURE_NAVIGATION.md`](./PROJECT_STRUCTURE_NAVIGATION.md) 的准确性。**
@@ -11,589 +16,71 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 - ✅ **验证要求**: 新的开发者或 AI 助手在开始工作前必须验证导航文档的准确性
 - 📍 **导航优先**: 所有开发活动都应基于该导航文档进行路径规划
 
-**如发现导航文档与实际项目结构不符，请立即更新文档后再继续开发工作。**
+---
+
+## 📚 Documentation
+
+Visit our comprehensive documentation portal at **[docs/](docs/)**:
+
+### 🚀 [Getting Started](docs/00-getting-started/)
+- **[Quick Start Guide](docs/00-getting-started/README.md)** - Get up and running in 5 minutes
+- **[Basic Configuration](docs/00-getting-started/basic-configuration.md)** - Understand the config file
+- **[Your First Proxy](docs/00-getting-started/first-proxy.md)** - Connect to an upstream server
+
+### 📖 [User Guide](docs/01-user-guide/)
+- **[Configuration Reference](docs/01-user-guide/configuration/overview.md)** - Full config schema
+- **[Protocol Support](docs/01-user-guide/README.md#protocol-support)** - Inbound/Outbound protocols (Shadowsocks, Trojan, VMess, VLESS, Hysteria, etc.)
+- **[Routing](docs/01-user-guide/configuration/routing.md)** - Smart routing by domain, IP, process
+- **[TLS & Anti-Censorship](docs/01-user-guide/configuration/tls.md)** - REALITY, ECH, Standard TLS
+
+### 🛠️ [Operations](docs/03-operations/)
+- **[Deployment](docs/03-operations/README.md#deployment-patterns)** - Systemd, Docker, Kubernetes
+- **[Monitoring](docs/03-operations/monitoring/metrics.md)** - Prometheus metrics & Grafana
+- **[Troubleshooting](docs/03-operations/README.md#troubleshooting)** - Common issues & fixes
+
+### 💻 [Development](docs/04-development/)
+- **[Architecture](docs/04-development/architecture.md)** - System design & modules
+- **[Contribution Guide](docs/04-development/contributing.md)** - How to contribute
+- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Go to Rust migration details
+
+---
 
 ## Quick Start
 
-### Build with Acceptance Features
-
-Build the full-featured binary for testing and release candidates:
+Build the full-featured binary:
 
 ```bash
-# Build with all acceptance features enabled
 cargo +1.90 build -p app --features "acceptance,manpage" --release
-
-# Binary will be at: target/release/app
+./target/release/app version
 ```
 
-### Essential CLI Examples
+Run with a config:
 
 ```bash
-# 1) Validate configuration (exit codes: 0=ok, 1=warnings, 2=errors)
-./target/release/app check -c config.json --format json
-
-# 2) Explain routing decision for a destination
-./target/release/app route -c config.json --dest example.com:443 --explain --format json
-
-# 3) Display version with build metadata
-./target/release/app version --format json
-
-# 4) Generate shell completions for all shells
-./target/release/app gen-completions --all --dir completions/
+./target/release/app run -c config.json
 ```
 
-### Full Development Workflow
+See [Getting Started](docs/00-getting-started/) for detailed instructions.
 
-```bash
-cargo check --workspace --all-features
-bash scripts/ci/local.sh
-scripts/e2e/run.sh   # optional e2e summary → .e2e/summary.json
+---
 
-# Run comprehensive E2E tests (auth + rate limiting)
-cargo run -p xtask -- e2e
+## Key Features
 
-# Run app with adapter bridge (HTTP/SOCKS/Mixed/TUN via sb-adapters)
-cargo run -p app --features "adapters,router" -- --config config.json
-```
+- **High Performance**: Native process matching (149x faster on macOS), zero-copy parsing, linear scaling.
+- **Memory Safe**: Written in Rust for stability and security.
+- **Full Parity**: Supports all 36 protocols from sing-box (Shadowsocks, Trojan, VMess, VLESS, Hysteria, TUIC, etc.).
+- **Advanced TLS**: REALITY, ECH, and Standard TLS 1.3 support.
+- **Mesh Networking**: Built-in DERP service for cross-region relay.
+- **Observability**: Comprehensive Prometheus metrics and tracing.
 
-DNS backends (env-driven)
+---
 
-```bash
-# Direct backend selection
-SB_DNS_ENABLE=1 SB_DNS_MODE=doh cargo run -p app -- run
-SB_DNS_ENABLE=1 SB_DNS_MODE=dot cargo run -p app -- run
-SB_DNS_ENABLE=1 SB_DNS_MODE=doq cargo run -p app --features "sb-core/dns_doq" -- run
+## Community & Support
 
-# Resolver pool (race strategy)
-SB_DNS_ENABLE=1 \
-SB_DNS_POOL="system,udp:127.0.0.1:1053,doh:https://cloudflare-dns.com/dns-query,dot:1.1.1.1:853,doq:1.1.1.1:853@cloudflare-dns.com" \
-SB_DNS_POOL_STRATEGY=race \
-cargo run -p app -- run
-```
+- **[Project Status](docs/STATUS.md)**: Check current version and roadmap.
+- **[Issues](https://github.com/your-repo/issues)**: Report bugs.
+- **[Discussions](https://github.com/your-repo/discussions)**: Ask questions and share configs.
 
-NTP background service (experimental)
+---
 
-```bash
-# Build with service_ntp feature and enable via env
-SB_NTP_ENABLE=1 \
-SB_NTP_SERVER=time.google.com:123 \
-SB_NTP_INTERVAL_S=1800 \
-cargo build -p sb-core --features service_ntp
-```
-
-### Logging & Docs
-
-- Runtime logs use `tracing` across binaries and libraries.
-- Enable and filter logs via env:
-  - `RUST_LOG=info` enables info-level logs (use `debug` for more detail).
-  - Example: `RUST_LOG=sb_core=debug,app=info cargo run -p app -- version`.
-  - JSON output (when subscriber configured): `RUST_LOG=info APP_LOG_JSON=1 ...`.
-
-- Metrics & redaction
-  - Prometheus exporter: set `SB_METRICS_ADDR=127.0.0.1:9090` and the app exposes `/metrics`.
-  - Log sampling: set `SB_LOG_SAMPLE=<N>` to rate‑limit info/debug logs per-target per-second (default off).
-  - Secret redaction: enabled by default; set `SB_LOG_REDACT=0` to disable. See `METRICS_CATALOG.md` for details and label whitelist.
-
-CLI bench (HTTP/2) requires feature `reqwest`:
-
-```bash
-cargo run -p app --features reqwest -- bench io --h2 --url https://example.com --requests 10 --concurrency 2 --json
-```
-
-### Performance Baseline \u0026 Regression Detection
-
-Record and verify performance baselines using cargo bench:
-
-```bash
-# Record baseline (run once on stable machine)
-scripts/test/bench/guard.sh record
-
-# Check for regressions (CI/development use)
-scripts/test/bench/guard.sh check
-
-# Adjust tolerance threshold (default: ±10%)
-BENCH_GUARD_TOL=0.05 scripts/test/bench/guard.sh check
-```
-
-The guard script:
-
-- Records hardware/machine info, date, git SHA, and rustc version in baseline.json
-- Compares current benchmark results against baseline with configurable tolerance
-- Returns exit code 3 for regressions, 2 for setup/parsing failures
-- Supports stable benchmarks that avoid external network dependencies
-
-### Performance Benchmarking Framework
-
-Comprehensive performance benchmarking system for validating Rust implementation against Go sing-box 1.12.12 baseline:
-
-```bash
-# Quick smoke test (~5 minutes)
-./scripts/run_benchmarks.sh --smoke-test
-
-# Development benchmarks (~15 minutes)
-./scripts/run_benchmarks.sh --quick
-
-# Full benchmark suite (~60 minutes)
-./scripts/run_benchmarks.sh --full
-
-# Specific protocol
-./scripts/run_benchmarks.sh --protocol socks5 --quick
-
-# Compare with Go baseline (if available)
-./scripts/run_benchmarks.sh --full --compare-go
-```
-
-**Framework Features:**
-- 📊 **Criterion.rs Integration**: Statistical analysis with confidence intervals
-- 🔄 **Automated Execution**: Multiple run modes (smoke/quick/full)
-- 📈 **HTML Reports**: Interactive charts and regression detection
-- 🤖 **CI Integration**: GitHub Actions workflow with artifact uploads
-- 🔍 **Comprehensive Coverage**: Protocols, DNS, memory, concurrency
-
-**Available Benchmark Suites:**
-- `socks5_throughput`: Handshake latency + data throughput (1KB-1MB)
-- `shadowsocks_throughput`: AES-GCM & ChaCha20-Poly1305 encryption
-- `vmess_throughput`: Header encoding + AEAD encryption
-- `dns_performance`: Query parsing, response building, cache lookup
-- `protocol_comprehensive`: All protocol categories
-- `resource_usage`: Memory, concurrency, routing, crypto
-- `aead_crypto`: Real AEAD encryption/decryption (NEW ✨)
-
-**Latest Results** (Apple M1):
-- ChaCha20-Poly1305: **123.6 MiB/s** encryption, faster than AES by 1.5x
-- Zero-copy parsing: **60x faster** than traditional copy
-- Concurrent scaling: **Linear to 1000 connections** (104µs)
-
-**Performance Goals:**
-- ✅ **Throughput**: ≥90% of Go baseline (target: 100%+)
-- ✅ **Latency**: ≤120% of Go baseline (within 20%)
-- ✅ **Memory**: Lower or equal allocation rates
-- ✅ **Concurrency**: Linear scaling (validated: 1000 connections in 104µs)
-
-**Documentation:**
-- [BENCHMARKS.md](BENCHMARKS.md) - Methodology and usage guide
-- [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) - Latest results and analysis
-- [benches/README.md](benches/README.md) - Technical details
-
-**View Results:**
-```bash
-# Summary report
-cat benchmark_results/latest_summary.md
-
-# Interactive HTML (with charts)
-open target/criterion/index.html
-```
-
-
-## Lint Baseline
-
-- Workspace default denies warnings: `cargo clippy --workspace --all-targets -- -D warnings`
-- Strict lib-only checks (pedantic + nursery):
-  - `cargo clippy -p sb-core --lib --features metrics -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks`
-  - `cargo clippy -p sb-platform --lib -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks`
-  - `cargo clippy -p sb-transport --lib -- -D warnings -W clippy::pedantic -W clippy::nursery -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::unimplemented -D clippy::undocumented_unsafe_blocks`
-
-Docs & guides:
-
-- Getting Started: [docs/00-getting-started/](docs/00-getting-started/)
-- Development: [docs/04-development/](docs/04-development/)
-- Operations: [docs/03-operations/](docs/03-operations/)
-
-Local verification:
-
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test -p app -q -- --nocapture`
-- `cargo test -p sb-core --features metrics -q`
-
-Run with an example:
-
-```bash
-bash scripts/tools/run-examples.sh examples/configs/advanced/full_stack.json
-```
-
-## 📚 文档导航
-
-### 🗺️ 项目结构导航 (必读)
-
-- **[PROJECT_STRUCTURE_NAVIGATION.md](./PROJECT_STRUCTURE_NAVIGATION.md)** - 项目结构权威导航文档
-
-### 📖 核心文档
-
-- **[docs/](docs/)** - 完整文档门户（全新重构）
-  - [Getting Started](docs/00-getting-started/) - 5 分钟快速开始
-  - [User Guide](docs/01-user-guide/) - 配置指南和协议说明
-  - [CLI Reference](docs/02-cli-reference/) - 命令行工具参考
-  - [Operations](docs/03-operations/) - 部署和运维指南
-  - [Development](docs/04-development/) - 架构和贡献指南
-  - [API Reference](docs/05-api-reference/) - HTTP/gRPC API 文档
-  - [Advanced Topics](docs/06-advanced-topics/) - REALITY/ECH 等高级特性
-  - [Reference](docs/07-reference/) - Schema 和错误码参考
-- [Examples](docs/08-examples/) - 配置示例
- - [UDP Support](docs/UDP_SUPPORT.md) - SOCKS5 UDP 行为、会话/直连路径、NAT 策略、e2e 运行说明
-
-### 🧪 测试文档
-
-- [tests/README.md](tests/README.md) - 测试指南和目录结构
-
-### CLI Parity Commands
-
-The unified `app` binary now mirrors upstream `sing-box` subcommands. Run any tool with:
-
-```bash
-cargo run -p app -- <subcommand> [flags]
-```
-
-Common examples:
-
-- `cargo run -p app -- format -c config.json -w`
-- `cargo run -p app -- merge -c base.json -c override.json merged.json`
-- `cargo run -p app -- geoip --file geoip.db list`
-- `cargo run -p app -- geosite --file geosite.db export netflix`
-- `cargo run -p app -- ruleset validate rules.srs`
-- `cargo run -p app -- tools connect example.com:443 -c config.json`
-
-### Adapter Bridge Coverage
-
-Enabling the `adapters` feature switches the bridge to sb-adapters implementations
-for the following protocols:
-
-| Protocol | Direction | Extra `sb-adapters` features |
-| --- | --- | --- |
-| HTTP CONNECT | inbound/outbound | `http`, `adapter-http` |
-| SOCKS5 | inbound/outbound | `socks`, `adapter-socks` |
-| Mixed (HTTP+SOCKS) | inbound | `mixed`, `http`, `socks` |
-| TUN (Phase 1 skeleton) | inbound | `tun`, `adapter-tun` |
-| Shadowsocks AEAD | inbound/outbound | `adapter-shadowsocks` |
-| VMess | inbound/outbound | `adapter-vmess` |
-| VLESS | inbound/outbound | `adapter-vless` |
-| Trojan | inbound/outbound | `adapter-trojan` |
-
-Example:
-
-```bash
-cargo run -p app \
-  --features "router,adapters,sb-adapters/adapter-shadowsocks" \
-  -- --config config.json
-```
-
-When adapters are disabled (the default), the bridge automatically falls back to the
-built-in scaffold implementations.
-
-### Admin 实现选择
-
-运行期可通过 CLI 或环境变量在 **核心实现** 与 **Debug 实现**间切换：
-
-```bash
-# 核心 Admin（默认）
-run --admin-impl core
-
-# Debug Admin（包含 Dry-Run、审计、config_version 等扩展）
-SB_PREFETCH_ENABLE=1 \
-SB_PREFETCH_CAP=256 \
-SB_PREFETCH_WORKERS=2 \
-run --admin-impl debug --admin-listen 127.0.0.1:8088
-```
-
-### 🔐 Authentication & Security
-
-**JWT Authentication**: Production-ready JWT validation with:
-
-- RS256/ES256/HS256 algorithm support with configurable allowlist
-- JWKS caching with automatic rotation and fallback mechanisms
-- Clock skew tolerance (±5 minutes) for robust timestamp validation
-- Memory-safe key loading from environment variables, files, or inline configuration
-
-**Security Features**:
-
-- Credential redaction in logs via `sb-security` crate
-- Supply chain security with `cargo-deny` policies
-- Memory protection with `ZeroizeOnDrop` for sensitive data
-- Rate limiting with configurable QPS and burst limits
-
-See [SECURITY.md](SECURITY.md) for complete security documentation and [docs/05-api-reference/](docs/05-api-reference/) for API authentication details.
-
-### 预取（Prefetch）
-
-当 `/subs/...` 响应 `Cache-Control: max-age>=60` 时将触发异步预取，并在 `__metrics` 暴露：
-
-```
-sb_prefetch_queue_depth
-sb_prefetch_jobs_total{event=...}
-```
-
-可使用 `scripts/tools/prefetch-heat.sh` 观察指标变化。
-
-## Protocol Support
-
-### Inbound Protocols (17/17 Complete - 100%)
-
-- **SOCKS5**: Full support with UDP relay and authentication
-- **HTTP/HTTPS**: HTTP proxy with CONNECT method
-- **Mixed**: Combined SOCKS5 + HTTP on single port
-- **Direct**: TCP/UDP forwarder with address override
-- **TUN**: Virtual network interface (macOS/Linux/Windows)
-- **Redirect**: Linux-only transparent proxy (iptables/nftables)
-- **TProxy**: Linux-only transparent proxy with original destination
-- **Shadowsocks**: AEAD ciphers with UDP relay
-- **VMess**: V2Ray protocol with AEAD encryption
-- **VLESS**: Lightweight V2Ray protocol with REALITY/ECH support
-- **Trojan**: TLS-based protocol with fallback
-- **TUIC**: QUIC-based UDP-optimized protocol
-- **Hysteria v1**: High-performance QUIC with custom congestion control
-- **Hysteria v2**: Enhanced Hysteria with Salamander obfuscation
-- **Naive**: Chromium-based HTTP/2 proxy
-- **ShadowTLS**: TLS camouflage for Shadowsocks
-- **AnyTLS**: TLS-based protocol with multi-user authentication and padding
-
-### Outbound Protocols (19/19 Complete - 100%)
-
-- **Direct**: Direct connection to target
-- **Block**: Block connections
-- **DNS**: DNS query outbound
-- **SOCKS5**: SOCKS5 proxy client
-- **HTTP/HTTPS**: HTTP proxy client
-- **Shadowsocks**: Full cipher suite support
-- **VMess**: V2Ray client with transport options
-- **VLESS**: VLESS client with REALITY/ECH
-- **Trojan**: Trojan client with TLS
-- **TUIC**: QUIC-based client with UDP over stream
-- **Hysteria v1**: High-performance QUIC client
-- **Hysteria v2**: Enhanced Hysteria client
-- **ShadowTLS**: TLS SNI/ALPN configuration
-- **SSH**: SSH tunnel with key-based auth
-- **Tor**: SOCKS5 proxy over Tor daemon
-- **AnyTLS**: TLS-based client with session multiplexing
-- **WireGuard**: System interface binding (production: use kernel WireGuard)
-- **Selector**: Manual/auto outbound selection
-- **URLTest**: Health-check based selection
-
-### Advanced TLS Features
-
-- **REALITY**: X25519-based TLS camouflage with fallback proxy
-- **ECH (Encrypted Client Hello)**: HPKE-encrypted SNI for privacy
-- **Standard TLS**: Full TLS 1.2/1.3 with ALPN, SNI, certificate verification
-- **Certificate Management**: Custom CA, client certificates, skip verification
-
-### Transport Layers (All Complete)
-
-- **TCP**: Standard TCP transport
-- **UDP**: UDP with NAT session management
-- **QUIC**: HTTP/3 and custom QUIC protocols
-- **WebSocket**: WS and WSS with custom paths
-- **HTTP/2**: H2 and H2C transport
-- **HTTPUpgrade**: HTTP upgrade to TCP stream
-- **gRPC**: gRPC tunnel transport
-- **Multiplex**: yamux stream multiplexing
-
-### VPN Endpoints (NEW)
-
-- **WireGuard**: Userspace WireGuard implementation via boringtun
-  - Full Noise protocol support with encryption/decryption
-  - TUN device management (Linux/macOS/Windows)
-  - Pre-shared key (PSK) support for enhanced security
-  - IPv4 and IPv6 dual-stack
-  - NAT traversal with persistent keepalive
-  - Supervisor/Bridge 会在启动与热重载时自动构建并启动 endpoints；未启用 feature 时会返回友好的 stub 错误
-  - See [Quick Start Guide](docs/wireguard-quickstart.md) and [Full Documentation](docs/wireguard-endpoint-guide.md)
-
-**Example**:
-```json
-{
-  "endpoints": [{
-    "type": "wireguard",
-    "tag": "wg0",
-    "wireguard_address": ["10.0.0.2/24"],
-    "wireguard_private_key": "YOUR_PRIVATE_KEY",
-    "wireguard_peers": [{
-      "public_key": "PEER_PUBLIC_KEY",
-      "address": "vpn.example.com",
-      "port": 51820,
-      "allowed_ips": ["0.0.0.0/0"]
-    }]
-  }]
-}
-```
-
-Build with endpoint support:
-```bash
-cargo build --release --features adapters
-```
-
-### Services (Infrastructure)
-
-- **DERP (Designated Encrypted Relay for Packets)**: Complete mesh networking relay service
-  - ✅ **Mesh networking**: Multi-server federation with automatic peer discovery
-  - ✅ **TLS support**: Optional TLS termination with rustls
-  - ✅ **Authentication**: PSK-based mesh peer authentication
-  - ✅ **Rate limiting**: Per-IP sliding window (120 conn/10sec)
-  - ✅ **Metrics**: Comprehensive Prometheus metrics (connections, packets, bytes, lifetimes)
-  - ✅ **STUN server**: Built-in STUN for NAT traversal
-  - ✅ **Production ready**: 21 tests passing, supports TLS, cross-region relay
-  - See [DERP Usage Guide](docs/DERP_USAGE.md) for configuration examples
-
-- **Resolved**: systemd-resolved integration (Linux D-Bus)
-- **SSMAPI**: Shadowsocks manager API for user management
-
-**Example DERP Mesh Setup**:
-```json
-{
-  "services": [{
-    "type": "derp",
-    "tag": "derp-mesh",
-    "derp_listen": "0.0.0.0",
-    "derp_listen_port": 3478,
-    "derp_mesh_psk": "your-secret-key",
-    "derp_mesh_with": ["peer1.example.com:3478"],
-    "derp_tls_cert_path": "/etc/certs/derp.crt",
-    "derp_tls_key_path": "/etc/certs/derp.key"
-  }]
-}
-```
-
-
-
-## Status
-
-**Version**: v0.2.0 | **Production Readiness**: ⭐⭐⭐⭐⭐ (9.9/10) | **Feature Parity**: 100%
-
-**🎉 Major Milestone: 100% Protocol Coverage Achieved (2025-11-23)**
-
-- ✅ **Inbound Protocols**: 17/17 (100%) - From SOCKS to AnyTLS
-- ✅ **Outbound Protocols**: 19/19 (100%) - Including Selector, URLTest, WireGuard
-- ✅ **DNS Transports**: 9/12 complete (75%), 3 partial (DHCP/Resolved/Tailscale)
-- ✅ **VPN Endpoints**: WireGuard userspace MVP (boringtun + TUN)
-- ✅ **Services**: DERP complete (mesh networking), Resolved (Linux D-Bus), SSMAPI
-- 📚 **Migration Guide**: [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) - Complete Go → Rust migration guide
-
-**Recent Achievements**:
-
-- ✅ **Sprint 1** (2025-10-02): P0+P1 fixes, zero compilation errors, v0.2.0 release
-- ✅ **Sprint 2** (2025-10-02): macOS native process matching (**149.4x faster**), cardinality monitoring
-- ✅ **Sprint 3** (2025-10-02): Windows native process matching, VLESS support
-- ✅ **Sprint 4** (2025-10-02): Constant-time credential verification, comprehensive module documentation
-- ✅ **Sprint 5** (2025-10-09): **TLS INFRASTRUCTURE COMPLETE** - REALITY, ECH, Hysteria v1/v2, TUIC, Direct inbound ✨
-
-**Sprint 5 Major Breakthrough (2025-10-09)**:
-
-- 🎉 **TLS Infrastructure**: REALITY, ECH, Standard TLS complete in new `crates/sb-tls` crate
-- 🎉 **REALITY TLS**: Client/server handshake with X25519 key exchange, auth data embedding, fallback proxy
-- 🎉 **ECH**: Runtime handshake with HPKE encryption, SNI encryption, ECHConfigList parsing
-- 🎉 **Direct Inbound**: TCP+UDP forwarder with session-based NAT, automatic timeout cleanup
-- 🎉 **Hysteria v1**: Full client/server with QUIC transport, custom congestion control, UDP relay
-- 🎉 **Hysteria2**: Complete with Salamander obfuscation, password auth, UDP over stream
-- 🎉 **TUIC Outbound**: Full UDP over stream support with authentication
-- 🎉 **Sniffing Pipeline**: HTTP Host, TLS SNI, QUIC ALPN detection integrated with routing
-
-**Major Milestones Achieved**:
-
-- 🎉 **TLS Infrastructure**: REALITY, ECH, Standard TLS (unblocks 15+ protocols)
-- 🎉 **Inbounds**: 17/17 Complete (100%) - All protocols from SOCKS to AnyTLS
-- 🎉 **Outbounds**: 19/19 Complete (100%) - Including Selector, URLTest, AnyTLS, WireGuard
-- 🎉 **Services**: DERP mesh networking complete, Resolved (Linux D-Bus), SSMAPI
-- 🎉 **Endpoints**: WireGuard userspace endpoint (boringtun + TUN)
-- 🎉 **Transport Layer**: WebSocket, HTTP/2, HTTPUpgrade, gRPC, Multiplex, QUIC complete
-- 🎉 **CLI Tools**: 100% complete (generate, rule-set, geoip, geosite, format, merge tools)
-- 🔐 **Advanced TLS**: REALITY handshake, ECH with HPKE, Standard TLS 1.2/1.3
-- 🚀 **Cross-platform**: Native process matching - macOS (149.4x), Windows (20-50x)
-- 📊 **Observability**: Prometheus metrics with cardinality monitoring, Selector/URLTest health metrics
-- 🔐 **Security**: Timing-attack resistant credential verification
-- 📚 **Rule-Set**: SRS binary format, remote caching, auto-update
-- 🔄 **Proxy Selectors**: URLTest with health checks, multiple load balancing strategies
-- 🌐 **DNS**: FakeIP, multiple strategies, DoH/DoT/DoQ/DoH3 support
-
-**Next Steps**: 
-- ✅ **Protocol Coverage**: 100% complete (17/17 inbound, 19/19 outbound)
-- ✅ **Documentation**: Migration guide complete - [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
-- 🔄 **Testing**: Feature gate matrix verification (`cargo xtask feature-matrix`)
-- 🔄 **Verification**: CLI contract testing and Go parity validation
-- 📊 **Observability**: Metrics alignment and monitoring improvements
-- ⚠️ **Blocked**: Tailscale endpoint (build constraints - see [TAILSCALE_RESEARCH.md](docs/TAILSCALE_RESEARCH.md))
-
-**For detailed feature status, see**: [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md), [NEXT_STEPS.md](NEXT_STEPS.md), and [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
-
-## Deployment (Quickstart)
-
-- Systemd (Linux): see `packaging/systemd/singbox-rs.service`, then:
-
-  - `sudo cp packaging/systemd/singbox-rs.service /etc/systemd/system/`
-  - `sudo systemctl daemon-reload && sudo systemctl enable --now singbox-rs`
-
-- Docker (MUSL image): see `packaging/docker/Dockerfile.musl` and `packaging/docker/entrypoint.sh`.
-  - Exposes admin/metrics and mounts `/data` for configs.
-  - Example: `docker run -p 18088:18088 -v $PWD:/data singbox-rs:latest --config /data/minimal.yaml`
-
-Health probe: `curl -fsS http://127.0.0.1:18088/metrics` (or admin ping endpoint if enabled).
-
-## Troubleshooting
-
-- Set `SB_PRINT_ENV=1` to print a one-line JSON snapshot of relevant environment variables at startup.
-- Common errors and meanings:
-  - `outbound_error_total{kind="udp",class="no_upstream"}`: proxy mode selected but no upstream configured; falls back to direct.
-  - `balancer_failures_total{reason}`: upstream connect/send/recv failures with exponential backoff applied.
-  - `udp_nat_reject_total{reason="capacity"}`: NAT table reached capacity; increase `SB_UDP_NAT_MAX` or reduce churn.
-
-### P0 Protocol Troubleshooting
-
-**REALITY TLS**:
-
-- **Authentication failures**: Verify `public_key` and `short_id` match server configuration. Use `sing-box generate reality-keypair` to generate compatible keys.
-- **Handshake errors**: Ensure `server_name` matches a valid target domain. REALITY requires a real target server for fallback.
-- **Config validation**: Public key must be 64 hex characters, short_id must be 0-16 hex characters.
-
-**ECH (Encrypted Client Hello)**:
-
-- **Config format**: ECH config must be base64-encoded ECHConfigList. Generate with `sing-box generate ech-keypair`.
-- **Handshake failures**: Verify server supports ECH. Check `pq_signature_schemes_enabled` if using post-quantum crypto.
-- **SNI encryption**: ECH encrypts SNI in ClientHello. Verify with packet capture if needed.
-
-**Hysteria v1/v2**:
-
-- **Connection failures**: Check `up_mbps` and `down_mbps` settings. Hysteria requires bandwidth configuration.
-- **Authentication errors**: Verify password/obfs settings match server. Hysteria v2 uses password auth, v1 uses obfs.
-- **UDP relay issues**: Ensure `udp: true` is set on inbound. Check NAT table capacity with metrics.
-- **Salamander obfuscation** (v2): Password must match on both client and server for obfuscation to work.
-
-**SSH Outbound**:
-
-- **Host key verification failures**: Add server to `known_hosts` or set `host_key_verification: false` (insecure).
-- **Authentication errors**: Verify username/password or private key path. Check key permissions (should be 600).
-- **Private key format**: Supports OpenSSH and PEM formats. Use `private_key_passphrase` for encrypted keys.
-- **Connection pooling**: Adjust `connection_pool_size` (default 5) based on concurrent connection needs.
-
-**TUIC**:
-
-- **UUID format**: Must be valid UUID v4 format (e.g., `550e8400-e29b-41d4-a716-446655440000`).
-- **Congestion control**: Supports `cubic`, `new_reno`, `bbr`. Match server configuration.
-- **UDP over stream**: Set `udp_over_stream: true` to tunnel UDP over TCP streams.
-- **Zero-RTT**: Enable `zero_rtt_handshake: true` for faster connection establishment (less secure).
-
-**General TLS Issues**:
-
-- **Certificate verification**: Use `skip_cert_verify: true` only for testing. Production should use valid certificates.
-- **ALPN negotiation**: Specify `alpn` array (e.g., `["h2", "http/1.1"]`) to match server requirements.
-- **SNI**: Set `sni` field to match server certificate. Required for most TLS configurations.
-
-### Probe a layered outbound (VMess/VLESS/Trojan)
-
-Build with router and enable desired sb-core features:
-
-```
-cargo run -p app --features "router,sb-core/out_vmess,sb-core/out_vless,sb-core/out_trojan,sb-core/v2ray_transport" --bin probe-outbound -- \
-  --config config.yaml --outbound my-vmess --target example.com:80
-```
-
-Config example (VMess with TLS+WebSocket):
-
-```yaml
-schema_version: 2
-outbounds:
-  - type: vmess
-    name: my-vmess
-    server: vmess.example.com
-    port: 443
-    uuid: 00000000-0000-0000-0000-000000000000
-    transport: [tls, ws]
-    ws_path: /ws
-    ws_host: cdn.example.com
-    tls_sni: cdn.example.com
-```
+*For detailed navigation of the project structure, see [PROJECT_STRUCTURE_NAVIGATION.md](PROJECT_STRUCTURE_NAVIGATION.md).*

@@ -51,8 +51,12 @@ async fn derp_service_bridge_mock_relay_e2e() -> Result<()> {
     assert_eq!(bridge.services.len(), 1);
     let service = bridge.services[0].clone();
 
-    service.start(StartStage::Initialize)?;
-    service.start(StartStage::Start)?;
+    service
+        .start(StartStage::Initialize)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    service
+        .start(StartStage::Start)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     sleep(Duration::from_millis(50)).await;
 
     let addr = ("127.0.0.1", port);
@@ -71,6 +75,6 @@ async fn derp_service_bridge_mock_relay_e2e() -> Result<()> {
     b.read_exact(&mut buf).await?;
     assert_eq!(&buf, b"ping");
 
-    service.close()?;
+    service.close().map_err(|e| anyhow::anyhow!(e.to_string()))?;
     Ok(())
 }

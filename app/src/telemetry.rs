@@ -1,3 +1,18 @@
+//! Telemetry and Tracing Abstraction
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module provides a **Unified Abstraction Layer** for telemetry (metrics and tracing).
+//! It abstracts away the differences between "Observe" (full telemetry) and "Minimal" (no-op) builds.
+//!
+//! 本模块为遥测（指标和链路追踪）提供了一个 **统一抽象层**。
+//! 它抽象了“观测”（全量遥测）和“最小化”（无操作）构建之间的差异。
+//!
+//! ## Strategic Design / 战略设计
+//! - **Conditional Compilation / 条件编译**: Uses `#[cfg(feature = "observe")]` to switch implementations at compile time.
+//!   使用 `#[cfg(feature = "observe")]` 在编译时切换实现。
+//! - **Zero-Cost Abstraction / 零成本抽象**: In minimal builds, functions are `const` or empty, ensuring zero runtime overhead.
+//!   在最小化构建中，函数是 `const` 或空的，确保零运行时开销。
+
 #[cfg(feature = "observe")]
 mod imp {
     use anyhow::Result;

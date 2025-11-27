@@ -1,4 +1,14 @@
 //! HTTP handlers for Clash API endpoints
+//! Clash API 端点的 HTTP 处理程序
+//!
+//! # Strategic Role / 战略角色
+//!
+//! These handlers map HTTP requests to internal manager calls. They are responsible for
+//! translating internal data structures (like `Connection`, `Provider`) into the specific
+//! JSON format expected by Clash clients.
+//!
+//! 这些处理程序将 HTTP 请求映射到内部管理器调用。它们负责将内部数据结构（如 `Connection`、
+//! `Provider`）转换为 Clash 客户端期望的特定 JSON 格式。
 
 use crate::{clash::server::ApiState, types::*};
 use axum::{
@@ -249,9 +259,11 @@ fn simulate_proxy_delay(proxy_name: &str) -> i32 {
 // ===== API Handlers =====
 
 /// Get all proxies
+/// 获取所有代理
 ///
 /// Returns a list of all available proxies from the outbound manager,
 /// including default DIRECT and REJECT proxies.
+/// 从出站管理器返回所有可用代理的列表，包括默认的 DIRECT 和 REJECT 代理。
 pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
 
@@ -372,8 +384,10 @@ pub async fn get_proxy_delay(
 }
 
 /// Get all active connections
+/// 获取所有活动连接
 ///
 /// Returns a list of all currently active network connections managed by the connection manager.
+/// 返回由连接管理器管理的所有当前活动网络连接的列表。
 pub async fn get_connections(State(state): State<ApiState>) -> impl IntoResponse {
     let connections = if let Some(connection_manager) = &state.connection_manager {
         match connection_manager.get_connections().await {

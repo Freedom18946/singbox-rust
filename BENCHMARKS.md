@@ -98,6 +98,9 @@ Comprehensive performance benchmarking for singbox-rust implementation vs Go sin
 | Connection pool overhead | 🔄 Planned |
 | File descriptor usage | 🔄 Planned |
 
+**Documentation:**
+- [PERFORMANCE_REPORT.md](reports/PERFORMANCE_REPORT.md) - Latest results and analysis
+
 ## Methodology
 
 ### Benchmark Framework
@@ -374,6 +377,6 @@ When adding benchmarks:
 
 ---
 
-**Last Updated**: 2025-11-21  
+**Last Updated**: 2025-11-26  
 **Go Baseline**: sing-box 1.12.12  
 **Rust Version**: 1.90+

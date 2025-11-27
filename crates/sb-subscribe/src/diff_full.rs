@@ -1,6 +1,10 @@
-//! R104: 订阅差异对比（纯离线）
-//! - 输入：lhs/rhs 文本 + format=clash|singbox + keyword/suffix 模式 + 是否 normalize
-//! - 输出：minijson：{ ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }
+//! R104: Subscription diffing (purely offline).
+//! [Chinese] R104: 订阅差异对比（纯离线）。
+//!
+//! - Input: lhs/rhs text + format=clash|singbox + keyword/suffix mode + normalize flag.
+//! [Chinese] - 输入：lhs/rhs 文本 + format=clash|singbox + keyword/suffix 模式 + 是否 normalize。
+//! - Output: minijson: { ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }.
+//! [Chinese] - 输出：minijson：{ ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }。
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};
@@ -63,7 +67,8 @@ fn outbound_kinds_histogram(p: &Profile) -> std::collections::BTreeMap<String, u
     m
 }
 
-/// 朴素行级补丁（保持 CLI 风格）：以 lhs 为基准，输出把 lhs 变为 rhs 的 -/+ 集合（删除先于添加）
+/// Naive line-level patch (CLI style): based on lhs, outputs the -/+ set to transform lhs to rhs (deletions before additions).
+/// [Chinese] 朴素行级补丁（保持 CLI 风格）：以 lhs 为基准，输出把 lhs 变为 rhs 的 -/+ 集合（删除先于添加）。
 fn line_patch(lhs: &str, rhs: &str) -> String {
     use std::collections::BTreeSet;
     let lset: BTreeSet<&str> = lhs.lines().filter(|s| !s.is_empty()).collect();
@@ -137,7 +142,8 @@ pub fn diff_full_minijson(
     let rk = kinds_histogram(&rp);
     let lo = outbound_kinds_histogram(&lp);
     let ro = outbound_kinds_histogram(&rp);
-    // 以 minijson::Raw 内嵌直方图对象
+    // Embed histogram objects using minijson::Raw
+    // [Chinese] 以 minijson::Raw 内嵌直方图对象
     let j = obj([
         ("ok", Val::Bool(true)),
         ("format", Val::Str(format)),

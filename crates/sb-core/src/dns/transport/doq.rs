@@ -49,19 +49,15 @@ impl DoqTransport {
         for p in extra_ca_paths {
             if let Ok(bytes) = std::fs::read(p) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
-                for it in rustls_pemfile::certs(&mut rd) {
-                    if let Ok(der) = it {
-                        let _ = roots.add(der);
-                    }
+                for der in rustls_pemfile::certs(&mut rd).flatten() {
+                    let _ = roots.add(der);
                 }
             }
         }
         for pem in extra_ca_pem {
             let mut rd = std::io::BufReader::new(pem.as_bytes());
-            for it in rustls_pemfile::certs(&mut rd) {
-                if let Ok(der) = it {
-                    let _ = roots.add(der);
-                }
+            for der in rustls_pemfile::certs(&mut rd).flatten() {
+                let _ = roots.add(der);
             }
         }
         let mut crypto = rustls::ClientConfig::builder()

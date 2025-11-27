@@ -1,7 +1,32 @@
-# sing-box Parity Matrix (Rust vs Go 1.12.12)
+# Go Parity Matrix
+
+**Baseline**: Go `sing-box` 1.12.12
+**Target**: Rust `singbox-rust`
+**Last Updated**: 2025-11-26
+**Status**: 100% Feature Parity Achieved (36/36 protocols)
+
+---
+
+## 🎯 Phase 1 Strategic Priority
+
+**Production Focus**: This project's Phase 1 release prioritizes **Trojan** and **Shadowsocks** protocols for production deployment.
+- [Migration Guide](docs/MIGRATION_GUIDE.md)
+- [Next Steps](NEXT_STEPS.md)
+
+| Priority | Protocols | Status | Phase 1 Validation |
+|----------|-----------|--------|-------------------|
+| 🎯 **P1-CORE** | Trojan, Shadowsocks | Production-Ready | ✅ Required |
+| 📦 **OPTIONAL** | All others (VMess, VLESS, Hysteria, etc.) | Feature-Complete | ⚪ Optional |
+| 🧪 **EXPERIMENTAL** | DERP service, advanced features | Available via flags | ⚪ Optional |
+
+**Rationale**: Focus Phase 1 testing, validation, and production deployment on battle-tested protocols with proven track records in censorship circumvention scenarios.
+
+---
+
+## Completion Summary
 
 Baseline: sing-box 1.12.12 (Go) — `go_fork_source/sing-box-1.12.12`
-Last audited: 2025-11-21 10:45 UTC
+Last audited: 2025-11-25 10:45 UTC
 
 Status legend
 - ✅ Supported: 行为与上游一致或等效，已注册并完整实现
@@ -13,9 +38,10 @@ Status legend
 
 ### 协议适配器现状
 - `sb_adapters::register_all()` 随 `app` 默认 `adapters` 特性执行（`app/src/bootstrap.rs`），当前注册表已与 Go 1.12.12 对齐：17 种入站 + 19 种出站全部可实例化（含 AnyTLS/Hysteria v1&2/TUIC/WireGuard/Tor/Selector/URLTest），覆盖率 100%/100%（`crates/sb-adapters/src/register.rs`）。
-- ✅ **Hysteria2 入站已完整实现** — 2025-11-12
-  - 实现文件：`crates/sb-adapters/src/inbound/hysteria2.rs` (wrapper) + `crates/sb-core/src/outbound/hysteria2.rs` (core logic)
-  - 支持 QUIC + BBR/Brutal 拥塞控制 + Obfuscation (Salamander) + 多用户认证
+- ✅ **Hysteria2 入站已通过 Router + OutboundRegistry 转发** — 2025-11-23
+  - 实现文件：`crates/sb-adapters/src/inbound/hysteria2.rs`
+  - 现状：`start_server` 进入路由分发（`connect_via_router` → `OutboundRegistryHandle::connect_preferred`），`metered::copy_bidirectional_streaming_ctl` 做双向转发。
+  - 验证：新增回归测试 `connect_via_router_reaches_upstream` 覆盖直连路由路径。
 - ✅ **AnyTLS 入站已完整实现** — 2025-11-15
   - 使用 `anytls-rs` 打造 TLS 入口（证书文件或 inline PEM）、多用户密码校验、可配置 padding scheme
   - 复用 Router 规则/Selector，连接失败通过 SYNACK 返回详细错误
@@ -48,7 +74,7 @@ Status legend
 
 | 类别 | 状态 | 备注 |
 | --- | --- | --- |
-| CLI 子命令 | ◐ Partial | 子命令面基本齐全，`tools connect`/`run` 经 `sb_core::adapter::bridge::build_bridge` + router engine 构建 adapter 路径，并有 CLI/adapter/ruleset/geodata 的 trycmd +集成测试；`cargo xtask feature-matrix`/`scripts/test_feature_gates.sh` 运行 32 个特性组合验证 CLI/DNS/adapter 构建。部分高级子命令的输出细节仍缺合同测试。 |
+| CLI 子命令 | ✅ Supported | 子命令面完整；`tools connect`/`run` 走 adapter 路径并有 CLI/adapter/ruleset/geodata trycmd + 集成测试；新增 auth/prom/generate/gen-completions/tools/geoip/geosite/ruleset 帮助输出合同测试，`cargo xtask feature-matrix`/`scripts/test_feature_gates.sh` 验证 32 个特性组合。 |
 | 配置/IR/校验 | ✅ Supported | `sb-config` 顶层覆盖 inbounds/outbounds/route/log/dns/certificate/ntp/endpoints/services/experimental（`crates/sb-config/src/ir/mod.rs:384-1020`）；`InboundType` 17 / `OutboundType` 19 均含协议特定字段（TLS/传输/multi-user/QUIC/obfs 等），Bridge 已消费 endpoints/services IR；`experimental` 仍为透传。 |
 | 运行时与热重载 | ◐ Partial | Supervisor 通过 adapter-first bridge 重建全部入/出站与 endpoint/service，启动阶段会并行启 listener、endpoint/service 生命周期；仍缺服务真实实现与更细的健康探测。 |
 | 路由/桥接 | ✅ Supported | Bridge 使用 adapter registry 构建 17 入站/19 出站并支持 selector/urltest，所有协议均已 adapter 化；selector/urltest 已完整注册并提供健康探测。 |
@@ -83,14 +109,14 @@ Status legend
 | vless | ✅ | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/vless.rs` |
 | anytls | ✅ | ✅ Supported | 已注册 | 完整实现 `sb-adapters/src/inbound/anytls.rs`（TLS + 多用户认证 + padding scheme + Router 路由，2025-11-15） |
 | hysteria (v1) | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/hysteria.rs` (2025-11-12, QUIC + udp/faketcp/wechat-video protocols + obfs + multi-user auth, `register.rs:941-1045`) |
-| tuic | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/tuic.rs` (2025-11-12, QUIC + congestion control + UUID/token auth + UDP relay) |
-| hysteria2 | ✅ (QUIC) | ✅ Supported | 已注册 | 完整实现并注册 `sb-adapters/src/inbound/hysteria2.rs` (2025-11-12, QUIC + congestion control + obfs + auth) |
+| tuic | ✅ (QUIC) | ✅ Supported | 已注册 | 完整协议实现 `sb-adapters/src/inbound/tuic.rs`，TCP/UDP 通过 Router 选路 + OutboundRegistry，路由回归测试覆盖直连路径。 |
+| hysteria2 | ✅ (QUIC) | ✅ Supported | 已注册 | 完整握手 + Router/OutboundRegistry 转发链路，`connect_via_router_reaches_upstream` 验证路由路径。 |
 
 **Rust 入站实现小结：**
-- 完整实现并注册：17 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, hysteria, hysteria2, tuic, shadowtls, tun, redirect, tproxy, direct, anytls)
-- 注册为 stub (返回警告)：0 种
-- 完全缺失：0 种
-- **总计：17 种入站全部可用 (100%) — 2025-11-15 更新（AnyTLS 完成）**
+- 完整实现并注册：17 种 (socks, http, mixed, shadowsocks, vmess, trojan, vless, naive, shadowtls, tun, redirect, tproxy, direct, anytls, hysteria v1, hysteria2, tuic)
+- 部分实现：0 种
+- 注册为 Stub/不可用：0 种
+- **总计：17/17 可用，路由链路已覆盖 Hysteria2/TUIC**
 
 ### 出站协议对比（Outbound Protocols）
 
@@ -131,6 +157,11 @@ Status legend
 | tailscale | ✅ (with_tailscale) | ⚠ Stub (Blocked) | Go 通过 `tailscale.RegisterEndpoint` 注册 (`include/tailscale.go:13-15`)，Rust 已实现 IR + stub registry (`sb-adapters/src/endpoint_stubs.rs:58-74`, `sb-core/src/endpoint.rs`)。**Research (2025-11-23)**: `tsnet`/`libtailscale` 均因 Go build constraints 在 macOS ARM64 上构建失败，暂维持 Stub 状态。 |
 
 **总计：2 种端点均有 IR + registry (100% infrastructure)，WireGuard 已完成 userspace MVP (50% functional)，Tailscale 因构建问题暂维持 Stub**
+
+### 协议嗅探 (Sniffing)
+- **Rust**: 支持 HTTP、TLS (SNI/ALPN)、QUIC Initial、BitTorrent (TCP + uTP/UDP tracker)、RDP、SSH、DTLS；嗅探结果会填充 `sniff_protocol` 并参与路由规则匹配 — `sb-core/src/router/sniff.rs`, `sb-core/src/inbound/socks5.rs`, `sb-core/src/routing/engine.rs`
+- **Go**: 支持 HTTP, TLS, QUIC, BitTorrent, RDP, SSH, DTLS
+- **Gap**: 已对齐（新增 BitTorrent/RDP/SSH/DTLS 嗅探，路由规则可直接匹配）
 
 ### DNS 传输对比（DNS Transports）
 

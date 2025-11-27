@@ -10,10 +10,15 @@ use anyhow::{anyhow, Result};
 use quinn::{Endpoint, ServerConfig};
 // Use types re-exported by quinn to satisfy trait bounds
 use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use std::net::SocketAddr;
+use sb_core::outbound::{
+    Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
+};
+use sb_core::router::{self, Transport};
+use sb_core::router::engine::RouteCtx;
+use sb_transport::IoStream;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -31,6 +36,10 @@ pub struct TuicInboundConfig {
     pub key: String,
     /// Congestion control algorithm (cubic/bbr/new_reno)
     pub congestion_control: Option<String>,
+    /// Router for outbound selection
+    pub router: Arc<router::RouterHandle>,
+    /// Outbound registry handle for connector lookup
+    pub outbounds: Arc<OutboundRegistryHandle>,
 }
 
 /// TUIC user (UUID + token)
@@ -297,7 +306,7 @@ async fn handle_stream(
 
 /// Handle TCP relay over QUIC stream
 async fn handle_tcp_relay(
-    _cfg: Arc<TuicInboundConfig>,
+    cfg: Arc<TuicInboundConfig>,
     mut send: quinn::SendStream,
     mut recv: quinn::RecvStream,
     peer: SocketAddr,
@@ -307,14 +316,15 @@ async fn handle_tcp_relay(
 
     debug!("TUIC: TCP CONNECT {}:{} from {}", host, port, peer);
 
-    // Connect to target
-    // Note: Router integration can be added by passing router to config
-    // For now, direct connection provides baseline functionality
-    let upstream = TcpStream::connect((host.as_str(), port))
-        .await
-        .map_err(|e| anyhow!("Failed to connect to target: {}", e))?;
+    let upstream = match connect_via_router(&cfg, &host, port).await {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = send.write_all(&vec![0x01; 16]).await;
+            return Err(e);
+        }
+    };
 
-    debug!("TUIC: connected to {}:{}", host, port);
+    debug!("TUIC: routed connection to {}:{}", host, port);
 
     // Send success response
     let response = vec![0x00; 16];
@@ -328,7 +338,7 @@ async fn handle_tcp_relay(
 
 /// Handle UDP relay over QUIC stream (Sprint 19 Phase 1.2)
 async fn handle_udp_relay(
-    _cfg: Arc<TuicInboundConfig>,
+    cfg: Arc<TuicInboundConfig>,
     mut send: quinn::SendStream,
     mut recv: quinn::RecvStream,
     peer: SocketAddr,
@@ -339,6 +349,18 @@ async fn handle_udp_relay(
     let (host, port) = parse_address_port(&mut recv).await?;
 
     debug!("TUIC: UDP PACKET {}:{} from {}", host, port, peer);
+
+    // Router decision (UDP path)
+    let route = cfg.router.select_ctx_and_record(RouteCtx {
+        host: Some(&host),
+        ip: None,
+        port: Some(port),
+        transport: Transport::Udp,
+    });
+    if let Err(e) = allow_udp_route(&route) {
+        let _ = send.write_all(&[0x01]).await;
+        return Err(e);
+    }
 
     // Bind local UDP socket
     let udp = UdpSocket::bind("0.0.0.0:0")
@@ -444,13 +466,61 @@ async fn parse_address_port(recv: &mut quinn::RecvStream) -> Result<(String, u16
     Ok((host, port))
 }
 
+async fn connect_via_router(cfg: &TuicInboundConfig, host: &str, port: u16) -> Result<IoStream> {
+    let ctx = RouteCtx {
+        host: Some(host),
+        ip: None,
+        port: Some(port),
+        transport: Transport::Tcp,
+    };
+    let target: OutRouteTarget = cfg.router.select_ctx_and_record(ctx);
+    let endpoint = match host.parse::<IpAddr>() {
+        Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
+        Err(_) => OutEndpoint::Domain(host.to_string(), port),
+    };
+
+    #[cfg(feature = "v2ray_transport")]
+    {
+        cfg.outbounds
+            .connect_preferred(&target, endpoint)
+            .await
+            .map_err(|e| anyhow!("failed to connect via router: {}", e))
+    }
+    #[cfg(not(feature = "v2ray_transport"))]
+    {
+        let stream = cfg
+            .outbounds
+            .connect_preferred(&target, endpoint)
+            .await
+            .map_err(|e| anyhow!("failed to connect via router: {}", e))?;
+        Ok(Box::new(stream))
+    }
+}
+
+fn allow_udp_route(route: &OutRouteTarget) -> Result<()> {
+    match route {
+        OutRouteTarget::Kind(OutboundKind::Direct) => Ok(()),
+        OutRouteTarget::Named(name) => {
+            if name == "direct" {
+                Ok(())
+            } else {
+                Err(anyhow!("udp route '{name}' not supported in tuic inbound"))
+            }
+        }
+        _ => Err(anyhow!(
+            "udp route {:?} not supported in tuic inbound",
+            route
+        )),
+    }
+}
+
 /// Relay data between QUIC stream and TCP stream
 async fn relay_quic_tcp(
     mut quic_send: quinn::SendStream,
     mut quic_recv: quinn::RecvStream,
-    mut tcp: TcpStream,
+    tcp: IoStream,
 ) -> Result<()> {
-    let (mut tcp_read, mut tcp_write) = tcp.split();
+    let (mut tcp_read, mut tcp_write) = tokio::io::split(tcp);
 
     let quic_to_tcp = async {
         let mut buf = vec![0u8; 8192];
@@ -592,5 +662,48 @@ mod tests {
         assert_eq!(AddressType::try_from(0x03).unwrap(), AddressType::Domain);
         assert_eq!(AddressType::try_from(0x04).unwrap(), AddressType::IPv6);
         assert!(AddressType::try_from(0xFF).is_err());
+    }
+
+    #[cfg(feature = "router")]
+    #[tokio::test]
+    async fn connect_via_router_reaches_upstream() {
+        use sb_core::outbound::{OutboundImpl, OutboundRegistry};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Start a simple upstream echo server.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind upstream");
+        let upstream_addr = listener.local_addr().unwrap();
+        let (echo_tx, echo_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept upstream");
+            let mut buf = [0u8; 4];
+            socket.read_exact(&mut buf).await.expect("read upstream");
+            echo_tx.send(buf).ok();
+        });
+
+        // Router defaults to "direct"; provide a matching outbound entry.
+        let router = router::RouterHandle::from_env();
+        let mut reg = OutboundRegistry::default();
+        reg.insert("direct".to_string(), OutboundImpl::Direct);
+        let outbounds = OutboundRegistryHandle::new(reg);
+
+        let cfg = TuicInboundConfig {
+            listen: upstream_addr, // unused by helper
+            users: vec![],
+            cert: String::new(),
+            key: String::new(),
+            congestion_control: None,
+            router: Arc::new(router),
+            outbounds: Arc::new(outbounds),
+        };
+
+        let mut stream = connect_via_router(&cfg, "127.0.0.1", upstream_addr.port())
+            .await
+            .expect("route to upstream");
+        stream.write_all(b"ping").await.expect("write to upstream");
+        let echoed = echo_rx.await.expect("receive upstream data");
+        assert_eq!(&echoed, b"ping");
     }
 }

@@ -1,6 +1,9 @@
 // crates/sb-adapters/src/inbound/socks/mod.rs
+//! SOCKS5 Inbound (TCP CONNECT + Optional UDP ASSOCIATE Announcement)
 //! SOCKS5 入站（TCP CONNECT + 可选 UDP ASSOCIATE 宣告）
+//! - Same routing/outbound abstraction as HTTP inbound: RouterHandle + OutboundRegistryHandle + Endpoint
 //! - 与 HTTP 入站相同的路由/出站抽象：RouterHandle + OutboundRegistryHandle + Endpoint
+//! - P1.5: Unified IO metering via sb_core::net::metered
 //! - P1.5：IO 计量统一走 sb_core::net::metered
 
 use std::{
@@ -45,22 +48,28 @@ pub mod tcp;
 pub mod udp;
 
 /// SOCKS5 inbound configuration
+/// SOCKS5 入站配置
 #[derive(Clone, Debug)]
 pub struct SocksInboundConfig {
     /// Listen address
+    /// 监听地址
     pub listen: SocketAddr,
     /// 给 UDP ASSOCIATE 用于宣告的地址；仅在 Some 时回复非 0 地址。
     pub udp_bind: Option<SocketAddr>,
     /// Router handle
+    /// 路由器句柄
     pub router: Arc<RouterHandle>,
     /// Outbound registry handle
+    /// 出站注册表句柄
     pub outbounds: Arc<OutboundRegistryHandle>,
+    /// Reserved for future: used when we natively start the udp module here
     /// 保留给未来：当我们在这里内置启动 udp 模块时使用
     #[allow(dead_code)]
     pub udp_nat_ttl: Duration,
 }
 
 /// Serve SOCKS5 proxy with ready signal notification
+/// 运行 SOCKS5 代理服务，并提供就绪信号通知
 pub async fn serve_socks(
     cfg: SocksInboundConfig,
     mut stop_rx: mpsc::Receiver<()>,
@@ -74,6 +83,7 @@ pub async fn serve_socks(
     }
 
     // 可通过环境变量在测试时禁止 stop 打断（与 HTTP 入站一致）
+    // Can disable stop interruption during testing via environment variable (consistent with HTTP inbound)
     let disable_stop = std::env::var("SB_SOCKS_DISABLE_STOP").as_deref() == Ok("1");
 
     loop {
@@ -93,6 +103,7 @@ pub async fn serve_socks(
                 tokio::spawn(async move {
                     if let Err(e) = handle_conn(&mut cli, peer, &cfg_clone).await {
                         // 客户端在方法协商后立刻断开（脚本探活的典型场景），降级为 debug
+                        // Client closed immediately after method negotiation (typical scenario for script probing), downgrade to debug
                         if e.kind() == io::ErrorKind::UnexpectedEof {
                             tracing::debug!(
                                 peer=%peer,
@@ -101,6 +112,7 @@ pub async fn serve_socks(
                             return;
                         }
                         // 其他错误继续告警
+                        // Continue to warn for other errors
                         sb_core::metrics::http::record_error_display(&e);
                         sb_core::metrics::record_inbound_error_display("socks", &e);
                         warn!(peer=%peer, error=%e, "socks session error");
@@ -112,12 +124,17 @@ pub async fn serve_socks(
     Ok(())
 }
 
+// Compatible with old alias
 // 兼容旧别名
 /// Compatibility alias - run SOCKS5 proxy
+/// 兼容性别名 - 运行 SOCKS5 代理
 pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
     // NOTE(linus): UDP Associate 骨架已就绪，但默认不启用。
     // 后续批次将基于配置/env 决定是否绑定一个 UDP socket 并回送 BND.ADDR。
     // 占位示例（请勿取消注释，直到接入完整转发表/上游发送）：
+    // NOTE(linus): UDP Associate skeleton is ready but disabled by default.
+    // Subsequent batches will decide whether to bind a UDP socket and return BND.ADDR based on config/env.
+    // Placeholder example (do not uncomment until full forwarding table/upstream sending is integrated):
     //
     // if std::env::var("SB_SOCKS_UDP_ENABLE").is_ok() {
     //     let sock = std::sync::Arc::new(udp::bind_udp_any(false).await?);
@@ -132,6 +149,7 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
 }
 
 /// Compatibility alias - serve SOCKS5 proxy
+/// 兼容性别名 - 运行 SOCKS5 代理
 pub async fn serve(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
     serve_socks(cfg, stop_rx, None).await
 }
@@ -156,6 +174,7 @@ async fn handle_conn(
     let mut methods = vec![0u8; n_methods];
     cli.read_exact(&mut methods).await?;
     // 仅支持 NO_AUTH
+    // Only support NO_AUTH
     cli.write_all(&[0x05, 0x00]).await?;
 
     // --- request header ---
@@ -170,6 +189,7 @@ async fn handle_conn(
     let atyp = head[3];
 
     // 解析目标
+    // Parse target
     let (endpoint, _host_for_route, _port) = match atyp {
         0x01 => {
             let mut b = [0u8; 4];
@@ -208,12 +228,14 @@ async fn handle_conn(
         0x01 => {
             // CONNECT
             // 握手阶段（greeting/auth/req）完成
+            // Handshake phase (greeting/auth/req) completed
             inbound_parse("socks", "ok", "greeting+request");
 
             let mut decision = RDecision::Direct;
             let proxy = default_proxy();
 
             // 运行态规则引擎（先判决）
+            // Runtime rule engine (decide first)
             if let Some(eng) = rules_global::global() {
                 let (dom, ip, port) = match &endpoint {
                     Endpoint::Domain(h, p) => (Some(h.as_str()), None, Some(*p)),
@@ -322,6 +344,7 @@ async fn handle_conn(
             }
 
             // 与上游建立连接（根据决策与默认代理）
+            // Establish connection with upstream (based on decision and default proxy)
             let mut srv: IoStream = match decision {
                 RDecision::Direct => match &endpoint {
                     Endpoint::Domain(host, port) => {
@@ -603,10 +626,12 @@ async fn handle_conn(
             };
 
             // 成功：回复 0x00，BND=0.0.0.0:0
+            // Success: reply 0x00, BND=0.0.0.0:0
             reply(cli, 0x00, None).await?;
             debug!(peer=%peer, "socks connect established");
 
             // 双向转发 + 计量 + 读/写超时（可选，来自环境）
+            // Bidirectional forwarding + metering + read/write timeout (optional, from env)
             fn dur_from_env(key: &str) -> Option<std::time::Duration> {
                 std::env::var(key)
                     .ok()
@@ -637,6 +662,7 @@ async fn handle_conn(
         0x03 => {
             // UDP ASSOCIATE
             // 如果声明了 udp_bind，就用它；否则回复 0 地址
+            // If udp_bind is declared, use it; otherwise reply with 0 address
             reply(cli, 0x00, cfg.udp_bind).await?;
             #[cfg(feature = "metrics")]
             metrics::counter!("inbound_connections_total",
@@ -646,6 +672,7 @@ async fn handle_conn(
         }
         0x02 => {
             // BIND（不支持）
+            // BIND (not supported)
             inbound_parse("socks", "error", "bad_method");
             reply(cli, 0x07, None).await?; // Command not supported
             Ok(())
@@ -671,9 +698,15 @@ async fn handle_conn(
 // 若上游连接/握手失败，在 Err 分支前：
 // inbound_forward("socks","error",Some(err_kind(&e)));
 // timeout： inbound_forward("socks","timeout",Some("timeout"));
+// At each error return point (e.g., version mismatch, unsupported method, unsupported ATYP, etc.), attach:
+// inbound_parse("socks","error","bad_version"|"bad_method"|"bad_cmd"|"bad_atyp");
+// If upstream connection/handshake fails, before the Err branch:
+// inbound_forward("socks","error",Some(err_kind(&e)));
+// timeout: inbound_forward("socks","timeout",Some("timeout"));
 
 async fn reply(cli: &mut TcpStream, rep: u8, bnd: Option<SocketAddr>) -> io::Result<()> {
     // 统一回复格式：VER=5, REP=rep, RSV=0, ATYP + ADDR + PORT
+    // Unified reply format: VER=5, REP=rep, RSV=0, ATYP + ADDR + PORT
     let mut buf = Vec::with_capacity(4 + 18 + 2);
     buf.push(0x05);
     buf.push(rep);
@@ -715,6 +748,7 @@ async fn read_u16(s: &mut TcpStream) -> io::Result<u16> {
 }
 
 // 构造 RouteCtx 的小助手（避免借用/解引用细节）
+// Helper for constructing RouteCtx (avoid borrowing/dereferencing details)
 #[allow(dead_code)] // Reserved for context building
 fn route_ctx_from_endpoint(ep: &Endpoint) -> RouteCtx<'_> {
     match ep {
@@ -736,6 +770,7 @@ fn route_ctx_from_endpoint(ep: &Endpoint) -> RouteCtx<'_> {
 }
 
 // 供 UDP 子模块复用（入站内部工具）
+// Reused by UDP submodule (inbound internal utility)
 fn _target_to_string_lossy(ep: &Endpoint) -> String {
     match ep {
         Endpoint::Ip(sa) => sa.to_string(),
@@ -750,15 +785,20 @@ pub struct SocksInbound {
 impl SocksInbound {
     pub async fn run(&self) -> anyhow::Result<()> {
         // ... 既有 TCP 接受/处理逻辑 ...
+        // ... Existing TCP accept/handle logic ...
 
         // NOTE(linus): UDP Associate 接入（默认关闭）。仅当显式设置 SB_SOCKS_UDP_ENABLE=1 时启用。
         // 行为守恒：不开关 → 不绑定端口，不起后台任务。
+        // NOTE(linus): UDP Associate integration (disabled by default). Enabled only when SB_SOCKS_UDP_ENABLE=1 is explicitly set.
+        // Behavior conservation: No switch -> No port binding, no background task.
         if std::env::var("SB_SOCKS_UDP_ENABLE").is_ok() {
             // 绑定：支持 SB_SOCKS_UDP_BIND="0.0.0.0:0,[::]:0" 多地址
+            // Bind: Support SB_SOCKS_UDP_BIND="0.0.0.0:0,[::]:0" multiple addresses
             let sockets = udp::bind_udp_from_env_or_any()
                 .await
                 .map_err(|e| anyhow::anyhow!("bind_udp_from_env_or_any failed: {e}"))?;
             // 起 NAT 驱逐占位（内部会 spawn，并持续运行；目前不依赖 self 的成员，零侵入）
+            // Start NAT eviction placeholder (internally spawns and runs continuously; currently does not depend on self members, zero intrusion)
             let nat = std::sync::Arc::new(sb_core::net::datagram::UdpNatMap::new(
                 std::time::Duration::from_secs(60),
             ));
@@ -768,11 +808,13 @@ impl SocksInbound {
                 scan: std::time::Duration::from_secs(30),
             });
             // 后台处理 UDP 报文（解析+上游转发+回写）
+            // Background processing of UDP packets (parse + upstream forward + write back)
             for s in sockets {
                 tokio::spawn({
                     let sock = s.clone();
                     async move {
                         // 这里的 sock 已经是 Arc<UdpSocket>，与新签名匹配
+                        // sock here is already Arc<UdpSocket>, matching the new signature
                         if let Err(e) = udp::serve_udp_datagrams(sock).await {
                             tracing::warn!("socks/udp serve ended: {e}");
                         }
@@ -786,8 +828,10 @@ impl SocksInbound {
         }
 
         // NOTE(linus): TCP（仅 UDP_ASSOCIATE）接入（默认关闭）。
+        // NOTE(linus): TCP (UDP_ASSOCIATE only) integration (disabled by default).
         if std::env::var("SB_SOCKS_TCP_ENABLE").is_ok() {
             // 如果用户只开了 TCP 开关而没开 UDP，我们也要保证有一个 UDP 绑定用于 BND.ADDR/PORT
+            // If user only enabled TCP switch but not UDP, we must ensure there is a UDP binding for BND.ADDR/PORT
             if udp::get_udp_bind_addr().is_none() {
                 let sockets = udp::bind_udp_from_env_or_any()
                     .await
@@ -812,6 +856,7 @@ impl SocksInbound {
             let addr_for_log = addr.clone();
             tokio::spawn(async move {
                 let addr = addr; // move 进闭包，避免后续 borrow moved value
+                                 // move into closure to avoid subsequent borrow moved value
                 if let Err(e) = crate::inbound::socks::tcp::run_tcp(&addr).await {
                     tracing::warn!("socks/tcp run failed: {e}");
                 }

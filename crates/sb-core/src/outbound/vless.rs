@@ -96,7 +96,8 @@ impl VlessOutbound {
         target: &HostPort,
         stream: &mut S,
     ) -> io::Result<()> {
-        let _t0 = std::time::Instant::now();
+        #[cfg(feature = "metrics")]
+        let t0 = std::time::Instant::now();
         // Send VLESS request header
         let request = self.encode_vless_request(target);
         stream.write_all(&request).await?;
@@ -190,53 +191,6 @@ impl VlessOutbound {
     }
 }
 
-#[cfg(test)]
-#[cfg(feature = "out_vless")]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vless_encode_basic() {
-        let cfg = VlessConfig {
-            server: "s".into(),
-            port: 443,
-            uuid: uuid::Uuid::new_v4(),
-            flow: None,
-            encryption: Some("none".into()),
-            ..Default::default()
-        };
-        let outbound = VlessOutbound::new(cfg).unwrap();
-        let hp = HostPort {
-            host: "example.com".into(),
-            port: 80,
-        };
-        let req = outbound.encode_vless_request(&hp);
-        assert_eq!(req[0], 0x01); // version
-                                  // additional length is 0 when no TLV
-        assert_eq!(req[17], 0x00);
-    }
-
-    #[test]
-    fn test_vless_encode_with_flow_tlv() {
-        let cfg = VlessConfig {
-            server: "s".into(),
-            port: 443,
-            uuid: uuid::Uuid::new_v4(),
-            flow: Some("xtls-rprx-vision".into()),
-            encryption: Some("none".into()),
-            ..Default::default()
-        };
-        let outbound = VlessOutbound::new(cfg).unwrap();
-        let hp = HostPort {
-            host: "example.com".into(),
-            port: 80,
-        };
-        let req = outbound.encode_vless_request(&hp);
-        assert_eq!(req[0], 0x01);
-        assert!(req[17] > 0); // additional has content
-    }
-}
-
 // V2Ray transport integration (feature-gated)
 #[cfg(all(feature = "out_vless", feature = "v2ray_transport"))]
 #[async_trait::async_trait]
@@ -259,7 +213,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
         // Use unified IR→Builder mapping (no env overrides)
         let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
 
-        let chain_opt = self.config.transport.as_ref().map(|v| v.as_slice());
+        let chain_opt = self.config.transport.as_deref();
         let builder = crate::runtime::transport::map::apply_layers(
             TransportBuilder::tcp(),
             chain_opt,
@@ -305,7 +259,8 @@ impl OutboundTcp for VlessOutbound {
 
         record_connect_attempt(crate::outbound::OutboundKind::Vless);
 
-        let _start = std::time::Instant::now();
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
 
         // Connect to VLESS server
         let mut stream =
@@ -451,6 +406,53 @@ impl crate::adapter::OutboundConnector for VlessOutbound {
 
         // Use async connect implementation
         OutboundTcp::connect(self, &target).await
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "out_vless")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vless_encode_basic() {
+        let cfg = VlessConfig {
+            server: "s".into(),
+            port: 443,
+            uuid: uuid::Uuid::new_v4(),
+            flow: None,
+            encryption: Some("none".into()),
+            ..Default::default()
+        };
+        let outbound = VlessOutbound::new(cfg).unwrap();
+        let hp = HostPort {
+            host: "example.com".into(),
+            port: 80,
+        };
+        let req = outbound.encode_vless_request(&hp);
+        assert_eq!(req[0], 0x01); // version
+                                  // additional length is 0 when no TLV
+        assert_eq!(req[17], 0x00);
+    }
+
+    #[test]
+    fn test_vless_encode_with_flow_tlv() {
+        let cfg = VlessConfig {
+            server: "s".into(),
+            port: 443,
+            uuid: uuid::Uuid::new_v4(),
+            flow: Some("xtls-rprx-vision".into()),
+            encryption: Some("none".into()),
+            ..Default::default()
+        };
+        let outbound = VlessOutbound::new(cfg).unwrap();
+        let hp = HostPort {
+            host: "example.com".into(),
+            port: 80,
+        };
+        let req = outbound.encode_vless_request(&hp);
+        assert_eq!(req[0], 0x01);
+        assert!(req[17] > 0); // additional has content
     }
 }
 

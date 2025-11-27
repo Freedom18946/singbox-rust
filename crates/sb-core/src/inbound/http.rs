@@ -52,6 +52,7 @@ pub struct HttpInboundService {
     config: HttpConfig,
     shutdown: Arc<AtomicBool>,
     active_connections: Arc<AtomicU64>,
+    rate_limiter: Option<crate::net::tcp_rate_limit::TcpRateLimiter>,
 }
 
 impl HttpInboundService {
@@ -62,11 +63,15 @@ impl HttpInboundService {
 
     /// Create new HTTP inbound service with custom configuration
     pub fn with_config(addr: SocketAddr, config: HttpConfig) -> Self {
+        let rate_limiter = Some(crate::net::tcp_rate_limit::TcpRateLimiter::new(
+            crate::net::tcp_rate_limit::TcpRateLimitConfig::from_env(),
+        ));
         Self {
             addr,
             config,
             shutdown: Arc::new(AtomicBool::new(false)),
             active_connections: Arc::new(AtomicU64::new(0)),
+            rate_limiter,
         }
     }
 
@@ -293,6 +298,15 @@ impl HttpInboundService {
                         continue;
                     }
 
+                    // Rate limit check
+                    if let Some(limiter) = &self.rate_limiter {
+                        if !limiter.allow_connection(peer.ip()) {
+                            warn!("HTTP CONNECT: Rate limit exceeded for {}", peer.ip());
+                            drop(stream);
+                            continue;
+                        }
+                    }
+
                     // Handle connection in background task
                     let service = self.clone();
                     tokio::spawn(async move {
@@ -323,6 +337,7 @@ impl Clone for HttpInboundService {
             config: self.config.clone(),
             shutdown: Arc::clone(&self.shutdown),
             active_connections: Arc::clone(&self.active_connections),
+            rate_limiter: self.rate_limiter.clone(),
         }
     }
 }

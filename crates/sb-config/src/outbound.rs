@@ -3,24 +3,33 @@
 use serde::{Deserialize, Serialize};
 
 /// Outbound proxy configuration.
+/// 出站代理配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum Outbound {
     /// Direct connection (no proxy).
+    /// 直连（无代理）。
     Direct(DirectConfig),
     /// Upstream HTTP proxy (CONNECT method).
+    /// 上游 HTTP 代理（CONNECT 方法）。
     Http(HttpProxyConfig),
     /// Upstream SOCKS5 proxy.
+    /// 上游 SOCKS5 代理。
     Socks5(Socks5Config),
     /// VMess protocol.
+    /// VMess 协议。
     Vmess(VmessConfig),
     /// VLESS protocol.
+    /// VLESS 协议。
     Vless(VlessConfig),
     /// TUIC protocol.
+    /// TUIC 协议。
     Tuic(TuicConfig),
     /// Manual selector (user choice).
+    /// 手动选择器（用户选择）。
     Selector(SelectorConfig),
-    /// 自动选择器（基于延迟）
+    /// Automatic selector (latency based).
+    /// 自动选择器（基于延迟）。
     #[serde(rename = "urltest")]
     UrlTest(UrlTestConfig),
 }
@@ -36,19 +45,19 @@ pub struct DirectConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpProxyConfig {
-    /// 代理地址 host:port
+    /// Proxy server address host:port / 代理地址 host:port
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
-    /// Basic 认证（可选）
+    /// Basic Auth (optional) / Basic 认证（可选）
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
-    /// 建连超时秒（可选）
+    /// Connection timeout in seconds (optional) / 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
-    /// TLS configuration
+    /// TLS configuration / TLS 配置
     #[serde(default)]
     pub tls: Option<TlsConfig>,
 }
@@ -71,40 +80,40 @@ pub struct Socks5Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VmessConfig {
-    /// 服务器地址 host:port
+    /// Server address host:port / 服务器地址 host:port
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
-    /// 用户 UUID
+    /// User UUID / 用户 UUID
     pub uuid: String,
-    /// 加密方式 (auto, aes-128-gcm, chacha20-poly1305, none)
+    /// Encryption method (auto, aes-128-gcm, chacha20-poly1305, none) / 加密方式
     #[serde(default = "default_vmess_security")]
     pub security: String,
-    /// AlterId (legacy, should be 0 for AEAD)
+    /// AlterId (legacy, should be 0 for AEAD) / AlterId (旧版，AEAD 应为 0)
     #[serde(default)]
     pub alter_id: u16,
-    /// 全局填充
+    /// Global padding / 全局填充
     #[serde(default)]
     pub global_padding: bool,
-    /// 认证长度
+    /// Authenticated length / 认证长度
     #[serde(default)]
     pub authenticated_length: bool,
-    /// 网络类型
+    /// Network type / 网络类型
     #[serde(default)]
     pub network: Option<Vec<String>>,
-    /// 数据包编码
+    /// Packet encoding / 数据包编码
     #[serde(default)]
     pub packet_encoding: Option<String>,
-    /// 建连超时秒（可选）
+    /// Connection timeout in seconds (optional) / 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
-    /// TLS configuration
+    /// TLS configuration / TLS 配置
     #[serde(default)]
     pub tls: Option<TlsConfig>,
-    /// Transport configuration (WebSocket, gRPC, HTTPUpgrade)
+    /// Transport configuration (WebSocket, gRPC, HTTPUpgrade) / 传输配置
     #[serde(default)]
     pub transport: Option<TransportConfig>,
-    /// Multiplex configuration
+    /// Multiplex configuration / 多路复用配置
     #[serde(default)]
     pub multiplex: Option<MultiplexConfig>,
 }
@@ -115,31 +124,31 @@ fn default_vmess_security() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VlessConfig {
-    /// 服务器地址 host:port
+    /// Server address host:port / 服务器地址 host:port
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
-    /// 用户 UUID
+    /// User UUID / 用户 UUID
     pub uuid: String,
-    /// 流控模式 (xtls-rprx-vision)
+    /// Flow control mode (xtls-rprx-vision) / 流控模式
     #[serde(default)]
     pub flow: Option<String>,
-    /// 网络类型 (tcp, udp)
+    /// Network type (tcp, udp) / 网络类型
     #[serde(default = "default_vless_network")]
     pub network: String,
-    /// 数据包编码 (packetaddr, xudp)
+    /// Packet encoding (packetaddr, xudp) / 数据包编码
     #[serde(default)]
     pub packet_encoding: Option<String>,
-    /// 建连超时秒（可选）
+    /// Connection timeout in seconds (optional) / 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
-    /// TLS configuration
+    /// TLS configuration / TLS 配置
     #[serde(default)]
     pub tls: Option<TlsConfig>,
-    /// Transport configuration (WebSocket, gRPC, HTTPUpgrade)
+    /// Transport configuration (WebSocket, gRPC, HTTPUpgrade) / 传输配置
     #[serde(default)]
     pub transport: Option<TransportConfig>,
-    /// Multiplex configuration
+    /// Multiplex configuration / 多路复用配置
     #[serde(default)]
     pub multiplex: Option<MultiplexConfig>,
 }
@@ -150,39 +159,39 @@ fn default_vless_network() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TuicConfig {
-    /// 服务器地址 host:port
+    /// Server address host:port / 服务器地址 host:port
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
-    /// 用户 UUID
+    /// User UUID / 用户 UUID
     pub uuid: String,
-    /// 密码
+    /// Password / 密码
     pub password: String,
-    /// 拥塞控制算法 (bbr, cubic, new_reno)
+    /// Congestion control algorithm (bbr, cubic, new_reno) / 拥塞控制算法
     #[serde(default = "default_tuic_congestion_control")]
     pub congestion_control: String,
-    /// UDP 中继模式 (native, quic)
+    /// UDP relay mode (native, quic) / UDP 中继模式
     #[serde(default)]
     pub udp_relay_mode: Option<String>,
     /// UDP over Stream
     #[serde(default)]
     pub udp_over_stream: bool,
-    /// 0-RTT 握手
+    /// 0-RTT Handshake / 0-RTT 握手
     #[serde(default)]
     pub zero_rtt_handshake: bool,
-    /// 心跳间隔 (毫秒)
+    /// Heartbeat interval (ms) / 心跳间隔 (毫秒)
     #[serde(default = "default_tuic_heartbeat")]
     pub heartbeat: u64,
-    /// 建连超时秒（可选）
+    /// Connection timeout in seconds (optional) / 建连超时秒（可选）
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
-    /// 认证超时秒（可选）
+    /// Authentication timeout in seconds (optional) / 认证超时秒（可选）
     #[serde(default)]
     pub auth_timeout_sec: Option<u64>,
-    /// 网络类型
+    /// Network type / 网络类型
     #[serde(default)]
     pub network: Option<Vec<String>>,
-    /// TLS configuration
+    /// TLS configuration / TLS 配置
     #[serde(default)]
     pub tls: Option<TlsConfig>,
 }
@@ -199,12 +208,12 @@ fn default_tuic_heartbeat() -> u64 {
 pub struct SelectorConfig {
     #[serde(default)]
     pub tag: Option<String>,
-    /// 候选出站列表（按 tag 引用）
+    /// Candidate outbound list (referenced by tag) / 候选出站列表（按 tag 引用）
     pub outbounds: Vec<String>,
-    /// 默认选中的出站（可选）
+    /// Default selected outbound (optional) / 默认选中的出站（可选）
     #[serde(default)]
     pub default: Option<String>,
-    /// 是否在启动时检查可用性
+    /// Check availability on startup / 是否在启动时检查可用性
     #[serde(default)]
     pub interrupt_exist_connections: bool,
 }
@@ -213,21 +222,21 @@ pub struct SelectorConfig {
 pub struct UrlTestConfig {
     #[serde(default)]
     pub tag: Option<String>,
-    /// 候选出站列表（按 tag 引用）
+    /// Candidate outbound list (referenced by tag) / 候选出站列表（按 tag 引用）
     pub outbounds: Vec<String>,
-    /// 测试 URL（默认 http://www.gstatic.com/generate_204）
+    /// Test URL (default http://www.gstatic.com/generate_204) / 测试 URL
     #[serde(default = "default_url_test_url")]
     pub url: String,
-    /// 测试间隔（秒，默认 60）
+    /// Test interval (seconds, default 60) / 测试间隔（秒，默认 60）
     #[serde(default = "default_url_test_interval")]
     pub interval: u64,
-    /// 超时时间（秒，默认 5）
+    /// Timeout (seconds, default 5) / 超时时间（秒，默认 5）
     #[serde(default = "default_url_test_timeout")]
     pub timeout: u64,
-    /// 容忍度（毫秒，默认 50ms，延迟差距小于此值不切换）
+    /// Tolerance (ms, default 50ms, switch only if latency diff > tolerance) / 容忍度（毫秒，默认 50ms）
     #[serde(default = "default_url_test_tolerance")]
     pub tolerance: u64,
-    /// 是否在启动时检查可用性
+    /// Check availability on startup / 是否在启动时检查可用性
     #[serde(default)]
     pub interrupt_exist_connections: bool,
 }
@@ -249,9 +258,10 @@ fn default_url_test_tolerance() -> u64 {
 }
 
 /// TLS configuration for outbound connections
+/// 出站连接的 TLS 配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TlsConfig {
-    /// Enable TLS
+    /// Enable TLS / 启用 TLS
     #[serde(default)]
     pub enabled: bool,
     /// Server Name Indication (SNI)
@@ -260,91 +270,98 @@ pub struct TlsConfig {
     /// Application Layer Protocol Negotiation (ALPN)
     #[serde(default)]
     pub alpn: Option<String>,
-    /// Skip certificate verification (insecure)
+    /// Skip certificate verification (insecure) / 跳过证书校验（不安全）
     #[serde(default)]
     pub insecure: bool,
-    /// REALITY TLS configuration
+    /// REALITY TLS configuration / REALITY TLS 配置
     #[serde(default)]
     pub reality: Option<RealityConfig>,
-    /// ECH (Encrypted Client Hello) configuration
+    /// ECH (Encrypted Client Hello) configuration / ECH 配置
     #[serde(default)]
     pub ech: Option<EchConfig>,
 }
 
 /// REALITY TLS configuration
+/// REALITY TLS 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealityConfig {
-    /// Enable REALITY
+    /// Enable REALITY / 启用 REALITY
     #[serde(default)]
     pub enabled: bool,
-    /// Server public key (64-character hex string)
+    /// Server public key (64-character hex string) / 服务端公钥
     pub public_key: String,
-    /// Short ID (0-16 character hex string)
+    /// Short ID (0-16 character hex string) / Short ID
     #[serde(default)]
     pub short_id: Option<String>,
-    /// Server name for SNI
+    /// Server name for SNI / SNI 服务端名称
     pub server_name: String,
 }
 
 /// ECH (Encrypted Client Hello) configuration
+/// ECH (加密 Client Hello) 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EchConfig {
-    /// Enable ECH
+    /// Enable ECH / 启用 ECH
     #[serde(default)]
     pub enabled: bool,
-    /// ECH configuration list (base64 encoded)
+    /// ECH configuration list (base64 encoded) / ECH 配置列表 (Base64 编码)
     #[serde(default)]
     pub config: Option<String>,
-    /// Enable post-quantum signature schemes
+    /// Enable post-quantum signature schemes / 启用后量子签名方案
     #[serde(default)]
     pub pq_signature_schemes_enabled: bool,
-    /// Disable dynamic record sizing
+    /// Disable dynamic record sizing / 禁用动态记录大小调整
     #[serde(default)]
     pub dynamic_record_sizing_disabled: Option<bool>,
 }
 
 /// Transport configuration for V2Ray protocols (VMess, VLESS, Trojan)
+/// V2Ray 协议 (VMess, VLESS, Trojan) 的传输配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TransportConfig {
     /// Direct TCP connection (default)
+    /// 直接 TCP 连接（默认）
     Tcp,
     /// WebSocket transport
+    /// WebSocket 传输
     #[serde(rename = "ws")]
     WebSocket {
-        /// WebSocket path
+        /// WebSocket path / WebSocket 路径
         #[serde(default = "default_ws_path")]
         path: String,
-        /// Custom headers
+        /// Custom headers / 自定义请求头
         #[serde(default)]
         headers: Option<std::collections::HashMap<String, String>>,
-        /// Maximum message size in bytes
+        /// Maximum message size in bytes / 最大消息大小 (字节)
         #[serde(default)]
         max_message_size: Option<usize>,
-        /// Maximum frame size in bytes
+        /// Maximum frame size in bytes / 最大帧大小 (字节)
         #[serde(default)]
         max_frame_size: Option<usize>,
     },
     /// gRPC bidirectional streaming
+    /// gRPC 双向流
     #[serde(rename = "grpc")]
     Grpc {
-        /// Service name
+        /// Service name / 服务名称
         #[serde(default = "default_grpc_service")]
         service_name: String,
-        /// Method name
+        /// Method name / 方法名称
         #[serde(default = "default_grpc_method")]
         method_name: String,
-        /// Custom metadata
+        /// Custom metadata / 自定义元数据
         #[serde(default)]
         metadata: Option<std::collections::HashMap<String, String>>,
     },
     /// HTTP/1.1 Upgrade
+    /// HTTP/1.1 Upgrade
     #[serde(rename = "httpupgrade")]
     HttpUpgrade {
-        /// Path
+        /// Path / 路径
         #[serde(default = "default_httpupgrade_path")]
         path: String,
-        /// Custom headers
+        /// Custom headers / 自定义请求头
         #[serde(default)]
         headers: Option<std::collections::HashMap<String, String>>,
     },
@@ -373,27 +390,28 @@ fn default_httpupgrade_path() -> String {
 }
 
 /// Multiplex configuration (yamux-based stream multiplexing)
+/// 多路复用配置 (基于 yamux 的流多路复用)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiplexConfig {
-    /// Enable multiplex
+    /// Enable multiplex / 启用多路复用
     #[serde(default)]
     pub enabled: bool,
-    /// Protocol (only "yamux" supported)
+    /// Protocol (only "yamux" supported) / 协议 (仅支持 "yamux")
     #[serde(default = "default_multiplex_protocol")]
     pub protocol: String,
-    /// Maximum connections in pool
+    /// Maximum connections in pool / 连接池最大连接数
     #[serde(default = "default_multiplex_max_connections")]
     pub max_connections: usize,
-    /// Minimum connections to keep alive
+    /// Minimum connections to keep alive / 最小保活连接数
     #[serde(default = "default_multiplex_min_streams")]
     pub min_streams: usize,
-    /// Maximum streams per connection
+    /// Maximum streams per connection / 单连接最大流数
     #[serde(default = "default_multiplex_max_streams")]
     pub max_streams: usize,
-    /// Padding (bytes)
+    /// Padding (bytes) / 填充 (字节)
     #[serde(default)]
     pub padding: bool,
-    /// Brutal congestion control configuration
+    /// Brutal congestion control configuration / Brutal 拥塞控制配置
     #[serde(default)]
     pub brutal: Option<BrutalConfig>,
 }
@@ -429,15 +447,16 @@ fn default_multiplex_max_streams() -> usize {
 }
 
 /// Brutal congestion control configuration
+/// Brutal 拥塞控制配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrutalConfig {
-    /// Enable brutal congestion control
+    /// Enable brutal congestion control / 启用 Brutal 拥塞控制
     #[serde(default)]
     pub enabled: bool,
-    /// Upload bandwidth in Mbps
+    /// Upload bandwidth in Mbps / 上传带宽 (Mbps)
     #[serde(default)]
     pub up_mbps: u32,
-    /// Download bandwidth in Mbps
+    /// Download bandwidth in Mbps / 下载带宽 (Mbps)
     #[serde(default)]
     pub down_mbps: u32,
 }

@@ -63,6 +63,8 @@ async fn probe(addr: SocketAddr) -> bool {
         .is_ok()
 }
 
+/// The Runtime struct holds the core components of the running proxy.
+/// Runtime 结构体持有运行中代理的核心组件。
 pub struct Runtime {
     #[cfg(feature = "router")]
     pub router: Arc<sb_core::router::engine::RouterHandle>,
@@ -108,6 +110,22 @@ fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
 }
 
 /// Build OutboundRegistry from ConfigIR (minimal: direct/block/http/socks)
+///
+/// # Strategic Logic / 战略逻辑
+/// This function acts as the **Translation Layer** between the Configuration Intermediate Representation (IR)
+/// and the concrete Runtime Outbound Registry.
+///
+/// 此函数充当配置中间表示 (IR) 与具体运行时出站注册表之间的 **转换层**。
+///
+/// It iterates through the configured outbounds and instantiates the corresponding `OutboundImpl`.
+/// Note that complex selectors (like URLTest) require a two-pass approach:
+/// 1. Instantiate all concrete outbounds (Direct, Socks, etc.).
+/// 2. Instantiate selectors that reference the concrete outbounds.
+///
+/// 它遍历配置的出站并实例化相应的 `OutboundImpl`。
+/// 注意，复杂的选择器（如 URLTest）需要两遍扫描的方法：
+/// 1. 实例化所有具体出站（Direct, Socks 等）。
+/// 2. 实例化引用具体出站的选择器。
 pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> OutboundRegistry {
     use sb_core::outbound::{HttpProxyConfig, OutboundImpl, Socks5Config};
 
@@ -674,6 +692,28 @@ fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
 
 /// Start the proxy runtime from configuration.
 ///
+/// # Global Strategic Logic / 全局战略逻辑
+/// This is the **Factory Method** of the application. It orchestrates the initialization of the entire proxy system.
+/// 这是应用程序的 **工厂方法**。它编排整个代理系统的初始化。
+///
+/// ## Initialization Sequence / 初始化顺序
+/// 1. **Env & Health**: Initialize global proxy health registry and health checks.
+///    **环境与健康**: 初始化全局代理健康注册表和健康检查。
+/// 2. **Adapter Registration**: Register all available adapters (protocols) to the system.
+///    **适配器注册**: 向系统注册所有可用的适配器（协议）。
+/// 3. **Config Validation**: Validate the configuration object (strict fail).
+///    **配置验证**: 验证配置对象（严格失败）。
+/// 4. **IR Conversion**: Convert Config to Intermediate Representation (IR) for efficient processing.
+///    **IR 转换**: 将配置转换为中间表示 (IR) 以便高效处理。
+/// 5. **DNS Setup**: Apply DNS settings from config.
+///    **DNS 设置**: 应用配置中的 DNS 设置。
+/// 6. **Outbound Registry**: Build the outbound registry from IR.
+///    **出站注册表**: 从 IR 构建出站注册表。
+/// 7. **Router Setup**: Initialize the router and install routing rules (Index).
+///    **路由设置**: 初始化路由器并安装路由规则 (Index)。
+/// 8. **Inbound Startup**: Start all inbound listeners (HTTP, SOCKS, TUN, etc.).
+///    **入站启动**: 启动所有入站监听器（HTTP, SOCKS, TUN 等）。
+///
 /// # Errors
 /// Returns an error if:
 /// - Configuration validation fails
@@ -691,6 +731,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     sb_adapters::register_all();
 
     // 1) 构建 Registry/Router 并包装成 Handle（严格失败）
+    // 1) Build Registry/Router and wrap into Handle (Strict Failure)
     cfg.validate()?; // Configuration validation (IR compiled inside)
 
     // Convert to IR once
@@ -724,6 +765,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     info!("sb bootstrap: inbounds={inbounds}, outbounds={outbounds}, rules={rules}");
 
     // 2) 起入站（HTTP / SOCKS / TUN）：每个入站一个 stop 通道；当前不做热更新/回收
+    // 2) Start Inbounds (HTTP / SOCKS / TUN): One stop channel per inbound; currently no hot-reload/reclaim
     start_inbounds_from_ir(
         &cfg_ir.inbounds,
         #[cfg(feature = "router")]

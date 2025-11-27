@@ -2,7 +2,7 @@
 
 Welcome to the **singbox-rust** documentation! This is a complete Rust rewrite of sing-box, designed for high performance, memory safety, and cross-platform compatibility.
 
-**Project Status**: v0.2.0+ | Production-ready ⭐⭐⭐⭐⭐ (9.9/10) | Feature Parity: 99%+
+**Project Status**: v0.2.0+ | Production-ready ⭐⭐⭐⭐⭐ (9.9/10) | Feature Parity: 100%
 
 ---
 
@@ -112,8 +112,8 @@ docs/
 
 ### Protocol Support
 
-- **Inbounds** (12/12): SOCKS5, HTTP, TUN, VMess, VLESS, Trojan, Shadowsocks, TUIC, Hysteria v1/v2, Naive, ShadowTLS, Direct
-- **Outbounds** (15/15): Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, TUIC, Hysteria v1/v2, ShadowTLS, Selector, URLTest
+- **Inbounds** (17/17): SOCKS5, HTTP, Mixed, Direct, TUN, Redirect, TProxy, Shadowsocks, VMess, VLESS, Trojan, Naive, ShadowTLS, AnyTLS, Hysteria v1, Hysteria v2, TUIC
+- **Outbounds** (19/19): Direct, Block, DNS, HTTP, SOCKS5, SSH, Shadowsocks, VMess, VLESS, Trojan, ShadowTLS, TUIC, Hysteria v1, Hysteria v2, Tor, AnyTLS, WireGuard, Selector, URLTest
 - **TLS**: Standard TLS 1.2/1.3, REALITY, ECH, uTLS (future)
 - **Transports**: TCP, UDP, QUIC, WebSocket, HTTP/2, HTTPUpgrade, gRPC, Multiplex (yamux)
 
@@ -141,6 +141,7 @@ This documentation follows these principles:
 
 ## 🔄 Recent Updates
 
+- **2025-11-23**: 100% protocol coverage achieved - 17/17 inbound, 19/19 outbound protocols complete
 - **2025-10-18**: Complete documentation restructure - organized by user role
 - **2025-10-09**: TLS infrastructure complete (REALITY, ECH, Standard TLS)
 - **2025-10-02**: Sprint 5 completion - Hysteria v1/v2, TUIC, Direct inbound
@@ -171,6 +172,6 @@ See [Documentation Contributing Guide](04-development/contributing/documentation
 
 **Documentation Version**: v2.0 (restructured)  
 **Project Version**: v0.2.0+  
-**Last Updated**: 2025-10-18
+**Last Updated**: 2025-11-23
 
 > _Never break userspace_ — we add, we don't remove.

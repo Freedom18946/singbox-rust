@@ -92,7 +92,7 @@ fn register_scaffold_outbounds() {
         "ssh",
     ];
     for kind in KINDS {
-        let _ = registry::register_outbound(*kind, scaffold_outbound_builder);
+        let _ = registry::register_outbound(kind, scaffold_outbound_builder);
     }
 }
 
@@ -768,14 +768,18 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
 
                             // Reader: ss_tcp_r -> ls_w (decrypt)
                             let cipher_r = self.cipher.clone();
+                            #[cfg(feature = "metrics")]
+                            let cipher_name_r = cipher_r.name().to_string();
                             let subkey_r = subkey; // same subkey
                             tokio::spawn(async move {
+                                #[cfg(feature = "metrics")]
+                                let cipher_name_r = cipher_name_r;
                                 let mut read_nonce: u64 = 0;
                                 let tag = cipher_r.tag_size();
                                 let mut len_buf = vec![0u8; 2 + tag];
                                 loop {
                                     // read encrypted length
-                                    if let Err(_) = ss_tcp_r.read_exact(&mut len_buf).await {
+                                    if (ss_tcp_r.read_exact(&mut len_buf).await).is_err() {
                                         #[cfg(feature = "metrics")]
                                         crate::metrics::outbound::record_ss_stream_error_with_cipher("read_len", &cipher_name_r);
                                         break;
@@ -813,7 +817,7 @@ fn try_scaffold_outbound(p: &OutboundParam, ob: &OutboundIR) -> Option<BuiltOutb
                                     };
                                     // read encrypted payload
                                     let mut payload = vec![0u8; plain_len + tag];
-                                    if let Err(_) = ss_tcp_r.read_exact(&mut payload).await {
+                                    if (ss_tcp_r.read_exact(&mut payload).await).is_err() {
                                         #[cfg(feature = "metrics")]
                                         crate::metrics::outbound::record_ss_stream_error_with_cipher("read_payload", &cipher_name_r);
                                         break;
@@ -1986,7 +1990,7 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
 // Optional Circuit Breaker wrapper for outbound connectors
 // ============================================================================
 
-static CB_STATES: Lazy<DashMap<String, i32>> = Lazy::new(|| DashMap::new());
+static CB_STATES: Lazy<DashMap<String, i32>> = Lazy::new(DashMap::new);
 
 /// Update circuit breaker state for an outbound (0=closed,1=half-open,2=open)
 pub fn cb_state_set(name: &str, code: i32) {
@@ -2022,11 +2026,11 @@ impl std::fmt::Debug for CbConnector {
 #[async_trait::async_trait]
 impl OutboundConnector for CbConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        use std::io::{Error, ErrorKind};
+        use std::io::Error;
 
         match self.cb.allow_request().await {
             sb_transport::circuit_breaker::CircuitBreakerDecision::Reject => {
-                return Err(Error::new(ErrorKind::Other, "circuit open"));
+                return Err(Error::other("circuit open"));
             }
             sb_transport::circuit_breaker::CircuitBreakerDecision::Allow => {}
         }

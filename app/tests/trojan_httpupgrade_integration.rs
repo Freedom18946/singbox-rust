@@ -25,6 +25,7 @@ async fn test_trojan_httpupgrade_config_creation() {
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(30),
         sni: Some("example.com".to_string()),
+        alpn: None,
         skip_cert_verify: false,
         transport_layer: TransportConfig::HttpUpgrade(httpupgrade_config),
         reality: None,
@@ -48,6 +49,7 @@ async fn test_trojan_httpupgrade_with_multiplex() {
         password: "password123".to_string(),
         connect_timeout_sec: Some(30),
         sni: Some("example.com".to_string()),
+        alpn: None,
         skip_cert_verify: false,
         transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
             path: "/trojan-upgrade".to_string(),
@@ -71,12 +73,13 @@ async fn test_trojan_httpupgrade_path_variants() {
         let config = TrojanConfig {
             server: server_addr.clone(),
             tag: None,
-            password: "test-pass".to_string(),
-            connect_timeout_sec: Some(10),
-            sni: None,
-            skip_cert_verify: true,
-            transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
-                path: path.to_string(),
+        password: "test-pass".to_string(),
+        connect_timeout_sec: Some(10),
+        sni: None,
+        alpn: None,
+        skip_cert_verify: true,
+        transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
+            path: path.to_string(),
                 headers: vec![],
             }),
             reality: None,
@@ -99,6 +102,7 @@ async fn test_trojan_tcp_vs_httpupgrade() {
         password: "password123".to_string(),
         connect_timeout_sec: Some(30),
         sni: Some("example.com".to_string()),
+        alpn: None,
         skip_cert_verify: false,
         transport_layer: TransportConfig::Tcp,
         reality: None,
@@ -112,6 +116,7 @@ async fn test_trojan_tcp_vs_httpupgrade() {
         password: "password123".to_string(),
         connect_timeout_sec: Some(30),
         sni: Some("example.com".to_string()),
+        alpn: None,
         skip_cert_verify: false,
         transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
             path: "/upgrade".to_string(),

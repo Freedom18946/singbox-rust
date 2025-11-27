@@ -344,7 +344,8 @@ fn watch(
             Some(std::time::Instant::now() + std::time::Duration::from_secs(_duration))
         };
         let mut series: Vec<u64> = Vec::with_capacity(1200);
-        let is_tty = atty::is(atty::Stream::Stdout) && !_plain && !_json && !_ndjson;
+        use std::io::IsTerminal;
+        let is_tty = std::io::stdout().is_terminal() && !_plain && !_json && !_ndjson;
         loop {
             let depth = m::get_prefetch_queue_depth();
             let high = m::get_prefetch_queue_high_watermark();

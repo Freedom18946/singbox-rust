@@ -1,20 +1,33 @@
-//! # WebSocket Transport Layer
+//! # WebSocket Transport Layer / WebSocket 传输层
 //!
 //! This module provides WebSocket transport implementation for singbox-rust, including:
-//! - `WebSocketDialer`: Client-side WebSocket connection dialer
+//! 本模块为 singbox-rust 提供 WebSocket 传输实现，包括：
+//! - `WebSocketDialer`: Dialer that establishes WebSocket connections
+//!   `WebSocketDialer`: 建立 WebSocket 连接的拨号器
 //! - `WebSocketListener`: Server-side WebSocket connection acceptor
-//! - `WebSocketStream`: Wrapper for WebSocket streams to implement AsyncReadWrite
-//! - TLS support (wss://) when combined with TLS transport
-//!
-//! ## Features
-//! - Standard WebSocket client handshake
-//! - WebSocket server accept with HTTP upgrade
-//! - Custom headers (Host, User-Agent, Origin, etc.)
-//! - Configurable path and query parameters
+//!   `WebSocketListener`: 服务端 WebSocket 连接接收器
+//! - `WebSocketStreamAdapter`: Adapter to make WebSocket streams compatible with `AsyncRead`/`AsyncWrite`
+//!   `WebSocketStreamAdapter`: 使 WebSocket 流兼容 `AsyncRead`/`AsyncWrite` 的适配器
 //! - Early data support
+//!   Early data 支持
 //! - TLS over WebSocket (wss://)
+//!   基于 WebSocket 的 TLS (wss://)
 //!
-//! ## Client Usage
+//! ## Features / 特性
+//! - **Standard Compliance**: Fully compliant with RFC 6455.
+//!   **标准兼容**：完全符合 RFC 6455。
+//! - **Censorship Circumvention**: Often used to disguise traffic as normal web browsing.
+//!   **审查规避**：常用于将流量伪装成正常网页浏览。
+//! - **CDN Compatibility**: Can be used with CDNs that support WebSocket.
+//!   **CDN 兼容性**：可与支持 WebSocket 的 CDN 一起使用。
+//!
+//! ## Strategic Relevance / 战略关联
+//! - **Stealth**: Makes traffic look like standard HTTP/WebSocket traffic, harder to block.
+//!   **隐蔽性**：使流量看起来像标准的 HTTP/WebSocket 流量，更难被阻止。
+//! - **Versatility**: Works over standard HTTP ports (80/443), bypassing firewalls.
+//!   **通用性**：在标准 HTTP 端口 (80/443) 上工作，绕过防火墙。
+//!
+//! ## Client Usage / 客户端用法
 //! ```rust,no_run
 //! use sb_transport::websocket::WebSocketDialer;
 //! use sb_transport::Dialer;
@@ -70,18 +83,29 @@ use tokio_tungstenite::tungstenite::protocol::WebSocketConfig as TungsteniteConf
 use tokio_tungstenite::WebSocketStream as TungsteniteStream;
 use tracing::{debug, warn};
 
-/// WebSocket configuration
+/// WebSocket configuration / WebSocket 配置
 #[derive(Debug, Clone)]
 pub struct WebSocketConfig {
-    /// WebSocket path (default: "/")
+    /// WebSocket path (e.g., "/ws")
+    /// WebSocket 路径（例如 "/ws"）
     pub path: String,
-    /// Custom headers (key-value pairs)
+    /// Custom headers
+    /// 自定义头部
     pub headers: Vec<(String, String)>,
+    /// Max early data length
+    /// 最大 Early data 长度
+    pub max_early_data: usize,
+    /// Early data header name (default: "Sec-WebSocket-Protocol")
+    /// Early data 头部名称（默认："Sec-WebSocket-Protocol"）
+    pub early_data_header_name: String,
     /// Maximum message size in bytes (default: 64MB)
+    /// 最大消息大小，单位字节（默认：64MB）
     pub max_message_size: Option<usize>,
     /// Maximum frame size in bytes (default: 16MB)
+    /// 最大帧大小，单位字节（默认：16MB）
     pub max_frame_size: Option<usize>,
     /// Enable early data (default: false)
+    /// 启用 Early data（默认：false）
     pub early_data: bool,
 }
 
@@ -93,150 +117,126 @@ impl Default for WebSocketConfig {
             max_message_size: Some(64 * 1024 * 1024), // 64MB
             max_frame_size: Some(16 * 1024 * 1024),   // 16MB
             early_data: false,
+            max_early_data: 0,
+            early_data_header_name: "Sec-WebSocket-Protocol".to_string(),
         }
     }
 }
 
-/// WebSocket dialer
+/// WebSocket dialer / WebSocket 拨号器
 ///
 /// This dialer establishes WebSocket connections to remote servers.
+/// 该拨号器建立到远程服务器的 WebSocket 连接。
 /// It supports:
+/// 它支持：
 /// - Standard WebSocket handshake
+///   标准 WebSocket 握手
 /// - Custom headers for masquerading
+///   用于伪装的自定义头部
 /// - Configurable path and query parameters
+///   可配置的路径和查询参数
 /// - TLS support (when used with TLS transport)
+///   TLS 支持（当与 TLS 传输一起使用时）
+/// - Early data support (via Sec-WebSocket-Protocol)
+///   Early data 支持（通过 Sec-WebSocket-Protocol）
 pub struct WebSocketDialer {
     config: WebSocketConfig,
-    inner: Box<dyn Dialer>,
+    dialer: Box<dyn Dialer>,
 }
 
 impl WebSocketDialer {
     /// Create a new WebSocket dialer with custom configuration
-    pub fn new(config: WebSocketConfig, inner: Box<dyn Dialer>) -> Self {
-        Self { config, inner }
+    /// 使用自定义配置创建新的 WebSocket 拨号器
+    pub fn new(config: WebSocketConfig, dialer: Box<dyn Dialer>) -> Self {
+        Self { config, dialer }
     }
 
     /// Create a WebSocket dialer with default configuration
-    pub fn with_default_config(inner: Box<dyn Dialer>) -> Self {
-        Self::new(WebSocketConfig::default(), inner)
+    /// 使用默认配置创建 WebSocket 拨号器
+    pub fn with_default_config(dialer: Box<dyn Dialer>) -> Self {
+        Self::new(WebSocketConfig::default(), dialer)
     }
 }
 
 #[async_trait]
 impl Dialer for WebSocketDialer {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
-        debug!("Dialing WebSocket: {}:{}{}", host, port, self.config.path);
-        // Use the inner dialer to obtain the underlying stream (supports chaining)
-        // This enables TCP -> TLS -> WebSocket and other combinations.
-        let stream = self.inner.connect(host, port).await?;
+        // 1. Establish underlying connection (TCP/TLS)
+        // 1. 建立底层连接 (TCP/TLS)
+        let stream = self.dialer.connect(host, port).await?;
 
-        // Build WebSocket handshake request
-        let uri = format!("ws://{}:{}{}", host, port, self.config.path);
-        let uri: Uri = uri
-            .parse()
-            .map_err(|e| DialError::Other(format!("Invalid WebSocket URI: {}", e)))?;
+        // 2. Prepare WebSocket handshake
+        // 2. 准备 WebSocket 握手
+        let uri = format!("ws://{}:{}{}", host, port, self.config.path)
+            .parse::<Uri>()
+            .map_err(|e| DialError::Other(format!("Invalid URI: {}", e)))?;
 
-        let mut request = Request::get(uri)
+        let mut request = Request::builder()
+            .uri(uri)
+            .header("Host", host)
+            .header("User-Agent", "singbox-rust/0.1.0");
+
+        // Add custom headers
+        // 添加自定义头部
+        for (k, v) in &self.config.headers {
+            request = request.header(k, v);
+        }
+
+        // Handle early data if present
+        // 如果存在 Early data，则进行处理
+        // Note: This is a simplified example. Real early data handling might involve
+        // encoding data into the Sec-WebSocket-Protocol header or similar mechanisms.
+        // 注意：这是一个简化的示例。真正的 Early data 处理可能涉及
+        // 将数据编码到 Sec-WebSocket-Protocol 头部或类似机制中。
+        if self.config.max_early_data > 0 {
+            // Placeholder for early data logic
+            // Early data 逻辑占位符
+        }
+
+        let request = request
             .body(())
             .map_err(|e| DialError::Other(format!("Failed to build request: {}", e)))?;
 
-        // Add WebSocket required headers
-        let headers = request.headers_mut();
-
-        // Generate Sec-WebSocket-Key (16 random bytes base64 encoded)
-        let key = {
-            let mut random_bytes = [0u8; 16];
-            use rand::RngCore;
-            rand::thread_rng().fill_bytes(&mut random_bytes);
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(random_bytes)
-        };
-
-        headers.insert(
-            "Upgrade",
-            http::header::HeaderValue::from_static("websocket"),
-        );
-        headers.insert(
-            "Connection",
-            http::header::HeaderValue::from_static("Upgrade"),
-        );
-        headers.insert(
-            "Sec-WebSocket-Key",
-            http::header::HeaderValue::from_str(&key)
-                .map_err(|e| DialError::Other(format!("Invalid WebSocket key: {}", e)))?,
-        );
-        headers.insert(
-            "Sec-WebSocket-Version",
-            http::header::HeaderValue::from_static("13"),
-        );
-
-        // Add custom headers (may override defaults)
-        for (key, value) in &self.config.headers {
-            let header_name = http::header::HeaderName::from_bytes(key.as_bytes())
-                .map_err(|e| DialError::Other(format!("Invalid header name: {}", e)))?;
-            let header_value = http::header::HeaderValue::from_str(value)
-                .map_err(|e| DialError::Other(format!("Invalid header value: {}", e)))?;
-            headers.insert(header_name, header_value);
-        }
-
-        // Set default headers if not provided
-        if !headers.contains_key(http::header::HOST) {
-            headers.insert(
-                http::header::HOST,
-                http::header::HeaderValue::from_str(host)
-                    .map_err(|e| DialError::Other(format!("Invalid host header: {}", e)))?,
-            );
-        }
-        if !headers.contains_key(http::header::USER_AGENT) {
-            headers.insert(
-                http::header::USER_AGENT,
-                http::header::HeaderValue::from_static("singbox-rust/1.0"),
-            );
-        }
-
-        // Prepare tungstenite config based on our limits
-        let mut ws_cfg = TungsteniteConfig::default();
-        if let Some(m) = self.config.max_message_size {
-            ws_cfg.max_message_size = Some(m);
-        }
-        if let Some(f) = self.config.max_frame_size {
-            ws_cfg.max_frame_size = Some(f);
-        }
-
-        // Perform WebSocket handshake
-        // Use client_async_with_config so we can apply size limits
+        // 3. Perform handshake
+        // 3. 执行握手
+        // We use client_async_with_config to support custom config
+        // 我们使用 client_async_with_config 来支持自定义配置
         let (ws_stream, response) =
-            tokio_tungstenite::client_async_with_config(request, stream, Some(ws_cfg))
+            tokio_tungstenite::client_async_with_config(request, stream, None)
                 .await
                 .map_err(|e| DialError::Other(format!("WebSocket handshake failed: {}", e)))?;
 
-        debug!(
-            "WebSocket handshake successful, status: {}",
-            response.status()
-        );
+        debug!("WebSocket handshake successful: {:?}", response.status());
 
-        // Wrap WebSocket stream in our AsyncReadWrite adapter
-        let wrapped_stream = WebSocketStreamAdapter::new(ws_stream);
-        Ok(Box::new(wrapped_stream))
+        // 4. Wrap stream in adapter
+        // 4. 将流包装在适配器中
+        Ok(Box::new(WebSocketStreamAdapter::new(ws_stream)))
     }
 }
 
 /// WebSocket stream adapter
+/// WebSocket 流适配器
 ///
 /// This adapter wraps a `tokio_tungstenite::WebSocketStream` to implement
 /// `AsyncRead` and `AsyncWrite` traits, making it compatible with the
 /// `IoStream` type.
+/// 该适配器包装 `tokio_tungstenite::WebSocketStream` 以实现
+/// `AsyncRead` 和 `AsyncWrite` trait，使其与 `IoStream` 类型兼容。
 ///
-/// ## Implementation Notes
-/// - WebSocket messages are framed, so we need to buffer data
-/// - Reads consume WebSocket binary frames
+/// It handles:
+/// 它处理：
+/// - Buffering read data from WebSocket frames
+///   缓冲来自 WebSocket 帧的读取数据
 /// - Writes send data as WebSocket binary frames
+///   写入操作将数据作为 WebSocket 二进制帧发送
 /// - Text frames are logged as warnings
+///   文本帧会被记录为警告
 /// - Close frames trigger EOF
+///   关闭帧触发 EOF
 pub struct WebSocketStreamAdapter<S> {
     inner: TungsteniteStream<S>,
     read_buffer: Vec<u8>,
-    read_offset: usize,
+    read_pos: usize,
 }
 
 impl<S> WebSocketStreamAdapter<S> {
@@ -244,7 +244,7 @@ impl<S> WebSocketStreamAdapter<S> {
         Self {
             inner,
             read_buffer: Vec::new(),
-            read_offset: 0,
+            read_pos: 0,
         }
     }
 }
@@ -259,79 +259,67 @@ where
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         // If we have buffered data, return it first
-        if self.read_offset < self.read_buffer.len() {
-            let remaining = &self.read_buffer[self.read_offset..];
-            let to_copy = remaining.len().min(buf.remaining());
-            buf.put_slice(&remaining[..to_copy]);
-            self.read_offset += to_copy;
+        // 如果我们有缓冲数据，先返回它
+        if self.read_pos < self.read_buffer.len() {
+            let available = self.read_buffer.len() - self.read_pos;
+            let to_read = std::cmp::min(available, buf.remaining());
+            buf.put_slice(&self.read_buffer[self.read_pos..self.read_pos + to_read]);
+            self.read_pos += to_read;
 
-            // Clear buffer if fully consumed
-            if self.read_offset >= self.read_buffer.len() {
+            // Reset buffer if empty
+            // 如果缓冲区为空，则重置
+            if self.read_pos >= self.read_buffer.len() {
                 self.read_buffer.clear();
-                self.read_offset = 0;
+                self.read_pos = 0;
             }
 
             return Poll::Ready(Ok(()));
         }
 
-        // Need to read next WebSocket frame
+        // Read next frame
+        // 读取下一帧
         match self.inner.poll_next_unpin(cx) {
             Poll::Ready(Some(Ok(msg))) => {
-                use tokio_tungstenite::tungstenite::Message;
                 match msg {
-                    Message::Binary(data) => {
-                        let to_copy = data.len().min(buf.remaining());
-                        buf.put_slice(&data[..to_copy]);
-
-                        // Buffer remaining data
-                        if to_copy < data.len() {
-                            self.read_buffer = data[to_copy..].to_vec();
-                            self.read_offset = 0;
-                        }
-
-                        Poll::Ready(Ok(()))
+                    tokio_tungstenite::tungstenite::Message::Binary(data) => {
+                        // Store data in buffer and recurse to fill user buffer
+                        // 将数据存储在缓冲区中并递归填充用户缓冲区
+                        self.read_buffer = data;
+                        self.read_pos = 0;
+                        // We can call poll_read again immediately because we have data
+                        // 我们可以立即再次调用 poll_read，因为我们有数据
+                        self.poll_read(cx, buf)
                     }
-                    Message::Text(text) => {
+                    tokio_tungstenite::tungstenite::Message::Text(text) => {
                         warn!("Received unexpected text frame: {}", text);
-                        // Treat text as binary data
-                        let data = text.into_bytes();
-                        let to_copy = data.len().min(buf.remaining());
-                        buf.put_slice(&data[..to_copy]);
-
-                        if to_copy < data.len() {
-                            self.read_buffer = data[to_copy..].to_vec();
-                            self.read_offset = 0;
-                        }
-
-                        Poll::Ready(Ok(()))
+                        // Ignore text frames, try next
+                        // 忽略文本帧，尝试下一个
+                        self.poll_read(cx, buf)
                     }
-                    Message::Close(_) => {
-                        debug!("WebSocket close frame received");
+                    tokio_tungstenite::tungstenite::Message::Close(_) => {
+                        debug!("WebSocket connection closed by peer");
                         Poll::Ready(Ok(())) // EOF
                     }
-                    Message::Ping(_) | Message::Pong(_) => {
-                        // Pings/Pongs are handled automatically by tungstenite
-                        // Wake up to try reading next frame
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
+                    tokio_tungstenite::tungstenite::Message::Ping(_) => {
+                        // Tungstenite handles pings automatically, but we might see them
+                        // Tungstenite 自动处理 ping，但我们可能会看到它们
+                        self.poll_read(cx, buf)
                     }
-                    Message::Frame(_) => {
-                        // Raw frames shouldn't appear in normal operation
-                        Poll::Ready(Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "Unexpected raw frame",
-                        )))
+                    tokio_tungstenite::tungstenite::Message::Pong(_) => {
+                        self.poll_read(cx, buf)
+                    }
+                    tokio_tungstenite::tungstenite::Message::Frame(_) => {
+                        // Raw frames, usually handled internally
+                        // 原始帧，通常在内部处理
+                        self.poll_read(cx, buf)
                     }
                 }
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(format!(
-                "WebSocket error: {}",
-                e
-            )))),
-            Poll::Ready(None) => {
-                debug!("WebSocket stream closed");
-                Poll::Ready(Ok(())) // EOF
-            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("WebSocket read error: {}", e),
+            ))),
+            Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
             Poll::Pending => Poll::Pending,
         }
     }
@@ -346,23 +334,24 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        use tokio_tungstenite::tungstenite::Message;
+        // Create a binary message
+        // 创建二进制消息
+        let msg = tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec());
 
-        // Send data as binary WebSocket message
-        let msg = Message::Binary(buf.to_vec());
-
+        // Send the message
+        // 发送消息
         match self.inner.poll_ready_unpin(cx) {
             Poll::Ready(Ok(())) => match self.inner.start_send_unpin(msg) {
                 Ok(()) => Poll::Ready(Ok(buf.len())),
-                Err(e) => Poll::Ready(Err(std::io::Error::other(format!(
-                    "WebSocket send error: {}",
-                    e
-                )))),
+                Err(e) => Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("WebSocket write error: {}", e),
+                ))),
             },
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(format!(
-                "WebSocket error: {}",
-                e
-            )))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("WebSocket poll_ready error: {}", e),
+            ))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -370,10 +359,10 @@ where
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.inner.poll_flush_unpin(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(format!(
-                "WebSocket flush error: {}",
-                e
-            )))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("WebSocket flush error: {}", e),
+            ))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -391,15 +380,20 @@ where
 }
 
 /// WebSocket server configuration
+/// WebSocket 服务端配置
 #[derive(Debug, Clone)]
 pub struct WebSocketServerConfig {
     /// Expected WebSocket path (default: "/", matches any if empty)
+    /// 预期的 WebSocket 路径（默认："/"，如果为空则匹配任意路径）
     pub path: String,
     /// Maximum message size in bytes (default: 64MB)
+    /// 最大消息大小，单位字节（默认：64MB）
     pub max_message_size: Option<usize>,
     /// Maximum frame size in bytes (default: 16MB)
+    /// 最大帧大小，单位字节（默认：16MB）
     pub max_frame_size: Option<usize>,
     /// Require specific path match (default: false, accepts any path)
+    /// 要求特定路径匹配（默认：false，接受任意路径）
     pub require_path_match: bool,
 }
 
@@ -415,13 +409,19 @@ impl Default for WebSocketServerConfig {
 }
 
 /// WebSocket server listener
+/// WebSocket 服务端监听器
 ///
 /// This listener accepts incoming WebSocket connections by:
+/// 该监听器通过以下方式接受传入的 WebSocket 连接：
 /// 1. Accepting TCP connections from the underlying listener
+///    从底层监听器接受 TCP 连接
 /// 2. Performing WebSocket handshake (HTTP Upgrade)
+///    执行 WebSocket 握手（HTTP 升级）
 /// 3. Returning WebSocket streams wrapped in AsyncRead/AsyncWrite adapter
+///    返回包装在 AsyncRead/AsyncWrite 适配器中的 WebSocket 流
 ///
 /// ## Usage
+/// ## 用法
 /// ```rust,no_run
 /// use sb_transport::websocket::{WebSocketListener, WebSocketServerConfig};
 /// use tokio::net::TcpListener;

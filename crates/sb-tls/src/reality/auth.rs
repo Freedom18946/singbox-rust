@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// REALITY authentication helper
+/// REALITY 认证助手
 pub struct RealityAuth {
     secret: StaticSecret,
     public_key: PublicKey,
@@ -12,6 +13,7 @@ pub struct RealityAuth {
 
 impl RealityAuth {
     /// Create new auth from private key bytes
+    /// 从私钥字节创建新的认证
     #[must_use]
     pub fn from_private_key(private_key: [u8; 32]) -> Self {
         let secret = StaticSecret::from(private_key);
@@ -21,6 +23,7 @@ impl RealityAuth {
     }
 
     /// Generate new random keypair
+    /// 生成新的随机密钥对
     #[must_use]
     pub fn generate() -> Self {
         let secret = StaticSecret::random_from_rng(OsRng);
@@ -30,18 +33,21 @@ impl RealityAuth {
     }
 
     /// Get public key bytes
+    /// 获取公钥字节
     #[must_use]
     pub fn public_key_bytes(&self) -> [u8; 32] {
         *self.public_key.as_bytes()
     }
 
     /// Get private key bytes
+    /// 获取私钥字节
     #[must_use]
     pub fn private_key_bytes(&self) -> [u8; 32] {
         self.secret.to_bytes()
     }
 
     /// Perform ECDH key exchange with peer public key
+    /// 与对端公钥执行 ECDH 密钥交换
     #[must_use]
     pub fn derive_shared_secret(&self, peer_public_key: &[u8; 32]) -> [u8; 32] {
         let peer_key = PublicKey::from(*peer_public_key);
@@ -50,9 +56,11 @@ impl RealityAuth {
     }
 
     /// Compute authentication hash
+    /// 计算认证哈希
     ///
     /// This creates a deterministic hash from the shared secret and other parameters
     /// for authentication verification.
+    /// 这将从共享密钥和其他参数创建一个确定性的哈希，用于认证验证。
     #[must_use]
     pub fn compute_auth_hash(
         &self,
@@ -72,6 +80,7 @@ impl RealityAuth {
     }
 
     /// Verify authentication hash
+    /// 验证认证哈希
     #[must_use]
     pub fn verify_auth_hash(
         &self,
@@ -86,6 +95,7 @@ impl RealityAuth {
 }
 
 /// Generate a new keypair and return as hex strings
+/// 生成一个新的密钥对并作为十六进制字符串返回
 #[must_use]
 pub fn generate_keypair() -> (String, String) {
     let auth = RealityAuth::generate();
@@ -95,6 +105,7 @@ pub fn generate_keypair() -> (String, String) {
 }
 
 /// Constant-time comparison to prevent timing attacks
+/// 防止时序攻击的恒定时间比较
 fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;

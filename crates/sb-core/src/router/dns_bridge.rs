@@ -132,6 +132,10 @@ impl Resolver for EnhancedDnsResolver {
     fn name(&self) -> &str {
         &self.name
     }
+
+    async fn explain(&self, domain: &str) -> anyhow::Result<serde_json::Value> {
+        self.inner.explain(domain).await
+    }
 }
 
 #[cfg(test)]

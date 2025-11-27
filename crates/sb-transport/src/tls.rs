@@ -1,15 +1,24 @@
-//! # TLS 传输层安全模块
+//! # TLS Transport Layer Security Module / TLS 传输层安全模块
 //!
+//! This module provides a TLS connection wrapper based on rustls, supporting:
 //! 该模块提供基于 rustls 的 TLS 连接包装器，支持：
-//! - TLS 客户端连接建立
-//! - SNI (Server Name Indication) 配置
-//! - ALPN (Application Layer Protocol Negotiation) 支持
-//! - 环境变量驱动的配置
+//! - TLS client connection establishment / TLS 客户端连接建立
+//! - SNI (Server Name Indication) configuration / SNI (Server Name Indication) 配置
+//! - ALPN (Application Layer Protocol Negotiation) support / ALPN (Application Layer Protocol Negotiation) 支持
+//! - Environment variable driven configuration / 环境变量驱动的配置
 //!
-//! ## 安全性考虑
-//! - 使用现代的 rustls 库提供 TLS 支持
-//! - 支持灵活的根证书配置
-//! - 提供测试和生产环境的不同配置选项
+//! ## Strategic Relevance / 战略关联
+//! - **Security Foundation**: Provides the standard TLS implementation for the entire project, ensuring
+//!   consistent security policies (e.g., root store, cipher suites).
+//!   **安全基础**：为整个项目提供标准的 TLS 实现，确保一致的安全策略（如根证书库、加密套件）。
+//! - **Anti-Censorship Integration**: Serves as the base for advanced anti-censorship protocols like
+//!   REALITY and ECH, which are critical for the project's core value proposition.
+//!   **反审查集成**：作为 REALITY 和 ECH 等高级反审查协议的基础，这对项目的核心价值主张至关重要。
+//!
+//! ## Security Considerations / 安全性考虑
+//! - Uses modern rustls library for TLS support / 使用现代的 rustls 库提供 TLS 支持
+//! - Supports flexible root certificate configuration / 支持灵活的根证书配置
+//! - Provides different configuration options for test and production environments / 提供测试和生产环境的不同配置选项
 
 use super::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
@@ -18,66 +27,78 @@ use std::sync::Arc;
 #[cfg(feature = "transport_reality")]
 use sb_tls::TlsConnector;
 
-/// TLS 拨号器包装器
+/// TLS Dialer Wrapper / TLS 拨号器包装器
 ///
+/// This struct wraps any underlying dialer to add TLS encryption support.
 /// 该结构体包装了任意的底层拨号器，为其添加 TLS 加密层支持。
+/// It uses the decorator pattern to convert any dialer implementing the `Dialer` trait
+/// into a secure connection dialer supporting TLS.
 /// 它采用装饰器模式，可以将任何实现了 `Dialer` trait 的拨号器
 /// 转换为支持 TLS 的安全连接拨号器。
 ///
-/// ## 设计理念
-// - **组合优于继承**: 通过包装而不是继承来扩展功能
-// - **灵活配置**: 支持 SNI 重写和 ALPN 协商
-// - **环境驱动**: 可通过环境变量进行配置
+/// ## Design Philosophy / 设计理念
+// - **Composition over Inheritance**: Extend functionality via wrapping rather than inheritance / **组合优于继承**: 通过包装而不是继承来扩展功能
+// - **Flexible Configuration**: Support SNI rewrite and ALPN negotiation / **灵活配置**: 支持 SNI 重写和 ALPN 协商
+// - **Environment Driven**: Configurable via environment variables / **环境驱动**: 可通过环境变量进行配置
 ///
-/// ## 类型参数
-// - `D`: 底层拨号器类型，必须实现 `Dialer` trait
+/// ## Type Parameters / 类型参数
+// - `D`: Underlying dialer type, must implement `Dialer` trait / 底层拨号器类型，必须实现 `Dialer` trait
 ///
-/// ## 字段说明
-// - `inner`: 底层拨号器实例，负责建立基础连接
-// - `config`: rustls 客户端配置，包含证书、协议等设置
-// - `sni_override`: 可选的 SNI 主机名重写
-// - `alpn`: 可选的应用层协议协商列表
+/// ## Field Description / 字段说明
+// - `inner`: Underlying dialer instance, responsible for establishing base connection / 底层拨号器实例，负责建立基础连接
+// - `config`: rustls client config, containing certificates, protocols, etc. / rustls 客户端配置，包含证书、协议等设置
+// - `sni_override`: Optional SNI hostname override / 可选的 SNI 主机名重写
+// - `alpn`: Optional list of ALPN protocols / 可选的应用层协议协商列表
 pub struct TlsDialer<D: Dialer> {
+    /// Underlying dialer, responsible for establishing raw connection
     /// 底层拨号器，负责建立原始连接
     pub inner: D,
 
+    /// TLS client configuration, containing root certs, protocol versions, etc.
     /// TLS 客户端配置，包含根证书、协议版本等
     pub config: Arc<rustls::ClientConfig>,
 
+    /// SNI hostname override (optional)
     /// SNI 主机名重写（可选）
+    /// If set, this value will be used as SNI instead of the connection target hostname
     /// 如果设置，将使用此值而不是连接目标主机名作为 SNI
     pub sni_override: Option<String>,
 
+    /// ALPN protocol list (optional)
     /// ALPN 协议列表（可选）
+    /// Used to negotiate application layer protocols during TLS handshake
     /// 用于在 TLS 握手期间协商应用层协议
     pub alpn: Option<Vec<Vec<u8>>>,
 }
 
 #[async_trait]
 impl<D: Dialer + Send + Sync> Dialer for TlsDialer<D> {
+    /// Establish a TLS encrypted connection
     /// 建立 TLS 加密连接
     ///
+    /// This method implements the complete TLS connection establishment process:
     /// 该方法实现了完整的 TLS 连接建立流程：
-    /// 1. 使用底层拨号器建立原始连接
-    /// 2. 配置 SNI 和 ALPN 参数
-    /// 3. 执行 TLS 握手
-    /// 4. 返回加密的连接流
+    /// 1. Establish raw connection using underlying dialer / 使用底层拨号器建立原始连接
+    /// 2. Configure SNI and ALPN parameters / 配置 SNI 和 ALPN 参数
+    /// 3. Perform TLS handshake / 执行 TLS 握手
+    /// 4. Return encrypted connection stream / 返回加密的连接流
     ///
-    /// # 连接流程
+    /// # Connection Flow / 连接流程
     /// ```text
+    /// Raw Connection -> TLS Handshake -> Encrypted Connection
     /// 原始连接 -> TLS握手 -> 加密连接
     ///     ↑          ↑         ↑
-    ///   底层拨号器   rustls   IoStream
+    ///   Underlying   rustls   IoStream
     /// ```
     ///
-    /// # 参数处理
-    // - SNI: 使用 `sni_override` 或回退到目标主机名
-    // - ALPN: 如果配置了协议列表，会克隆配置并应用
+    /// # Parameter Handling / 参数处理
+    // - SNI: Use `sni_override` or fallback to target hostname / 使用 `sni_override` 或回退到目标主机名
+    // - ALPN: If protocol list is configured, clone config and apply / 如果配置了协议列表，会克隆配置并应用
     ///
-    /// # 错误处理
-    // - 底层连接失败: 直接传播 `DialError`
-    // - SNI 解析失败: 转换为 `DialError::Tls`
-    // - TLS 握手失败: 转换为 `DialError::Tls`
+    /// # Error Handling / 错误处理
+    // - Underlying connection failure: Propagate `DialError` directly / 底层连接失败: 直接传播 `DialError`
+    // - SNI parsing failure: Convert to `DialError::Tls` / SNI 解析失败: 转换为 `DialError::Tls`
+    // - TLS handshake failure: Convert to `DialError::Tls` / TLS 握手失败: 转换为 `DialError::Tls`
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;
@@ -123,27 +144,33 @@ impl<D: Dialer + Send + Sync> Dialer for TlsDialer<D> {
     }
 }
 
+/// Build production TLS configuration (based on webpki_roots)
 /// 构建生产环境 TLS 配置（基于 webpki_roots）
 ///
+/// This function creates a TLS client configuration suitable for production environments, characterized by:
 /// 该函数创建一个适用于生产环境的 TLS 客户端配置，特点：
-// - 使用系统或内置的根证书存储
-// - 不使用客户端证书认证
-// - 适用于标准的 HTTPS 连接
+// - Using system or built-in root certificate store / 使用系统或内置的根证书存储
+// - No client certificate authentication / 不使用客户端证书认证
+// - Suitable for standard HTTPS connections / 适用于标准的 HTTPS 连接
 ///
-/// ## 注意事项
+/// ## Notes / 注意事项
+/// The current implementation uses an empty root store as a placeholder. In production, you should:
 /// 当前实现使用空的根证书存储作为占位符。在生产环境中，应该：
-// - 使用 `webpki-roots` crate 加载内置根证书
-// - 或使用 `rustls-native-certs` 加载系统根证书
-// - 或手动加载自定义根证书
+// - Use `webpki-roots` crate to load built-in root certificates / 使用 `webpki-roots` crate 加载内置根证书
+// - Or use `rustls-native-certs` to load system root certificates / 或使用 `rustls-native-certs` 加载系统根证书
+// - Or manually load custom root certificates / 或手动加载自定义根证书
 ///
-/// ## rustls 0.23 兼容性
+/// ## rustls 0.23 Compatibility / rustls 0.23 兼容性
+/// This implementation is based on rustls 0.23 API, where RootCertStore usage
+/// may differ from older versions.
 /// 该实现基于 rustls 0.23 的 API，RootCertStore 的使用方式
 /// 可能与旧版本有所不同。
 ///
-/// # 返回值
+/// # Returns / 返回值
+/// Returns a shared `ClientConfig` instance that can be safely reused across multiple connections
 /// 返回共享的 `ClientConfig` 实例，可以安全地在多个连接间复用
 ///
-/// # 使用示例
+/// # Usage Example / 使用示例
 /// ```rust,no_run
 /// use sb_transport::{webpki_roots_config, TlsDialer, TcpDialer};
 ///
@@ -170,33 +197,39 @@ pub fn webpki_roots_config() -> Arc<rustls::ClientConfig> {
     )
 }
 
+/// Build test-only TLS configuration (empty root store)
 /// 构建测试专用 TLS 配置（空根证书存储）
 ///
+/// This function creates a TLS client configuration strictly for testing, characterized by:
 /// 该函数创建一个仅用于测试的 TLS 客户端配置，特点：
-// - 使用空的根证书存储
-// - 不进行证书验证
-// - **严禁在生产环境使用**
+// - Using empty root certificate store / 使用空的根证书存储
+// - No certificate verification / 不进行证书验证
+// - **Strictly prohibited in production** / **严禁在生产环境使用**
 ///
-/// ## 安全警告
-/// 🚨 **该配置不提供任何安全保障！**
-// - 不验证服务器证书
-// - 不检查证书链
-// - 容易受到中间人攻击
+/// ## Security Warning / 安全警告
+/// 🚨 **This configuration provides NO security guarantees!** / 🚨 **该配置不提供任何安全保障！**
+// - Does not verify server certificates / 不验证服务器证书
+// - Does not check certificate chains / 不检查证书链
+// - Vulnerable to Man-in-the-Middle attacks / 容易受到中间人攻击
 ///
-/// ## 适用场景
+/// ## Applicable Scenarios / 适用场景
+/// Only suitable for the following test scenarios:
 /// 仅适用于以下测试场景：
-// - 单元测试中的 TLS 代码路径验证
-// - 本地开发环境的快速原型测试
-// - 不涉及真实网络通信的集成测试
+// - TLS code path verification in unit tests / 单元测试中的 TLS 代码路径验证
+// - Rapid prototyping in local development environments / 本地开发环境的快速原型测试
+// - Integration tests not involving real network communication / 不涉及真实网络通信的集成测试
 ///
-/// ## 命名说明
+/// ## Naming / 命名说明
+/// "smoke" indicates this is a smoke test configuration, only used to verify code
+/// compilation and execution, not guaranteeing actual functional correctness.
 /// "smoke" 表示这是一个冒烟测试配置，仅用于验证代码
 /// 是否能正常编译和运行，不保证实际功能正确性。
 ///
-/// # 返回值
+/// # Returns / 返回值
+/// Returns an unsafe `ClientConfig` instance for testing
 /// 返回一个不安全的测试用 `ClientConfig` 实例
 ///
-/// # 使用示例
+/// # Usage Example / 使用示例
 /// ```rust,no_run
 /// // 仅在测试中使用！
 /// #[cfg(test)]
@@ -223,28 +256,30 @@ pub fn smoke_empty_roots_config() -> Arc<rustls::ClientConfig> {
     )
 }
 
-/// REALITY TLS 拨号器包装器
+/// REALITY TLS Dialer Wrapper / REALITY TLS 拨号器包装器
 ///
+/// This struct wraps any underlying dialer to add REALITY TLS support.
 /// 该结构体包装了任意的底层拨号器，为其添加 REALITY TLS 支持。
+/// REALITY is an anti-censorship protocol that bypasses DPI detection via SNI spoofing and certificate stealing.
 /// REALITY 是一种反审查协议，通过 SNI 伪造和证书窃取来绕过 DPI 检测。
 ///
-/// ## REALITY 协议特点
-/// - SNI 伪造：使用目标域名（如 www.apple.com）作为 SNI
-/// - 证书窃取：从真实目标网站获取证书
-/// - 认证机制：使用 X25519 密钥交换进行身份验证
-/// - 回退模式：认证失败时透明代理到真实目标
+/// ## REALITY Protocol Features / REALITY 协议特点
+/// - SNI Spoofing: Use target domain (e.g., www.apple.com) as SNI / SNI 伪造：使用目标域名（如 www.apple.com）作为 SNI
+/// - Certificate Stealing: Acquire certificates from real target websites / 证书窃取：从真实目标网站获取证书
+/// - Authentication: Use X25519 key exchange for authentication / 认证机制：使用 X25519 密钥交换进行身份验证
+/// - Fallback Mode: Transparently proxy to real target upon auth failure / 回退模式：认证失败时透明代理到真实目标
 ///
-/// ## 设计理念
-/// - **反审查优先**: 专为绕过 SNI 白名单和 DPI 检测设计
-/// - **不可检测性**: 认证失败时表现为正常浏览器访问
-/// - **灵活配置**: 支持多种目标域名和认证参数
+/// ## Design Philosophy / 设计理念
+/// - **Anti-Censorship First**: Designed specifically to bypass SNI whitelists and DPI / **反审查优先**: 专为绕过 SNI 白名单和 DPI 检测设计
+/// - **Undetectability**: Behaves like normal browser access upon auth failure / **不可检测性**: 认证失败时表现为正常浏览器访问
+/// - **Flexible Configuration**: Supports various target domains and auth parameters / **灵活配置**: 支持多种目标域名和认证参数
 ///
-/// ## 类型参数
-/// - `D`: 底层拨号器类型，必须实现 `Dialer` trait
+/// ## Type Parameters / 类型参数
+/// - `D`: Underlying dialer type, must implement `Dialer` trait / 底层拨号器类型，必须实现 `Dialer` trait
 ///
-/// ## 字段说明
-/// - `inner`: 底层拨号器实例，负责建立基础连接
-/// - `connector`: REALITY 连接器，处理 REALITY 协议握手
+/// ## Field Description / 字段说明
+/// - `inner`: Underlying dialer instance, responsible for establishing base connection / 底层拨号器实例，负责建立基础连接
+/// - `connector`: REALITY connector, handles REALITY protocol handshake / REALITY 连接器，处理 REALITY 协议握手
 #[cfg(feature = "transport_reality")]
 pub struct RealityDialer<D: Dialer> {
     /// 底层拨号器，负责建立原始连接
@@ -257,30 +292,33 @@ pub struct RealityDialer<D: Dialer> {
 #[cfg(feature = "transport_reality")]
 #[async_trait]
 impl<D: Dialer + Send + Sync> Dialer for RealityDialer<D> {
+    /// Establish REALITY TLS encrypted connection
     /// 建立 REALITY TLS 加密连接
     ///
+    /// This method implements the complete REALITY connection establishment process:
     /// 该方法实现了完整的 REALITY 连接建立流程：
-    /// 1. 使用底层拨号器建立原始连接
-    /// 2. 执行 REALITY 握手（SNI 伪造 + 认证）
-    /// 3. 返回加密的连接流
+    /// 1. Establish raw connection using underlying dialer / 使用底层拨号器建立原始连接
+    /// 2. Perform REALITY handshake (SNI spoofing + Auth) / 执行 REALITY 握手（SNI 伪造 + 认证）
+    /// 3. Return encrypted connection stream / 返回加密的连接流
     ///
-    /// # 连接流程
+    /// # Connection Flow / 连接流程
     /// ```text
+    /// Raw Connection -> REALITY Handshake -> Encrypted Connection
     /// 原始连接 -> REALITY握手 -> 加密连接
     ///     ↑          ↑            ↑
-    ///   底层拨号器   sb-tls     IoStream
+    ///   Underlying   sb-tls     IoStream
     /// ```
     ///
-    /// # REALITY 握手过程
-    /// 1. 使用伪造的 SNI（目标域名）建立 TLS 连接
-    /// 2. 在 ClientHello 中嵌入认证数据
-    /// 3. 服务器验证认证数据
-    /// 4. 成功：返回代理连接；失败：回退到真实目标
+    /// # REALITY Handshake Process / REALITY 握手过程
+    /// 1. Establish TLS connection using spoofed SNI (target domain) / 使用伪造的 SNI（目标域名）建立 TLS 连接
+    /// 2. Embed auth data in ClientHello / 在 ClientHello 中嵌入认证数据
+    /// 3. Server verifies auth data / 服务器验证认证数据
+    /// 4. Success: Return proxy connection; Failure: Fallback to real target / 成功：返回代理连接；失败：回退到真实目标
     ///
-    /// # 错误处理
-    /// - 底层连接失败: 直接传播 `DialError`
-    /// - REALITY 握手失败: 转换为 `DialError::Tls`
-    /// - 认证失败: 可能进入回退模式（取决于服务器配置）
+    /// # Error Handling / 错误处理
+    /// - Underlying connection failure: Propagate `DialError` directly / 底层连接失败: 直接传播 `DialError`
+    /// - REALITY handshake failure: Convert to `DialError::Tls` / REALITY 握手失败: 转换为 `DialError::Tls`
+    /// - Auth failure: May enter fallback mode (depends on server config) / 认证失败: 可能进入回退模式（取决于服务器配置）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // 第一步：使用底层拨号器建立原始连接
         let stream = self.inner.connect(host, port).await?;
@@ -543,37 +581,42 @@ impl<D: Dialer> TlsDialer<D> {
     }
 }
 
-/// ECH (Encrypted Client Hello) 拨号器包装器
+/// ECH (Encrypted Client Hello) Dialer Wrapper / ECH (Encrypted Client Hello) 拨号器包装器
 ///
+/// This struct wraps any underlying dialer to add ECH support.
 /// 该结构体包装了任意的底层拨号器，为其添加 ECH 支持。
+/// ECH is a TLS extension that prevents traffic analysis and SNI-based blocking by encrypting the ClientHello.
 /// ECH 是一种 TLS 扩展，通过加密 ClientHello 来防止流量分析和基于 SNI 的封锁。
 ///
-/// ## ECH 协议特点
-/// - ClientHello 加密：使用 HPKE 加密真实的 SNI
-/// - 公共名称：使用无害的公共域名作为外层 SNI
-/// - 前向保密：每次连接使用新的临时密钥
-/// - 防审查：审查者无法看到真实的目标域名
+/// ## ECH Protocol Features / ECH 协议特点
+/// - ClientHello Encryption: Encrypt real SNI using HPKE / ClientHello 加密：使用 HPKE 加密真实的 SNI
+/// - Public Name: Use harmless public domain as outer SNI / 公共名称：使用无害的公共域名作为外层 SNI
+/// - Forward Secrecy: New ephemeral key for each connection / 前向保密：每次连接使用新的临时密钥
+/// - Anti-Censorship: Censors cannot see the real target domain / 防审查：审查者无法看到真实的目标域名
 ///
-/// ## 设计理念
-/// - **隐私优先**: 保护 SNI 不被窃听
-/// - **反审查**: 绕过基于 SNI 的封锁
-/// - **标准兼容**: 遵循 IETF ECH 草案规范
+/// ## Design Philosophy / 设计理念
+/// - **Privacy First**: Protect SNI from eavesdropping / **隐私优先**: 保护 SNI 不被窃听
+/// - **Anti-Censorship**: Bypass SNI-based blocking / **反审查**: 绕过基于 SNI 的封锁
+/// - **Standard Compliance**: Follow IETF ECH draft specs / **标准兼容**: 遵循 IETF ECH 草案规范
 ///
-/// ## 类型参数
-/// - `D`: 底层拨号器类型，必须实现 `Dialer` trait
+/// ## Type Parameters / 类型参数
+/// - `D`: Underlying dialer type, must implement `Dialer` trait / 底层拨号器类型，必须实现 `Dialer` trait
 ///
-/// ## 字段说明
-/// - `inner`: 底层拨号器实例，负责建立基础连接
-/// - `config`: rustls 客户端配置
-/// - `ech_connector`: ECH 连接器，处理 ECH 加密
+/// ## Field Description / 字段说明
+/// - `inner`: Underlying dialer instance, responsible for establishing base connection / 底层拨号器实例，负责建立基础连接
+/// - `config`: rustls client config / rustls 客户端配置
+/// - `ech_connector`: ECH connector, handles ClientHello encryption / ECH 连接器，处理 ClientHello 加密
 #[cfg(feature = "transport_ech")]
 pub struct EchDialer<D: Dialer> {
+    /// Underlying dialer, responsible for establishing raw connection
     /// 底层拨号器，负责建立原始连接
     pub inner: D,
 
+    /// TLS client configuration
     /// TLS 客户端配置
     pub config: Arc<rustls::ClientConfig>,
 
+    /// ECH connector, handles ClientHello encryption
     /// ECH 连接器，处理 ClientHello 加密
     pub ech_connector: sb_tls::EchConnector,
 }
@@ -581,50 +624,55 @@ pub struct EchDialer<D: Dialer> {
 #[cfg(feature = "transport_ech")]
 #[async_trait]
 impl<D: Dialer + Send + Sync> Dialer for EchDialer<D> {
+    /// Establish ECH encrypted TLS connection
     /// 建立 ECH 加密的 TLS 连接
     ///
+    /// This method implements the complete ECH connection establishment process:
     /// 该方法实现了完整的 ECH 连接建立流程：
-    /// 1. 使用底层拨号器建立原始连接
-    /// 2. 使用 ECH 加密真实的 SNI
-    /// 3. 执行 TLS 握手（带 ECH 扩展）
-    /// 4. 验证 ECH 接受状态
-    /// 5. 返回加密的连接流
+    /// 1. Establish raw connection using underlying dialer / 使用底层拨号器建立原始连接
+    /// 2. Encrypt real SNI using ECH / 使用 ECH 加密真实的 SNI
+    /// 3. Perform TLS handshake (with ECH extension) / 执行 TLS 握手（带 ECH 扩展）
+    /// 4. Verify ECH acceptance status / 验证 ECH 接受状态
+    /// 5. Return encrypted connection stream / 返回加密的连接流
     ///
-    /// # 连接流程
+    /// # Connection Flow / 连接流程
     /// ```text
+    /// Raw Connection -> ECH Encryption -> TLS Handshake -> ECH Verification -> Encrypted Connection
     /// 原始连接 -> ECH加密 -> TLS握手 -> ECH验证 -> 加密连接
     ///     ↑         ↑         ↑         ↑          ↑
-    ///   底层拨号器  sb-tls   rustls   sb-tls   IoStream
+    ///   Underlying  sb-tls   rustls   sb-tls   IoStream
     /// ```
     ///
-    /// # ECH 握手过程
-    /// 1. 生成 ECH ClientHello（加密真实 SNI）
-    /// 2. 使用公共名称作为外层 SNI
-    /// 3. 在 TLS 扩展中嵌入加密的 ClientHello
-    /// 4. 服务器解密并处理真实的 ClientHello
-    /// 5. 验证服务器的 ECH 接受响应
+    /// # ECH Handshake Process / ECH 握手过程
+    /// 1. Generate ECH ClientHello (encrypt real SNI) / 生成 ECH ClientHello（加密真实 SNI）
+    /// 2. Use public name as outer SNI / 使用公共名称作为外层 SNI
+    /// 3. Embed encrypted ClientHello in TLS extension / 在 TLS 扩展中嵌入加密的 ClientHello
+    /// 4. Server decrypts and processes real ClientHello / 服务器解密并处理真实的 ClientHello
+    /// 5. Verify server's ECH acceptance response / 验证服务器的 ECH 接受响应
     ///
-    /// # rustls ECH 支持状态
+    /// # rustls ECH Support Status / rustls ECH 支持状态
     ///
-    /// ⚠️ **当前限制**: rustls 0.23 不支持 ECH 扩展
+    /// ⚠️ **Current Limitation**: rustls 0.23 does not support ECH extension / ⚠️ **当前限制**: rustls 0.23 不支持 ECH 扩展
     ///
+    /// This implementation provides the framework for ECH integration:
     /// 本实现提供了 ECH 集成的框架：
-    /// - ECH ClientHello 加密（完成）
-    /// - ECH 配置管理（完成）
-    /// - TLS 握手集成点（待 rustls 支持）
+    /// - ECH ClientHello encryption (Done) / ECH ClientHello 加密（完成）
+    /// - ECH configuration management (Done) / ECH 配置管理（完成）
+    /// - TLS handshake integration point (Pending rustls support) / TLS 握手集成点（待 rustls 支持）
     ///
+    /// When rustls adds ECH support, we need to:
     /// 当 rustls 添加 ECH 支持时，需要：
-    /// 1. 在 ClientConfig 中启用 ECH
-    /// 2. 传递 ech_hello.ech_payload 到 TLS 握手
-    /// 3. 从 ServerHello 中提取 ECH 接受状态
+    /// 1. Enable ECH in ClientConfig / 在 ClientConfig 中启用 ECH
+    /// 2. Pass ech_hello.ech_payload to TLS handshake / 传递 ech_hello.ech_payload 到 TLS 握手
+    /// 3. Extract ECH acceptance status from ServerHello / 从 ServerHello 中提取 ECH 接受状态
     ///
-    /// # 错误处理
-    /// - 底层连接失败: 直接传播 `DialError`
-    /// - ECH 未启用: 返回 `DialError::Tls` 错误
-    /// - ECH 加密失败: 转换为 `DialError::Tls`
-    /// - 外层 SNI 无效: 转换为 `DialError::Tls`
-    /// - TLS 握手失败: 转换为 `DialError::Tls`
-    /// - ECH 未被接受: 记录警告但继续连接（降级行为）
+    /// # Error Handling / 错误处理
+    /// - Underlying connection failure: Propagate `DialError` directly / 底层连接失败: 直接传播 `DialError`
+    /// - ECH disabled: Return `DialError::Tls` / ECH 未启用: 返回 `DialError::Tls` 错误
+    /// - ECH encryption failure: Convert to `DialError::Tls` / ECH 加密失败: 转换为 `DialError::Tls`
+    /// - Outer SNI invalid: Convert to `DialError::Tls` / 外层 SNI 无效: 转换为 `DialError::Tls`
+    /// - TLS handshake failure: Convert to `DialError::Tls` / TLS 握手失败: 转换为 `DialError::Tls`
+    /// - ECH not accepted: Log warning but continue (downgrade behavior) / ECH 未被接受: 记录警告但继续连接（降级行为）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;
@@ -736,48 +784,51 @@ impl<D: Dialer> EchDialer<D> {
         })
     }
 
+    /// Build ECH dialer from environment variables
     /// 从环境变量构建 ECH 拨号器
     ///
+    /// This method provides a convenient way to configure ECH behavior via environment variables.
     /// 该方法提供了一种通过环境变量配置 ECH 行为的便捷方式。
     ///
-    /// ## 支持的环境变量
+    /// ## Supported Environment Variables / 支持的环境变量
     ///
     /// ### `SB_ECH_CONFIG`
-    /// - **作用**: ECH 配置列表（base64 编码）
-    /// - **格式**: Base64 字符串
-    /// - **来源**: 通常从 DNS TXT 记录或服务器配置获取
-    /// - **必需**: 是
+    /// - **Role**: ECH config list (base64 encoded) / **作用**: ECH 配置列表（base64 编码）
+    /// - **Format**: Base64 string / **格式**: Base64 字符串
+    /// - **Source**: Usually from DNS TXT record or server config / **来源**: 通常从 DNS TXT 记录或服务器配置获取
+    /// - **Required**: Yes / **必需**: 是
     ///
     /// ### `SB_ECH_ENABLED`
-    /// - **作用**: 启用或禁用 ECH
-    /// - **格式**: "true" 或 "false"
-    /// - **默认**: "true"
+    /// - **Role**: Enable or disable ECH / **作用**: 启用或禁用 ECH
+    /// - **Format**: "true" or "false" / **格式**: "true" 或 "false"
+    /// - **Default**: "true" / **默认**: "true"
     ///
     /// ### `SB_ECH_PQ_ENABLED`
-    /// - **作用**: 启用后量子签名方案
-    /// - **格式**: "true" 或 "false"
-    /// - **默认**: "false"
+    /// - **Role**: Enable post-quantum signature schemes / **作用**: 启用后量子签名方案
+    /// - **Format**: "true" or "false" / **格式**: "true" 或 "false"
+    /// - **Default**: "false" / **默认**: "false"
     ///
     /// ### `SB_ECH_DYNAMIC_RECORD_SIZING_DISABLED`
-    /// - **作用**: 禁用动态记录大小调整
-    /// - **格式**: "true" 或 "false"
-    /// - **默认**: "false"
+    /// - **Role**: Disable dynamic record sizing / **作用**: 禁用动态记录大小调整
+    /// - **Format**: "true" or "false" / **格式**: "true" 或 "false"
+    /// - **Default**: "false" / **默认**: "false"
     ///
-    /// # 参数
-    /// - `inner`: 底层拨号器实例
-    /// - `config`: TLS 客户端配置
+    /// # Parameters / 参数
+    /// - `inner`: Underlying dialer instance / 底层拨号器实例
+    /// - `config`: TLS client config / TLS 客户端配置
     ///
-    /// # 返回值
+    /// # Returns / 返回值
+    /// Configured `EchDialer` instance, or error if env vars are missing or invalid
     /// 配置好的 `EchDialer` 实例，如果环境变量缺失或无效则返回错误
     ///
-    /// # 错误情况
-    /// - `SB_ECH_CONFIG` 未设置
-    /// - ECH 配置格式无效（非 base64 或解析失败）
-    /// - 环境变量值无法解析为布尔值（使用默认值）
+    /// # Error Conditions / 错误情况
+    /// - `SB_ECH_CONFIG` not set / `SB_ECH_CONFIG` 未设置
+    /// - Invalid ECH config format (non-base64 or parse failed) / ECH 配置格式无效（非 base64 或解析失败）
+    /// - Env var value cannot be parsed as boolean (uses default) / 环境变量值无法解析为布尔值（使用默认值）
     ///
-    /// # 使用示例
+    /// # Usage Example / 使用示例
     /// ```bash
-    /// # 设置环境变量
+    /// # Set environment variables / 设置环境变量
     /// export SB_ECH_CONFIG="base64_encoded_ech_config_list"
     /// export SB_ECH_ENABLED="true"
     /// export SB_ECH_PQ_ENABLED="false"
@@ -791,10 +842,12 @@ impl<D: Dialer> EchDialer<D> {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn from_env(inner: D, config: Arc<rustls::ClientConfig>) -> Result<Self, DialError> {
+        // Read required ECH config
         // 读取必需的 ECH 配置
         let ech_config_b64 = std::env::var("SB_ECH_CONFIG")
-            .map_err(|_| DialError::Tls("环境变量 SB_ECH_CONFIG 未设置".to_string()))?;
+            .map_err(|_| DialError::Tls("Environment variable SB_ECH_CONFIG not set / 环境变量 SB_ECH_CONFIG 未设置".to_string()))?;
 
+        // Read optional boolean configs, use default on parse failure
         // 读取可选的布尔配置，解析失败时使用默认值
         let enabled = std::env::var("SB_ECH_ENABLED")
             .ok()
@@ -810,10 +863,12 @@ impl<D: Dialer> EchDialer<D> {
             .ok()
             .and_then(|s| s.parse::<bool>().ok());
 
+        // Create ECH config
         // 创建 ECH 配置
         let ech_config = sb_tls::EchClientConfig::new(ech_config_b64)
-            .map_err(|e| DialError::Tls(format!("无效的 ECH 配置: {}", e)))?;
+            .map_err(|e| DialError::Tls(format!("Invalid ECH config: {} / 无效的 ECH 配置: {}", e, e)))?;
 
+        // Apply environment variable overrides
         // 应用环境变量覆盖
         let ech_config = sb_tls::EchClientConfig {
             enabled,
@@ -826,21 +881,24 @@ impl<D: Dialer> EchDialer<D> {
     }
 }
 
-/// TLS Transport Wrapper
+/// TLS Transport Wrapper / TLS 传输包装器
 ///
 /// This module provides a unified interface for wrapping streams with TLS
 /// using the `sb-tls` crate. It supports Standard TLS, REALITY, and ECH.
+/// 该模块提供了一个统一的接口，用于使用 `sb-tls` crate 为流添加 TLS 包装。
+/// 它支持标准 TLS、REALITY 和 ECH。
 ///
-/// ## Design
-/// - Unified configuration through `TlsConfig` enum
-/// - Consistent `wrap_client()` and `wrap_server()` methods
-/// - Integration with `sb-tls` crate for all TLS variants
-/// - Serde support for configuration deserialization
+/// ## Design / 设计
+/// - Unified configuration through `TlsConfig` enum / 通过 `TlsConfig` 枚举统一配置
+/// - Consistent `wrap_client()` and `wrap_server()` methods / 一致的 `wrap_client()` 和 `wrap_server()` 方法
+/// - Integration with `sb-tls` crate for all TLS variants / 与 `sb-tls` crate 集成以支持所有 TLS 变体
+/// - Serde support for configuration deserialization / 支持 Serde 配置反序列化
 ///
-/// ## Usage
+/// ## Usage / 用法
 /// ```rust,no_run
 /// use sb_transport::TlsTransport;
 /// use sb_transport::TlsConfig;
+/// use sb_transport::StandardTlsConfig;
 ///
 /// // Create Standard TLS transport
 /// let config = TlsConfig::Standard(StandardTlsConfig::default());
@@ -852,77 +910,94 @@ impl<D: Dialer> EchDialer<D> {
 use serde::{Deserialize, Serialize};
 
 /// TLS configuration enum supporting Standard/REALITY/ECH
+/// 支持标准/REALITY/ECH 的 TLS 配置枚举
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TlsConfig {
     /// Standard TLS 1.3 using rustls
+    /// 使用 rustls 的标准 TLS 1.3
     Standard(StandardTlsConfig),
 
     /// REALITY anti-censorship protocol
+    /// REALITY 反审查协议
     #[cfg(feature = "transport_reality")]
     Reality(RealityTlsConfig),
 
     /// Encrypted Client Hello (ECH)
+    /// 加密客户端 Hello (ECH)
     #[cfg(feature = "transport_ech")]
     Ech(EchTlsConfig),
 }
 
-/// Standard TLS configuration
+/// Standard TLS configuration / 标准 TLS 配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StandardTlsConfig {
     /// Server name for SNI (client-side)
+    /// SNI 服务器名称（客户端）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_name: Option<String>,
 
     /// ALPN protocols
+    /// ALPN 协议列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,
 
     /// Skip certificate verification (insecure, for testing only)
+    /// 跳过证书验证（不安全，仅用于测试）
     #[serde(default)]
     pub insecure: bool,
 
     /// Certificate path (server-side)
+    /// 证书路径（服务端）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cert_path: Option<String>,
 
     /// Private key path (server-side)
+    /// 私钥路径（服务端）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
 
     /// Certificate content (PEM format, server-side)
+    /// 证书内容（PEM 格式，服务端）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cert_pem: Option<String>,
 
     /// Private key content (PEM format, server-side)
+    /// 私钥内容（PEM 格式，服务端）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_pem: Option<String>,
 }
 
 // Default is derived above
 
-/// REALITY TLS configuration
+/// REALITY TLS configuration / REALITY TLS 配置
 #[cfg(feature = "transport_reality")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealityTlsConfig {
     /// Target domain for SNI forgery
+    /// 用于 SNI 伪造的目标域名
     pub target: String,
 
     /// Server name (usually same as target)
+    /// 服务器名称（通常与目标相同）
     pub server_name: String,
 
     /// Server public key (hex-encoded)
+    /// 服务器公钥（十六进制编码）
     pub public_key: String,
 
     /// Short ID for client identification
+    /// 用于客户端识别的短 ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub short_id: Option<String>,
 
     /// Browser fingerprint to emulate
+    /// 要模拟的浏览器指纹
     #[serde(default = "default_fingerprint")]
     pub fingerprint: String,
 
     /// ALPN protocols
+    /// ALPN 协议列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,
 }
@@ -932,35 +1007,42 @@ fn default_fingerprint() -> String {
     "chrome".to_string()
 }
 
-/// ECH TLS configuration
+/// ECH TLS configuration / ECH TLS 配置
 #[cfg(feature = "transport_ech")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EchTlsConfig {
     /// Enable ECH
+    /// 启用 ECH
     #[serde(default)]
     pub enabled: bool,
 
     /// ECH configuration (base64-encoded)
+    /// ECH 配置（Base64 编码）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
 
     /// ECH config list (raw bytes)
+    /// ECH 配置列表（原始字节）
     #[serde(skip_serializing_if = "Option::is_none", with = "serde_bytes")]
     pub config_list: Option<Vec<u8>>,
 
     /// Enable post-quantum signature schemes
+    /// 启用后量子签名方案
     #[serde(default)]
     pub pq_signature_schemes_enabled: bool,
 
     /// Disable dynamic record sizing
+    /// 禁用动态记录大小调整
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_record_sizing_disabled: Option<bool>,
 
     /// Server name for outer SNI
+    /// 外层 SNI 的服务器名称
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_name: Option<String>,
 
     /// ALPN protocols
+    /// ALPN 协议列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,
 }
@@ -995,10 +1077,12 @@ mod serde_bytes {
     }
 }
 
-/// TLS Transport wrapper
+/// TLS Transport wrapper / TLS 传输包装器
 ///
 /// Provides a unified interface for wrapping streams with TLS.
+/// 提供统一的接口，用于为流添加 TLS 包装。
 /// Supports Standard TLS, REALITY, and ECH through the `TlsConfig` enum.
+/// 通过 `TlsConfig` 枚举支持标准 TLS、REALITY 和 ECH。
 pub struct TlsTransport {
     config: TlsConfig,
 }
@@ -1010,16 +1094,17 @@ impl TlsTransport {
     }
 
     /// Wrap a client stream with TLS
+    /// 为客户端流添加 TLS 包装
     ///
-    /// # Arguments
-    /// - `stream`: The underlying stream to wrap
-    /// - `server_name`: The server name for SNI
+    /// # Arguments / 参数
+    /// - `stream`: The underlying stream to wrap / 要包装的底层流
+    /// - `server_name`: The server name for SNI / 用于 SNI 的服务器名称
     ///
-    /// # Returns
-    /// A TLS-wrapped stream
+    /// # Returns / 返回值
+    /// A TLS-wrapped stream / TLS 包装后的流
     ///
-    /// # Errors
-    /// Returns `DialError::Tls` if the TLS handshake fails
+    /// # Errors / 错误
+    /// Returns `DialError::Tls` if the TLS handshake fails / 如果 TLS 握手失败，返回 `DialError::Tls`
     pub async fn wrap_client<S>(&self, stream: S, server_name: &str) -> Result<IoStream, DialError>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
@@ -1040,15 +1125,17 @@ impl TlsTransport {
     }
 
     /// Wrap a server stream with TLS
+    /// 为服务端流添加 TLS 包装
     ///
-    /// # Arguments
-    /// - `stream`: The underlying stream to wrap
+    /// # Arguments / 参数
+    /// - `stream`: The underlying stream to wrap / 要包装的底层流
     ///
-    /// # Returns
-    /// A TLS-wrapped stream
+    /// # Returns / 返回值
+    /// A TLS-wrapped stream / TLS 包装后的流
     ///
-    /// # Errors
+    /// # Errors / 错误
     /// Returns `DialError::Tls` if the TLS handshake fails or server configuration is missing
+    /// 如果 TLS 握手失败或缺少服务器配置，返回 `DialError::Tls`
     pub async fn wrap_server<S>(&self, stream: S) -> Result<IoStream, DialError>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
@@ -1267,6 +1354,7 @@ impl TlsTransport {
 }
 
 /// Helper: Load certificates from PEM file
+/// 助手函数：从 PEM 文件加载证书
 fn load_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, DialError> {
     use std::io::BufReader;
 
@@ -1286,6 +1374,7 @@ fn load_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'stati
 }
 
 /// Helper: Load private key from PEM file
+/// 助手函数：从 PEM 文件加载私钥
 fn load_private_key(path: &str) -> Result<rustls::pki_types::PrivateKeyDer<'static>, DialError> {
     use std::io::BufReader;
 

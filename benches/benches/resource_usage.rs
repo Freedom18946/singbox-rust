@@ -85,7 +85,7 @@ fn routing_overhead(c: &mut Criterion) {
     // Domain-based routing
     group.bench_function("domain_match", |b| {
         let domain = "example.com";
-        let rules = vec!["*.google.com", "*.github.com", "example.com"];
+        let rules = ["*.google.com", "*.github.com", "example.com"];
 
         b.iter(|| {
             let matched = rules.iter().find(|&&rule| {

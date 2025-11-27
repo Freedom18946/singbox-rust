@@ -1,0 +1,69 @@
+# Trojan Server Configuration Template
+# Production-ready configuration for Phase 1 deployment
+
+{
+    "log": {
+        "level": "info",
+        "output": "/var/log/singbox-rust/singbox.log",
+        "timestamp": true
+    },
+    "inbounds": [
+        {
+            "type": "trojan",
+            "tag": "trojan-in",
+            "listen": "0.0.0.0",
+            "listen_port": 443,
+      
+      # SECURITY: Change this to a strong password (≥20 characters)
+      "password": "CHANGEME_USE_STRONG_PASSWORD_HERE",
+            "tls": {
+                "enabled": true,
+        # Update paths to your TLS certificates
+        "cert_path": "/etc/letsencrypt/live/your-domain.com/fullchain.pem",
+                "key_path": "/etc/letsencrypt/live/your-domain.com/privkey.pem",
+        
+        # ALPN for HTTP/2 and HTTP/1.1
+        "alpn": [
+                    "h2",
+                    "http/1.1"
+                ],
+        
+        # SNI verification (optional, for multi-domain setups)
+        # "server_name": "your-domain.com"
+            }
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "direct",
+            "tag": "direct"
+        },
+        {
+            "type": "block",
+            "tag": "block"
+        }
+    ],
+    "route": {
+        "rules": [
+      # Block known malicious IPs/domains (optional)
+      # {
+      #   "domain": [
+                    "malicious-site.com"
+                ],
+      #   "outbound": "block"
+      #
+            },
+      
+      # Default: route all traffic through direct outbound
+      {
+                "inbound": [
+                    "trojan-in"
+                ],
+                "outbound": "direct"
+            }
+        ],
+    
+    # Fallback to direct if no rules match
+    "final": "direct"
+    }
+}

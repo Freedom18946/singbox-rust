@@ -1,5 +1,30 @@
 //! TUN device abstraction layer
 //!
+//! # 🇨🇳 模块说明 (Module Description)
+//!
+//! 本模块提供了**虚拟网络设备 (TUN Device)** 的统一抽象。
+//! 它是 SingBox 实现**透明代理 (Transparent Proxy)** 的核心组件。通过创建 TUN 设备，
+//! SingBox 可以像操作系统内核一样直接接收和处理 IP 数据包，从而接管系统的网络流量。
+//!
+//! This module provides a unified abstraction for **TUN Devices**.
+//! It is the core component for SingBox's **Transparent Proxy** functionality. By creating a TUN device,
+//! SingBox can receive and process IP packets directly like an OS kernel, effectively capturing system network traffic.
+//!
+//! ## 🚀 战略逻辑 (Strategic Logic)
+//!
+//! 1.  **流量接管 (Traffic Capture)**:
+//!     -   作为用户态与内核态之间的桥梁，将网络流量从内核路由表引流到 SingBox 进程中。
+//!     -   Acts as a bridge between user space and kernel space, diverting network traffic from the kernel routing table into the SingBox process.
+//!
+//! 2.  **跨平台一致性 (Cross-Platform Consistency)**:
+//!     -   **Linux**: 封装 `/dev/net/tun` 字符设备与 `ioctl` 调用。
+//!     -   **macOS**: 封装 System Configuration 框架管理的 `utun` 设备。
+//!     -   **Windows**: 集成高性能的 `WinTun` 驱动接口。
+//!     -   对外暴露统一的 `AsyncTunDevice` 接口，使得上层代理逻辑无需关心底层驱动差异。
+//!
+//! 3.  **高性能 I/O (High-Performance I/O)**:
+//!     -   深度集成 `tokio` 异步运行时，支持零拷贝（部分实现）和高并发读写，满足千兆级吞吐需求。
+//!
 //! This module provides cross-platform TUN device capabilities for transparent
 //! proxy functionality with platform-specific implementations.
 
@@ -83,6 +108,19 @@ pub enum TunError {
 }
 
 /// TUN device trait providing platform-agnostic interface
+///
+/// # 🇨🇳 接口定义 (Interface Definition)
+///
+/// `TunDevice` 定义了所有平台必须实现的最小功能集。
+/// 任何实现了此 Trait 的结构体都可以被 `AsyncTunDevice` 包装，从而接入 SingBox 的事件循环。
+///
+/// `TunDevice` defines the minimal feature set that all platforms must implement.
+/// Any struct implementing this trait can be wrapped by `AsyncTunDevice` to integrate with SingBox's event loop.
+///
+/// ## 关键方法 (Key Methods)
+///
+/// -   `read/write`: 同步阻塞读写接口（由 `AsyncTunDevice` 在 `spawn_blocking` 中调用，或在支持异步的平台上直接异步调用）。
+/// -   `mtu`: 获取最大传输单元，对于分片和重组至关重要。
 pub trait TunDevice: Send + Sync {
     /// Create and configure a new TUN device
     fn create(config: &TunConfig) -> Result<Self, TunError>

@@ -1,7 +1,16 @@
-//! Router facade module
+//! Router Facade Module / 路由外观模块
 //!
-//! When the `router` feature is enabled, re-exports `sb_core::router` functionality.
-//! When disabled, provides safe placeholder functions that return appropriate errors.
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module acts as a **Conditional Facade** for the router functionality.
+//! 本模块充当路由功能的 **条件外观**。
+//!
+//! ## Strategic Design / 战略设计
+//! - **Enabled**: When `feature = "router"` is on, it re-exports `sb_core::router`, providing full routing capabilities.
+//! - **Disabled**: When off, it provides **Safe Placeholders (Shims)**. This allows other modules (like CLI) to compile without conditional compilation hell (`#[cfg]`).
+//!   当禁用时，它提供 **安全占位符 (Shims)**。这允许其他模块（如 CLI）进行编译，而无需陷入条件编译地狱。
+//!
+//! This pattern ensures that the codebase remains **Structurally Sound** even in minimal builds.
+//! 这种模式确保了即使在最小化构建中，代码库也能保持 **结构稳健**。
 
 // Router functionality is provided through direct sb_core imports in other modules
 

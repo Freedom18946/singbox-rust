@@ -57,7 +57,7 @@ fn test_wireguard_endpoint_registration() {
     let registry = sb_core::endpoint::endpoint_registry();
 
     // Verify WireGuard endpoint is registered
-    let builder = registry.get(&EndpointType::Wireguard);
+    let builder = registry.get(EndpointType::Wireguard);
     assert!(builder.is_some(), "WireGuard endpoint should be registered");
 }
 

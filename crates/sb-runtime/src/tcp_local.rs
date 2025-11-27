@@ -1,4 +1,7 @@
+//! tcp_local.rs - Localhost TCP Connector (127.0.0.1 / ::1 only), for offline alpha testing
 //! tcp_local.rs - 本机 TCP 连接器（仅 127.0.0.1 / ::1），用于离线 α 测试
+//!
+//! Features: io_local_alpha + handshake_alpha
 //! 特性：io_local_alpha + handshake_alpha
 use crate::handshake::Handshake;
 use crate::loopback::{Frame, FrameDir, SessionLog};
@@ -10,18 +13,18 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::sleep;
 use tokio::time::timeout;
 
-/// Chaos 注入规格（全部可选，默认无副作用）
+/// Chaos Injection Spec (All optional, default no side effects) / Chaos 注入规格（全部可选，默认无副作用）
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ChaosSpec {
-    /// 写入前的附加延迟（毫秒）
+    /// Additional delay before writing (ms) / 写入前的附加延迟（毫秒）
     pub delay_tx_ms: u64,
-    /// 读取前的附加延迟（毫秒）
+    /// Additional delay before reading (ms) / 读取前的附加延迟（毫秒）
     pub delay_rx_ms: u64,
-    /// 对读到的数据，丢弃前 N 个字节（不足则变 0）
+    /// Drop first N bytes of read data (zeroed if insufficient) / 对读到的数据，丢弃前 N 个字节（不足则变 0）
     pub rx_drop: usize,
-    /// 对读到的数据，最多保留 M 个字节（None=不截断）
+    /// Keep at most M bytes of read data (None=No truncation) / 对读到的数据，最多保留 M 个字节（None=不截断）
     pub rx_trim: Option<usize>,
-    /// 对读到的数据，按字节 XOR 的掩码（None=不篡改）
+    /// XOR mask for read data (None=No tampering) / 对读到的数据，按字节 XOR 的掩码（None=不篡改）
     pub rx_xor: Option<u8>,
 }
 
@@ -51,6 +54,7 @@ fn xor_inplace(buf: &mut [u8], key: u8) {
     }
 }
 
+/// Local TCP Connector: Connect to 127.0.0.1/::1:port, send init, read reply, write JSONL frame
 /// 本机 TCP 连接器：连接到 127.0.0.1/::1:port ，发送 init，读取回包片段，写 JSONL 帧
 pub async fn io_local_once(
     proto: &dyn Handshake,

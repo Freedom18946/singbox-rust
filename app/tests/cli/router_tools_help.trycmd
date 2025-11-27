@@ -1,0 +1,55 @@
+```console
+$ app geoip --help
+GeoIP tools[..]
+
+Usage: app geoip [OPTIONS] <COMMAND>
+
+Options:
+  -f, --file <FILE>[..]
+  -h, --help[..]
+  -V, --version[..]
+
+Commands:
+  list    List country codes[..]
+  lookup  Lookup if an IP[..]
+  export  Export a country[..]
+  help    Print this message or the help of the given subcommand(s)
+
+$ app geosite --help
+Geosite tools[..]
+
+Usage: app geosite [OPTIONS] <COMMAND>
+
+Options:
+  -f, --file <FILE>[..]
+  -h, --help[..]
+  -V, --version[..]
+
+Commands:
+  list     List geosite categories[..]
+  lookup   Check if domain is in geosite[..]
+  export   Export category as rule-set JSON[..]
+  matcher  Test matcher[..]
+  help     Print this message or the help of the given subcommand(s)
+
+$ app ruleset --help
+Rule-Set management tool[..]
+
+Usage: app ruleset <COMMAND>
+
+Commands:
+  validate   Validate a rule-set file[..]
+  info       Show information about a rule-set file
+  format     Format a JSON rule-set (prettify)
+  decompile  Decompile a binary .srs file[..]
+  match      Match helper[..]
+  compile    Compile a JSON rule-set into binary .srs
+  convert    Convert between JSON and SRS formats based on extension
+  merge      Merge multiple rule-set files[..]
+  upgrade    Upgrade rule-set version[..]
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help[..]
+  -V, --version[..]
+```

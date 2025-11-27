@@ -22,6 +22,21 @@ pub struct DnsResolver {
     default_ttl: Duration,
     /// 解析器名称
     name: String,
+    /// 统计信息
+    stats: Arc<DnsStats>,
+}
+
+/// DNS 解析器统计信息
+#[derive(Debug, Default)]
+pub struct DnsStats {
+    /// 成功查询总数
+    pub queries_success: std::sync::atomic::AtomicU64,
+    /// 失败查询总数
+    pub queries_failed: std::sync::atomic::AtomicU64,
+    /// NXDOMAIN 响应总数
+    pub queries_nxdomain: std::sync::atomic::AtomicU64,
+    /// 查询超时总数
+    pub queries_timeout: std::sync::atomic::AtomicU64,
 }
 
 impl DnsResolver {
@@ -38,6 +53,7 @@ impl DnsResolver {
             upstreams,
             default_ttl,
             name: "dns_resolver".to_string(),
+            stats: Arc::new(DnsStats::default()),
         }
     }
 
@@ -103,12 +119,17 @@ impl DnsResolver {
             let upstream_name = upstream.name().to_string();
             match upstream.query(domain, record_type).await {
                 Ok(answer) => {
-                    tracing::debug!(
-                        "DNS query successful: upstream={}, domain={}, type={:?}, ips={}",
-                        upstream_name,
+                    // Track success stats
+                    self.stats.queries_success.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    
+                    // Log "exchanged" event similar to Go
+                    tracing::info!(
+                        "exchanged {} {} {} {} {}",
                         domain,
-                        record_type,
-                        answer.ips.len()
+                        format!("{:?}", record_type),
+                        answer.rcode.as_str(),
+                        upstream_name,
+                        answer.ttl.as_secs()
                     );
 
                     #[cfg(feature = "metrics")]
@@ -116,13 +137,26 @@ impl DnsResolver {
                         "dns_query_total",
                         "upstream" => upstream_name,
                         "record_type" => format!("{:?}", record_type),
-                        "result" => "success"
+                        "result" => "success",
+                        "rcode" => answer.rcode.as_str().to_string()
                     )
                     .increment(1);
 
                     return Ok(answer);
                 }
                 Err(e) => {
+                    // Track failed stats
+                    self.stats.queries_failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    
+                    // Log "rejected" event similar to Go (for failures)
+                    tracing::info!(
+                        "rejected {} {} {} {}",
+                        domain,
+                        format!("{:?}", record_type),
+                        "SERVFAIL", // Or derive from error if possible, but usually error means failure to exchange
+                        upstream_name
+                    );
+
                     tracing::debug!(
                         "DNS query failed: upstream={}, domain={}, type={:?}, error={}",
                         upstream.name(),
@@ -136,7 +170,8 @@ impl DnsResolver {
                         "dns_query_total",
                         "upstream" => upstream_name.clone(),
                         "record_type" => format!("{:?}", record_type),
-                        "result" => "error"
+                        "result" => "error",
+                        "rcode" => "error"
                     )
                     .increment(1);
 
@@ -211,6 +246,37 @@ impl Resolver for DnsResolver {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
+        let upstream_names: Vec<String> = self
+            .upstreams
+            .iter()
+            .map(|u| u.name().to_string())
+            .collect();
+        Ok(serde_json::json!({
+            "domain": domain,
+            "resolver": self.name,
+            "strategy": "sequential",
+            "upstreams": upstream_names,
+            "default_ttl_secs": self.default_ttl.as_secs(),
+            "cache": "none"
+        }))
+    }
+}
+
+impl DnsResolver {
+    /// 获取解析器统计信息
+    pub fn get_stats(&self) -> serde_json::Value {
+        use std::sync::atomic::Ordering;
+        serde_json::json!({
+            "queries_success": self.stats.queries_success.load(Ordering::Relaxed),
+            "queries_failed": self.stats.queries_failed.load(Ordering::Relaxed),
+            "queries_nxdomain": self.stats.queries_nxdomain.load(Ordering::Relaxed),
+            "queries_timeout": self.stats.queries_timeout.load(Ordering::Relaxed),
+            "upstreams_count": self.upstreams.len(),
+            "resolver_name": self.name,
+        })
     }
 }
 
@@ -334,5 +400,42 @@ mod tests {
 
         let result = resolver.resolve("nonexistent.com").await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_resolver_stats_tracking() {
+        use std::sync::atomic::Ordering;
+        
+        let upstream = Arc::new(
+            MockUpstream::new("test")
+                .with_response(
+                    "success.com",
+                    RecordType::A,
+                    Ok(DnsAnswer {
+                        ips: vec![IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))],
+                        ttl: Duration::from_secs(300),
+                        source: crate::dns::cache::Source::Upstream,
+                        rcode: crate::dns::cache::Rcode::NoError,
+                        created_at: std::time::Instant::now(),
+                    }),
+                )
+                .with_response(
+                    "fail.com",
+                    RecordType::A,
+                    Err(anyhow::anyhow!("upstream error")),
+                ),
+        );
+
+        let resolver = DnsResolver::new(vec![upstream]);
+        
+        // Test successful query increments success counter
+        let _ = resolver.resolve("success.com").await;
+        assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 1);
+        assert_eq!(resolver.stats.queries_failed.load(Ordering::Relaxed), 0);
+
+        // Test failed query increments failed counter (will try all upstreams)
+        let _ = resolver.resolve("fail.com").await;
+        assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 1);
+        assert_eq!(resolver.stats.queries_failed.load(Ordering::Relaxed), 1);
     }
 }

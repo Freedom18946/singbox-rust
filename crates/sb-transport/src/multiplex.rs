@@ -1,56 +1,36 @@
 //! # Multiplex Transport Layer
+//! # 多路复用传输层
 //!
 //! This module provides connection multiplexing implementation for singbox-rust, including:
+//! 本模块为 singbox-rust 提供连接多路复用实现，包括：
 //! - `MultiplexDialer`: Client-side dialer that creates multiplexed streams
+//!   `MultiplexDialer`: 客户端拨号器，创建多路复用流
 //! - `MultiplexListener`: Server-side listener that accepts multiplexed streams
-//! - `yamux` protocol support for connection multiplexing
+//!   `MultiplexListener`: 服务端监听器，接受多路复用流
+//! - `yamux`: Underlying multiplexing protocol
+//!   `yamux`: 底层多路复用协议
+//! - `Brutal`: Congestion control optimized for lossy networks
+//!   `Brutal`: 针对有损网络优化的拥塞控制
 //! - Stream management and lifecycle
+//!   流管理和生命周期控制
 //!
-//! ## Features
-//! - Connection multiplexing using yamux protocol
-//! - Multiple logical streams over single TCP connection
-//! - Flow control and backpressure
-//! - Compatible with smux protocol (Go implementation)
-//! - Connection pooling for reuse (client-side)
+//! ## Features / 特性
+//! - **Connection Reuse**: Reduces handshake overhead by reusing connections.
+//!   **连接复用**：通过复用连接减少握手开销。
+//! - **Concurrency**: Supports multiple concurrent streams per connection.
+//!   **并发**：支持每个连接多个并发流。
+//! - **Congestion Control**: Integrates Brutal algorithm for better performance in poor network conditions.
+//!   **拥塞控制**：集成 Brutal 算法，在恶劣网络条件下提供更好的性能。
+//! - **Keep-alive**: Built-in keep-alive mechanism to maintain persistent connections.
+//!   **保活**：内置保活机制以维护持久连接。
 //!
-//! ## Client Usage
-//! ```rust,no_run
-//! use sb_transport::multiplex::{MultiplexDialer, MultiplexConfig};
-//! use sb_transport::{Dialer, TcpDialer};
-//!
-//! async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//!     let config = MultiplexConfig::default();
-//!     let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
-//!     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
-//!
-//!     // Each connect() call creates a new multiplexed stream
-//!     // over a shared connection
-//!     let stream1 = mux_dialer.connect("example.com", 443).await?;
-//!     let stream2 = mux_dialer.connect("example.com", 443).await?;
-//!
-//!     // stream1 and stream2 share the same underlying TCP connection
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## Server Usage
-//! ```rust,no_run
-//! use sb_transport::multiplex::{MultiplexListener, MultiplexServerConfig};
-//! use tokio::net::TcpListener;
-//!
-//! async fn server_example() -> Result<(), Box<dyn std::error::Error>> {
-//!     let tcp_listener = TcpListener::bind("127.0.0.1:8080").await?;
-//!     let config = MultiplexServerConfig::default();
-//!     let mux_listener = MultiplexListener::new(tcp_listener, config);
-//!
-//!     loop {
-//!         let stream = mux_listener.accept().await?;
-//!         tokio::spawn(async move {
-//!             // Handle multiplexed stream
-//!         });
-//!     }
-//! }
-//! ```
+//! ## Strategic Relevance / 战略关联
+//! - **Performance**: Significantly improves throughput and latency for protocols with frequent short-lived connections (e.g., HTTP/1.1).
+//!   **性能**：显著提高具有频繁短连接的协议（如 HTTP/1.1）的吞吐量和延迟。
+//! - **Resource Efficiency**: Reduces the number of TCP/TLS handshakes and open file descriptors.
+//!   **资源效率**：减少 TCP/TLS 握手次数和打开的文件描述符数量。
+//! - **Resilience**: Brutal congestion control helps maintain throughput even with high packet loss.
+//!   **弹性**：Brutal 拥塞控制有助于即使在高丢包率下也能保持吞吐量。
 
 use crate::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
@@ -58,39 +38,34 @@ use futures::future::poll_fn;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{debug, warn};
 use yamux::{Config, Connection, Mode};
 
-/// Brutal Congestion Control configuration
-///
-/// Brutal is a congestion control algorithm designed for lossy networks.
-/// It uses a fixed sending rate instead of traditional TCP congestion control.
+/// Brutal Congestion Control configuration / Brutal 拥塞控制配置
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BrutalConfig {
-    /// Upload bandwidth in Mbps (megabits per second)
+    /// Upload bandwidth in Mbps
     pub up_mbps: u64,
-    /// Download bandwidth in Mbps (megabits per second)
+    /// Download bandwidth in Mbps
     pub down_mbps: u64,
 }
 
 impl BrutalConfig {
-    /// Create a new Brutal configuration with specified bandwidth
     pub fn new(up_mbps: u64, down_mbps: u64) -> Self {
         Self { up_mbps, down_mbps }
     }
 
-    /// Get upload bandwidth in bytes per second
     pub fn up_bytes_per_sec(&self) -> u64 {
-        self.up_mbps * 1_000_000 / 8
+        self.up_mbps * 1024 * 1024 / 8
     }
 
-    /// Get download bandwidth in bytes per second
     pub fn down_bytes_per_sec(&self) -> u64 {
-        self.down_mbps * 1_000_000 / 8
+        self.down_mbps * 1024 * 1024 / 8
     }
 }
 
@@ -98,25 +73,15 @@ impl BrutalConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MultiplexConfig {
-    /// Maximum number of streams per connection (default: 256)
     pub max_num_streams: usize,
-    /// Initial stream window size in bytes (default: 256KB)
     pub initial_stream_window: u32,
-    /// Maximum stream window size in bytes (default: 1MB)
     pub max_stream_window: u32,
-    /// Enable keep-alive (default: true)
     pub enable_keepalive: bool,
-    /// Keep-alive interval in seconds (default: 30)
     pub keepalive_interval: u64,
-    /// Maximum number of pooled connections (default: 4)
     pub max_connections: usize,
-    /// Maximum streams per connection before creating new connection (default: 8)
     pub max_streams_per_connection: usize,
-    /// Connection idle timeout in seconds (default: 300)
     pub connection_idle_timeout: u64,
-    /// Enable padding (default: false)
     pub padding: bool,
-    /// Brutal congestion control configuration (optional)
     pub brutal: Option<BrutalConfig>,
 }
 
@@ -137,32 +102,35 @@ impl Default for MultiplexConfig {
     }
 }
 
-/// Multiplex dialer
-///
-/// This dialer creates multiplexed streams over a single underlying connection.
-/// It supports:
-/// - yamux protocol for multiplexing
-/// - Connection pooling and reuse
-/// - Multiple streams per connection
-/// - Automatic connection creation when needed
-// yamux requires futures::io traits, so we use compat
-type YamuxStream = tokio_util::compat::Compat<IoStream>;
+/// Multiplex server configuration (alias to MultiplexConfig)
+pub type MultiplexServerConfig = MultiplexConfig;
+
+/// Control message for multiplex connection
+enum ControlMessage {
+    OpenStream(oneshot::Sender<Result<yamux::Stream, DialError>>),
+}
 
 /// Represents a multiplexed connection with metadata
+#[derive(Clone)]
 struct MultiplexConnection {
-    connection: Arc<Mutex<Connection<YamuxStream>>>,
+    control_tx: mpsc::UnboundedSender<ControlMessage>,
     stream_count: Arc<AtomicUsize>,
-    last_used: Arc<Mutex<Instant>>,
     created_at: Instant,
+    last_used: Arc<Mutex<Instant>>,
+    closed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl MultiplexConnection {
-    fn new(connection: Connection<YamuxStream>) -> Self {
+    fn new(
+        control_tx: mpsc::UnboundedSender<ControlMessage>,
+        closed: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
         Self {
-            connection: Arc::new(Mutex::new(connection)),
+            control_tx,
             stream_count: Arc::new(AtomicUsize::new(0)),
-            last_used: Arc::new(Mutex::new(Instant::now())),
             created_at: Instant::now(),
+            last_used: Arc::new(Mutex::new(Instant::now())),
+            closed,
         }
     }
 
@@ -171,9 +139,7 @@ impl MultiplexConnection {
     }
 
     fn decrement_stream_count(&self) -> usize {
-        self.stream_count
-            .fetch_sub(1, Ordering::SeqCst)
-            .saturating_sub(1)
+        self.stream_count.fetch_sub(1, Ordering::SeqCst) - 1
     }
 
     fn get_stream_count(&self) -> usize {
@@ -181,32 +147,27 @@ impl MultiplexConnection {
     }
 
     async fn update_last_used(&self) {
-        let mut last_used = self.last_used.lock().await;
-        *last_used = Instant::now();
+        *self.last_used.lock().await = Instant::now();
     }
 
     async fn is_idle(&self, timeout: Duration) -> bool {
-        let last_used = self.last_used.lock().await;
+        if self.get_stream_count() > 0 {
+            return false;
+        }
+        let last_used = *self.last_used.lock().await;
         last_used.elapsed() > timeout
     }
 
-    fn age(&self) -> Duration {
-        self.created_at.elapsed()
-    }
-
-    /// Check if connection is healthy by attempting to poll it
-    async fn is_healthy(&self) -> bool {
-        // For yamux 0.13, we assume connection is healthy if we can lock it
-        // A more sophisticated check would try to poll the connection
-        self.connection.try_lock().is_ok()
+    fn is_healthy(&self) -> bool {
+        !self.closed.load(Ordering::SeqCst)
     }
 }
 
+/// Multiplex dialer
 pub struct MultiplexDialer {
     config: MultiplexConfig,
-    inner: Box<dyn Dialer>,
-    // Connection pool: host:port -> MultiplexConnection
-    pool: Arc<Mutex<HashMap<String, Arc<MultiplexConnection>>>>,
+    dialer: Box<dyn Dialer>,
+    pool: Arc<Mutex<HashMap<(String, u16), Vec<MultiplexConnection>>>>,
 }
 
 impl std::fmt::Debug for MultiplexDialer {
@@ -219,26 +180,22 @@ impl std::fmt::Debug for MultiplexDialer {
 }
 
 impl MultiplexDialer {
-    /// Create a new multiplex dialer with custom configuration
-    pub fn new(config: MultiplexConfig, inner: Box<dyn Dialer>) -> Self {
+    pub fn new(config: MultiplexConfig, dialer: Box<dyn Dialer>) -> Self {
         let dialer = Self {
             config,
-            inner,
+            dialer,
             pool: Arc::new(Mutex::new(HashMap::new())),
         };
 
-        // Start background cleanup task
         dialer.start_cleanup_task();
 
         dialer
     }
 
-    /// Create a multiplex dialer with default configuration
     pub fn with_default_config(inner: Box<dyn Dialer>) -> Self {
         Self::new(MultiplexConfig::default(), inner)
     }
 
-    /// Start background task to cleanup idle and unhealthy connections
     fn start_cleanup_task(&self) {
         let pool = self.pool.clone();
         let idle_timeout = Duration::from_secs(self.config.connection_idle_timeout);
@@ -249,171 +206,168 @@ impl MultiplexDialer {
                 interval.tick().await;
 
                 let mut pool = pool.lock().await;
-                let mut to_remove = Vec::new();
+                let mut keys_to_remove = Vec::new();
 
-                for (key, conn) in pool.iter() {
-                    // Check if connection is idle
-                    if conn.is_idle(idle_timeout).await {
-                        debug!("Removing idle connection: {}", key);
-                        to_remove.push(key.clone());
-                        continue;
+                for (key, connections) in pool.iter_mut() {
+                    let mut i = 0;
+                    while i < connections.len() {
+                        let conn = &connections[i];
+                        if conn.is_idle(idle_timeout).await {
+                            debug!("Removing idle connection: {:?}", key);
+                            connections.remove(i);
+                        } else if !conn.is_healthy() {
+                            debug!("Removing unhealthy connection: {:?}", key);
+                            connections.remove(i);
+                        } else {
+                            i += 1;
+                        }
                     }
 
-                    // Check if connection is healthy
-                    if !conn.is_healthy().await {
-                        debug!("Removing unhealthy connection: {}", key);
-                        to_remove.push(key.clone());
-                        continue;
+                    if connections.is_empty() {
+                        keys_to_remove.push(key.clone());
                     }
                 }
 
-                for key in to_remove {
+                for key in keys_to_remove {
                     pool.remove(&key);
                 }
             }
         });
     }
 
-    /// Create yamux configuration with optional Brutal congestion control
     fn create_yamux_config(&self) -> Config {
         let mut config = Config::default();
         config.set_max_num_streams(self.config.max_num_streams);
 
-        // Apply Brutal congestion control if configured
         if let Some(ref brutal) = self.config.brutal {
-            // Note: yamux 0.13 has limited API for congestion control
-            // We log the configuration but yamux doesn't expose window update mode directly
             debug!(
                 "Brutal congestion control configured: up={}Mbps, down={}Mbps",
                 brutal.up_mbps, brutal.down_mbps
             );
-            // Window sizes and congestion control would be handled at a lower level
-            // or through custom yamux configuration if needed
         }
 
         config
     }
 
-    /// Get or create a yamux connection with health checks and stream limits
     async fn get_or_create_connection(
         &self,
         host: &str,
         port: u16,
     ) -> Result<Arc<MultiplexConnection>, DialError> {
-        let key = format!("{}:{}", host, port);
+        let key = (host.to_string(), port);
 
-        // Try to get existing connection from pool
-        {
-            let pool = self.pool.lock().await;
-            if let Some(mux_conn) = pool.get(&key) {
-                // Check if connection is healthy
-                if mux_conn.is_healthy().await {
-                    let stream_count = mux_conn.get_stream_count();
-
-                    // Check if we can reuse this connection (not at max streams)
-                    if stream_count < self.config.max_streams_per_connection {
-                        debug!(
-                            "Reusing pooled yamux connection for {} (streams: {}/{})",
-                            key, stream_count, self.config.max_streams_per_connection
-                        );
-                        mux_conn.update_last_used().await;
-                        return Ok(mux_conn.clone());
-                    } else {
-                        debug!(
-                            "Connection {} at max streams ({}/{}), creating new connection",
-                            key, stream_count, self.config.max_streams_per_connection
-                        );
-                    }
-                } else {
-                    debug!(
-                        "Connection {} is unhealthy, will create new connection",
-                        key
-                    );
-                }
-            }
-        }
-
-        // Check if we've reached max connections limit
-        {
-            let pool = self.pool.lock().await;
-            if pool.len() >= self.config.max_connections {
-                // Try to find a connection with available capacity
-                for (existing_key, mux_conn) in pool.iter() {
-                    if existing_key.starts_with(&format!("{}:", host))
-                        && mux_conn.is_healthy().await
-                        && mux_conn.get_stream_count() < self.config.max_streams_per_connection
-                    {
-                        debug!(
-                            "Max connections reached, reusing existing connection: {}",
-                            existing_key
-                        );
-                        mux_conn.update_last_used().await;
-                        return Ok(mux_conn.clone());
-                    }
-                }
-
-                // If no available connection, remove oldest idle connection
-                if let Some((oldest_key, _)) = pool.iter().max_by_key(|(_, conn)| conn.age()) {
-                    let oldest_key = oldest_key.clone();
-                    drop(pool);
-                    let mut pool = self.pool.lock().await;
-                    pool.remove(&oldest_key);
-                    debug!("Removed oldest connection {} to make room", oldest_key);
-                }
-            }
-        }
-
-        // Create new connection
-        debug!("Creating new yamux connection for {}", key);
-        let stream = self.inner.connect(host, port).await?;
-
-        // Convert tokio AsyncRead/AsyncWrite to futures traits
-        let compat_stream = stream.compat();
-
-        // Create yamux configuration
-        let yamux_config = self.create_yamux_config();
-
-        // Create yamux connection as client
-        let connection = Connection::new(compat_stream, yamux_config, Mode::Client);
-        let mux_conn = Arc::new(MultiplexConnection::new(connection));
-
-        // Start background task to drive the yamux connection
-        // This is necessary to handle control frames and keep the connection alive
-        let conn_clone = mux_conn.clone();
-        let key_clone = key.clone();
-        tokio::spawn(async move {
-            let mut connection = conn_clone.connection.lock().await;
-            loop {
-                match poll_fn(|cx| connection.poll_next_inbound(cx)).await {
-                    Some(Ok(_stream)) => {
-                        // We don't expect inbound streams on client side, but we need to poll
-                        // to drive the connection and handle control frames
-                        debug!(
-                            "Unexpected inbound stream on client connection: {}",
-                            key_clone
-                        );
-                    }
-                    Some(Err(e)) => {
-                        debug!("yamux connection error for {}: {}", key_clone, e);
-                        break;
-                    }
-                    None => {
-                        debug!("yamux connection closed for {}", key_clone);
-                        break;
-                    }
-                }
-            }
-        });
-
-        // Add to pool
         {
             let mut pool = self.pool.lock().await;
-            pool.insert(key.clone(), mux_conn.clone());
-            debug!(
-                "Added new connection to pool: {} (pool size: {})",
-                key,
-                pool.len()
-            );
+            if let Some(connections) = pool.get_mut(&key) {
+                let mut i = 0;
+                while i < connections.len() {
+                    if !connections[i].is_healthy() {
+                        debug!("Removing unhealthy connection: {:?}", key);
+                        connections.remove(i);
+                    } else {
+                        i += 1;
+                    }
+                }
+
+                for conn in connections.iter() {
+                    if conn.get_stream_count() < self.config.max_streams_per_connection {
+                        debug!("Reusing connection for {:?}", key);
+                        return Ok(Arc::new(conn.clone()));
+                    }
+                }
+            }
+        }
+
+        debug!("Creating new connection for {:?}", key);
+        let stream = self.dialer.connect(host, port).await?;
+        let compat_stream = stream.compat();
+        let config = self.create_yamux_config();
+        let mut connection = Connection::new(compat_stream, config, Mode::Client);
+        let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let closed_clone = closed.clone();
+        let (control_tx, mut control_rx) = mpsc::unbounded_channel::<ControlMessage>();
+
+        tokio::spawn(async move {
+            let mut pending_open: Option<oneshot::Sender<Result<yamux::Stream, DialError>>> = None;
+
+            poll_fn(|cx| {
+                // 1. Poll inbound streams
+                loop {
+                    match connection.poll_next_inbound(cx) {
+                        Poll::Ready(Some(Ok(_stream))) => {
+                            debug!("Accepted unexpected inbound stream");
+                        }
+                        Poll::Ready(Some(Err(e))) => {
+                            warn!("Yamux connection error: {}", e);
+                            return Poll::Ready(());
+                        }
+                        Poll::Ready(None) => {
+                            debug!("Yamux connection closed");
+                            return Poll::Ready(());
+                        }
+                        Poll::Pending => break,
+                    }
+                }
+
+                // 2. Handle pending open request
+                if let Some(tx) = pending_open.take() {
+                    match connection.poll_new_outbound(cx) {
+                        Poll::Ready(Ok(stream)) => {
+                            let _ = tx.send(Ok(stream));
+                        }
+                        Poll::Ready(Err(e)) => {
+                            let _ = tx.send(Err(DialError::Other(e.to_string())));
+                        }
+                        Poll::Pending => {
+                            // Still pending, put it back
+                            pending_open = Some(tx);
+                        }
+                    }
+                }
+
+                // 3. Poll control messages if no pending open
+                if pending_open.is_none() {
+                    loop {
+                        match control_rx.poll_recv(cx) {
+                            Poll::Ready(Some(msg)) => match msg {
+                                ControlMessage::OpenStream(tx) => {
+                                    // Try to open immediately
+                                    match connection.poll_new_outbound(cx) {
+                                        Poll::Ready(Ok(stream)) => {
+                                            let _ = tx.send(Ok(stream));
+                                        }
+                                        Poll::Ready(Err(e)) => {
+                                            let _ = tx.send(Err(DialError::Other(e.to_string())));
+                                        }
+                                        Poll::Pending => {
+                                            pending_open = Some(tx);
+                                            break; // Wait for wake up
+                                        }
+                                    }
+                                }
+                            },
+                            Poll::Ready(None) => {
+                                return Poll::Ready(());
+                            }
+                            Poll::Pending => break,
+                        }
+                    }
+                }
+
+                Poll::Pending
+            })
+            .await;
+
+            debug!("Yamux connection task finished");
+            closed_clone.store(true, Ordering::SeqCst);
+        });
+
+        let mux_conn = Arc::new(MultiplexConnection::new(control_tx, closed));
+
+        {
+            let mut pool = self.pool.lock().await;
+            let connections = pool.entry(key).or_insert_with(Vec::new);
+            connections.push((*mux_conn).clone());
         }
 
         Ok(mux_conn)
@@ -425,36 +379,37 @@ impl Dialer for MultiplexDialer {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         debug!("Dialing multiplexed stream: {}:{}", host, port);
 
-        // Get or create a yamux connection from the pool
         let mux_conn = self.get_or_create_connection(host, port).await?;
-
-        // Increment stream count
         let stream_count = mux_conn.increment_stream_count();
         debug!(
             "Opening yamux stream for {}:{} (stream count: {})",
             host, port, stream_count
         );
 
-        // Open a new outbound stream on the yamux connection
-        let mut connection = mux_conn.connection.lock().await;
-        let stream = poll_fn(|cx| connection.poll_new_outbound(cx))
-            .await
-            .map_err(|e| {
-                mux_conn.decrement_stream_count();
-                DialError::Other(format!("Failed to open yamux stream: {}", e))
-            })?;
+        let (tx, rx) = oneshot::channel();
+        if mux_conn.control_tx.send(ControlMessage::OpenStream(tx)).is_err() {
+            mux_conn.decrement_stream_count();
+            return Err(DialError::Other("Connection closed".into()));
+        }
 
-        drop(connection);
+        let stream = match rx.await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
+                mux_conn.decrement_stream_count();
+                return Err(e);
+            }
+            Err(_) => {
+                mux_conn.decrement_stream_count();
+                return Err(DialError::Other("Control channel closed".into()));
+            }
+        };
 
         debug!(
             "Successfully opened multiplexed stream for {}:{}",
             host, port
         );
 
-        // Convert yamux stream back to tokio traits
         let tokio_stream = stream.compat();
-
-        // Wrap in a struct that decrements stream count on drop
         let stream_wrapper = StreamWrapper {
             stream: tokio_stream,
             mux_conn: mux_conn.clone(),
@@ -464,7 +419,6 @@ impl Dialer for MultiplexDialer {
     }
 }
 
-/// Wrapper that decrements stream count when dropped
 struct StreamWrapper {
     stream: tokio_util::compat::Compat<yamux::Stream>,
     mux_conn: Arc<MultiplexConnection>,
@@ -511,82 +465,21 @@ impl tokio::io::AsyncWrite for StreamWrapper {
     }
 }
 
-// yamux Stream already implements AsyncRead + AsyncWrite + Unpin + Send,
-// so it can be used directly as IoStream
-
-/// Multiplex server configuration
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MultiplexServerConfig {
-    /// Maximum number of streams per connection (default: 256)
-    pub max_num_streams: usize,
-    /// Initial stream window size in bytes (default: 256KB)
-    pub initial_stream_window: u32,
-    /// Maximum stream window size in bytes (default: 1MB)
-    pub max_stream_window: u32,
-    /// Enable keep-alive (default: true)
-    pub enable_keepalive: bool,
-    /// Brutal congestion control configuration (optional)
-    pub brutal: Option<BrutalConfig>,
-}
-
-impl Default for MultiplexServerConfig {
-    fn default() -> Self {
-        Self {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024, // 256KB
-            max_stream_window: 1024 * 1024,    // 1MB
-            enable_keepalive: true,
-            brutal: None,
-        }
-    }
-}
-
-/// Multiplex server listener
-///
-/// This listener accepts incoming multiplexed connections by:
-/// 1. Accepting TCP connections from the underlying listener
-/// 2. Creating yamux server-side connection
-/// 3. Accepting incoming streams from the yamux connection
-/// 4. Returning streams as AsyncRead + AsyncWrite
-///
-/// ## Usage
-/// ```rust,no_run
-/// use sb_transport::multiplex::{MultiplexListener, MultiplexServerConfig};
-/// use tokio::net::TcpListener;
-///
-/// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-///     let tcp_listener = TcpListener::bind("127.0.0.1:8080").await?;
-///     let config = MultiplexServerConfig::default();
-///     let mux_listener = MultiplexListener::new(tcp_listener, config);
-///
-///     loop {
-///         let stream = mux_listener.accept().await?;
-///         tokio::spawn(async move {
-///             // Handle multiplexed stream
-///         });
-///     }
-/// }
-/// ```
 pub struct MultiplexListener {
     config: MultiplexServerConfig,
-    // Channel for distributing incoming streams
     stream_rx: Arc<Mutex<tokio::sync::mpsc::UnboundedReceiver<IoStream>>>,
-    // Keep stream_tx alive to prevent channel from closing
     #[allow(dead_code)]
     stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
     local_addr: std::net::SocketAddr,
 }
 
 impl MultiplexListener {
-    /// Create a new multiplex listener from a TCP listener
     pub fn new(tcp_listener: tokio::net::TcpListener, config: MultiplexServerConfig) -> Self {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::unbounded_channel();
         let local_addr = tcp_listener
             .local_addr()
             .expect("Failed to get local address");
 
-        // Start background task to accept TCP connections and handle yamux
         Self::start_accept_task(tcp_listener, config.clone(), stream_tx.clone());
 
         Self {
@@ -597,37 +490,28 @@ impl MultiplexListener {
         }
     }
 
-    /// Create a multiplex listener with default configuration
     pub fn with_default_config(tcp_listener: tokio::net::TcpListener) -> Self {
         Self::new(tcp_listener, MultiplexServerConfig::default())
     }
 
-    /// Get the server configuration
     pub fn config(&self) -> &MultiplexServerConfig {
         &self.config
     }
 
-    /// Create yamux configuration for server with optional Brutal congestion control
     fn create_server_yamux_config(config: &MultiplexServerConfig) -> Config {
         let mut yamux_config = Config::default();
         yamux_config.set_max_num_streams(config.max_num_streams);
 
-        // Apply Brutal congestion control if configured
         if let Some(ref brutal) = config.brutal {
-            // Note: yamux 0.13 has limited API for congestion control
-            // We log the configuration but yamux doesn't expose window update mode directly
             debug!(
                 "Server Brutal congestion control configured: up={}Mbps, down={}Mbps",
                 brutal.up_mbps, brutal.down_mbps
             );
-            // Window sizes and congestion control would be handled at a lower level
-            // or through custom yamux configuration if needed
         }
 
         yamux_config
     }
 
-    /// Start background task to accept TCP connections and distribute streams
     fn start_accept_task(
         tcp_listener: tokio::net::TcpListener,
         config: MultiplexServerConfig,
@@ -635,7 +519,6 @@ impl MultiplexListener {
     ) {
         tokio::spawn(async move {
             loop {
-                // Accept TCP connection
                 let (tcp_stream, peer_addr) = match tcp_listener.accept().await {
                     Ok(result) => result,
                     Err(e) => {
@@ -646,7 +529,6 @@ impl MultiplexListener {
 
                 debug!("Accepted TCP connection from {} for yamux", peer_addr);
 
-                // Spawn task to handle this yamux connection
                 let stream_tx = stream_tx.clone();
                 let config = config.clone();
 
@@ -662,58 +544,46 @@ impl MultiplexListener {
         });
     }
 
-    /// Handle a single yamux connection and distribute its streams
     async fn handle_yamux_connection(
         tcp_stream: tokio::net::TcpStream,
         peer_addr: std::net::SocketAddr,
         config: MultiplexServerConfig,
         stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
     ) -> Result<(), DialError> {
-        // Convert to compat stream (yamux needs futures traits)
         let compat_stream = tcp_stream.compat();
-
-        // Create yamux configuration with Brutal support
         let yamux_config = Self::create_server_yamux_config(&config);
-
-        // Create yamux connection as server
         let mut connection = Connection::new(compat_stream, yamux_config, Mode::Server);
 
         debug!("Created yamux server connection for {}", peer_addr);
 
-        // Accept and distribute all incoming streams from this connection
-        loop {
-            match poll_fn(|cx| connection.poll_next_inbound(cx)).await {
-                Some(Ok(stream)) => {
-                    debug!("Accepted yamux stream from {}", peer_addr);
-
-                    // Convert yamux stream back to tokio traits and box it
-                    let tokio_stream = stream.compat();
-                    let boxed_stream: IoStream = Box::new(tokio_stream);
-
-                    // Send stream through channel
-                    if stream_tx.send(boxed_stream).is_err() {
-                        warn!("Failed to send stream to channel, listener may be closed");
-                        break;
+        poll_fn(|cx| {
+            loop {
+                match connection.poll_next_inbound(cx) {
+                    Poll::Ready(Some(Ok(stream))) => {
+                        debug!("Accepted yamux stream from {}", peer_addr);
+                        let tokio_stream = stream.compat();
+                        let boxed_stream: IoStream = Box::new(tokio_stream);
+                        if stream_tx.send(boxed_stream).is_err() {
+                            warn!("Failed to send stream to channel, listener may be closed");
+                            return Poll::Ready(());
+                        }
                     }
-                }
-                Some(Err(e)) => {
-                    warn!("yamux stream error from {}: {}", peer_addr, e);
-                    break;
-                }
-                None => {
-                    debug!("yamux connection closed for {}", peer_addr);
-                    break;
+                    Poll::Ready(Some(Err(e))) => {
+                        warn!("yamux stream error from {}: {}", peer_addr, e);
+                        return Poll::Ready(());
+                    }
+                    Poll::Ready(None) => {
+                        debug!("yamux connection closed for {}", peer_addr);
+                        return Poll::Ready(());
+                    }
+                    Poll::Pending => return Poll::Pending,
                 }
             }
-        }
+        }).await;
 
         Ok(())
     }
 
-    /// Accept a new multiplexed stream
-    ///
-    /// This method receives streams from the channel that are distributed
-    /// by the background task handling yamux connections.
     pub async fn accept(&self) -> Result<IoStream, DialError> {
         let mut stream_rx = self.stream_rx.lock().await;
 
@@ -723,7 +593,6 @@ impl MultiplexListener {
             .ok_or_else(|| DialError::Other("Stream channel closed".to_string()))
     }
 
-    /// Get the local address this listener is bound to
     pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
         Ok(self.local_addr)
     }

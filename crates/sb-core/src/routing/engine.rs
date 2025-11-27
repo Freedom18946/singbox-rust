@@ -28,6 +28,8 @@ pub struct Input<'a> {
     pub sniff_host: Option<&'a str>,
     /// Optional sniffed ALPN (e.g., "h2", "http/1.1", "h3")
     pub sniff_alpn: Option<&'a str>,
+    /// Optional sniffed protocol (e.g., "tls", "http", "ssh")
+    pub sniff_protocol: Option<&'a str>,
 }
 
 pub struct Engine<'a> {
@@ -216,13 +218,19 @@ impl<'a> Engine<'a> {
             }
         }
         if !r.protocol.is_empty() {
-            let m = r
-                .protocol
-                .iter()
-                .any(|x| x.eq_ignore_ascii_case(inp.protocol));
+            let mut m = false;
+            if let Some(sniffed) = inp.sniff_protocol {
+                m = r.protocol.iter().any(|x| x.eq_ignore_ascii_case(sniffed));
+            }
+            if !m {
+                m = r
+                    .protocol
+                    .iter()
+                    .any(|x| x.eq_ignore_ascii_case(inp.protocol));
+            }
             steps.push(Step {
                 kind: "protocol".into(),
-                value: inp.protocol.into(),
+                value: inp.sniff_protocol.unwrap_or(inp.protocol).into(),
                 matched: m,
             });
             if !m {
@@ -444,6 +452,7 @@ mod tests {
                 protocol: "socks",
                 sniff_host: None,
                 sniff_alpn: None,
+                sniff_protocol: None,
             },
             false,
         );
@@ -456,9 +465,68 @@ mod tests {
                 protocol: "socks",
                 sniff_host: None,
                 sniff_alpn: None,
+                sniff_protocol: None,
             },
             false,
         );
         assert_eq!(skip.matched_rule, "00000000"); // fallback default
+    }
+
+    #[test]
+    fn matches_on_sniffed_protocol() {
+        let cfg = ConfigIR {
+            route: RouteIR {
+                rules: vec![RuleIR {
+                    protocol: vec!["bittorrent".into()],
+                    outbound: Some("block".into()),
+                    ..Default::default()
+                }],
+                default: Some("direct".into()),
+            },
+            ..Default::default()
+        };
+        let eng = Engine::new(&cfg);
+        let decision = eng.decide(
+            &Input {
+                host: "example.com",
+                port: 6881,
+                network: "tcp",
+                protocol: "socks",
+                sniff_host: None,
+                sniff_alpn: None,
+                sniff_protocol: Some("bittorrent"),
+            },
+            false,
+        );
+        assert_eq!(decision.outbound, "block");
+    }
+
+    #[test]
+    fn falls_back_to_base_protocol_when_sniff_differs() {
+        let cfg = ConfigIR {
+            route: RouteIR {
+                rules: vec![RuleIR {
+                    protocol: vec!["socks".into()],
+                    outbound: Some("direct".into()),
+                    ..Default::default()
+                }],
+                default: Some("block".into()),
+            },
+            ..Default::default()
+        };
+        let eng = Engine::new(&cfg);
+        let decision = eng.decide(
+            &Input {
+                host: "example.com",
+                port: 443,
+                network: "tcp",
+                protocol: "socks",
+                sniff_host: None,
+                sniff_alpn: None,
+                sniff_protocol: Some("tls"),
+            },
+            false,
+        );
+        assert_eq!(decision.outbound, "direct");
     }
 }

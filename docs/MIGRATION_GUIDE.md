@@ -503,7 +503,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 - Linear scaling validated up to 1000 connections (104µs)
 - No degradation under concurrent load
 
-**Documentation:** See [PERFORMANCE_REPORT.md](../PERFORMANCE_REPORT.md) for detailed results.
+**Documentation:** See [PERFORMANCE_REPORT.md](../reports/PERFORMANCE_REPORT.md) for detailed results.
 
 ---
 
@@ -532,7 +532,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 - **WireGuard Guides:**
   - [Quick Start](wireguard-quickstart.md)
   - [Full Documentation](wireguard-endpoint-guide.md)
-- **Performance Reports:** [PERFORMANCE_REPORT.md](../PERFORMANCE_REPORT.md)
+- **Performance Reports:** [PERFORMANCE_REPORT.md](../reports/PERFORMANCE_REPORT.md)
 
 ---
 

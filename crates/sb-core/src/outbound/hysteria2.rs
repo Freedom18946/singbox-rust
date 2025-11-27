@@ -960,7 +960,8 @@ impl OutboundTcp for Hysteria2Outbound {
 
         record_connect_attempt(crate::outbound::OutboundKind::Hysteria2);
 
-        let _start = std::time::Instant::now();
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
 
         // Get or create QUIC connection with pooling
         let connection = match self.get_connection().await {

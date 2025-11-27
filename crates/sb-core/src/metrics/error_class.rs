@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn display_auth_maps() {
-        let e = format!("Authentication error: invalid token");
+        let e = "Authentication error: invalid token".to_string();
         assert_eq!(classify_display(&e), ErrorClass::Auth);
     }
 }

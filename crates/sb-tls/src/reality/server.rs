@@ -12,23 +12,34 @@ use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
 /// Combined trait for stream types used in fallback
+/// 用于回退的流类型的组合 trait
 pub trait FallbackStream: AsyncRead + AsyncWrite + Unpin + Send {}
 
 // Blanket implementation for all types that satisfy the bounds
 impl<T> FallbackStream for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 
 /// REALITY server acceptor
+/// REALITY 服务端接收器
 ///
 /// This acceptor implements the REALITY protocol server side.
+/// 此接收器实现了 REALITY 协议的服务端。
 /// It verifies client authentication and either:
+/// 它验证客户端认证，并执行以下操作之一：
 /// - Establishes proxy connection (auth success)
+/// - 建立代理连接（认证成功）
 /// - Falls back to target website (auth failure)
+/// - 回退到目标网站（认证失败）
 ///
 /// ## How it works:
+/// ## 工作原理：
 /// 1. Receives TLS `ClientHello` with embedded auth data
+/// 1. 接收带有嵌入认证数据的 TLS `ClientHello`
 /// 2. Verifies authentication using shared secret
+/// 2. 使用共享密钥验证认证
 /// 3. If valid: issues temporary certificate and proxies traffic
+/// 3. 如果有效：颁发临时证书并代理流量
 /// 4. If invalid: proxies to real target website (disguise)
+/// 4. 如果无效：代理到真实目标网站（伪装）
 pub struct RealityAcceptor {
     config: Arc<RealityServerConfig>,
     auth: RealityAuth,
@@ -36,9 +47,12 @@ pub struct RealityAcceptor {
 
 impl RealityAcceptor {
     /// Create new REALITY acceptor
+    /// 创建新的 REALITY 接收器
     ///
     /// # Errors
+    /// # 错误
     /// Returns an error if configuration validation or key parsing fails.
+    /// 如果配置验证或密钥解析失败，则返回错误。
     pub fn new(config: RealityServerConfig) -> RealityResult<Self> {
         // Validate configuration
         config.validate().map_err(RealityError::InvalidConfig)?;
@@ -68,13 +82,20 @@ impl RealityAcceptor {
     }
 
     /// Accept and handle REALITY connection
+    /// 接受并处理 REALITY 连接
     ///
     /// This is the core server-side REALITY logic:
+    /// 这是核心服务端 REALITY 逻辑：
     /// 1. Parse `ClientHello` and extract auth data
+    /// 1. 解析 `ClientHello` 并提取认证数据
     /// 2. Verify authentication
+    /// 2. 验证认证
     /// 3. Either proxy or fallback based on auth result
+    /// 3. 根据认证结果进行代理或回退
     /// # Errors
+    /// # 错误
     /// Returns an error if the handshake times out or validation fails.
+    /// 如果握手超时或验证失败，则返回错误。
     pub async fn accept<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
@@ -144,8 +165,10 @@ impl RealityAcceptor {
     }
 
     /// Parse `ClientHello` and buffer the data for replay
+    /// 解析 `ClientHello` 并缓冲数据以供重放
     ///
     /// Returns: (`client_public_key`, `short_id`, `auth_hash`, sni, `buffered_data`)
+    /// 返回：(`client_public_key`, `short_id`, `auth_hash`, sni, `buffered_data`)
     #[allow(clippy::cognitive_complexity)] // Parsing and validation sequence is linear but branching by spec; splitting reduces readability. Revisit later.
     async fn parse_and_buffer_client_hello<S>(
         &self,
@@ -231,6 +254,7 @@ impl RealityAcceptor {
     }
 
     /// Complete TLS handshake with temporary certificate
+    /// 使用临时证书完成 TLS 握手
     async fn complete_tls_handshake<S>(
         &self,
         stream: S,
@@ -279,9 +303,11 @@ impl RealityAcceptor {
     }
 
     /// Fallback to target website
+    /// 回退到目标网站
     ///
     /// When authentication fails, proxy the connection to the real target
     /// to make it appear as legitimate traffic.
+    /// 当认证失败时，将连接代理到真实目标，使其看起来像合法流量。
     async fn fallback_to_target<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -309,11 +335,14 @@ impl RealityAcceptor {
 }
 
 /// REALITY connection type
+/// REALITY 连接类型
 pub enum RealityConnection {
     /// Authenticated proxy connection
+    /// 已认证的代理连接
     Proxy(crate::TlsIoStream),
 
     /// Fallback connection (proxy to real target)
+    /// 回退连接（代理到真实目标）
     Fallback {
         client: Box<dyn FallbackStream>,
         target: TcpStream,
@@ -322,22 +351,29 @@ pub enum RealityConnection {
 
 impl RealityConnection {
     /// Check if this is a proxy connection
+    /// 检查是否为代理连接
     pub const fn is_proxy(&self) -> bool {
         matches!(self, Self::Proxy(_))
     }
 
     /// Check if this is a fallback connection
+    /// 检查是否为回退连接
     pub const fn is_fallback(&self) -> bool {
         matches!(self, Self::Fallback { .. })
     }
 
     /// Handle the connection based on type
+    /// 根据类型处理连接
     ///
     /// - Proxy: return the encrypted stream for application layer
+    /// - Proxy: 返回用于应用层的加密流
     /// - Fallback: bidirectionally copy traffic between client and target
+    /// - Fallback: 在客户端和目标之间双向复制流量
     ///
     /// # Errors
+    /// # 错误
     /// Returns an error if relaying data between client and target fails.
+    /// 如果在客户端和目标之间中继数据失败，则返回错误。
     pub async fn handle(self) -> io::Result<Option<crate::TlsIoStream>> {
         match self {
             Self::Proxy(stream) => Ok(Some(stream)),
@@ -368,6 +404,7 @@ impl RealityConnection {
 }
 
 /// Stream wrapper that replays buffered data before reading from underlying stream
+/// 在从底层流读取之前重放缓冲数据的流包装器
 struct ReplayStream<S> {
     inner: S,
     buffer: Vec<u8>,

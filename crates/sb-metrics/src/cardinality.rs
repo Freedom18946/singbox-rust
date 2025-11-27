@@ -1,16 +1,28 @@
-//! Cardinality monitoring for Prometheus metrics
+//! Cardinality monitoring for Prometheus metrics / Prometheus 指标基数监控
 //!
 //! This module prevents label explosion by tracking unique label combinations
 //! and warning when cardinality exceeds thresholds.
+//! 本模块通过跟踪唯一的标签组合并在基数超过阈值时发出警告，从而防止标签爆炸。
 //!
-//! ## Problem
+//! ## Strategic Logic / 战略逻辑
+//! In dynamic proxy environments, labels like "target_domain" or "client_ip" can have unbounded cardinality.
+//! Without this safeguard, Prometheus memory usage could grow indefinitely, crashing the service.
+//! This module acts as a **safety valve**, detecting anomalies before they cause critical failures.
+//!
+//! 在动态代理环境中，像 "target_domain" 或 "client_ip" 这样的标签可能具有无限的基数。
+//! 如果没有此保护措施，Prometheus 的内存使用量可能会无限增长，导致服务崩溃。
+//! 本模块充当**安全阀**，在异常导致严重故障之前检测到它们。
+//!
+//! ## Problem / 问题
 //! High cardinality metrics (many unique label combinations) can cause:
-//! - Memory exhaustion in Prometheus
-//! - Slow query performance
-//! - Storage bloat
+//! 高基数指标（许多唯一的标签组合）会导致：
+//! - Memory exhaustion in Prometheus / Prometheus 内存耗尽
+//! - Slow query performance / 查询性能缓慢
+//! - Storage bloat / 存储膨胀
 //!
-//! ## Solution
+//! ## Solution / 解决方案
 //! Track unique label combinations per metric and warn when threshold exceeded.
+//! 跟踪每个指标的唯一标签组合，并在超过阈值时发出警告。
 //!
 //! ## Usage
 //! ```

@@ -80,7 +80,7 @@ tracing = "0.1"
 bytes = "1"
 uuid = { version = "1", features = ["v4"] }
 once_cell = "1"
-prometheus = "0.13"
+prometheus = "0.14"
 metrics = "0.24"
 sb-types = { path = "crates/sb-types" }
 sb-admin-contract = { path = "crates/sb-admin-contract", version = "0.1.0" }

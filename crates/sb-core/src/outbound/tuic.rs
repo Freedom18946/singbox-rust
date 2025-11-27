@@ -550,7 +550,8 @@ impl OutboundTcp for TuicOutbound {
 
         record_connect_attempt(crate::outbound::OutboundKind::Tuic);
 
-        let _start = std::time::Instant::now();
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
 
         // Get or create pooled QUIC connection
         let connection = match self.get_connection().await {

@@ -1,0 +1,179 @@
+    Checking sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+error[E0425]: cannot find value `stream` in this scope
+   --> crates/sb-transport/src/multiplex.rs:464:28
+    |
+464 |         let tokio_stream = stream.compat();
+    |                            ^^^^^^ not found in this scope
+
+warning: unused import: `Method`
+  --> crates/sb-transport/src/http2.rs:74:12
+   |
+74 | use http::{Method, Request, Uri};
+   |            ^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `BytesMut`
+  --> crates/sb-transport/src/grpc.rs:43:25
+   |
+43 | use bytes::{Buf, Bytes, BytesMut};
+   |                         ^^^^^^^^
+
+warning: unused import: `futures::stream::Stream`
+  --> crates/sb-transport/src/grpc.rs:44:5
+   |
+44 | use futures::stream::Stream;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `TunnelRequest` and `TunnelResponse`
+   --> crates/sb-transport/src/grpc.rs:204:22
+    |
+204 |         use tunnel::{TunnelRequest, TunnelResponse};
+    |                      ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+
+warning: unused import: `futures::future::poll_fn`
+  --> crates/sb-transport/src/multiplex.rs:76:5
+   |
+76 | use futures::future::poll_fn;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `futures::stream::StreamExt`
+  --> crates/sb-transport/src/multiplex.rs:84:5
+   |
+84 | use futures::stream::StreamExt;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `futures::Stream`
+  --> crates/sb-transport/src/multiplex.rs:85:5
+   |
+85 | use futures::Stream;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `futures::StreamExt`
+   --> crates/sb-transport/src/multiplex.rs:414:17
+    |
+414 |             use futures::StreamExt;
+    |                 ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> crates/sb-transport/src/circuit_breaker.rs:27:5
+   |
+27 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused variable: `connection`
+   --> crates/sb-transport/src/multiplex.rs:407:17
+    |
+407 |         let mut connection = Connection::new(compat_stream, config, Mode::Client);
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_connection`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: variable does not need to be mutable
+   --> crates/sb-transport/src/multiplex.rs:407:13
+    |
+407 |         let mut connection = Connection::new(compat_stream, config, Mode::Client);
+    |             ----^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+error[E0308]: mismatched types
+   --> crates/sb-transport/src/multiplex.rs:678:17
+    |
+677 |             match std::task::Poll::Pending::<Option<Result<yamux::Stream, yamux::ConnectionError>>> {
+    |                   --------------------------------------------------------------------------------- this expression has type `std::task::Poll<std::option::Option<Result<yamux::Stream, ConnectionError>>>`
+678 |                 Some(Ok(stream)) => {
+    |                 ^^^^^^^^^^^^^^^^ expected `Poll<Option<Result<Stream, ...>>>`, found `Option<_>`
+    |
+    = note: expected enum `std::task::Poll<std::option::Option<Result<yamux::Stream, ConnectionError>>>`
+               found enum `std::option::Option<_>`
+help: try wrapping the pattern in `std::task::Poll::Ready`
+    |
+678 |                 std::task::Poll::Ready(Some(Ok(stream))) => {
+    |                 +++++++++++++++++++++++                +
+
+error[E0308]: mismatched types
+   --> crates/sb-transport/src/multiplex.rs:691:17
+    |
+677 |             match std::task::Poll::Pending::<Option<Result<yamux::Stream, yamux::ConnectionError>>> {
+    |                   --------------------------------------------------------------------------------- this expression has type `std::task::Poll<std::option::Option<Result<yamux::Stream, ConnectionError>>>`
+...
+691 |                 Some(Err(e)) => {
+    |                 ^^^^^^^^^^^^ expected `Poll<Option<Result<Stream, ...>>>`, found `Option<_>`
+    |
+    = note: expected enum `std::task::Poll<std::option::Option<Result<yamux::Stream, ConnectionError>>>`
+               found enum `std::option::Option<_>`
+help: try wrapping the pattern in `std::task::Poll::Ready`
+    |
+691 |                 std::task::Poll::Ready(Some(Err(e))) => {
+    |                 +++++++++++++++++++++++            +
+
+error[E0308]: mismatched types
+   --> crates/sb-transport/src/multiplex.rs:695:17
+    |
+677 |             match std::task::Poll::Pending::<Option<Result<yamux::Stream, yamux::ConnectionError>>> {
+    |                   --------------------------------------------------------------------------------- this expression has type `std::task::Poll<std::option::Option<Result<yamux::Stream, ConnectionError>>>`
+...
+695 |                 None => {
+    |                 ^^^^ expected `Poll<Option<Result<Stream, ...>>>`, found `Option<_>`
+    |
+    = note: expected enum `std::task::Poll<std::option::Option<Result<yamux::Stream, ConnectionError>>>`
+               found enum `std::option::Option<_>`
+help: try wrapping the pattern in `std::task::Poll::Ready`
+    |
+695 |                 std::task::Poll::Ready(None) => {
+    |                 +++++++++++++++++++++++    +
+
+warning: unreachable statement
+   --> crates/sb-transport/src/multiplex.rs:458:9
+    |
+456 |           return Err(DialError::Other("Not implemented".into()));
+    |           ------------------------------------------------------ any code following this expression is unreachable
+457 |
+458 | /         debug!(
+459 | |             "Successfully opened multiplexed stream for {}:{}",
+460 | |             host, port
+461 | |         );
+    | |_________^ unreachable statement
+    |
+    = note: `#[warn(unreachable_code)]` on by default
+    = note: this warning originates in the macro `$crate::event` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused import: `SinkExt`
+  --> crates/sb-transport/src/grpc.rs:45:15
+   |
+45 | use futures::{SinkExt, StreamExt};
+   |               ^^^^^^^
+
+warning: unused variable: `cx`
+   --> crates/sb-transport/src/http2.rs:381:48
+    |
+381 |     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+    |                                                ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+
+warning: variable does not need to be mutable
+   --> crates/sb-transport/src/http2.rs:381:22
+    |
+381 |     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+    |                      ----^^^^
+    |                      |
+    |                      help: remove this `mut`
+
+warning: unused variable: `error`
+   --> crates/sb-transport/src/retry.rs:265:35
+    |
+265 |     pub fn is_transient_dns_error(error: &DialError) -> bool {
+    |                                   ^^^^^ help: if this is intentional, prefix it with an underscore: `_error`
+
+warning: unused variable: `is_timeout`
+   --> crates/sb-transport/src/circuit_breaker.rs:399:36
+    |
+399 |     fn should_count_failure(&self, is_timeout: bool) -> bool {
+    |                                    ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_timeout`
+
+Some errors have detailed explanations: E0308, E0425.
+For more information about an error, try `rustc --explain E0308`.
+warning: `sb-transport` (lib) generated 17 warnings
+error: could not compile `sb-transport` (lib) due to 4 previous errors; 17 warnings emitted

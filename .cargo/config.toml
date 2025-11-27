@@ -22,9 +22,6 @@ rustflags = [
 # Treat documentation warnings as errors to maintain high doc quality
 rustdocflags = ["-D", "warnings"]
 
-# Use vendored crates to build without network access
-# (disabled for now; building with network)
-
 # Target-specific configurations
 # Note: Rust 1.90+ uses lld by default on x86_64-unknown-linux-gnu
 # For other platforms (macOS, Windows), we manually enable rust-lld for faster linking

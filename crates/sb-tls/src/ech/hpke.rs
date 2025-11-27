@@ -1,9 +1,14 @@
 //! HPKE (Hybrid Public Key Encryption) implementation for ECH
+//! 用于 ECH 的 HPKE (混合公钥加密) 实现
 //!
 //! This module implements HPKE operations needed for ECH:
+//! 此模块实现了 ECH 所需的 HPKE 操作：
 //! - DHKEM(X25519, HKDF-SHA256): Key encapsulation
+//! - DHKEM(X25519, HKDF-SHA256): 密钥封装
 //! - HKDF-SHA256: Key derivation
+//! - HKDF-SHA256: 密钥派生
 //! - AES-128-GCM: Authenticated encryption
+//! - AES-128-GCM: 认证加密
 
 use super::{EchError, EchResult, HpkeAead, HpkeKdf, HpkeKem};
 use ring::aead::{AES_128_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
@@ -11,6 +16,7 @@ use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// HPKE context for encryption/decryption
+/// 用于加密/解密的 HPKE 上下文
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct HpkeContext {
@@ -78,6 +84,7 @@ impl HpkeContext {
 }
 
 /// HPKE sender (client-side encryption)
+/// HPKE 发送方（客户端加密）
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct HpkeSender {

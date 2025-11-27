@@ -1,8 +1,16 @@
-//! Secure key loading strategies and utilities
+//! # Secure Key Loading Strategies (安全密钥加载策略)
 //!
 //! This module provides secure methods for loading cryptographic keys and secrets
 //! from various sources (environment variables, files, inline configuration) with
 //! proper security considerations.
+//! 本模块提供从各种来源（环境变量、文件、内联配置）加载加密密钥和机密信息的安全方法，并充分考虑了安全性。
+//!
+//! ## Features (特性)
+//!
+//! - **Multiple Sources** (多源支持): Env vars, files, and inline strings. (环境变量、文件、内联字符串)
+//! - **Security Policies** (安全策略): Can enforce secure sources in production. (可在生产环境中强制使用安全来源)
+//! - **Memory Safety** (内存安全): Uses `ZeroizeOnDrop` to clear secrets from memory. (使用 `ZeroizeOnDrop` 在内存中清除机密)
+//! - **Permission Checks** (权限检查): Verifies file permissions on Unix systems. (在 Unix 系统上验证文件权限)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

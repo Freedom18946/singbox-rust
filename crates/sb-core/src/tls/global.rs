@@ -122,19 +122,15 @@ pub fn base_root_store() -> RootCertStore {
         for path in &ir.ca_paths {
             if let Ok(bytes) = std::fs::read(path) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
-                for item in rustls_pemfile::certs(&mut rd) {
-                    if let Ok(der) = item {
-                        let _ = roots.add(der);
-                    }
+                for der in rustls_pemfile::certs(&mut rd).flatten() {
+                    let _ = roots.add(der);
                 }
             }
         }
         for pem in &ir.ca_pem {
             let mut rd = std::io::BufReader::new(pem.as_bytes());
-            for item in rustls_pemfile::certs(&mut rd) {
-                if let Ok(der) = item {
-                    let _ = roots.add(der);
-                }
+            for der in rustls_pemfile::certs(&mut rd).flatten() {
+                let _ = roots.add(der);
             }
         }
     }

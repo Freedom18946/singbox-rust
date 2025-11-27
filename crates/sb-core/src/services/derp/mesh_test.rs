@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::service::{Service, ServiceContext, StartStage};
     use crate::services::derp::protocol::{DerpFrame, FrameType};
     use crate::services::derp::{build_derp_service, DerpService};
-    use crate::service::{Service, ServiceContext, StartStage};
     use sb_config::ir::{ServiceIR, ServiceType};
     use std::net::SocketAddr;
     use std::sync::Arc;
@@ -18,14 +18,17 @@ mod tests {
 
     async fn connect_and_handshake(addr: SocketAddr, key: [u8; 32]) -> (TcpStream, [u8; 32]) {
         let mut stream = TcpStream::connect(addr).await.expect("connect");
-        
+
         // Read ServerKey
         let mut buf = [0u8; 1024];
         let mut server_key = [0u8; 32];
-        
+
         // We need to read frame by frame.
         // ServerKey frame: type(1) + len(4) + key(32) = 37 bytes
-        stream.read_exact(&mut buf[0..37]).await.expect("read server key");
+        stream
+            .read_exact(&mut buf[0..37])
+            .await
+            .expect("read server key");
         assert_eq!(buf[0], FrameType::ServerKey as u8);
         server_key.copy_from_slice(&buf[5..37]);
 
@@ -109,7 +112,7 @@ mod tests {
 
         service_a.start(StartStage::Initialize).unwrap();
         service_a.start(StartStage::Start).unwrap();
-        
+
         service_b.start(StartStage::Initialize).unwrap();
         service_b.start(StartStage::Start).unwrap();
 
@@ -120,15 +123,17 @@ mod tests {
         let client1_key = [1u8; 32];
         let (mut c1, _) = connect_and_handshake(
             format!("127.0.0.1:{}", port_a).parse().unwrap(),
-            client1_key
-        ).await;
+            client1_key,
+        )
+        .await;
 
         // Client 2 connects to B
         let client2_key = [2u8; 32];
         let (mut c2, _) = connect_and_handshake(
             format!("127.0.0.1:{}", port_b).parse().unwrap(),
-            client2_key
-        ).await;
+            client2_key,
+        )
+        .await;
 
         // Wait for peer presence propagation
         sleep(Duration::from_millis(200)).await;
@@ -139,7 +144,9 @@ mod tests {
             dst_key: client2_key,
             packet: packet_content.clone(),
         };
-        c1.write_all(&frame.to_bytes().unwrap()).await.expect("c1 send");
+        c1.write_all(&frame.to_bytes().unwrap())
+            .await
+            .expect("c1 send");
 
         // C2 should receive RecvPacket from C1
         let mut buf = [0u8; 1024];
@@ -147,17 +154,19 @@ mod tests {
         c2.read_exact(&mut buf[0..5]).await.expect("c2 read header");
         let frame_type = buf[0];
         let frame_len = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]) as usize;
-        
+
         assert_eq!(frame_type, FrameType::RecvPacket as u8);
-        
+
         // Read frame body
-        c2.read_exact(&mut buf[0..frame_len]).await.expect("c2 read body");
-        
+        c2.read_exact(&mut buf[0..frame_len])
+            .await
+            .expect("c2 read body");
+
         // Verify content
         // RecvPacket: src_key(32) + packet
         let src_key = &buf[0..32];
         let packet = &buf[32..frame_len];
-        
+
         assert_eq!(src_key, client1_key);
         assert_eq!(packet, packet_content.as_slice());
 

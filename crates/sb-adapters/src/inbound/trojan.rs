@@ -12,6 +12,8 @@ use sb_core::outbound::{
     ConnectOpts,
 };
 use sb_core::outbound::{registry, selector::PoolSelector};
+use sb_core::net::tcp_rate_limit::{TcpRateLimiter, TcpRateLimitConfig};
+use sb_core::net::rate_limit_metrics;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -94,6 +96,9 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
     let listener = transport.create_inbound_listener(cfg.listen).await?;
     let actual = listener.local_addr().unwrap_or(cfg.listen);
 
+    // Initialize rate limiter
+    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+
     // Note: Multiplex support for Trojan inbound is configured but not yet fully implemented
     // Trojan typically uses TLS directly, and multiplex integration would require
     // wrapping TLS streams with multiplex, which needs architectural changes
@@ -159,7 +164,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
             _ = stop_rx.recv() => break,
             _ = hb.tick() => { tracing::debug!("trojan: accept-loop heartbeat"); }
             r = listener.accept() => {
-                let mut stream = match r {
+                let (mut stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "trojan: accept error");
@@ -169,15 +174,34 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                     }
                 };
 
-                // For non-TCP transports, we don't have peer address
-                let peer = SocketAddr::from(([0, 0, 0, 0], 0));
+                // Check rate limit
+                if !rate_limiter.allow_connection(peer.ip()) {
+                    warn!(%peer, "trojan: connection rate limited");
+                    rate_limit_metrics::record_rate_limited("trojan", "connection_limit");
+                    continue;
+                }
+
+                // Check if IP is banned due to auth failures
+                if rate_limiter.is_banned(peer.ip()) {
+                    warn!(%peer, "trojan: IP banned due to excessive auth failures");
+                    rate_limit_metrics::record_rate_limited("trojan", "auth_failure_ban");
+                    continue;
+                }
 
                 #[cfg(feature = "tls_reality")]
                 let reality_acceptor_clone = reality_acceptor.clone();
                 let tls_acceptor_clone = tls_acceptor.clone();
                 let cfg_clone = cfg.clone();
+                let rate_limiter_clone = rate_limiter.clone();
+
+                // Track active connection
+                rate_limit_metrics::inc_active_connections("trojan");
 
                 tokio::spawn(async move {
+                    // Ensure we decrement on exit
+                    let _guard = scopeguard::guard((), |_| {
+                        rate_limit_metrics::dec_active_connections("trojan");
+                    });
                     // Note: For V2Ray transports (WebSocket/gRPC/HTTPUpgrade), TLS might already
                     // be handled at the transport layer, or we need to wrap the stream with TLS here
 
@@ -188,23 +212,28 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                             // Note: This needs refactoring to support generic streams
                             warn!("REALITY TLS over V2Ray transports not yet supported, using stream directly");
                             // TODO: Implement generic TLS wrapping for any AsyncRead+AsyncWrite stream
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer, &rate_limiter_clone).await {
                                 sb_core::metrics::http::record_error_display(&e);
                                 sb_core::metrics::record_inbound_error_display("trojan", &e);
                                 warn!(%peer, error=%e, "trojan: REALITY session error (direct stream)");
                             }
-                        } else if tls_acceptor_clone.is_some() {
+                        } else if let Some(acceptor) = tls_acceptor_clone {
                             // Standard TLS over transport stream
-                            warn!("Standard TLS over V2Ray transports not yet fully supported, using stream directly");
-                            // TODO: Implement TLS acceptor for generic streams
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                                sb_core::metrics::http::record_error_display(&e);
-                                sb_core::metrics::record_inbound_error_display("trojan", &e);
-                                warn!(%peer, error=%e, "trojan: session error (direct stream)");
+                            match acceptor.accept(stream).await {
+                                Ok(mut tls_stream) => {
+                                    if let Err(e) = handle_conn_stream(&cfg_clone, &mut tls_stream, peer, &rate_limiter_clone).await {
+                                        sb_core::metrics::http::record_error_display(&e);
+                                        sb_core::metrics::record_inbound_error_display("trojan", &e);
+                                        warn!(%peer, error=%e, "trojan: session error (TLS)");
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(%peer, error=%e, "trojan: TLS accept failed");
+                                }
                             }
                         } else {
                             // No TLS configured, use stream directly
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer, &rate_limiter_clone).await {
                                 sb_core::metrics::http::record_error_display(&e);
                                 warn!(%peer, error=%e, "trojan: session error (no TLS)");
                             }
@@ -213,18 +242,22 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
 
                     #[cfg(not(feature = "tls_reality"))]
                     {
-                        if tls_acceptor_clone.is_some() {
-                            // Standard TLS over transport stream
-                            warn!("Standard TLS over V2Ray transports not yet fully supported, using stream directly");
-                            // TODO: Implement TLS acceptor for generic streams
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                                sb_core::metrics::http::record_error_display(&e);
-                                sb_core::metrics::record_inbound_error_display("trojan", &e);
-                                warn!(%peer, error=%e, "trojan: session error (direct stream)");
+                        if let Some(acceptor) = tls_acceptor_clone {
+                            match acceptor.accept(stream).await {
+                                Ok(mut tls_stream) => {
+                                    if let Err(e) = handle_conn_stream(&cfg_clone, &mut tls_stream, peer, &rate_limiter_clone).await {
+                                        sb_core::metrics::http::record_error_display(&e);
+                                        sb_core::metrics::record_inbound_error_display("trojan", &e);
+                                        warn!(%peer, error=%e, "trojan: session error (TLS)");
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(%peer, error=%e, "trojan: TLS accept failed");
+                                }
                             }
                         } else {
                             // No TLS configured, use stream directly
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer, &rate_limiter_clone).await {
                                 sb_core::metrics::http::record_error_display(&e);
                                 sb_core::metrics::record_inbound_error_display("trojan", &e);
                                 warn!(%peer, error=%e, "trojan: session error (no TLS)");
@@ -243,14 +276,16 @@ async fn handle_conn_stream(
     cfg: &TrojanInboundConfig,
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
     peer: SocketAddr,
+    rate_limiter: &TcpRateLimiter,
 ) -> Result<()> {
-    handle_conn_impl(cfg, stream, peer).await
+    handle_conn_impl(cfg, stream, peer, rate_limiter).await
 }
 
 async fn handle_conn_impl(
     cfg: &TrojanInboundConfig,
     tls: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
     peer: SocketAddr,
+    rate_limiter: &TcpRateLimiter,
 ) -> Result<()> {
     // Read until CRLFCRLF
     let mut buf = Vec::with_capacity(512);
@@ -274,6 +309,8 @@ async fn handle_conn_impl(
     let mut lines = text.split("\r\n");
     let pass = lines.next().unwrap_or("");
     if pass != cfg.password {
+        rate_limiter.record_auth_failure(peer.ip());
+        rate_limit_metrics::record_auth_failure("trojan");
         return Err(anyhow!("trojan: bad password"));
     }
     let req = lines.next().unwrap_or("");

@@ -1,4 +1,12 @@
 //! Error handling for API services
+//! API 服务的错误处理
+//!
+//! # Strategic Role / 战略角色
+//!
+//! Defines how internal errors are mapped to HTTP status codes and JSON error responses.
+//! Ensures consistent error reporting across all API endpoints.
+//!
+//! 定义内部错误如何映射到 HTTP 状态代码和 JSON 错误响应。确保所有 API 端点的一致错误报告。
 
 use axum::{
     http::StatusCode,
@@ -13,6 +21,10 @@ use thiserror::Error;
 pub type ApiResult<T> = Result<T, ApiError>;
 
 /// API error types
+/// API 错误类型
+///
+/// Enumerates all possible failure modes exposed to API clients.
+/// 枚举暴露给 API 客户端的所有可能的故障模式。
 #[derive(Debug, Error)]
 pub enum ApiError {
     /// Client sent a malformed or invalid request.

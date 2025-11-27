@@ -1,16 +1,19 @@
-//! sb-adapters 的"出站适配器"模块
+//! Outbound adapters module.
+//! sb-adapters 的"出站适配器"模块。
 //!
+//! Contains outbound connector implementations for various protocols, including:
 //! 包含各种协议的出站连接器实现，包括：
-//! - 直连和阻断
-//! - HTTP 代理连接器
-//! - SOCKS5 代理连接器
-//! - Shadowsocks 连接器
-//! - VMess 协议连接器
-//! - VLESS 协议连接器
-//! - TUIC 协议连接器
+//! - Direct and Block (直连和阻断)
+//! - HTTP Proxy Connector (HTTP 代理连接器)
+//! - SOCKS5 Proxy Connector (SOCKS5 代理连接器)
+//! - Shadowsocks Connector (Shadowsocks 连接器)
+//! - VMess Protocol Connector (VMess 协议连接器)
+//! - VLESS Protocol Connector (VLESS 协议连接器)
+//! - TUIC Protocol Connector (TUIC 协议连接器)
 
 pub mod prelude {
     //! Common imports for all adapter implementations
+    //! 所有适配器实现的通用导入
     pub use crate::error::{AdapterError, Result};
     pub use crate::traits::{BoxedStream, DialOpts, OutboundConnector, Target, TransportKind};
     pub use async_trait::async_trait;
@@ -19,11 +22,14 @@ pub mod prelude {
 }
 
 /// Block outbound adapter - rejects all connection attempts
+/// 阻断出站适配器 - 拒绝所有连接尝试
 pub mod block;
 /// Direct outbound adapter - connects directly to target
+/// 直连出站适配器 - 直接连接到目标
 pub mod direct;
 
 // Helper functions for tracing
+// 用于追踪的辅助函数
 #[allow(dead_code)]
 pub(crate) fn span_dial(adapter: &'static str, target: &crate::traits::Target) -> tracing::Span {
     tracing::info_span!("dial",
@@ -34,6 +40,7 @@ pub(crate) fn span_dial(adapter: &'static str, target: &crate::traits::Target) -
 }
 
 // Feature-gated adapter modules
+// 特性门控的适配器模块
 #[cfg(feature = "adapter-anytls")]
 pub mod anytls;
 #[cfg(feature = "adapter-dns")]
@@ -61,13 +68,16 @@ pub mod vless;
 #[cfg(feature = "adapter-vmess")]
 pub mod vmess;
 // Selector group adapters (always available since they're core functionality)
+// 选择器组适配器（始终可用，因为它们是核心功能）
 pub mod selector;
 pub mod urltest;
 
 // Re-export traits for easy access
+// 重导出 trait 以便轻松访问
 pub use crate::traits::*;
 
 // IR to adapter construction bridges
+// IR 到适配器构造的桥接
 #[cfg(feature = "adapter-http")]
 impl TryFrom<&sb_config::ir::OutboundIR> for http::HttpProxyConnector {
     type Error = crate::error::AdapterError;

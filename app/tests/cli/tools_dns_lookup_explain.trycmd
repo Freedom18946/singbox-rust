@@ -1,0 +1,23 @@
+```console
+$ app tools dns-lookup example.com --config {fixtures}/dns_hosts.json --explain
+{
+  "domain": "example.com",
+  "explain": {
+    "domain": "example.com",
+    "resolver": "hosts_overlay",
+    "decision": "hosts",
+    "ttl_secs": 123,
+    "ips": [
+      "1.2.3.4"
+    ]
+  },
+  "answer": {
+    "ips": [
+      "1.2.3.4"
+    ],
+    "ttl_secs": 123,
+    "source": "static",
+    "rcode": "NOERROR"
+  }
+}
+```

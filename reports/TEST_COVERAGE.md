@@ -1,8 +1,21 @@
 # Test Coverage Report
 
-Last Updated: 2025-11-21
+**Last Updated**: 2025-11-26
 
-## Overview
+---
+
+## 🎯 Phase 1 Testing Priority
+
+**Phase 1 Core Protocols** (Trojan, Shadowsocks) receive highest priority for comprehensive test coverage:
+- **Target**: 90%+ code coverage for P1-CORE protocols
+- **Requirement**: All critical paths tested (happy path + error handling)
+- **Validation**: Integration tests + E2E scenarios
+
+**Optional Protocols** are tested but not required to meet Phase 1 coverage targets.
+
+---
+
+## Coverage Summary
 
 This document tracks test coverage for protocol adapters, DNS transports, VPN endpoints/services, and other core functionality.
 

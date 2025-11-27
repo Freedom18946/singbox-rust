@@ -18,11 +18,11 @@ use serde_json::json;
 #[cfg(feature = "bench")]
 use tokio::time::timeout;
 #[cfg(feature = "bench")]
-use trust_dns_proto::op::{Message, MessageType, OpCode, Query};
+use hickory_proto::op::{Message, MessageType, OpCode, Query};
 #[cfg(feature = "bench")]
-use trust_dns_proto::rr::{Name, RecordType};
+use hickory_proto::rr::{Name, RecordType};
 #[cfg(feature = "bench")]
-use trust_dns_proto::serialize::binary::{BinEncodable, BinEncoder};
+use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
 
 #[cfg(feature = "bench")]
 #[tokio::main]

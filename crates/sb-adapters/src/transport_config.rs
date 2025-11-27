@@ -499,11 +499,11 @@ impl InboundListener {
     /// # Errors
     ///
     /// Returns an error if accepting the connection fails.
-    pub async fn accept(&self) -> Result<Box<dyn InboundStream>, std::io::Error> {
+    pub async fn accept(&self) -> Result<(Box<dyn InboundStream>, std::net::SocketAddr), std::io::Error> {
         match self {
             Self::Tcp(listener) => {
-                let (stream, _peer) = listener.accept().await?;
-                Ok(Box::new(stream) as Box<dyn InboundStream>)
+                let (stream, peer) = listener.accept().await?;
+                Ok((Box::new(stream) as Box<dyn InboundStream>, peer))
             }
 
             #[cfg(feature = "transport_ws")]
@@ -513,7 +513,9 @@ impl InboundListener {
                     DialError::Io(io_err) => io_err,
                     other => std::io::Error::other(other.to_string()),
                 })?;
-                Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
+                // WebSocket listener doesn't expose peer addr easily yet, use dummy
+                let peer = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
+                Ok((Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>, peer))
             }
 
             #[cfg(feature = "transport_grpc")]
@@ -522,7 +524,9 @@ impl InboundListener {
                     .accept()
                     .await
                     .map_err(|e| std::io::Error::other(e.to_string()))?;
-                Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
+                // gRPC doesn't expose peer addr easily yet, use dummy
+                let peer = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
+                Ok((Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>, peer))
             }
 
             #[cfg(feature = "transport_httpupgrade")]
@@ -532,7 +536,9 @@ impl InboundListener {
                     DialError::Io(io_err) => io_err,
                     other => std::io::Error::other(other.to_string()),
                 })?;
-                Ok(Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>)
+                // HttpUpgrade doesn't expose peer addr easily yet, use dummy
+                let peer = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
+                Ok((Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>, peer))
             }
         }
     }

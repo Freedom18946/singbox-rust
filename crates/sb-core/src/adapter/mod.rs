@@ -1,11 +1,17 @@
 //! Adapter traits and factory interfaces.
+//! 适配器 trait 和工厂接口。
 //!
 //! This module defines the core abstraction layer between configuration and runtime:
+//! 本模块定义了配置和运行时之间的核心抽象层：
 //! - [`InboundService`]: Trait for inbound protocol handlers (socks5, http, tun, etc.)
+//!   入站协议处理程序的 Trait（socks5, http, tun 等）
 //! - [`OutboundConnector`]: Trait for outbound connection providers
+//!   出站连接提供者的 Trait
 //! - [`Bridge`]: Runtime container managing all inbound/outbound instances
+//!   管理所有入站/出站实例的运行时容器
 //!
 //! sb-adapters provides concrete implementations; sb-core defines interfaces and bridging logic.
+//! sb-adapters 提供具体实现；sb-core 定义接口和桥接逻辑。
 
 use crate::endpoint::{endpoint_registry, Endpoint, EndpointContext};
 use crate::service::{service_registry, Service, ServiceContext};
@@ -33,10 +39,13 @@ fn direct_connector_fallback() -> Arc<dyn OutboundConnector> {
 }
 
 /// Inbound service trait for protocol handlers (socks5/http/tun).
+/// 协议处理程序（socks5/http/tun）的入站服务 trait。
 ///
 /// Implementers provide a blocking `serve()` method that internally spawns worker threads.
+/// 实现者提供一个阻塞的 `serve()` 方法，该方法在内部生成工作线程。
 pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
     /// Blocking entry point to run the service (spawns internal workers).
+    /// 运行服务的阻塞入口点（生成内部工作线程）。
     fn serve(&self) -> std::io::Result<()>;
 
     /// Request a graceful shutdown if supported by the implementation.
@@ -58,11 +67,14 @@ pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
 }
 
 /// Outbound connector trait for establishing TCP connections to targets.
+/// 用于建立到目标的 TCP 连接的出站连接器 trait。
 ///
 /// Implementers handle protocol-specific handshakes (e.g., SOCKS5 upstream, HTTP CONNECT).
+/// 实现者处理特定于协议的握手（例如，SOCKS5 上游，HTTP CONNECT）。
 #[async_trait::async_trait]
 pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
     /// Establish a TCP connection to the specified host and port.
+    /// 建立到指定主机和端口的 TCP 连接。
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
 }
 
@@ -222,9 +234,11 @@ pub trait OutboundFactory: Send + Sync {
 }
 
 /// Runtime bridge: manages inbound services and outbound connectors.
+/// 运行时桥接：管理入站服务和出站连接器。
 ///
 /// The bridge is assembled from IR configuration and serves as the central registry
 /// for all protocol handlers. It supports adapter-first fallback to scaffold implementations.
+/// 桥接器由 IR 配置组装而成，作为所有协议处理程序的中央注册表。它支持适配器优先回退到脚手架实现。
 #[derive(Clone)]
 pub struct Bridge {
     pub inbounds: Vec<Arc<dyn InboundService>>,

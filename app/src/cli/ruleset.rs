@@ -1,4 +1,20 @@
 //! Rule-set management subcommand (parity with sing-box `rule-set`)
+//! 规则集管理子命令（与 sing-box `rule-set` 对齐）
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module manages the **Lifecycle of Routing Rules**.
+//! 本模块管理 **路由规则的生命周期**。
+//!
+//! ## Strategic Workflow / 战略工作流
+//! `Source (JSON)` <-> `Compiler` <-> `Binary (SRS)`
+//!
+//! ## Strategic Features / 战略特性
+//! - **Compilation / 编译**: Converts human-readable JSON into optimized binary (`.srs`) for faster loading and lower memory usage.
+//!   将人类可读的 JSON 转换为优化的二进制 (`.srs`)，以实现更快的加载和更低的内存使用。
+//! - **Decompilation / 反编译**: Allows inspecting binary rulesets for debugging and verification.
+//!   允许检查二进制规则集以进行调试和验证。
+//! - **Validation / 校验**: Ensures rulesets conform to the schema before deployment.
+//!   确保规则集在部署前符合模式。
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};

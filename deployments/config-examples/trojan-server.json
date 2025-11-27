@@ -1,0 +1,62 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true,
+    "output": "stdout"
+  },
+  "inbounds": [
+    {
+      "type": "trojan",
+      "tag": "trojan-in",
+      "listen": "0.0.0.0",
+      "listen_port": 443,
+      "users": [
+        {
+          "name": "user1",
+          "password": "CHANGE_THIS_PASSWORD_1"
+        },
+        {
+          "name": "user2",
+          "password": "CHANGE_THIS_PASSWORD_2"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "example.com",
+        "certificate_path": "/etc/singbox/certs/fullchain.pem",
+        "key_path": "/etc/singbox/certs/privkey.pem",
+        "alpn": [
+          "h2",
+          "http/1.1"
+        ]
+      },
+      "fallback": {
+        "server": "127.0.0.1",
+        "server_port": 80
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "geoip": "private",
+        "outbound": "direct"
+      },
+      {
+        "protocol": "dns",
+        "outbound": "direct"
+      }
+    ],
+    "final": "direct"
+  }
+}

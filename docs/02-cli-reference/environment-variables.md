@@ -763,7 +763,7 @@ singbox-rust check -c config.yaml
 ---
 
 **Auto-generated from source code analysis**  
-**Last Updated**: 2025-10-18  
+**Last Updated**: 2025-11-23  
 **Total Variables**: 271+
 
 > ⚠️ **Note**: This list is automatically discovered from the codebase. Some variables may be experimental or deprecated. Refer to the source code for definitive behavior.

@@ -30,7 +30,7 @@ struct Decision {
 
 #[cfg(not(feature = "router"))]
 impl Engine {
-    fn new(cfg: sb_config::ir::ConfigIR) -> Self {
+    pub(crate) fn new(cfg: sb_config::ir::ConfigIR) -> Self {
         Self { cfg }
     }
 
@@ -239,13 +239,19 @@ pub(crate) async fn handle_conn(
                     // Router decision for UDP (bind outbound at first packet)
                     #[cfg(feature = "router")]
                     let d = {
+                        let sniffed = if sniff_enabled {
+                            crate::routing::sniff::sniff_datagram(payload)
+                        } else {
+                            crate::routing::sniff::SniffOutcome::default()
+                        };
                         let input = RouterInput {
                             host: &dst_host,
                             port: dst_port,
                             network: "udp",
                             protocol: "socks",
                             sniff_host: None,
-                            sniff_alpn: None,
+                            sniff_alpn: sniffed.alpn.as_deref(),
+                            sniff_protocol: sniffed.protocol,
                         };
                         eng.decide(&input, false)
                     };
@@ -465,6 +471,7 @@ pub(crate) async fn handle_conn(
     // 2) 可选嗅探：快速读取客户端首包（不阻塞）
     let mut sniff_host_opt: Option<String> = None;
     let mut sniff_alpn_opt: Option<String> = None;
+    let mut sniff_protocol_opt: Option<&'static str> = None;
     let mut first_payload = Vec::new();
     if sniff_enabled {
         let mut buf = [0u8; 1024];
@@ -473,9 +480,16 @@ pub(crate) async fn handle_conn(
         {
             if n > 0 {
                 first_payload.extend_from_slice(&buf[..n]);
-                if let Some(info) = crate::routing::sniff::sniff_tls_client_hello(&first_payload) {
-                    sniff_host_opt = info.sni;
-                    sniff_alpn_opt = info.alpn;
+                #[cfg(feature = "router")]
+                {
+                    let sniffed = crate::routing::sniff::sniff_stream(&first_payload);
+                    sniff_host_opt = sniffed.host;
+                    sniff_alpn_opt = sniffed.alpn;
+                    sniff_protocol_opt = sniffed.protocol;
+                }
+                #[cfg(not(feature = "router"))]
+                {
+                    // No router, no sniffing logic available
                 }
             }
         }
@@ -486,6 +500,7 @@ pub(crate) async fn handle_conn(
     let d = {
         let sniff_host_ref = sniff_host_opt.as_deref();
         let sniff_alpn_ref = sniff_alpn_opt.as_deref();
+        let sniff_proto_ref = sniff_protocol_opt;
         let input = RouterInput {
             host: &host,
             port,
@@ -493,6 +508,7 @@ pub(crate) async fn handle_conn(
             protocol: "socks",
             sniff_host: sniff_host_ref,
             sniff_alpn: sniff_alpn_ref,
+            sniff_protocol: sniff_proto_ref,
         };
         eng.decide(&input, false)
     };
@@ -548,10 +564,14 @@ pub struct Socks5 {
     shutdown: Arc<AtomicBool>,
     active: Arc<AtomicU64>,
     udp_count: Arc<AtomicU64>,
+    rate_limiter: Option<crate::net::tcp_rate_limit::TcpRateLimiter>,
 }
 
 impl Socks5 {
     pub fn new(listen: String, port: u16) -> Self {
+        let rate_limiter = Some(crate::net::tcp_rate_limit::TcpRateLimiter::new(
+            crate::net::tcp_rate_limit::TcpRateLimitConfig::from_env(),
+        ));
         Self {
             listen,
             port,
@@ -561,6 +581,7 @@ impl Socks5 {
             shutdown: Arc::new(AtomicBool::new(false)),
             active: Arc::new(AtomicU64::new(0)),
             udp_count: Arc::new(AtomicU64::new(0)),
+            rate_limiter,
         }
     }
 
@@ -604,7 +625,15 @@ impl Socks5 {
                     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                     continue;
                 }
-                Ok(Ok((socket, _))) => {
+                Ok(Ok((socket, peer_addr))) => {
+                    // Rate limit check
+                    if let Some(limiter) = &self.rate_limiter {
+                        if !limiter.allow_connection(peer_addr.ip()) {
+                            tracing::warn!("Rate limit exceeded for {}", peer_addr.ip());
+                            continue;
+                        }
+                    }
+
                     let active = self.active.clone();
                     active.fetch_add(1, Ordering::Relaxed);
                     // metrics: report updated active count

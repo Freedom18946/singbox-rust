@@ -1,4 +1,13 @@
 //! Real-time reporter for broadcasting metrics to API clients
+//! 用于向 API 客户端广播指标的实时报告器
+//!
+//! # Strategic Role / 战略角色
+//!
+//! Acts as the central hub for all real-time data. It receives updates from collectors
+//! and pushes them to all connected WebSocket clients (Clash API) and gRPC streams (V2Ray API).
+//!
+//! 充当所有实时数据的中心枢纽。它接收来自收集器的更新，并将它们推送到所有连接的
+//! WebSocket 客户端（Clash API）和 gRPC 流（V2Ray API）。
 
 use crate::{
     types::{Connection, LogEntry, TrafficStats},
@@ -41,6 +50,11 @@ impl Default for ReportConfig {
 }
 
 /// Real-time reporter that broadcasts metrics to API clients
+/// 向 API 客户端广播指标的实时报告器
+///
+/// Decouples data collection from data distribution, ensuring that slow clients don't block
+/// the collection process.
+/// 将数据收集与数据分发解耦，确保慢速客户端不会阻塞收集过程。
 pub struct RealtimeReporter {
     config: ReportConfig,
     is_running: AtomicBool,

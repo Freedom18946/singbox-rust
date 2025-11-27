@@ -1,5 +1,10 @@
+//! scenario.rs - Scenario-driven offline regression executor (handshake_alpha/io_local_alpha)
 //! scenario.rs - 场景驱动的离线回归执行器（handshake_alpha/io_local_alpha）
-//! 目标：把"一个个命令"固化为可声明、可复现、可断言的测试流。
+//!
+//! # Goal / 目标
+//!
+//! Solidify "individual commands" into declarable, reproducible, and assertable test flows.
+//! 把"一个个命令"固化为可声明、可复现、可断言的测试流。
 use anyhow::{anyhow, Context, Result};
 use glob::glob;
 use serde::{Deserialize, Serialize};
@@ -13,7 +18,7 @@ use crate::loopback::run_once as loopback_once;
 #[cfg(feature = "io_local_alpha")]
 use crate::tcp_local::{io_local_once, spawn_echo_once, ChaosSpec};
 
-/// 轻量协议描述（不依赖 CLI 的 Proto 枚举）
+/// Lightweight Protocol Description (Independent of CLI Proto Enum) / 轻量协议描述（不依赖 CLI 的 Proto 枚举）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProtoLite {
@@ -36,7 +41,7 @@ pub struct ChaosFile {
     pub delay_rx_ms: Option<u64>,
     pub rx_drop: Option<u64>,
     pub rx_trim: Option<u64>,
-    /// 十六进制字符串，如 "aa"
+    /// Hex string, e.g., "aa" / 十六进制字符串，如 "aa"
     pub rx_xor: Option<String>,
 }
 
@@ -67,16 +72,17 @@ pub struct Expect {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Defaults {
-    /// 允许 step 中 seed=0 时使用
+    /// Allow using when step seed=0 / 允许 step 中 seed=0 时使用
     pub seed: Option<u64>,
-    /// 可选的统一输出目录前缀，如设定则 `out`/`from` 走 join
+    /// Optional unified output directory prefix / 可选的统一输出目录前缀
+    /// If set, `out`/`from` will be joined with this path / 如设定则 `out`/`from` 走 join
     pub out_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum Step {
-    /// 生成一份回环日志（无网络）
+    /// Generate a loopback log (No Network) / 生成一份回环日志（无网络）
     Loopback {
         proto: ProtoLite,
         host: String,
@@ -84,6 +90,7 @@ pub enum Step {
         seed: u64,
         out: PathBuf,
     },
+    /// Localhost TCP (127.0.0.1/::1 only), with optional chaos/file combination
     /// 本机 TCP（仅 127.0.0.1/::1），可选 chaos/file 组合
     IoLocal {
         proto: ProtoLite,
@@ -100,9 +107,10 @@ pub enum Step {
         rx_trim: Option<usize>,
         rx_xor: Option<String>,
     },
+    /// Quality Check: Statistics/Timing/Histogram and write JSON
     /// 质量体检：统计帧/时序/直方图并写 JSON
     VerifyJsonl { from: PathBuf, out: PathBuf },
-    /// 断言阈值（CI 友好）
+    /// Assert Thresholds (CI Friendly) / 断言阈值（CI 友好）
     AssertMetrics { from: PathBuf, expect: Expect },
 }
 

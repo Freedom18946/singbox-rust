@@ -23,6 +23,7 @@ failpoints = ["dep:fail"]
 
 [dependencies]
 tokio = { workspace = true, features = ["net", "time", "io-util"] }
+tokio-stream = "0.1"
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 pin-project-lite = "0.2"
@@ -36,7 +37,7 @@ quinn = { version = "0.11", optional = true }
 uuid = "1.0"
 bytes = { workspace = true }
 futures = { workspace = true }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "io", "futures-io"] }
 tracing = { workspace = true }
 rand = "0.8"
 base64 = "0.22"

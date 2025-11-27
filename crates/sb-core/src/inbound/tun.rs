@@ -128,13 +128,20 @@ impl TunInboundService {
             if self.sniff_enabled {
                 // Demonstrate that sniff path can be called safely. The actual integration
                 // should provide the first TLS/QUIC payload bytes from the flow classifier.
-                let sample: &[u8] = &[]; // replace with real first-segment data
-                if let Some(info) = crate::routing::sniff::sniff_tls_client_hello(sample) {
-                    tracing::trace!(target: "sb_core::inbound::tun", ?info, "tls clienthello sniffed");
-                } else if let Some(alpn) = crate::routing::sniff::sniff_quic_initial(sample) {
-                    tracing::trace!(target: "sb_core::inbound::tun", alpn=%alpn, "quic initial detected");
-                } else {
-                    tracing::trace!(target: "sb_core::inbound::tun", "sniff: no tls/quic signature");
+                #[cfg(feature = "router")]
+                {
+                    let sample: &[u8] = &[]; // replace with real first-segment data
+                    if let Some(info) = crate::routing::sniff::sniff_tls_client_hello(sample) {
+                        tracing::trace!(target: "sb_core::inbound::tun", ?info, "tls clienthello sniffed");
+                    } else if let Some(alpn) = crate::routing::sniff::sniff_quic_initial(sample) {
+                        tracing::trace!(target: "sb_core::inbound::tun", alpn=%alpn, "quic initial detected");
+                    } else {
+                        tracing::trace!(target: "sb_core::inbound::tun", "sniff: no tls/quic signature");
+                    }
+                }
+                #[cfg(not(feature = "router"))]
+                {
+                    tracing::trace!(target: "sb_core::inbound::tun", "sniff: router feature disabled, skipping sniff");
                 }
             }
             // 4. Query router for routing decision

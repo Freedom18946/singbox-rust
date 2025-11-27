@@ -1,12 +1,19 @@
+//! JSONL Frame Utilities - Streaming Read & Verify
 //! JSONL 帧工具 - 流式读取与校验
 //!
+//! Provides parsing, statistical analysis, and verification for protocol handshake frames in JSONL format.
+//! Depends on `loopback::Frame` structure, introduces no side effects other than IO.
 //! 提供 JSONL 格式的协议握手帧解析、统计和验证功能。
 //! 依赖 `loopback::Frame` 结构，不引入 IO 以外的副作用。
 //!
-//! # 主要功能
-//! - 流式读取 JSONL 文件（容错跳过空行和解析失败行）
-//! - 基本统计验证（帧数、传输量、时间戳等）
-//! - 回放校验（严格/宽松模式）
+//! # Key Features / 主要功能
+//! - **Streaming Read**: Fault-tolerant skipping of empty lines and parsing failures.
+//! - **Statistical Verification**: Frame count, throughput, timestamps, etc.
+//! - **Replay Verification**: Strict/Lenient modes.
+//!
+//! - **流式读取**: 容错跳过空行和解析失败行。
+//! - **基本统计验证**: 帧数、传输量、时间戳等。
+//! - **回放校验**: 严格/宽松模式。
 use crate::loopback::Frame;
 use anyhow::{anyhow, Result};
 use std::{
@@ -17,16 +24,22 @@ use std::{
     time::SystemTime,
 };
 
-/// 逐帧流式读取 JSONL 文件（容错：跳过空行与解析失败行）
+/// Stream frames from JSONL file (Fault-tolerant: skips empty/failed lines).
+/// 逐帧流式读取 JSONL 文件（容错：跳过空行与解析失败行）。
 ///
-/// # 参数
-/// - `p`: JSONL 文件路径
+/// # Arguments / 参数
 ///
-/// # 返回
-/// 返回帧的迭代器，自动过滤空行
+/// - `p`: JSONL file path. / JSONL 文件路径。
 ///
-/// # 错误
-/// 当文件无法打开时返回错误，解析失败的行会作为 `Err` 返回
+/// # Returns / 返回
+///
+/// Iterator of frames, automatically filtering empty lines.
+/// 返回帧的迭代器，自动过滤空行。
+///
+/// # Errors / 错误
+///
+/// Returns error if file cannot be opened. Parsing failures are returned as `Err` items.
+/// 当文件无法打开时返回错误，解析失败的行会作为 `Err` 返回。
 pub fn stream_frames<P: AsRef<Path>>(p: P) -> Result<impl Iterator<Item = Result<Frame>>> {
     let path = p.as_ref();
     let f = File::open(path).map_err(|e| anyhow!("open {} failed: {e}", path.display()))?;
@@ -69,26 +82,32 @@ pub fn stream_frames<P: AsRef<Path>>(p: P) -> Result<impl Iterator<Item = Result
     Ok(iter)
 }
 
-/// 基本统计验证（扩展版，向后兼容旧版本）
+/// Basic Statistical Verification (Extended, Backward Compatible).
+/// 基本统计验证（扩展版，向后兼容旧版本）。
 ///
-/// 统计信息包括：
-/// - `frames`: 总帧数
-/// - `tx/rx`: 发送/接收字节数
-/// - `ts_disorder`: 时间戳乱序计数
-/// - `head8_modes`: 前 8 字节模式的 Top 5（旧格式，向后兼容）
-/// - `head8_top`: 前 8 字节模式的 Top 5（新格式，带计数）
-/// - `ts_min/ts_max/ts_span_ms`: 时间戳范围
-/// - `len_min/len_max`: 帧长度范围
-/// - `generated_at_ms`: 生成时间
+/// Statistics include:
+/// - `frames`: Total frame count. / 总帧数。
+/// - `tx/rx`: Transmitted/Received bytes. / 发送/接收字节数。
+/// - `ts_disorder`: Timestamp disorder count. / 时间戳乱序计数。
+/// - `head8_modes`: Top 5 head8 patterns (Old format). / 前 8 字节模式的 Top 5（旧格式，向后兼容）。
+/// - `head8_top`: Top 5 head8 patterns (New format with counts). / 前 8 字节模式的 Top 5（新格式，带计数）。
+/// - `ts_min/ts_max/ts_span_ms`: Timestamp range. / 时间戳范围。
+/// - `len_min/len_max`: Frame length range. / 帧长度范围。
+/// - `generated_at_ms`: Generation time. / 生成时间。
 ///
-/// # 参数
-/// - `p`: JSONL 文件路径
+/// # Arguments / 参数
 ///
-/// # 返回
-/// 包含统计信息的 JSON 对象
+/// - `p`: JSONL file path. / JSONL 文件路径。
 ///
-/// # 错误
-/// 当文件读取或解析失败时返回错误
+/// # Returns / 返回
+///
+/// JSON object containing statistics.
+/// 包含统计信息的 JSON 对象。
+///
+/// # Errors / 错误
+///
+/// Returns error if file read or parse fails.
+/// 当文件读取或解析失败时返回错误。
 pub fn basic_verify<P: AsRef<Path>>(p: P) -> Result<serde_json::Value> {
     use crate::loopback::FrameDir;
 

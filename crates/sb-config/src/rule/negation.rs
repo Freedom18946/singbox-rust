@@ -1,9 +1,15 @@
 //! Negation detection utilities for routing rules.
-//! 语义：当任何规则包含 not_* 维度时，视为启用否定维度。
+//! 路由规则的取反检测工具。
+//!
+//! Semantics: When any rule contains a `not_*` dimension, it is considered to enable negation dimensions.
+//! 语义：当任何规则包含 `not_*` 维度时，视为启用否定维度。
+//!
+//! Usage: Under CLI `check --minimize-rules`, when negation dimensions are encountered, only "normalization" is performed, and "deletion" is prohibited.
 //! 用途：在 CLI `check --minimize-rules` 下，遇到否定维度时仅做"规范化"，禁止"删除"。
 use serde::Deserialize;
 
-/// 路由规则（与 v1/v2 兼容的最小只读体）
+/// Routing rule (minimal read-only subset compatible with v1/v2).
+/// 路由规则（与 v1/v2 兼容的最小只读体）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct RuleLite {
     #[serde(default)]
@@ -41,7 +47,8 @@ pub struct RuleLite {
     // ……可按需补充其他维度（source/dest/user-agent 等）
 }
 
-/// 配置根（只挑 route.rules 的只读体，用于快速检测）
+/// Config root (selects only route.rules read-only subset for fast detection).
+/// 配置根（只挑 route.rules 的只读体，用于快速检测）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct RouteLite {
     #[serde(default)]
@@ -54,7 +61,8 @@ pub struct ConfigLite {
     pub route: Option<RouteLite>,
 }
 
-/// 判断配置是否包含任意 not_* 维度
+/// Check if the configuration contains any `not_*` dimensions.
+/// 判断配置是否包含任意 `not_*` 维度。
 pub fn has_any_negation(json_bytes: &[u8]) -> bool {
     let conf: ConfigLite = match serde_json::from_slice(json_bytes) {
         Ok(v) => v,

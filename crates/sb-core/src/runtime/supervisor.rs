@@ -1,7 +1,21 @@
 //! Runtime supervisor for hot reload and graceful shutdown.
+//! 用于热重载和优雅关闭的运行时监督者。
 //!
-//! Manages engine/bridge lifecycle and handles reload/shutdown messages
-//! via async channels while maintaining service availability.
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module implements the **Supervisor Pattern** to manage the application lifecycle.
+//! 本模块实现了 **监督者模式** 来管理应用程序生命周期。
+//!
+//! ## Strategic Workflow / 战略工作流
+//! `Start` -> `Event Loop` -> `Reload (Diff & Apply)` -> `Shutdown (Drain & Stop)`
+//! `启动` -> `事件循环` -> `重载 (差异 & 应用)` -> `关闭 (排空 & 停止)`
+//!
+//! ## Strategic Features / 战略特性
+//! - **Hot Reload / 热重载**: Applies new configurations without dropping existing connections (where possible).
+//!   在可能的情况下，应用新配置而不丢弃现有连接。
+//! - **Graceful Shutdown / 优雅关闭**: Waits for active connections to drain before terminating, ensuring zero data loss.
+//!   在终止前等待活动连接排空，确保零数据丢失。
+//! - **Diffing / 差异计算**: Calculates the difference between old and new configs to minimize churn (e.g., only restarting changed inbounds).
+//!   计算旧配置和新配置之间的差异，以尽量减少变动（例如，仅重启更改的入站）。
 
 use crate::adapter::Bridge;
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};

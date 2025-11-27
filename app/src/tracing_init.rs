@@ -1,3 +1,15 @@
+//! Observability Initialization / 可观测性初始化
+//!
+//! # Global Strategic Logic / 全局战略逻辑
+//! This module manages the **Singleton Initialization** of the observability stack (Tracing + Metrics).
+//! 本模块管理可观测性堆栈（追踪 + 指标）的 **单例初始化**。
+//!
+//! ## Strategic Design / 战略设计
+//! - **Idempotency / 幂等性**: Uses `OnceLock` to ensure initialization happens exactly once, regardless of how many times `init` is called.
+//!   使用 `OnceLock` 确保初始化仅发生一次，无论 `init` 被调用多少次。
+//! - **Unified Entry / 统一入口**: Provides a single point to bootstrap all monitoring systems, ensuring consistency.
+//!   提供单一入口点来引导所有监控系统，确保一致性。
+
 use std::sync::OnceLock;
 
 /// Ensure tracing is initialized only once across the application

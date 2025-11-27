@@ -15,6 +15,7 @@ use tracing::warn;
 static REGISTER_ONCE: Once = Once::new();
 
 /// Register adapter-provided builders with sb-core registry. Safe to call multiple times.
+/// 将适配器提供的构建器注册到 sb-core 注册表中。可以安全地多次调用。
 pub fn register_all() {
     REGISTER_ONCE.call_once(|| {
         #[cfg(feature = "adapter-http")]
@@ -191,14 +192,18 @@ fn build_tls_config(ir: &OutboundIR) -> Option<sb_config::outbound::TlsConfig> {
         None
     };
 
-    // ECH is not yet fully exposed in OutboundIR in the version I saw, 
+    // ECH is not yet fully exposed in OutboundIR in the version I saw,
     // but TlsConfig has it. If IR doesn't have it, we leave it None.
     let ech: Option<EchConfig> = None;
 
     Some(TlsConfig {
         enabled: true,
         sni: ir.tls_sni.clone(),
-        alpn: ir.tls_alpn.as_ref().map(|v| v.join(",")).or(ir.alpn.clone()),
+        alpn: ir
+            .tls_alpn
+            .as_ref()
+            .map(|v| v.join(","))
+            .or(ir.alpn.clone()),
         insecure: ir.skip_cert_verify.unwrap_or(false),
         reality,
         ech,
@@ -277,8 +282,7 @@ fn build_http_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // HTTP proxy uses CONNECT method, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 format!(
                     "HTTP proxy uses CONNECT method for {}:{}; use switchboard registry instead",
                     host, port
@@ -379,8 +383,7 @@ fn build_socks_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // SOCKS5 uses proxy protocol, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 format!(
                     "SOCKS5 uses proxy protocol for {}:{}; use switchboard registry instead",
                     host, port
@@ -463,8 +466,7 @@ fn build_shadowsocks_outbound(
     impl OutboundConnector for ShadowsocksConnectorWrapper {
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Shadowsocks uses encrypted stream; adapter path should use switchboard instead.
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "Shadowsocks adapter connector is not usable directly; use switchboard registry instead",
             ))
         }
@@ -550,8 +552,7 @@ fn build_trojan_outbound(
     impl OutboundConnector for TrojanConnectorWrapper {
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Trojan uses encrypted stream; adapter path should use switchboard instead.
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "Trojan adapter connector is not usable directly; use switchboard registry instead",
             ))
         }
@@ -650,8 +651,7 @@ fn build_vmess_outbound(
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // VMess uses encrypted stream, cannot return TcpStream directly
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "VMess uses encrypted stream; use switchboard registry instead",
             ))
         }
@@ -747,8 +747,7 @@ fn build_vless_outbound(
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // VLESS uses encrypted stream, cannot return TcpStream directly
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "VLESS uses encrypted stream; use switchboard registry instead",
             ))
         }
@@ -1091,7 +1090,7 @@ fn build_hysteria_inbound(
 
 fn build_hysteria2_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     #[cfg(feature = "adapter-hysteria2")]
     {
@@ -1181,6 +1180,8 @@ fn build_hysteria2_inbound(
             congestion_control: param.congestion_control.clone(),
             salamander: param.salamander.clone(),
             obfs: param.obfs.clone(),
+            router: ctx.router.clone(),
+            outbounds: ctx.outbounds.clone(),
         };
 
         match Hysteria2Inbound::new(config) {
@@ -1193,7 +1194,7 @@ fn build_hysteria2_inbound(
     }
     #[cfg(not(feature = "adapter-hysteria2"))]
     {
-        let _ = param;
+        let _ = (param, ctx);
         stub_inbound("hysteria2");
         None
     }
@@ -1202,7 +1203,7 @@ fn build_hysteria2_inbound(
 #[cfg(feature = "adapter-tuic")]
 fn build_tuic_inbound(
     param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
     use crate::inbound::tuic::{TuicInboundConfig, TuicUser};
     use std::net::SocketAddr;
@@ -1290,6 +1291,8 @@ fn build_tuic_inbound(
         cert,
         key,
         congestion_control: param.congestion_control.clone(),
+        router: ctx.router.clone(),
+        outbounds: ctx.outbounds.clone(),
     };
 
     Some(Arc::new(TuicInboundAdapter::new(config)))
@@ -1363,7 +1366,7 @@ fn build_dns_outbound(
         Some(s) => s.parse().ok(),
         None => None,
     };
-    
+
     let server = match server {
         Some(s) => s,
         None => {
@@ -1597,8 +1600,7 @@ fn build_tor_outbound(
             ) -> std::io::Result<tokio::net::TcpStream> {
                 // Tor uses SOCKS5 proxy protocol, cannot return raw TcpStream
                 // Use switchboard registry instead
-                Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+                Err(std::io::Error::other(
                 format!("Tor uses SOCKS5 proxy protocol for {}:{}; use switchboard registry instead", host, port),
             ))
             }
@@ -1742,9 +1744,7 @@ fn build_hysteria_outbound(
 
     // Hysteria v1 specific configuration
     let protocol = ir
-        .hysteria_protocol
-        .as_ref()
-        .map(|s| s.clone())
+        .hysteria_protocol.clone()
         .unwrap_or_else(|| "udp".to_string());
 
     let up_mbps = ir.up_mbps.unwrap_or(10);
@@ -1758,9 +1758,7 @@ fn build_hysteria_outbound(
 
     // ALPN (convert Vec<String> if present, otherwise default)
     let alpn = ir
-        .tls_alpn
-        .as_ref()
-        .map(|v| v.clone())
+        .tls_alpn.clone()
         .unwrap_or_else(|| vec!["hysteria".to_string()]);
 
     // QUIC receive windows
@@ -1810,8 +1808,7 @@ fn build_hysteria_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Hysteria v1 uses QUIC stream, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 format!(
                     "Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead",
                     host, port

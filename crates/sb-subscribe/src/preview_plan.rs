@@ -1,4 +1,6 @@
-//! R117: 订阅→DSL→Lint→Plan 聚合（纯离线）。输出 minijson：
+//! R117: Subscription -> DSL -> Lint -> Plan aggregation (purely offline). Outputs minijson:
+//! [Chinese] R117: 订阅→DSL→Lint→Plan 聚合（纯离线）。输出 minijson：
+//!
 //! { ok, meta{format,mode,normalized,ordered,kinds,apply}, dsl_in, dsl_in_hash, lint, plan_summary, patch, dsl_out? }
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
@@ -44,7 +46,8 @@ fn blake3_hex(s: &str) -> String {
     }
 }
 
-/// 计划输出（补齐 Serialize + Display；不改变任何既有字段和语义）
+/// Plan output (implements Serialize + Display; keeps existing fields and semantics).
+/// [Chinese] 计划输出（补齐 Serialize + Display；不改变任何既有字段和语义）。
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PlanOutput {
     pub json: String,
@@ -54,23 +57,27 @@ pub struct PlanOutput {
 }
 
 impl PlanOutput {
-    /// 统一的 JSON 串输出（pretty=false）
+    /// Unified JSON string output (pretty=false).
+    /// [Chinese] 统一的 JSON 串输出（pretty=false）。
     pub fn to_json_string(&self) -> String {
         match serde_json::to_string(self) {
             Ok(s) => s,
             Err(_) => "{\"_error\":\"serialize_failed\"}".to_string(),
         }
     }
-    /// 统一的 JSON 串输出（pretty=true）
+    /// Unified JSON string output (pretty=true).
+    /// [Chinese] 统一的 JSON 串输出（pretty=true）。
     pub fn to_json_pretty(&self) -> String {
         match serde_json::to_string_pretty(self) {
             Ok(s) => s,
             Err(_) => "{\n  \"_error\": \"serialize_failed\"\n}".to_string(),
         }
     }
-    /// （可选）尝试抓取常用字段，缺失即返回 None；供 CLI `--field` 用
+    /// (Optional) Try to fetch common fields, return None if missing; used for CLI `--field`.
+    /// [Chinese] （可选）尝试抓取常用字段，缺失即返回 None；供 CLI `--field` 用。
     pub fn field(&self, key: &str) -> Option<String> {
-        // 通过 Value 中转，避免对具体结构产生强耦合
+        // Proxy via Value to avoid strong coupling with specific structure
+        // [Chinese] 通过 Value 中转，避免对具体结构产生强耦合
         let val = serde_json::to_value(self).ok()?;
         match key {
             "dsl_in" => val
@@ -88,15 +95,18 @@ impl PlanOutput {
     }
 }
 
-/// 为 PlanOutput 提供 Display，从而支持 `.to_string()` 与 `println!("{}", out)`
+/// Provide Display for PlanOutput, supporting `.to_string()` and `println!("{}", out)`.
+/// [Chinese] 为 PlanOutput 提供 Display，从而支持 `.to_string()` 与 `println!("{}", out)`。
 impl fmt::Display for PlanOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // 与 CLI 默认一致：紧凑 JSON
+        // Consistent with CLI default: compact JSON
+        // [Chinese] 与 CLI 默认一致：紧凑 JSON
         write!(f, "{}", self.to_json_string())
     }
 }
 
-/// kinds: 逗号分隔，默认："port_aggregate,portrange_merge,suffix_shadow_cleanup,lint_autofix"
+/// kinds: comma separated, default: "port_aggregate,portrange_merge,suffix_shadow_cleanup,lint_autofix".
+/// [Chinese] kinds: 逗号分隔，默认："port_aggregate,portrange_merge,suffix_shadow_cleanup,lint_autofix"。
 pub fn preview_plan_minijson(
     input: &str,
     format: &str,
@@ -105,9 +115,11 @@ pub fn preview_plan_minijson(
     kinds: Option<&str>,
     apply: bool,
 ) -> Result<PlanOutput, String> {
-    // 订阅 → Profile
+    // Subscription -> Profile
+    // [Chinese] 订阅 → Profile
     let p = parse_profile(input, format, use_keyword)?;
-    // Profile → DSL
+    // Profile -> DSL
+    // [Chinese] Profile → DSL
     let mut dsl = String::new();
     for r in &p.rules {
         dsl.push_str(&r.line);
@@ -116,13 +128,15 @@ pub fn preview_plan_minijson(
     if normalize {
         dsl = sb_core::router::rules_normalize(&dsl);
     }
-    // Lint 报告（minijson + DSL 文本）
+    // Lint report (minijson + DSL text)
+    // [Chinese] Lint 报告（minijson + DSL 文本）
     #[cfg(feature = "subs_lint")]
     let lint = crate::lint::lint_minijson(input, format, use_keyword, normalize)?.json;
     #[cfg(not(feature = "subs_lint"))]
     let lint = "{}".to_string();
 
-    // 计划 kinds 白名单与过滤
+    // Plan kinds whitelist and filtering
+    // [Chinese] 计划 kinds 白名单与过滤
     let whitelist = [
         "portrange_merge",
         "suffix_shadow_cleanup",
@@ -147,12 +161,14 @@ pub fn preview_plan_minijson(
         .cloned()
         .collect();
 
-    // Plan 生成 + 摘要（使用过滤后的 kinds）
+    // Plan generation + Summary (using filtered kinds)
+    // [Chinese] Plan 生成 + 摘要（使用过滤后的 kinds）
     let pr = sb_core::router::patch_plan::build_plan(&dsl, &filtered_kinds, Some("rules.conf"));
     let mut patch = pr.patch_text.clone();
     let summary_json = pr.summary.to_json();
 
-    // 补强：即使空计划也用 lint_autofix 兜底产生 "+/-"
+    // Enhancement: even if plan is empty, use lint_autofix as fallback to generate "+/-"
+    // [Chinese] 补强：即使空计划也用 lint_autofix 兜底产生 "+/-"
     if pr.summary.noop && filtered_kinds.contains(&"lint_autofix") {
         #[allow(unused)]
         {
@@ -167,15 +183,17 @@ pub fn preview_plan_minijson(
         }
     }
 
-    // dry-run 应用（可选）
+    // dry-run apply (optional)
+    // [Chinese] dry-run 应用（可选）
     let applied = if apply && !patch.trim().is_empty() {
         sb_core::router::patch_apply::apply_cli_patch(&dsl, &patch).ok()
     } else {
         None
     };
-    let ordered = false; // 计划补丁是集合风格，不保序；建议 normalize=1
+    let ordered = false; // Plan patch is set-style, unordered; suggest normalize=1. [Chinese] 计划补丁是集合风格，不保序；建议 normalize=1
 
-    // 构造 JSON（按是否返回 dsl_out 分支）
+    // Construct JSON (branch based on whether dsl_out is returned)
+    // [Chinese] 构造 JSON（按是否返回 dsl_out 分支）
     let meta = obj([
         ("format", Val::Str(format)),
         (

@@ -1,5 +1,9 @@
+//! HTTP CONNECT Inbound (Routing + Outbound Registry)
 //! HTTP CONNECT 入站（路由+出站注册表）
-//! P1.4：读头超时；P1.5：IO 计量统一走 sb_core::net::metered。
+//! - P1.4: Read header timeout
+//! - P1.4：读头超时
+//! - P1.5: Unified IO metering via sb_core::net::metered
+//! - P1.5：IO 计量统一走 sb_core::net::metered。
 
 use anyhow::{anyhow, Result};
 use sb_core::obs::access;
@@ -11,12 +15,16 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::{interval, Duration},
 };
+// Use existing `async fn respond_403(cli: &mut TcpStream) -> Result<()>` in the file
 // 使用文件内已有的 `async fn respond_403(cli: &mut TcpStream) -> Result<()>`
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+// NOTE: mainline defaults to off; can be temporarily enabled via env for acceptance/troubleshooting (lazy load).
 // NOTE: mainline 默认关闭；验收/排障时可通过环境变量临时开启（惰性读取）。
+// SB_HTTP_SMOKE_405=1    -> Return 405 directly after accept (Smoke Mode)
 // SB_HTTP_SMOKE_405=1    -> 在 accept 后直接回 405（烟囱模式）
+// SB_HTTP_DISABLE_STOP=1 -> Disable stop interruption during debugging (Use with caution)
 // SB_HTTP_DISABLE_STOP=1 -> 调试时禁用 stop 打断（谨慎使用）
 use std::sync::OnceLock;
 #[allow(dead_code)] // Reserved for smoke testing
@@ -72,9 +80,12 @@ use sb_core::router::runtime::{default_proxy, ProxyChoice};
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
 
+// (Remove unused inbound_parse)
 // （删除未使用的 inbound_parse）
+// Only effective when feature=metrics is enabled; default build is unaffected
 // 只有在 feature=metrics 下才会真正生效，默认构建不受影响
 
+/// NOTE(mainline): Defaults to off, can be temporarily enabled via env for acceptance/troubleshooting.
 /// NOTE(mainline): 默认关闭，验收/排障时可通过环境变量临时开启。
 fn http_smoke_405_enabled() -> bool {
     *HTTP_FLAG_SMOKE_405.get_or_init(|| {
@@ -92,6 +103,7 @@ fn http_disable_stop_enabled() -> bool {
         )
     })
 }
+/// Rollback switch: Degrade to "Write only + Close"
 /// 回滚开关：降级为"只写 + 关"
 /// Note: This is already defined above at line 38, removing duplicate
 #[cfg(test)]
@@ -103,6 +115,7 @@ fn http_legacy_write_enabled_test() -> bool {
     )
 }
 
+// NOTE(mainline): "Smoke Mode" returns 405 on short path only when env is on; default off does not trigger.
 // NOTE(mainline): "烟囱模式"仅在 env 打开时短路径返回 405；默认关闭不触发。
 fn should_short_circuit_405() -> bool {
     http_smoke_405_enabled()
@@ -124,19 +137,25 @@ const MAX_HEADER: usize = 8 * 1024;
 const READ_HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// HTTP proxy configuration
+/// HTTP 代理配置
 #[derive(Clone, Debug)]
 pub struct HttpProxyConfig {
     /// Listen address
+    /// 监听地址
     pub listen: SocketAddr,
     /// Router handle
+    /// 路由句柄
     pub router: Arc<router::RouterHandle>,
     /// Outbound registry handle
+    /// 出站注册表句柄
     pub outbounds: Arc<OutboundRegistryHandle>,
     /// Optional TLS configuration
+    /// 可选的 TLS 配置
     pub tls: Option<sb_transport::TlsConfig>,
 }
 
 /// Ready signal notifier - sends when socket binding completes
+/// 就绪信号通知器 - 当 socket 绑定完成时发送
 pub async fn serve_http(
     cfg: HttpProxyConfig,
     mut stop_rx: mpsc::Receiver<()>,
@@ -191,6 +210,7 @@ pub async fn serve_http(
                         }
                     }
                 };
+                // NOTE(mainline): "Smoke Mode" returns 405 on short path only when env is on; default off does not trigger.
                 // NOTE(mainline): "烟囱模式"仅在 env 打开时短路径返回 405；默认关闭不触发。
                 if should_short_circuit_405() {
                     use tokio::io::AsyncWriteExt;
@@ -231,16 +251,19 @@ pub async fn serve_http(
 }
 
 /// Compatibility alias - run HTTP proxy without ready signal
+/// 兼容性别名 - 运行 HTTP 代理（无就绪信号）
 pub async fn run_http(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     serve_http(cfg, stop_rx, None).await
 }
 
 /// Compatibility alias - serve HTTP proxy
+/// 兼容性别名 - 服务 HTTP 代理
 pub async fn serve(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     serve_http(cfg, stop_rx, None).await
 }
 
 /// Compatibility alias - run HTTP proxy
+/// 兼容性别名 - 运行 HTTP 代理
 pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()> {
     serve_http(cfg, stop_rx, None).await
 }
@@ -271,6 +294,7 @@ where
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("http_respond_total", "code" => "405").increment(1);
+            // Record method name as is (low cardinality); avoid move, clone once
             // 将方法名原样落盘（低基数）；避免 move，clone 一次
             counter!("http_requests_total", "method"=>method.clone(), "code"=>"405").increment(1);
         }
@@ -281,6 +305,7 @@ where
         );
         return respond_405_stream(&mut cli).await.map(|_| ());
     }
+    // Parse host:port (keep original parsing function/error handling in project)
     // 解析 host:port（保持项目里原有的解析函数/错误处理）
     let (host, port) = split_host_port(&target).ok_or_else(|| anyhow!("bad CONNECT target"))?;
     info!(?peer, host=%host, port=%port, "http: CONNECT route");
@@ -288,6 +313,7 @@ where
     let mut decision = RDecision::Direct;
     let proxy = default_proxy();
 
+    // Runtime rule engine (decide first)
     // 运行态规则引擎（先判决）
     if let Some(eng) = rules_global::global() {
         let ctx = RouteCtx {
@@ -311,6 +337,7 @@ where
             ).increment(1);
         }
         if matches!(d, RDecision::Reject) {
+            // Explicit reject
             // 明确拒绝
             let resp = b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
             let _ = cli.write_all(resp).await;
@@ -319,6 +346,7 @@ where
         decision = d;
     }
 
+    // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct
     #[cfg(feature="metrics")]
     metrics::counter!("router_route_total",
@@ -353,6 +381,7 @@ where
 
     let opts = ConnectOpts::default();
 
+    // Establish TCP with upstream first (based on decision and default proxy)
     // 先与上游建立 TCP（根据决策与默认代理）
     let mut upstream: IoStream = match decision {
         RDecision::Direct => {
@@ -517,11 +546,13 @@ where
             return Err(anyhow!("unexpected reject decision in http inbound"));
         }
     };
+    // Respond 200, then tunnel forwarding
     // 应答 200，然后做隧道转发
     let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
     cli.write_all(resp).await?;
     cli.flush().await?;
 
+    // Tunnel forwarding (metered copy; label=http), unified read/write timeout (from env, optional)
     // 隧道转发（计量 copy；label=http），统一读/写超时（来自环境变量，可选）
     let rt = opt_duration_ms_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = opt_duration_ms_from_env("SB_TCP_WRITE_TIMEOUT_MS");
@@ -627,6 +658,7 @@ fn trim_cr(s: &[u8]) -> &[u8] {
     }
 }
 
+/// Parse `host:port` or `[ipv6]:port`
 /// 解析 `host:port` 或 `[ipv6]:port`
 fn split_host_port(s: &str) -> Option<(&str, u16)> {
     if let Some(rest) = s.strip_prefix('[') {
@@ -639,6 +671,7 @@ fn split_host_port(s: &str) -> Option<(&str, u16)> {
     }
 }
 
+// (Instant already imported at top of file, removing duplicate import here)
 // （已在文件顶部导入 Instant，这里删除重复导入）
 async fn respond_405_stream<S>(stream: &mut S) -> anyhow::Result<()>
 where
@@ -664,6 +697,7 @@ where
     Ok(())
 }
 
+// Around original respond_405/400: Unified as "Standard Sequence"; legacy controlled by switch
 // 原 respond_405/400 附近：统一为"标准序列"；legacy 由开关控制
 #[allow(dead_code)]
 async fn respond_405<S>(mut s: S) -> std::io::Result<()>
@@ -671,16 +705,19 @@ where
     S: tokio::io::AsyncWrite + Unpin,
 {
     let start = Instant::now();
+    // Keep header minimal
     // 头部尽量保持最小
     const HDR: &[u8] =
         b"HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
     if http_legacy_write_enabled() {
         s.write_all(HDR).await?;
+        // legacy: Direct shutdown (no flush/no sleep)
         // legacy: 直接 shutdown（无 flush/无 sleep）
         #[allow(unused_must_use)]
         {
             let _ = tokio::io::AsyncWriteExt::shutdown(&mut s).await;
         }
+        // metrics: 405 count
         // metrics: 405 计数
         #[cfg(feature = "metrics")]
         {
@@ -689,6 +726,7 @@ where
         debug!(elapsed_ms=%start.elapsed().as_millis(), mode="legacy", kind="405", "http: respond");
         return Ok(());
     }
+    // Standard sequence: write_all -> flush -> sleep 10ms -> shutdown
     // 标准序列：write_all → flush → sleep 10ms → shutdown
     s.write_all(HDR).await?;
     tokio::io::AsyncWriteExt::flush(&mut s).await?;
@@ -697,6 +735,7 @@ where
     {
         let _ = tokio::io::AsyncWriteExt::shutdown(&mut s).await;
     }
+    // metrics: 405 count
     // metrics: 405 计数
     #[cfg(feature = "metrics")]
     {
@@ -767,6 +806,7 @@ async fn respond_403(cli: &mut TcpStream) -> Result<()> {
     );
     cli.write_all(resp.as_bytes()).await?;
     cli.write_all(body).await?;
+    // metrics: 403 count unified via http_respond_total
     // metrics: 403 计数统一走 http_respond_total
     #[cfg(feature = "metrics")]
     {

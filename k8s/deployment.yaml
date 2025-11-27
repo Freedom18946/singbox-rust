@@ -1,0 +1,215 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: singbox-rust
+  labels:
+    name: singbox-rust
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: singbox-config
+  namespace: singbox-rust
+data:
+  config.json: |
+    {
+      "log": {
+        "level": "info",
+        "output": "stdout",
+        "timestamp": true
+      },
+      "inbounds": [
+        {
+          "type": "trojan",
+          "tag": "trojan-in",
+          "listen": "0.0.0.0",
+          "listen_port": 443,
+          "password": "CHANGEME",
+          "tls": {
+            "enabled": true,
+            "cert_path": "/etc/tls/tls.crt",
+            "key_path": "/etc/tls/tls.key",
+            "alpn": ["h2", "http/1.1"]
+          }
+        }
+      ],
+      "outbounds": [
+        {
+          "type": "direct",
+          "tag": "direct"
+        }
+      ],
+      "route": {
+        "rules": [
+          {
+            "inbound": ["trojan-in"],
+            "outbound": "direct"
+          }
+        ],
+        "final": "direct"
+      }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: singbox-tls
+  namespace: singbox-rust
+type: kubernetes.io/tls
+data:
+  # Base64 encoded TLS certificate and key
+  # Replace with actual values: kubectl create secret tls singbox-tls --cert=cert.pem --key=key.pem -n singbox-rust
+  tls.crt: LS0tLS1CRUdJTi...
+  tls.key: LS0tLS1CRUdJTi...
+---
+apiVersion: apps/v1
+kind:Deployment
+metadata:
+  name: singbox-rust
+  namespace: singbox-rust
+  labels:
+    app: singbox-rust
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: singbox-rust
+  template:
+    metadata:
+      labels:
+        app: singbox-rust
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        
+      containers:
+      - name: singbox-rust
+        image: ghcr.io/freedom18946/singbox-rust:v1.0.0
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: trojan
+          containerPort: 443
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        
+        env:
+        - name: SB_INBOUND_RATE_LIMIT_PER_IP
+          value: "100"
+        - name: SB_INBOUND_RATE_LIMIT_WINDOW_SEC
+          value: "10"
+        - name: SB_INBOUND_RATE_LIMIT_QPS
+          value: "1000"
+        
+        volumeMounts:
+        - name: config
+          mountPath: /etc/singbox-rust
+          readOnly: true
+        - name: tls
+          mountPath: /etc/tls
+          readOnly: true
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+      
+      volumes:
+      - name: config
+        configMap:
+          name: singbox-config
+      - name: tls
+        secret:
+          secretName: singbox-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: singbox-rust
+  namespace: singbox-rust
+  labels:
+    app: singbox-rust
+spec:
+  type: LoadBalancer
+  ports:
+  - name: trojan
+    port: 443
+    targetPort: 443
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  selector:
+    app: singbox-rust
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: singbox-rust-pdb
+  namespace: singbox-rust
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: singbox-rust
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: singbox-rust-hpa
+  namespace: singbox-rust
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: singbox-rust
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

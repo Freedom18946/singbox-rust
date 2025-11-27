@@ -1,44 +1,74 @@
 //! # ECH (Encrypted Client Hello) Support
+//! # ECH (加密客户端 Hello) 支持
 //!
 //! ECH is a TLS extension that encrypts the ClientHello message to prevent
 //! traffic analysis and SNI-based blocking. This module provides:
+//! ECH 是一种 TLS 扩展，它加密 ClientHello 消息以防止流量分析和基于 SNI 的阻断。此模块提供：
 //! - ECH configuration structures
+//! - ECH 配置结构
 //! - ECHConfigList parsing and validation
+//! - ECHConfigList 解析和验证
 //! - HPKE (Hybrid Public Key Encryption) integration
+//! - HPKE (混合公钥加密) 集成
 //! - Runtime handshake integration with rustls
+//! - 与 rustls 的运行时握手集成
 //!
 //! ## How ECH Works
+//! ## ECH 工作原理
 //!
 //! **Client Side:**
+//! **客户端:**
 //! 1. Obtains ECHConfigList (from DNS, config, or other sources)
+//! 1. 获取 ECHConfigList（从 DNS、配置或其他来源）
 //! 2. Encrypts ClientHello using server's public key (HPKE)
+//! 2. 使用服务器公钥加密 ClientHello (HPKE)
 //! 3. Sends encrypted ClientHello in TLS extension
+//! 3. 在 TLS 扩展中发送加密的 ClientHello
 //! 4. Server decrypts and processes the real ClientHello
+//! 4. 服务器解密并处理真实的 ClientHello
 //!
 //! **Key Components:**
+//! **关键组件:**
 //! - DHKEM(X25519, HKDF-SHA256): Key encapsulation mechanism
+//! - DHKEM(X25519, HKDF-SHA256): 密钥封装机制
 //! - HPKE: Hybrid Public Key Encryption for ClientHello encryption
+//! - HPKE: 用于 ClientHello 加密的混合公钥加密
 //! - ECHConfigList: Server's ECH configuration (public key, cipher suites, etc.)
+//! - ECHConfigList: 服务器的 ECH 配置（公钥、密码套件等）
 //!
 //! ## Current Status
+//! ## 当前状态
 //!
 //! - CLI keypair generation: ✅ Complete (app/src/cli/generate.rs)
+//! - CLI 密钥对生成: ✅ 完成 (app/src/cli/generate.rs)
 //! - Runtime handshake integration: 🚧 In Progress
+//! - 运行时握手集成: 🚧 进行中
 //! - rustls ECH support: ⚠️ Limited (as of rustls 0.23)
+//! - rustls ECH 支持: ⚠️ 有限 (截至 rustls 0.23)
 //!
 //! ## Implementation Notes
+//! ## 实现说明
 //!
 //! rustls 0.23 does not have native ECH support. This implementation provides:
+//! rustls 0.23 没有原生 ECH 支持。此实现提供：
 //! 1. ECH configuration structures compatible with sing-box
+//! 1. 与 sing-box 兼容的 ECH 配置结构
 //! 2. ECHConfigList parsing (RFC 9180 format)
+//! 2. ECHConfigList 解析 (RFC 9180 格式)
 //! 3. HPKE encryption primitives
+//! 3. HPKE 加密原语
 //! 4. Custom TLS extension handling (when rustls adds ECH support)
+//! 4. 自定义 TLS 扩展处理（当 rustls 添加 ECH 支持时）
 //!
 //! ## References
+//! ## 参考资料
 //!
 //! - RFC 9180: HPKE (Hybrid Public Key Encryption)
+//! - RFC 9180: HPKE (混合公钥加密)
 //! - draft-ietf-tls-esni: TLS Encrypted Client Hello
+//! - draft-ietf-tls-esni: TLS 加密客户端 Hello
 //! - sing-box ECH implementation
+//! - sing-box ECH 实现
 
 pub mod config;
 pub mod hpke;
@@ -50,37 +80,46 @@ pub use parser::{EchConfigList, parse_ech_config_list};
 use thiserror::Error;
 
 /// ECH-specific errors
+/// ECH 特定错误
 #[derive(Debug, Error)]
 pub enum EchError {
     /// Invalid ECH configuration
+    /// 无效的 ECH 配置
     #[error("Invalid ECH configuration: {0}")]
     InvalidConfig(String),
 
     /// ECH encryption failed
+    /// ECH 加密失败
     #[error("ECH encryption failed: {0}")]
     EncryptionFailed(String),
 
     /// ECH decryption failed
+    /// ECH 解密失败
     #[error("ECH decryption failed: {0}")]
     DecryptionFailed(String),
 
     /// TLS handshake failed with ECH
+    /// ECH TLS 握手失败
     #[error("ECH handshake failed: {0}")]
     HandshakeFailed(String),
 
     /// ECH not supported by server
+    /// 服务器不支持 ECH
     #[error("ECH not supported by server")]
     NotSupported,
 
     /// HPKE operation failed
+    /// HPKE 操作失败
     #[error("HPKE operation failed: {0}")]
     HpkeFailed(String),
 
     /// ECHConfigList parsing failed
+    /// ECHConfigList 解析失败
     #[error("ECHConfigList parsing failed: {0}")]
     ParseFailed(String),
 
     /// IO error
+    /// IO 错误
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -88,10 +127,13 @@ pub enum EchError {
 pub type EchResult<T> = Result<T, EchError>;
 
 /// ECH connector for client-side ECH encryption
+/// 用于客户端 ECH 加密的 ECH 连接器
 pub struct EchConnector {
     /// ECH client configuration
+    /// ECH 客户端配置
     config: EchClientConfig,
     /// Parsed ECH config list
+    /// 解析的 ECH 配置列表
     ech_config_list: Option<parser::EchConfigList>,
 }
 
@@ -113,19 +155,29 @@ impl EchConnector {
     }
 
     /// Wrap a TLS stream with ECH encryption
+    /// 使用 ECH 加密包装 TLS 流
     ///
     /// This method encrypts the ClientHello SNI using the ECH public key
     /// and embeds the encrypted configuration in the TLS extension.
+    /// 此方法使用 ECH 公钥加密 ClientHello SNI，并将加密配置嵌入 TLS 扩展中。
     ///
     /// # Arguments
+    /// # 参数
     /// - `stream`: The underlying stream to wrap
+    /// - `stream`: 要包装的底层流
     /// - `server_name`: The real server name to encrypt in the inner ClientHello
+    /// - `server_name`: 要在内部 ClientHello 中加密的真实服务器名称
     ///
     /// # Returns
+    /// # 返回
     /// An `EchClientHello` structure containing:
+    /// 包含以下内容的 `EchClientHello` 结构：
     /// - Encrypted inner ClientHello
+    /// - 加密的内部 ClientHello
     /// - Outer ClientHello with public name
+    /// - 带有公共名称的外部 ClientHello
     /// - HPKE encapsulated key
+    /// - HPKE 封装密钥
     pub fn wrap_tls(&self, server_name: &str) -> EchResult<EchClientHello> {
         if !self.config.enabled {
             return Err(EchError::InvalidConfig("ECH not enabled".to_string()));
@@ -216,9 +268,12 @@ impl EchConnector {
     }
 
     /// Verify ECH acceptance from server
+    /// 验证服务器是否接受 ECH
     ///
     /// This method checks the server's response to determine if ECH was accepted.
+    /// 此方法检查服务器的响应以确定是否接受了 ECH。
     /// The server indicates ECH acceptance through a specific extension in ServerHello.
+    /// 服务器通过 ServerHello 中的特定扩展指示接受 ECH。
     pub fn verify_ech_acceptance(&self, server_hello: &[u8]) -> EchResult<bool> {
         // Look for ECH acceptance indication in ServerHello
         // In the real implementation, this would parse the ServerHello extensions
@@ -251,15 +306,20 @@ impl EchConnector {
 }
 
 /// ECH ClientHello structure
+/// ECH ClientHello 结构
 #[derive(Debug, Clone)]
 pub struct EchClientHello {
     /// Outer SNI (public name from ECH config)
+    /// 外部 SNI（来自 ECH 配置的公共名称）
     pub outer_sni: String,
     /// Inner SNI (real server name, encrypted)
+    /// 内部 SNI（真实的服务器名称，已加密）
     pub inner_sni: String,
     /// ECH extension payload
+    /// ECH 扩展负载
     pub ech_payload: Vec<u8>,
     /// HPKE encapsulated key
+    /// HPKE 封装密钥
     pub encapsulated_key: Vec<u8>,
 }
 

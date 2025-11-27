@@ -4,6 +4,7 @@ use serde_json::Value;
 // All v1→v2 migration now happens through migrate_to_v2() using serde_json::Value
 
 /// V1 condition fields that get wrapped into the V2 `when` object.
+/// 会被包装进 V2 `when` 对象的 V1 条件字段。
 const V1_CONDITION_FIELDS: &[&str] = &[
     "domain",
     "domain_suffix",
@@ -19,19 +20,21 @@ const V1_CONDITION_FIELDS: &[&str] = &[
 ];
 
 /// Migrate legacy config (v1-style) into v2 canonical layout.
+/// 将旧版配置 (v1 风格) 迁移到 v2 规范布局。
 ///
-/// Transformations applied:
-/// - Moves root `rules` → `route.rules`
-/// - Renames `default_outbound` → `route.default`
-/// - Normalizes outbound type `socks5` → `socks`
-/// - Renames inbound/outbound `tag` → `name`
-/// - Merges inbound `listen` + `listen_port` → `listen: "IP:PORT"`
-/// - Renames route rule `outbound` → `to`
-/// - Wraps rule conditions in `when` object
-/// - Injects `schema_version: 2`
+/// Transformations applied / 应用的转换:
+/// - Moves root `rules` → `route.rules` / 移动根 `rules` 到 `route.rules`
+/// - Renames `default_outbound` → `route.default` / 重命名 `default_outbound` 到 `route.default`
+/// - Normalizes outbound type `socks5` → `socks` / 归一化出站类型 `socks5` 到 `socks`
+/// - Renames inbound/outbound `tag` → `name` / 重命名入站/出站 `tag` 到 `name`
+/// - Merges inbound `listen` + `listen_port` → `listen: "IP:PORT"` / 合并入站 `listen` + `listen_port` 到 `listen: "IP:PORT"`
+/// - Renames route rule `outbound` → `to` / 重命名路由规则 `outbound` 到 `to`
+/// - Wraps rule conditions in `when` object / 将规则条件包装在 `when` 对象中
+/// - Injects `schema_version: 2` / 注入 `schema_version: 2`
 ///
 /// # Panics
 /// Does not panic; silently skips malformed fields.
+/// 不会 panic；静默跳过格式错误的字段。
 #[must_use]
 pub fn migrate_to_v2(raw: &Value) -> Value {
     let mut v = raw.clone();

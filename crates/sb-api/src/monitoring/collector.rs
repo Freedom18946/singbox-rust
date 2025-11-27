@@ -1,4 +1,14 @@
 //! Real-time data collectors for monitoring system
+//! 监控系统的实时数据收集器
+//!
+//! # Strategic Role / 战略角色
+//!
+//! These collectors bridge the gap between `sb-core`'s raw metrics and the API's high-level view.
+//! They poll the core at regular intervals or subscribe to events to maintain an up-to-date
+//! state of the system performance.
+//!
+//! 这些收集器弥合了 `sb-core` 的原始指标与 API 的高级视图之间的差距。
+//! 它们定期轮询核心或订阅事件，以维护系统性能的最新状态。
 
 use crate::{
     monitoring::bridge::{DnsMetrics, MetricsBridge, OutboundMetrics},
@@ -17,6 +27,10 @@ use tokio::{
 };
 
 /// Traffic statistics collector with real-time updates
+/// 具有实时更新功能的流量统计收集器
+///
+/// Aggregates global upload/download counters and calculates current speeds.
+/// 聚合全局上传/下载计数器并计算当前速度。
 pub struct TrafficCollector {
     bridge: Arc<MetricsBridge>,
     is_running: Arc<AtomicBool>,
@@ -180,6 +194,10 @@ impl TrafficCollector {
 }
 
 /// Connection tracking collector
+/// 连接跟踪收集器
+///
+/// Maintains a list of active connections and broadcasts updates when connections open/close.
+/// 维护活动连接列表，并在连接打开/关闭时广播更新。
 pub struct ConnectionCollector {
     connections: Arc<Mutex<Vec<Connection>>>,
     connection_tx: broadcast::Sender<Connection>,

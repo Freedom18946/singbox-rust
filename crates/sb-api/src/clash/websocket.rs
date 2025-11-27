@@ -1,4 +1,13 @@
 //! WebSocket handlers for real-time updates
+//! 用于实时更新的 WebSocket 处理程序
+//!
+//! # Strategic Role / 战略角色
+//!
+//! Manages long-lived WebSocket connections for pushing real-time data (traffic stats, logs)
+//! to the dashboard. This avoids the need for polling and provides a responsive UI experience.
+//!
+//! 管理用于向仪表盘推送实时数据（流量统计、日志）的长连接 WebSocket。
+//! 这避免了轮询的需要，并提供了响应式的 UI 体验。
 
 use crate::{
     clash::server::ApiState,
@@ -15,11 +24,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{sync::broadcast, time::interval};
 
 /// Handle traffic WebSocket connections
+/// 处理流量 WebSocket 连接
+///
+/// Upgrades the HTTP connection to a WebSocket and starts the traffic loop.
+/// 将 HTTP 连接升级为 WebSocket 并启动流量循环。
 pub async fn traffic_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>) -> Response {
     ws.on_upgrade(move |socket| handle_traffic_websocket(socket, state))
 }
 
 /// Handle logs WebSocket connections
+/// 处理日志 WebSocket 连接
+///
+/// Upgrades the HTTP connection to a WebSocket and starts the log loop.
+/// 将 HTTP 连接升级为 WebSocket 并启动日志循环。
 pub async fn logs_websocket(ws: WebSocketUpgrade, State(state): State<ApiState>) -> Response {
     ws.on_upgrade(move |socket| handle_logs_websocket(socket, state))
 }

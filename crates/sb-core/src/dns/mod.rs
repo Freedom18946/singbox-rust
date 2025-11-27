@@ -110,6 +110,14 @@ pub trait Resolver: Send + Sync {
 
     /// 获取解析器名称（用于日志和指标）
     fn name(&self) -> &str;
+
+    /// 解释域名的路由决策
+    async fn explain(&self, _domain: &str) -> Result<serde_json::Value> {
+        Ok(serde_json::json!({
+            "type": "unknown",
+            "message": "explain not supported by this resolver"
+        }))
+    }
 }
 
 /// DNS 上游服务器抽象
@@ -408,8 +416,19 @@ impl ResolverHandle {
             }
             if let Ok(cache) = cache_opt {
                 if let Some(ent) = cache.get(&cache_key) {
+                    // Log "cached" event
+                    tracing::info!(
+                        "cached {} {} {} {}",
+                        key,
+                        "ANY", // In this path we might not know exact QType easily or it's mixed, but let's use ANY or infer from context if possible. 
+                               // Actually resolve_with_cache is generic, but here we are in the cache hit block.
+                               // The cache_key has qtype.
+                        ent.rcode.as_str(),
+                        ent.ttl.as_secs()
+                    );
+
                     #[cfg(feature = "metrics")]
-                ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
+                    ::metrics::counter!("dns_query_total", "hit"=>"hit", "family"=>"ANY", "source"=> match ent.source { crate::dns::cache::Source::Static => "static", _ => "system" }, "rcode"=> ent.rcode.as_str()).increment(1);
                     let ips = if self.ipv6_enabled {
                         ent.ips.clone()
                     } else {
