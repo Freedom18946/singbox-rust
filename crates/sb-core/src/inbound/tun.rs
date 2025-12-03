@@ -5,11 +5,17 @@
 //! through the appropriate outbound connections.
 
 use crate::adapter::InboundService;
+use sb_platform::tun::{AsyncTunDevice, TunConfig as PlatformTunConfig};
+use smoltcp::iface::{Config, Interface, SocketSet};
+use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
+use smoltcp::time::Instant;
+use smoltcp::wire::{HardwareAddress, IpCidr, Ipv4Address};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-use tracing::{debug, error, info};
+
+
+use tracing::{error, info, warn};
 
 /// TUN interface configuration
 #[derive(Debug, Clone)]
@@ -24,7 +30,7 @@ pub struct TunConfig {
     pub ipv6: Option<std::net::Ipv6Addr>,
     /// Enable auto-route configuration
     pub auto_route: bool,
-    /// Stack type (system, gvisor, etc.)
+    /// Stack type (system, gvisor, mixed)
     pub stack: String,
 }
 
@@ -91,96 +97,139 @@ impl TunInboundService {
         self.shutdown.load(Ordering::Relaxed)
     }
 
-    /// Initialize TUN device (platform specific)
-    fn init_device(&self) -> io::Result<()> {
-        info!(
-            "Initializing TUN device: name={}, mtu={}, stack={}",
-            self.config.name, self.config.mtu, self.config.stack
-        );
-
-        // For now, we simulate device initialization
-        // In a real implementation, this would:
-        // 1. Create platform-specific TUN device handle
-        // 2. Configure IP addresses and routes
-        // 3. Set up packet capture/injection interfaces
-
-        debug!("TUN device initialized successfully");
-        Ok(())
-    }
-
-    /// Main packet processing loop
+    /// Main packet processing loop using smoltcp
     async fn process_packets(&self) -> io::Result<()> {
-        let mut packet_count = 0u64;
+        let platform_config = PlatformTunConfig {
+            name: self.config.name.clone(),
+            mtu: self.config.mtu,
+            ipv4: self.config.ipv4.map(Into::into),
+            ipv6: self.config.ipv6.map(Into::into),
+            auto_route: self.config.auto_route,
+            table: None,
+        };
+
+        let mut device = AsyncTunDevice::new(&platform_config).map_err(io::Error::other)?;
+        info!("TUN device {} initialized", device.name());
+
+        // Initialize smoltcp interface
+        let mut config = Config::new(HardwareAddress::Ip);
+        config.random_seed = rand::random();
+        
+        let mut iface = Interface::new(config, &mut TunPhy::new(device.mtu()), Instant::now());
+        iface.update_ip_addrs(|ip_addrs| {
+            if let Some(ipv4) = self.config.ipv4 {
+                let _ = ip_addrs.push(IpCidr::new(smoltcp::wire::IpAddress::Ipv4(Ipv4Address::from_bytes(&ipv4.octets())), 24));
+            }
+        });
+
+        let mut sockets = SocketSet::new(vec![]);
+        let mut buf = vec![0u8; self.config.mtu as usize];
 
         loop {
             if self.is_shutdown() {
-                info!("TUN service shutdown requested, stopping packet processing");
+                info!("TUN service shutdown requested");
                 break;
             }
 
-            // Simulate packet processing delay
-            tokio::time::sleep(Duration::from_millis(100)).await;
-
-            // In a real implementation, this would:
-            // 1. Read packet from TUN device
-            // 2. Parse IP headers and extract destination (host/port, proto)
-            // 3. Optionally peek first bytes of streams for TLS SNI/ALPN when sniff is enabled
-            if self.sniff_enabled {
-                // Demonstrate that sniff path can be called safely. The actual integration
-                // should provide the first TLS/QUIC payload bytes from the flow classifier.
-                #[cfg(feature = "router")]
-                {
-                    let sample: &[u8] = &[]; // replace with real first-segment data
-                    if let Some(info) = crate::routing::sniff::sniff_tls_client_hello(sample) {
-                        tracing::trace!(target: "sb_core::inbound::tun", ?info, "tls clienthello sniffed");
-                    } else if let Some(alpn) = crate::routing::sniff::sniff_quic_initial(sample) {
-                        tracing::trace!(target: "sb_core::inbound::tun", alpn=%alpn, "quic initial detected");
-                    } else {
-                        tracing::trace!(target: "sb_core::inbound::tun", "sniff: no tls/quic signature");
+            // Read packet from TUN
+            match device.read(&mut buf) {
+                Ok(len) => {
+                    if len == 0 {
+                        continue;
+                    }
+                    let packet = &mut buf[..len];
+                    
+                    // Feed to smoltcp
+                    let timestamp = Instant::now();
+                    let mut phy = TunPhy::new(device.mtu());
+                    phy.rx_buf = Some(packet.to_vec()); // Simple buffering for demo
+                    
+                    iface.poll(timestamp, &mut phy, &mut sockets);
+                    // Check for outgoing packets in phy.tx_buf and write to device
+                    if let Some(tx_packet) = phy.tx_buf {
+                        if let Err(e) = device.write(&tx_packet) {
+                            warn!("Failed to write to TUN: {}", e);
+                        }
                     }
                 }
-                #[cfg(not(feature = "router"))]
-                {
-                    tracing::trace!(target: "sb_core::inbound::tun", "sniff: router feature disabled, skipping sniff");
+                Err(e) => {
+                    error!("Failed to read from TUN: {}", e);
+                    break;
                 }
             }
-            // 4. Query router for routing decision
-            // 4. Forward packet to appropriate outbound
-            // 5. Handle return traffic
-
-            packet_count += 1;
-            if packet_count.is_multiple_of(100) {
-                debug!("Processed {} packets", packet_count);
-            }
         }
-
-        info!("TUN packet processing loop ended");
+        
+        let _ = device.close();
         Ok(())
+    }
+}
+
+/// A simple PHY device for smoltcp that buffers a single packet
+struct TunPhy {
+    mtu: u32,
+    rx_buf: Option<Vec<u8>>,
+    tx_buf: Option<Vec<u8>>,
+}
+
+impl TunPhy {
+    fn new(mtu: u32) -> Self {
+        Self { mtu, rx_buf: None, tx_buf: None }
+    }
+}
+
+impl Device for TunPhy {
+    type RxToken<'a> = TunRxToken;
+    type TxToken<'a> = TunTxToken<'a>;
+
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        self.rx_buf.take().map(|buf| (TunRxToken(buf), TunTxToken(self)))
+    }
+
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
+        Some(TunTxToken(self))
+    }
+
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut caps = DeviceCapabilities::default();
+        caps.max_transmission_unit = self.mtu as usize;
+        caps.medium = Medium::Ip;
+        caps
+    }
+}
+
+struct TunRxToken(Vec<u8>);
+
+impl RxToken for TunRxToken {
+    fn consume<R, F>(mut self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        f(&mut self.0)
+    }
+}
+
+struct TunTxToken<'a>(&'a mut TunPhy);
+
+impl<'a> TxToken for TunTxToken<'a> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut buf = vec![0u8; len];
+        let result = f(&mut buf);
+        self.0.tx_buf = Some(buf);
+        result
     }
 }
 
 impl InboundService for TunInboundService {
     fn serve(&self) -> std::io::Result<()> {
         info!("Starting TUN inbound service");
-
-        // Initialize TUN device
-        self.init_device()?;
-
-        // Create async runtime for packet processing
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-
-        // Run packet processing loop
-        rt.block_on(async {
-            if let Err(e) = self.process_packets().await {
-                error!("TUN packet processing failed: {}", e);
-                return Err(e);
-            }
-            Ok(())
-        })
+        rt.block_on(self.process_packets())
     }
 
     fn request_shutdown(&self) {
-        // Signal packet loop to stop
         self.shutdown();
     }
 }

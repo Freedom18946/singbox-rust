@@ -24,7 +24,6 @@
 //!   **全局保护**：全局应用于出站连接以确保稳定性。
 
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{debug, trace, warn};
@@ -68,6 +67,9 @@ pub struct CircuitBreakerConfig {
     /// Max concurrent requests in HalfOpen state
     /// 半开状态下的最大并发请求数
     pub half_open_max_requests: u32,
+    /// Whether to count timeouts as failures
+    /// 是否将超时计为失败
+    pub count_timeouts: bool,
 }
 
 impl Default for CircuitBreakerConfig {
@@ -75,8 +77,9 @@ impl Default for CircuitBreakerConfig {
         Self {
             failure_threshold: 5,
             recovery_timeout: Duration::from_secs(60), // 1 minute
-            failure_window: Duration::from_secs(30), // 30 seconds
+            failure_window: Duration::from_secs(30),   // 30 seconds
             half_open_max_requests: 1,
+            count_timeouts: true,
         }
     }
 }
@@ -110,18 +113,24 @@ impl CircuitBreakerConfig {
             failure_threshold, window_duration_ms, half_open_max_calls, open_timeout_ms
         );
 
+        let count_timeouts = std::env::var("SB_CB_COUNT_TIMEOUTS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(true);
+
         Self {
             failure_threshold,
             failure_window: Duration::from_millis(window_duration_ms),
             half_open_max_requests: half_open_max_calls,
             recovery_timeout: Duration::from_millis(open_timeout_ms),
+            count_timeouts,
         }
     }
 }
 
 /// Sliding window for tracking recent failures
 #[derive(Debug)]
-struct SlidingWindow {
+pub struct SlidingWindow {
     failures: VecDeque<Instant>,
     window_duration: Duration,
 }
@@ -398,9 +407,12 @@ impl CircuitBreaker {
     /// 可通过环境变量进行配置
     fn should_count_failure(&self, is_timeout: bool) -> bool {
         // By default, count all failures including timeouts
+        if is_timeout {
+            self.config.count_timeouts
+        } else {
             true
         }
-
+    }
 
     /// Get current circuit state
     pub async fn state(&self) -> CircuitState {
@@ -472,9 +484,10 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 3,
-                window_duration_ms: 1000,
-                half_open_max_calls: 1,
-                open_timeout_ms: 2000,
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 1,
+                recovery_timeout: Duration::from_millis(2000),
+                count_timeouts: true,
             },
         );
 
@@ -491,9 +504,10 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 2,
-                window_duration_ms: 1000,
-                half_open_max_calls: 1,
-                open_timeout_ms: 100,
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 1,
+                recovery_timeout: Duration::from_millis(100),
+                count_timeouts: true,
             },
         );
 
@@ -521,9 +535,10 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 1,
-                window_duration_ms: 1000,
-                half_open_max_calls: 2,
-                open_timeout_ms: 50, // Short timeout for test
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 2,
+                recovery_timeout: Duration::from_millis(50), // Short timeout for test
+                count_timeouts: true,
             },
         );
 
@@ -558,9 +573,10 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 1,
-                window_duration_ms: 1000,
-                half_open_max_calls: 1,
-                open_timeout_ms: 50,
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 1,
+                recovery_timeout: Duration::from_millis(50),
+                count_timeouts: true,
             },
         );
 
@@ -582,9 +598,10 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 1,
-                window_duration_ms: 1000,
-                half_open_max_calls: 1,
-                open_timeout_ms: 50,
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 1,
+                recovery_timeout: Duration::from_millis(50),
+                count_timeouts: true,
             },
         );
 
@@ -622,14 +639,12 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 2,
-                window_duration_ms: 1000,
-                half_open_max_calls: 1,
-                open_timeout_ms: 100,
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 1,
+                recovery_timeout: Duration::from_millis(100),
+                count_timeouts: false,
             },
         );
-
-        // Set environment to not count timeouts
-        std::env::set_var("SB_CB_COUNT_TIMEOUTS", "false");
 
         // Timeout failures shouldn't count
         cb.record_result(false, true).await; // timeout
@@ -640,9 +655,6 @@ mod tests {
         cb.record_result(false, false).await;
         cb.record_result(false, false).await;
         assert_eq!(cb.state().await, CircuitState::Open);
-
-        // Clean up
-        std::env::remove_var("SB_CB_COUNT_TIMEOUTS");
     }
 
     #[test]
@@ -653,8 +665,8 @@ mod tests {
 
         let config = CircuitBreakerConfig::from_env();
         assert_eq!(config.failure_threshold, 10);
-        assert_eq!(config.window_duration_ms, 5000);
-        assert_eq!(config.half_open_max_calls, 3);
+        assert_eq!(config.failure_window, Duration::from_millis(5000));
+        assert_eq!(config.half_open_max_requests, 3);
 
         // Clean up
         std::env::remove_var("SB_CB_FAILS");
@@ -668,9 +680,10 @@ mod tests {
             "test".to_string(),
             CircuitBreakerConfig {
                 failure_threshold: 1,
-                window_duration_ms: 1000,
-                half_open_max_calls: 1,
-                open_timeout_ms: 100,
+                failure_window: Duration::from_millis(1000),
+                half_open_max_requests: 1,
+                recovery_timeout: Duration::from_millis(100),
+                count_timeouts: true,
             },
         );
 

@@ -36,7 +36,7 @@ rate_limit = ["admin_envelope"]
 jwt = ["jsonwebtoken", "rsa", "p256", "pkcs8", "pkcs1"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
-router  = ["sb-core", "sb-core/router", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss"]
+router  = ["sb-core", "sb-core/router", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss", "sb-transport"]
 observe = ["router", "sb-metrics"]
 out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth"]
@@ -90,6 +90,7 @@ dns_dhcp = ["sb-core/dns_dhcp"]
 dns_resolved = ["sb-core/dns_resolved"]
 dns_tailscale = ["sb-core/dns_tailscale"]
 adapter-wireguard-endpoint = ["sb-adapters/adapter-wireguard-endpoint"]
+vless_mux_ready = []
 
 # Internal gating to include sb-adapters powered inbounds in bootstrap
 adapters = [
@@ -99,9 +100,13 @@ adapters = [
     "sb-adapters/adapter-socks",
     "sb-adapters/socks",
     "sb-adapters/adapter-shadowsocks",
+    "sb-adapters/shadowsocks",
     "sb-adapters/adapter-trojan",
+    "sb-adapters/trojan",
     "sb-adapters/adapter-vmess",
+    "sb-adapters/vmess",
     "sb-adapters/adapter-vless",
+    "sb-adapters/vless",
     "sb-adapters/adapter-naive",
     "sb-adapters/adapter-hysteria",
     "sb-adapters/adapter-hysteria2",
@@ -113,6 +118,10 @@ adapters = [
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",
+    "sb-adapters/router",
+    "service_resolved",
+    "service_ssmapi",
+    "service_derp",
 ]
 
 ## 新增组合预设（示例）
@@ -128,10 +137,22 @@ full    = [
 ]
 scaffold = ["sb-core/scaffold"]
 service_ntp = ["sb-core/service_ntp"]
-service_resolved = ["sb-core/service_resolved"]
-service_ssmapi   = ["sb-core/service_ssmapi"]
+service_resolved = ["sb-core/service_resolved", "sb-adapters/service_resolved"]
+service_ssmapi   = ["sb-core/service_ssmapi", "sb-adapters/service_ssmapi"]
 service_derp     = ["sb-core/service_derp", "sb-adapters/service_derp"]
 hickory-proto = ["dep:hickory-proto"]
+adapter-http = ["sb-adapters/adapter-http"]
+out_tuic = ["sb-core/out_tuic"]
+out_hysteria2 = ["sb-core/out_hysteria2"]
+adapter-dns = []
+adapter-trojan = ["sb-adapters/adapter-trojan"]
+adapter-vless = ["sb-adapters/adapter-vless"]
+adapter-vmess = ["sb-adapters/adapter-vmess"]
+adapter-shadowsocks = ["sb-adapters/adapter-shadowsocks"]
+adapter-shadowtls = ["sb-adapters/adapter-shadowtls"]
+adapter-anytls = ["sb-adapters/adapter-anytls"]
+adapter-wireguard = ["sb-adapters/adapter-wireguard"]
+adapter-tun = ["sb-adapters/adapter-tun"]
 
 ## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
 [[bin]]
@@ -298,6 +319,7 @@ sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
 sb-tls      = { path = "../crates/sb-tls", package = "sb-tls", optional = true }
 futures-util= { version = "0.3", optional = true }
 sb-runtime  = { path = "../crates/sb-runtime", optional = true }
+sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"], optional = true }
 uuid        = { version = "1", features = ["v4"] }
 
 #[dev-dependencies are declared later]
@@ -353,7 +375,7 @@ criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
 sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
-sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "tls_reality", "transport_ech", "transport_mux"] }
+sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "tls_reality", "transport_ech", "transport_mux", "adapter-anytls", "adapter-wireguard-endpoint", "router"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 async-trait = "0.1"

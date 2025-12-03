@@ -366,6 +366,7 @@ mod tests {
     async fn test_pressure_tracker_window_expiry() {
         let config = ResourcePressureConfig {
             pressure_window: Duration::from_millis(100),
+            fd_pressure_threshold: 1,
             ..Default::default()
         };
 

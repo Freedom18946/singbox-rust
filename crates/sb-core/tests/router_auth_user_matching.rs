@@ -38,7 +38,7 @@ fn test_auth_user_exact_match() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("alice"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -56,7 +56,7 @@ fn test_auth_user_exact_match() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("bob"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_bob), Decision::Direct);
 }
@@ -90,6 +90,7 @@ fn test_auth_user_case_insensitive() {
             outbound_tag: None,
             auth_user: Some(username),
             query_type: None,
+            ..Default::default()
         };
         assert_eq!(
             engine.decide(&ctx),
@@ -134,7 +135,7 @@ fn test_auth_user_priority_after_process() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("alice"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -149,7 +150,7 @@ fn test_auth_user_priority_after_process() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("alice"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -167,7 +168,7 @@ fn test_auth_user_priority_after_process() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("alice"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx3),
@@ -201,7 +202,7 @@ fn test_auth_user_no_user_fallback() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Direct);
 }
@@ -240,7 +241,7 @@ fn test_multiple_auth_user_rules() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("alice"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_alice),
@@ -258,7 +259,7 @@ fn test_multiple_auth_user_rules() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("bob"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_bob),
@@ -276,7 +277,7 @@ fn test_multiple_auth_user_rules() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("charlie"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_charlie), Decision::Direct);
 
@@ -291,7 +292,7 @@ fn test_multiple_auth_user_rules() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("dave"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_unknown), Decision::Reject);
 }
@@ -397,7 +398,7 @@ fn test_real_world_multi_user_proxy() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("ceo"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_ceo),
@@ -415,7 +416,7 @@ fn test_real_world_multi_user_proxy() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("alice_eng"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_eng),
@@ -433,7 +434,7 @@ fn test_real_world_multi_user_proxy() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("charlie_sales"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_sales),
@@ -451,7 +452,7 @@ fn test_real_world_multi_user_proxy() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("intern1"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_intern), Decision::Direct);
 
@@ -466,7 +467,7 @@ fn test_real_world_multi_user_proxy() {
         inbound_tag: None,
         outbound_tag: None,
         auth_user: Some("hacker"),
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_unknown), Decision::Reject);
 }

@@ -120,8 +120,10 @@ impl DnsResolver {
             match upstream.query(domain, record_type).await {
                 Ok(answer) => {
                     // Track success stats
-                    self.stats.queries_success.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    
+                    self.stats
+                        .queries_success
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
                     // Log "exchanged" event similar to Go
                     tracing::info!(
                         "exchanged {} {} {} {} {}",
@@ -146,8 +148,10 @@ impl DnsResolver {
                 }
                 Err(e) => {
                     // Track failed stats
-                    self.stats.queries_failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    
+                    self.stats
+                        .queries_failed
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
                     // Log "rejected" event similar to Go (for failures)
                     tracing::info!(
                         "rejected {} {} {} {}",
@@ -405,7 +409,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolver_stats_tracking() {
         use std::sync::atomic::Ordering;
-        
+
         let upstream = Arc::new(
             MockUpstream::new("test")
                 .with_response(
@@ -427,7 +431,7 @@ mod tests {
         );
 
         let resolver = DnsResolver::new(vec![upstream]);
-        
+
         // Test successful query increments success counter
         let _ = resolver.resolve("success.com").await;
         assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 1);

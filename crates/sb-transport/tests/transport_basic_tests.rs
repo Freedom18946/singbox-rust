@@ -29,6 +29,7 @@ mod websocket_tests {
             max_message_size: Some(32 * 1024 * 1024),
             max_frame_size: Some(8 * 1024 * 1024),
             early_data: true,
+            ..Default::default()
         };
 
         assert_eq!(config.path, "/ws");
@@ -49,7 +50,7 @@ mod http2_tests {
         let cfg = Http2Config::default();
         assert_eq!(cfg.path, "/");
         assert!(cfg.enable_pooling);
-        assert_eq!(cfg.max_concurrent_streams, 100);
+        assert_eq!(cfg.max_concurrent_streams, Some(100));
     }
 }
 
@@ -66,6 +67,8 @@ mod tls_tests {
 
 #[cfg(test)]
 mod transport_basic_tests {
+    use sb_transport::TcpDialer;
+
     #[test]
     fn test_dialer_trait_exists() {
         // Create a boxed dialer via the builder to exercise trait object path
@@ -76,8 +79,8 @@ mod transport_basic_tests {
 
     #[test]
     fn test_transport_modules_available() {
-        // Verify the TcpDialer type is available and implements Debug name
-        let _tcp = sb_transport::TcpDialer;
+        let dialer = TcpDialer::default(); // type is available and implements Debug name
+        let _tcp = dialer;
     }
 }
 

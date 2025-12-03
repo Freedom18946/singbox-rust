@@ -14,15 +14,15 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "bench")]
 use hdrhistogram::Histogram;
 #[cfg(feature = "bench")]
-use serde_json::json;
-#[cfg(feature = "bench")]
-use tokio::time::timeout;
-#[cfg(feature = "bench")]
 use hickory_proto::op::{Message, MessageType, OpCode, Query};
 #[cfg(feature = "bench")]
 use hickory_proto::rr::{Name, RecordType};
 #[cfg(feature = "bench")]
 use hickory_proto::serialize::binary::{BinEncodable, BinEncoder};
+#[cfg(feature = "bench")]
+use serde_json::json;
+#[cfg(feature = "bench")]
+use tokio::time::timeout;
 
 #[cfg(feature = "bench")]
 #[tokio::main]

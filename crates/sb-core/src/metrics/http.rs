@@ -68,7 +68,7 @@ pub fn inc_405_responses() {
 pub fn record_connect_duration(_duration_ms: f64) {
     #[cfg(feature = "metrics")]
     HTTP_CONNECT_DURATION_MS
-        .with_label_values(&[])
+        .with_label_values(&[] as &[&str])
         .observe(_duration_ms);
 }
 
@@ -94,20 +94,20 @@ pub fn inc_errors(_class: &str) {
 pub fn set_active_connections(_count: usize) {
     #[cfg(feature = "metrics")]
     HTTP_ACTIVE_CONNECTIONS
-        .with_label_values(&[])
+        .with_label_values(&[] as &[&str])
         .set(_count as f64);
 }
 
 /// Increment active connections
 pub fn inc_active_connections() {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[]).inc();
+    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[] as &[&str]).inc();
 }
 
 /// Decrement active connections
 pub fn dec_active_connections() {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[]).dec();
+    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[] as &[&str]).dec();
 }
 
 /// Error classes for HTTP operations

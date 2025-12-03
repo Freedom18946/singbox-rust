@@ -22,10 +22,14 @@ mod config_tests {
             token: "test-token".to_string(),
             password: Some("test-password".to_string()),
             congestion_control: Some("cubic".to_string()),
-            alpn: Some("tuic".to_string()),
+            alpn: Some(vec!["tuic".to_string()]),
             skip_cert_verify: false,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         assert_eq!(config.server, "example.com");
@@ -44,10 +48,14 @@ mod config_tests {
             token: "test-token".to_string(),
             password: None,
             congestion_control: Some("bbr".to_string()),
-            alpn: Some("tuic".to_string()),
+            alpn: Some(vec!["tuic".to_string()]),
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config);
@@ -70,6 +78,10 @@ mod config_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         assert_eq!(config.password, Some("secret-password".to_string()));
@@ -88,6 +100,10 @@ mod config_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config_quic = TuicConfig {
@@ -112,6 +128,10 @@ mod config_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         assert!(config.udp_over_stream);
@@ -133,6 +153,10 @@ mod config_tests {
                 skip_cert_verify: true,
                 udp_relay_mode: UdpRelayMode::Native,
                 udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
             };
 
             assert_eq!(config.congestion_control, Some(expected.to_string()));
@@ -152,15 +176,19 @@ mod config_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config_custom = TuicConfig {
-            alpn: Some("h3".to_string()),
+            alpn: Some(vec!["h3".to_string()]),
             ..config_default.clone()
         };
 
         assert_eq!(config_default.alpn, None);
-        assert_eq!(config_custom.alpn, Some("h3".to_string()));
+        assert_eq!(config_custom.alpn, Some(vec!["h3".to_string()]));
     }
 }
 
@@ -183,6 +211,10 @@ mod authentication_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -222,6 +254,10 @@ mod authentication_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config2 = TuicConfig {
@@ -255,6 +291,10 @@ mod authentication_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config2 = TuicConfig {
@@ -286,6 +326,10 @@ mod authentication_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -316,6 +360,10 @@ mod handshake_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -347,6 +395,10 @@ mod handshake_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -372,6 +424,10 @@ mod handshake_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -402,6 +458,10 @@ mod handshake_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: false,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -430,6 +490,10 @@ mod udp_framing_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -473,6 +537,10 @@ mod udp_framing_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -499,6 +567,10 @@ mod udp_framing_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -606,6 +678,10 @@ mod udp_framing_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -671,6 +747,10 @@ mod udp_framing_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -697,6 +777,10 @@ mod udp_framing_tests {
             skip_cert_verify: true,
             udp_relay_mode: UdpRelayMode::Native,
             udp_over_stream: true,
+            sni: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = TuicOutbound::new(config).unwrap();
@@ -742,7 +826,7 @@ mod protocol_constants_tests {
 #[cfg(test)]
 #[cfg(feature = "out_tuic")]
 mod contract_tests {
-    use super::*;
+
     use crate::adapter::UdpOutboundFactory;
     use crate::outbound::tuic::{TuicConfig, TuicOutbound, UdpRelayMode};
 
@@ -758,7 +842,7 @@ mod contract_tests {
             token: "token".to_string(),
             password: None,
             congestion_control: Some("bbr".to_string()),
-            alpn: Some("tuic".to_string()),
+            alpn: Some(vec!["tuic".to_string()]),
             skip_cert_verify: true,
             sni: None,
             tls_ca_paths: Vec::new(),

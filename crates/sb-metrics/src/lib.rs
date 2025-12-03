@@ -52,7 +52,7 @@
 pub mod cardinality; // Cardinality monitoring for label explosion prevention
 pub mod http; // HTTP 侧指标（入站/上游代理共用）
 pub mod inbound;
-pub mod server; // Metrics server implementation
+// pub mod server; // Removed unused server metrics
 pub mod socks; // SOCKS 侧指标
 pub mod transfer; // 通用传输指标（带宽/字节数） // 入站统一错误指标
 use std::{
@@ -74,7 +74,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-mod labels;
+pub mod labels;
 
 fn guarded_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec {
     labels::ensure_allowed_labels(name, labels);
@@ -917,11 +917,11 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[allow(clippy::unwrap_used)]
     async fn exporter_noise_smoke() {
         // Directly exercise the /metrics handler without binding sockets.
         let req = Request::builder()
             .method(Method::GET)
-            .uri("/metrics")
             .body(Body::empty())
             .unwrap();
         let resp = metrics_http(req).await.unwrap();

@@ -129,29 +129,33 @@ impl DnsRuleEngine {
     pub async fn explain(&self, domain: &str) -> Result<serde_json::Value> {
         let decision = self.route_domain(domain);
 
-        let matched_rule = decision.matched_rule.as_ref().map(|m| {
-            let source = match &m.source {
-                RuleSetSource::Local(path) => serde_json::json!({
-                    "type": "local",
-                    "path": path
-                }),
-                RuleSetSource::Remote(url) => serde_json::json!({
-                    "type": "remote",
-                    "url": url
-                }),
-            };
-            serde_json::json!({
-                "upstream": m.upstream_tag,
-                "priority": m.priority,
-                "rule_set": {
-                    "source": source,
-                    "format": match m.format {
-                        RuleSetFormat::Binary => "binary",
-                        RuleSetFormat::Source => "source",
+        let matched_rule = decision
+            .matched_rule
+            .as_ref()
+            .map(|m| {
+                let source = match &m.source {
+                    RuleSetSource::Local(path) => serde_json::json!({
+                        "type": "local",
+                        "path": path
+                    }),
+                    RuleSetSource::Remote(url) => serde_json::json!({
+                        "type": "remote",
+                        "url": url
+                    }),
+                };
+                serde_json::json!({
+                    "upstream": m.upstream_tag,
+                    "priority": m.priority,
+                    "rule_set": {
+                        "source": source,
+                        "format": match m.format {
+                            RuleSetFormat::Binary => "binary",
+                            RuleSetFormat::Source => "source",
+                        }
                     }
-                }
+                })
             })
-        }).unwrap_or_else(|| serde_json::Value::Null);
+            .unwrap_or_else(|| serde_json::Value::Null);
 
         Ok(serde_json::json!({
             "domain": domain,
@@ -225,7 +229,8 @@ impl DnsRuleEngine {
                     "dns_rule_match_total",
                     "upstream" => decision.upstream_tag.clone(),
                     "matched" => "true"
-                ).increment(1);
+                )
+                .increment(1);
 
                 return decision;
             }
@@ -253,7 +258,8 @@ impl DnsRuleEngine {
             "dns_rule_match_total",
             "upstream" => decision.upstream_tag.clone(),
             "matched" => "false"
-        ).increment(1);
+        )
+        .increment(1);
 
         decision
     }

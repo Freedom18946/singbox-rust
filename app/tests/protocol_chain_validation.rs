@@ -116,13 +116,13 @@ async fn start_ss_server() -> (SocketAddr, mpsc::Sender<()>) {
 async fn test_chain_trojan_to_shadowsocks() {
     // This test simulates a chain: Client -> Trojan -> Shadowsocks -> Echo Server
     // In a real integration test, we would need to configure the Trojan server's router
-    // to forward to the Shadowsocks server. 
+    // to forward to the Shadowsocks server.
     // For this validation suite, we'll verify the components can be instantiated and connected.
-    
+
     let echo_addr = start_echo_server().await;
     let (ss_addr, _ss_stop) = start_ss_server().await;
     let (trojan_addr, _trojan_stop) = start_trojan_server().await;
-    
+
     // 1. Verify direct connection to SS works
     let ss_client_config = ShadowsocksConfig {
         server: ss_addr.to_string(),
@@ -133,7 +133,7 @@ async fn test_chain_trojan_to_shadowsocks() {
         multiplex: None,
     };
     let ss_connector = ShadowsocksConnector::new(ss_client_config).unwrap();
-    
+
     // 2. Verify direct connection to Trojan works
     let trojan_client_config = TrojanConfig {
         server: trojan_addr.to_string(),
@@ -148,7 +148,7 @@ async fn test_chain_trojan_to_shadowsocks() {
         multiplex: None,
     };
     let trojan_connector = TrojanConnector::new(trojan_client_config);
-    
+
     // Full chaining requires modifying the inbound server's router, which is complex in unit tests.
     // We'll mark this as a placeholder for the full integration test.
     println!("Protocol chaining components verified. Full chain requires router configuration.");

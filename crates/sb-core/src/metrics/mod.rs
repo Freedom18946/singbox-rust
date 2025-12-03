@@ -13,7 +13,7 @@ pub mod geoip;
 pub mod http;
 pub mod http_exporter;
 pub mod inbound;
-pub mod label_guard;
+// pub mod label_guard; // Consolidated into sb-metrics
 pub mod labels;
 pub mod outbound;
 pub mod udp;

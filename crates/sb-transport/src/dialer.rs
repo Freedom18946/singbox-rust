@@ -153,6 +153,9 @@ pub trait Dialer: Send + Sync {
     // - `DialError::Other`: Timeout or other generic errors / 超时或其他通用错误
     // - `DialError::NotSupported`: Dialer does not support this operation / 拨号器不支持该操作
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError>;
+
+    /// Downcast to Any to allow modifying specific dialer implementations
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 /// Allow using `Box<D>` where `D: Dialer` as a Dialer itself.
@@ -163,6 +166,10 @@ where
 {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         (**self).connect(host, port).await
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        (**self).as_any_mut()
     }
 }
 
@@ -180,10 +187,25 @@ where
 // - Direct TCP connections (e.g., HTTP, raw TCP proxies) / 直接的 TCP 连接（如 HTTP、原始 TCP 代理）
 // - As underlying transport for other dialers (e.g., internal implementation of TLS dialer) / 作为其他拨号器的底层传输（如 TLS 拨号器的内部实现）
 // - Simple connection needs in test and development environments / 测试和开发环境中的简单连接需求
-pub struct TcpDialer;
+#[derive(Default)]
+pub struct TcpDialer {
+    pub bind_interface: Option<String>,
+    pub bind_v4: Option<std::net::Ipv4Addr>,
+    pub bind_v6: Option<std::net::Ipv6Addr>,
+    pub routing_mark: Option<u32>,
+    pub reuse_addr: bool,
+    pub connect_timeout: Option<Duration>,
+    pub tcp_fast_open: bool,
+    pub tcp_multi_path: bool,
+    pub udp_fragment: bool,
+}
 
 #[async_trait]
 impl Dialer for TcpDialer {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     /// Establish a TCP connection to the specified host and port
     /// 建立 TCP 连接到指定的主机和端口
     ///
@@ -195,6 +217,11 @@ impl Dialer for TcpDialer {
     ///   - SB_HE_DISABLE=1: Disable Happy Eyeballs, fall back to original behavior / 禁用 Happy Eyeballs，回退到原始行为
     ///   - SB_HE_DELAY_MS: Set IPv4 delay start time (default 50ms) / 设置 IPv4 延迟启动时间（默认 50ms）
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
+        // Note: Configuration fields are currently ignored in this basic implementation
+        // except for potential future use or if we plumb them into socket setup.
+        // For now, we just keep the existing logic but allow fields to be set.
+        // TODO: Plumb bind_interface, etc. into socket creation.
+        
         // 检查是否禁用 Happy Eyeballs
         if std::env::var("SB_HE_DISABLE").is_ok_and(|v| v == "1") {
             debug!("Happy Eyeballs disabled, using traditional dial");
@@ -207,7 +234,12 @@ impl Dialer for TcpDialer {
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(50);
-        let ipv4_delay = Duration::from_millis(delay_ms);
+        let mut ipv4_delay = Duration::from_millis(delay_ms);
+
+        // Apply optional network strategy (prefer ipv4/ipv6 or only one stack)
+        let strategy = std::env::var("SB_NETWORK_STRATEGY")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
 
         debug!(
             "Starting Happy Eyeballs connection to {}:{}, IPv4 delay: {:?}",
@@ -225,8 +257,25 @@ impl Dialer for TcpDialer {
         }
 
         // 分离 IPv6 和 IPv4 地址
-        let (ipv6_addrs, ipv4_addrs): (Vec<_>, Vec<_>) =
+        let (mut ipv6_addrs, mut ipv4_addrs): (Vec<_>, Vec<_>) =
             addrs.into_iter().partition(|addr| addr.is_ipv6());
+
+        match strategy.as_str() {
+            "ipv4_only" => {
+                ipv6_addrs.clear();
+                ipv4_delay = Duration::from_millis(0);
+            }
+            "ipv6_only" => {
+                ipv4_addrs.clear();
+            }
+            "prefer_ipv4" => {
+                // Swap lists so IPv4 is treated as the preferred family
+                std::mem::swap(&mut ipv6_addrs, &mut ipv4_addrs);
+                ipv4_delay = Duration::from_millis(0);
+            }
+            // prefer_ipv6 or empty => keep defaults
+            _ => {}
+        }
 
         debug!(
             "Resolved {} IPv6 addresses, {} IPv4 addresses",
@@ -394,7 +443,17 @@ impl RetryableTcpDialer {
     /// 创建新的可重试TCP拨号器，从环境变量读取重试配置
     pub fn new() -> Self {
         Self {
-            inner: TcpDialer,
+            inner: TcpDialer {
+                bind_interface: None,
+                bind_v4: None,
+                bind_v6: None,
+                routing_mark: None,
+                reuse_addr: false,
+                connect_timeout: None,
+                tcp_fast_open: false,
+                tcp_multi_path: false,
+                udp_fragment: false,
+            },
             retry_policy: RetryPolicy::from_env(),
         }
     }
@@ -403,7 +462,17 @@ impl RetryableTcpDialer {
     /// 创建带指定重试策略的TCP拨号器
     pub fn with_policy(policy: RetryPolicy) -> Self {
         Self {
-            inner: TcpDialer,
+            inner: TcpDialer {
+                bind_interface: None,
+                bind_v4: None,
+                bind_v6: None,
+                routing_mark: None,
+                reuse_addr: false,
+                connect_timeout: None,
+                tcp_fast_open: false,
+                tcp_multi_path: false,
+                udp_fragment: false,
+            },
             retry_policy: policy,
         }
     }
@@ -432,6 +501,10 @@ impl Dialer for RetryableTcpDialer {
                 retry_conditions::is_retriable_error,
             )
             .await
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -463,7 +536,7 @@ impl<D: Dialer> ResourceAwareDialer<D> {
 }
 
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for ResourceAwareDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for ResourceAwareDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // 预先检查是否需要节流
         global_monitor()
@@ -478,6 +551,10 @@ impl<D: Dialer + Send + Sync> Dialer for ResourceAwareDialer<D> {
         }
 
         result
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -505,7 +582,8 @@ impl<D: Dialer + Send + Sync> Dialer for ResourceAwareDialer<D> {
 /// use std::pin::Pin;
 /// use std::future::Future;
 ///
-/// let mock_dialer = FnDialer::new(|host, port| {
+/// let mock_dialer = FnDialer::new(|host: &str, port: u16| {
+///     let host = host.to_string();
 ///     Box::pin(async move {
 ///         // 自定义连接逻辑
 ///         println!("连接到 {}:{}", host, port);
@@ -535,7 +613,7 @@ where
             u16,
         ) -> std::pin::Pin<
             Box<dyn std::future::Future<Output = Result<IoStream, DialError>> + Send + 'static>,
-        >,
+        > + 'static,
 {
     /// Invoke the internal closure to execute custom connection logic
     /// 调用内部闭包执行自定义连接逻辑
@@ -547,6 +625,10 @@ where
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // 调用闭包并等待其返回的 Future 完成
         (self.inner)(host, port).await
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -614,7 +696,7 @@ impl From<tokio::time::error::Elapsed> for DialError {
 /// 该模块包含一些内部使用的 IO 相关类型和工具函数，
 /// 主要用于类型检查和内部测试。
 pub(crate) mod priv_io {
-    use tokio::io::{AsyncRead, AsyncWrite};
+    // use tokio::io::{AsyncRead, AsyncWrite};
 
     /// Type alias for tokio DuplexStream / tokio DuplexStream 的类型别名
     ///
@@ -630,27 +712,4 @@ pub(crate) mod priv_io {
     /// 注意：该类型当前未被使用，但保留以备将来扩展
     #[allow(dead_code)]
     pub type DuplexStream = tokio::io::DuplexStream;
-
-    /// Compile-time type constraint check function
-    /// 编译时类型约束检查函数
-    ///
-    /// This function is used to verify at compile time whether a type satisfies the requirements of AsyncReadWrite,
-    /// including:
-    /// 该函数用于在编译时验证类型是否满足 AsyncReadWrite 的要求，
-    /// 包括：
-    // - `AsyncRead`: Supports async reading / 支持异步读取
-    // - `AsyncWrite`: Supports async writing / 支持异步写入
-    // - `Unpin`: Can be safely moved in memory / 可以安全地在内存中移动
-    // - `Send`: Can be transferred across threads / 可以在线程间传递
-    // - `'static`: Has static lifetime / 具有静态生命周期
-    ///
-    /// # Parameters / 参数
-    // - `_`: Reference to the type to check (argument ignored, used only for type inference) / 要检查的类型的引用（参数被忽略，仅用于类型推断）
-    ///
-    /// # Usage / 用途
-    // - Compile-time type verification / 编译时类型验证
-    // - Ensure type satisfies IoStream requirements / 确保类型满足 IoStream 的要求
-    // - Type checking in testing and development / 测试和开发中的类型检查
-    #[allow(dead_code)]
-    pub fn is_async_read_write<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(_: &T) {}
 }

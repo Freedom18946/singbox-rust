@@ -16,6 +16,9 @@ pub enum Outbound {
     /// Upstream SOCKS5 proxy.
     /// 上游 SOCKS5 代理。
     Socks5(Socks5Config),
+    /// Upstream SOCKS4 proxy.
+    /// 上游 SOCKS4 代理。
+    Socks4(Socks4Config),
     /// VMess protocol.
     /// VMess 协议。
     Vmess(VmessConfig),
@@ -76,6 +79,20 @@ pub struct Socks5Config {
     /// TLS configuration
     #[serde(default)]
     pub tls: Option<TlsConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Socks4Config {
+    /// Server address host:port / 服务器地址 host:port
+    pub server: String,
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// User ID for SOCKS4 authentication / SOCKS4 用户 ID
+    #[serde(default)]
+    pub user_id: Option<String>,
+    /// Connection timeout in seconds (optional) / 建连超时秒（可选）
+    #[serde(default)]
+    pub connect_timeout_sec: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

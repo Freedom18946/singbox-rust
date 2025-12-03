@@ -125,6 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         outbound_tag: None,
         auth_user: None,
         query_type: None,
+        ..Default::default()
     });
     println!(
         "  Parsed rules successfully, default decision: {:?}",

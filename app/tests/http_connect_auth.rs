@@ -1,6 +1,6 @@
 #![allow(clippy::manual_flatten)]
 use sb_config::ir::{
-    ConfigIR, Credentials, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR,
+    ConfigIR, Credentials, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR,
 };
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
@@ -50,6 +50,8 @@ fn start_echo() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
 
 #[test]
 fn http_inbound_basic_auth_required() {
+    let _ = tracing_subscriber::fmt().with_env_filter("debug").try_init();
+    sb_adapters::register_all();
     let (echo_addr, _eh) = start_echo();
     if echo_addr.port() == 0 {
         // skipped due to sandbox
@@ -74,7 +76,7 @@ fn http_inbound_basic_auth_required() {
     let ir = ConfigIR {
         inbounds: vec![InboundIR {
             ty: InboundType::Http,
-            listen: http_addr.ip().to_string(),
+            listen: "127.0.0.1".into(),
             port: http_addr.port(),
             sniff: false,
             udp: false,
@@ -86,6 +88,7 @@ fn http_inbound_basic_auth_required() {
             }),
             override_host: None,
             override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,
@@ -93,24 +96,31 @@ fn http_inbound_basic_auth_required() {
             ..Default::default()
         }],
         route: RouteIR {
-            rules: vec![RuleIR {
-                domain: vec!["*".into()],
-                outbound: Some("direct".into()),
-                ..Default::default()
-            }],
+            rules: vec![],
             default: Some("direct".into()),
+            ..Default::default()
         },
         ntp: None,
         dns: None,
+        ..Default::default()
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng.clone());
+    let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let switchboard = OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, switchboard).start();
-    thread::sleep(Duration::from_millis(80));
+    
     // no auth → 407
     {
-        let mut s = std::net::TcpStream::connect(http_addr).unwrap();
+        // Wait for server to start with retry
+        let mut s = None;
+        for _ in 0..20 {
+            thread::sleep(Duration::from_millis(100));
+            if let Ok(stream) = std::net::TcpStream::connect(http_addr) {
+                s = Some(stream);
+                break;
+            }
+        }
+        let mut s = s.expect("failed to connect to http inbound after retries");
         let req = format!(
             "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
             echo_addr.ip(),

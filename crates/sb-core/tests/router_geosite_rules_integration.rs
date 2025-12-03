@@ -43,6 +43,7 @@ fn test_geosite_rules_with_router_handle() {
 
     // Create a mock RouterIndex with GeoSite rules
     let router_index = sb_core::router::RouterIndex {
+        rules: vec![],
         exact: std::collections::HashMap::new(),
         suffix: vec![],
         suffix_map: std::collections::HashMap::new(),
@@ -57,9 +58,18 @@ fn test_geosite_rules_with_router_handle() {
         geoip_rules: vec![],
         geosite_rules: vec![
             ("google".to_string(), "proxy"),
-            ("ads".to_string(), "reject"),
             ("social".to_string(), "direct"),
         ],
+        wifi_ssid_rules: vec![],
+        wifi_bssid_rules: vec![],
+        rule_set_rules: vec![],
+        process_rules: vec![],
+        process_path_rules: vec![],
+        protocol_rules: vec![],
+        network_rules: vec![],
+        source_rules: vec![],
+        dest_rules: vec![],
+        user_agent_rules: vec![],
         #[cfg(feature = "router_keyword")]
         keyword_rules: vec![],
         #[cfg(feature = "router_keyword")]

@@ -23,7 +23,7 @@ impl DirectInboundAdapter {
     ///
     /// # Returns
     /// A boxed InboundService or an error if parameters are invalid.
-    pub fn new(param: &InboundParam) -> std::io::Result<Box<dyn InboundService>> {
+    pub fn create(param: &InboundParam) -> std::io::Result<Box<dyn InboundService>> {
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
         let listen: SocketAddr = listen_str.parse().map_err(|e| {

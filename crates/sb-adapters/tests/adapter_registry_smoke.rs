@@ -27,70 +27,70 @@ fn test_adapter_module_exists() {
 #[cfg(feature = "adapter-http")]
 fn test_http_feature_enabled() {
     // If this compiles, the adapter-http feature is working
-    assert!(true, "HTTP adapter feature is enabled");
+    // assert!(true, "HTTP adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-socks")]
 fn test_socks_feature_enabled() {
     // If this compiles, the adapter-socks feature is working
-    assert!(true, "SOCKS adapter feature is enabled");
+    // assert!(true, "SOCKS adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-shadowsocks")]
 fn test_shadowsocks_feature_enabled() {
     // If this compiles, the adapter-shadowsocks feature is working
-    assert!(true, "Shadowsocks adapter feature is enabled");
+    // assert!(true, "Shadowsocks adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-vmess")]
 fn test_vmess_feature_enabled() {
     // If this compiles, the adapter-vmess feature is working
-    assert!(true, "VMess adapter feature is enabled");
+    // assert!(true, "VMess adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-vless")]
 fn test_vless_feature_enabled() {
     // If this compiles, the adapter-vless feature is working
-    assert!(true, "VLESS adapter feature is enabled");
+    // assert!(true, "VLESS adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-trojan")]
 fn test_trojan_feature_enabled() {
     // If this compiles, the adapter-trojan feature is working
-    assert!(true, "Trojan adapter feature is enabled");
+    // assert!(true, "Trojan adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-tun")]
 fn test_tun_feature_enabled() {
     // If this compiles, the adapter-tun feature is working
-    assert!(true, "TUN adapter feature is enabled");
+    // assert!(true, "TUN adapter feature is enabled");
 }
 
 #[test]
 #[cfg(feature = "adapter-dns")]
 fn test_dns_feature_enabled() {
     // If this compiles, the adapter-dns feature is working
-    assert!(true, "DNS adapter feature is enabled");
+    // assert!(true, "DNS adapter feature is enabled");
 }
 
 #[test]
 #[cfg(all(feature = "adapter-tuic", feature = "out_tuic"))]
 fn test_tuic_feature_enabled() {
     // If this compiles, the out_tuic feature is working
-    assert!(true, "TUIC outbound feature is enabled");
+    // assert!(true, "TUIC outbound feature is enabled");
 }
 
 #[test]
 #[cfg(all(feature = "adapter-hysteria2", feature = "out_hysteria2"))]
 fn test_hysteria2_feature_enabled() {
     // If this compiles, the out_hysteria2 feature is working
-    assert!(true, "Hysteria2 outbound feature is enabled");
+    // assert!(true, "Hysteria2 outbound feature is enabled");
 }
 
 /// Test that the documented inbound count stays in sync with the parity matrix

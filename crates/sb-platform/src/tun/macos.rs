@@ -41,6 +41,7 @@ impl MacOsTun {
         // Copy control name to the structure
         let name_bytes = control_name.as_bytes_with_nul();
         let copy_len = std::cmp::min(name_bytes.len(), ctl_info.ctl_name.len());
+        #[allow(clippy::cast_possible_wrap)] // C API requires c_char which may be i8
         for (i, &byte) in name_bytes.iter().take(copy_len).enumerate() {
             ctl_info.ctl_name[i] = byte as libc::c_char;
         }
@@ -64,6 +65,7 @@ impl MacOsTun {
         }
 
         // Connect to the utun control
+        #[allow(clippy::cast_possible_truncation)] // SockaddrCtl is always 32 bytes on all platforms
         let addr = SockaddrCtl {
             sc_len: std::mem::size_of::<SockaddrCtl>() as u8,
             sc_family: AF_SYSTEM,
@@ -77,10 +79,12 @@ impl MacOsTun {
         // - 不变量：fd 是有效的文件描述符，addr 指向有效的 SockaddrCtl 结构体
         // - 并发/别名：addr 为局部变量，由当前线程独占访问
         // - FFI/平台契约：connect 系统调用参数类型转换合法
+        #[allow(clippy::ptr_as_ptr, clippy::borrow_as_ptr)] // Required for C FFI
+        #[allow(clippy::cast_possible_truncation)] // socklen_t is u32 on macOS
         let result = unsafe {
             libc::connect(
                 fd,
-                &addr as *const _ as *const libc::sockaddr,
+                (&raw const addr).cast::<libc::sockaddr>(),
                 std::mem::size_of::<SockaddrCtl>() as u32,
             )
         };
@@ -120,13 +124,12 @@ impl MacOsTun {
             unit_str
                 .parse::<u32>()
                 .map(|n| n + 1) // utun kernel numbering starts from 1
-                .map_err(|_| TunError::InvalidConfig(format!("Invalid utun name: {}", name)))
+                .map_err(|_| TunError::InvalidConfig(format!("Invalid utun name: {name}")))
         } else if name.is_empty() {
             Ok(0) // Let kernel assign
         } else {
             Err(TunError::InvalidConfig(format!(
-                "Invalid utun name: {}",
-                name
+                "Invalid utun name: {name}"
             )))
         }
     }
@@ -135,19 +138,21 @@ impl MacOsTun {
     fn get_utun_name(fd: RawFd) -> Result<String, TunError> {
         // Query the interface name using socket options
         let mut ifname = [0u8; libc::IF_NAMESIZE];
+        #[allow(clippy::cast_possible_truncation)]  // IF_NAMESIZE is a small constant
         let mut len = libc::IF_NAMESIZE as libc::socklen_t;
 
         // SAFETY:
         // - 不变量：fd 是有效的文件描述符，ifname 是大小为 IF_NAMESIZE 的可变缓冲区
         // - 并发/别名：ifname 为局部变量，由当前线程独占访问
         // - FFI/平台契约：getsockopt 系统调用参数类型和大小正确
+        #[allow(clippy::cast_possible_truncation, clippy::ptr_as_ptr, clippy::borrow_as_ptr)] // Required for C FFI
         let result = unsafe {
             libc::getsockopt(
                 fd,
                 SYSPROTO_CONTROL,
                 UTUN_OPT_IFNAME,
-                ifname.as_mut_ptr() as *mut libc::c_void,
-                &mut len,
+                ifname.as_mut_ptr().cast::<libc::c_void>(),
+                &raw mut len,
             )
         };
 
@@ -179,6 +184,51 @@ impl MacOsTun {
             self.set_ipv6_address(ipv6)?;
         }
 
+        // Configure auto-route if enabled
+        if config.auto_route {
+            self.setup_route(config)?;
+        }
+
+        Ok(())
+    }
+
+    /// Set up routing for the interface
+    fn setup_route(&self, config: &TunConfig) -> Result<(), TunError> {
+        // Add default route for IPv4
+        // route add default -interface <name>
+        let output = std::process::Command::new("route")
+            .args(["add", "default", "-interface", &self.name])
+            .output()
+            .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv4 route: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Ignore "File exists" error which means route already exists
+            if !stderr.contains("File exists") {
+                return Err(TunError::OperationFailed(format!(
+                    "Failed to add default IPv4 route: {stderr}"
+                )));
+            }
+        }
+
+        // Add default route for IPv6 if configured
+        if config.ipv6.is_some() {
+            // route add -inet6 default -interface <name>
+            let output = std::process::Command::new("route")
+                .args(["add", "-inet6", "default", "-interface", &self.name])
+                .output()
+                .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv6 route: {e}")))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.contains("File exists") {
+                    return Err(TunError::OperationFailed(format!(
+                        "Failed to add default IPv6 route: {stderr}"
+                    )));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -187,13 +237,12 @@ impl MacOsTun {
         let output = std::process::Command::new("ifconfig")
             .args([&self.name, "mtu", &mtu.to_string()])
             .output()
-            .map_err(|e| TunError::OperationFailed(format!("Failed to set MTU: {}", e)))?;
+            .map_err(|e| TunError::OperationFailed(format!("Failed to set MTU: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(TunError::OperationFailed(format!(
-                "Failed to set MTU: {}",
-                stderr
+                "Failed to set MTU: {stderr}"
             )));
         }
 
@@ -205,13 +254,12 @@ impl MacOsTun {
         let output = std::process::Command::new("ifconfig")
             .args([&self.name, "inet", &addr.to_string(), &addr.to_string()])
             .output()
-            .map_err(|e| TunError::OperationFailed(format!("Failed to set IPv4 address: {}", e)))?;
+            .map_err(|e| TunError::OperationFailed(format!("Failed to set IPv4 address: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(TunError::OperationFailed(format!(
-                "Failed to set IPv4 address: {}",
-                stderr
+                "Failed to set IPv4 address: {stderr}"
             )));
         }
 
@@ -221,15 +269,14 @@ impl MacOsTun {
     /// Set IPv6 address for the interface
     fn set_ipv6_address(&self, addr: std::net::IpAddr) -> Result<(), TunError> {
         let output = std::process::Command::new("ifconfig")
-            .args([&self.name, "inet6", &format!("{}/64", addr)])
+            .args([&self.name, "inet6", &format!("{addr}/64")])
             .output()
-            .map_err(|e| TunError::OperationFailed(format!("Failed to set IPv6 address: {}", e)))?;
+            .map_err(|e| TunError::OperationFailed(format!("Failed to set IPv6 address: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(TunError::OperationFailed(format!(
-                "Failed to set IPv6 address: {}",
-                stderr
+                "Failed to set IPv6 address: {stderr}"
             )));
         }
 
@@ -277,14 +324,13 @@ impl TunDevice for MacOsTun {
         let mut packet = Vec::with_capacity(buf.len() + 4);
 
         // Determine protocol family from IP version
-        let family = if !buf.is_empty() {
-            match buf[0] >> 4 {
-                4 => libc::AF_INET as u32,
-                6 => libc::AF_INET6 as u32,
-                _ => libc::AF_INET as u32, // Default to IPv4
-            }
-        } else {
+        let family = if buf.is_empty() {
             libc::AF_INET as u32
+        } else {
+            match buf[0] >> 4 {
+                6 => libc::AF_INET6 as u32,
+                _ => libc::AF_INET as u32, // Default to IPv4 (includes version 4)
+            }
         };
 
         // Add protocol family header in network byte order
@@ -329,11 +375,13 @@ impl AsRawFd for MacOsTun {
 
 impl MacOsTun {
     /// Expose raw file descriptor for integration layers that need it (e.g. tun2socks).
+    #[must_use]
     pub fn raw_fd(&self) -> RawFd {
         self.file.as_raw_fd()
     }
 
     /// Return the resolved interface name assigned by the kernel.
+    #[must_use]
     pub fn interface_name(&self) -> &str {
         &self.name
     }
@@ -344,7 +392,7 @@ const SYSPROTO_CONTROL: libc::c_int = 2;
 const AF_SYSTEM: u8 = 32;
 const AF_SYS_CONTROL: u16 = 2;
 const UTUN_CONTROL_NAME: &str = "com.apple.net.utun_control";
-const CTLIOCGINFO: libc::c_ulong = 0xC0644E03;
+const CTLIOCGINFO: libc::c_ulong = 0xC064_4E03;
 const UTUN_OPT_IFNAME: libc::c_int = 2;
 
 /// Control info structure for macOS

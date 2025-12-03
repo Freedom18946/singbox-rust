@@ -387,6 +387,19 @@ impl HysteriaV1Inbound {
         Ok(())
     }
 
+    /// Get the local address the server is bound to
+    pub async fn local_addr(&self) -> io::Result<SocketAddr> {
+        let endpoint = self.endpoint.lock().await;
+        if let Some(ep) = &*endpoint {
+            ep.local_addr()
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "Server not started",
+            ))
+        }
+    }
+
     /// Accept incoming connections
     pub async fn accept(&self) -> io::Result<(HysteriaV1Stream, SocketAddr)> {
         let endpoint = self
@@ -526,6 +539,11 @@ impl HysteriaV1Inbound {
                     ));
                 }
             }
+        } else if self.config.auth.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Authentication required",
+            ));
         }
 
         Ok(())

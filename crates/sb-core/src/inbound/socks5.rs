@@ -11,6 +11,7 @@ use crate::log::{self, Level};
 
 #[cfg(feature = "router")]
 use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
+use sb_platform::process::{ConnectionInfo, Protocol};
 
 #[cfg(feature = "router")]
 type EngineX<'a> = RouterEngine<'a>;
@@ -150,8 +151,8 @@ pub(crate) async fn handle_conn(
         });
 
         // Spawn UDP relay loop
-        let eng = eng.clone();
-        let br = bridge.clone();
+        let eng_owned = eng.clone();
+        let br_owned = bridge.clone();
         tokio::spawn(async move {
             // Track client endpoint (learned from first client datagram)
             let mut client_ep: Option<std::net::SocketAddr> = None;
@@ -244,6 +245,15 @@ pub(crate) async fn handle_conn(
                         } else {
                             crate::routing::sniff::SniffOutcome::default()
                         };
+                        let mut matched_rule_sets = Vec::new();
+                        if let Some(router) = &br_owned.router {
+                            if let Some(db) = router.rule_set_db() {
+                                db.match_host(&dst_host, &mut matched_rule_sets);
+                                if let Ok(ip) = dst_host.parse() {
+                                    db.match_ip(ip, &mut matched_rule_sets);
+                                }
+                            }
+                        }
                         let input = RouterInput {
                             host: &dst_host,
                             port: dst_port,
@@ -252,8 +262,18 @@ pub(crate) async fn handle_conn(
                             sniff_host: None,
                             sniff_alpn: sniffed.alpn.as_deref(),
                             sniff_protocol: sniffed.protocol,
+                            wifi_ssid: None,
+                            wifi_bssid: None,
+                            process_name: None,
+                            process_path: None,
+                            user_agent: None,
+                            rule_set: if matched_rule_sets.is_empty() {
+                                None
+                            } else {
+                                Some(&matched_rule_sets)
+                            },
                         };
-                        eng.decide(&input, false)
+                        eng_owned.decide(&input, false)
                     };
                     #[cfg(not(feature = "router"))]
                     let d = {
@@ -263,13 +283,13 @@ pub(crate) async fn handle_conn(
                             network: "udp".to_string(),
                             protocol: "socks".to_string(),
                         };
-                        eng.decide(&input, false)
+                        eng_owned.decide(&input, false)
                     };
                     let out_name = d.outbound;
 
                     // Open UDP session once, if available for outbound
                     if udp_sess.is_none() {
-                        if let Some(factory) = br.find_udp_factory(&out_name) {
+                        if let Some(factory) = br_owned.find_udp_factory(&out_name) {
                             match factory.open_session().await {
                                 Ok(sess) => {
                                     // Spawn a receive loop for this session → client endpoint
@@ -277,31 +297,26 @@ pub(crate) async fn handle_conn(
                                         let relay_c = relay.clone();
                                         let sess_c = sess.clone();
                                         tokio::spawn(async move {
-                                            loop {
-                                                match sess_c.recv_from().await {
-                                                    Ok((data, src_addr)) => {
-                                                        // Wrap and forward to client
-                                                        let mut pkt =
-                                                            Vec::with_capacity(data.len() + 10);
-                                                        pkt.extend_from_slice(&[0x00, 0x00, 0x00]); // RSV RSV FRAG
-                                                        match src_addr.ip() {
-                                                            std::net::IpAddr::V4(v4) => {
-                                                                pkt.push(0x01);
-                                                                pkt.extend_from_slice(&v4.octets());
-                                                            }
-                                                            std::net::IpAddr::V6(v6) => {
-                                                                pkt.push(0x04);
-                                                                pkt.extend_from_slice(&v6.octets());
-                                                            }
-                                                        }
-                                                        pkt.extend_from_slice(
-                                                            &src_addr.port().to_be_bytes(),
-                                                        );
-                                                        pkt.extend_from_slice(&data);
-                                                        let _ = relay_c.send_to(&pkt, ep).await;
+                                            while let Ok((data, src_addr)) = sess_c.recv_from().await {
+                                                // Wrap and forward to client
+                                                let mut pkt =
+                                                    Vec::with_capacity(data.len() + 10);
+                                                pkt.extend_from_slice(&[0x00, 0x00, 0x00]); // RSV RSV FRAG
+                                                match src_addr.ip() {
+                                                    std::net::IpAddr::V4(v4) => {
+                                                        pkt.push(0x01);
+                                                        pkt.extend_from_slice(&v4.octets());
                                                     }
-                                                    Err(_) => break,
+                                                    std::net::IpAddr::V6(v6) => {
+                                                        pkt.push(0x04);
+                                                        pkt.extend_from_slice(&v6.octets());
+                                                    }
                                                 }
+                                                pkt.extend_from_slice(
+                                                    &src_addr.port().to_be_bytes(),
+                                                );
+                                                pkt.extend_from_slice(&data);
+                                                let _ = relay_c.send_to(&pkt, ep).await;
                                             }
                                         });
                                     }
@@ -361,29 +376,24 @@ pub(crate) async fn handle_conn(
                             let upstream_c = upstream.clone();
                             tokio::spawn(async move {
                                 let mut rbuf = vec![0u8; 64 * 1024];
-                                loop {
-                                    match upstream_c.recv(&mut rbuf).await {
-                                        Ok(m) => {
-                                            // Use connected peer as source
-                                            if let Ok(peer) = upstream_c.peer_addr() {
-                                                let mut pkt = Vec::with_capacity(m + 10);
-                                                pkt.extend_from_slice(&[0x00, 0x00, 0x00]);
-                                                match peer.ip() {
-                                                    std::net::IpAddr::V4(v4) => {
-                                                        pkt.push(0x01);
-                                                        pkt.extend_from_slice(&v4.octets());
-                                                    }
-                                                    std::net::IpAddr::V6(v6) => {
-                                                        pkt.push(0x04);
-                                                        pkt.extend_from_slice(&v6.octets());
-                                                    }
-                                                }
-                                                pkt.extend_from_slice(&peer.port().to_be_bytes());
-                                                pkt.extend_from_slice(&rbuf[..m]);
-                                                let _ = relay_c.send_to(&pkt, client_c).await;
+                                while let Ok(m) = upstream_c.recv(&mut rbuf).await {
+                                    // Use connected peer as source
+                                    if let Ok(peer) = upstream_c.peer_addr() {
+                                        let mut pkt = Vec::with_capacity(m + 10);
+                                        pkt.extend_from_slice(&[0x00, 0x00, 0x00]);
+                                        match peer.ip() {
+                                            std::net::IpAddr::V4(v4) => {
+                                                pkt.push(0x01);
+                                                pkt.extend_from_slice(&v4.octets());
+                                            }
+                                            std::net::IpAddr::V6(v6) => {
+                                                pkt.push(0x04);
+                                                pkt.extend_from_slice(&v6.octets());
                                             }
                                         }
-                                        Err(_) => break,
+                                        pkt.extend_from_slice(&peer.port().to_be_bytes());
+                                        pkt.extend_from_slice(&rbuf[..m]);
+                                        let _ = relay_c.send_to(&pkt, client_c).await;
                                     }
                                 }
                             });
@@ -501,6 +511,40 @@ pub(crate) async fn handle_conn(
         let sniff_host_ref = sniff_host_opt.as_deref();
         let sniff_alpn_ref = sniff_alpn_opt.as_deref();
         let sniff_proto_ref = sniff_protocol_opt;
+
+        // Process matching
+        let mut process_name: Option<String> = None;
+        let mut process_path: Option<String> = None;
+
+        if let Some(matcher) = &bridge.context.process_matcher {
+            let find_process = {
+                let opts = bridge.context.network.route_options();
+                opts.find_process
+            };
+            if find_process {
+                if let (Ok(local_addr), Ok(remote_addr)) = (cli.local_addr(), cli.peer_addr()) {
+                    let conn_info = ConnectionInfo {
+                        local_addr,
+                        remote_addr,
+                        protocol: Protocol::Tcp,
+                    };
+                    if let Ok(info) = matcher.match_connection(&conn_info).await {
+                        process_name = Some(info.name);
+                        process_path = Some(info.path);
+                    }
+                }
+            }
+        }
+
+        let mut matched_rule_sets = Vec::new();
+        if let Some(router) = &bridge.router {
+            if let Some(db) = router.rule_set_db() {
+                db.match_host(&host, &mut matched_rule_sets);
+                if let Ok(ip) = host.parse() {
+                    db.match_ip(ip, &mut matched_rule_sets);
+                }
+            }
+        }
         let input = RouterInput {
             host: &host,
             port,
@@ -509,6 +553,16 @@ pub(crate) async fn handle_conn(
             sniff_host: sniff_host_ref,
             sniff_alpn: sniff_alpn_ref,
             sniff_protocol: sniff_proto_ref,
+            wifi_ssid: None,
+            wifi_bssid: None,
+            process_name: process_name.as_deref(),
+            process_path: process_path.as_deref(),
+            user_agent: None,
+            rule_set: if matched_rule_sets.is_empty() {
+                None
+            } else {
+                Some(&matched_rule_sets)
+            },
         };
         eng.decide(&input, false)
     };
@@ -676,10 +730,9 @@ impl InboundService for Socks5 {
             let cfg = Box::leak(Box::new(sb_config::ir::ConfigIR::default()));
             self.engine.clone().unwrap_or_else(|| EngineX::new(cfg))
         };
-        let br = self
-            .bridge
-            .clone()
-            .unwrap_or_else(|| Arc::new(crate::adapter::Bridge::new()));
+        let br = self.bridge.clone().unwrap_or_else(|| {
+            Arc::new(crate::adapter::Bridge::new(crate::context::Context::new()))
+        });
 
         // 使用当前 tokio runtime 或创建新的
         match tokio::runtime::Handle::try_current() {

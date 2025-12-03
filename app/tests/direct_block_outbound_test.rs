@@ -2,11 +2,13 @@
 use sb_adapters::register_all;
 use sb_config::ir::{OutboundIR, OutboundType};
 use sb_core::adapter::{registry, Bridge, OutboundParam};
+use sb_core::context::{Context, ContextRegistry};
 use std::sync::Arc;
 
 fn ctx() -> registry::AdapterOutboundContext {
     registry::AdapterOutboundContext {
-        bridge: Arc::new(Bridge::new()),
+        bridge: Arc::new(Bridge::new(Context::new())),
+        context: ContextRegistry::from(&Context::new()),
     }
 }
 
@@ -40,11 +42,11 @@ fn test_direct_outbound_registration() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Direct outbound should be buildable");
 
-    let (connector, udp_factory) = result.unwrap();
+    let (_connector, udp_factory) = result.unwrap();
     // Connector is already Arc<dyn OutboundConnector>, not Option
     assert!(
-        udp_factory.is_none(),
-        "Direct outbound should not support UDP"
+        udp_factory.is_some(),
+        "Direct outbound should support UDP"
     );
 }
 
@@ -78,7 +80,7 @@ fn test_block_outbound_registration() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Block outbound should be buildable");
 
-    let (connector, udp_factory) = result.unwrap();
+    let (_connector, udp_factory) = result.unwrap();
     // Connector is already Arc<dyn OutboundConnector>, not Option
     assert!(
         udp_factory.is_none(),

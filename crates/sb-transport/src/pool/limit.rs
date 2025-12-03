@@ -51,7 +51,7 @@ impl<D: Dialer + Clone> LimitedDialer<D> {
 }
 
 #[async_trait::async_trait]
-impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
+impl<D: Dialer + Clone + Send + Sync + 'static> Dialer for LimitedDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // Acquire a permit from the semaphore
         // 从信号量获取许可
@@ -70,6 +70,10 @@ impl<D: Dialer + Clone + Send + Sync> Dialer for LimitedDialer<D> {
         let res = self.inner.connect(host, port).await;
         drop(permit); // release
         res
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

@@ -1,4 +1,4 @@
-#![cfg(all(feature = "net_e2e"))]
+#![cfg(feature = "net_e2e")]
 //! E2E: Hysteria2 UDP session round-trip using core inbound server.
 
 use std::net::SocketAddr;

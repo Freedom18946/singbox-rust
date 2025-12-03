@@ -3,9 +3,7 @@
 //! Tests for DNS configuration and URL parsing
 
 use anyhow::Result;
-use sb_config::ir::{DnsIR, DnsServerIR};
-use sb_core::dns::config_builder::resolver_from_ir;
-use std::sync::Arc;
+// use sb_config::ir::DnsServerIR;
 
 #[cfg(feature = "dns_udp")]
 #[test]
@@ -129,6 +127,7 @@ fn test_doh3_server_ir_parsing() -> Result<()> {
 
     // Test DoH3 with full server IR
     let server_ir = DnsServerIR {
+        tag: "test-doh3".to_string(),
         address: "doh3://1.1.1.1:443/dns-query".to_string(),
         sni: Some("cloudflare-dns.com".to_string()),
         client_subnet: Some("1.2.3.0/24".to_string()),
@@ -150,6 +149,7 @@ fn test_doh3_server_ir_with_tls_options() -> Result<()> {
 
     // Test DoH3 with custom CA and SNI
     let server_ir = DnsServerIR {
+        tag: "test-doh3-tls".to_string(),
         address: "doh3://private-dns.example:8443/query".to_string(),
         sni: Some("dns.example.com".to_string()),
         client_subnet: None,
@@ -189,15 +189,10 @@ fn test_system_resolver_parsing() -> Result<()> {
 #[test]
 fn test_all_dns_transports_available() {
     // Test that all DNS transports can be imported when features are enabled
-    use sb_core::dns::transport::{
-        DnsTransport, Doh3Transport, DohTransport, DoqTransport, DotTransport, UdpTransport,
-    };
+
 
     // This is a compile-time test - if it compiles, all transports are available
-    assert!(
-        true,
-        "All DNS transports should be available with features enabled"
-    );
+    // No runtime assertion needed
 }
 
 #[cfg(feature = "dns_doh3")]

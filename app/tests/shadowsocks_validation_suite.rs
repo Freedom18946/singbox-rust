@@ -120,7 +120,7 @@ async fn test_ss_aes_128_gcm() {
 
     let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
     stream.write_all(b"test-aes-128-gcm").await.unwrap();
-    
+
     let mut buf = vec![0u8; 16];
     stream.read_exact(&mut buf).await.unwrap();
     assert_eq!(&buf, b"test-aes-128-gcm");
@@ -149,7 +149,7 @@ async fn test_ss_aes_256_gcm() {
 
     let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
     stream.write_all(b"test-aes-256-gcm").await.unwrap();
-    
+
     let mut buf = vec![0u8; 16];
     stream.read_exact(&mut buf).await.unwrap();
     assert_eq!(&buf, b"test-aes-256-gcm");
@@ -178,7 +178,7 @@ async fn test_ss_chacha20_poly1305() {
 
     let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
     stream.write_all(b"test-chacha20").await.unwrap();
-    
+
     let mut buf = vec![0u8; 13];
     stream.read_exact(&mut buf).await.unwrap();
     assert_eq!(&buf, b"test-chacha20");
@@ -191,11 +191,11 @@ async fn test_ss_chacha20_poly1305() {
 #[tokio::test]
 async fn test_ss_udp_relay() {
     use tokio::net::UdpSocket;
-    
+
     // Start UDP echo server
     let udp_echo = UdpSocket::bind("127.0.0.1:0").await.expect("bind udp echo");
     let echo_addr = udp_echo.local_addr().unwrap();
-    
+
     tokio::spawn(async move {
         let mut buf = vec![0u8; 65535];
         loop {
@@ -204,16 +204,16 @@ async fn test_ss_udp_relay() {
             }
         }
     });
-    
+
     tokio::time::sleep(Duration::from_millis(100)).await;
-    
+
     // Note: Full UDP relay testing requires UDP support in both client and server
     // This is a basic connectivity test. Full UDP relay would need:
     // - UDP associate command support
     // - SOCKS5 UDP relay protocol
     // - NAT session management
     // For now, we verify TCP connectivity works, which is the foundation
-    
+
     let (server_addr, _stop_tx) = start_ss_server("aes-256-gcm", "test-pass").await;
     let client_config = ShadowsocksConfig {
         server: server_addr.to_string(),
@@ -233,8 +233,11 @@ async fn test_ss_udp_relay() {
 
     // Verify basic connectivity (foundation for UDP relay)
     let result = connector.dial(target, DialOpts::default()).await;
-    assert!(result.is_ok(), "Basic connectivity should work as foundation for UDP relay");
-    
+    assert!(
+        result.is_ok(),
+        "Basic connectivity should work as foundation for UDP relay"
+    );
+
     println!("UDP relay test: Basic connectivity verified (full UDP relay requires SOCKS5 UDP associate)");
 }
 
@@ -245,11 +248,11 @@ async fn test_ss_udp_relay() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_ss_multi_user_auth() {
     let echo_addr = start_echo_server().await;
-    
+
     // Start multiple SS servers with different passwords (simulating multi-user)
     let (server1_addr, _stop_tx1) = start_ss_server("aes-256-gcm", "user1-pass").await;
     let (server2_addr, _stop_tx2) = start_ss_server("aes-256-gcm", "user2-pass").await;
-    
+
     // User 1 connects with correct password
     let client1_config = ShadowsocksConfig {
         server: server1_addr.to_string(),
@@ -267,7 +270,10 @@ async fn test_ss_multi_user_auth() {
         kind: TransportKind::Tcp,
     };
 
-    let mut stream1 = connector1.dial(target.clone(), DialOpts::default()).await.unwrap();
+    let mut stream1 = connector1
+        .dial(target.clone(), DialOpts::default())
+        .await
+        .unwrap();
     stream1.write_all(b"user1-data").await.unwrap();
     let mut buf1 = vec![0u8; 10];
     stream1.read_exact(&mut buf1).await.unwrap();

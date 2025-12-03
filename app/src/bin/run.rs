@@ -56,6 +56,17 @@ async fn main() -> Result<()> {
         use rustls::crypto::{ring, CryptoProvider};
         let _ = CryptoProvider::install_default(ring::default_provider());
     }
+
+    // Initialize logging
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+    
+    // Register adapters early (must be called before Bridge::build or any adapter usage)
+    #[cfg(feature = "adapters")]
+    sb_adapters::register_all();
+    
     if std::env::args().skip(1).any(|arg| arg == "--help-json") {
         app::cli::help::print_help_json::<Args>();
     }
@@ -132,7 +143,9 @@ async fn main() -> Result<()> {
     }
 
     // Start supervisor with initial configuration
+    tracing::info!("Calling Supervisor::start");
     let supervisor = Arc::new(Supervisor::start(ir).await?);
+    tracing::info!("Supervisor::start returned");
 
     // 3.1) Admin HTTP （可选）
     let admin_addr = args

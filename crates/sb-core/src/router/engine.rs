@@ -11,13 +11,11 @@ use std::time::Instant;
 use tracing::warn;
 // no PhantomData needed in the compatibility layer
 
-use super::{
-    normalize_host, router_index_decide_exact_suffix, router_index_decide_geosite,
-    router_index_decide_ip, router_index_decide_transport_port, runtime_override_udp, shared_index,
-    RouterIndex,
+use crate::router::{
+    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
+    runtime_override_udp, RouterIndex, shared_index,
 };
-use crate::geoip::lookup_with_metrics_decision;
-use crate::outbound::RouteTarget;
+
 
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`
 pub struct RouterHandle {
@@ -25,7 +23,7 @@ pub struct RouterHandle {
     resolver: Option<Arc<dyn DnsResolve>>,
     /// 决策缓存（可选）：(观测到的 generation, LRU)
     #[cfg(feature = "router_cache_lru_demo")]
-    cache: Option<Mutex<(u64, lru::LruCache<String, &'static str>)>>,
+    cache: Option<Mutex<(u64, lru::LruCache<String, String>)>>,
     #[cfg(not(feature = "router_cache_lru_demo"))]
     cache: Option<()>,
     #[cfg(feature = "geoip_mmdb")]
@@ -47,6 +45,8 @@ pub struct RouterHandle {
     geoip_db: Option<std::sync::Arc<crate::router::geo::GeoIpDb>>,
     /// Enhanced GeoSite database support
     geosite_db: Option<std::sync::Arc<crate::router::geo::GeoSiteDb>>,
+    /// RuleSet database support
+    rule_set_db: Option<std::sync::Arc<crate::router::rule_set::RuleSetDb>>,
 }
 
 impl std::fmt::Debug for RouterHandle {
@@ -127,6 +127,7 @@ impl RouterHandle {
             geoip_source: None,
             geoip_db: None,
             geosite_db: None,
+            rule_set_db: None,
         };
         #[cfg(not(feature = "geoip_mmdb"))]
         let handle = Self {
@@ -147,6 +148,7 @@ impl RouterHandle {
             geoip_source: None,
             geoip_db: None,
             geosite_db: None,
+            rule_set_db: None,
         };
         #[cfg(feature = "geoip_mmdb")]
         handle.init_geoip_if_env();
@@ -263,6 +265,20 @@ impl RouterHandle {
         self.geosite_db.as_ref()
     }
 
+    /// Set RuleSet database
+    pub fn with_rule_set_db(
+        mut self,
+        rule_set_db: std::sync::Arc<crate::router::rule_set::RuleSetDb>,
+    ) -> Self {
+        self.rule_set_db = Some(rule_set_db);
+        self
+    }
+
+    /// Get RuleSet database reference
+    pub fn rule_set_db(&self) -> Option<&std::sync::Arc<crate::router::rule_set::RuleSetDb>> {
+        self.rule_set_db.as_ref()
+    }
+
     /// Enhanced GeoIP lookup using the new GeoIpDb
     ///
     /// This method first tries the enhanced GeoIpDb, then falls back to the legacy lookup
@@ -354,7 +370,7 @@ impl RouterHandle {
     }
 
     #[inline]
-    fn cache_try_get(&self, host_norm: &str) -> Option<&'static str> {
+    fn cache_try_get(&self, host_norm: &str) -> Option<String> {
         #[cfg(feature = "router_cache_lru_demo")]
         {
             let Some(c) = &self.cache else { return None };
@@ -373,7 +389,7 @@ impl RouterHandle {
             if let Some(v) = g.1.get(host_norm) {
                 #[cfg(feature = "metrics")]
                 metrics::counter!("router_decision_cache_total", "result"=>"hit").increment(1);
-                return Some(*v);
+                return Some(v.clone());
             }
             #[cfg(feature = "metrics")]
             metrics::counter!("router_decision_cache_total", "result"=>"miss").increment(1);
@@ -387,7 +403,7 @@ impl RouterHandle {
     }
 
     #[inline]
-    fn cache_put(&self, host_norm: &str, dec: &'static str) {
+    fn cache_put(&self, host_norm: &str, dec: &str) {
         #[cfg(feature = "router_cache_lru_demo")]
         {
             let Some(c) = &self.cache else { return };
@@ -398,7 +414,7 @@ impl RouterHandle {
                 g.0 = gen;
                 g.1.clear();
             }
-            g.1.put(host_norm.to_string(), dec);
+            g.1.put(host_norm.to_string(), dec.to_string());
         }
         #[cfg(not(feature = "router_cache_lru_demo"))]
         {
@@ -510,8 +526,19 @@ impl RouterHandle {
             cidr6: Vec::new(),
             cidr4_buckets: vec![Vec::new(); 33],
             cidr6_buckets: vec![Vec::new(); 129],
+            rules: Vec::new(),
             geoip_rules: Vec::new(),
             geosite_rules: Vec::new(),
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: Vec::new(),
+            dest_rules: Vec::new(),
+            user_agent_rules: Vec::new(),
             #[cfg(feature = "router_keyword")]
             keyword_rules: Vec::new(),
             #[cfg(feature = "router_keyword")]
@@ -542,6 +569,7 @@ impl RouterHandle {
             geoip_source: None,
             geoip_db: None,
             geosite_db: None,
+            rule_set_db: None,
         }
     }
 
@@ -550,46 +578,174 @@ impl RouterHandle {
         Self::from_env()
     }
 
-    /// UDP 决策：基于 UdpTargetAddr 进行路由，同步版本
-    pub fn decide_udp(&self, target: &crate::net::datagram::UdpTargetAddr) -> &'static str {
-        let host_str = match target {
-            crate::net::datagram::UdpTargetAddr::Ip(addr) => addr.ip().to_string(),
-            crate::net::datagram::UdpTargetAddr::Domain { host, .. } => host.clone(),
+    /// 通用决策入口：支持所有规则类型的复合匹配
+    pub fn decide(&self, ctx: &crate::router::RouteCtx) -> crate::router::rules::Decision {
+        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+        
+        // 1. 构造 rules::RouteCtx 并填充元数据
+        let mut rules_ctx = crate::router::rules::RouteCtx {
+            domain: ctx.host,
+            ip: ctx.ip,
+            port: ctx.port,
+            network: Some(ctx.network),
+            protocol: None, // TODO: Add protocol to mod::RouteCtx if needed, or infer
+            user_agent: ctx.user_agent,
+            geosite_codes: vec![],
+            geoip_code: None,
+            source_geoip_code: None,
+            rule_sets: vec![],
+            source_ip: ctx.source_ip,
+            source_port: ctx.source_port,
+            process_name: ctx.process_name,
+            process_path: ctx.process_path,
+            wifi_ssid: ctx.wifi_ssid,
+            wifi_bssid: ctx.wifi_bssid,
+            inbound_tag: ctx.inbound_tag,
+            auth_user: ctx.auth_user,
+            query_type: ctx.query_type,
+            // Negation fields are handled by CompositeRule::matches using the same context
+            ..Default::default()
         };
 
-        // 基于共享索引决策
-        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
-
-        // Check exact/suffix first
-        if let Some(d) = super::router_index_decide_exact_suffix(&idx, &host_str) {
-            return d;
+        // Resolve GeoSite
+        if let Some(host) = ctx.host {
+            if let Some(geosite_db) = &self.geosite_db {
+                 rules_ctx.geosite_codes = geosite_db.lookup_categories(host);
+            }
+            
+            // Resolve RuleSet (domain)
+            if let Some(rule_set_db) = &self.rule_set_db {
+                let mut matched_tags = Vec::new();
+                rule_set_db.match_host(host, &mut matched_tags);
+                rules_ctx.rule_sets.extend(matched_tags);
+            }
         }
-
-        // Check GeoSite rules if database is available
-        if let Some(geosite_db) = &self.geosite_db {
-            if let Some(d) = super::router_index_decide_geosite(&idx, &host_str, geosite_db) {
-                return d;
+        
+        // Resolve GeoIP
+        if let Some(ip) = ctx.ip {
+            if let Some(geoip_db) = &self.geoip_db {
+                if let Some(code) = geoip_db.lookup_country(ip) {
+                    rules_ctx.geoip_code = Some(code);
+                }
+            }
+             // Resolve RuleSet (IP)
+            if let Some(rule_set_db) = &self.rule_set_db {
+                let mut matched_tags = Vec::new();
+                rule_set_db.match_ip(ip, &mut matched_tags);
+                 rules_ctx.rule_sets.extend(matched_tags);
             }
         }
 
-        // Check IP rules
-        if let Ok(ip) = host_str.parse::<IpAddr>() {
-            if let Some(d) = super::router_index_decide_ip(&idx, ip) {
-                return d;
+        // Resolve Source GeoIP
+        if let Some(ip) = ctx.source_ip {
+            if let Some(geoip_db) = &self.geoip_db {
+                if let Some(code) = geoip_db.lookup_country(ip) {
+                    rules_ctx.source_geoip_code = Some(code);
+                }
+            }
+        }
+        
+        // 2. Iterate composite rules
+        for rule in &idx.rules {
+            if rule.matches(&rules_ctx) {
+                return rule.decision.clone();
+            }
+        }
+        
+        // Helper to convert legacy tag to Decision
+        let tag_to_decision = |tag: &str| -> crate::router::rules::Decision {
+            match tag {
+                "direct" => crate::router::rules::Decision::Direct,
+                "reject" => crate::router::rules::Decision::Reject,
+                _ => crate::router::rules::Decision::Proxy(Some(tag.to_string())),
+            }
+        };
+
+        // 3. Fallback to legacy optimized checks (if no composite rule matched)
+        if idx.rules.is_empty() {
+             // Check exact/suffix first
+            if let Some(host) = ctx.host {
+                if let Some(d) = super::router_index_decide_exact_suffix(&idx, host) {
+                    return tag_to_decision(d);
+                }
+                 // Check GeoSite rules
+                if let Some(geosite_db) = &self.geosite_db {
+                    if let Some(d) = super::router_index_decide_geosite(&idx, host, geosite_db) {
+                        return tag_to_decision(d);
+                    }
+                }
+            }
+            
+            if let Some(ip) = ctx.ip {
+                if let Some(d) = super::router_index_decide_ip(&idx, ip) {
+                    return tag_to_decision(d);
+                }
+            }
+            
+            // Check transport/port
+            if let Some(d) = super::router_index_decide_transport_port(&idx, ctx.port, Some(ctx.network)) {
+                return tag_to_decision(d);
             }
         }
 
-        idx.default
+        tag_to_decision(idx.default)
+    }
+
+    /// UDP 决策：基于 UdpTargetAddr 进行路由，同步版本
+    pub fn decide_udp(&self, target: &crate::net::datagram::UdpTargetAddr) -> String {
+        let (host, ip) = match target {
+            crate::net::datagram::UdpTargetAddr::Ip(addr) => (None, Some(addr.ip())),
+            crate::net::datagram::UdpTargetAddr::Domain { host, .. } => (Some(host.as_str()), None),
+        };
+        
+        let port = match target {
+            crate::net::datagram::UdpTargetAddr::Ip(addr) => Some(addr.port()),
+            crate::net::datagram::UdpTargetAddr::Domain { port, .. } => Some(*port),
+        };
+
+        let ctx = crate::router::RouteCtx {
+            host,
+            ip,
+            port,
+            transport: crate::router::Transport::Udp,
+            network: "udp",
+            ..Default::default()
+        };
+
+        self.decide(&ctx).as_str().to_string()
+    }
+
+    /// TCP/HTTP decision (sync)
+    pub fn decide_http(&self, target: &str) -> String {
+        let (host_raw, port_opt) = if let Some((h, p)) = target.rsplit_once(':') {
+            (h, p.parse::<u16>().ok())
+        } else {
+            (target, None)
+        };
+        let host = normalize_host(host_raw);
+        let ip = host.parse::<IpAddr>().ok();
+
+        let ctx = crate::router::RouteCtx {
+            host: Some(&host),
+            ip,
+            port: port_opt,
+            transport: crate::router::Transport::Tcp,
+            network: "tcp",
+            ..Default::default()
+        };
+
+        self.decide(&ctx).as_str().to_string()
     }
 
     /// 基于当前索引快照进行 UDP 决策（最小可用版）
-    pub async fn decide_udp_async(&self, host: &str) -> &'static str {
+    #[allow(unused_variables)]
+    pub async fn decide_udp_async(&self, host: &str) -> String {
         let started = Instant::now();
-        let budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+        let __budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(5);
-        let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+        let __idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host);
         // 复合缓存键：transport|host_norm（UDP 无端口）
         let cache_key = format!("udp|{}", host_norm);
@@ -600,7 +756,7 @@ impl RouterHandle {
             #[cfg(feature = "metrics")]
             metrics::histogram!("router_decide_latency_ms_bucket")
                 .record(started.elapsed().as_millis() as f64);
-            return d;
+            return d.to_string();
         }
         // 缓存命中直接返回
         if let Some(dec) = self.cache_try_get(&cache_key) {
@@ -609,201 +765,39 @@ impl RouterHandle {
                 .record(started.elapsed().as_millis() as f64);
             #[cfg(feature = "metrics")]
             metrics::counter!("router_decide_reason_total", "kind"=>"cache").increment(1);
-            return dec;
+            return dec.to_string();
         }
 
-        // 1) exact/suffix 快路
-        if let Some(d) = router_index_decide_exact_suffix(&idx, &host_norm) {
-            self.cache_put(&cache_key, d);
-            #[cfg(feature = "metrics")]
-            {
-                metrics::histogram!("router_decide_latency_ms_bucket")
-                    .record(started.elapsed().as_millis() as f64);
-                let kind = if idx.exact.contains_key(&host_norm) {
-                    "exact"
-                } else {
-                    "suffix"
-                };
-                metrics::counter!("router_decide_reason_total", "kind"=>kind).increment(1);
-            }
-            return d;
-        }
-
-        // 1.5) GeoSite domain categorization
-        if let Some(geosite_db) = &self.geosite_db {
-            if let Some(d) = router_index_decide_geosite(&idx, &host_norm, geosite_db) {
-                self.cache_put(&cache_key, d);
-                #[cfg(feature = "metrics")]
-                {
-                    metrics::histogram!("router_decide_latency_ms_bucket")
-                        .record(started.elapsed().as_millis() as f64);
-                    metrics::counter!("router_decide_reason_total", "kind"=>"geosite").increment(1);
-                }
-                return d;
-            }
-        }
-
-        // 2) 字面量 IP (with FakeIP support)
-        if let Ok(ip) = host_norm.parse::<IpAddr>() {
-            // Check if this is a FakeIP and resolve to original domain
-            if crate::dns::fakeip::enabled() {
-                if let Some(original_domain) = crate::dns::fakeip::to_domain(&ip) {
-                    // FakeIP detected - route based on original domain
-                    let normalized_domain = normalize_host(&original_domain);
-
-                    // Try domain-based routing first
-                    if let Some(d) = router_index_decide_exact_suffix(&idx, &normalized_domain) {
-                        self.cache_put(&cache_key, d);
-                        #[cfg(feature = "metrics")]
-                        {
-                            metrics::histogram!("router_decide_latency_ms_bucket")
-                                .record(started.elapsed().as_millis() as f64);
-                            metrics::counter!("router_decide_reason_total", "kind"=>"fakeip_domain").increment(1);
-                        }
-                        return d;
-                    }
-
-                    // Try GeoSite for FakeIP domain
-                    if let Some(geosite_db) = &self.geosite_db {
-                        if let Some(d) =
-                            router_index_decide_geosite(&idx, &normalized_domain, geosite_db)
-                        {
-                            self.cache_put(&cache_key, d);
-                            #[cfg(feature = "metrics")]
-                            {
-                                metrics::histogram!("router_decide_latency_ms_bucket")
-                                    .record(started.elapsed().as_millis() as f64);
-                                metrics::counter!("router_decide_reason_total", "kind"=>"fakeip_geosite").increment(1);
-                            }
-                            return d;
-                        }
-                    }
-                }
-            }
-
-            // Not a FakeIP or FakeIP domain rules didn't match - try IP-based routing
-            if let Some(d) = router_index_decide_ip(&idx, ip) {
-                self.cache_put(&cache_key, d);
-                #[cfg(feature = "metrics")]
-                {
-                    metrics::histogram!("router_decide_latency_ms_bucket")
-                        .record(started.elapsed().as_millis() as f64);
-                    metrics::counter!("router_decide_reason_total", "kind"=>"ip").increment(1);
-                }
-                return d;
-            }
-        }
-
-        // 3) （可选）DNS → IP → 规则 / GeoIP
-        let try_dns = std::env::var("SB_ROUTER_DNS")
-            .ok()
-            .map(|v| v == "1")
-            .unwrap_or(false);
-        let try_geoip = std::env::var("SB_GEOIP_ENABLE")
-            .ok()
-            .map(|v| v == "1")
-            .unwrap_or(false);
-        if try_dns {
-            {
-                let timeout_ms = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(300);
-                let dns_started = Instant::now();
-                // 解析
-                let resolved = self.resolve_with_fallback(&host_norm, timeout_ms).await;
-                let _dns_elapsed = dns_started.elapsed().as_millis() as f64;
-                #[cfg(feature = "metrics")]
-                metrics::histogram!("router_dns_resolve_ms_bucket").record(_dns_elapsed);
-                match resolved {
-                    DnsResult::Ok(ips) => {
-                        #[cfg(feature = "metrics")]
-                        metrics::counter!("router_dns_resolve_total", "rcode"=>"ok").increment(1);
-                        // 先按规则匹配
-                        for ip in &ips {
-                            if let Some(d) = router_index_decide_ip(&idx, *ip) {
-                                self.cache_put(&cache_key, d);
-                                #[cfg(feature = "metrics")]
-                                {
-                                    metrics::histogram!("router_decide_latency_ms_bucket")
-                                        .record(started.elapsed().as_millis() as f64);
-                                    metrics::counter!("router_decide_reason_total", "kind"=>"dns_ip").increment(1);
-                                }
-                                return d;
-                            }
-                        }
-                        // 再尝试 GeoIP（任一 IP 命中即返回）
-                        if try_geoip {
-                            for ip in ips {
-                                if let Some(d) = self.enhanced_geoip_lookup(ip, &idx) {
-                                    self.cache_put(&cache_key, d);
-                                    #[cfg(feature = "metrics")]
-                                    {
-                                        metrics::histogram!("router_decide_latency_ms_bucket")
-                                            .record(started.elapsed().as_millis() as f64);
-                                        metrics::counter!("router_decide_reason_total", "kind"=>"dns_geoip").increment(1);
-                                    }
-                                    return d;
-                                }
-                            }
-                        }
-                    }
-                    DnsResult::Miss => {
-                        #[cfg(feature = "metrics")]
-                        metrics::counter!("router_dns_resolve_total", "rcode"=>"miss").increment(1);
-                    }
-                    DnsResult::Timeout => {
-                        #[cfg(feature = "metrics")]
-                        metrics::counter!("router_dns_resolve_total", "rcode"=>"timeout")
-                            .increment(1);
-                    }
-                    DnsResult::Error => {
-                        #[cfg(feature = "metrics")]
-                        metrics::counter!("router_dns_resolve_total", "rcode"=>"error")
-                            .increment(1);
-                    }
-                }
-                // 预算短路：如果 DNS 解析已耗尽整体预算，直接返回默认并打点降级
-                // 仅用于调试/统计；避免未使用告警
-                let _elapsed_ms = started.elapsed().as_millis() as u64;
-                if _elapsed_ms > budget {
-                    #[cfg(feature = "metrics")]
-                    {
-                        metrics::histogram!("router_decide_latency_ms_bucket")
-                            .record(_elapsed_ms as f64);
-                        metrics::counter!("router_degrade_total", "reason"=>"budget").increment(1);
-                    }
-                    self.cache_put(&cache_key, idx.default);
-                    return idx.default;
-                }
-            }
-        }
-
-        // 4) 传输/端口兜底（UDP 场景：transport=udp，port 不可用）
-        if let Some(d) = router_index_decide_transport_port(&idx, None, Some("udp")) {
-            self.cache_put(&cache_key, d);
-            #[cfg(feature = "metrics")]
-            metrics::histogram!("router_decide_latency_ms_bucket")
-                .record(started.elapsed().as_millis() as f64);
-            #[cfg(feature = "metrics")]
-            metrics::counter!("router_decide_reason_total", "kind"=>"transport").increment(1);
-            return d;
-        }
-
-        // 5) 默认退回，并在超预算时计 degrade（仅"未定→默认"触发）
-        let dec = idx.default;
-        // 仅用于调试/统计；避免未使用告警
-        let _elapsed_ms = started.elapsed().as_millis() as u64;
+        // 1) Use unified decide logic
+        let ip = host_norm.parse::<IpAddr>().ok();
+        let ctx = crate::router::RouteCtx {
+            host: Some(&host_norm),
+            ip,
+            port: None, // UDP has no port in RouteCtx for now
+            transport: crate::router::Transport::Udp,
+            network: "udp",
+            ..Default::default()
+        };
+        
+        let d = self.decide(&ctx);
+        // Check if decision is not default (or if we want to cache everything)
+        // For now, cache everything
+        let d_str = d.as_str().to_string();
+        self.cache_put(&cache_key, &d_str);
         #[cfg(feature = "metrics")]
         {
-            metrics::histogram!("router_decide_latency_ms_bucket").record(_elapsed_ms as f64);
-            if _elapsed_ms > budget {
-                metrics::counter!("router_degrade_total", "reason"=>"budget").increment(1);
-            }
-            metrics::counter!("router_decide_reason_total", "kind"=>"default").increment(1);
+            metrics::histogram!("router_decide_latency_ms_bucket")
+                .record(started.elapsed().as_millis() as f64);
+            metrics::counter!("router_decide_reason_total", "kind"=>"unified").increment(1);
         }
-        self.cache_put(&cache_key, dec);
-        dec
+        d_str
+    }
+
+    /// Async TCP decision
+    pub async fn decide_tcp_async(&self, host: &str) -> String {
+        // For now, mostly identical to decide_udp_async but could handle port if host has it
+        // TODO: Parse port from host if present and use it for port rules
+        self.decide_udp_async(host).await
     }
 
     /// 旧接口适配：根据上下文进行路由并返回 RouteTarget（不做 DNS，仅 exact/suffix/IP/default）
@@ -832,6 +826,20 @@ impl RouterHandle {
         if let Some(ip) = ctx.ip {
             if let Some(d) = router_index_decide_ip(&idx, ip) {
                 return RouteTarget::Named(d.to_string());
+            }
+            // Check RuleSet rules (IP)
+            if let Some(rule_set_db) = &self.rule_set_db {
+                let mut matched_tags = Vec::new();
+                rule_set_db.match_ip(ip, &mut matched_tags);
+                if !matched_tags.is_empty() {
+                    let input = crate::router::Input {
+                        rule_set: Some(&matched_tags),
+                        ..Default::default()
+                    };
+                    if let Some(d) = crate::router::router_index_decide_rule_set(&idx, &input) {
+                        return RouteTarget::Named(d.to_string());
+                    }
+                }
             }
         }
         RouteTarget::Named(idx.default.to_string())
@@ -1005,14 +1013,15 @@ pub struct ExactRuleView {
 }
 
 /// 兼容历史导出（占位类型，避免下游编译失败；如未使用可忽略）
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum Transport {
+    #[default]
     Tcp,
     Udp,
 }
 
 /// 旧接口上下文（按 sb-adapters 预期提供字段）
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RouteCtx<'a> {
     pub host: Option<&'a str>,
     pub ip: Option<IpAddr>,

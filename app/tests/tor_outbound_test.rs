@@ -5,11 +5,13 @@
 
 use sb_config::ir::{OutboundIR, OutboundType};
 use sb_core::adapter::{registry, Bridge, OutboundParam};
+use sb_core::context::{Context, ContextRegistry};
 use std::sync::Arc;
 
 fn ctx() -> registry::AdapterOutboundContext {
     registry::AdapterOutboundContext {
-        bridge: Arc::new(Bridge::new()),
+        bridge: Arc::new(Bridge::new(Context::new())),
+        context: ContextRegistry::from(&Context::new()),
     }
 }
 
@@ -32,6 +34,7 @@ fn create_outbound_param(kind: &str, name: &str) -> OutboundParam {
         ssh_private_key_passphrase: None,
         ssh_host_key_verification: None,
         ssh_known_hosts_path: None,
+        ..Default::default()
     }
 }
 

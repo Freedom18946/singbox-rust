@@ -1,9 +1,10 @@
+
 //! Integration tests for TUN device abstraction layer
 //! Tests the complete functionality required for Task 17
 
 use sb_platform::tun::{create_platform_device, AsyncTunDevice, TunConfig, TunError, TunManager};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use tokio::time::{timeout, Duration};
+
 
 #[tokio::test]
 async fn test_tun_device_abstraction_creation() {
@@ -85,38 +86,32 @@ async fn test_async_tun_device() {
             let test_data = b"async test packet";
 
             // Test async read with timeout
-            let read_result =
-                timeout(Duration::from_millis(100), async_device.read(&mut read_buf)).await;
+            // Test read (synchronous)
+            let read_result = async_device.read(&mut read_buf);
             match read_result {
-                Ok(Ok(_bytes_read)) => {
-                    println!("Async read completed successfully");
+                Ok(_bytes_read) => {
+                    println!("Read completed successfully");
                 }
-                Ok(Err(e)) => {
-                    println!("Async read failed: {:?}", e);
-                }
-                Err(_timeout) => {
-                    println!("Async read timed out (expected in test)");
+                Err(e) => {
+                    println!("Read failed: {:?}", e);
                 }
             }
 
             // Test async write with timeout
-            let write_result =
-                timeout(Duration::from_millis(100), async_device.write(test_data)).await;
+            // Test write (synchronous)
+            let write_result = async_device.write(test_data);
             match write_result {
-                Ok(Ok(bytes_written)) => {
-                    println!("Async write completed: {} bytes", bytes_written);
+                Ok(bytes_written) => {
+                    println!("Write completed: {} bytes", bytes_written);
                     assert_eq!(bytes_written, test_data.len());
                 }
-                Ok(Err(e)) => {
-                    println!("Async write failed: {:?}", e);
-                }
-                Err(_timeout) => {
-                    println!("Async write timed out");
+                Err(e) => {
+                    println!("Write failed: {:?}", e);
                 }
             }
 
             // Clean up
-            let _ = async_device.close().await;
+            let _ = async_device.close();
         }
         Err(e) => {
             println!("Async TUN device creation failed: {:?} - test skipped", e);
@@ -148,7 +143,7 @@ async fn test_tun_manager_functionality() {
 
     let mut created_devices = 0;
     for config in &configs {
-        match manager.create_device(config).await {
+        match manager.create_device(config) {
             Ok(()) => {
                 created_devices += 1;
                 println!("Created device: {}", config.name);
@@ -173,7 +168,7 @@ async fn test_tun_manager_functionality() {
 
     // Test device removal
     for config in &configs {
-        match manager.remove_device(&config.name).await {
+        match manager.remove_device(&config.name) {
             Ok(()) => {
                 println!("Removed device: {}", config.name);
             }
@@ -188,7 +183,7 @@ async fn test_tun_manager_functionality() {
     assert!(final_list.is_empty());
 
     // Test close all
-    manager.close_all().await.unwrap();
+    manager.close_all().unwrap();
 }
 
 #[tokio::test]
@@ -355,10 +350,10 @@ async fn test_multiple_device_operations() {
 
     // Clean up all devices
     for mut device in successful_devices {
-        let _ = device.close().await;
+        let _ = device.close();
     }
 
-    manager.close_all().await.unwrap();
+    manager.close_all().unwrap();
 }
 
 // This test validates the core requirements for Task 17

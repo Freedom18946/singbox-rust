@@ -28,6 +28,7 @@ pub struct MatchContext {
 type RegexCache = Arc<parking_lot::RwLock<HashMap<String, Regex>>>;
 
 /// Rule matcher with caching
+#[derive(Debug)]
 pub struct RuleMatcher {
     /// The rule-set to match against
     ruleset: Arc<RuleSet>,

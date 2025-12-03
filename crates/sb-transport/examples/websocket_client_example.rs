@@ -29,17 +29,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create WebSocket dialer with custom config
     let ws_config = WebSocketConfig {
-        path: "/".to_string(),
+        path: "/ws".to_string(),
         headers: vec![(
             "User-Agent".to_string(),
             "singbox-rust-example/1.0".to_string(),
         )],
         max_message_size: Some(64 * 1024 * 1024),
         max_frame_size: Some(16 * 1024 * 1024),
-        early_data: false,
+        ..Default::default()
     };
 
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let ws_dialer = WebSocketDialer::new(ws_config, tcp_dialer);
 
     // Connect to server

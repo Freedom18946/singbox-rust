@@ -9,7 +9,7 @@
 //! - Does not implement full proxy logic (minimal implementation)
 
 use crate::connector::{IoStream, OutboundConnector, ProtoError, Target};
-use crate::trojan_min::TrojanHello;
+use crate::trojan::TrojanHello;
 use async_trait::async_trait;
 use sb_transport::dialer::Dialer;
 

@@ -71,7 +71,7 @@ use async_trait::async_trait;
 use bytes::{Buf, Bytes};
 use h2::client::{self, SendRequest};
 use h2::{RecvStream, SendStream};
-use http::{Method, Request, Uri};
+use http::{Request, Uri};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -79,6 +79,9 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
+
+/// Type alias for HTTP/2 connection pool to reduce type complexity
+type Http2Pool = Arc<Mutex<HashMap<(String, u16), SendRequest<Bytes>>>>;
 
 /// HTTP/2 configuration / HTTP/2 配置
 #[derive(Debug, Clone)]
@@ -137,7 +140,7 @@ pub struct Http2Dialer {
     // 连接池的共享状态
     // Key: (host, port), Value: Active HTTP/2 connection sender
     // 键: (host, port), 值: 活动 HTTP/2 连接发送者
-    pool: Arc<Mutex<HashMap<(String, u16), SendRequest<Bytes>>>>,
+    pool: Http2Pool,
 }
 
 impl Http2Dialer {
@@ -252,6 +255,10 @@ impl Dialer for Http2Dialer {
         // 将流包装在适配器中
         Ok(Box::new(Http2StreamAdapter::new(send_stream, recv_stream)))
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// HTTP/2 stream adapter / HTTP/2 流适配器
@@ -320,8 +327,7 @@ impl AsyncRead for Http2StreamAdapter {
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("HTTP/2 read error: {}", e),
             ))),
             Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
@@ -354,14 +360,12 @@ impl AsyncWrite for Http2StreamAdapter {
                 let data = Bytes::copy_from_slice(&buf[..to_write]);
                 match self.send_stream.send_data(data, false) {
                     Ok(_) => Poll::Ready(Ok(to_write)),
-                    Err(e) => Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    Err(e) => Poll::Ready(Err(std::io::Error::other(
                         format!("HTTP/2 write error: {}", e),
                     ))),
                 }
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("HTTP/2 capacity error: {}", e),
             ))),
             Poll::Ready(None) => Poll::Ready(Err(std::io::Error::new(
@@ -378,7 +382,7 @@ impl AsyncWrite for Http2StreamAdapter {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         // Send empty data frame with END_STREAM flag
         // 发送带有 END_STREAM 标志的空数据帧
         // We can't easily do this here because send_data consumes self or needs mutable access
@@ -578,13 +582,13 @@ mod tests {
         assert_eq!(config.path, "/");
         assert_eq!(config.method, "POST");
         assert!(config.enable_pooling);
-        assert_eq!(config.max_concurrent_streams, 100);
+        assert_eq!(config.max_concurrent_streams, Some(100));
     }
 
     #[tokio::test]
     async fn test_http2_dialer_creation() {
         let config = Http2Config::default();
-        let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+        let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
         let h2_dialer = Http2Dialer::new(config, tcp_dialer);
         assert_eq!(h2_dialer.config.path, "/");
     }

@@ -25,6 +25,7 @@
 
 use anyhow::{anyhow, Result};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
@@ -65,6 +66,12 @@ pub struct VlessInboundConfig {
     /// V2Ray 传输层配置 (WebSocket, gRPC, HTTPUpgrade)
     /// 如果为 None，默认为 TCP
     pub transport_layer: Option<crate::transport_config::TransportConfig>,
+    /// Fallback target address
+    pub fallback: Option<SocketAddr>,
+    /// Fallback targets by ALPN
+    pub fallback_for_alpn: HashMap<String, SocketAddr>,
+    /// Flow control (e.g. "xtls-rprx-vision")
+    pub flow: Option<String>,
 }
 
 // VLESS protocol constants
@@ -90,32 +97,67 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         "vless: inbound bound"
     );
 
-    // Note: Multiplex support for VLESS inbound is configured but not yet fully implemented
-    // VLESS can work with or without TLS, and multiplex integration would require
-    // wrapping streams appropriately based on the configuration
-    // 注意：VLESS 入站的多路复用支持已配置，但尚未完全实现
-    // VLESS 可以在有或无 TLS 的情况下工作，多路复用集成需要根据配置适当地包装流
-    if cfg.multiplex.is_some() {
-        warn!("Multiplex configuration present but not yet fully implemented for VLESS inbound");
+    // Handle Multiplexing
+    // 处理多路复用
+    if let Some(ref mux_cfg) = cfg.multiplex {
+        match listener {
+            crate::transport_config::InboundListener::Tcp(tcp_listener) => {
+                info!("vless: enabling multiplexing over TCP");
+                let mux_listener = sb_transport::multiplex::MultiplexListener::new(tcp_listener, mux_cfg.clone());
+                
+                let mut hb = interval(Duration::from_secs(5));
+                loop {
+                    select! {
+                        _ = stop_rx.recv() => break,
+                        _ = hb.tick() => { 
+                            // debug!("vless: mux accept-loop heartbeat"); 
+                        }
+                        r = mux_listener.accept() => {
+                            let stream = match r {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    warn!(error=%e, "vless: mux accept error");
+                                    continue;
+                                }
+                            };
+                            
+                            // Mux streams don't have a direct peer address in the same way, 
+                            // but we can try to get it from the listener or use a placeholder.
+                            // For now, use 0.0.0.0:0 or try to get it if exposed.
+                            // MuxListener doesn't expose per-stream peer addr easily yet.
+                            let peer = SocketAddr::from(([0, 0, 0, 0], 0)); 
+                            
+                            let cfg_clone = cfg.clone();
+                            // Wrap stream in a way that handle_conn_stream accepts
+                            // handle_conn_stream takes &mut (AsyncRead+AsyncWrite+Unpin)
+                            // stream is Box<dyn ...> which implements that.
+                            
+                            tokio::spawn(async move {
+                                let mut stream = stream;
+                                if let Err(e) = handle_conn_stream(&cfg_clone, &mut stream, peer).await {
+                                    sb_core::metrics::http::record_error_display(&e);
+                                    sb_core::metrics::record_inbound_error_display("vless", &e);
+                                    warn!(%peer, error=%e, "vless: mux session error");
+                                }
+                            });
+                        }
+                    }
+                }
+                return Ok(());
+            }
+
+        }
     }
 
-    // Create REALITY acceptor if configured
-    // 如果配置了 REALITY 接收器，则创建它
-    #[cfg(feature = "tls_reality")]
-    let reality_acceptor = if let Some(ref reality_cfg) = cfg.reality {
-        Some(Arc::new(
-            sb_tls::RealityAcceptor::new(reality_cfg.clone())
-                .map_err(|e| anyhow!("Failed to create REALITY acceptor: {}", e))?,
-        ))
-    } else {
-        None
-    };
-
+    // Standard accept loop (Non-Mux or Non-TCP)
+    // 标准接受循环 (非 Mux 或非 TCP)
     let mut hb = interval(Duration::from_secs(5));
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { debug!("vless: accept-loop heartbeat"); }
+            _ = hb.tick() => { 
+                // debug!("vless: accept-loop heartbeat"); 
+            }
             r = listener.accept() => {
                 let (mut stream, peer) = match r {
                     Ok(v) => v,
@@ -127,39 +169,22 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     }
                 };
 
-                // For non-TCP transports, we don't have peer address (it will be 0.0.0.0:0)
-                // let peer = SocketAddr::from(([0, 0, 0, 0], 0)); // Removed, use peer from accept
-                // 对于非 TCP 传输，我们没有对等地址 (它将是 0.0.0.0:0)
-                // let peer = SocketAddr::from(([0, 0, 0, 0], 0)); // 已移除，使用 accept 中的 peer
                 let cfg_clone = cfg.clone();
 
+                // TODO: Initialize reality_acceptor when REALITY TLS is properly configured
                 #[cfg(feature = "tls_reality")]
-                let reality_acceptor_clone = reality_acceptor.clone();
+                // let reality_acceptor_clone = reality_acceptor.clone();
+
 
                 tokio::spawn(async move {
                     #[cfg(feature = "tls_reality")]
                     {
-                        if reality_acceptor_clone.is_some() {
-                            // Handle REALITY connection
-                            // Note: This needs refactoring to support generic streams
-                            // 处理 REALITY 连接
-                            // 注意：这需要重构以支持通用流
-                            warn!("REALITY TLS over V2Ray transports not yet supported, using stream directly");
-                            // TODO: Implement generic TLS wrapping for any AsyncRead+AsyncWrite stream
-                            // TODO: 为任何 AsyncRead+AsyncWrite 流实现通用 TLS 包装
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                                sb_core::metrics::http::record_error_display(&e);
-                                sb_core::metrics::record_inbound_error_display("vless", &e);
-                                warn!(%peer, error=%e, "vless: REALITY session error (direct stream)");
-                            }
-                        } else {
-                            // No REALITY - handle plain connection
-                            // 无 REALITY - 处理普通连接
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                                sb_core::metrics::http::record_error_display(&e);
-                                sb_core::metrics::record_inbound_error_display("vless", &e);
-                                warn!(%peer, error=%e, "vless: session error");
-                            }
+                        // TODO: Implement REALITY TLS support
+                        // For now, handle as plain connection
+                        if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("vless", &e);
+                            warn!(%peer, error=%e, "vless: session error");
                         }
                     }
 
@@ -175,6 +200,22 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
             }
         }
     }
+    Ok(())
+}
+
+async fn handle_fallback(
+    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
+    target: SocketAddr,
+    prefix: &[u8],
+) -> Result<()> {
+    let mut remote = tokio::net::TcpStream::connect(target).await
+        .map_err(|e| anyhow!("vless: failed to connect to fallback {}: {}", target, e))?;
+    
+    if !prefix.is_empty() {
+        remote.write_all(prefix).await?;
+    }
+    
+    let _ = tokio::io::copy_bidirectional(stream, &mut remote).await;
     Ok(())
 }
 
@@ -195,8 +236,21 @@ async fn handle_conn_impl(
 ) -> Result<()> {
     // Step 1: Read version (1 byte)
     // 步骤 1: 读取版本 (1 字节)
-    let version = cli.read_u8().await?;
+    let version = match cli.read_u8().await {
+        Ok(v) => v,
+        Err(e) => {
+             // Read failed, if we have fallback, try it? 
+             // But we have no data. Just error.
+             return Err(anyhow!("vless: failed to read version: {}", e));
+        }
+    };
+
     if version != VLESS_VERSION {
+        if let Some(fallback_addr) = cfg.fallback {
+            debug!(%peer, version=%version, "vless: invalid version, falling back to {}", fallback_addr);
+            // We read 1 byte. We need to send it to fallback.
+            return handle_fallback(cli, fallback_addr, &[version]).await;
+        }
         return Err(anyhow!("vless: invalid version: {}", version));
     }
 
@@ -209,6 +263,14 @@ async fn handle_conn_impl(
     // Validate UUID
     // 验证 UUID
     if client_uuid != cfg.uuid {
+        if let Some(fallback_addr) = cfg.fallback {
+            debug!(%peer, "vless: auth failed, falling back to {}", fallback_addr);
+            // We read 1+16 = 17 bytes.
+            let mut prefix = Vec::with_capacity(17);
+            prefix.push(version);
+            prefix.extend_from_slice(&uuid_bytes);
+            return handle_fallback(cli, fallback_addr, &prefix).await;
+        }
         return Err(anyhow!("vless: authentication failed"));
     }
 
@@ -251,12 +313,8 @@ async fn handle_conn_impl(
             ip: None,
             transport_udp: false,
             port: Some(target_port),
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            network: Some("tcp"),
+            ..Default::default()
         };
         let d = eng.decide(&ctx);
         if matches!(d, RDecision::Reject) {

@@ -196,7 +196,7 @@ fn test_wireguard_endpoint_lifecycle() {
 #[test]
 fn test_wireguard_endpoint_validation() {
     // Test missing required fields
-    let invalid_jsons = vec![
+    let invalid_jsons = [
         // Missing private key
         r#"{"type": "wireguard", "tag": "test"}"#,
         // Missing peers

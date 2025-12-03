@@ -7,8 +7,6 @@
 //! - `TlsConnector` trait 用于可扩展的 TLS 实现
 //! - REALITY protocol for anti-censorship (certificate stealing)
 //! - REALITY 协议用于抗审查（证书窃取）
-//! - uTLS for TLS fingerprint mimicry (future)
-//! - uTLS 用于 TLS 指纹模拟（未来支持）
 //! - ECH (Encrypted Client Hello) support (future)
 //! - ECH (加密客户端 Hello) 支持（未来支持）
 //!
@@ -16,8 +14,6 @@
 //! ## 特性
 //! - `reality`: REALITY anti-censorship protocol (default)
 //! - `reality`: REALITY 抗审查协议（默认）
-//! - `utls`: uTLS fingerprint mimicry
-//! - `utls`: uTLS 指纹模拟
 //! - `ech`: Encrypted Client Hello
 //! - `ech`: 加密客户端 Hello
 //!
@@ -29,7 +25,6 @@
 //! - **抗审查**: 绕过 DPI 和 SNI 过滤的协议
 //! - **Security First**: Proper key management and authentication
 //! - **安全优先**: 正确的密钥管理和认证
-
 
 use async_trait::async_trait;
 use std::io;
@@ -60,8 +55,8 @@ pub type TlsIoStream = Box<dyn TlsStream>;
 /// - 标准 TLS 1.3 (rustls)
 /// - REALITY (anti-censorship)
 /// - REALITY (抗审查)
-/// - uTLS (fingerprint mimicry)
-/// - uTLS (指纹模拟)
+/// - REALITY (anti-censorship)
+/// - REALITY (抗审查)
 /// - ECH (encrypted client hello)
 /// - ECH (加密客户端 Hello)
 #[async_trait]
@@ -89,18 +84,17 @@ pub mod standard;
 #[cfg(feature = "reality")]
 pub mod reality;
 
-/// uTLS fingerprint mimicry
-/// uTLS 指纹模拟
-///
-/// TODO: Implement browser fingerprint emulation
-/// TODO: 实现浏览器指纹模拟
-#[cfg(feature = "utls")]
-pub mod utls {}
+
 
 /// Encrypted Client Hello
 /// 加密客户端 Hello
 #[cfg(feature = "ech")]
 pub mod ech;
+
+/// ACME (Automated Certificate Management Environment)
+/// ACME (自动证书管理环境)
+#[cfg(feature = "acme")]
+pub mod acme;
 
 // Re-exports
 pub use standard::StandardTlsConnector;

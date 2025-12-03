@@ -10,10 +10,10 @@ use sb_config::ir::ConfigIR;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle as ThreadJoinHandle};
 
+pub mod runtime_health;
 pub mod supervisor;
 pub mod switchboard;
 pub mod transport;
-pub mod runtime_health;
 
 #[cfg(feature = "router")]
 pub struct Runtime<'a> {
@@ -56,7 +56,7 @@ impl<'a> Runtime<'a> {
     /// 从配置 IR 创建运行时。
     pub fn from_config_ir(ir: &'a ConfigIR) -> crate::error::SbResult<Self> {
         let engine = Engine::new(ir);
-        let bridge = Bridge::new_from_config(ir).map_err(|e| {
+        let bridge = Bridge::new_from_config(ir, crate::context::Context::new()).map_err(|e| {
             crate::error::SbError::config(
                 sb_types::IssueCode::SchemaInvalid,
                 "bridge_init",
@@ -159,7 +159,7 @@ impl<'a> Runtime<'a> {
 
     /// Create dummy bridge for admin compatibility
     pub fn dummy_bridge() -> Arc<Bridge> {
-        Arc::new(Bridge::new())
+        Arc::new(Bridge::new(crate::context::Context::new()))
     }
 
     /// Create dummy switchboard for admin compatibility

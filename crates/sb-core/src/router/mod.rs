@@ -20,6 +20,7 @@ pub mod hot_reload_cli;
 #[cfg(feature = "json")]
 pub mod json_bridge;
 pub mod process_router;
+pub mod rule_set;
 pub mod rules;
 pub mod runtime;
 /// Protocol sniffing (stage 1: no-op stubs)
@@ -97,6 +98,7 @@ pub use self::hot_reload_cli::{
     show_rule_stats, start_hot_reload_cli, validate_rule_files, HotReloadCliConfig,
 };
 pub use crate::outbound::RouteTarget;
+pub use crate::routing::engine::Input;
 
 /// Route decision result for hot reload compatibility.
 /// 热重载兼容的路由决策结果。
@@ -121,6 +123,38 @@ pub struct RouteCtx<'a> {
     pub port: Option<u16>,
     pub transport: Transport,
     pub network: &'a str,
+    pub source_ip: Option<std::net::IpAddr>,
+    pub source_port: Option<u16>,
+    pub process_name: Option<&'a str>,
+    pub process_path: Option<&'a str>,
+    pub user_agent: Option<&'a str>,
+    pub wifi_ssid: Option<&'a str>,
+    pub wifi_bssid: Option<&'a str>,
+    pub inbound_tag: Option<&'a str>,
+    pub auth_user: Option<&'a str>,
+    pub query_type: Option<crate::router::rules::DnsRecordType>,
+}
+
+impl<'a> Default for RouteCtx<'a> {
+    fn default() -> Self {
+        Self {
+            host: None,
+            ip: None,
+            port: None,
+            transport: Transport::Tcp,
+            network: "tcp",
+            source_ip: None,
+            source_port: None,
+            process_name: None,
+            process_path: None,
+            user_agent: None,
+            wifi_ssid: None,
+            wifi_bssid: None,
+            inbound_tag: None,
+            auth_user: None,
+            query_type: None,
+        }
+    }
 }
 
 use blake3::Hasher as Blake3;
@@ -143,6 +177,8 @@ use std::{
 };
 use tokio::fs as tfs;
 use tokio::time::sleep;
+
+
 
 #[cfg(feature = "metrics")]
 #[inline]
@@ -201,6 +237,29 @@ pub struct RouterIndex {
     pub keyword_rules: Vec<(String, String)>, // Original storage / 原始存储
     #[cfg(feature = "router_keyword")]
     pub keyword_idx: Option<crate::router::keyword::Index>,
+    /// WiFi SSID rules: SSID -> decision
+    pub wifi_ssid_rules: Vec<(String, &'static str)>,
+    /// WiFi BSSID rules: BSSID -> decision
+    pub wifi_bssid_rules: Vec<(String, &'static str)>,
+    /// Rule Set rules: RuleSet Name -> decision
+    pub rule_set_rules: Vec<(String, &'static str)>,
+    /// Process Name rules: Process Name -> decision
+    pub process_rules: Vec<(String, &'static str)>,
+    /// Process Path rules: Process Path -> decision
+    pub process_path_rules: Vec<(String, &'static str)>,
+    /// Protocol rules: Protocol -> decision
+    pub protocol_rules: Vec<(String, &'static str)>,
+    /// Network rules: Network -> decision
+    pub network_rules: Vec<(String, &'static str)>,
+    /// Source rules: Source -> decision
+    pub source_rules: Vec<(String, &'static str)>,
+    /// Destination rules: Destination -> decision
+    pub dest_rules: Vec<(String, &'static str)>,
+    /// User Agent rules: User Agent -> decision
+    pub user_agent_rules: Vec<(String, &'static str)>,
+    /// Composite rules (linear scan, AND logic).
+    /// 复合规则（线性扫描，AND 逻辑）。
+    pub rules: Vec<rules::CompositeRule>,
     pub default: &'static str,
     /// Generation code (incremented on successful hot reload), for observability only.
     /// 构建代号（热重载成功 +1），仅用于可观测。
@@ -233,6 +292,16 @@ pub struct RuleSizes {
     pub cidr6: usize,
     pub geoip: usize,
     pub geosite: usize,
+    pub wifi_ssid: usize,
+    pub wifi_bssid: usize,
+    pub rule_set: usize,
+    pub process: usize,
+    pub process_path: usize,
+    pub protocol: usize,
+    pub network: usize,
+    pub source: usize,
+    pub dest: usize,
+    pub user_agent: usize,
 }
 
 // R14/R25: 决策缓存摘要（保底返回 disabled=true；若注册 Provider 则返回实化字段）
@@ -448,6 +517,16 @@ pub fn router_build_index_from_str(
     let buckets6 = vec![Vec::new(); 129]; // 0..=128
     let mut geoip = Vec::new();
     let mut geosite = Vec::new();
+    let mut wifi_ssid = Vec::new();
+    let mut wifi_bssid = Vec::new();
+    let mut rule_set = Vec::new();
+    let mut process = Vec::new();
+    let mut process_path = Vec::new();
+    let mut protocol = Vec::new();
+    let mut network = Vec::new();
+    let mut source = Vec::new();
+    let mut dest = Vec::new();
+    let mut user_agent = Vec::new();
     #[cfg(feature = "router_keyword")]
     let mut keyword_rules: Vec<(String, String)> = Vec::new();
     let mut default: Option<&'static str> = None;
@@ -668,6 +747,76 @@ pub fn router_build_index_from_str(
                 geosite.push((pat.to_lowercase(), intern_dec(decision)));
                 count += 1;
             }
+            "wifi_ssid" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                wifi_ssid.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "wifi_bssid" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                wifi_bssid.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "rule_set" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                rule_set.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "process" | "process_name" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                process.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "process_path" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                process_path.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "protocol" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                protocol.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "network" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                network.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "source" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                source.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "dest" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                dest.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
+            "user_agent" => {
+                if pat.is_empty() {
+                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                }
+                user_agent.push((pat.to_string(), intern_dec(decision)));
+                count += 1;
+            }
             "port" => {
                 // port:443=proxy
                 let p: u16 = pat.parse().map_err(|_| {
@@ -826,6 +975,16 @@ pub fn router_build_index_from_str(
         cidr6_buckets: buckets6,
         geoip_rules: geoip,
         geosite_rules: geosite,
+        wifi_ssid_rules: wifi_ssid,
+        wifi_bssid_rules: wifi_bssid,
+        rule_set_rules: rule_set,
+        process_rules: process,
+        process_path_rules: process_path,
+        protocol_rules: protocol,
+        network_rules: network,
+        source_rules: source,
+        dest_rules: dest,
+        user_agent_rules: user_agent,
         #[cfg(feature = "router_keyword")]
         keyword_rules,
         #[cfg(feature = "router_keyword")]
@@ -833,6 +992,7 @@ pub fn router_build_index_from_str(
         default: default.unwrap_or("direct"),
         gen: 0,
         checksum,
+        rules: vec![],
     };
     #[cfg(not(feature = "router_keyword"))]
     let idx = RouterIndex {
@@ -849,6 +1009,16 @@ pub fn router_build_index_from_str(
         cidr6_buckets: buckets6,
         geoip_rules: geoip,
         geosite_rules: geosite,
+        wifi_ssid_rules: wifi_ssid,
+        wifi_bssid_rules: wifi_bssid,
+        rule_set_rules: rule_set,
+        process_rules: process,
+        process_path_rules: process_path,
+        protocol_rules: protocol,
+        network_rules: network,
+        source_rules: source,
+        dest_rules: dest,
+        user_agent_rules: user_agent,
         #[cfg(feature = "router_keyword")]
         keyword_rules,
         #[cfg(feature = "router_keyword")]
@@ -856,6 +1026,7 @@ pub fn router_build_index_from_str(
         default: default.unwrap_or("direct"),
         gen: 0,
         checksum,
+        rules: vec![],
     };
     // 可选：构建完成后的收尾操作
     #[cfg(feature = "router_keyword")]
@@ -888,6 +1059,22 @@ pub fn router_build_index_from_str(
         metrics::gauge!("router_rules_size", "kind"=>"cidr6").set(idx.cidr6.len() as f64);
         metrics::gauge!("router_rules_size", "kind"=>"geoip").set(idx.geoip_rules.len() as f64);
         metrics::gauge!("router_rules_size", "kind"=>"geosite").set(idx.geosite_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"wifi_ssid")
+            .set(idx.wifi_ssid_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"wifi_bssid")
+            .set(idx.wifi_bssid_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"rule_set")
+            .set(idx.rule_set_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"process").set(idx.process_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"process_path")
+            .set(idx.process_path_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"protocol")
+            .set(idx.protocol_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"network").set(idx.network_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"source").set(idx.source_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"dest").set(idx.dest_rules.len() as f64);
+        metrics::gauge!("router_rules_size", "kind"=>"user_agent")
+            .set(idx.user_agent_rules.len() as f64);
         metrics::gauge!("router_rules_footprint_bytes").set(estimate_footprint_bytes(&idx) as f64);
         let elapsed = build_start.elapsed().as_millis() as f64;
         metrics::histogram!("router_rules_build_ms_bucket").record(elapsed);
@@ -1136,6 +1323,16 @@ fn estimate_footprint_bytes(idx: &RouterIndex) -> usize {
     bytes += idx.port_ranges.len() * std::mem::size_of::<(u16, u16, *const u8)>();
     bytes += idx.cidr4.len() * std::mem::size_of::<(Ipv4Net, *const u8)>();
     bytes += idx.cidr6.len() * std::mem::size_of::<(Ipv6Net, *const u8)>();
+    bytes += idx.wifi_ssid_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.wifi_bssid_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.rule_set_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.process_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.process_path_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.protocol_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.network_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.source_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.dest_rules.len() * std::mem::size_of::<(String, *const u8)>();
+    bytes += idx.user_agent_rules.len() * std::mem::size_of::<(String, *const u8)>();
     // 桶向量的结构体占位
     bytes += idx
         .cidr4_buckets
@@ -1341,6 +1538,110 @@ pub fn router_index_decide_geosite(
     for (category, decision) in &idx.geosite_rules {
         if geosite_db.match_domain(domain, category) {
             return Some(*decision);
+        }
+    }
+    None
+}
+
+/// WiFi SSID decision
+pub fn router_index_decide_wifi_ssid(idx: &RouterIndex, ssid: &str) -> Option<&'static str> {
+    for (s, d) in &idx.wifi_ssid_rules {
+        if s == ssid {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// WiFi BSSID decision
+pub fn router_index_decide_wifi_bssid(idx: &RouterIndex, bssid: &str) -> Option<&'static str> {
+    for (s, d) in &idx.wifi_bssid_rules {
+        if s.eq_ignore_ascii_case(bssid) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Rule Set decision
+pub fn router_index_decide_rule_set(idx: &RouterIndex, input: &Input) -> Option<&'static str> {
+    if let Some(rule_sets) = input.rule_set {
+        for rs in rule_sets {
+            for (s, d) in &idx.rule_set_rules {
+                if s == rs {
+                    return Some(*d);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Process Name decision
+pub fn router_index_decide_process(idx: &RouterIndex, process: &str) -> Option<&'static str> {
+    for (s, d) in &idx.process_rules {
+        if s.eq_ignore_ascii_case(process) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Process Path decision
+pub fn router_index_decide_process_path(idx: &RouterIndex, path: &str) -> Option<&'static str> {
+    for (s, d) in &idx.process_path_rules {
+        if s.eq_ignore_ascii_case(path) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Protocol decision
+pub fn router_index_decide_protocol(idx: &RouterIndex, protocol: &str) -> Option<&'static str> {
+    for (s, d) in &idx.protocol_rules {
+        if s.eq_ignore_ascii_case(protocol) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Network decision
+pub fn router_index_decide_network(idx: &RouterIndex, network: &str) -> Option<&'static str> {
+    for (s, d) in &idx.network_rules {
+        if s.eq_ignore_ascii_case(network) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Source decision
+pub fn router_index_decide_source(idx: &RouterIndex, source: &str) -> Option<&'static str> {
+    for (s, d) in &idx.source_rules {
+        if s.eq_ignore_ascii_case(source) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// Destination decision
+pub fn router_index_decide_dest(idx: &RouterIndex, dest: &str) -> Option<&'static str> {
+    for (s, d) in &idx.dest_rules {
+        if s.eq_ignore_ascii_case(dest) {
+            return Some(*d);
+        }
+    }
+    None
+}
+
+/// User Agent decision
+pub fn router_index_decide_user_agent(idx: &RouterIndex, ua: &str) -> Option<&'static str> {
+    for (s, d) in &idx.user_agent_rules {
+        if ua.contains(s) {
+            return Some(*d);
         }
     }
     None
@@ -1724,6 +2025,17 @@ pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>
             cidr6_buckets: vec![Vec::new(); 129],
             geoip_rules: vec![],
             geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
+
             #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
@@ -1731,6 +2043,7 @@ pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>
             default: "direct",
             gen: 0,
             checksum: [0; 32],
+            rules: vec![],
         })
     });
     let shared = Arc::new(RwLock::new(idx));
@@ -1771,6 +2084,17 @@ static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
             cidr6_buckets: vec![Vec::new(); 129],
             geoip_rules: vec![],
             geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
+
             #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
@@ -1778,6 +2102,7 @@ static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
             default: "direct",
             gen: 0,
             checksum: [0; 32],
+            rules: vec![],
         })
     });
     Arc::new(RwLock::new(idx))
@@ -1957,6 +2282,16 @@ pub fn router_snapshot_summary() -> String {
         cidr6: idx.cidr6.len(),
         geoip: idx.geoip_rules.len(),
         geosite: idx.geosite_rules.len(),
+        wifi_ssid: idx.wifi_ssid_rules.len(),
+        wifi_bssid: idx.wifi_bssid_rules.len(),
+        rule_set: idx.rule_set_rules.len(),
+        process: idx.process_rules.len(),
+        process_path: idx.process_path_rules.len(),
+        protocol: idx.protocol_rules.len(),
+        network: idx.network_rules.len(),
+        source: idx.source_rules.len(),
+        dest: idx.dest_rules.len(),
+        user_agent: idx.user_agent_rules.len(),
     };
     let summary = RouterSnapshotSummary {
         generation: idx.gen,
@@ -2155,6 +2490,17 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
             cidr6_buckets: vec![Vec::new(); 129],
             geoip_rules: vec![],
             geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
+
             #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
@@ -2162,6 +2508,7 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
             default: "direct",
             gen: 0,
             checksum: [0; 32],
+            rules: vec![],
         })
     });
 
@@ -2224,6 +2571,17 @@ pub fn decide_udp_with_rules_and_ips_v46(
             cidr6_buckets: vec![Vec::new(); 129],
             geoip_rules: vec![],
             geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
+
             #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
@@ -2231,6 +2589,7 @@ pub fn decide_udp_with_rules_and_ips_v46(
             default: "direct",
             gen: 0,
             checksum: [0; 32],
+            rules: vec![],
         })
     });
 
@@ -2278,6 +2637,17 @@ pub fn decide_udp_with_rules_and_ips(
             cidr6_buckets: vec![Vec::new(); 129],
             geoip_rules: vec![],
             geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
+
             #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
             #[cfg(feature = "router_keyword")]
@@ -2285,6 +2655,7 @@ pub fn decide_udp_with_rules_and_ips(
             default: "direct",
             gen: 0,
             checksum: [0; 32],
+            rules: vec![],
         })
     });
 

@@ -446,6 +446,7 @@ mod tests {
             derp_stun_listen_port: None,
             derp_tls_cert_path: None,
             derp_tls_key_path: None,
+            derp_server_key_path: None,
         };
 
         let ctx = ServiceContext::default();
@@ -486,6 +487,7 @@ mod tests {
             derp_stun_listen_port: None,
             derp_tls_cert_path: None,
             derp_tls_key_path: None,
+            derp_server_key_path: None,
         };
 
         // Note: This test will fail if systemd-resolved is not available

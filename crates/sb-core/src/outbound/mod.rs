@@ -444,8 +444,31 @@ impl OutboundRegistryHandle {
                         Ok(stream)
                     }
                     #[cfg(feature = "out_ss")]
-                    Some(OutboundImpl::Shadowsocks(_cfg)) => {
-                        Err(io::Error::other("Shadowsocks boxed IO not implemented"))
+                    Some(OutboundImpl::Shadowsocks(cfg)) => {
+
+                        use crate::outbound::traits::OutboundConnectorIo;
+                        use crate::outbound::shadowsocks::ShadowsocksOutbound;
+                        use crate::types::{
+                            ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
+                        };
+                        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+                        let dst = match ep {
+                            Endpoint::Ip(sa) => CEndpoint::from_socket_addr(sa),
+                            Endpoint::Domain(host, port) => {
+                                CEndpoint::new(CHost::domain(host), port)
+                            }
+                        };
+                        let src = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
+                        let ctx = ConnCtx::new(0, Network::Tcp, src, dst);
+
+                        let outbound = ShadowsocksOutbound::new(cfg.clone());
+                        let stream = OutboundConnectorIo::connect_tcp_io(&outbound, &ctx)
+                            .await
+                            .map_err(|e| {
+                                io::Error::other(format!("Shadowsocks connect_io failed: {}", e))
+                            })?;
+                        Ok(stream)
                     }
                     #[cfg(feature = "out_shadowtls")]
                     Some(OutboundImpl::ShadowTls(_cfg)) => {

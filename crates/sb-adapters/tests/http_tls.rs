@@ -61,13 +61,11 @@ impl MockHttpProxy {
         }
 
         // Check authentication if required
-        if self.with_auth {
-            if auth_header.is_none() {
-                // Send 407 Proxy Authentication Required
-                let response = "HTTP/1.1 407 Proxy Authentication Required\r\n\r\n";
-                stream.write_all(response.as_bytes()).await?;
-                return Ok(());
-            }
+        if self.with_auth && auth_header.is_none() {
+            // Send 407 Proxy Authentication Required
+            let response = "HTTP/1.1 407 Proxy Authentication Required\r\n\r\n";
+            stream.write_all(response.as_bytes()).await?;
+            return Ok(());
         }
 
         // Send 200 Connection established

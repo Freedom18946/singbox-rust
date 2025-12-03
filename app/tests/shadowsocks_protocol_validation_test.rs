@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Comprehensive Shadowsocks Protocol Validation Tests
 //!
 //! Test Coverage (Milestone 1, Week 48):
@@ -16,7 +17,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::time::timeout;
 
 // Import config from adapters
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 
 /// Test helper: Start echo server for testing
 async fn start_echo_server() -> SocketAddr {
@@ -78,14 +79,18 @@ async fn test_shadowsocks_aes_256_gcm_config() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "aes-256-gcm".to_string(),
-        password: "secure-password-aes256".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "default".to_string(),
+            password: "secure-password-aes256".to_string(),
+        }],
         router,
         multiplex: None,
         transport_layer: None,
     };
 
     assert_eq!(config.method, "aes-256-gcm");
-    assert!(config.password.len() >= 10);
+    assert!(config.users[0].password.len() >= 10);
     println!("✓ AES-256-GCM configuration validated");
 }
 
@@ -98,14 +103,18 @@ async fn test_shadowsocks_aes_128_gcm_config() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "aes-128-gcm".to_string(),
-        password: "secure-password-aes128".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "default".to_string(),
+            password: "secure-password-aes128".to_string(),
+        }],
         router,
         multiplex: None,
         transport_layer: None,
     };
 
     assert_eq!(config.method, "aes-128-gcm");
-    assert!(config.password.len() >= 10);
+    assert!(config.users[0].password.len() >= 10);
     println!("✓ AES-128-GCM configuration validated");
 }
 
@@ -118,14 +127,18 @@ async fn test_shadowsocks_chacha20_poly1305_config() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "chacha20-poly1305".to_string(),
-        password: "secure-password-chacha".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "default".to_string(),
+            password: "secure-password-chacha".to_string(),
+        }],
         router,
         multiplex: None,
         transport_layer: None,
     };
 
     assert_eq!(config.method, "chacha20-poly1305");
-    assert!(config.password.len() >= 10);
+    assert!(config.users[0].password.len() >= 10);
     println!("✓ ChaCha20-Poly1305 configuration validated");
 }
 
@@ -139,7 +152,11 @@ async fn test_shadowsocks_all_supported_ciphers() {
         let config = ShadowsocksInboundConfig {
             listen: "127.0.0.1:0".parse().unwrap(),
             method: method.to_string(),
-            password: format!("password-{}", method),
+            password: None,
+            users: vec![ShadowsocksUser {
+                name: "default".to_string(),
+                password: format!("password-{}", method),
+            }],
             router: router.clone(),
             multiplex: None,
             transport_layer: None,
@@ -190,7 +207,10 @@ async fn test_udp_relay_session_management() {
             let client = UdpSocket::bind("127.0.0.1:0").await.expect("bind");
             let test_data = format!("Session {}", i);
 
-            client.send_to(test_data.as_bytes(), echo_addr).await.expect("send");
+            client
+                .send_to(test_data.as_bytes(), echo_addr)
+                .await
+                .expect("send");
 
             let mut buf = vec![0u8; 1024];
             let (len, _) = timeout(Duration::from_secs(2), client.recv_from(&mut buf))
@@ -212,7 +232,10 @@ async fn test_udp_relay_session_management() {
     }
 
     assert_eq!(success_count, num_sessions);
-    println!("✓ UDP session management validated ({} sessions)", num_sessions);
+    println!(
+        "✓ UDP session management validated ({} sessions)",
+        num_sessions
+    );
 }
 
 #[tokio::test]
@@ -240,14 +263,21 @@ async fn test_password_based_authentication() {
     let config = ShadowsocksInboundConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
         method: "aes-256-gcm".to_string(),
-        password: "user-password-123".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "default".to_string(),
+            password: "user-password-123".to_string(),
+        }],
         router,
         multiplex: None,
         transport_layer: None,
     };
 
-    assert_eq!(config.password, "user-password-123");
-    assert!(config.password.len() >= 10, "Password should be sufficiently long");
+    assert_eq!(config.users[0].password, "user-password-123");
+    assert!(
+        config.users[0].password.len() >= 10,
+        "Password should be sufficiently long"
+    );
     println!("✓ Password-based authentication configured");
 }
 
@@ -259,7 +289,11 @@ async fn test_multi_user_different_passwords() {
     let user1_config = ShadowsocksInboundConfig {
         listen: "127.0.0.1:18001".parse().unwrap(),
         method: "aes-256-gcm".to_string(),
-        password: "user1-password".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "user1".to_string(),
+            password: "user1-password".to_string(),
+        }],
         router: router.clone(),
         multiplex: None,
         transport_layer: None,
@@ -268,14 +302,18 @@ async fn test_multi_user_different_passwords() {
     let user2_config = ShadowsocksInboundConfig {
         listen: "127.0.0.1:18002".parse().unwrap(),
         method: "aes-256-gcm".to_string(),
-        password: "user2-password".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "user2".to_string(),
+            password: "user2-password".to_string(),
+        }],
         router: router.clone(),
         multiplex: None,
         transport_layer: None,
     };
 
     // Passwords should be different
-    assert_ne!(user1_config.password, user2_config.password);
+    assert_ne!(user1_config.users[0].password, user2_config.users[0].password);
     assert_ne!(user1_config.listen, user2_config.listen);
 
     println!("✓ Multi-user with different passwords validated");
@@ -335,14 +373,11 @@ async fn test_shadowsocks_1000_connections() {
     let mut success_count = 0;
 
     for i in 0..num_connections {
-        let result = timeout(
-            Duration::from_secs(2),
-            TcpStream::connect(echo_addr),
-        )
-        .await
-        .ok()
-        .and_then(|r| r.ok());
-        
+        let result = timeout(Duration::from_secs(2), TcpStream::connect(echo_addr))
+            .await
+            .ok()
+            .and_then(|r| r.ok());
+
         if let Some(mut stream) = result {
             let data = b"test";
             if stream.write_all(data).await.is_ok() {
@@ -363,7 +398,10 @@ async fn test_shadowsocks_1000_connections() {
 
     println!("Total connections: {}", num_connections);
     println!("Successful: {}", success_count);
-    println!("Success rate: {:.1}%", (success_count as f64 / num_connections as f64) * 100.0);
+    println!(
+        "Success rate: {:.1}%",
+        (success_count as f64 / num_connections as f64) * 100.0
+    );
     println!("Time elapsed: {:.2}s", elapsed.as_secs_f64());
     println!("Connection rate: {:.2} conn/sec", rate);
 

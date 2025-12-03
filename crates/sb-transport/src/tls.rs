@@ -72,7 +72,7 @@ pub struct TlsDialer<D: Dialer> {
 }
 
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for TlsDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for TlsDialer<D> {
     /// Establish a TLS encrypted connection
     /// 建立 TLS 加密连接
     ///
@@ -142,6 +142,10 @@ impl<D: Dialer + Send + Sync> Dialer for TlsDialer<D> {
         // 这样调用者就可以像使用普通流一样使用加密连接
         Ok(Box::new(tls))
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Build production TLS configuration (based on webpki_roots)
@@ -186,9 +190,12 @@ impl<D: Dialer + Send + Sync> Dialer for TlsDialer<D> {
 pub fn webpki_roots_config() -> Arc<rustls::ClientConfig> {
     use rustls::{ClientConfig, RootCertStore};
 
-    // Use an empty root store placeholder to keep builds reproducible
-    // (system/webpki roots wiring can be added when distributing binaries)
-    let roots = RootCertStore::empty();
+    // Load built-in root certificates from webpki-roots
+    // This provides a set of trusted CA certificates maintained by the webpki-roots project
+    // 从 webpki-roots 加载内置根证书
+    // 提供由 webpki-roots 项目维护的可信 CA 证书集合
+    let mut roots = RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
     Arc::new(
         ClientConfig::builder()
@@ -291,7 +298,7 @@ pub struct RealityDialer<D: Dialer> {
 
 #[cfg(feature = "transport_reality")]
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for RealityDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for RealityDialer<D> {
     /// Establish REALITY TLS encrypted connection
     /// 建立 REALITY TLS 加密连接
     ///
@@ -336,6 +343,10 @@ impl<D: Dialer + Send + Sync> Dialer for RealityDialer<D> {
         // 第三步：返回加密连接
         // Wrap the TLS stream in an adapter to convert trait objects
         Ok(Box::new(RealityStreamAdapter { inner: tls_stream }))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -623,7 +634,7 @@ pub struct EchDialer<D: Dialer> {
 
 #[cfg(feature = "transport_ech")]
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for EchDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for EchDialer<D> {
     /// Establish ECH encrypted TLS connection
     /// 建立 ECH 加密的 TLS 连接
     ///
@@ -731,6 +742,10 @@ impl<D: Dialer + Send + Sync> Dialer for EchDialer<D> {
 
         // 第八步：返回加密连接
         Ok(Box::new(tls))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -844,8 +859,12 @@ impl<D: Dialer> EchDialer<D> {
     pub fn from_env(inner: D, config: Arc<rustls::ClientConfig>) -> Result<Self, DialError> {
         // Read required ECH config
         // 读取必需的 ECH 配置
-        let ech_config_b64 = std::env::var("SB_ECH_CONFIG")
-            .map_err(|_| DialError::Tls("Environment variable SB_ECH_CONFIG not set / 环境变量 SB_ECH_CONFIG 未设置".to_string()))?;
+        let ech_config_b64 = std::env::var("SB_ECH_CONFIG").map_err(|_| {
+            DialError::Tls(
+                "Environment variable SB_ECH_CONFIG not set / 环境变量 SB_ECH_CONFIG 未设置"
+                    .to_string(),
+            )
+        })?;
 
         // Read optional boolean configs, use default on parse failure
         // 读取可选的布尔配置，解析失败时使用默认值
@@ -865,8 +884,12 @@ impl<D: Dialer> EchDialer<D> {
 
         // Create ECH config
         // 创建 ECH 配置
-        let ech_config = sb_tls::EchClientConfig::new(ech_config_b64)
-            .map_err(|e| DialError::Tls(format!("Invalid ECH config: {} / 无效的 ECH 配置: {}", e, e)))?;
+        let ech_config = sb_tls::EchClientConfig::new(ech_config_b64).map_err(|e| {
+            DialError::Tls(format!(
+                "Invalid ECH config: {} / 无效的 ECH 配置: {}",
+                e, e
+            ))
+        })?;
 
         // Apply environment variable overrides
         // 应用环境变量覆盖

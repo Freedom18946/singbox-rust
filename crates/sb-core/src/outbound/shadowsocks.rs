@@ -1,5 +1,7 @@
 #[cfg(feature = "out_ss")]
 use super::crypto_types::{HostPort, OutboundTcp};
+use sb_transport::Dialer;
+use std::sync::Arc;
 #[cfg(feature = "out_ss")]
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 #[cfg(feature = "out_ss")]
@@ -48,6 +50,8 @@ pub struct ShadowsocksConfig {
     pub port: u16,
     pub password: String,
     pub cipher: ShadowsocksCipher,
+    #[cfg(feature = "v2ray_transport")]
+    pub multiplex: Option<sb_config::ir::MultiplexOptionsIR>,
 }
 
 #[cfg(feature = "out_ss")]
@@ -58,7 +62,18 @@ impl ShadowsocksConfig {
             port,
             password,
             cipher,
+            #[cfg(feature = "v2ray_transport")]
+            multiplex: None,
         }
+    }
+
+    #[cfg(feature = "v2ray_transport")]
+    pub fn with_multiplex(
+        mut self,
+        multiplex: Option<sb_config::ir::MultiplexOptionsIR>,
+    ) -> Self {
+        self.multiplex = multiplex;
+        self
     }
 
     pub fn derive_key(&self) -> Vec<u8> {
@@ -68,16 +83,99 @@ impl ShadowsocksConfig {
 }
 
 #[cfg(feature = "out_ss")]
+#[derive(Debug)]
 pub struct ShadowsocksOutbound {
     config: ShadowsocksConfig,
     key: Vec<u8>,
+    #[cfg(feature = "v2ray_transport")]
+    multiplex_dialer: Option<std::sync::Arc<sb_transport::multiplex::MultiplexDialer>>,
 }
 
 #[cfg(feature = "out_ss")]
 impl ShadowsocksOutbound {
     pub fn new(config: ShadowsocksConfig) -> Self {
         let key = config.derive_key();
+        #[cfg(feature = "v2ray_transport")]
+        {
+            let multiplex_dialer = if let Some(ref mux_ir) = config.multiplex {
+                if !mux_ir.enabled {
+                    None
+                } else {
+                    let mut mux_config = sb_transport::multiplex::MultiplexConfig::default();
+                    if let Some(n) = mux_ir.max_streams {
+                        mux_config.max_num_streams = n;
+                    }
+                    if let Some(n) = mux_ir.max_connections {
+                        mux_config.max_pool_size = n;
+                    }
+                    if let Some(p) = mux_ir.padding {
+                        mux_config.enable_padding = p;
+                    }
+                    if let Some(w) = mux_ir.initial_stream_window {
+                        mux_config.initial_stream_window = w;
+                    }
+                    if let Some(w) = mux_ir.max_stream_window {
+                        mux_config.max_stream_window = w;
+                    }
+                    if let Some(k) = mux_ir.enable_keepalive {
+                        mux_config.enable_keepalive = k;
+                    }
+                    if let Some(i) = mux_ir.keepalive_interval {
+                        mux_config.keepalive_interval = i;
+                    }
+                    
+                    let base = ShadowsocksBaseDialer {
+                        config: config.clone(),
+                    };
+                    Some(Arc::new(
+                        sb_transport::multiplex::MultiplexDialer::new(
+                            mux_config,
+                            Box::new(base),
+                        ),
+                    ))
+                }
+            } else {
+                None
+            };
+
+            Self {
+                config,
+                key,
+                multiplex_dialer,
+            }
+        }
+        #[cfg(not(feature = "v2ray_transport"))]
         Self { config, key }
+    }
+}
+
+#[cfg(all(feature = "out_ss", feature = "v2ray_transport"))]
+#[derive(Clone)]
+struct ShadowsocksBaseDialer {
+    config: ShadowsocksConfig,
+}
+
+#[cfg(all(feature = "out_ss", feature = "v2ray_transport"))]
+#[async_trait]
+impl sb_transport::Dialer for ShadowsocksBaseDialer {
+    async fn connect(&self, _host: &str, _port: u16) -> Result<sb_transport::IoStream, sb_transport::dialer::DialError> {
+        // Connect to the proxy server
+        let stream = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
+            .await
+            .inspect_err(|_e| {
+                #[cfg(feature = "metrics")]
+                crate::telemetry::outbound_connect(
+                    "shadowsocks",
+                    "error",
+                    Some(crate::telemetry::err_kind(_e)),
+                );
+            })
+            .map_err(sb_transport::dialer::DialError::Io)?;
+        Ok(Box::new(stream))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -89,23 +187,61 @@ impl OutboundTcp for ShadowsocksOutbound {
     async fn connect(&self, target: &HostPort) -> std::io::Result<Self::IO> {
         let _start = std::time::Instant::now();
 
-        // Step 1: TCP connect to Shadowsocks server
-        let tcp = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
-            .await
-            .inspect_err(|_e| {
-                #[cfg(feature = "metrics")]
-                crate::telemetry::outbound_connect(
-                    "shadowsocks",
-                    "error",
-                    Some(crate::telemetry::err_kind(_e)),
-                );
-            })?;
+        // Step 1: Connect to Shadowsocks server (TCP or Mux)
+        #[allow(unused_mut)]
+        let mut stream: sb_transport::IoStream;
+
+        #[cfg(feature = "v2ray_transport")]
+        if let Some(ref mux) = self.multiplex_dialer {
+            // Use multiplex dialer
+            // Note: MultiplexDialer::connect takes (host, port) but our base dialer ignores them
+            // and connects to the proxy server.
+            stream = mux
+                .connect(&self.config.server, self.config.port)
+                .await
+                .map_err(|e| std::io::Error::other(format!("mux dial failed: {}", e)))?;
+        } else {
+            let s = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
+                .await
+                .inspect_err(|_e| {
+                    #[cfg(feature = "metrics")]
+                    crate::telemetry::outbound_connect(
+                        "shadowsocks",
+                        "error",
+                        Some(crate::telemetry::err_kind(_e)),
+                    );
+                })?;
+            stream = Box::new(s);
+        }
+
+        #[cfg(not(feature = "v2ray_transport"))]
+        {
+            let s = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
+                .await
+                .inspect_err(|_e| {
+                    #[cfg(feature = "metrics")]
+                    crate::telemetry::outbound_connect(
+                        "shadowsocks",
+                        "error",
+                        Some(crate::telemetry::err_kind(_e)),
+                    );
+                })?;
+            stream = Box::new(s);
+        }
 
         #[cfg(feature = "metrics")]
-        crate::telemetry::outbound_connect("shadowsocks", "ok", None);
+        {
+            #[cfg(feature = "v2ray_transport")]
+            if self.multiplex_dialer.is_none() {
+                crate::telemetry::outbound_connect("shadowsocks", "ok", None);
+            }
+            #[cfg(not(feature = "v2ray_transport"))]
+            crate::telemetry::outbound_connect("shadowsocks", "ok", None);
+        }
 
         // Step 2: Perform Shadowsocks handshake
-        let mut stream = ShadowsocksStream::new(tcp, self.key.clone(), self.config.cipher.clone());
+        let mut stream =
+            ShadowsocksStream::new(stream, self.key.clone(), self.config.cipher.clone());
         stream.handshake(target).await?;
 
         // Session key for subsequent frames
@@ -116,7 +252,37 @@ impl OutboundTcp for ShadowsocksOutbound {
             .ok_or_else(|| std::io::Error::other("missing session key after handshake"))?;
 
         // Split remote stream and create local loopback pair
-        let (mut ss_r, mut ss_w) = stream.inner.into_split();
+        // Note: ShadowsocksStream wraps `Box<dyn AsyncReadWrite>`.
+        // We cannot use `into_split` on Box<dyn ...>.
+        // We need to use `tokio::io::split` or similar.
+        // But `tokio::io::split` requires `AsyncRead + AsyncWrite`.
+        // `sb_transport::IoStream` satisfies this.
+
+        // However, the original code used `stream.inner.into_split()` which worked on `TcpStream`.
+        // For `Box<dyn AsyncReadWrite>`, we can't easily split it into owned halves without Arc/Mutex or `tokio::io::split`.
+        // `tokio::io::split` returns `ReadHalf` and `WriteHalf` which borrow the stream (or take ownership if using `BiLock`).
+        // But `ShadowsocksStream` logic (lines 119+) spawns tasks that need OWNERSHIP of the halves.
+
+        // If `inner` is `Box<dyn AsyncReadWrite>`, we can use `tokio::io::split` if we wrap it in `Arc<Mutex<...>>`? No.
+        // `tokio::io::split` works on any `AsyncRead + AsyncWrite`.
+        // But it returns `ReadHalf<T>` and `WriteHalf<T>`.
+        // If `T` is `Box<dyn ...>`, then `ReadHalf<Box<dyn ...>>`.
+        // This holds a reference to the Box? No, `tokio::io::split` takes a reference by default?
+        // No, `tokio::io::split` takes `T`.
+        // Wait, `tokio::io::split(stream)` takes ownership and returns `(ReadHalf<T>, WriteHalf<T>)`.
+        // But `T` must be `AsyncRead + AsyncWrite`.
+        // `Box<dyn AsyncReadWrite>` implements `AsyncRead + AsyncWrite`.
+        // So `tokio::io::split(stream)` should work.
+
+        // BUT, `ReadHalf` and `WriteHalf` rely on `BiLock` internally if the underlying type doesn't support specialized splitting.
+        // `TcpStream` supports specialized `into_split`.
+        // `Box<dyn ...>` does not.
+        // So `tokio::io::split` will use `BiLock`.
+        // This is fine, but slightly less efficient.
+
+        // Let's verify `tokio::io::split` usage.
+        let (mut ss_r, mut ss_w) = tokio::io::split(stream.inner);
+
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let local_addr = listener.local_addr()?;
         let accept_task = tokio::spawn(async move { listener.accept().await.map(|(s, _)| s) });
@@ -211,7 +377,11 @@ impl OutboundTcp for ShadowsocksOutbound {
             let _ = ls_w.shutdown().await;
         });
 
-        let wrapped = ShadowsocksStream::new(client, self.key.clone(), self.config.cipher.clone());
+        // Wrap the client side of the loopback pair
+        // We need to box it to satisfy ShadowsocksStream::new
+        let wrapped_client: sb_transport::IoStream = Box::new(client);
+        let wrapped =
+            ShadowsocksStream::new(wrapped_client, self.key.clone(), self.config.cipher.clone());
 
         let _elapsed = _start.elapsed();
         #[cfg(feature = "metrics")]
@@ -232,9 +402,23 @@ impl OutboundTcp for ShadowsocksOutbound {
     }
 }
 
+#[cfg(all(feature = "out_ss", feature = "v2ray_transport"))]
+#[async_trait]
+impl crate::outbound::traits::OutboundConnectorIo for ShadowsocksOutbound {
+    async fn connect_tcp_io(
+        &self,
+        ctx: &crate::types::ConnCtx,
+    ) -> crate::error::SbResult<sb_transport::IoStream> {
+        let target = HostPort::new(ctx.dst.host.to_string(), ctx.dst.port);
+        let stream = self.connect(&target).await?;
+        // ShadowsocksStream implements AsyncRead+AsyncWrite, so we can box it
+        Ok(Box::new(stream))
+    }
+}
+
 #[cfg(feature = "out_ss")]
 pub struct ShadowsocksStream {
-    inner: tokio::net::TcpStream,
+    inner: sb_transport::IoStream,
     key: Vec<u8>,
     cipher: ShadowsocksCipher,
     write_nonce: u64,
@@ -246,7 +430,7 @@ pub struct ShadowsocksStream {
 
 #[cfg(feature = "out_ss")]
 impl ShadowsocksStream {
-    fn new(stream: tokio::net::TcpStream, key: Vec<u8>, cipher: ShadowsocksCipher) -> Self {
+    fn new(stream: sb_transport::IoStream, key: Vec<u8>, cipher: ShadowsocksCipher) -> Self {
         Self {
             inner: stream,
             key,

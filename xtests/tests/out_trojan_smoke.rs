@@ -188,7 +188,7 @@ mod trojan_stub_tests {
 
     #[tokio::test]
     async fn test_trojan_stub_config_creation() {
-        let config = TrojanConfig::new(
+        let _config = TrojanConfig::new(
             "example.com".to_string(),
             443,
             "password123".to_string(),
@@ -196,7 +196,7 @@ mod trojan_stub_tests {
         );
 
         // Stub implementation should allow config creation
-        assert!(true);
+        // assert!(true);
     }
 
     #[tokio::test]
@@ -230,5 +230,5 @@ async fn test_trojan_metrics_integration() {
 #[tokio::test]
 async fn test_basic_compilation() {
     // This test just ensures the module compiles correctly
-    assert!(true);
+    // assert!(true);
 }

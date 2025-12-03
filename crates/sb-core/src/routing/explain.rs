@@ -105,6 +105,12 @@ impl ExplainEngine {
                 sniff_host: None,
                 sniff_alpn: None,
                 sniff_protocol: None,
+                wifi_ssid: None,
+                wifi_bssid: None,
+                process_name: None,
+                process_path: None,
+                user_agent: None,
+                rule_set: None,
             },
             with_trace,
         );

@@ -8,11 +8,23 @@ use std::{net::IpAddr, str::FromStr};
 // Re-export RecordType from DNS module for routing use
 pub use crate::dns::RecordType as DnsRecordType;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Decision {
+    #[default]
     Direct,
     Proxy(Option<String>), // Support named proxy pools with "proxy:name" syntax
     Reject,
+}
+
+impl Decision {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Decision::Direct => "direct",
+            Decision::Proxy(Some(name)) => name,
+            Decision::Proxy(None) => "proxy",
+            Decision::Reject => "reject",
+        }
+    }
 }
 
 /// Wrapper for Regex that implements PartialEq/Eq based on the pattern string
@@ -107,7 +119,70 @@ pub struct Rule {
     pub decision: Decision,
 }
 
-#[derive(Debug, Clone)]
+/// Composite rule that matches multiple criteria (AND logic).
+/// Mirrors `RuleIR` but uses optimized matchers where possible.
+#[derive(Debug, Clone, Default)]
+pub struct CompositeRule {
+    // Positive matchers
+    pub domain: Vec<String>,
+    pub domain_suffix: Vec<String>,
+    pub domain_keyword: Vec<String>,
+    pub domain_regex: Vec<DomainRegexMatcher>,
+    pub geosite: Vec<String>,
+    pub ip_cidr: Vec<IpNet>,
+    pub geoip: Vec<String>,
+    pub source_ip_cidr: Vec<IpNet>,
+    pub source_geoip: Vec<String>,
+    pub port: Vec<u16>,
+    pub port_range: Vec<(u16, u16)>,
+    pub source_port: Vec<u16>,
+    pub source_port_range: Vec<(u16, u16)>,
+    pub network: Vec<String>,
+    pub protocol: Vec<String>,
+    pub process_name: Vec<String>,
+    pub process_path: Vec<String>,
+    pub process_path_regex: Vec<ProcessPathRegexMatcher>,
+    pub wifi_ssid: Vec<String>,
+    pub wifi_bssid: Vec<String>,
+    pub rule_set: Vec<String>,
+    pub user_agent: Vec<String>,
+    pub inbound_tag: Vec<String>,
+    pub auth_user: Vec<String>,
+    pub query_type: Vec<DnsRecordType>,
+    pub ip_is_private: bool,
+    pub ip_version: Vec<String>, // ipv4, ipv6
+
+    // Negative matchers
+    pub not_domain: Vec<String>,
+    pub not_domain_suffix: Vec<String>,
+    pub not_domain_keyword: Vec<String>,
+    pub not_domain_regex: Vec<DomainRegexMatcher>,
+    pub not_geosite: Vec<String>,
+    pub not_ip_cidr: Vec<IpNet>,
+    pub not_geoip: Vec<String>,
+    pub not_source_ip_cidr: Vec<IpNet>,
+    pub not_source_geoip: Vec<String>,
+    pub not_port: Vec<u16>,
+    pub not_port_range: Vec<(u16, u16)>,
+    pub not_source_port: Vec<u16>,
+    pub not_source_port_range: Vec<(u16, u16)>,
+    pub not_network: Vec<String>,
+    pub not_protocol: Vec<String>,
+    pub not_process_name: Vec<String>,
+    pub not_process_path: Vec<String>,
+    pub not_process_path_regex: Vec<ProcessPathRegexMatcher>,
+    pub not_wifi_ssid: Vec<String>,
+    pub not_wifi_bssid: Vec<String>,
+    pub not_rule_set: Vec<String>,
+    pub not_user_agent: Vec<String>,
+    pub not_inbound_tag: Vec<String>,
+    pub not_auth_user: Vec<String>,
+    pub not_ip_is_private: bool,
+
+    pub decision: Decision,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct RouteCtx<'a> {
     pub domain: Option<&'a str>,
     pub ip: Option<IpAddr>,
@@ -119,6 +194,362 @@ pub struct RouteCtx<'a> {
     pub outbound_tag: Option<&'a str>,
     pub auth_user: Option<&'a str>,
     pub query_type: Option<DnsRecordType>,
+    pub wifi_ssid: Option<&'a str>,
+    pub wifi_bssid: Option<&'a str>,
+    pub network: Option<&'a str>, // tcp/udp
+    pub protocol: Option<&'a str>, // http/tls/etc
+    pub user_agent: Option<&'a str>,
+    pub geosite_codes: Vec<String>,
+    pub geoip_code: Option<String>,
+    pub source_geoip_code: Option<String>,
+    pub rule_sets: Vec<String>,
+    pub source_ip: Option<IpAddr>,
+    pub source_port: Option<u16>,
+}
+
+impl CompositeRule {
+    pub fn matches(&self, ctx: &RouteCtx) -> bool {
+        // 1. Negation checks (if any match, rule fails)
+        if !self.not_domain.is_empty() {
+            if let Some(domain) = ctx.domain {
+                if self.not_domain.iter().any(|d| domain.eq_ignore_ascii_case(d)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_domain_suffix.is_empty() {
+            if let Some(domain) = ctx.domain {
+                let domain = domain.to_ascii_lowercase();
+                if self.not_domain_suffix.iter().any(|s| domain.ends_with(&s.to_ascii_lowercase())) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_domain_keyword.is_empty() {
+            if let Some(domain) = ctx.domain {
+                let domain = domain.to_ascii_lowercase();
+                if self.not_domain_keyword.iter().any(|k| domain.contains(&k.to_ascii_lowercase())) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_domain_regex.is_empty() {
+            if let Some(domain) = ctx.domain {
+                if self.not_domain_regex.iter().any(|r| r.is_match(domain)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_geosite.is_empty()
+            && self.not_geosite.iter().any(|g| ctx.geosite_codes.iter().any(|c| c == g)) {
+                return false;
+            }
+        if !self.not_ip_cidr.is_empty() {
+            if let Some(ip) = ctx.ip {
+                if self.not_ip_cidr.iter().any(|n| n.contains(&ip)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_geoip.is_empty() {
+            if let Some(code) = &ctx.geoip_code {
+                if self.not_geoip.iter().any(|c| c.eq_ignore_ascii_case(code)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_source_ip_cidr.is_empty() {
+            if let Some(ip) = ctx.source_ip {
+                if self.not_source_ip_cidr.iter().any(|n| n.contains(&ip)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_source_geoip.is_empty() {
+            if let Some(code) = &ctx.source_geoip_code {
+                if self.not_source_geoip.iter().any(|c| c.eq_ignore_ascii_case(code)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_port.is_empty() {
+            if let Some(port) = ctx.port {
+                if self.not_port.contains(&port) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_port_range.is_empty() {
+            if let Some(port) = ctx.port {
+                if self.not_port_range.iter().any(|(s, e)| port >= *s && port <= *e) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_source_port.is_empty() {
+            if let Some(port) = ctx.source_port {
+                if self.not_source_port.contains(&port) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_source_port_range.is_empty() {
+            if let Some(port) = ctx.source_port {
+                if self.not_source_port_range.iter().any(|(s, e)| port >= *s && port <= *e) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_network.is_empty() {
+            if let Some(network) = ctx.network {
+                if self.not_network.iter().any(|n| n.eq_ignore_ascii_case(network)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_protocol.is_empty() {
+            if let Some(protocol) = ctx.protocol {
+                if self.not_protocol.iter().any(|p| p.eq_ignore_ascii_case(protocol)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_process_name.is_empty() {
+            if let Some(name) = ctx.process_name {
+                if self.not_process_name.iter().any(|n| name.eq_ignore_ascii_case(n)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_process_path.is_empty() {
+            if let Some(path) = ctx.process_path {
+                if self.not_process_path.iter().any(|p| path.eq_ignore_ascii_case(p)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_process_path_regex.is_empty() {
+            if let Some(path) = ctx.process_path {
+                if self.not_process_path_regex.iter().any(|r| r.is_match(path)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_wifi_ssid.is_empty() {
+            if let Some(ssid) = ctx.wifi_ssid {
+                if self.not_wifi_ssid.iter().any(|s| s == ssid) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_wifi_bssid.is_empty() {
+            if let Some(bssid) = ctx.wifi_bssid {
+                if self.not_wifi_bssid.iter().any(|b| b.eq_ignore_ascii_case(bssid)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_rule_set.is_empty()
+            && self.not_rule_set.iter().any(|rs| ctx.rule_sets.iter().any(|r| r == rs)) {
+                return false;
+            }
+        if !self.not_user_agent.is_empty() {
+            if let Some(ua) = ctx.user_agent {
+                if self.not_user_agent.iter().any(|u| ua.contains(u)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_inbound_tag.is_empty() {
+            if let Some(tag) = ctx.inbound_tag {
+                if self.not_inbound_tag.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_auth_user.is_empty() {
+            if let Some(user) = ctx.auth_user {
+                if self.not_auth_user.iter().any(|u| u.eq_ignore_ascii_case(user)) {
+                    return false;
+                }
+            }
+        }
+        if self.not_ip_is_private {
+             if let Some(ip) = ctx.ip {
+                 if Engine::is_private_ip(&ip) {
+                     return false;
+                 }
+             }
+        }
+
+        // 2. Positive checks (all non-empty fields must match)
+        if !self.domain.is_empty() {
+            let matched = if let Some(domain) = ctx.domain {
+                self.domain.iter().any(|d| domain.eq_ignore_ascii_case(d))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.domain_suffix.is_empty() {
+            let matched = if let Some(domain) = ctx.domain {
+                let domain = domain.to_ascii_lowercase();
+                self.domain_suffix.iter().any(|s| domain.ends_with(&s.to_ascii_lowercase()))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.domain_keyword.is_empty() {
+            let matched = if let Some(domain) = ctx.domain {
+                let domain = domain.to_ascii_lowercase();
+                self.domain_keyword.iter().any(|k| domain.contains(&k.to_ascii_lowercase()))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.domain_regex.is_empty() {
+            let matched = if let Some(domain) = ctx.domain {
+                self.domain_regex.iter().any(|r| r.is_match(domain))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.geosite.is_empty() {
+            let matched = self.geosite.iter().any(|g| ctx.geosite_codes.iter().any(|c| c == g));
+            if !matched { return false; }
+        }
+        if !self.ip_cidr.is_empty() {
+            let matched = if let Some(ip) = ctx.ip {
+                self.ip_cidr.iter().any(|n| n.contains(&ip))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.geoip.is_empty() {
+            let matched = if let Some(code) = &ctx.geoip_code {
+                self.geoip.iter().any(|c| c.eq_ignore_ascii_case(code))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.source_ip_cidr.is_empty() {
+            let matched = if let Some(ip) = ctx.source_ip {
+                self.source_ip_cidr.iter().any(|n| n.contains(&ip))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.source_geoip.is_empty() {
+            let matched = if let Some(code) = &ctx.source_geoip_code {
+                self.source_geoip.iter().any(|c| c.eq_ignore_ascii_case(code))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.port.is_empty() {
+            let matched = if let Some(port) = ctx.port {
+                self.port.contains(&port)
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.port_range.is_empty() {
+            let matched = if let Some(port) = ctx.port {
+                self.port_range.iter().any(|(s, e)| port >= *s && port <= *e)
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.source_port.is_empty() {
+            let matched = if let Some(port) = ctx.source_port {
+                self.source_port.contains(&port)
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.source_port_range.is_empty() {
+            let matched = if let Some(port) = ctx.source_port {
+                self.source_port_range.iter().any(|(s, e)| port >= *s && port <= *e)
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.network.is_empty() {
+            let matched = if let Some(network) = ctx.network {
+                self.network.iter().any(|n| n.eq_ignore_ascii_case(network))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.protocol.is_empty() {
+            let matched = if let Some(protocol) = ctx.protocol {
+                self.protocol.iter().any(|p| p.eq_ignore_ascii_case(protocol))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.process_name.is_empty() {
+            let matched = if let Some(name) = ctx.process_name {
+                self.process_name.iter().any(|n| name.eq_ignore_ascii_case(n))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.process_path.is_empty() {
+            let matched = if let Some(path) = ctx.process_path {
+                self.process_path.iter().any(|p| path.eq_ignore_ascii_case(p))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.process_path_regex.is_empty() {
+            let matched = if let Some(path) = ctx.process_path {
+                self.process_path_regex.iter().any(|r| r.is_match(path))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.wifi_ssid.is_empty() {
+            let matched = if let Some(ssid) = ctx.wifi_ssid {
+                self.wifi_ssid.iter().any(|s| s == ssid)
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.wifi_bssid.is_empty() {
+            let matched = if let Some(bssid) = ctx.wifi_bssid {
+                self.wifi_bssid.iter().any(|b| b.eq_ignore_ascii_case(bssid))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.rule_set.is_empty() {
+            let matched = self.rule_set.iter().any(|rs| ctx.rule_sets.iter().any(|r| r == rs));
+            if !matched { return false; }
+        }
+        if !self.user_agent.is_empty() {
+            let matched = if let Some(ua) = ctx.user_agent {
+                self.user_agent.iter().any(|u| ua.contains(u))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.inbound_tag.is_empty() {
+            let matched = if let Some(tag) = ctx.inbound_tag {
+                self.inbound_tag.iter().any(|t| t.eq_ignore_ascii_case(tag))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.auth_user.is_empty() {
+            let matched = if let Some(user) = ctx.auth_user {
+                self.auth_user.iter().any(|u| u.eq_ignore_ascii_case(user))
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.query_type.is_empty() {
+            let matched = if let Some(qt) = ctx.query_type {
+                self.query_type.contains(&qt)
+            } else { false };
+            if !matched { return false; }
+        }
+        if self.ip_is_private {
+            let matched = if let Some(ip) = ctx.ip {
+                Engine::is_private_ip(&ip)
+            } else { false };
+            if !matched { return false; }
+        }
+        if !self.ip_version.is_empty() {
+            let matched = if let Some(ip) = ctx.ip {
+                if ip.is_ipv4() {
+                    self.ip_version.iter().any(|v| v == "4" || v.eq_ignore_ascii_case("ipv4"))
+                } else {
+                    self.ip_version.iter().any(|v| v == "6" || v.eq_ignore_ascii_case("ipv6"))
+                }
+            } else { false };
+            if !matched { return false; }
+        }
+
+        true
+    }
 }
 
 #[derive(Debug, Default)]

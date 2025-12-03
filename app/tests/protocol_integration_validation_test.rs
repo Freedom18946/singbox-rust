@@ -51,7 +51,7 @@ async fn start_echo_server() -> SocketAddr {
 #[tokio::test]
 async fn test_protocol_chain_config_creation() {
     // Test that protocol chain configurations can be created
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     // Simulated chain: Trojan inbound → Router → Shadowsocks outbound
     println!("✓ Protocol chain configuration validated");
@@ -65,7 +65,7 @@ async fn test_trojan_to_shadowsocks_chain_routing() {
     // 2. Route through router based on rules
     // 3. Forward to Shadowsocks outbound
 
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     // Verify router is available for chaining
 
@@ -75,7 +75,7 @@ async fn test_trojan_to_shadowsocks_chain_routing() {
 #[tokio::test]
 async fn test_shadowsocks_to_trojan_reverse_chain() {
     // Test Shadowsocks → Trojan reverse chain
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     // Verify router is available for reverse chaining
 
@@ -106,7 +106,7 @@ async fn test_multi_hop_latency_overhead() {
 #[tokio::test]
 async fn test_routing_decision_based_on_rules() {
     // Test routing decisions based on domain/IP rules
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     // In a real test, we'd configure routing rules and verify
     // connections are routed to the correct outbound
@@ -124,13 +124,10 @@ async fn test_primary_outbound_failure_fallback() {
     println!("\n=== Testing Failover Scenario ===");
 
     // Simulate primary failure with deliberate timeout
-    let primary_result = timeout(
-        Duration::from_millis(10),
-        async {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            Ok::<TcpStream, std::io::Error>(TcpStream::connect("localhost:1").await?)
-        }
-    )
+    let primary_result = timeout(Duration::from_millis(10), async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        TcpStream::connect("localhost:1").await
+    })
     .await;
 
     assert!(primary_result.is_err(), "Primary should fail/timeout");
@@ -179,7 +176,10 @@ async fn test_network_interruption_recovery() {
 
     // Recover by establishing new connection
     let mut new_stream = TcpStream::connect(echo_addr).await.expect("reconnect");
-    new_stream.write_all(b"test2").await.expect("write after recovery");
+    new_stream
+        .write_all(b"test2")
+        .await
+        .expect("write after recovery");
 
     println!("✓ Network interruption recovery validated");
 }
@@ -187,13 +187,10 @@ async fn test_network_interruption_recovery() {
 #[tokio::test]
 async fn test_connection_timeout_fallback() {
     // Test connection timeout triggers fallback
-    let timeout_result = timeout(
-        Duration::from_millis(10),
-        async {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            Ok::<TcpStream, std::io::Error>(TcpStream::connect("localhost:1").await?)
-        }
-    )
+    let timeout_result = timeout(Duration::from_millis(10), async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        TcpStream::connect("localhost:1").await
+    })
     .await;
 
     assert!(timeout_result.is_err(), "Connection should timeout");
@@ -224,7 +221,7 @@ async fn test_dns_over_various_transports() {
     // Test DNS over various transports (UDP, DoH, DoT)
     // This validates that the DNS system supports multiple transports
 
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     println!("✓ DNS transport variety validated (UDP, DoH, DoT, DoQ supported)");
 }
@@ -234,7 +231,7 @@ async fn test_fakeip_integration_concept() {
     // Test FakeIP integration concept
     // FakeIP should work with both Trojan and Shadowsocks protocols
 
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     println!("✓ FakeIP integration concept validated");
 }
@@ -258,7 +255,7 @@ async fn test_e2e_trojan_shadowsocks_chain() {
     println!("\n=== E2E: Trojan → Shadowsocks Chain ===");
 
     let echo_addr = start_echo_server().await;
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
+    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
     // In a real test, this would:
     // 1. Start Trojan inbound server

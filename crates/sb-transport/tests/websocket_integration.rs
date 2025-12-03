@@ -34,7 +34,7 @@ async fn test_websocket_server_client_echo() {
         path: "/".to_string(),
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let ws_dialer = WebSocketDialer::new(config, tcp_dialer);
 
     // Connect to server
@@ -85,7 +85,7 @@ async fn test_websocket_server_multiple_clients() {
     // Connect 3 clients concurrently
     let mut handles = vec![];
     for i in 0..3 {
-        let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+        let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
         let ws_dialer = WebSocketDialer::new(WebSocketConfig::default(), tcp_dialer);
         let port = server_addr.port();
 
@@ -138,7 +138,7 @@ async fn test_websocket_large_message() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Create WebSocket client
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let ws_dialer = WebSocketDialer::new(WebSocketConfig::default(), tcp_dialer);
 
     let mut client_stream = ws_dialer

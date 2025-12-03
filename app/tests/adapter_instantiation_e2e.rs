@@ -155,7 +155,7 @@ fn test_inbound_adapters_instantiation() -> Result<()> {
         println!("Testing {} inbound instantiation...", adapter_name);
 
         let ir = to_ir_v1(&config);
-        let result = Bridge::new_from_config(&ir);
+        let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
 
         assert!(
             result.is_ok(),
@@ -336,7 +336,7 @@ fn test_outbound_adapters_instantiation() -> Result<()> {
         println!("Testing {} outbound instantiation...", adapter_name);
 
         let ir = to_ir_v1(&config);
-        let result = Bridge::new_from_config(&ir);
+        let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
 
         assert!(
             result.is_ok(),
@@ -461,7 +461,7 @@ fn test_adapter_registry_robustness() -> Result<()> {
     });
 
     let ir = to_ir_v1(&minimal_config);
-    let result = Bridge::new_from_config(&ir);
+    let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
     assert!(
         result.is_ok(),
         "Bridge should handle minimal config gracefully"
@@ -489,7 +489,7 @@ fn test_adapter_registry_robustness() -> Result<()> {
     });
 
     let ir = to_ir_v1(&selector_config);
-    let result = Bridge::new_from_config(&ir);
+    let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
     assert!(result.is_ok(), "Bridge should handle selector outbounds");
 
     Ok(())

@@ -50,91 +50,91 @@ fn test_dns_transports_are_documented() {
     println!("  ✅ local (LocalUpstream with system fallback)");
     println!("==============================\n");
 
-    assert!(true, "DNS transport coverage documented");
+    // assert!(true, "DNS transport coverage documented");
 }
 
 #[test]
 fn test_udp_dns_is_supported() {
     println!("UDP DNS transport is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 fn test_dot_dns_is_supported() {
     println!("DNS-over-TLS (DoT) transport is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 fn test_doh_dns_is_supported() {
     println!("DNS-over-HTTPS (DoH) transport is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 fn test_doq_dns_is_supported() {
     println!("DNS-over-QUIC (DoQ) transport is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 fn test_doh3_dns_is_supported() {
     println!("DNS-over-HTTP/3 (DoH3) transport is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 fn test_hosts_overlay_is_supported() {
     println!("Hosts overlay is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 fn test_fakeip_is_supported() {
     println!("FakeIP is supported");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 #[cfg(feature = "dns_dhcp")]
 fn test_dhcp_dns_is_supported() {
     println!("DHCP DNS (via resolv.conf) is supported with dns_dhcp feature");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 #[cfg(not(feature = "dns_dhcp"))]
 fn test_dhcp_dns_requires_feature() {
     println!("DHCP DNS requires dns_dhcp feature");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 #[cfg(feature = "dns_resolved")]
 fn test_resolved_dns_is_supported() {
     println!("systemd-resolved DNS is supported with dns_resolved feature");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 #[cfg(not(feature = "dns_resolved"))]
 fn test_resolved_dns_requires_feature() {
     println!("Resolved DNS requires dns_resolved feature");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 #[cfg(feature = "dns_tailscale")]
 fn test_tailscale_dns_is_supported() {
     println!("Tailscale DNS is supported with dns_tailscale feature");
-    assert!(true);
+    // assert!(true);
 }
 
 #[test]
 #[cfg(not(feature = "dns_tailscale"))]
 fn test_tailscale_dns_requires_feature() {
     println!("Tailscale DNS requires dns_tailscale feature");
-    assert!(true);
+    // assert!(true);
 }
 
 // ============================================================================
@@ -147,7 +147,7 @@ fn test_dns_env_vars_work() {
     println!("  - SB_DNS_UDP_TIMEOUT_MS");
     println!("  - SB_DNS_CLIENT_SUBNET");
     println!("  - SB_DNS_DEFAULT_TTL_S");
-    assert!(true);
+    // assert!(true);
 }
 
 // ============================================================================
@@ -173,7 +173,7 @@ fn test_dns_features_are_documented() {
     #[cfg(not(feature = "dns_tailscale"))]
     println!("  ⚠️  dns_tailscale disabled");
 
-    assert!(true);
+    // assert!(true);
 }
 
 // ============================================================================

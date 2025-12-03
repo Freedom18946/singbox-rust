@@ -16,6 +16,7 @@ pub mod map {
     /// - If `h2` is present and ALPN is not supplied, ALPN defaults to `h2`.
     /// - gRPC enables TLS when `tls_sni`/ALPN indicates TLS or when chain contains `tls`.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_layers(
         mut builder: TransportBuilder,
         transport_chain: Option<&[String]>,
@@ -35,6 +36,8 @@ pub mod map {
         grpc_metadata: &[(String, String)],
         // Optional TLS config override
         tls_cfg_override: Option<std::sync::Arc<rustls::ClientConfig>>,
+        // Multiplex config
+        multiplex: Option<&sb_config::ir::MultiplexOptionsIR>,
     ) -> TransportBuilder {
         let chain_buf = derive_chain(
             transport_chain,
@@ -138,7 +141,36 @@ pub mod map {
                     builder = builder.grpc(cfg);
                 }
                 "mux" | "multiplex" => {
-                    let cfg = sb_transport::multiplex::MultiplexConfig::default();
+                    let mut cfg = sb_transport::multiplex::MultiplexConfig::default();
+                    if let Some(m) = multiplex {
+                        // if let Some(n) = m.max_connections {
+                        //     cfg.max_connections = n;
+                        // }
+                        if let Some(n) = m.max_streams {
+                            cfg.max_streams_per_connection = n;
+                        }
+                        if let Some(p) = m.padding {
+                            cfg.enable_padding = p;
+                        }
+                        if let Some(w) = m.initial_stream_window {
+                            cfg.initial_stream_window = w;
+                        }
+                        if let Some(w) = m.max_stream_window {
+                            cfg.max_stream_window = w;
+                        }
+                        if let Some(k) = m.enable_keepalive {
+                            cfg.enable_keepalive = k;
+                        }
+                        if let Some(i) = m.keepalive_interval {
+                            cfg.keepalive_interval = i;
+                        }
+                        if let Some(b) = &m.brutal {
+                            cfg.brutal = Some(sb_transport::multiplex::BrutalConfig {
+                                up_mbps: b.up,
+                                down_mbps: b.down,
+                            });
+                        }
+                    }
                     builder = builder.multiplex(cfg);
                 }
                 _ => {}
@@ -155,6 +187,7 @@ pub mod map {
     /// - Include `httpupgrade` when upgrade path/headers are set.
     /// - Append `grpc` when any gRPC hint present.
     /// - Insert `tls` at the beginning when SNI or ALPN are present.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn derive_chain(
         transport_chain: Option<&[String]>,
         tls_sni: Option<&str>,
@@ -223,8 +256,44 @@ pub mod map {
                 ob.tls_sni.as_deref()
             };
         let alpn_csv = ob.tls_alpn.as_ref().map(|v| v.join(","));
-        apply_layers(
-            TransportBuilder::tcp(),
+        let mut builder = TransportBuilder::tcp();
+
+        if let Some(iface) = &ob.bind_interface {
+            builder = builder.bind_interface(iface.clone());
+        }
+        if let Some(addr) = &ob.inet4_bind_address {
+            if let Ok(ip) = addr.parse() {
+                builder = builder.bind_v4(ip);
+            }
+        }
+        if let Some(addr) = &ob.inet6_bind_address {
+            if let Ok(ip) = addr.parse() {
+                builder = builder.bind_v6(ip);
+            }
+        }
+        if let Some(mark) = ob.routing_mark {
+            builder = builder.routing_mark(mark);
+        }
+        if let Some(reuse) = ob.reuse_addr {
+            builder = builder.reuse_addr(reuse);
+        }
+        if let Some(timeout) = &ob.connect_timeout {
+             if let Ok(d) = humantime::parse_duration(timeout) {
+                builder = builder.connect_timeout(d);
+             }
+        }
+        if let Some(tfo) = ob.tcp_fast_open {
+            builder = builder.tcp_fast_open(tfo);
+        }
+        if let Some(mptcp) = ob.tcp_multi_path {
+            builder = builder.tcp_multi_path(mptcp);
+        }
+        if let Some(frag) = ob.udp_fragment {
+            builder = builder.udp_fragment(frag);
+        }
+
+        let builder = apply_layers(
+            builder,
             ob.transport.as_deref(),
             computed_tls_sni,
             alpn_csv.as_deref(),
@@ -245,7 +314,12 @@ pub mod map {
                 .map(|h| (h.key.clone(), h.value.clone()))
                 .collect::<Vec<_>>(),
             tls_cfg_override,
-        )
+            ob.multiplex.as_ref(),
+        );
+
+
+
+        builder
     }
 
     /// Expose derived chain for diagnostics and tooling.
@@ -440,28 +514,35 @@ pub mod map {
 
         #[test]
         fn override_when_skip_verify() {
-            let mut ob = sb_config::ir::OutboundIR::default();
-            ob.skip_cert_verify = Some(true);
+            let ob = sb_config::ir::OutboundIR {
+                skip_cert_verify: Some(true),
+                ..Default::default()
+            };
             let ov = tls_override_from_ob(&ob);
             assert!(ov.is_some());
         }
 
         #[test]
         fn override_when_ca_inline_present() {
-            let mut ob = sb_config::ir::OutboundIR::default();
-            ob.tls_ca_pem =
-                vec!["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into()];
+            let ob = sb_config::ir::OutboundIR {
+                tls_ca_pem: vec!["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into()],
+                ..Default::default()
+            };
             let ov = tls_override_from_ob(&ob);
             assert!(ov.is_some());
         }
 
         #[test]
         fn override_when_client_inline_present() {
-            let mut ob = sb_config::ir::OutboundIR::default();
-            ob.tls_client_cert_pem =
-                Some("-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into());
-            ob.tls_client_key_pem =
-                Some("-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----".into());
+            let ob = sb_config::ir::OutboundIR {
+                tls_client_cert_pem: Some(
+                    "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into(),
+                ),
+                tls_client_key_pem: Some(
+                    "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----".into(),
+                ),
+                ..Default::default()
+            };
             let ov = tls_override_from_ob(&ob);
             assert!(ov.is_some());
         }
@@ -613,10 +694,12 @@ pub mod map {
 
         #[test]
         fn fallback_from_ws_to_h2_when_hints_present() {
-            let mut ob = OutboundIR::default();
-            ob.tls_sni = Some("example.com".into());
-            ob.ws_path = Some("/ws".into());
-            ob.h2_path = Some("/h2".into());
+            let ob = OutboundIR {
+                tls_sni: Some("example.com".into()),
+                ws_path: Some("/ws".into()),
+                h2_path: Some("/h2".into()),
+                ..Default::default()
+            };
             let plans = fallback_chains_from_ir(&ob);
             assert_eq!(plans[0], vec!["tls", "ws"]);
             assert!(plans.contains(&vec!["tls".into(), "h2".into()]));
@@ -624,12 +707,14 @@ pub mod map {
 
         #[test]
         fn fallback_from_h2_to_ws_when_hints_present() {
-            let mut ob = OutboundIR::default();
-            ob.tls_sni = Some("example.com".into());
-            ob.h2_path = Some("/h2".into());
-            ob.ws_path = Some("/ws".into());
-            // Force explicit chain to simulate h2 primary
-            ob.transport = Some(vec!["tls".into(), "h2".into()]);
+            let ob = OutboundIR {
+                tls_sni: Some("example.com".into()),
+                h2_path: Some("/h2".into()),
+                ws_path: Some("/ws".into()),
+                // Force explicit chain to simulate h2 primary
+                transport: Some(vec!["tls".into(), "h2".into()]),
+                ..Default::default()
+            };
             let plans = fallback_chains_from_ir(&ob);
             assert_eq!(plans[0], vec!["tls", "h2"]);
             assert!(plans.contains(&vec!["tls".into(), "ws".into()]));
@@ -637,9 +722,11 @@ pub mod map {
 
         #[test]
         fn fallback_from_httpupgrade_to_ws_when_ws_hint() {
-            let mut ob = OutboundIR::default();
-            ob.http_upgrade_path = Some("/up".into());
-            ob.ws_path = Some("/ws".into());
+            let ob = OutboundIR {
+                http_upgrade_path: Some("/up".into()),
+                ws_path: Some("/ws".into()),
+                ..Default::default()
+            };
             let plans = fallback_chains_from_ir(&ob);
             assert_eq!(plans[0], vec!["httpupgrade"]);
             assert!(plans.contains(&vec!["ws".into()]));
@@ -655,9 +742,11 @@ pub mod map {
 
         #[test]
         fn fallback_only_h2_hint() {
-            let mut ob = OutboundIR::default();
-            ob.tls_sni = Some("example.com".into());
-            ob.h2_path = Some("/h2".into());
+            let ob = OutboundIR {
+                tls_sni: Some("example.com".into()),
+                h2_path: Some("/h2".into()),
+                ..Default::default()
+            };
             let plans = fallback_chains_from_ir(&ob);
             // primary uses tls,h2; no ws hints so no alt added
             assert_eq!(plans[0], vec!["tls", "h2"]);

@@ -110,7 +110,11 @@ impl MixedInbound {
                     // Rate limit check
                     if let Some(limiter) = &self.rate_limiter {
                         if !limiter.allow_connection(peer_addr.ip()) {
-                            tracing::warn!(target = "sb_core::inbound::mixed", "Rate limit exceeded for {}", peer_addr.ip());
+                            tracing::warn!(
+                                target = "sb_core::inbound::mixed",
+                                "Rate limit exceeded for {}",
+                                peer_addr.ip()
+                            );
                             continue;
                         }
                     }
@@ -181,7 +185,7 @@ impl InboundService for MixedInbound {
         let br = self
             .bridge
             .clone()
-            .unwrap_or_else(|| Arc::new(Bridge::new()));
+            .unwrap_or_else(|| Arc::new(Bridge::new(crate::context::Context::new())));
 
         match tokio::runtime::Handle::try_current() {
             Ok(h) => h.block_on(self.serve_async(eng, br)),

@@ -26,7 +26,7 @@ use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFOR
 /// Windows native process matcher
 ///
 /// Uses `GetExtendedTcpTable`/`GetExtendedUdpTable` for 20-50x faster queries.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct NativeWindowsProcessMatcher;
 
 impl NativeWindowsProcessMatcher {

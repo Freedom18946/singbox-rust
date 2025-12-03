@@ -157,6 +157,7 @@ mod tests {
             derp_stun_listen_port: None,
             derp_tls_cert_path: None,
             derp_tls_key_path: None,
+            derp_server_key_path: None,
         };
 
         let service = registry.build(&ir, &ctx);
@@ -220,6 +221,7 @@ mod tests {
             derp_stun_listen_port: None,
             derp_tls_cert_path: None,
             derp_tls_key_path: None,
+            derp_server_key_path: None,
         };
 
         let service = registry.build(&ir, &ctx);
@@ -265,6 +267,7 @@ mod tests {
             derp_stun_listen_port: None,
             derp_tls_cert_path: None,
             derp_tls_key_path: None,
+            derp_server_key_path: None,
         };
 
         let service = registry.build(&ir, &ctx);

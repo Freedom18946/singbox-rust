@@ -64,13 +64,16 @@ pub fn run(args: DnsArgs) -> Result<()> {
 fn run_query(args: QueryArgs) -> Result<()> {
     // Load config
     let cfg = load_config(&args.config)?;
-    
+
     // Build DNS resolver from config IR
     let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
-    
-    let dns_ir = cfg.ir().dns.as_ref()
+
+    let dns_ir = cfg
+        .ir()
+        .dns
+        .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No DNS configuration found in config"))?;
-    
+
     let resolver = sb_core::dns::config_builder::resolver_from_ir(dns_ir)
         .context("build DNS resolver from config")?;
 
@@ -118,11 +121,7 @@ fn run_cache(_args: CacheArgs) -> Result<()> {
         "note": "Cache statistics not yet implemented"
     });
 
-    output::emit(
-        _args.format,
-        || "DNS cache stats".to_string(),
-        &stats,
-    );
+    output::emit(_args.format, || "DNS cache stats".to_string(), &stats);
 
     Ok(())
 }
@@ -130,7 +129,7 @@ fn run_cache(_args: CacheArgs) -> Result<()> {
 fn run_upstream(args: UpstreamArgs) -> Result<()> {
     // Load config
     let cfg = load_config(&args.config)?;
-    
+
     // Get upstream info from DNS config IR
     let upstream_names: Vec<String> = if let Some(dns) = &cfg.ir().dns {
         dns.servers
@@ -140,7 +139,7 @@ fn run_upstream(args: UpstreamArgs) -> Result<()> {
     } else {
         Vec::new()
     };
-    
+
     let upstreams_info = serde_json::json!({
         "upstreams": upstream_names,
         "count": upstream_names.len(),
@@ -159,12 +158,10 @@ fn run_upstream(args: UpstreamArgs) -> Result<()> {
 /// Load config from file (supports JSON and YAML)
 fn load_config(path: &str) -> Result<sb_config::Config> {
     if path.ends_with(".yaml") || path.ends_with(".yml") {
-        let data = std::fs::read_to_string(path)
-            .with_context(|| format!("read config {}", path))?;
-        serde_yaml::from_str::<sb_config::Config>(&data)
-            .with_context(|| "parse config as yaml")
+        let data =
+            std::fs::read_to_string(path).with_context(|| format!("read config {}", path))?;
+        serde_yaml::from_str::<sb_config::Config>(&data).with_context(|| "parse config as yaml")
     } else {
-        sb_config::Config::load(path)
-            .with_context(|| format!("load config from {}", path))
+        sb_config::Config::load(path).with_context(|| format!("load config from {}", path))
     }
 }

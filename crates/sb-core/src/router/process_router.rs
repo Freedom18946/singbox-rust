@@ -53,10 +53,7 @@ impl ProcessRouter {
             port,
             process_name: process_name.as_deref(),
             process_path: process_path.as_deref(),
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         };
 
         // Make routing decision
@@ -79,10 +76,7 @@ impl ProcessRouter {
             port,
             process_name: None,
             process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         };
 
         let engine = self.engine.read().await;
@@ -186,6 +180,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let engine = router.engine.read().await;
@@ -229,6 +224,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let eng = router.engine.read().await;
@@ -248,6 +244,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let eng = router.engine.read().await;
@@ -290,6 +287,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let eng = router.engine.read().await;
@@ -403,6 +401,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let eng = router.engine.read().await;
@@ -422,6 +421,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let eng = router.engine.read().await;
@@ -441,6 +441,7 @@ mod tests {
                 outbound_tag: None,
                 auth_user: None,
                 query_type: None,
+                ..Default::default()
             };
 
             let eng = router.engine.read().await;

@@ -254,6 +254,7 @@ pub mod retry_conditions {
                     | ErrorKind::ConnectionAborted
                     | ErrorKind::TimedOut
                     | ErrorKind::Interrupted
+                    | ErrorKind::ConnectionRefused
             ),
             DialError::Other(msg) if msg == "timeout" => true,
             _ => false,
@@ -263,11 +264,17 @@ pub mod retry_conditions {
     /// Should retry on DNS resolution failures (often transient)
     /// 是否应在 DNS 解析失败（通常是瞬态的）上重试
     pub fn is_transient_dns_error(error: &DialError) -> bool {
-        // Simple heuristic: if it's an IO error related to "not found" or "temporary failure"
-        // 简单的启发式方法：如果是与“未找到”或“临时失败”相关的 IO 错误
-        // In a real implementation, we might inspect the error message or inner error type
-        // 在实际实现中，我们可能会检查错误消息或内部错误类型
-        false // Placeholder / 占位符
+        match error {
+            DialError::Io(e) => {
+                let msg = e.to_string().to_lowercase();
+                msg.contains("dns") || msg.contains("lookup") || msg.contains("resolve")
+            }
+            DialError::Other(msg) => {
+                let msg = msg.to_lowercase();
+                msg.contains("dns") || msg.contains("lookup") || msg.contains("resolve")
+            }
+            _ => false,
+        }
     }
 
     /// Combined transient error detector for network operations
@@ -287,7 +294,7 @@ mod tests {
     fn test_retry_policy_default_disabled() {
         let policy = RetryPolicy::default();
         assert!(!policy.is_enabled());
-        assert_eq!(policy.max_attempts, 0);
+        assert_eq!(policy.max_retries, 0);
     }
 
     #[test]
@@ -305,9 +312,9 @@ mod tests {
 
         let policy = RetryPolicy::from_env();
         assert!(policy.is_enabled());
-        assert_eq!(policy.max_attempts, 3);
-        assert_eq!(policy.base_delay_ms, 200);
-        assert_eq!(policy.jitter, 0.2);
+        assert_eq!(policy.max_retries, 3);
+        assert_eq!(policy.base_delay, Duration::from_millis(200));
+        assert_eq!(policy.jitter_factor, 0.2);
 
         // Cleanup
         std::env::remove_var("SB_RETRY_MAX");
@@ -318,9 +325,10 @@ mod tests {
     #[test]
     fn test_calculate_delay_exponential_backoff() {
         let policy = RetryPolicy {
-            max_attempts: 3,
-            base_delay_ms: 100,
-            jitter: 0.0, // No jitter for predictable testing
+            max_retries: 3,
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(2),
+            jitter_factor: 0.0, // No jitter for predictable testing
         };
 
         // Attempt 0 should have no delay
@@ -339,9 +347,10 @@ mod tests {
     #[test]
     fn test_calculate_delay_with_jitter() {
         let policy = RetryPolicy {
-            max_attempts: 1,
-            base_delay_ms: 100,
-            jitter: 0.5, // 50% jitter
+            max_retries: 1,
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(2),
+            jitter_factor: 0.5, // 50% jitter
         };
 
         // With 50% jitter, delay should be in range [50ms, 150ms]
@@ -368,9 +377,10 @@ mod tests {
     #[tokio::test]
     async fn test_execute_success_first_attempt() {
         let policy = RetryPolicy {
-            max_attempts: 3,
-            base_delay_ms: 10,
-            jitter: 0.0,
+            max_retries: 3,
+            base_delay: Duration::from_millis(10),
+            max_delay: Duration::from_secs(2),
+            jitter_factor: 0.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -397,9 +407,10 @@ mod tests {
     #[tokio::test]
     async fn test_execute_success_after_retries() {
         let policy = RetryPolicy {
-            max_attempts: 3,
-            base_delay_ms: 1, // Very short delay for fast test
-            jitter: 0.0,
+            max_retries: 3,
+            base_delay: Duration::from_millis(1), // Very short delay for fast test
+            max_delay: Duration::from_secs(2),
+            jitter_factor: 0.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -430,9 +441,10 @@ mod tests {
     #[tokio::test]
     async fn test_execute_max_retries_reached() {
         let policy = RetryPolicy {
-            max_attempts: 2,
-            base_delay_ms: 1,
-            jitter: 0.0,
+            max_retries: 2,
+            base_delay: Duration::from_millis(1),
+            max_delay: Duration::from_secs(2),
+            jitter_factor: 0.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -460,9 +472,10 @@ mod tests {
     #[tokio::test]
     async fn test_execute_non_retriable_error() {
         let policy = RetryPolicy {
-            max_attempts: 3,
-            base_delay_ms: 1,
-            jitter: 0.0,
+            max_retries: 3,
+            base_delay: Duration::from_millis(1),
+            max_delay: Duration::from_secs(2),
+            jitter_factor: 0.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));

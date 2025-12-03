@@ -158,6 +158,7 @@ impl DuplexDialer {
             b, // Server returned directly / 服务端直接返回
         )
     }
+
 }
 
 #[async_trait]
@@ -227,5 +228,9 @@ impl Dialer for DuplexDialer {
         // Wrap DuplexStream as IoStream and return
         // 将 DuplexStream 包装为 IoStream 返回
         Ok(Box::new(s))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

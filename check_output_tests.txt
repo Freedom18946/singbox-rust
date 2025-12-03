@@ -1,0 +1,643 @@
+    Checking sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
+    Checking sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+warning: unused import: `tokio::sync::Mutex`
+  --> crates/sb-core/src/inbound/tun.rs:17:5
+   |
+17 | use tokio::sync::Mutex;
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `debug`
+  --> crates/sb-core/src/inbound/tun.rs:18:15
+   |
+18 | use tracing::{debug, error, info, warn};
+   |               ^^^^^
+
+warning: unused import: `super::*`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:745:9
+    |
+745 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused import: `crate::outbound::crypto_types::HostPort as Hp`
+   --> crates/sb-core/src/outbound/mod.rs:448:29
+    |
+448 |                         use crate::outbound::crypto_types::HostPort as Hp;
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `router_index_decide_geosite` and `router_index_decide_transport_port`
+  --> crates/sb-core/src/router/engine.rs:15:55
+   |
+15 |     normalize_host, router_index_decide_exact_suffix, router_index_decide_geosite,
+   |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 |     router_index_decide_ip, router_index_decide_transport_port, runtime_override_udp, shared_index,
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ConfigIR` and `RuleIR`
+   --> crates/sb-core/src/router/mod.rs:180:21
+    |
+180 | use sb_config::ir::{ConfigIR, RuleIR};
+    |                     ^^^^^^^^  ^^^^^^
+
+warning: unused import: `ipnet::IpNet`
+   --> crates/sb-core/src/router/mod.rs:181:5
+    |
+181 | use ipnet::IpNet;
+    |     ^^^^^^^^^^^^
+
+warning: unused import: `std::str::FromStr`
+   --> crates/sb-core/src/router/mod.rs:182:5
+    |
+182 | use std::str::FromStr;
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CompositeRule`, `Decision`, `DnsRecordType`, `DomainRegexMatcher`, and `ProcessPathRegexMatcher`
+   --> crates/sb-core/src/router/mod.rs:183:28
+    |
+183 | use crate::router::rules::{CompositeRule, Decision, DomainRegexMatcher, ProcessPathRegexMatcher, DnsRecordType};
+    |                            ^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: unused import: `DerpService`
+ --> crates/sb-core/src/services/derp/mesh_test.rs:5:53
+  |
+5 |     use crate::services::derp::{build_derp_service, DerpService};
+  |                                                     ^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> crates/sb-core/src/services/derp/mesh_test.rs:8:9
+  |
+8 |     use std::sync::Arc;
+  |         ^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::Path`
+    --> crates/sb-core/src/services/derp/server.rs:2150:13
+     |
+2150 |         use std::path::Path;
+     |             ^^^^^^^^^^^^^^^
+
+warning: unused imports: `delete`, `post`, and `put`
+ --> crates/sb-core/src/services/ssmapi/server.rs:6:15
+  |
+6 |     routing::{delete, get, post, put},
+  |               ^^^^^^       ^^^^  ^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/sb-core/src/services/ssmapi/server.rs:10:5
+   |
+10 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `budget`
+   --> crates/sb-core/src/router/engine.rs:745:13
+    |
+745 |         let budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_budget`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `idx`
+   --> crates/sb-core/src/router/engine.rs:749:13
+    |
+749 |         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+    |             ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: unused import: `AsyncWriteExt`
+  --> crates/sb-core/src/inbound/tun.rs:16:31
+   |
+16 | use tokio::io::{AsyncReadExt, AsyncWriteExt};
+   |                               ^^^^^^^^^^^^^
+
+warning: unused import: `AsyncReadExt`
+  --> crates/sb-core/src/inbound/tun.rs:16:17
+   |
+16 | use tokio::io::{AsyncReadExt, AsyncWriteExt};
+   |                 ^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/sb-core/src/runtime/transport.rs:293:13
+    |
+293 |         let mut builder = apply_layers(
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: function `extract_credentials` is never used
+   --> crates/sb-core/src/adapter/bridge.rs:279:4
+    |
+279 | fn extract_credentials(p: &OutboundParam) -> (Option<String>, Option<String>) {
+    |    ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `sb-core` (lib) generated 16 warnings (9 duplicates) (run `cargo fix --lib -p sb-core` to apply 2 suggestions)
+warning: unused import: `Service`
+ --> crates/sb-core/tests/ssmapi_service_test.rs:2:24
+  |
+2 | use sb_core::service::{Service, ServiceContext, StartStage};
+  |                        ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: `sb-core` (test "ssmapi_service_test") generated 1 warning
+warning: unused import: `std::time::Duration`
+ --> crates/sb-core/tests/dns_dot_transport_direct.rs:5:5
+  |
+5 | use std::time::Duration;
+  |     ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+error[E0063]: missing field `rules` in initializer of `RouterIndex`
+   --> crates/sb-core/tests/router_geosite_integration.rs:237:24
+    |
+237 |     let router_index = sb_core::router::RouterIndex {
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ missing `rules`
+
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `sb-core` (test "router_geosite_integration") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+warning: `sb-core` (test "dns_dot_transport_direct") generated 1 warning (run `cargo fix --test "dns_dot_transport_direct"` to apply 1 suggestion)
+error[E0063]: missing field `derp_server_key_path` in initializer of `ServiceIR`
+  --> crates/sb-core/tests/resolved_service_test.rs:13:14
+   |
+13 |     let ir = ServiceIR {
+   |              ^^^^^^^^^ missing `derp_server_key_path`
+
+warning: unused import: `Service`
+ --> crates/sb-core/tests/resolved_service_test.rs:4:24
+  |
+4 | use sb_core::service::{Service, ServiceContext, StartStage};
+  |                        ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: `sb-core` (test "resolved_service_test") generated 1 warning
+error: could not compile `sb-core` (test "resolved_service_test") due to 1 previous error; 1 warning emitted
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+  --> crates/sb-core/src/outbound/hysteria2/tests.rs:21:22
+   |
+21 |         let config = Hysteria2Config {
+   |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+  --> crates/sb-core/src/outbound/hysteria2/tests.rs:47:22
+   |
+47 |         let config = Hysteria2Config {
+   |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+  --> crates/sb-core/src/outbound/hysteria2/tests.rs:75:22
+   |
+75 |         let config = Hysteria2Config {
+   |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:102:22
+    |
+102 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:128:23
+    |
+128 |         let config1 = Hysteria2Config {
+    |                       ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:160:22
+    |
+160 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:219:22
+    |
+219 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:240:22
+    |
+240 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:261:22
+    |
+261 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:296:22
+    |
+296 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:339:22
+    |
+339 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:369:22
+    |
+369 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:397:22
+    |
+397 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:430:23
+    |
+430 |         let config1 = Hysteria2Config {
+    |                       ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:461:22
+    |
+461 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:487:22
+    |
+487 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:515:22
+    |
+515 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:547:22
+    |
+547 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:578:27
+    |
+578 |         let base_config = Hysteria2Config {
+    |                           ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:610:22
+    |
+610 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:636:23
+    |
+636 |         let config1 = Hysteria2Config {
+    |                       ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:668:22
+    |
+668 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:699:22
+    |
+699 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:729:22
+    |
+729 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:763:22
+    |
+763 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+   --> crates/sb-core/src/outbound/hysteria2/tests.rs:884:22
+    |
+884 |         let config = Hysteria2Config {
+    |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+    --> crates/sb-core/src/outbound/hysteria2/tests.rs:1048:22
+     |
+1048 |         let config = Hysteria2Config {
+     |                      ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0063]: missing fields `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake` in initializer of `Hysteria2Config`
+    --> crates/sb-core/src/outbound/hysteria2/tests.rs:1086:19
+     |
+1086 |         let cfg = Hysteria2Config {
+     |                   ^^^^^^^^^^^^^^^ missing `tls_ca_paths`, `tls_ca_pem` and `zero_rtt_handshake`
+
+error[E0308]: mismatched types
+   --> crates/sb-core/src/outbound/tuic/tests.rs:25:24
+    |
+ 25 |             alpn: Some("tuic".to_string()),
+    |                   ---- ^^^^^^^^^^^^^^^^^^ expected `Vec<String>`, found `String`
+    |                   |
+    |                   arguments to this enum variant are incorrect
+    |
+    = note: expected struct `Vec<std::string::String>`
+               found struct `std::string::String`
+help: the type constructed contains `std::string::String` due to the type of the argument passed
+   --> crates/sb-core/src/outbound/tuic/tests.rs:25:19
+    |
+ 25 |             alpn: Some("tuic".to_string()),
+    |                   ^^^^^------------------^
+    |                        |
+    |                        this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/option.rs:601:5
+    |
+601 |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^^^
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+  --> crates/sb-core/src/outbound/tuic/tests.rs:18:22
+   |
+18 |         let config = TuicConfig {
+   |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0308]: mismatched types
+   --> crates/sb-core/src/outbound/tuic/tests.rs:47:24
+    |
+ 47 |             alpn: Some("tuic".to_string()),
+    |                   ---- ^^^^^^^^^^^^^^^^^^ expected `Vec<String>`, found `String`
+    |                   |
+    |                   arguments to this enum variant are incorrect
+    |
+    = note: expected struct `Vec<std::string::String>`
+               found struct `std::string::String`
+help: the type constructed contains `std::string::String` due to the type of the argument passed
+   --> crates/sb-core/src/outbound/tuic/tests.rs:47:19
+    |
+ 47 |             alpn: Some("tuic".to_string()),
+    |                   ^^^^^------------------^
+    |                        |
+    |                        this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/option.rs:601:5
+    |
+601 |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^^^
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+  --> crates/sb-core/src/outbound/tuic/tests.rs:40:22
+   |
+40 |         let config = TuicConfig {
+   |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+  --> crates/sb-core/src/outbound/tuic/tests.rs:62:22
+   |
+62 |         let config = TuicConfig {
+   |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+  --> crates/sb-core/src/outbound/tuic/tests.rs:80:29
+   |
+80 |         let config_native = TuicConfig {
+   |                             ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:104:22
+    |
+104 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:125:26
+    |
+125 |             let config = TuicConfig {
+    |                          ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:144:30
+    |
+144 |         let config_default = TuicConfig {
+    |                              ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0308]: mismatched types
+   --> crates/sb-core/src/outbound/tuic/tests.rs:158:24
+    |
+158 |             alpn: Some("h3".to_string()),
+    |                   ---- ^^^^^^^^^^^^^^^^ expected `Vec<String>`, found `String`
+    |                   |
+    |                   arguments to this enum variant are incorrect
+    |
+    = note: expected struct `Vec<std::string::String>`
+               found struct `std::string::String`
+help: the type constructed contains `std::string::String` due to the type of the argument passed
+   --> crates/sb-core/src/outbound/tuic/tests.rs:158:19
+    |
+158 |             alpn: Some("h3".to_string()),
+    |                   ^^^^^----------------^
+    |                        |
+    |                        this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/option.rs:601:5
+    |
+601 |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^^^
+
+error[E0308]: mismatched types
+   --> crates/sb-core/src/outbound/tuic/tests.rs:163:40
+    |
+163 |         assert_eq!(config_custom.alpn, Some("h3".to_string()));
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Vec<String>>`, found `Option<String>`
+    |
+    = note: expected enum `std::option::Option<Vec<std::string::String>>`
+               found enum `std::option::Option<std::string::String>`
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:175:22
+    |
+175 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:214:23
+    |
+214 |         let config1 = TuicConfig {
+    |                       ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:247:23
+    |
+247 |         let config1 = TuicConfig {
+    |                       ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:278:22
+    |
+278 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:308:22
+    |
+308 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:339:22
+    |
+339 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:364:22
+    |
+364 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:394:22
+    |
+394 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:422:22
+    |
+422 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:465:22
+    |
+465 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:491:22
+    |
+491 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:598:22
+    |
+598 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:663:22
+    |
+663 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0063]: missing fields `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field in initializer of `tuic::TuicConfig`
+   --> crates/sb-core/src/outbound/tuic/tests.rs:689:22
+    |
+689 |         let config = TuicConfig {
+    |                      ^^^^^^^^^^ missing `sni`, `tls_ca_paths`, `tls_ca_pem` and 1 other field
+
+error[E0308]: mismatched types
+   --> crates/sb-core/src/outbound/tuic/tests.rs:761:24
+    |
+761 |             alpn: Some("tuic".to_string()),
+    |                   ---- ^^^^^^^^^^^^^^^^^^ expected `Vec<String>`, found `String`
+    |                   |
+    |                   arguments to this enum variant are incorrect
+    |
+    = note: expected struct `Vec<std::string::String>`
+               found struct `std::string::String`
+help: the type constructed contains `std::string::String` due to the type of the argument passed
+   --> crates/sb-core/src/outbound/tuic/tests.rs:761:19
+    |
+761 |             alpn: Some("tuic".to_string()),
+    |                   ^^^^^------------------^
+    |                        |
+    |                        this argument influences the type of `Some`
+note: tuple variant defined here
+   --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/option.rs:601:5
+    |
+601 |     Some(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^^^
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:172:23
+    |
+172 |             let ctx = RouteCtx {
+    |                       ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:215:28
+    |
+215 |             let ctx_curl = RouteCtx {
+    |                            ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:234:32
+    |
+234 |             let ctx_telegram = RouteCtx {
+    |                                ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:276:23
+    |
+276 |             let ctx = RouteCtx {
+    |                       ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:389:31
+    |
+389 |             let ctx_firefox = RouteCtx {
+    |                               ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:408:30
+    |
+408 |             let ctx_chrome = RouteCtx {
+    |                              ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0063]: missing fields `geoip_code`, `geosite_codes`, `network` and 8 other fields in initializer of `rules::RouteCtx<'_>`
+   --> crates/sb-core/src/router/process_router.rs:427:28
+    |
+427 |             let ctx_curl = RouteCtx {
+    |                            ^^^^^^^^ missing `geoip_code`, `geosite_codes`, `network` and 8 other fields
+
+error[E0277]: the trait bound `Vec<std::string::String>: std::convert::From<&str>` is not satisfied
+    --> crates/sb-core/src/runtime/switchboard.rs:1204:44
+     |
+1204 |         ob.tls_alpn = Some("h3, hysteria2".into());
+     |                                            ^^^^ the trait `std::convert::From<&str>` is not implemented for `Vec<std::string::String>`
+     |
+     = help: the following other types implement trait `std::convert::From<T>`:
+               `Vec<RelativeDistinguishedName<'_>>` implements `std::convert::From<X509Name<'_>>`
+               `Vec<T, A>` implements `std::convert::From<BinaryHeap<T, A>>`
+               `Vec<T, A>` implements `std::convert::From<Box<[T], A>>`
+               `Vec<T, A>` implements `std::convert::From<VecDeque<T, A>>`
+               `Vec<T>` implements `std::convert::From<&[T; N]>`
+               `Vec<T>` implements `std::convert::From<&[T]>`
+               `Vec<T>` implements `std::convert::From<&mut [T; N]>`
+               `Vec<T>` implements `std::convert::From<&mut [T]>`
+             and 13 others
+     = note: required for `&str` to implement `std::convert::Into<Vec<std::string::String>>`
+
+warning: unused import: `Service`
+ --> crates/sb-core/src/services/derp/mesh_test.rs:3:26
+  |
+3 |     use crate::service::{Service, ServiceContext, StartStage};
+  |                          ^^^^^^^
+
+Some errors have detailed explanations: E0063, E0277, E0308.
+For more information about an error, try `rustc --explain E0063`.
+warning: `sb-core` (lib test) generated 19 warnings (5 duplicates)
+error: could not compile `sb-core` (lib test) due to 62 previous errors; 19 warnings emitted

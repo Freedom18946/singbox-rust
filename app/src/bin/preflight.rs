@@ -19,7 +19,7 @@ fn main() {
     let val: serde_json::Value = serde_json::from_slice(&raw).unwrap_or(serde_json::json!({}));
     let ir = to_ir_v1(&val);
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng, sb_core::context::Context::default());
     let inbound_cnt = br.inbounds.len();
     let outbounds = br.outbounds_snapshot();
     // 选择器成员存在性简报（best-effort）

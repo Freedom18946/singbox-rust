@@ -59,7 +59,7 @@ impl<D: Dialer> CircuitBreakerDialer<D> {
 }
 
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for CircuitBreakerDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         // Check if circuit breaker allows the request
         // 检查熔断器是否允许请求
@@ -101,7 +101,11 @@ impl<D: Dialer + Send + Sync> Dialer for CircuitBreakerDialer<D> {
                 // 返回指示熔断器拒绝的特定错误（通过 io::Error -> DialError）
                 Err(std::io::Error::other("circuit breaker open - request rejected").into())
             }
+            }
         }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -131,10 +135,10 @@ mod tests {
         use crate::dialer::TcpDialer;
 
         // Use TcpDialer which already implements Dialer trait
-        let success_dialer = TcpDialer;
+        let dialer = TcpDialer::default();
 
         let cb_dialer = CircuitBreakerDialer::new(
-            success_dialer,
+            dialer,
             "test-outbound".to_string(),
             CircuitBreakerConfig::default(),
         );

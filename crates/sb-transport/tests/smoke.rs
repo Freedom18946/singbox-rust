@@ -54,7 +54,7 @@ async fn tls_dialer_compiles() {
     // 这里使用了各种有代表性的配置组合
     let d = TlsDialer {
         // 使用基础的 TCP 拨号器作为底层传输
-        inner: TcpDialer,
+        inner: TcpDialer::default(),
 
         // 使用测试用的空 TLS 配置
         // 注意：这是不安全的，只用于测试！

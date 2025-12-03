@@ -62,6 +62,7 @@ fn test_tuic_inbound_registration() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        ..Default::default()
     };
 
     // Verify TUIC-specific fields are set
@@ -151,6 +152,7 @@ fn test_tuic_inbound_requires_users() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        ..Default::default()
     };
 
     // Verify that users_tuic is None
@@ -219,6 +221,7 @@ fn test_tuic_congestion_control() {
             tls_server_name: None,
             tls_alpn: None,
             multiplex: None,
+            ..Default::default()
         };
 
         assert_eq!(inbound.congestion_control, Some(algo.to_string()));

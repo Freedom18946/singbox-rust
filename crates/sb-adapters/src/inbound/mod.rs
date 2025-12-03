@@ -65,10 +65,11 @@ pub mod hysteria2;
 #[cfg(feature = "adapter-anytls")]
 pub mod anytls;
 
-/// Router connector module for TUN devices.
-/// TUN 设备的路由器连接器模块。
 #[cfg(feature = "tun")]
-pub mod router_connector;
+pub mod tun_session;
+
+#[cfg(feature = "tun")]
+pub mod tun_packet;
 
 #[cfg(feature = "tun")]
 pub mod tun_enhanced;

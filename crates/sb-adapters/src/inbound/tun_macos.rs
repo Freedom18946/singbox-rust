@@ -4,8 +4,11 @@
 //! local SOCKS5 bridge that forwards traffic through the standard
 //! outbound connector stack. Both TCP CONNECT and UDP ASSOCIATE are
 //! supported so that tun2socks can tunnel arbitrary traffic.
+//!
+//! NOTE: Skeleton/WIP code - warnings suppressed.
 
 #![cfg(all(target_os = "macos", feature = "tun_macos"))]
+#![allow(unused, dead_code)]
 
 use std::{
     collections::HashMap,
@@ -110,7 +113,7 @@ impl TunMacosRuntime {
 
         // Touch the TUN device once to ensure the fd stays open in the async side.
         let mut buf = [0u8; 4];
-        let _ = tun_async.read(&mut buf).await;
+        let _ = tun_async.read(&mut buf);
 
         Ok(Self {
             tun: tun_arc,

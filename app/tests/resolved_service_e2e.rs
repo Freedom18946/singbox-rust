@@ -7,7 +7,7 @@
 //! - Gracefully handle lifecycle (start/stop)
 
 use sb_config::ir::{ServiceIR, ServiceType};
-use sb_core::service::{Service, ServiceContext, StartStage};
+use sb_core::service::{ServiceContext, StartStage};
 
 #[test]
 fn test_resolved_service_creation() {

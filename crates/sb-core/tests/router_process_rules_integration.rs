@@ -89,7 +89,7 @@ async fn test_process_path_regex_routing() {
         let rules = vec![
             Rule {
                 kind: RuleKind::ProcessPathRegex(
-                    ProcessPathRegexMatcher::new(r"(?i).*/Chrome\.app$".to_string()).unwrap(),
+                    ProcessPathRegexMatcher::new(r"(?i).*Chrome\.app$".to_string()).unwrap(),
                 ),
                 decision: Decision::Proxy(Some("regex_proxy".to_string())),
             },
@@ -110,10 +110,8 @@ async fn test_process_path_regex_routing() {
             port: Some(443),
             process_name: Some("Google Chrome"),
             process_path: Some("/Applications/Google Chrome.app"),
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+
+            ..Default::default()
         };
         let engine_for_decide = Engine::build(rules_clone.clone());
         let decision = engine_for_decide.decide(&matching_ctx);
@@ -126,10 +124,8 @@ async fn test_process_path_regex_routing() {
             port: Some(443),
             process_name: Some("curl"),
             process_path: Some("/usr/bin/curl"),
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+
+            ..Default::default()
         };
         let engine_for_decide2 = Engine::build(rules_clone);
         let decision = engine_for_decide2.decide(&non_matching_ctx);
@@ -316,10 +312,7 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: Some("firefox"),
         process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
 
     let engine = Engine::build(vec![rule]);
@@ -339,10 +332,7 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: None,
         process_path: Some("/usr/bin/firefox"),
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
 
     let engine = Engine::build(vec![rule]);
@@ -362,10 +352,7 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: None,
         process_path: Some("/usr/bin/firefox"),
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
 
     let engine = Engine::build(vec![rule]);
@@ -375,7 +362,7 @@ fn test_process_rule_matching_logic() {
     // Test process path regex matching
     let rule = Rule {
         kind: RuleKind::ProcessPathRegex(
-            ProcessPathRegexMatcher::new(r"(?i).*/Chrome\.app$".to_string()).unwrap(),
+                    ProcessPathRegexMatcher::new(r"(?i).*Chrome\.app$".to_string()).unwrap(),
         ),
         decision: Decision::Proxy(Some("chrome".to_string())),
     };
@@ -387,10 +374,7 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: Some("Google Chrome"),
         process_path: Some("/Applications/Google Chrome.app"),
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
 
     let engine = Engine::build(vec![rule.clone()]);
@@ -404,10 +388,7 @@ fn test_process_rule_matching_logic() {
         port: None,
         process_name: Some("curl"),
         process_path: Some("/usr/bin/curl"),
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
 
     let engine = Engine::build(vec![rule]);

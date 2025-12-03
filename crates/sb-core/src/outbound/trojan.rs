@@ -34,6 +34,7 @@ pub struct TrojanConfig {
     pub grpc_method: Option<String>,
     pub grpc_authority: Option<String>,
     pub grpc_metadata: Vec<(String, String)>,
+    pub multiplex: Option<sb_config::ir::MultiplexOptionsIR>,
 }
 
 #[cfg(feature = "out_trojan")]
@@ -57,6 +58,7 @@ impl TrojanConfig {
             grpc_method: None,
             grpc_authority: None,
             grpc_metadata: Vec::new(),
+            multiplex: None,
         }
     }
 
@@ -168,6 +170,7 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
             self.config.grpc_authority.as_deref(),
             &self.config.grpc_metadata,
             None,
+            self.config.multiplex.as_ref(),
         );
 
         let mut stream = builder

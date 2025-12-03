@@ -18,7 +18,7 @@ pub struct Decide {
     pub trace: Option<Trace>, // detailed steps (opt-in)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Input<'a> {
     pub host: &'a str, // domain or ip string (original target)
     pub port: u16,
@@ -30,6 +30,18 @@ pub struct Input<'a> {
     pub sniff_alpn: Option<&'a str>,
     /// Optional sniffed protocol (e.g., "tls", "http", "ssh")
     pub sniff_protocol: Option<&'a str>,
+    /// Optional WiFi SSID
+    pub wifi_ssid: Option<&'a str>,
+    /// Optional WiFi BSSID
+    pub wifi_bssid: Option<&'a str>,
+    /// Optional Process Name
+    pub process_name: Option<&'a str>,
+    /// Optional Process Path
+    pub process_path: Option<&'a str>,
+    /// Optional User Agent
+    pub user_agent: Option<&'a str>,
+    /// Optional Rule Set tags
+    pub rule_set: Option<&'a [String]>,
 }
 
 pub struct Engine<'a> {
@@ -251,6 +263,93 @@ impl<'a> Engine<'a> {
                 return (false, steps);
             }
         }
+        if !r.wifi_ssid.is_empty() {
+            let m = inp
+                .wifi_ssid
+                .map(|s| r.wifi_ssid.iter().any(|x| x == s))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "wifi_ssid".into(),
+                value: inp.wifi_ssid.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.wifi_bssid.is_empty() {
+            let m = inp
+                .wifi_bssid
+                .map(|s| r.wifi_bssid.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "wifi_bssid".into(),
+                value: inp.wifi_bssid.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.process_name.is_empty() {
+            let m = inp
+                .process_name
+                .map(|s| r.process_name.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "process_name".into(),
+                value: inp.process_name.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.process_path.is_empty() {
+            let m = inp
+                .process_path
+                .map(|s| r.process_path.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "process_path".into(),
+                value: inp.process_path.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.user_agent.is_empty() {
+            let m = inp
+                .user_agent
+                .map(|s| r.user_agent.iter().any(|x| s.contains(x)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "user_agent".into(),
+                value: inp.user_agent.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.rule_set.is_empty() {
+            let m = inp
+                .rule_set
+                .map(|tags| r.rule_set.iter().any(|x| tags.contains(x)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "rule_set".into(),
+                value: format!("{:?}", inp.rule_set.unwrap_or(&[])),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
 
         // 否定维度
         if !r.not_domain.is_empty() && is_ip.is_none() {
@@ -336,8 +435,87 @@ impl<'a> Engine<'a> {
                 return (false, steps);
             }
         }
+        if !r.not_wifi_ssid.is_empty() {
+            let n = inp
+                .wifi_ssid
+                .map(|s| r.not_wifi_ssid.iter().any(|x| x == s))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_wifi_ssid".into(),
+                value: inp.wifi_ssid.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_wifi_bssid.is_empty() {
+            let n = inp
+                .wifi_bssid
+                .map(|s| r.not_wifi_bssid.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_wifi_bssid".into(),
+                value: inp.wifi_bssid.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_process_name.is_empty() {
+            let n = inp
+                .process_name
+                .map(|s| r.not_process_name.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_process".into(),
+                value: inp.process_name.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_user_agent.is_empty() {
+            let n = inp
+                .user_agent
+                .map(|s| r.not_user_agent.iter().any(|x| s.contains(x)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_user_agent".into(),
+                value: inp.user_agent.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_rule_set.is_empty() {
+            let n = inp
+                .rule_set
+                .map(|tags| r.not_rule_set.iter().any(|x| tags.contains(x)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_rule_set".into(),
+                value: format!("{:?}", inp.rule_set.unwrap_or(&[])),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
 
         (true, steps)
+    }
+
+    fn default_outbound(&self) -> String {
+        self.cfg
+            .route
+            .default
+            .clone()
+            .or_else(|| self.cfg.route.final_outbound.clone())
+            .unwrap_or_else(|| "direct".into())
     }
 
     pub fn decide(&self, inp: &Input, want_trace: bool) -> Decide {
@@ -346,13 +524,7 @@ impl<'a> Engine<'a> {
             if ok {
                 let (canon, chain) = Self::rule_canonical(r);
                 let rid = sha8(&canon);
-                let out = r.outbound.clone().unwrap_or_else(|| {
-                    self.cfg
-                        .route
-                        .default
-                        .clone()
-                        .unwrap_or_else(|| "direct".into())
-                });
+                let out = r.outbound.clone().unwrap_or_else(|| self.default_outbound());
                 let trace = if want_trace {
                     Some(Trace {
                         steps,
@@ -371,12 +543,7 @@ impl<'a> Engine<'a> {
             }
         }
         // no rule matched → default
-        let out = self
-            .cfg
-            .route
-            .default
-            .clone()
-            .unwrap_or_else(|| "direct".into());
+        let out = self.default_outbound();
         Decide {
             outbound: out,
             matched_rule: "00000000".into(),
@@ -440,6 +607,7 @@ mod tests {
                     ..Default::default()
                 }],
                 default: Some("direct".into()),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -453,6 +621,12 @@ mod tests {
                 sniff_host: None,
                 sniff_alpn: None,
                 sniff_protocol: None,
+                wifi_ssid: None,
+                wifi_bssid: None,
+                process_name: None,
+                process_path: None,
+                user_agent: None,
+                rule_set: None,
             },
             false,
         );
@@ -466,6 +640,12 @@ mod tests {
                 sniff_host: None,
                 sniff_alpn: None,
                 sniff_protocol: None,
+                wifi_ssid: None,
+                wifi_bssid: None,
+                process_name: None,
+                process_path: None,
+                user_agent: None,
+                rule_set: None,
             },
             false,
         );
@@ -482,6 +662,7 @@ mod tests {
                     ..Default::default()
                 }],
                 default: Some("direct".into()),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -495,6 +676,12 @@ mod tests {
                 sniff_host: None,
                 sniff_alpn: None,
                 sniff_protocol: Some("bittorrent"),
+                wifi_ssid: None,
+                wifi_bssid: None,
+                process_name: None,
+                process_path: None,
+                user_agent: None,
+                rule_set: None,
             },
             false,
         );
@@ -511,6 +698,7 @@ mod tests {
                     ..Default::default()
                 }],
                 default: Some("block".into()),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -524,6 +712,12 @@ mod tests {
                 sniff_host: None,
                 sniff_alpn: None,
                 sniff_protocol: Some("tls"),
+                wifi_ssid: None,
+                wifi_bssid: None,
+                process_name: None,
+                process_path: None,
+                user_agent: None,
+                rule_set: None,
             },
             false,
         );

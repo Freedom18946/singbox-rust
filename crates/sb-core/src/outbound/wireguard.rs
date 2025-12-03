@@ -105,7 +105,7 @@ impl WireGuardConfig {
 
         let mut allowed_ips = if !ir.wireguard_allowed_ips.is_empty() {
             ir.wireguard_allowed_ips.clone()
-        } else if let Some(raw) = std::env::var("SB_WIREGUARD_ALLOWED_IPS").ok() {
+        } else if let Ok(raw) = std::env::var("SB_WIREGUARD_ALLOWED_IPS") {
             raw.split(',')
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty())
@@ -303,8 +303,8 @@ impl OutboundTcp for WireGuardOutbound {
     async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
         let mut last_err = None;
         let lookup = format!("{}:{}", target.host, target.port);
-        let mut iter = lookup_host(lookup).await?;
-        while let Some(addr) = iter.next() {
+        let iter = lookup_host(lookup).await?;
+        for addr in iter {
             match self.connect_addr(addr).await {
                 Ok(stream) => {
                     self.record_connect_metrics("ok");
@@ -361,8 +361,8 @@ struct WireGuardUdpSession {
 #[async_trait]
 impl UdpOutboundSession for WireGuardUdpSession {
     async fn send_to(&self, data: &[u8], host: &str, port: u16) -> io::Result<()> {
-        let mut iter = lookup_host((host, port)).await?;
-        while let Some(addr) = iter.next() {
+        let iter = lookup_host((host, port)).await?;
+        for addr in iter {
             if addr.is_ipv4() {
                 let _ = self.socket.send_to(data, addr).await?;
                 return Ok(());

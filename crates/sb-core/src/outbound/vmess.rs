@@ -52,6 +52,7 @@ pub struct VmessConfig {
     pub grpc_metadata: Vec<(String, String)>,
     pub http_upgrade_path: Option<String>,
     pub http_upgrade_headers: Vec<(String, String)>,
+    pub multiplex: Option<sb_config::ir::MultiplexOptionsIR>,
 }
 
 impl Default for VmessConfig {
@@ -75,7 +76,9 @@ impl Default for VmessConfig {
             grpc_metadata: Vec::new(),
             http_upgrade_path: None,
             http_upgrade_headers: Vec::new(),
+            multiplex: None,
         }
+
     }
 }
 
@@ -662,6 +665,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
             self.config.grpc_authority.as_deref(),
             &self.config.grpc_metadata,
             None,
+            self.config.multiplex.as_ref(),
         );
 
         let mut stream = builder

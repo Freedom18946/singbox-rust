@@ -45,6 +45,9 @@ use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::{debug, warn};
 use yamux::{Config, Connection, Mode};
 
+pub mod padding;
+pub use padding::PaddingStream;
+
 /// Brutal Congestion Control configuration / Brutal 拥塞控制配置
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -72,38 +75,64 @@ impl BrutalConfig {
 /// Multiplex configuration
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MultiplexConfig {
+pub struct MultiplexClientConfig {
+    /// Maximum number of concurrent streams per connection
+    /// 每个连接的最大并发流数量
     pub max_num_streams: usize,
+
+    /// Initial receive window size (bytes)
+    /// 初始接收窗口大小（字节）
     pub initial_stream_window: u32,
+
+    /// Maximum receive window size (bytes)
+    /// 最大接收窗口大小（字节）
     pub max_stream_window: u32,
+
+    /// Enable padding frames for traffic analysis resistance
+    /// 启用填充帧以抵抗流量分析
+    /// Adds random padding to make traffic patterns less distinctive
+    /// 添加随机填充使流量模式不易识别
+    pub enable_padding: bool,
+
+    /// Connection reuse timeout (seconds)
+    /// 连接复用超时（秒）
+    /// Idle connections are kept alive for reuse within this duration
+    /// 空闲连接在此时间内保持活动以供复用
+    pub reuse_timeout_secs: u64,
+
+    /// Maximum number of connections to pool for reuse
+    /// 连接池中复用的最大连接数
+    pub max_pool_size: usize,
+
     pub enable_keepalive: bool,
     pub keepalive_interval: u64,
-    pub max_connections: usize,
     pub max_streams_per_connection: usize,
-    pub connection_idle_timeout: u64,
-    pub padding: bool,
     pub brutal: Option<BrutalConfig>,
 }
 
-impl Default for MultiplexConfig {
+impl Default for MultiplexClientConfig {
     fn default() -> Self {
         Self {
             max_num_streams: 256,
-            initial_stream_window: 256 * 1024, // 256KB
-            max_stream_window: 1024 * 1024,    // 1MB
+            initial_stream_window: 256 * 1024,
+            max_stream_window: 1024 * 1024,
+            enable_padding: false,
+            reuse_timeout_secs: 300, // 5 minutes
+            max_pool_size: 4,
             enable_keepalive: true,
             keepalive_interval: 30,
-            max_connections: 4,
             max_streams_per_connection: 8,
-            connection_idle_timeout: 300,
-            padding: false,
             brutal: None,
         }
     }
 }
 
-/// Multiplex server configuration (alias to MultiplexConfig)
-pub type MultiplexServerConfig = MultiplexConfig;
+/// Multiplex configuration (alias to MultiplexClientConfig for backward compatibility)
+/// 多路复用配置（为向后兼容使用 MultiplexClientConfig 的别名）
+pub type MultiplexConfig = MultiplexClientConfig;
+
+/// Multiplex server configuration (alias to MultiplexClient Config for backward compatibility)
+pub type MultiplexServerConfig = MultiplexClientConfig;
 
 /// Control message for multiplex connection
 enum ControlMessage {
@@ -115,7 +144,6 @@ enum ControlMessage {
 struct MultiplexConnection {
     control_tx: mpsc::UnboundedSender<ControlMessage>,
     stream_count: Arc<AtomicUsize>,
-    created_at: Instant,
     last_used: Arc<Mutex<Instant>>,
     closed: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -128,7 +156,6 @@ impl MultiplexConnection {
         Self {
             control_tx,
             stream_count: Arc::new(AtomicUsize::new(0)),
-            created_at: Instant::now(),
             last_used: Arc::new(Mutex::new(Instant::now())),
             closed,
         }
@@ -163,11 +190,14 @@ impl MultiplexConnection {
     }
 }
 
+/// Type alias for multiplex connection pool to reduce type complexity
+type MultiplexPool = Arc<Mutex<HashMap<(String, u16), Vec<MultiplexConnection>>>>;
+
 /// Multiplex dialer
 pub struct MultiplexDialer {
     config: MultiplexConfig,
     dialer: Box<dyn Dialer>,
-    pool: Arc<Mutex<HashMap<(String, u16), Vec<MultiplexConnection>>>>,
+    pool: MultiplexPool,
 }
 
 impl std::fmt::Debug for MultiplexDialer {
@@ -198,7 +228,7 @@ impl MultiplexDialer {
 
     fn start_cleanup_task(&self) {
         let pool = self.pool.clone();
-        let idle_timeout = Duration::from_secs(self.config.connection_idle_timeout);
+        let idle_timeout = Duration::from_secs(self.config.reuse_timeout_secs);
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -238,6 +268,14 @@ impl MultiplexDialer {
     fn create_yamux_config(&self) -> Config {
         let mut config = Config::default();
         config.set_max_num_streams(self.config.max_num_streams);
+        // Yamux 0.13 deprecated set_receive_window in favor of set_max_connection_receive_window.
+        // We set it to None to allow unlimited total receive window, letting individual streams
+        // manage their windows. Note that yamux 0.13.8 doesn't expose per-stream window configuration
+        // in the public API - it uses internal defaults.
+        config.set_max_connection_receive_window(None);
+        
+        // Note: yamux 0.13.8 doesn't expose set_keep_alive_interval or set_receive_window in the public API.
+        // Keep-alive and window management are handled internally by the yamux implementation.
 
         if let Some(ref brutal) = self.config.brutal {
             debug!(
@@ -280,6 +318,15 @@ impl MultiplexDialer {
 
         debug!("Creating new connection for {:?}", key);
         let stream = self.dialer.connect(host, port).await?;
+        
+        let stream = if self.config.enable_padding {
+            debug!("Enabling padding for multiplex connection");
+            let padded = PaddingStream::new(stream, true);
+            Box::new(padded) as IoStream
+        } else {
+            stream
+        };
+
         let compat_stream = stream.compat();
         let config = self.create_yamux_config();
         let mut connection = Connection::new(compat_stream, config, Mode::Client);
@@ -366,7 +413,20 @@ impl MultiplexDialer {
 
         {
             let mut pool = self.pool.lock().await;
-            let connections = pool.entry(key).or_insert_with(Vec::new);
+            let connections = pool.entry(key.clone()).or_insert_with(Vec::new);
+
+            // Enforce max_pool_size
+            if connections.len() >= self.config.max_pool_size {
+                // Use simple FIFO eviction strategy
+                // For simplicity and performance in this critical section, we remove the first connection.
+                // A smarter LRU strategy would require async locking of last_used timestamps,
+                // which adds complexity while holding the pool lock.
+                if !connections.is_empty() {
+                     debug!("Pool full for {:?}, evicting oldest connection", key);
+                     connections.remove(0);
+                }
+            }
+
             connections.push((*mux_conn).clone());
         }
 
@@ -380,6 +440,7 @@ impl Dialer for MultiplexDialer {
         debug!("Dialing multiplexed stream: {}:{}", host, port);
 
         let mux_conn = self.get_or_create_connection(host, port).await?;
+        mux_conn.update_last_used().await;
         let stream_count = mux_conn.increment_stream_count();
         debug!(
             "Opening yamux stream for {}:{} (stream count: {})",
@@ -387,7 +448,11 @@ impl Dialer for MultiplexDialer {
         );
 
         let (tx, rx) = oneshot::channel();
-        if mux_conn.control_tx.send(ControlMessage::OpenStream(tx)).is_err() {
+        if mux_conn
+            .control_tx
+            .send(ControlMessage::OpenStream(tx))
+            .is_err()
+        {
             mux_conn.decrement_stream_count();
             return Err(DialError::Other("Connection closed".into()));
         }
@@ -416,6 +481,10 @@ impl Dialer for MultiplexDialer {
         };
 
         Ok(Box::new(stream_wrapper))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -550,36 +619,42 @@ impl MultiplexListener {
         config: MultiplexServerConfig,
         stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
     ) -> Result<(), DialError> {
-        let compat_stream = tcp_stream.compat();
+        let stream: IoStream = if config.enable_padding {
+            debug!("Enabling padding for multiplex connection from {}", peer_addr);
+            Box::new(PaddingStream::new(tcp_stream, false))
+        } else {
+            Box::new(tcp_stream)
+        };
+        
+        let compat_stream = stream.compat();
         let yamux_config = Self::create_server_yamux_config(&config);
         let mut connection = Connection::new(compat_stream, yamux_config, Mode::Server);
 
         debug!("Created yamux server connection for {}", peer_addr);
 
-        poll_fn(|cx| {
-            loop {
-                match connection.poll_next_inbound(cx) {
-                    Poll::Ready(Some(Ok(stream))) => {
-                        debug!("Accepted yamux stream from {}", peer_addr);
-                        let tokio_stream = stream.compat();
-                        let boxed_stream: IoStream = Box::new(tokio_stream);
-                        if stream_tx.send(boxed_stream).is_err() {
-                            warn!("Failed to send stream to channel, listener may be closed");
-                            return Poll::Ready(());
-                        }
-                    }
-                    Poll::Ready(Some(Err(e))) => {
-                        warn!("yamux stream error from {}: {}", peer_addr, e);
+        poll_fn(|cx| loop {
+            match connection.poll_next_inbound(cx) {
+                Poll::Ready(Some(Ok(stream))) => {
+                    debug!("Accepted yamux stream from {}", peer_addr);
+                    let tokio_stream = stream.compat();
+                    let boxed_stream: IoStream = Box::new(tokio_stream);
+                    if stream_tx.send(boxed_stream).is_err() {
+                        warn!("Failed to send stream to channel, listener may be closed");
                         return Poll::Ready(());
                     }
-                    Poll::Ready(None) => {
-                        debug!("yamux connection closed for {}", peer_addr);
-                        return Poll::Ready(());
-                    }
-                    Poll::Pending => return Poll::Pending,
                 }
+                Poll::Ready(Some(Err(e))) => {
+                    warn!("yamux stream error from {}: {}", peer_addr, e);
+                    return Poll::Ready(());
+                }
+                Poll::Ready(None) => {
+                    debug!("yamux connection closed for {}", peer_addr);
+                    return Poll::Ready(());
+                }
+                Poll::Pending => return Poll::Pending,
             }
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
@@ -616,7 +691,7 @@ mod tests {
     #[tokio::test]
     async fn test_multiplex_dialer_creation() {
         let config = MultiplexConfig::default();
-        let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+        let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
         let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
         assert_eq!(mux_dialer.config.max_num_streams, 256);
     }

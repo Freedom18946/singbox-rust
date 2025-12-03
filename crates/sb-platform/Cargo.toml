@@ -10,6 +10,10 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 libc = "0.2"
 log = "0.4"
+parking_lot = "0.12"
+once_cell = "1.21"
+
+
 
 # macOS native process matching
 [target.'cfg(target_os = "macos")'.dependencies]

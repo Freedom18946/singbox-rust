@@ -247,7 +247,7 @@ fn config_ir_to_router_rules(config: &sb_config::ir::ConfigIR) -> String {
         }
 
         // Handle process matches
-        for process in &rule.process {
+        for process in &rule.process_name {
             rules.push(format!("process:{process}={outbound}"));
         }
 

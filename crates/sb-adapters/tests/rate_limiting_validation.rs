@@ -9,7 +9,7 @@
 //! Run with:
 //!   cargo test --package sb-adapters --test rate_limiting_validation -- --nocapture
 
-use sb_core::net::tcp_rate_limit::{TcpRateLimiter, TcpRateLimitConfig};
+use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
@@ -32,7 +32,8 @@ fn test_trojan_rate_limit_per_ip() {
     for i in 1..=5 {
         assert!(
             limiter.allow_connection(ip),
-            "Connection {} should be allowed", i
+            "Connection {} should be allowed",
+            i
         );
     }
 
@@ -60,7 +61,8 @@ fn test_shadowsocks_rate_limit_per_ip() {
     for i in 1..=10 {
         assert!(
             limiter.allow_connection(ip),
-            "Connection {} should be allowed", i
+            "Connection {} should be allowed",
+            i
         );
     }
 
@@ -82,7 +84,7 @@ fn test_rate_limit_multiple_ips() {
         ..Default::default()
     };
     let limiter = TcpRateLimiter::new(config);
-    
+
     let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
     let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
 
@@ -124,7 +126,8 @@ fn test_trojan_auth_failure_tracking() {
         let is_banned = limiter.record_auth_failure(ip);
         assert!(
             !is_banned,
-            "IP should not be banned after {} failures (limit is 5)", i
+            "IP should not be banned after {} failures (limit is 5)",
+            i
         );
     }
 
@@ -151,7 +154,7 @@ fn test_shadowsocks_auth_failure_tracking() {
     limiter.record_auth_failure(ip);
     limiter.record_auth_failure(ip);
     limiter.record_auth_failure(ip);
-    
+
     assert!(!limiter.is_banned(ip), "3 failures should not ban");
 
     // 4th failure bans
@@ -207,10 +210,7 @@ fn test_trojan_qps_limiting() {
 
     // First 10 requests should be allowed (token bucket starts full)
     for i in 1..=10 {
-        assert!(
-            limiter.allow_request(ip),
-            "Request {} should be allowed", i
-        );
+        assert!(limiter.allow_request(ip), "Request {} should be allowed", i);
     }
 
     // 11th request should be blocked (bucket empty)
@@ -234,10 +234,7 @@ fn test_shadowsocks_qps_limiting() {
 
     // First 20 requests should be allowed
     for i in 1..=20 {
-        assert!(
-            limiter.allow_request(ip),
-            "Request {} should be allowed", i
-        );
+        assert!(limiter.allow_request(ip), "Request {} should be allowed", i);
     }
 
     // 21st request should be blocked
@@ -273,7 +270,7 @@ fn test_qps_token_bucket_refill() {
         limiter.allow_request(ip),
         "Should allow request after token refill"
     );
-    
+
     // Should be rate limited again
     assert!(
         !limiter.allow_request(ip),
@@ -324,7 +321,10 @@ fn test_sliding_window_behavior() {
 
     // T=100ms: Still rate limited (half window)
     std::thread::sleep(Duration::from_millis(100));
-    assert!(!limiter.allow_connection(ip), "Should still be rate limited at T+100ms");
+    assert!(
+        !limiter.allow_connection(ip),
+        "Should still be rate limited at T+100ms"
+    );
 
     // T=250ms: Window expired, should allow new connections
     std::thread::sleep(Duration::from_millis(150));

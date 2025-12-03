@@ -212,6 +212,10 @@ impl Dialer for WebSocketDialer {
         // 4. 将流包装在适配器中
         Ok(Box::new(WebSocketStreamAdapter::new(ws_stream)))
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// WebSocket stream adapter
@@ -305,9 +309,7 @@ where
                         // Tungstenite 自动处理 ping，但我们可能会看到它们
                         self.poll_read(cx, buf)
                     }
-                    tokio_tungstenite::tungstenite::Message::Pong(_) => {
-                        self.poll_read(cx, buf)
-                    }
+                    tokio_tungstenite::tungstenite::Message::Pong(_) => self.poll_read(cx, buf),
                     tokio_tungstenite::tungstenite::Message::Frame(_) => {
                         // Raw frames, usually handled internally
                         // 原始帧，通常在内部处理
@@ -315,8 +317,7 @@ where
                     }
                 }
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket read error: {}", e),
             ))),
             Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
@@ -343,13 +344,11 @@ where
         match self.inner.poll_ready_unpin(cx) {
             Poll::Ready(Ok(())) => match self.inner.start_send_unpin(msg) {
                 Ok(()) => Poll::Ready(Ok(buf.len())),
-                Err(e) => Poll::Ready(Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Err(e) => Poll::Ready(Err(std::io::Error::other(
                     format!("WebSocket write error: {}", e),
                 ))),
             },
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket poll_ready error: {}", e),
             ))),
             Poll::Pending => Poll::Pending,
@@ -359,8 +358,7 @@ where
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.inner.poll_flush_unpin(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(
                 format!("WebSocket flush error: {}", e),
             ))),
             Poll::Pending => Poll::Pending,
@@ -520,7 +518,7 @@ mod tests {
     #[tokio::test]
     async fn test_websocket_dialer_creation() {
         let config = WebSocketConfig::default();
-        let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+        let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
         let ws_dialer = WebSocketDialer::new(config, tcp_dialer);
         // Just verify it compiles and creates successfully
         assert_eq!(ws_dialer.config.path, "/");

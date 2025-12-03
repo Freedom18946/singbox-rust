@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
+
 /// Transport type for connection requests
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportKind {
@@ -346,6 +347,7 @@ impl SwitchboardBuilder {
     fn try_register_from_ir(&mut self, ir: &sb_config::ir::OutboundIR) -> AdapterResult<()> {
         use sb_config::ir::OutboundType;
 
+        #[allow(unused_variables)]
         let name = ir.name.as_deref().unwrap_or("unnamed");
 
         match ir.ty {
@@ -404,7 +406,7 @@ impl SwitchboardBuilder {
                     };
 
                     let outbound = SshOutbound::new(cfg)
-                        .map_err(|e| AdapterError::Other(anyhow::anyhow!(e).into()))?;
+                        .map_err(|e| AdapterError::Other(anyhow::anyhow!(e)))?;
                     #[derive(Debug, Clone)]
                     struct SshConn {
                         inner: std::sync::Arc<SshOutbound>,
@@ -646,7 +648,7 @@ impl SwitchboardBuilder {
                             }
                         }
                         let inner = crate::outbound::tuic::TuicOutbound::new(cfg)
-                            .map_err(|e| AdapterError::Other(e.into()))?;
+                            .map_err(AdapterError::Other)?;
                         let inner = std::sync::Arc::new(inner);
                         let conn = TuicConnector {
                             inner: inner.clone(),
@@ -698,7 +700,7 @@ impl SwitchboardBuilder {
                             }
                         }
                         let inner = crate::outbound::hysteria2::Hysteria2Outbound::new(cfg)
-                            .map_err(|e| AdapterError::Other(e.into()))?;
+                            .map_err(AdapterError::Other)?;
                         let inner = std::sync::Arc::new(inner);
                         let conn = Hy2Connector {
                             inner: inner.clone(),
@@ -731,7 +733,7 @@ impl SwitchboardBuilder {
                     })?;
 
                     let outbound = WireGuardOutbound::new(cfg)
-                        .map_err(|e| AdapterError::Other(anyhow::anyhow!(e).into()))?;
+                        .map_err(|e| AdapterError::Other(anyhow::anyhow!(e)))?;
 
                     #[derive(Debug, Clone)]
                     struct WireGuardConnector {
@@ -819,7 +821,7 @@ impl SwitchboardBuilder {
                             }
                         }
                         let inner = crate::outbound::shadowtls::ShadowTlsOutbound::new(cfg)
-                            .map_err(|e| AdapterError::Other(e.into()))?;
+                            .map_err(AdapterError::Other)?;
                         let conn = StlConnector {
                             inner: std::sync::Arc::new(inner),
                         };
@@ -1171,21 +1173,23 @@ mod tests {
     #[cfg(feature = "out_tuic")]
     #[test]
     fn tuic_mapping_defaults() {
-        let mut ob = sb_config::ir::OutboundIR::default();
-        ob.ty = sb_config::ir::OutboundType::Tuic;
-        ob.name = Some("tu1".into());
-        ob.server = Some("example.com".into());
-        ob.port = Some(443);
-        ob.uuid = Some(uuid::Uuid::new_v4().to_string());
-        ob.token = Some("tok".into());
+        let ob = sb_config::ir::OutboundIR {
+            ty: sb_config::ir::OutboundType::Tuic,
+            name: Some("tu1".into()),
+            server: Some("example.com".into()),
+            port: Some(443),
+            uuid: Some(uuid::Uuid::new_v4().to_string()),
+            token: Some("tok".into()),
+            ..Default::default()
+        };
         // leave optional fields None to exercise defaults
 
         let cfg = tuic_from_ir(&ob).expect("ok").expect("some");
         assert_eq!(cfg.server, "example.com");
         assert_eq!(cfg.port, 443);
-        assert_eq!(cfg.skip_cert_verify, false);
-        assert_eq!(cfg.udp_over_stream, false);
-        assert_eq!(cfg.zero_rtt_handshake, false);
+        assert!(!cfg.skip_cert_verify);
+        assert!(!cfg.udp_over_stream);
+        assert!(!cfg.zero_rtt_handshake);
         assert!(cfg.alpn.is_none());
         assert!(cfg.sni.is_none());
     }
@@ -1193,19 +1197,21 @@ mod tests {
     #[cfg(feature = "out_hysteria2")]
     #[test]
     fn hysteria2_mapping_defaults_and_alpn_split() {
-        let mut ob = sb_config::ir::OutboundIR::default();
-        ob.ty = sb_config::ir::OutboundType::Hysteria2;
-        ob.name = Some("hy1".into());
-        ob.server = Some("hy.example".into());
-        ob.port = Some(8443);
-        ob.password = Some("pw".into());
-        ob.tls_alpn = Some("h3, hysteria2".into());
+        let ob = sb_config::ir::OutboundIR {
+            ty: sb_config::ir::OutboundType::Hysteria2,
+            name: Some("hy1".into()),
+            server: Some("hy.example".into()),
+            port: Some(8443),
+            password: Some("pw".into()),
+            tls_alpn: Some(vec!["h3".to_string(), "hysteria2".to_string()]),
+            ..Default::default()
+        };
 
         let cfg = hysteria2_from_ir(&ob).expect("ok").expect("some");
         assert_eq!(cfg.server, "hy.example");
         assert_eq!(cfg.port, 8443);
-        assert_eq!(cfg.skip_cert_verify, false);
-        assert_eq!(cfg.zero_rtt_handshake, false);
+        assert!(!cfg.skip_cert_verify);
+        assert!(!cfg.zero_rtt_handshake);
         let alpn = cfg.alpn.unwrap();
         assert_eq!(alpn, vec!["h3".to_string(), "hysteria2".to_string()]);
     }
@@ -1213,16 +1219,18 @@ mod tests {
     #[cfg(feature = "out_shadowtls")]
     #[test]
     fn shadowtls_mapping_defaults() {
-        let mut ob = sb_config::ir::OutboundIR::default();
-        ob.ty = sb_config::ir::OutboundType::Shadowtls;
-        ob.name = Some("st1".into());
-        ob.server = Some("st.example".into());
-        ob.port = Some(443);
+        let ob = sb_config::ir::OutboundIR {
+            ty: sb_config::ir::OutboundType::Shadowtls,
+            name: Some("st1".into()),
+            server: Some("st.example".into()),
+            port: Some(443),
+            ..Default::default()
+        };
         // no sni provided -> default to server
 
         let cfg = shadowtls_from_ir(&ob).expect("ok").expect("some");
         assert_eq!(cfg.sni, "st.example");
-        assert_eq!(cfg.skip_cert_verify, false);
+        assert!(!cfg.skip_cert_verify);
     }
 }
 
@@ -1467,6 +1475,7 @@ impl OutboundConnector for TrojanConnector {
                 this.grpc_authority.as_deref(),
                 &this.grpc_metadata,
                 None,
+                None,
             );
             let mut s = b
                 .build()
@@ -1493,34 +1502,36 @@ impl OutboundConnector for TrojanConnector {
                     return Err(e);
                 }
                 // Build plan from IR hints
-                let mut ob = sb_config::ir::OutboundIR::default();
-                ob.transport = self.transport.clone();
-                ob.ws_path = self.ws_path.clone();
-                ob.ws_host = self.ws_host.clone();
-                ob.h2_path = self.h2_path.clone();
-                ob.h2_host = self.h2_host.clone();
-                ob.tls_sni = self.tls_sni.clone();
-                ob.tls_alpn = self.tls_alpn.clone();
-                ob.http_upgrade_path = self.http_upgrade_path.clone();
-                ob.http_upgrade_headers = self
-                    .http_upgrade_headers
-                    .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                    })
-                    .collect();
-                ob.grpc_service = self.grpc_service.clone();
-                ob.grpc_method = self.grpc_method.clone();
-                ob.grpc_authority = self.grpc_authority.clone();
-                ob.grpc_metadata = self
-                    .grpc_metadata
-                    .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                    })
-                    .collect();
+                let ob = sb_config::ir::OutboundIR {
+                    transport: self.transport.clone(),
+                    ws_path: self.ws_path.clone(),
+                    ws_host: self.ws_host.clone(),
+                    h2_path: self.h2_path.clone(),
+                    h2_host: self.h2_host.clone(),
+                    tls_sni: self.tls_sni.clone(),
+                    tls_alpn: self.tls_alpn.clone(),
+                    http_upgrade_path: self.http_upgrade_path.clone(),
+                    http_upgrade_headers: self
+                        .http_upgrade_headers
+                        .iter()
+                        .map(|(k, v)| sb_config::ir::HeaderEntry {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
+                        .collect(),
+                    grpc_service: self.grpc_service.clone(),
+                    grpc_method: self.grpc_method.clone(),
+                    grpc_authority: self.grpc_authority.clone(),
+                    grpc_metadata: self
+                        .grpc_metadata
+                        .iter()
+                        .map(|(k, v)| sb_config::ir::HeaderEntry {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
+                        .collect(),
+                    ..Default::default()
+                };
 
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {
@@ -1654,6 +1665,7 @@ impl OutboundConnector for VlessConnector {
                 this.grpc_authority.as_deref(),
                 &this.grpc_metadata,
                 None,
+                None,
             );
             let mut s = b
                 .build()
@@ -1691,34 +1703,36 @@ impl OutboundConnector for VlessConnector {
                 if !enabled {
                     return Err(e);
                 }
-                let mut ob = sb_config::ir::OutboundIR::default();
-                ob.transport = self.transport.clone();
-                ob.ws_path = self.ws_path.clone();
-                ob.ws_host = self.ws_host.clone();
-                ob.h2_path = self.h2_path.clone();
-                ob.h2_host = self.h2_host.clone();
-                ob.tls_sni = self.tls_sni.clone();
-                ob.tls_alpn = self.tls_alpn.clone();
-                ob.http_upgrade_path = self.http_upgrade_path.clone();
-                ob.http_upgrade_headers = self
-                    .http_upgrade_headers
-                    .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                    })
-                    .collect();
-                ob.grpc_service = self.grpc_service.clone();
-                ob.grpc_method = self.grpc_method.clone();
-                ob.grpc_authority = self.grpc_authority.clone();
-                ob.grpc_metadata = self
-                    .grpc_metadata
-                    .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                    })
-                    .collect();
+                let ob = sb_config::ir::OutboundIR {
+                    transport: self.transport.clone(),
+                    ws_path: self.ws_path.clone(),
+                    ws_host: self.ws_host.clone(),
+                    h2_path: self.h2_path.clone(),
+                    h2_host: self.h2_host.clone(),
+                    tls_sni: self.tls_sni.clone(),
+                    tls_alpn: self.tls_alpn.clone(),
+                    http_upgrade_path: self.http_upgrade_path.clone(),
+                    http_upgrade_headers: self
+                        .http_upgrade_headers
+                        .iter()
+                        .map(|(k, v)| sb_config::ir::HeaderEntry {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
+                        .collect(),
+                    grpc_service: self.grpc_service.clone(),
+                    grpc_method: self.grpc_method.clone(),
+                    grpc_authority: self.grpc_authority.clone(),
+                    grpc_metadata: self
+                        .grpc_metadata
+                        .iter()
+                        .map(|(k, v)| sb_config::ir::HeaderEntry {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
+                        .collect(),
+                    ..Default::default()
+                };
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {
                     tracing::warn!(target:"sb_core::transport", server=%self.server, port=self.port, alt=%alt.join("->"), "transport primary failed; trying fallback");
@@ -1790,6 +1804,7 @@ impl OutboundConnector for VmessConnector {
                 this.grpc_authority.as_deref(),
                 &this.grpc_metadata,
                 None,
+                None,
             );
             let mut s = b
                 .build()
@@ -1828,34 +1843,36 @@ impl OutboundConnector for VmessConnector {
                 if !enabled {
                     return Err(e);
                 }
-                let mut ob = sb_config::ir::OutboundIR::default();
-                ob.transport = self.transport.clone();
-                ob.ws_path = self.ws_path.clone();
-                ob.ws_host = self.ws_host.clone();
-                ob.h2_path = self.h2_path.clone();
-                ob.h2_host = self.h2_host.clone();
-                ob.tls_sni = self.tls_sni.clone();
-                ob.tls_alpn = self.tls_alpn.clone();
-                ob.http_upgrade_path = self.http_upgrade_path.clone();
-                ob.http_upgrade_headers = self
-                    .http_upgrade_headers
-                    .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                    })
-                    .collect();
-                ob.grpc_service = self.grpc_service.clone();
-                ob.grpc_method = self.grpc_method.clone();
-                ob.grpc_authority = self.grpc_authority.clone();
-                ob.grpc_metadata = self
-                    .grpc_metadata
-                    .iter()
-                    .map(|(k, v)| sb_config::ir::HeaderEntry {
-                        key: k.clone(),
-                        value: v.clone(),
-                    })
-                    .collect();
+                let ob = sb_config::ir::OutboundIR {
+                    transport: self.transport.clone(),
+                    ws_path: self.ws_path.clone(),
+                    ws_host: self.ws_host.clone(),
+                    h2_path: self.h2_path.clone(),
+                    h2_host: self.h2_host.clone(),
+                    tls_sni: self.tls_sni.clone(),
+                    tls_alpn: self.tls_alpn.clone(),
+                    http_upgrade_path: self.http_upgrade_path.clone(),
+                    http_upgrade_headers: self
+                        .http_upgrade_headers
+                        .iter()
+                        .map(|(k, v)| sb_config::ir::HeaderEntry {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
+                        .collect(),
+                    grpc_service: self.grpc_service.clone(),
+                    grpc_method: self.grpc_method.clone(),
+                    grpc_authority: self.grpc_authority.clone(),
+                    grpc_metadata: self
+                        .grpc_metadata
+                        .iter()
+                        .map(|(k, v)| sb_config::ir::HeaderEntry {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
+                        .collect(),
+                    ..Default::default()
+                };
                 let plans = crate::runtime::transport::map::fallback_chains_from_ir(&ob);
                 for alt in plans.into_iter().skip(1) {
                     let mode = alt.join("->");

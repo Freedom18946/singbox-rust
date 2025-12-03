@@ -1,16 +1,17 @@
+#![allow(deprecated)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use sb_benches::setup_tracing;
-use std::time::Duration;
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::runtime::Runtime;
 use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
 use sb_adapters::TransportKind;
-use std::sync::Arc;
+use sb_benches::setup_tracing;
 use sb_core::router::engine::RouterHandle;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::runtime::Runtime;
 
 // Helper: Start TCP echo server
 async fn start_echo_server() -> std::net::SocketAddr {
@@ -49,13 +50,16 @@ async fn start_trojan_server() -> std::net::SocketAddr {
 
     let config = TrojanInboundConfig {
         listen: addr,
-        password: "benchmark-pass".to_string(),
+        password: Some("benchmark-pass".to_string()),
         cert_path: "app/tests/cli/fixtures/pems/cert.pem".to_string(),
         key_path: "app/tests/cli/fixtures/pems/key.pem".to_string(),
         router: Arc::new(RouterHandle::new_mock()),
         transport_layer: None,
         multiplex: None,
         reality: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+        users: vec![],
     };
 
     tokio::spawn(async move {
@@ -68,7 +72,7 @@ async fn start_trojan_server() -> std::net::SocketAddr {
 
 fn bench_trojan_throughput(c: &mut Criterion) {
     setup_tracing();
-    
+
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("trojan_throughput");
     group.measurement_time(Duration::from_secs(10));
@@ -83,50 +87,47 @@ fn bench_trojan_throughput(c: &mut Criterion) {
 
     for size in [1024, 65536, 1_048_576] {
         group.throughput(Throughput::Bytes(size as u64));
-        
-        group.bench_with_input(
-            BenchmarkId::new("tls_1_3", size),
-            &size,
-            |b, &size| {
-                b.to_async(&rt).iter(|| async {
-                    let client_config = TrojanConfig {
-                        server: trojan_addr.to_string(),
-                        tag: None,
-                        password: "benchmark-pass".to_string(),
-                        connect_timeout_sec: Some(5),
-                        sni: Some("localhost".to_string()),
-                        skip_cert_verify: true,
-                        transport_layer: TransportConfig::Tcp,
-                        reality: None,
-                        multiplex: None,
-                    };
-                    
-                    let connector = TrojanConnector::new(client_config);
-                    let target = Target {
-                        host: echo_addr.ip().to_string(),
-                        port: echo_addr.port(),
-                        kind: TransportKind::Tcp,
-                    };
 
-                    let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
-                    let data = vec![0u8; size];
-                    
-                    stream.write_all(&data).await.unwrap();
-                    let mut buf = vec![0u8; size];
-                    stream.read_exact(&mut buf).await.unwrap();
-                    
-                    black_box(buf);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("tls_1_3", size), &size, |b, &size| {
+            b.to_async(&rt).iter(|| async {
+                let client_config = TrojanConfig {
+                    server: trojan_addr.to_string(),
+                    tag: None,
+                    password: "benchmark-pass".to_string(),
+                    connect_timeout_sec: Some(5),
+                    sni: Some("localhost".to_string()),
+                    alpn: None,
+                    skip_cert_verify: true,
+                    transport_layer: TransportConfig::Tcp,
+                    reality: None,
+                    multiplex: None,
+                };
+
+                let connector = TrojanConnector::new(client_config);
+                let target = Target {
+                    host: echo_addr.ip().to_string(),
+                    port: echo_addr.port(),
+                    kind: TransportKind::Tcp,
+                };
+
+                let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
+                let data = vec![0u8; size];
+
+                stream.write_all(&data).await.unwrap();
+                let mut buf = vec![0u8; size];
+                stream.read_exact(&mut buf).await.unwrap();
+
+                black_box(buf);
+            });
+        });
     }
-    
+
     group.finish();
 }
 
 fn bench_trojan_handshake_overhead(c: &mut Criterion) {
     setup_tracing();
-    
+
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("trojan_handshake");
     group.measurement_time(Duration::from_secs(10));
@@ -145,13 +146,14 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
                 tag: None,
                 password: "benchmark-pass".to_string(),
                 connect_timeout_sec: Some(5),
-                sni: Some("localhost".to_string()),
+                sni: Some("example.com".to_string()),
+                alpn: None,
                 skip_cert_verify: true,
                 transport_layer: TransportConfig::Tcp,
                 reality: None,
                 multiplex: None,
             };
-            
+
             let connector = TrojanConnector::new(client_config);
             let target = Target {
                 host: echo_addr.ip().to_string(),
@@ -163,7 +165,7 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
             black_box(stream);
         });
     });
-    
+
     group.finish();
 }
 

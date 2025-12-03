@@ -14,9 +14,6 @@ use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
 use sb_core::outbound::observe::with_pool_observation;
 use sb_core::outbound::registry;
-// 本文件只用到了 inbound_parse，其他两个会在具体错误路径里再接入
-// This file only uses inbound_parse, the other two will be accessed in specific error paths
-use sb_core::telemetry::inbound_parse;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::socks5_udp::UpSocksSession;
 
@@ -351,13 +348,9 @@ async fn run_one_real(sock: UdpSocket, nat: std::sync::Arc<UdpNatMap>) -> Result
                 domain: dom,
                 ip,
                 transport_udp: true,
+                network: Some("udp"),
                 port,
-                process_name: None,
-                process_path: None,
-                inbound_tag: None,
-                outbound_tag: None,
-                auth_user: None,
-                query_type: None,
+                ..Default::default()
             };
             let d = eng.decide(&ctx);
             #[cfg(feature = "metrics")]
@@ -1075,13 +1068,9 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
                 domain: dom,
                 ip,
                 transport_udp: true,
+                network: Some("udp"),
                 port,
-                process_name: None,
-                process_path: None,
-                inbound_tag: None,
-                outbound_tag: None,
-                auth_user: None,
-                query_type: None,
+                ..Default::default()
             };
             let d = eng.decide(&ctx);
             #[cfg(feature = "metrics")]

@@ -7,6 +7,7 @@
 use super::{
     Bridge, InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
 };
+use crate::context::ContextRegistry;
 use crate::outbound::OutboundRegistryHandle;
 #[cfg(feature = "router")]
 use crate::router::RouterHandle;
@@ -23,6 +24,7 @@ pub struct AdapterInboundContext<'a> {
     pub outbounds: Arc<OutboundRegistryHandle>,
     #[cfg(feature = "router")]
     pub router: Arc<RouterHandle>,
+    pub context: ContextRegistry,
     #[cfg(not(feature = "router"))]
     pub _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -30,6 +32,7 @@ pub struct AdapterInboundContext<'a> {
 /// Context passed to outbound adapter builders so they can access the bridge (for Selector/URLTest).
 pub struct AdapterOutboundContext {
     pub bridge: Arc<Bridge>,
+    pub context: ContextRegistry,
 }
 
 type InboundBuilder =

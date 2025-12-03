@@ -34,6 +34,9 @@ mod hysteria2_test_suite {
                 up_mbps: 50,
                 down_mbps: 100,
             }),
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         assert_eq!(config.server, "example.com");
@@ -57,6 +60,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config);
@@ -88,6 +94,9 @@ mod hysteria2_test_suite {
                 up_mbps: 50,
                 down_mbps: 100,
             }),
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -112,6 +121,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -138,6 +150,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config2 = Hysteria2Config {
@@ -170,6 +185,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -229,6 +247,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
         let outbound = Hysteria2Outbound::new(config).unwrap();
         assert!(matches!(
@@ -250,6 +271,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
         let outbound = Hysteria2Outbound::new(config).unwrap();
         assert!(matches!(
@@ -271,6 +295,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
         let outbound = Hysteria2Outbound::new(config).unwrap();
         assert!(matches!(
@@ -306,6 +333,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -349,6 +379,9 @@ mod hysteria2_test_suite {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -379,6 +412,9 @@ mod handshake_and_auth_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -410,6 +446,9 @@ mod handshake_and_auth_tests {
                 up_mbps: 100,
                 down_mbps: 200,
             }),
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -440,6 +479,9 @@ mod handshake_and_auth_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config2 = Hysteria2Config {
@@ -471,6 +513,9 @@ mod handshake_and_auth_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -500,6 +545,9 @@ mod handshake_and_auth_tests {
                 up_mbps: 100,
                 down_mbps: 200,
             }),
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -525,6 +573,9 @@ mod handshake_and_auth_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -557,6 +608,9 @@ mod handshake_and_auth_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -588,6 +642,9 @@ mod salamander_obfuscation_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config_with_salamander = Hysteria2Config {
@@ -620,6 +677,9 @@ mod salamander_obfuscation_tests {
             alpn: None,
             salamander: Some("salamander-key".to_string()),
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -646,6 +706,9 @@ mod salamander_obfuscation_tests {
             alpn: None,
             salamander: Some("key1".to_string()),
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let config2 = Hysteria2Config {
@@ -678,6 +741,9 @@ mod salamander_obfuscation_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -709,6 +775,9 @@ mod salamander_obfuscation_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -739,6 +808,9 @@ mod salamander_obfuscation_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -773,6 +845,9 @@ mod udp_over_stream_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let _outbound = Hysteria2Outbound::new(config).unwrap();
@@ -894,6 +969,9 @@ mod session_management_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -1058,6 +1136,9 @@ mod integration_tests {
             alpn: Some(vec!["h3".to_string()]),
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -1096,6 +1177,9 @@ mod integration_tests {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
         let outbound = Hysteria2Outbound::new(cfg).unwrap();
         let res = outbound.open_session().await;

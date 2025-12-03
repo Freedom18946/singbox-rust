@@ -1,14 +1,15 @@
-use sb_config::ir::{ServiceIR, ServiceType};
-use sb_core::service::{Service, ServiceContext, StartStage};
-use tokio::time::{sleep, Duration};
+#![cfg(feature = "service_ssmapi")]
+use sb_core::services::ssmapi::{ServiceIR, ServiceType};
+// use sb_core::service::{ServiceContext, StartStage};
+// use tokio::time::{sleep, Duration};
 
 #[tokio::test]
 async fn test_ssmapi_service_lifecycle() {
     // Pick a random port
     let port = 51000 + (fastrand::u16(0..1000));
-    let addr = format!("127.0.0.1:{}", port);
+    let _addr = format!("127.0.0.1:{}", port);
 
-    let ir = ServiceIR {
+    let _ir = ServiceIR {
         ty: ServiceType::Ssmapi,
         tag: Some("ssm-test".to_string()),
         resolved_listen: None,

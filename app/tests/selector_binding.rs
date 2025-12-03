@@ -42,13 +42,14 @@ fn selector_is_bound_to_members() {
                 ..Default::default()
             }],
             default: Some("S".into()),
+            ..Default::default()
         },
         ntp: None,
         dns: None,
         ..Default::default()
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng, sb_core::context::Context::default());
     // 选择器应已作为一个命名出站注册
     assert!(br.find_outbound("S").is_some());
 }

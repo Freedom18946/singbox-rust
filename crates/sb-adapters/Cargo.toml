@@ -11,6 +11,7 @@ repository = "https://github.com/singbox-rust/singbox-rust"
 anyhow = "1"
 async-trait = "0.1"
 bytes = "1"
+dashmap = "6"
 once_cell = "1"
 parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }
@@ -22,6 +23,8 @@ tun2socks = { version = "0.1.10", optional = true }
 tun = { version = "0.8", optional = true, features = ["async"] }
 libc = "0.2"
 scopeguard = "1.2"
+tokio-util = { version = "0.7", features = ["compat", "io"] }
+futures = "0.3"
 
 # VMess protocol dependencies
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -78,6 +81,7 @@ http = { version = "0.2", optional = true }
 # Constant-time comparison for authentication
 subtle = "2.5"
 anytls-rs = { version = "0.5.4", optional = true }
+smoltcp = { version = "0.11", features = ["std", "async", "medium-ethernet", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp", "socket-icmp"] }
 
 # D-Bus support for systemd-resolved service (Linux only)
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -131,6 +135,8 @@ e2e = []
 tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile"]
 # Router-aware adapters rely on sb-core routing infrastructure
 router = ["sb-core/router"]
+# V2Ray transport layer support (ws, grpc, h2, etc.)
+v2ray_transport = []
 
 # sb-core outbound feature mirrors to keep adapter cfg(feature = "out_*") checks working.
 out_ss = ["sb-core/out_ss"]

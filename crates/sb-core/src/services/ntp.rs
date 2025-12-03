@@ -1,4 +1,8 @@
+#[cfg(feature = "service_ntp")]
+use crate::context::NtpService as NtpServiceTrait;
 use anyhow::Result;
+#[cfg(feature = "service_ntp")]
+use sb_config::ir::NtpIR;
 use std::net::UdpSocket;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -57,7 +61,7 @@ impl NtpService {
                     Ok(offset) => {
                         #[cfg(feature = "metrics")]
                         {
-                            metrics::gauge!("ntp_offset_seconds").set(offset as f64);
+                            metrics::gauge!("ntp_offset_seconds").set(offset);
                             metrics::counter!("ntp_query_total", "result"=>"ok").increment(1);
                         }
                         tracing::info!(target: "sb_core::ntp", server=%cfg.server, offset_seconds=offset, "ntp offset measured");
@@ -72,6 +76,43 @@ impl NtpService {
         }))
     }
 }
+
+#[cfg(feature = "service_ntp")]
+#[derive(Debug, Clone)]
+pub struct NtpMarker {
+    pub server: String,
+    pub interval_ms: u64,
+    pub timeout_ms: u64,
+}
+
+#[cfg(feature = "service_ntp")]
+impl From<&NtpIR> for NtpMarker {
+    fn from(ntp_cfg: &NtpIR) -> Self {
+        let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
+            (Some(s), Some(p)) => format!("{s}:{p}"),
+            (Some(s), None) => {
+                if s.contains(':') {
+                    s.clone()
+                } else {
+                    format!("{s}:123")
+                }
+            }
+            (None, Some(p)) => format!("time.google.com:{p}"),
+            (None, None) => crate::services::ntp::NtpConfig::default().server,
+        };
+        let interval_ms = ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000);
+        let timeout_ms = ntp_cfg.timeout_ms.unwrap_or(1500);
+
+        Self {
+            server,
+            interval_ms,
+            timeout_ms,
+        }
+    }
+}
+
+#[cfg(feature = "service_ntp")]
+impl NtpServiceTrait for NtpMarker {}
 
 /// Perform a single NTP query using UDP and compute offset (seconds).
 pub fn ntp_offset_once(server: &str, timeout: Duration) -> Result<f64> {

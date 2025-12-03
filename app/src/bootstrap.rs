@@ -29,11 +29,19 @@ use std::collections::HashMap;
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
 #[cfg(feature = "adapters")]
+use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
+#[cfg(feature = "adapters")]
 use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
+#[cfg(feature = "adapters")]
+use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig, TrojanUser};
 #[cfg(all(feature = "tun", feature = "adapters"))]
 use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
+#[cfg(feature = "adapters")]
+use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
+#[cfg(feature = "adapters")]
+use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
 
 const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
 const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
@@ -313,6 +321,18 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                     };
                     if let Some(cipher) = cipher {
                         let cfg = ShadowsocksConfig::new(server, port, password, cipher);
+
+                        #[cfg(feature = "v2ray_transport")]
+                        let mut cfg = cfg;
+
+                        #[cfg(feature = "v2ray_transport")]
+                        {
+                            // Use multiplex config from IR directly
+                            if ob.multiplex.as_ref().is_some_and(|m| m.enabled) {
+                                cfg.multiplex = ob.multiplex.clone();
+                            }
+                        }
+
                         map.insert(name, OutboundImpl::Shadowsocks(cfg));
                     }
                 }
@@ -347,6 +367,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                 grpc_metadata: map_header_entries(&ob.grpc_metadata),
                                 http_upgrade_path: ob.http_upgrade_path.clone(),
                                 http_upgrade_headers: map_header_entries(&ob.http_upgrade_headers),
+                                multiplex: ob.multiplex.clone(),
                             };
                             map.insert(name, OutboundImpl::Vless(cfg));
                         }
@@ -383,6 +404,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                 grpc_metadata: map_header_entries(&ob.grpc_metadata),
                                 http_upgrade_path: ob.http_upgrade_path.clone(),
                                 http_upgrade_headers: map_header_entries(&ob.http_upgrade_headers),
+                                multiplex: ob.multiplex.clone(),
                             };
                             map.insert(name, OutboundImpl::Vmess(cfg));
                         }
@@ -646,7 +668,7 @@ fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
                 rules.push(format!("port:{port}={outbound}"));
             }
         }
-        for process in &rule.process {
+        for process in &rule.process_name {
             rules.push(format!("process:{process}={outbound}"));
         }
         for network in &rule.network {
@@ -826,8 +848,10 @@ async fn start_inbounds_from_ir(
     outbounds: Arc<OutboundRegistryHandle>,
 ) {
     use sb_config::ir::InboundType;
+    info!("start_inbounds_from_ir: count={}", inbounds.len());
 
     for ib in inbounds {
+        info!("Starting inbound: type={:?} listen={}", ib.ty, ib.listen);
         match ib.ty {
             InboundType::Http => {
                 #[cfg(feature = "adapters")]
@@ -847,6 +871,7 @@ async fn start_inbounds_from_ir(
                             router: Arc::new(sb_core::router::RouterHandle::from_env()),
                             outbounds: outbounds.clone(),
                             tls: None,
+                            users: ib.users.clone(),
                         };
                         tokio::spawn(async move {
                             if let Err(e) = serve_http(cfg, rx, None).await {
@@ -881,6 +906,7 @@ async fn start_inbounds_from_ir(
                             router: Arc::new(sb_core::router::RouterHandle::from_env()),
                             outbounds: outbounds.clone(),
                             udp_nat_ttl: Duration::from_secs(60),
+                            users: ib.users.clone(),
                         };
                         tokio::spawn(async move {
                             if let Err(e) = serve_socks(cfg, rx, None).await {
@@ -902,6 +928,42 @@ async fn start_inbounds_from_ir(
                 #[cfg(not(feature = "adapters"))]
                 {
                     warn!("socks inbound requires 'adapters' feature; skipping");
+                }
+            }
+            InboundType::Mixed => {
+                #[cfg(feature = "adapters")]
+                {
+                    let listen_str = if ib.listen.contains(':') {
+                        ib.listen.clone()
+                    } else {
+                        format!("{}:{}", ib.listen, ib.port)
+                    };
+                    if let Ok(addr) = parse_listen_addr(&listen_str) {
+                        let (_tx, rx) = mpsc::channel::<()>(1);
+                        let cfg = MixedInboundConfig {
+                            listen: addr,
+                            #[cfg(feature = "router")]
+                            router: router.clone(),
+                            #[cfg(not(feature = "router"))]
+                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                            outbounds: outbounds.clone(),
+                            read_timeout: None,
+                            tls: None,
+                            users: ib.users.clone(),
+                            set_system_proxy: false,
+                        };
+                        tokio::spawn(async move {
+                            if let Err(e) = serve_mixed(cfg, rx, None).await {
+                                warn!(addr=%listen_str, error=%e, "mixed inbound failed");
+                            }
+                        });
+                    } else {
+                        warn!(%listen_str, "mixed inbound: invalid listen address");
+                    }
+                }
+                #[cfg(not(feature = "adapters"))]
+                {
+                    warn!("mixed inbound requires 'adapters' feature; skipping");
                 }
             }
             InboundType::Tun => {
@@ -963,6 +1025,210 @@ async fn start_inbounds_from_ir(
                     Err(e) => {
                         warn!(addr=%listen_str, error=%e, "direct inbound: invalid listen address");
                     }
+                }
+            }
+            InboundType::Trojan => {
+                #[cfg(feature = "adapters")]
+                {
+                    let listen_str = if ib.listen.contains(':') {
+                        ib.listen.clone()
+                    } else {
+                        format!("{}:{}", ib.listen, ib.port)
+                    };
+                    if let Ok(addr) = parse_listen_addr(&listen_str) {
+                        let (_tx, rx) = mpsc::channel::<()>(1);
+
+                        // Map users
+                        let users = ib
+                            .users_trojan
+                            .as_ref()
+                            .map(|v| {
+                                v.iter()
+                                    .map(|u| TrojanUser::new(u.name.clone(), u.password.clone()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        // Map fallback
+                        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
+                        let fallback_for_alpn = ib
+                            .fallback_for_alpn
+                            .as_ref()
+                            .map(|m| {
+                                m.iter()
+                                    .filter_map(|(k, v)| {
+                                        parse_listen_addr(v).ok().map(|a| (k.clone(), a))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        let cfg = TrojanInboundConfig {
+                            listen: addr,
+                            #[allow(deprecated)]
+                            password: None,
+                            users,
+                            cert_path: ib.tls_cert_path.clone().unwrap_or_default(),
+                            key_path: ib.tls_key_path.clone().unwrap_or_default(),
+                            #[cfg(feature = "router")]
+                            router: router.clone(),
+                            #[cfg(not(feature = "router"))]
+                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                            #[cfg(feature = "tls_reality")]
+                            reality: None,
+                            multiplex: None,
+                            transport_layer: None,
+                            fallback,
+                            fallback_for_alpn,
+                        };
+                        let listen_str_log = listen_str.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = serve_trojan(cfg, rx).await {
+                                warn!(addr=%listen_str, error=%e, "trojan inbound failed");
+                            }
+                        });
+                        info!(addr=%listen_str_log, "trojan inbound spawned");
+                    } else {
+                        warn!(%listen_str, "trojan inbound: invalid listen address");
+                    }
+                }
+                #[cfg(not(feature = "adapters"))]
+                {
+                    warn!("trojan inbound requires 'adapters' feature; skipping");
+                }
+            }
+            InboundType::Vless => {
+                #[cfg(feature = "adapters")]
+                {
+                    let listen_str = if ib.listen.contains(':') {
+                        ib.listen.clone()
+                    } else {
+                        format!("{}:{}", ib.listen, ib.port)
+                    };
+                    if let Ok(addr) = parse_listen_addr(&listen_str) {
+                        let (_tx, rx) = mpsc::channel::<()>(1);
+
+                        let uuid = match ib
+                            .uuid
+                            .as_ref()
+                            .and_then(|u| uuid::Uuid::parse_str(u).ok())
+                        {
+                            Some(u) => u,
+                            None => {
+                                warn!(%listen_str, "vless inbound missing or invalid uuid; skipping");
+                                continue;
+                            }
+                        };
+
+                        // Map fallback
+                        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
+                        let fallback_for_alpn = ib
+                            .fallback_for_alpn
+                            .as_ref()
+                            .map(|m| {
+                                m.iter()
+                                    .filter_map(|(k, v)| {
+                                        parse_listen_addr(v).ok().map(|a| (k.clone(), a))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        let cfg = VlessInboundConfig {
+                            listen: addr,
+                            uuid,
+                            #[cfg(feature = "router")]
+                            router: router.clone(),
+                            #[cfg(not(feature = "router"))]
+                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                            #[cfg(feature = "tls_reality")]
+                            reality: None,
+                            multiplex: None,
+                            transport_layer: None,
+                            fallback,
+                            fallback_for_alpn,
+                            flow: ib.flow.clone(),
+                        };
+                        let listen_str_log = listen_str.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = serve_vless(cfg, rx).await {
+                                warn!(addr=%listen_str, error=%e, "vless inbound failed");
+                            }
+                        });
+                        info!(addr=%listen_str_log, "vless inbound spawned");
+                    } else {
+                        warn!(%listen_str, "vless inbound: invalid listen address");
+                    }
+                }
+                #[cfg(not(feature = "adapters"))]
+                {
+                    warn!("vless inbound requires 'adapters' feature; skipping");
+                }
+            }
+            InboundType::Vmess => {
+                #[cfg(feature = "adapters")]
+                {
+                    let listen_str = if ib.listen.contains(':') {
+                        ib.listen.clone()
+                    } else {
+                        format!("{}:{}", ib.listen, ib.port)
+                    };
+                    if let Ok(addr) = parse_listen_addr(&listen_str) {
+                        let (_tx, rx) = mpsc::channel::<()>(1);
+
+                        let uuid = match ib
+                            .uuid
+                            .as_ref()
+                            .and_then(|u| uuid::Uuid::parse_str(u).ok())
+                        {
+                            Some(u) => u,
+                            None => {
+                                warn!(%listen_str, "vmess inbound missing or invalid uuid; skipping");
+                                continue;
+                            }
+                        };
+
+                        // Map fallback
+                        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
+                        let fallback_for_alpn = ib
+                            .fallback_for_alpn
+                            .as_ref()
+                            .map(|m| {
+                                m.iter()
+                                    .filter_map(|(k, v)| {
+                                        parse_listen_addr(v).ok().map(|a| (k.clone(), a))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        let cfg = VmessInboundConfig {
+                            listen: addr,
+                            uuid,
+                            security: "chacha20-poly1305".to_string(),
+                            #[cfg(feature = "router")]
+                            router: router.clone(),
+                            #[cfg(not(feature = "router"))]
+                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
+                            multiplex: None,
+                            transport_layer: None,
+                            fallback,
+                            fallback_for_alpn,
+                        };
+                        let listen_str_log = listen_str.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = serve_vmess(cfg, rx).await {
+                                warn!(addr=%listen_str, error=%e, "vmess inbound failed");
+                            }
+                        });
+                        info!(addr=%listen_str_log, "vmess inbound spawned");
+                    } else {
+                        warn!(%listen_str, "vmess inbound: invalid listen address");
+                    }
+                }
+                #[cfg(not(feature = "adapters"))]
+                {
+                    warn!("vmess inbound requires 'adapters' feature; skipping");
                 }
             }
             InboundType::Redirect | InboundType::Tproxy => {

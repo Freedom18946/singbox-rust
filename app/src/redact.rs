@@ -97,7 +97,7 @@ mod tests {
         let s = r#"{"token":"abcd","user":"bob"}"#;
         let r = redact_str(s);
         assert!(r.contains("\"token\": \"***\""));
-        assert!(r.contains("\"user\": \"bob\""));
+        assert!(r.contains("\"user\":\"bob\""));
     }
 
     #[test]

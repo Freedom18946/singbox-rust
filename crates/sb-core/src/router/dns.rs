@@ -23,8 +23,10 @@ use tracing::trace;
 pub struct DnsCache {
     ttl: Duration,
     // host -> (ips, expire_at)
-    inner: Arc<RwLock<HashMap<String, (Vec<IpAddr>, Instant)>>>,
+    inner: Arc<RwLock<CacheMap>>,
 }
+
+type CacheMap = HashMap<String, (Vec<IpAddr>, Instant)>;
 
 impl DnsCache {
     pub fn new(ttl: Duration) -> Self {

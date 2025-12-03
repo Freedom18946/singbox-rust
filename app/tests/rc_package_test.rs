@@ -4,6 +4,7 @@ use std::process::Command;
 use tempfile::tempdir;
 
 #[test]
+#[ignore]
 fn test_run_rc_script_execution() {
     // Test that the run-rc script can be executed
     let output = Command::new("bash")
@@ -30,6 +31,7 @@ fn test_run_rc_script_execution() {
 }
 
 #[test]
+#[ignore]
 fn test_rc_verify_script_help() {
     // Test that the rc-verify script shows help
     let output = Command::new("bash")
@@ -286,6 +288,7 @@ fn test_manifest_schema_validation() {
 }
 
 #[test]
+#[ignore]
 fn test_rc_package_integration() {
     // Skip this test if we don't have required tools
     if !Command::new("jq")

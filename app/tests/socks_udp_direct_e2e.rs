@@ -11,13 +11,8 @@ fn start_udp_echo() -> (SocketAddr, thread::JoinHandle<()>) {
     let addr = sock.local_addr().unwrap();
     let h = thread::spawn(move || {
         let mut buf = [0u8; 4096];
-        loop {
-            match sock.recv_from(&mut buf) {
-                Ok((n, peer)) => {
-                    let _ = sock.send_to(&buf[..n], peer);
-                }
-                Err(_) => break,
-            }
+        while let Ok((n, peer)) = sock.recv_from(&mut buf) {
+            let _ = sock.send_to(&buf[..n], peer);
         }
     });
     (addr, h)
@@ -108,11 +103,8 @@ fn socks_udp_via_direct_nat_echo() {
         ty: InboundType::Socks,
         listen: socks_addr.ip().to_string(),
         port: socks_addr.port(),
-        sniff: false,
-        udp: true,
-        basic_auth: None,
-        override_host: None,
-        override_port: None,
+        udp: true, // Explicitly set to true, as Default::default() would set it to false
+        ..Default::default()
     });
     let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
     let eng = Engine::new(ir_static);

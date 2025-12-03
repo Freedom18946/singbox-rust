@@ -85,7 +85,7 @@ fn histogram_fallback() -> &'static HistogramVec {
 
 pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'static IntGaugeVec {
     // Enforce label whitelist for CI/consistency
-    super::label_guard::ensure_allowed_labels(name, labels);
+    sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = INT_GAUGE_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -119,7 +119,7 @@ pub fn get_or_register_gauge_vec(name: &str, help: &str, labels: &[&str]) -> &'s
 /// Float GaugeVec accessor to avoid transmute at call sites that need `GaugeVec`.
 pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) -> &'static GaugeVec {
     // Enforce label whitelist for CI/consistency
-    super::label_guard::ensure_allowed_labels(name, labels);
+    sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = GAUGE_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -153,7 +153,7 @@ pub fn get_or_register_counter_vec(
     labels: &[&str],
 ) -> &'static IntCounterVec {
     // Enforce label whitelist for CI/consistency
-    super::label_guard::ensure_allowed_labels(name, labels);
+    sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = COUNTER_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {
@@ -247,7 +247,7 @@ pub fn get_or_register_histogram_vec(
     buckets: Option<Vec<f64>>,
 ) -> &'static HistogramVec {
     // Enforce label whitelist for CI/consistency
-    super::label_guard::ensure_allowed_labels(name, labels);
+    sb_metrics::labels::ensure_allowed_labels(name, labels);
     let map = HISTOGRAM_MAP.get_or_init(DashMap::new);
 
     if let Some(existing) = map.get(name) {

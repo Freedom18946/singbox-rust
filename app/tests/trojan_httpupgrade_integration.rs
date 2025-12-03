@@ -73,13 +73,13 @@ async fn test_trojan_httpupgrade_path_variants() {
         let config = TrojanConfig {
             server: server_addr.clone(),
             tag: None,
-        password: "test-pass".to_string(),
-        connect_timeout_sec: Some(10),
-        sni: None,
-        alpn: None,
-        skip_cert_verify: true,
-        transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
-            path: path.to_string(),
+            password: "test-pass".to_string(),
+            connect_timeout_sec: Some(10),
+            sni: None,
+            alpn: None,
+            skip_cert_verify: true,
+            transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
+                path: path.to_string(),
                 headers: vec![],
             }),
             reality: None,

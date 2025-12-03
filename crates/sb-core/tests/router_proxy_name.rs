@@ -186,6 +186,7 @@ fn test_router_engine_proxy_name_decisions() {
         outbound_tag: None,
         auth_user: None,
         query_type: None,
+        ..Default::default()
     };
     let decision = engine.decide(&ctx);
     match decision {
@@ -205,6 +206,7 @@ fn test_router_engine_proxy_name_decisions() {
         outbound_tag: None,
         auth_user: None,
         query_type: None,
+        ..Default::default()
     };
     let decision = engine.decide(&ctx);
     match decision {
@@ -224,6 +226,7 @@ fn test_router_engine_proxy_name_decisions() {
         outbound_tag: None,
         auth_user: None,
         query_type: None,
+        ..Default::default()
     };
     let decision = engine.decide(&ctx);
     assert_eq!(decision, Decision::Direct);

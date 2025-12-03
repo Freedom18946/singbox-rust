@@ -39,6 +39,7 @@ impl MockConnector {
         }
     }
 
+    #[allow(dead_code)]
     fn with_failures(name: &str, delay_ms: u64, max_fails: usize) -> Self {
         Self {
             _name: name.to_string(),
@@ -119,6 +120,7 @@ fn create_test_member(tag: &str, delay_ms: u64) -> ProxyMember {
     }
 }
 
+#[allow(dead_code)]
 fn create_failing_member(tag: &str, delay_ms: u64, max_fails: usize) -> ProxyMember {
     ProxyMember {
         tag: tag.to_string(),

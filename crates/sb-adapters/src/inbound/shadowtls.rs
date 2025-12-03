@@ -53,7 +53,9 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { debug!("shadowtls: accept-loop heartbeat"); }
+            _ = hb.tick() => { 
+                // debug!("shadowtls: accept-loop heartbeat"); 
+            }
             r = listener.accept() => {
                 let (cli, peer) = match r {
                     Ok(v) => v,
@@ -151,12 +153,8 @@ where
             ip: None,
             transport_udp: false,
             port: Some(port),
-            process_name: None,
-            process_path: None,
-            inbound_tag: None, // Could be set from config if needed
-            outbound_tag: None,
-            auth_user: None,  // ShadowTLS doesn't have user auth
-            query_type: None, // Not a DNS query
+            network: Some("tcp"),
+            ..Default::default()
         };
         let d = eng.decide(&ctx);
         if matches!(d, RDecision::Reject) {

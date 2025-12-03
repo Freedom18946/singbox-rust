@@ -8,15 +8,15 @@
 //! - Connection management (pooling, timeouts, graceful close)
 //! - Security validation (auth failures, TLS enforcement)
 
+use std::io::Write;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
+use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use std::io::Write;
-use tempfile::NamedTempFile;
 
 use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
@@ -30,7 +30,9 @@ fn init_crypto() {
 }
 
 async fn start_echo_server() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind echo server");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind echo server");
     let addr = listener.local_addr().unwrap();
 
     tokio::spawn(async move {
@@ -39,7 +41,9 @@ async fn start_echo_server() -> SocketAddr {
                 tokio::spawn(async move {
                     let mut buf = vec![0u8; 4096];
                     while let Ok(n) = stream.read(&mut buf).await {
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         let _ = stream.write_all(&buf[..n]).await;
                     }
                 });
@@ -56,7 +60,10 @@ fn generate_test_certs(cn: &str) -> (String, String) {
     params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(1);
     params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(365);
     let cert = rcgen::Certificate::from_params(params).unwrap();
-    (cert.serialize_pem().unwrap(), cert.serialize_private_key_pem())
+    (
+        cert.serialize_pem().unwrap(),
+        cert.serialize_private_key_pem(),
+    )
 }
 
 async fn start_trojan_server(
@@ -64,7 +71,9 @@ async fn start_trojan_server(
     cert_pem: String,
     key_pem: String,
 ) -> (SocketAddr, mpsc::Sender<()>, NamedTempFile, NamedTempFile) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind");
     let addr = listener.local_addr().unwrap();
     drop(listener);
 
@@ -74,7 +83,7 @@ async fn start_trojan_server(
     cert_file.write_all(cert_pem.as_bytes()).unwrap();
     let mut key_file = NamedTempFile::new().unwrap();
     key_file.write_all(key_pem.as_bytes()).unwrap();
-    
+
     let config = TrojanInboundConfig {
         listen: addr,
         password: password.to_string(),
@@ -100,13 +109,13 @@ async fn test_trojan_tls13_handshake_stress() {
     // assert!(count >= 45, "Expected >=45 successful handshakes, got {}", count);
 }
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_trojan_connection_pooling() {
     init_crypto();
     let echo_addr = start_echo_server().await;
     let (cert, key) = generate_test_certs("localhost");
-    let (server_addr, _stop, _cert_f, _key_f) = start_trojan_server("test-password", cert, key).await;
+    let (server_addr, _stop, _cert_f, _key_f) =
+        start_trojan_server("test-password", cert, key).await;
 
     let connector = Arc::new(TrojanConnector::new(TrojanConfig {
         server: server_addr.to_string(),
@@ -120,23 +129,23 @@ async fn test_trojan_connection_pooling() {
         reality: None,
         multiplex: None,
     }));
-    
+
     let mut handles = vec![];
     for i in 0..1 {
         let connector = connector.clone();
-        
+
         handles.push(tokio::spawn(async move {
             let target = Target {
                 host: echo_addr.ip().to_string(),
                 port: echo_addr.port(),
                 kind: TransportKind::Tcp,
             };
-            
+
             match connector.dial(target, DialOpts::default()).await {
                 Ok(mut stream) => {
                     let test_data = format!("ping{}", i);
                     let _ = stream.write_all(test_data.as_bytes()).await;
-                    
+
                     let mut buf = vec![0u8; test_data.len()];
                     stream.read_exact(&mut buf).await.is_ok()
                 }
@@ -145,10 +154,17 @@ async fn test_trojan_connection_pooling() {
         }));
     }
 
-    let results: Vec<bool> = futures::future::join_all(handles).await.into_iter()
-        .filter_map(Result::ok).collect();
+    let results: Vec<bool> = futures::future::join_all(handles)
+        .await
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
 
     let successful = results.iter().filter(|&&s| s).count();
     println!("Concurrent connections: {}/1 successful", successful);
-    assert!(successful >= 1, "Expected >=1 successful connections, got {}", successful);
+    assert!(
+        successful >= 1,
+        "Expected >=1 successful connections, got {}",
+        successful
+    );
 }

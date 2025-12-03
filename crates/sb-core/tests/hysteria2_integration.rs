@@ -34,6 +34,9 @@ async fn test_hysteria2_quic_transport_verification() {
         alpn: Some(vec!["h3".to_string(), "hysteria2".to_string()]),
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config);
@@ -70,6 +73,9 @@ async fn test_hysteria2_congestion_control_mechanisms() {
             alpn: None,
             salamander: None,
             brutal: None,
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -108,6 +114,9 @@ async fn test_hysteria2_brutal_congestion_control() {
         alpn: None,
         salamander: None,
         brutal: Some(brutal_config.clone()),
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -138,6 +147,9 @@ async fn test_hysteria2_authentication_and_encryption() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     // Test basic authentication hash
@@ -212,6 +224,9 @@ async fn test_hysteria2_udp_multiplexing_support() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -242,6 +257,9 @@ async fn test_hysteria2_performance_characteristics() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -283,6 +301,9 @@ async fn test_hysteria2_compatibility_features() {
             up_mbps: 50,
             down_mbps: 100,
         }),
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -320,6 +341,9 @@ async fn test_hysteria2_error_handling() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     // Should still create outbound (validation happens at connect time)
@@ -344,6 +368,9 @@ async fn test_hysteria2_connection_pooling() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -373,6 +400,9 @@ async fn test_hysteria2_auth_hash_performance() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -404,6 +434,9 @@ async fn test_hysteria2_obfuscation_performance() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();

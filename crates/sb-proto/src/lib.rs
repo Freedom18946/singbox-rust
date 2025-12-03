@@ -1,54 +1,41 @@
 //! Protocol implementations for various proxy protocols.
 //! 各种代理协议的协议实现。
 //!
-//! This crate provides modular implementations of proxy protocols including
-//! Shadowsocks 2022 and Trojan, designed for use in the singbox-rust project.
-//! 本 crate 提供了包括 Shadowsocks 2022 和 Trojan 在内的代理协议的模块化实现，
-//! 专为 singbox-rust 项目设计。
+//! This crate provides minimal protocol abstractions and packet builders
+//! for use in the singbox-rust project. The actual protocol implementations
+//! are in the `sb-adapters` crate.
+//! 本 crate 为 singbox-rust 项目提供最小化的协议抽象和数据包构建器。
+//! 实际的协议实现位于 `sb-adapters` crate 中。
 //!
 //! # Architecture / 架构
 //!
 //! - **Core abstractions / 核心抽象** ([`connector`]):
 //!   - Base traits for outbound connections.
 //!   - 出站连接的基础 trait。
-//!   - `OutboundConnector`, `Target`, etc.
-//! - **Shadowsocks 2022 variants / Shadowsocks 2022 变体**:
-//!   - `ss2022_min`: Minimal implementation (feature: `proto_ss2022_min`)
-//!     - 最小化实现（特性：`proto_ss2022_min`）
-//!   - `ss2022_core`: Core protocol logic (feature: `proto_ss2022_core`)
-//!     - 核心协议逻辑（特性：`proto_ss2022_core`）
-//!   - `ss2022_harness`: Testing harness (feature: `proto_ss2022_min`)
-//!     - 测试工具（特性：`proto_ss2022_min`）
-//! - **Trojan variants / Trojan 变体**:
-//!   - `trojan_min`: Minimal implementation (feature: `proto_trojan_min`)
-//!     - 最小化实现（特性：`proto_trojan_min`）
-//!   - `trojan_dry`: Dry-run connector (feature: `proto_trojan_dry`)
-//!     - 空跑连接器（特性：`proto_trojan_dry`）
-//!   - `trojan_harness`: Testing harness (feature: `proto_trojan_min`)
-//!     - 测试工具（特性：`proto_trojan_min`）
+//!   - `OutboundConnector`, `Target`, `IoStream`
+//! - **Protocol packet builders / 协议数据包构建器**:
+//!   - [`ss2022`]: Shadowsocks 2022 handshake packet builder
+//!     - Shadowsocks 2022 握手数据包构建器
+//!   - [`trojan`]: Trojan handshake packet builder
+//!     - Trojan 握手数据包构建器
+//!   - [`trojan_connector`]: Minimal Trojan connector with injectable dialer
+//!     - 带可注入拨号器的最小化 Trojan 连接器
+//! - **Optional registry / 可选注册表** ([`outbound_registry`], feature-gated):
+//!   - Protocol registry for dynamic dispatch in testing
+//!   - 用于测试中动态分发的协议注册表
 //!
 //! # Strategic Role / 战略角色
 //!
-//! `sb-proto` sits above the transport layer (`sb-transport`) and provides the application-level
-//! protocol logic. It decouples protocol implementation from the underlying transport (TCP/TLS/QUIC),
-//! allowing for flexible composition of protocols and transports.
-//! `sb-proto` 位于传输层 (`sb-transport`) 之上，提供应用层协议逻辑。
-//! 它将协议实现与底层传输（TCP/TLS/QUIC）解耦，允许协议和传输的灵活组合。
+//! `sb-proto` sits above the transport layer (`sb-transport`) and provides minimal
+//! protocol abstractions. It decouples protocol implementation from the underlying
+//! transport (TCP/TLS/QUIC). Full protocol implementations are in `sb-adapters`.
+//! `sb-proto` 位于传输层 (`sb-transport`) 之上，提供最小化的协议抽象。
+//! 它将协议实现与底层传输（TCP/TLS/QUIC）解耦。完整的协议实现位于 `sb-adapters`。
 //!
 //! # Features / 特性
 //!
-//! - `proto_ss2022_min`: Enables minimal Shadowsocks 2022 implementation
-//!   - 启用最小化 Shadowsocks 2022 实现
-//! - `proto_ss2022_core`: Enables core Shadowsocks 2022 protocol logic
-//!   - 启用核心 Shadowsocks 2022 协议逻辑
-//! - `proto_ss2022_tls_first`: Enables TLS-first Shadowsocks 2022 variant
-//!   - 启用 TLS 优先的 Shadowsocks 2022 变体
-//! - `proto_trojan_min`: Enables minimal Trojan implementation
-//!   - 启用最小化 Trojan 实现
-//! - `proto_trojan_dry`: Enables dry-run Trojan connector (testing)
-//!   - 启用空跑 Trojan 连接器（测试用）
-//! - `outbound_registry`: Enables protocol registry for dynamic dispatch
-//!   - 启用用于动态分发的协议注册表
+//! - `outbound_registry`: Enables protocol registry for dynamic dispatch (testing only)
+//!   - 启用用于动态分发的协议注册表（仅用于测试）
 //!
 //! # Example / 示例
 //!
@@ -67,46 +54,19 @@
 //! # }
 //! ```
 
-// Explicit module declaration order to avoid unguarded references when features are disabled
+// Explicit module declaration order
 pub mod connector;
 #[cfg(feature = "outbound_registry")]
 pub mod outbound_registry;
 
-/// Legacy placeholder for Shadowsocks 2022 (returns `NotImplemented`).
-/// Use feature-gated modules (`ss2022_min`, `ss2022_core`) for real implementations.
 pub mod ss2022;
-
-#[cfg(feature = "proto_ss2022_core")]
-pub mod ss2022_core;
-#[cfg(feature = "proto_ss2022_min")]
-pub mod ss2022_harness;
-#[cfg(feature = "proto_ss2022_min")]
-pub mod ss2022_min;
-
-/// Legacy placeholder for Trojan (returns `NotImplemented`).
-/// Use feature-gated modules (`trojan_min`, `trojan_dry`) for real implementations.
 pub mod trojan;
-
-#[cfg(feature = "proto_trojan_min")]
 pub mod trojan_connector;
-#[cfg(feature = "proto_trojan_dry")]
-pub mod trojan_dry;
-#[cfg(feature = "proto_trojan_min")]
-pub mod trojan_harness;
-#[cfg(feature = "proto_trojan_min")]
-pub mod trojan_min;
 
 // Re-export core types for convenience
 pub use connector::*;
 #[cfg(feature = "outbound_registry")]
 pub use outbound_registry::*;
-#[cfg(feature = "proto_ss2022_core")]
-pub use ss2022_core::*;
-#[cfg(feature = "proto_ss2022_min")]
-pub use ss2022_min::*;
-#[cfg(feature = "proto_trojan_dry")]
-pub use trojan_dry::*;
-#[cfg(feature = "proto_trojan_min")]
-pub use trojan_harness::*;
-#[cfg(feature = "proto_trojan_min")]
-pub use trojan_min::*;
+pub use ss2022::*;
+pub use trojan::*;
+pub use trojan_connector::*;

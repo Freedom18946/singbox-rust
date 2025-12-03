@@ -12,7 +12,7 @@ use tokio::fs as async_fs;
 ///
 /// Identifies processes by matching network connections through socket inodes.
 /// Maintains an internal cache to optimize repeated lookups.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct LinuxProcessMatcher {
     /// Cache for inode to PID mapping
     inode_cache: std::sync::Mutex<HashMap<u64, u32>>,

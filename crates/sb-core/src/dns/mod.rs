@@ -420,9 +420,9 @@ impl ResolverHandle {
                     tracing::info!(
                         "cached {} {} {} {}",
                         key,
-                        "ANY", // In this path we might not know exact QType easily or it's mixed, but let's use ANY or infer from context if possible. 
-                               // Actually resolve_with_cache is generic, but here we are in the cache hit block.
-                               // The cache_key has qtype.
+                        "ANY", // In this path we might not know exact QType easily or it's mixed, but let's use ANY or infer from context if possible.
+                        // Actually resolve_with_cache is generic, but here we are in the cache hit block.
+                        // The cache_key has qtype.
                         ent.rcode.as_str(),
                         ent.ttl.as_secs()
                     );

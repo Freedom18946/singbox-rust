@@ -103,63 +103,51 @@ impl Outbound for SsAeadUdp {
             let lb_recv = lb_recv; // move
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    match lb_recv.recv(&mut buf).await {
-                        Ok(n) => {
-                            // Determine target: from req.target if provided; otherwise attempt to parse SOCKS-style header
-                            let (payload, target_addr) = if let Some(t) = target_opt.clone() {
-                                (&buf[..n], t)
-                            } else {
-                                match parse_ss_addr(&buf[..n]) {
-                                    Ok((taddr, off)) if off <= n => (
-                                        &buf[off..n],
-                                        match taddr {
-                                            super::super::types::TargetAddr::Ip(sa) => {
-                                                super::super::types::TargetAddr::Ip(sa)
-                                            }
-                                            super::super::types::TargetAddr::Domain(d, p) => {
-                                                super::super::types::TargetAddr::Domain(d, p)
-                                            }
-                                        },
-                                    ),
-                                    _ => {
-                                        // Drop invalid packet silently
-                                        #[cfg(feature = "metrics")]
-                                        crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                            "addr_parse",
-                                            aead.config.cipher.name(),
-                                        );
-                                        continue;
+                while let Ok(n) = lb_recv.recv(&mut buf).await {
+                    // Determine target: from req.target if provided; otherwise attempt to parse SOCKS-style header
+                    let (payload, target_addr) = if let Some(t) = target_opt.clone() {
+                        (&buf[..n], t)
+                    } else {
+                        match parse_ss_addr(&buf[..n]) {
+                            Ok((taddr, off)) if off <= n => (
+                                &buf[off..n],
+                                match taddr {
+                                    super::super::types::TargetAddr::Ip(sa) => {
+                                        super::super::types::TargetAddr::Ip(sa)
                                     }
-                                }
-                            };
+                                    super::super::types::TargetAddr::Domain(d, p) => {
+                                        super::super::types::TargetAddr::Domain(d, p)
+                                    }
+                                },
+                            ),
+                            _ => {
+                                // Drop invalid packet silently
+                                #[cfg(feature = "metrics")]
+                                crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                    "addr_parse",
+                                    aead.config.cipher.name(),
+                                );
+                                continue;
+                            }
+                        }
+                    };
 
-                            match aead.encapsulate_udp_packet(payload, &target_addr) {
-                                Ok(pkt) => {
-                                    if let Err(_e) = aead.inner.send(&pkt).await {
-                                        #[cfg(feature = "metrics")]
-                                        crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                            "server_send",
-                                            aead.config.cipher.name(),
-                                        );
-                                    }
-                                }
-                                Err(_e) => {
-                                    #[cfg(feature = "metrics")]
-                                    crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                        "encrypt",
-                                        aead.config.cipher.name(),
-                                    );
-                                }
+                    match aead.encapsulate_udp_packet(payload, &target_addr) {
+                        Ok(pkt) => {
+                            if let Err(_e) = aead.inner.send(&pkt).await {
+                                #[cfg(feature = "metrics")]
+                                crate::metrics::outbound::record_ss_stream_error_with_cipher(
+                                    "server_send",
+                                    aead.config.cipher.name(),
+                                );
                             }
                         }
                         Err(_e) => {
                             #[cfg(feature = "metrics")]
                             crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                "app_recv",
+                                "encrypt",
                                 aead.config.cipher.name(),
                             );
-                            break;
                         }
                     }
                 }
@@ -171,33 +159,23 @@ impl Outbound for SsAeadUdp {
             let lb_send = lb_send; // move
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    match aead.inner.recv(&mut buf).await {
-                        Ok(n) => match aead.decapsulate_udp_packet(&buf[..n]) {
-                            Ok((data_len, _dst)) => {
-                                if let Err(_e) = lb_send.send(&buf[..data_len]).await {
-                                    #[cfg(feature = "metrics")]
-                                    crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                        "app_send",
-                                        aead.config.cipher.name(),
-                                    );
-                                }
-                            }
-                            Err(_e) => {
+                while let Ok(n) = aead.inner.recv(&mut buf).await {
+                    match aead.decapsulate_udp_packet(&buf[..n]) {
+                        Ok((data_len, _dst)) => {
+                            if let Err(_e) = lb_send.send(&buf[..data_len]).await {
                                 #[cfg(feature = "metrics")]
                                 crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                    "decrypt",
+                                    "app_send",
                                     aead.config.cipher.name(),
                                 );
                             }
-                        },
+                        }
                         Err(_e) => {
                             #[cfg(feature = "metrics")]
                             crate::metrics::outbound::record_ss_stream_error_with_cipher(
-                                "server_recv",
+                                "decrypt",
                                 aead.config.cipher.name(),
                             );
-                            break;
                         }
                     }
                 }
@@ -348,11 +326,6 @@ impl SsAeadUdpSocket {
         Ok((data_len, target))
     }
 
-    // Convert to UdpSocket for compatibility (this is a simplification)
-    #[allow(dead_code)]
-    fn into_udp_socket(self) -> UdpSocket {
-        unreachable!("not used after bridging implementation")
-    }
 }
 
 /// Decrypt AEAD data (reuse from TCP module with import)

@@ -56,7 +56,7 @@ impl<D: Dialer> FailpointDialer<D> {
 }
 
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for FailpointDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for FailpointDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         #[cfg(feature = "failpoints")]
         {
@@ -96,6 +96,10 @@ impl<D: Dialer + Send + Sync> Dialer for FailpointDialer<D> {
             // 当禁用故障点时，只需传递给内部拨号器
             self.inner.connect(host, port).await
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

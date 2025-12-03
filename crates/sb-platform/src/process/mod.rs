@@ -3,11 +3,11 @@
 //! # 🇨🇳 模块说明 (Module Description)
 //!
 //! 本模块实现了**基于进程的流量识别 (Process-Based Traffic Identification)**。
-//! 它是 SingBox 路由引擎的重要输入源之一，允许用户根据发起网络连接的应用程序（如 Chrome, Spotify）
+//! 它是 `SingBox` 路由引擎的重要输入源之一，允许用户根据发起网络连接的应用程序（如 Chrome, Spotify）
 //! 来制定精细化的路由规则（例如：所有 Chrome 流量走代理，Spotify 流量直连）。
 //!
 //! This module implements **Process-Based Traffic Identification**.
-//! It acts as a critical input source for the SingBox routing engine, allowing users to define
+//! It acts as a critical input source for the `SingBox` routing engine, allowing users to define
 //! granular routing rules based on the application initiating the network connection
 //! (e.g., route all Chrome traffic via proxy, bypass proxy for Spotify).
 //!
@@ -125,6 +125,7 @@ struct CacheEntry {
 /// - Linux: /proc filesystem
 /// - macOS: lsof fallback or native libproc (with `native-process-match` feature)
 /// - Windows: netstat fallback or native `GetExtendedTcpTable` (with `native-process-match` feature)
+#[derive(Debug)]
 pub struct ProcessMatcher {
     cache: Arc<RwLock<HashMap<u32, CacheEntry>>>,
     cache_ttl: Duration,
@@ -162,7 +163,7 @@ impl ProcessMatcher {
             macos_impl: macos::MacOsProcessMatcher::new()?,
             #[cfg(target_os = "macos")]
             #[cfg(feature = "native-process-match")]
-            macos_native_impl: native_macos::NativeMacOsProcessMatcher::new()?,
+            macos_native_impl: native_macos::NativeMacOsProcessMatcher::new(),
             #[cfg(target_os = "windows")]
             #[cfg(not(feature = "native-process-match"))]
             windows_impl: windows::WindowsProcessMatcher::new()?,
@@ -287,6 +288,9 @@ mod macos;
 #[cfg(target_os = "macos")]
 #[cfg(feature = "native-process-match")]
 mod native_macos;
+
+#[cfg(target_os = "macos")]
+mod macos_common;
 
 #[cfg(target_os = "windows")]
 #[cfg(not(feature = "native-process-match"))]

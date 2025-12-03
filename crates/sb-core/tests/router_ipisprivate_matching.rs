@@ -35,12 +35,7 @@ fn test_ipisprivate_ipv4_private_ranges() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 
@@ -50,12 +45,7 @@ fn test_ipisprivate_ipv4_private_ranges() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 
@@ -65,12 +55,7 @@ fn test_ipisprivate_ipv4_private_ranges() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(172, 31, 255, 254))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 
@@ -80,12 +65,7 @@ fn test_ipisprivate_ipv4_private_ranges() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx4), Decision::Direct);
 }
@@ -111,12 +91,7 @@ fn test_ipisprivate_ipv4_loopback_and_linklocal() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 
@@ -126,12 +101,7 @@ fn test_ipisprivate_ipv4_loopback_and_linklocal() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(169, 254, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 }
@@ -157,12 +127,7 @@ fn test_ipisprivate_ipv4_public_addresses() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -172,12 +137,7 @@ fn test_ipisprivate_ipv4_public_addresses() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 
@@ -187,12 +147,7 @@ fn test_ipisprivate_ipv4_public_addresses() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Proxy(None));
 }
@@ -218,12 +173,7 @@ fn test_ipisprivate_ipv6_ula() {
         ip: Some(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 
@@ -233,12 +183,7 @@ fn test_ipisprivate_ipv6_ula() {
         ip: Some(IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 }
@@ -264,12 +209,7 @@ fn test_ipisprivate_ipv6_linklocal_and_loopback() {
         ip: Some(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 
@@ -279,12 +219,7 @@ fn test_ipisprivate_ipv6_linklocal_and_loopback() {
         ip: Some(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 }
@@ -312,12 +247,7 @@ fn test_ipisprivate_ipv6_public_addresses() {
         ))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -329,12 +259,7 @@ fn test_ipisprivate_ipv6_public_addresses() {
         ))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 }
@@ -368,12 +293,7 @@ fn test_ipisprivate_priority_after_ipversion() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -383,12 +303,7 @@ fn test_ipisprivate_priority_after_ipversion() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -417,12 +332,7 @@ fn test_ipisprivate_no_ip_fallback() {
         ip: None,
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Proxy(None));
 }
@@ -478,12 +388,7 @@ fn test_ipisprivate_combined_with_cidr_rules() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(10, 1, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -493,12 +398,7 @@ fn test_ipisprivate_combined_with_cidr_rules() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(10, 2, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 }
@@ -535,12 +435,7 @@ fn test_real_world_lan_routing() {
             ip: Some(ip),
             transport_udp: false,
             port: Some(443),
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         };
         assert_eq!(
             engine.decide(&ctx),
@@ -564,12 +459,7 @@ fn test_real_world_lan_routing() {
             ip: Some(ip),
             transport_udp: false,
             port: Some(443),
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         };
         assert_eq!(
             engine.decide(&ctx),
@@ -602,12 +492,7 @@ fn test_ipisprivate_edge_cases() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(172, 15, 255, 255))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -617,12 +502,7 @@ fn test_ipisprivate_edge_cases() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 
@@ -632,12 +512,7 @@ fn test_ipisprivate_edge_cases() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(172, 31, 255, 255))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 
@@ -647,12 +522,7 @@ fn test_ipisprivate_edge_cases() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(172, 32, 0, 0))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx4), Decision::Proxy(None));
 }

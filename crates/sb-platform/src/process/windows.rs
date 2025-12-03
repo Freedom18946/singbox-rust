@@ -13,7 +13,7 @@ use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
 /// # Performance
 /// This uses external tools (netstat, tasklist, wmic) which are slow.
 /// Consider enabling `native-process-match` for native `GetExtended{Tcp,Udp}Table` APIs.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct WindowsProcessMatcher;
 
 impl WindowsProcessMatcher {

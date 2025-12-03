@@ -135,7 +135,7 @@ mod shadowsocks_stub_tests {
 
     #[tokio::test]
     async fn test_shadowsocks_stub_config_creation() {
-        let config = ShadowsocksConfig::new(
+        let _config = ShadowsocksConfig::new(
             "example.com".to_string(),
             8388,
             "password123".to_string(),
@@ -143,7 +143,7 @@ mod shadowsocks_stub_tests {
         );
 
         // Stub implementation should allow config creation
-        assert!(true);
+        // assert!(true);
     }
 
     #[tokio::test]
@@ -186,5 +186,5 @@ async fn test_shadowsocks_metrics_integration() {
 #[tokio::test]
 async fn test_basic_compilation() {
     // This test just ensures the module compiles correctly
-    assert!(true);
+    // assert!(true);
 }

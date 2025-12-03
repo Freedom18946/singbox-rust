@@ -209,17 +209,19 @@ impl TransportConfig {
         use sb_transport::TcpDialer;
 
         match self {
-            Self::Tcp => Box::new(TcpDialer) as Box<dyn sb_transport::Dialer>,
+            Self::Tcp => Box::new(TcpDialer::default()) as Box<dyn sb_transport::Dialer>,
 
             #[cfg(feature = "transport_ws")]
             Self::WebSocket(ws_config) => {
-                let inner = Box::new(TcpDialer) as Box<dyn sb_transport::Dialer>;
+                let inner = Box::new(TcpDialer::default()) as Box<dyn sb_transport::Dialer>;
                 let config = sb_transport::websocket::WebSocketConfig {
                     path: ws_config.path.clone(),
                     headers: ws_config.headers.clone(),
                     max_message_size: ws_config.max_message_size,
                     max_frame_size: ws_config.max_frame_size,
                     early_data: false,
+                    early_data_header_name: "Sec-WebSocket-Protocol".to_string(),
+                    max_early_data: 0,
                 };
                 Box::new(sb_transport::websocket::WebSocketDialer::new(config, inner))
             }
@@ -229,7 +231,7 @@ impl TransportConfig {
                 tracing::error!(
                     "WebSocket transport requested but transport_ws feature not enabled"
                 );
-                Box::new(TcpDialer)
+                Box::new(TcpDialer::default())
             }
 
             #[cfg(feature = "transport_grpc")]
@@ -240,6 +242,11 @@ impl TransportConfig {
                     metadata: grpc_config.metadata.clone(),
                     enable_tls: false, // TLS will be handled separately
                     server_name: None,
+                    connect_timeout: std::time::Duration::from_secs(10),
+                    idle_timeout: std::time::Duration::from_secs(300),
+                    permit_keepalive_without_calls: true,
+                    keepalive_time: Some(std::time::Duration::from_secs(20)),
+                    keepalive_timeout: Some(std::time::Duration::from_secs(10)),
                 };
                 Box::new(sb_transport::grpc::GrpcDialer::new(config))
             }
@@ -247,15 +254,16 @@ impl TransportConfig {
             #[cfg(not(feature = "transport_grpc"))]
             Self::Grpc(_) => {
                 tracing::error!("gRPC transport requested but transport_grpc feature not enabled");
-                Box::new(TcpDialer)
+                Box::new(TcpDialer::default())
             }
 
             #[cfg(feature = "transport_httpupgrade")]
             Self::HttpUpgrade(http_config) => {
-                let inner = Box::new(TcpDialer) as Box<dyn sb_transport::Dialer>;
+                let inner = Box::new(TcpDialer::default()) as Box<dyn sb_transport::Dialer>;
                 let config = sb_transport::httpupgrade::HttpUpgradeConfig {
                     path: http_config.path.clone(),
                     headers: http_config.headers.clone(),
+                    host: "".to_string(),
                 };
                 Box::new(sb_transport::httpupgrade::HttpUpgradeDialer::new(
                     config, inner,
@@ -267,7 +275,7 @@ impl TransportConfig {
                 tracing::error!(
                     "HTTPUpgrade transport requested but transport_httpupgrade feature not enabled"
                 );
-                Box::new(TcpDialer)
+                Box::new(TcpDialer::default())
             }
         }
     }
@@ -429,6 +437,8 @@ pub trait InboundStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 
 
 /// Blanket implementation for any type that satisfies the bounds.
 impl<T> InboundStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+
+
 
 /// Wrapper to adapt `AsyncReadWrite` streams to `InboundStream`.
 #[cfg(feature = "sb-transport")]

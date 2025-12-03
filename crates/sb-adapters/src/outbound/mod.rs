@@ -57,6 +57,8 @@ pub mod shadowsocks;
 pub mod shadowtls;
 #[cfg(feature = "adapter-socks")]
 pub mod socks5;
+#[cfg(feature = "adapter-socks")]
+pub mod socks4;
 #[cfg(feature = "adapter-ssh")]
 pub mod ssh;
 #[cfg(feature = "adapter-trojan")]
@@ -157,6 +159,45 @@ impl TryFrom<&sb_config::ir::OutboundIR> for socks5::Socks5Connector {
         Ok(Self::new(config))
     }
 }
+
+#[cfg(feature = "adapter-socks")]
+impl TryFrom<&sb_config::ir::OutboundIR> for socks4::Socks4Connector {
+    type Error = crate::error::AdapterError;
+
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty !=  OutboundType::Socks {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected SOCKS4 outbound type",
+            ));
+        }
+
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "SOCKS4 proxy server address required",
+            ))?;
+        let port = ir.port.unwrap_or(1080);
+
+        let server_addr = if server.contains(':') {
+            server.clone()
+        } else {
+            format!("{}:{}", server, port)
+        };
+
+        let config = sb_config::outbound::Socks4Config {
+            server: server_addr,
+            tag: ir.name.clone(),
+            user_id: ir.credentials.as_ref().and_then(|c| c.username.clone()),
+            connect_timeout_sec: Some(30),
+        };
+
+        Ok(Self::new(config))
+    }
+}
+
 
 #[cfg(feature = "adapter-shadowsocks")]
 impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocks::ShadowsocksConnector {

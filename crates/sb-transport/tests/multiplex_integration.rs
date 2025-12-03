@@ -54,12 +54,7 @@ async fn test_multiplex_server_client_echo() {
 
     // Spawn task to drive connection
     tokio::spawn(async move {
-        loop {
-            match poll_fn(|cx| connection.poll_next_inbound(cx)).await {
-                Some(Ok(_)) => {}
-                Some(Err(_)) | None => break,
-            }
-        }
+        while let Some(Ok(_)) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {}
     });
 
     // Send test data
@@ -144,11 +139,11 @@ async fn test_connection_pooling_and_reuse() {
 
     // Create MultiplexDialer with connection pooling
     let config = MultiplexConfig {
-        max_connections: 2,
+        max_pool_size: 2,
         max_streams_per_connection: 5,
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     // Connect multiple times to the same host:port
@@ -207,7 +202,7 @@ async fn test_multiple_streams_over_single_connection() {
 
     // Create MultiplexDialer
     let config = MultiplexConfig::default();
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = Arc::new(MultiplexDialer::new(config, tcp_dialer));
 
     // Open multiple streams concurrently
@@ -252,7 +247,7 @@ async fn test_stream_lifecycle_management() {
 
     // Create MultiplexDialer
     let config = MultiplexConfig::default();
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     let host = "127.0.0.1";
@@ -294,11 +289,11 @@ async fn test_max_streams_limit_enforcement() {
 
     // Create MultiplexDialer with low max_streams_per_connection
     let config = MultiplexConfig {
-        max_connections: 2,
+        max_pool_size: 2,
         max_streams_per_connection: 2, // Only 2 streams per connection
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     let host = "127.0.0.1";
@@ -384,7 +379,7 @@ async fn test_brutal_with_connection() {
         brutal: Some(BrutalConfig::new(100, 50)),
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     // Connect and test
@@ -416,10 +411,10 @@ async fn test_connection_health_and_cleanup() {
 
     // Create MultiplexDialer with short idle timeout
     let config = MultiplexConfig {
-        connection_idle_timeout: 2, // 2 seconds
+        reuse_timeout_secs: 2, // 2 seconds
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     let host = "127.0.0.1";
@@ -462,7 +457,7 @@ async fn test_concurrent_stream_creation() {
 
     // Create MultiplexDialer
     let config = MultiplexConfig::default();
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = Arc::new(MultiplexDialer::new(config, tcp_dialer));
 
     // Create many streams concurrently
@@ -505,11 +500,11 @@ async fn test_max_connections_limit() {
 
     // Create MultiplexDialer with max_connections = 1
     let config = MultiplexConfig {
-        max_connections: 1,
+        max_pool_size: 1,
         max_streams_per_connection: 5,
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     let host = "127.0.0.1";
@@ -537,7 +532,7 @@ async fn test_stream_isolation() {
 
     // Create MultiplexDialer
     let config = MultiplexConfig::default();
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let mux_dialer = MultiplexDialer::new(config, tcp_dialer);
 
     let host = "127.0.0.1";

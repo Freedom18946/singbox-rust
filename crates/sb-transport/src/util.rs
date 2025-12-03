@@ -262,7 +262,7 @@ pub async fn connect_with_timeout<D: Dialer + Send + Sync>(
 ///         // Mock DNS query
 ///         // 模拟 DNS 查询
 ///         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-///         Ok("127.0.0.1".parse().unwrap())
+///         Ok::<_, DialError>("127.0.0.1".parse().unwrap())
 ///     };
 ///
 ///     dial_with_timeout_future(dns_query, 5_000).await

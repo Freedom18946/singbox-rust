@@ -605,7 +605,8 @@ async fn resolve_cached_qtype(
         metrics::counter!(
             "dns_cache_hit_total",
             "rcode" => answer.rcode.as_str().to_string()
-        ).increment(1);
+        )
+        .increment(1);
         return Ok(answer
             .ips
             .into_iter()

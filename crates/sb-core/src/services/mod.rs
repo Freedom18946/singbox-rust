@@ -1,18 +1,40 @@
-//! Runtime services (optional)
+//! Background services (NTP, Resolved, DERP, SSM, etc.)
+
+pub mod cache_file;
+pub mod clash_api;
+
+#[cfg(feature = "service_derp")]
+pub mod derp;
 
 #[cfg(feature = "service_ntp")]
 pub mod ntp;
 
-#[cfg(feature = "service_ssmapi")]
-pub mod ssmapi;
-
-#[cfg(feature = "service_derp")]
-pub mod derp;
 #[cfg(feature = "service_resolved")]
 pub mod resolved;
 
+#[cfg(feature = "service_ssmapi")]
+pub mod ssmapi;
+
+pub mod v2ray_api;
+
 use std::io::Error;
 use std::time::Instant;
+
+/// Register built-in services.
+pub fn register_builtins() {
+    #[cfg(feature = "service_resolved")]
+    crate::service::register_service(
+        sb_config::ir::ServiceType::Resolved,
+        resolved::build_resolved_service,
+    );
+    #[cfg(feature = "service_derp")]
+    crate::service::register_service(sb_config::ir::ServiceType::Derp, derp::build_derp_service);
+    #[cfg(feature = "service_ssmapi")]
+    crate::service::register_service(
+        sb_config::ir::ServiceType::Ssmapi,
+        ssmapi::build_ssmapi_service,
+    );
+}
 
 /// Health check trait for services
 #[async_trait::async_trait]

@@ -178,62 +178,39 @@ fn cmd_feature_matrix() -> Result<()> {
 
 fn build_feature_matrix_cases() -> Vec<MatrixCase> {
     use MatrixCommand::Check;
-    let mut cases = Vec::new();
-
-    // App presets
-    cases.push(
+    vec![
+        // App presets
         MatrixCase::new("app", "Minimal CLI", Check)
             .with_no_default()
             .with_features(&["minimal"]),
-    );
-    cases.push(
         MatrixCase::new("app", "Router preset", Check)
             .with_no_default()
             .with_features(&["router"]),
-    );
-    cases.push(
         MatrixCase::new("app", "Observe preset", Check)
             .with_no_default()
             .with_features(&["observe"]),
-    );
-    cases.push(
         MatrixCase::new("app", "Full preset", Check)
             .with_no_default()
             .with_features(&["full"]),
-    );
-
-    // sb-core DNS transport combinations
-    cases.push(
+        // sb-core DNS transport combinations
         MatrixCase::new("sb-core", "DNS UDP only", Check)
             .with_no_default()
             .with_features(&["dns_udp"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "DNS DoH only", Check)
             .with_no_default()
             .with_features(&["dns_doh", "dns_udp"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "DNS DoT only", Check)
             .with_no_default()
             .with_features(&["dns_dot"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "DNS DoQ only", Check)
             .with_no_default()
             .with_features(&["dns_doq", "dns_udp"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "DNS DoH3 only", Check)
             .with_no_default()
             .with_features(&["dns_doh3", "dns_udp"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "All DNS transports", Check)
             .with_no_default()
             .with_features(&["dns_udp", "dns_doh", "dns_dot", "dns_doq", "dns_doh3"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "DNS transports + TLS", Check)
             .with_no_default()
             .with_features(&[
@@ -244,104 +221,63 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
                 "dns_doh3",
                 "tls_rustls",
             ]),
-    );
-
-    // sb-core QUIC / outbound features
-    cases.push(
+        // sb-core QUIC / outbound features
         MatrixCase::new("sb-core", "TUIC outbound core", Check)
             .with_no_default()
             .with_features(&["out_tuic", "out_quic", "tls_rustls"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "Hysteria2 outbound core", Check)
             .with_no_default()
             .with_features(&["out_hysteria2", "out_quic", "tls_rustls"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "ShadowTLS outbound", Check)
             .with_no_default()
             .with_features(&["out_shadowtls", "tls_rustls"]),
-    );
-    cases.push(
         MatrixCase::new("sb-core", "WireGuard outbound", Check)
             .with_no_default()
             .with_features(&["out_wireguard"]),
-    );
-
-    // sb-adapters protocol adapters
-    cases.push(
+        // sb-adapters protocol adapters
         MatrixCase::new("sb-adapters", "HTTP adapter", Check)
             .with_no_default()
             .with_features(&["adapter-http"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "SOCKS adapter", Check)
             .with_no_default()
             .with_features(&["adapter-socks"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "Shadowsocks adapter", Check)
             .with_no_default()
             .with_features(&["adapter-shadowsocks"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "Trojan adapter", Check)
             .with_no_default()
             .with_features(&["adapter-trojan"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "VMess adapter", Check)
             .with_no_default()
             .with_features(&["adapter-vmess"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "VLESS adapter", Check)
             .with_no_default()
             .with_features(&["adapter-vless"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "Naive adapter", Check)
             .with_no_default()
             .with_features(&["adapter-naive"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "ShadowTLS adapter", Check)
             .with_no_default()
             .with_features(&["adapter-shadowtls"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "Hysteria adapter", Check)
             .with_no_default()
             .with_features(&["adapter-hysteria"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "Hysteria2 adapter", Check)
             .with_no_default()
             .with_features(&["adapter-hysteria2"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "TUIC adapter", Check)
             .with_no_default()
             .with_features(&["adapter-tuic"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "WireGuard adapter", Check)
             .with_no_default()
             .with_features(&["adapter-wireguard"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "DNS adapter", Check)
             .with_no_default()
             .with_features(&["adapter-dns"]),
-    );
-
-    // sb-adapters combinations
-    cases.push(
+        // sb-adapters combinations
         MatrixCase::new("sb-adapters", "HTTP + SOCKS adapters", Check)
             .with_no_default()
             .with_features(&["adapter-http", "adapter-socks"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "Encrypted proxy set", Check)
             .with_no_default()
             .with_features(&[
@@ -350,13 +286,9 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
                 "adapter-vmess",
                 "adapter-vless",
             ]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "DNS DoH + HTTP adapter", Check)
             .with_no_default()
             .with_features(&["dns_doh", "adapter-http"]),
-    );
-    cases.push(
         MatrixCase::new("sb-adapters", "All DNS + core adapters", Check)
             .with_no_default()
             .with_features(&[
@@ -368,9 +300,7 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
                 "adapter-socks",
                 "adapter-shadowsocks",
             ]),
-    );
-
-    cases
+    ]
 }
 
 fn describe_case(case: &MatrixCase) -> String {
@@ -434,6 +364,7 @@ fn run_feature_case(case: &MatrixCase) -> Result<()> {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 enum MatrixCommand {
     Check,
     Build,
@@ -478,6 +409,7 @@ impl MatrixCase {
         self
     }
 
+    #[allow(dead_code)]
     fn with_all_features(mut self) -> Self {
         self.all_features = true;
         self

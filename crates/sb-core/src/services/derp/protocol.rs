@@ -365,7 +365,7 @@ impl DerpFrame {
         writer
             .write_all(&bytes)
             .await
-            .map_err(|e| ProtocolError::Io(e))?;
+            .map_err(ProtocolError::Io)?;
         Ok(())
     }
 
@@ -379,7 +379,7 @@ impl DerpFrame {
         reader
             .read_exact(&mut type_buf)
             .await
-            .map_err(|e| ProtocolError::Io(e))?;
+            .map_err(ProtocolError::Io)?;
         let frame_type = FrameType::from_u8(type_buf[0])?;
 
         // Read frame length (4 bytes, big-endian)
@@ -387,7 +387,7 @@ impl DerpFrame {
         reader
             .read_exact(&mut len_buf)
             .await
-            .map_err(|e| ProtocolError::Io(e))?;
+            .map_err(ProtocolError::Io)?;
         let frame_len = u32::from_be_bytes(len_buf) as usize;
 
         if frame_len > MAX_PACKET_SIZE {
@@ -404,7 +404,7 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 Ok(DerpFrame::ServerKey { key })
             }
             FrameType::ClientInfo => {
@@ -415,7 +415,7 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 Ok(DerpFrame::ClientInfo { key })
             }
             FrameType::SendPacket => {
@@ -429,14 +429,14 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut dst_key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
 
                 let packet_len = frame_len - 32;
                 let mut packet = vec![0u8; packet_len];
                 reader
                     .read_exact(&mut packet)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
 
                 Ok(DerpFrame::SendPacket { dst_key, packet })
             }
@@ -451,14 +451,14 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut src_key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
 
                 let packet_len = frame_len - 32;
                 let mut packet = vec![0u8; packet_len];
                 reader
                     .read_exact(&mut packet)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
 
                 Ok(DerpFrame::RecvPacket { src_key, packet })
             }
@@ -482,7 +482,7 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut data)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 Ok(DerpFrame::Ping { data })
             }
             FrameType::Pong => {
@@ -496,7 +496,7 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut data)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 Ok(DerpFrame::Pong { data })
             }
             FrameType::PeerGone => {
@@ -507,7 +507,7 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 Ok(DerpFrame::PeerGone { key })
             }
             FrameType::PeerPresent => {
@@ -518,7 +518,7 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 Ok(DerpFrame::PeerPresent { key })
             }
             FrameType::ForwardPacket => {
@@ -532,19 +532,19 @@ impl DerpFrame {
                 reader
                     .read_exact(&mut src_key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
                 let mut dst_key = [0u8; 32];
                 reader
                     .read_exact(&mut dst_key)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
 
                 let packet_len = frame_len - 64;
                 let mut packet = vec![0u8; packet_len];
                 reader
                     .read_exact(&mut packet)
                     .await
-                    .map_err(|e| ProtocolError::Io(e))?;
+                    .map_err(ProtocolError::Io)?;
 
                 Ok(DerpFrame::ForwardPacket {
                     src_key,

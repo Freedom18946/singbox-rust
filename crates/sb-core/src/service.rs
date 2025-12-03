@@ -6,7 +6,9 @@
 //! 服务提供后台功能，如 DNS 解析、DERP 中继和 Shadowsocks 管理器 API。
 
 use sb_config::ir::{ServiceIR, ServiceType};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Lifecycle stages for service initialization.
 /// 服务初始化的生命周期阶段。
@@ -65,7 +67,6 @@ pub struct ServiceContext {
     // Placeholder for future integration
     // pub logger: Arc<Logger>,
 }
-
 
 /// Builder function signature for creating services.
 /// 用于创建服务的构建器函数签名。
@@ -139,6 +140,76 @@ pub fn service_registry() -> &'static ServiceRegistry {
     &SERVICE_REGISTRY
 }
 
+/// Thread-safe registry of instantiated services by tag.
+#[derive(Clone)]
+pub struct ServiceManager {
+    services: Arc<RwLock<HashMap<String, Arc<dyn Service>>>>,
+}
+
+impl std::fmt::Debug for ServiceManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceManager")
+            .field("services", &"<dyn Service>")
+            .finish()
+    }
+}
+
+impl ServiceManager {
+    /// Create a new empty service manager.
+    pub fn new() -> Self {
+        Self {
+            services: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Add a service with the given tag.
+    pub async fn add_service(&self, tag: String, service: Arc<dyn Service>) {
+        let mut guard = self.services.write().await;
+        guard.insert(tag, service);
+    }
+
+    /// Fetch a service by tag.
+    pub async fn get(&self, tag: &str) -> Option<Arc<dyn Service>> {
+        let guard = self.services.read().await;
+        guard.get(tag).cloned()
+    }
+
+    /// Remove a service by tag.
+    pub async fn remove(&self, tag: &str) -> Option<Arc<dyn Service>> {
+        let mut guard = self.services.write().await;
+        guard.remove(tag)
+    }
+
+    /// List all registered service tags.
+    pub async fn list_tags(&self) -> Vec<String> {
+        let guard = self.services.read().await;
+        guard.keys().cloned().collect()
+    }
+
+    /// Number of registered services.
+    pub async fn len(&self) -> usize {
+        let guard = self.services.read().await;
+        guard.len()
+    }
+
+    /// Returns true when no services are registered.
+    pub async fn is_empty(&self) -> bool {
+        self.len().await == 0
+    }
+
+    /// Clear all services.
+    pub async fn clear(&self) {
+        let mut guard = self.services.write().await;
+        guard.clear();
+    }
+}
+
+impl Default for ServiceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Re-export NTP service module if feature is enabled
 #[cfg(feature = "service_ntp")]
 pub mod ntp;
@@ -164,5 +235,38 @@ mod tests {
 
         // Test retrieval
         assert!(registry.get(ServiceType::Resolved).is_some());
+    }
+
+    #[tokio::test]
+    async fn service_manager_tracks_entries() {
+        struct DummyService;
+        impl Service for DummyService {
+            fn service_type(&self) -> &str {
+                "dummy"
+            }
+            fn tag(&self) -> &str {
+                "svc"
+            }
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        let mgr = ServiceManager::new();
+        assert!(mgr.is_empty().await);
+
+        let svc = Arc::new(DummyService);
+        mgr.add_service("svc".into(), svc.clone()).await;
+        assert_eq!(mgr.len().await, 1);
+        assert!(mgr.get("svc").await.is_some());
+
+        mgr.remove("svc").await;
+        assert!(mgr.is_empty().await);
     }
 }

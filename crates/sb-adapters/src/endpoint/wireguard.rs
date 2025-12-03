@@ -75,7 +75,7 @@ impl WireGuardEndpoint {
         let mut config = tun::Configuration::default();
 
         if let Some(name) = &ir.wireguard_name {
-            config.name(name);
+            config.tun_name(name);
         }
 
         if let Some(addrs) = &ir.wireguard_address {
@@ -100,7 +100,7 @@ impl WireGuardEndpoint {
         });
 
         let mut tun_device = tun::create_as_async(&config)?;
-        let tun_name = "tun"; // We don't strictly need the name for Tunn
+        let _tun_name = "tun"; // We don't strictly need the name for Tunn
         tracing::info!("Created TUN device");
 
         // 3. Initialize UDP socket
@@ -166,11 +166,8 @@ impl WireGuardEndpoint {
                 res = tun_device.read(&mut buf_tun) => {
                     let n = res?;
                     let packet = &buf_tun[..n];
-                    match tunn.encapsulate(packet, &mut buf_out) {
-                        TunnResult::WriteToNetwork(packet) => {
-                            udp_socket.send_to(packet, peer_endpoint).await?;
-                        }
-                        _ => {}
+                    if let TunnResult::WriteToNetwork(packet) = tunn.encapsulate(packet, &mut buf_out) {
+                        udp_socket.send_to(packet, peer_endpoint).await?;
                     }
                 }
                 // Read from UDP -> Decapsulate -> Write to TUN
@@ -202,11 +199,8 @@ impl WireGuardEndpoint {
                 }
                 // Timer
                 _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                     match tunn.update_timers(&mut buf_out) {
-                        TunnResult::WriteToNetwork(packet) => {
-                            udp_socket.send_to(packet, peer_endpoint).await?;
-                        }
-                        _ => {}
+                     if let TunnResult::WriteToNetwork(packet) = tunn.update_timers(&mut buf_out) {
+                        udp_socket.send_to(packet, peer_endpoint).await?;
                     }
                 }
             }

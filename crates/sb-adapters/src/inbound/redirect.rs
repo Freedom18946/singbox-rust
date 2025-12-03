@@ -42,7 +42,7 @@ pub async fn serve(cfg: RedirectConfig, mut stop_rx: mpsc::Receiver<()>) -> Resu
         select! {
             _ = stop_rx.recv() => break,
             _ = hb.tick() => {
-                tracing::debug!("redirect: accept-loop heartbeat");
+                // tracing::debug!("redirect: accept-loop heartbeat");
             }
             r = listener.accept() => {
                 let (cli, peer) = match r {

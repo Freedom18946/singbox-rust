@@ -1,15 +1,16 @@
+#![allow(deprecated)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use sb_benches::{generate_random_bytes, setup_tracing};
-use std::time::Duration;
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::runtime::Runtime;
 use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
-use std::sync::Arc;
+use sb_benches::{generate_random_bytes, setup_tracing};
 use sb_core::router::engine::RouterHandle;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::runtime::Runtime;
 
 // Helper: Start TCP echo server
 async fn start_echo_server() -> std::net::SocketAddr {
@@ -49,10 +50,11 @@ async fn start_ss_server(method: &str) -> std::net::SocketAddr {
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: method.to_string(),
-        password: "benchmark-pass".to_string(),
+        password: Some("benchmark-pass".to_string()),
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,
+        users: vec![],
     };
 
     tokio::spawn(async move {
@@ -65,7 +67,7 @@ async fn start_ss_server(method: &str) -> std::net::SocketAddr {
 
 fn bench_ss_e2e_throughput(c: &mut Criterion) {
     setup_tracing();
-    
+
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("shadowsocks_e2e_throughput");
     group.measurement_time(Duration::from_secs(10));
@@ -81,7 +83,7 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
 
         for size in [1024, 65536, 1_048_576] {
             group.throughput(Throughput::Bytes(size as u64));
-            
+
             group.bench_with_input(
                 BenchmarkId::new(cipher, size),
                 &(cipher, size),
@@ -95,7 +97,7 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
                             connect_timeout_sec: Some(5),
                             multiplex: None,
                         };
-                        
+
                         let connector = ShadowsocksConnector::new(client_config).unwrap();
                         let target = Target {
                             host: echo_addr.ip().to_string(),
@@ -105,23 +107,23 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
 
                         let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
                         let data = vec![0u8; size];
-                        
+
                         stream.write_all(&data).await.unwrap();
                         let mut buf = vec![0u8; size];
                         stream.read_exact(&mut buf).await.unwrap();
-                        
+
                         black_box(buf);
                     });
                 },
             );
         }
     }
-    
+
     group.finish();
 }
 
 /// Benchmark Shadowsocks encryption/decryption (Cipher only)
-fn bench_ss_encrypt(cipher: &str, data_size: usize) -> Duration {
+fn bench_ss_encrypt(_cipher: &str, data_size: usize) -> Duration {
     use bytes::BytesMut;
 
     let data = generate_random_bytes(data_size);
@@ -143,7 +145,7 @@ fn bench_ss_encrypt(cipher: &str, data_size: usize) -> Duration {
     start.elapsed()
 }
 
-fn bench_ss_decrypt(cipher: &str, data_size: usize) -> Duration {
+fn bench_ss_decrypt(_cipher: &str, data_size: usize) -> Duration {
     use bytes::BytesMut;
 
     let data = generate_random_bytes(data_size);

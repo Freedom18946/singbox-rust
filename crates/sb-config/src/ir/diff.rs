@@ -168,7 +168,7 @@ fn rule_hash(rule: &RuleIR) -> String {
     add_field!(components, rule.geoip, "geoip");
     add_field!(components, rule.ipcidr, "ipcidr");
     add_field!(components, rule.port, "port");
-    add_field!(components, rule.process, "process");
+    add_field!(components, rule.process_name, "process");
     add_field!(components, rule.network, "network");
     add_field!(components, rule.protocol, "protocol");
     add_field!(components, rule.source, "source");
@@ -181,7 +181,7 @@ fn rule_hash(rule: &RuleIR) -> String {
     add_field!(components, rule.not_geoip, "not_geoip");
     add_field!(components, rule.not_ipcidr, "not_ipcidr");
     add_field!(components, rule.not_port, "not_port");
-    add_field!(components, rule.not_process, "not_process");
+    add_field!(components, rule.not_process_name, "not_process");
     add_field!(components, rule.not_network, "not_network");
     add_field!(components, rule.not_protocol, "not_protocol");
 
@@ -259,6 +259,9 @@ mod tests {
             tls_server_name: None,
             tls_alpn: None,
             multiplex: None,
+            fallback: None,
+            fallback_for_alpn: None,
+            users: None,
         }];
 
         let new = vec![InboundIR {
@@ -310,6 +313,9 @@ mod tests {
             tls_server_name: None,
             tls_alpn: None,
             multiplex: None,
+            fallback: None,
+            fallback_for_alpn: None,
+            users: None,
         }];
 
         let diff = diff_inbounds(&old, &new);
@@ -427,6 +433,9 @@ mod tests {
                 tls_server_name: None,
                 tls_alpn: None,
                 multiplex: None,
+                fallback: None,
+                fallback_for_alpn: None,
+                users: None,
             }],
             outbounds: vec![OutboundIR {
                 ty: OutboundType::Direct,
@@ -439,7 +448,9 @@ mod tests {
                     outbound: Some("direct".to_string()),
                     ..Default::default()
                 }],
+                rule_set: vec![],
                 default: Some("direct".to_string()),
+                ..Default::default()
             },
             log: None,
             ntp: None,
@@ -500,6 +511,9 @@ mod tests {
                 tls_server_name: None,
                 tls_alpn: None,
                 multiplex: None,
+                fallback: None,
+                fallback_for_alpn: None,
+                users: None,
             }],
             outbounds: vec![OutboundIR {
                 ty: OutboundType::Http,
@@ -514,7 +528,9 @@ mod tests {
                     outbound: Some("proxy".to_string()),
                     ..Default::default()
                 }],
+                rule_set: vec![],
                 default: Some("proxy".to_string()),
+                ..Default::default()
             },
             log: None,
             ntp: None,

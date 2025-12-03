@@ -33,9 +33,10 @@ async fn test_httpupgrade_server_client_echo() {
     // Create HTTPUpgrade client
     let config = HttpUpgradeConfig {
         path: "/".to_string(),
+        host: "".to_string(),
         headers: vec![],
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let dialer = HttpUpgradeDialer::new(config, tcp_dialer);
 
     // Connect to server
@@ -95,7 +96,7 @@ async fn test_httpupgrade_large_message() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Create HTTPUpgrade client
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let dialer = HttpUpgradeDialer::new(HttpUpgradeConfig::default(), tcp_dialer);
 
     let mut client_stream = dialer
@@ -144,7 +145,7 @@ async fn test_httpupgrade_multiple_clients() {
     // Connect 3 clients concurrently
     let mut handles = vec![];
     for i in 0..3 {
-        let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+        let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
         let dialer = HttpUpgradeDialer::new(HttpUpgradeConfig::default(), tcp_dialer);
         let port = server_addr.port();
 

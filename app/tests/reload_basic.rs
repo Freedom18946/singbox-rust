@@ -35,7 +35,7 @@ async fn test_basic_reload() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?)?;
 
     // Start the application
-    let mut child = Command::new("target/debug/run")
+    let mut child = Command::new("../target/debug/run")
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -52,8 +52,24 @@ async fn test_basic_reload() -> anyhow::Result<()> {
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
+    let mut stderr = child.stderr.take().expect("failed to capture stderr");
+    tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut reader = BufReader::new(stderr);
+        let mut line = String::new();
+        while let Ok(n) = reader.read_line(&mut line).await {
+            if n == 0 { break; }
+            print!("SERVER STDERR: {}", line);
+            line.clear();
+        }
+    });
+
     // Wait for startup
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+
+    if let Ok(Some(status)) = child.try_wait() {
+        println!("Server exited prematurely with status: {}", status);
+    }
 
     // Test initial connectivity to port 19110
     let initial_connectivity = test_port_connectivity(19110).await;
@@ -150,7 +166,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?)?;
 
     // Start the application
-    let mut child = Command::new("target/debug/run")
+    let mut child = Command::new("../target/debug/run")
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -164,7 +180,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
         .spawn()?;
 
     // Wait for startup
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(2000)).await;
 
     // Invalid configuration (missing required fields)
     let invalid_config = json!({
@@ -230,7 +246,7 @@ async fn test_reload_unauthorized() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&config)?)?;
 
     // Start the application with token
-    let mut child = Command::new("target/debug/run")
+    let mut child = Command::new("../target/debug/run")
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -244,7 +260,7 @@ async fn test_reload_unauthorized() -> anyhow::Result<()> {
         .spawn()?;
 
     // Wait for startup
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(2000)).await;
 
     let reload_request = json!({
         "config": config

@@ -1,7 +1,7 @@
 #![cfg(feature = "service_resolved")]
 
 use sb_config::ir::{ServiceIR, ServiceType};
-use sb_core::service::{Service, ServiceContext, StartStage};
+use sb_core::service::{ServiceContext, StartStage};
 use tokio::time::{sleep, Duration};
 
 #[tokio::test]
@@ -34,6 +34,7 @@ async fn test_resolved_service_lifecycle() {
         derp_stun_listen_port: None,
         derp_tls_cert_path: None,
         derp_tls_key_path: None,
+        derp_server_key_path: None,
     };
 
     let service =

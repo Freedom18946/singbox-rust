@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
-use once_cell::sync::OnceCell;
-use std::net::IpAddr;
-use std::time::Instant;
 use hickory_resolver::{
     config::{ResolverConfig, ResolverOpts},
     TokioAsyncResolver,
 };
+use once_cell::sync::OnceCell;
+use std::net::IpAddr;
+use std::time::Instant;
 use url::Url;
 
 static RESOLVER: OnceCell<TokioAsyncResolver> = OnceCell::new();

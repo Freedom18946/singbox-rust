@@ -23,13 +23,24 @@ pub struct DotTransport {
     /// 连接超时
     timeout: Duration,
     /// TLS 配置
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls", feature = "tls_rustls"))]
     tls_config: std::sync::Arc<rustls::ClientConfig>,
 }
 
 impl DotTransport {
     /// 创建新的 `DoT` 传输
     pub fn new(server: SocketAddr, server_name: String) -> Result<Self> {
+        Self::new_with_tls(server, server_name, Vec::new(), Vec::new(), false)
+    }
+
+    /// Create new DoT transport with custom TLS configuration
+    pub fn new_with_tls(
+        server: SocketAddr,
+        server_name: String,
+        extra_ca_paths: Vec<String>,
+        extra_ca_pem: Vec<String>,
+        skip_verify: bool,
+    ) -> Result<Self> {
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOT_TIMEOUT_MS")
                 .ok()
@@ -37,14 +48,37 @@ impl DotTransport {
                 .unwrap_or(5000),
         );
 
-        #[cfg(feature = "tls")]
+        #[cfg(any(feature = "tls", feature = "tls_rustls"))]
         let tls_config = {
+            let mut roots = crate::tls::global::base_root_store();
+            for p in extra_ca_paths {
+                if let Ok(bytes) = std::fs::read(p) {
+                    let mut rd = std::io::BufReader::new(&bytes[..]);
+                    for der in rustls_pemfile::certs(&mut rd).flatten() {
+                        let _ = roots.add(der);
+                    }
+                }
+            }
+            for pem in extra_ca_pem {
+                let mut rd = std::io::BufReader::new(pem.as_bytes());
+                for der in rustls_pemfile::certs(&mut rd).flatten() {
+                    let _ = roots.add(der);
+                }
+            }
+
             let mut config = rustls::ClientConfig::builder()
-                .with_root_certificates(crate::tls::global::base_root_store())
+                .with_root_certificates(roots)
                 .with_no_client_auth();
 
             // 启用 ALPN 协议协商
             config.alpn_protocols = vec![b"dot".to_vec()];
+
+            if skip_verify {
+                let v = crate::tls::danger::NoVerify::new();
+                config
+                    .dangerous()
+                    .set_certificate_verifier(std::sync::Arc::new(v));
+            }
 
             std::sync::Arc::new(config)
         };
@@ -53,7 +87,7 @@ impl DotTransport {
             server,
             server_name,
             timeout,
-            #[cfg(feature = "tls")]
+            #[cfg(any(feature = "tls", feature = "tls_rustls"))]
             tls_config,
         })
     }
@@ -64,7 +98,7 @@ impl DotTransport {
         self
     }
 
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls", feature = "tls_rustls"))]
     async fn establish_tls_connection(
         &self,
     ) -> Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
@@ -92,7 +126,7 @@ impl DotTransport {
         Ok(tls_stream)
     }
 
-    #[cfg(feature = "tls")]
+    #[cfg(any(feature = "tls", feature = "tls_rustls"))]
     async fn send_query_tls(&self, packet: &[u8]) -> Result<Vec<u8>> {
         use anyhow::Context as _;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -141,11 +175,11 @@ impl DotTransport {
 #[async_trait]
 impl DnsTransport for DotTransport {
     async fn query(&self, packet: &[u8]) -> Result<Vec<u8>> {
-        #[cfg(feature = "tls")]
+        #[cfg(any(feature = "tls", feature = "tls_rustls"))]
         {
             self.send_query_tls(packet).await
         }
-        #[cfg(not(feature = "tls"))]
+        #[cfg(not(any(feature = "tls", feature = "tls_rustls")))]
         {
             let _ = packet; // Acknowledge parameter usage
             Err(anyhow::anyhow!("DoT support requires TLS feature"))
@@ -172,8 +206,14 @@ mod tests {
     use super::*;
     use std::net::{Ipv4Addr, SocketAddr};
 
+    fn ensure_crypto_provider() {
+        // Install ring as the default CryptoProvider if not already installed
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
     #[test]
     fn test_dot_transport_creation() {
+        ensure_crypto_provider();
         let server = SocketAddr::from((Ipv4Addr::new(1, 1, 1, 1), 853));
         let transport = DotTransport::new(server, "cloudflare-dns.com".to_string()).unwrap();
 
@@ -184,6 +224,7 @@ mod tests {
 
     #[test]
     fn test_dot_transport_with_timeout() {
+        ensure_crypto_provider();
         let server = SocketAddr::from((Ipv4Addr::new(1, 1, 1, 1), 853));
         let custom_timeout = Duration::from_secs(10);
         let transport = DotTransport::new(server, "cloudflare-dns.com".to_string())

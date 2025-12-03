@@ -74,6 +74,53 @@ impl LinuxTun {
         // Enable the interface
         self.bring_up()?;
 
+        // Configure auto-route if enabled
+        if config.auto_route {
+            self.setup_route(config)?;
+        }
+
+        Ok(())
+    }
+
+    /// Set up routing for the interface
+    fn setup_route(&self, config: &TunConfig) -> Result<(), TunError> {
+        // Add default route for IPv4
+        // ip route add default dev <name>
+        let output = std::process::Command::new("ip")
+            .args(["route", "add", "default", "dev", &self.name])
+            .output()
+            .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv4 route: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Ignore "File exists" error which means route already exists
+            if !stderr.contains("File exists") {
+                return Err(TunError::OperationFailed(format!(
+                    "Failed to add default IPv4 route: {}",
+                    stderr
+                )));
+            }
+        }
+
+        // Add default route for IPv6 if configured
+        if config.ipv6.is_some() {
+            // ip -6 route add default dev <name>
+            let output = std::process::Command::new("ip")
+                .args(["-6", "route", "add", "default", "dev", &self.name])
+                .output()
+                .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv6 route: {}", e)))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.contains("File exists") {
+                    return Err(TunError::OperationFailed(format!(
+                        "Failed to add default IPv6 route: {}",
+                        stderr
+                    )));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -255,6 +302,12 @@ impl TunDevice for LinuxTun {
 impl Drop for LinuxTun {
     fn drop(&mut self) {
         let _ = self.close();
+    }
+}
+
+impl AsRawFd for LinuxTun {
+    fn as_raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
     }
 }
 

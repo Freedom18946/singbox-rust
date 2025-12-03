@@ -107,7 +107,7 @@ impl RealityConnector {
         rand::thread_rng().fill_bytes(&mut session_data);
 
         // Perform X25519 key exchange to derive shared secret
-        let shared_secret = self.auth.derive_shared_secret(&server_public_key);
+        let _shared_secret = self.auth.derive_shared_secret(&server_public_key);
 
         // Compute authentication hash using shared secret
         let auth_hash = self
@@ -126,9 +126,7 @@ impl RealityConnector {
         let mut config = rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(RealityVerifier {
-                shared_secret,
                 expected_server_name: self.config.server_name.clone(),
-                client_public_key: self.auth.public_key_bytes(),
             }))
             .with_no_client_auth();
 
@@ -364,14 +362,8 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for RealityClientStream<S> {
 /// 2. 来自目标域名的真实证书（爬虫/回退模式）
 #[derive(Debug)]
 struct RealityVerifier {
-    /// Shared secret derived from X25519 key exchange
-    #[allow(dead_code)]
-    shared_secret: [u8; 32],
     /// Expected server name (target domain)
     expected_server_name: String,
-    /// Client public key for verification
-    #[allow(dead_code)]
-    client_public_key: [u8; 32],
 }
 
 impl rustls::client::danger::ServerCertVerifier for RealityVerifier {

@@ -1,6 +1,5 @@
 //! Runtime health aggregation module
 
-
 use std::sync::Arc;
 
 use crate::services::{HealthCheck, ServiceHealth};
@@ -39,7 +38,10 @@ impl RuntimeHealth {
                 }
                 Err(e) => {
                     all_healthy = false;
-                    service_healths.push(ServiceHealth::unhealthy(format!("Health check failed: {}", e)));
+                    service_healths.push(ServiceHealth::unhealthy(format!(
+                        "Health check failed: {}",
+                        e
+                    )));
                 }
             }
         }

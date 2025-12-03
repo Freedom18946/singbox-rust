@@ -725,6 +725,7 @@ impl Socks5Connector {
 
     /// Perform username/password authentication
     /// 执行用户名/密码认证
+    #[allow(dead_code)]
     async fn socks5_auth(&self, stream: &mut TcpStream, timeout: Duration) -> Result<()> {
         self.socks5_auth_generic(stream, timeout).await
     }

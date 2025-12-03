@@ -3,9 +3,9 @@
 //! Verifies that tools connect/run properly use adapter registry and can
 //! instantiate configured outbounds from config files.
 
-use assert_cmd::prelude::*;
+
+// use std::process::Command;
 use std::io::Write;
-use std::process::Command;
 use tempfile::NamedTempFile;
 
 /// Test that adapter registration works in test context
@@ -20,6 +20,7 @@ fn test_adapter_registration_in_tests() {
 }
 
 /// Helper to create a minimal config with specified outbound type
+#[allow(dead_code)]
 fn create_test_config(outbound_type: &str, outbound_name: &str) -> NamedTempFile {
     let config = serde_json::json!({
         "log": {
@@ -46,6 +47,7 @@ fn create_test_config(outbound_type: &str, outbound_name: &str) -> NamedTempFile
 }
 
 /// Helper to create a config with direct outbound
+#[allow(dead_code)]
 fn create_direct_config() -> NamedTempFile {
     let config = serde_json::json!({
         "log": {

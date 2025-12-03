@@ -7,14 +7,14 @@
 //! and spawn new processes for each query. For production use, enable the
 //! `native-process-match` feature to use native macOS APIs (libproc) for 10-100x speedup.
 
-use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
+use super::{ConnectionInfo, ProcessInfo, ProcessMatchError};
 
 /// macOS process matcher
 ///
 /// # Performance
 /// This fallback implementation uses external tools and is significantly slower than
 /// the native API version. Enable the `native-process-match` feature for better performance.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MacOsProcessMatcher;
 
 impl MacOsProcessMatcher {
@@ -63,44 +63,7 @@ impl MacOsProcessMatcher {
         &self,
         conn: &ConnectionInfo,
     ) -> Result<u32, ProcessMatchError> {
-        use tokio::process::Command;
-
-        let protocol_flag = match conn.protocol {
-            Protocol::Tcp => "-iTCP",
-            Protocol::Udp => "-iUDP",
-        };
-
-        let addr_spec = format!("{}:{}", conn.local_addr.ip(), conn.local_addr.port());
-
-        let output = Command::new("lsof")
-            .args(["-n", "-P", protocol_flag, &addr_spec])
-            .output()
-            .await
-            .map_err(|e| {
-                ProcessMatchError::SystemError(format!("lsof failed (install via brew?): {e}"))
-            })?;
-
-        if !output.status.success() {
-            return Err(ProcessMatchError::ProcessNotFound);
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        // Parse lsof output to find PID (format: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME)
-        for line in stdout.lines().skip(1) {
-            // Skip header
-            let mut fields = line.split_whitespace();
-            // Skip COMMAND (field 0)
-            fields.next();
-            // Get PID (field 1)
-            if let Some(pid_str) = fields.next() {
-                if let Ok(pid) = pid_str.parse::<u32>() {
-                    return Ok(pid);
-                }
-            }
-        }
-
-        Err(ProcessMatchError::ProcessNotFound)
+        super::macos_common::find_process_with_lsof(conn).await
     }
 
     async fn get_process_path(&self, pid: u32) -> Result<String, ProcessMatchError> {

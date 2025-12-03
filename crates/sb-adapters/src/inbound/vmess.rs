@@ -31,6 +31,7 @@ use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey, Nonce as ChaNonce};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
@@ -64,6 +65,10 @@ pub struct VmessInboundConfig {
     /// V2Ray 传输层配置 (WebSocket, gRPC, HTTPUpgrade)
     /// 如果为 None，默认为 TCP
     pub transport_layer: Option<crate::transport_config::TransportConfig>,
+    /// Fallback target address
+    pub fallback: Option<SocketAddr>,
+    /// Fallback targets by ALPN
+    pub fallback_for_alpn: HashMap<String, SocketAddr>,
 }
 
 #[derive(Clone, Debug)]
@@ -118,9 +123,11 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { debug!("vmess: accept-loop heartbeat"); }
+            _ = hb.tick() => { 
+                // debug!("vmess: accept-loop heartbeat"); 
+            }
             r = listener.accept() => {
-                let (mut stream, peer) = match r {
+                let (mut stream, _peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vmess: accept error");
@@ -148,6 +155,22 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     Ok(())
 }
 
+async fn handle_fallback(
+    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
+    target: SocketAddr,
+    prefix: &[u8],
+) -> Result<()> {
+    let mut remote = tokio::net::TcpStream::connect(target).await
+        .map_err(|e| anyhow!("vmess: failed to connect to fallback {}: {}", target, e))?;
+    
+    if !prefix.is_empty() {
+        remote.write_all(prefix).await?;
+    }
+    
+    let _ = tokio::io::copy_bidirectional(stream, &mut remote).await;
+    Ok(())
+}
+
 // Helper function to handle connections from generic streams (trait objects)
 // 处理来自通用流 (trait 对象) 连接的辅助函数
 async fn handle_conn_stream(
@@ -166,7 +189,16 @@ async fn handle_conn(
     // Step 1: Read and validate authentication header
     // 步骤 1: 读取并验证认证头
     let mut auth_header = [0u8; AUTH_HEADER_LEN];
-    cli.read_exact(&mut auth_header).await?;
+    match cli.read_exact(&mut auth_header).await {
+        Ok(_) => {},
+        Err(e) => {
+             // Read failed. If we have fallback, we can't do much because we don't have data.
+             // But if it's EOF, maybe it's a probe?
+             // If we read partial data, we could fallback.
+             // For simplicity, just error.
+             return Err(anyhow!("vmess: failed to read auth header: {}", e));
+        }
+    }
 
     let timestamp = u64::from_be_bytes(auth_header[..8].try_into().unwrap());
     let received_hmac = &auth_header[8..];
@@ -178,6 +210,10 @@ async fn handle_conn(
         .unwrap()
         .as_secs();
     if timestamp.abs_diff(now) > 120 {
+        if let Some(fallback_addr) = cfg.fallback {
+            debug!(%timestamp, "vmess: timestamp out of range, falling back to {}", fallback_addr);
+            return handle_fallback(cli, fallback_addr, &auth_header).await;
+        }
         return Err(anyhow!("vmess: timestamp out of range"));
     }
 
@@ -189,6 +225,10 @@ async fn handle_conn(
     let expected_hmac = mac.finalize().into_bytes();
 
     if received_hmac != &expected_hmac[..16] {
+        if let Some(fallback_addr) = cfg.fallback {
+            debug!("vmess: hmac mismatch, falling back to {}", fallback_addr);
+            return handle_fallback(cli, fallback_addr, &auth_header).await;
+        }
         return Err(anyhow!("vmess: authentication failed"));
     }
 
@@ -222,12 +262,8 @@ async fn handle_conn(
             ip: None,
             transport_udp: false,
             port: Some(target_port),
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            network: Some("tcp"),
+            ..Default::default()
         };
         let d = eng.decide(&ctx);
         if matches!(d, RDecision::Reject) {

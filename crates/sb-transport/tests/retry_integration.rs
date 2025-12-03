@@ -6,17 +6,22 @@
 //! - Metrics collection
 //! - Enable/disable switch behavior
 
+use once_cell::sync::Lazy;
 use sb_transport::dialer::{Dialer, RetryableTcpDialer};
 use sb_transport::retry::{retry_conditions, RetryPolicy};
 use std::env;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use std::time::Duration;
 use tokio::time::timeout;
 
+static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
 #[tokio::test]
 async fn test_retry_policy_env_disabled_by_default() {
+    let _lock = ENV_LOCK.lock().await;
     // Clear all retry environment variables
     env::remove_var("SB_RETRY_MAX");
     env::remove_var("SB_RETRY_BASE_MS");
@@ -28,6 +33,7 @@ async fn test_retry_policy_env_disabled_by_default() {
 
 #[tokio::test]
 async fn test_retry_policy_env_configuration() {
+    let _lock = ENV_LOCK.lock().await;
     // Set environment variables
     env::set_var("SB_RETRY_MAX", "5");
     env::set_var("SB_RETRY_BASE_MS", "50");
@@ -35,9 +41,9 @@ async fn test_retry_policy_env_configuration() {
 
     let policy = RetryPolicy::from_env();
     assert!(policy.is_enabled());
-    assert_eq!(policy.max_attempts, 5);
-    assert_eq!(policy.base_delay_ms, 50);
-    assert_eq!(policy.jitter, 0.3);
+    assert_eq!(policy.max_retries, 5);
+    assert_eq!(policy.base_delay, Duration::from_millis(50));
+    assert_eq!(policy.jitter_factor, 0.3);
 
     // Clean up
     env::remove_var("SB_RETRY_MAX");
@@ -47,16 +53,17 @@ async fn test_retry_policy_env_configuration() {
 
 #[tokio::test]
 async fn test_retry_policy_env_jitter_clamping() {
+    let _lock = ENV_LOCK.lock().await;
     // Test jitter is properly clamped to [0.0, 1.0]
     env::set_var("SB_RETRY_MAX", "1");
     env::set_var("SB_RETRY_JITTER", "2.5"); // Should be clamped to 1.0
 
     let policy = RetryPolicy::from_env();
-    assert_eq!(policy.jitter, 1.0);
+    assert_eq!(policy.jitter_factor, 1.0);
 
     env::set_var("SB_RETRY_JITTER", "-0.5"); // Should be clamped to 0.0
     let policy2 = RetryPolicy::from_env();
-    assert_eq!(policy2.jitter, 0.0);
+    assert_eq!(policy2.jitter_factor, 0.0);
 
     // Clean up
     env::remove_var("SB_RETRY_MAX");
@@ -65,6 +72,7 @@ async fn test_retry_policy_env_jitter_clamping() {
 
 #[tokio::test]
 async fn test_retryable_dialer_success_no_retry() {
+    let _lock = ENV_LOCK.lock().await;
     // Set up a working server
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -91,6 +99,7 @@ async fn test_retryable_dialer_success_no_retry() {
 
 #[tokio::test]
 async fn test_retryable_dialer_disabled_retry() {
+    let _lock = ENV_LOCK.lock().await;
     // Ensure retries are disabled
     env::remove_var("SB_RETRY_MAX");
 
@@ -108,6 +117,7 @@ async fn test_retryable_dialer_disabled_retry() {
 
 #[tokio::test]
 async fn test_retryable_dialer_with_retry() {
+    let _lock = ENV_LOCK.lock().await;
     // Enable retries with short delays for fast test
     env::set_var("SB_RETRY_MAX", "2");
     env::set_var("SB_RETRY_BASE_MS", "10");
@@ -153,9 +163,10 @@ async fn test_retry_conditions() {
 #[tokio::test]
 async fn test_custom_retry_policy() {
     let custom_policy = RetryPolicy {
-        max_attempts: 1,
-        base_delay_ms: 20,
-        jitter: 0.1,
+        max_retries: 1,
+        base_delay: Duration::from_millis(20),
+        max_delay: Duration::from_secs(2),
+        jitter_factor: 0.1,
     };
 
     let dialer = RetryableTcpDialer::with_policy(custom_policy);
@@ -172,9 +183,10 @@ async fn test_custom_retry_policy() {
 #[tokio::test]
 async fn test_jitter_distribution_basic() {
     let policy = RetryPolicy {
-        max_attempts: 1,
-        base_delay_ms: 100,
-        jitter: 0.5, // 50% jitter
+        max_retries: 1,
+        base_delay: Duration::from_millis(100),
+        max_delay: Duration::from_secs(2),
+        jitter_factor: 0.5, // 50% jitter
     };
 
     // Collect multiple delay calculations
@@ -206,9 +218,10 @@ async fn test_jitter_distribution_basic() {
 async fn test_max_retry_attempts_reached() {
     // Create custom policy with specific retry count
     let policy = RetryPolicy {
-        max_attempts: 3,
-        base_delay_ms: 1, // Very fast for testing
-        jitter: 0.0,
+        max_retries: 3,
+        base_delay: Duration::from_millis(1), // Very short delay for fast test
+        max_delay: Duration::from_secs(2),
+        jitter_factor: 0.0,
     };
 
     let call_count = Arc::new(AtomicU32::new(0));
@@ -235,6 +248,7 @@ async fn test_max_retry_attempts_reached() {
 
 #[tokio::test]
 async fn test_retry_switch_on_off() {
+    let _lock = ENV_LOCK.lock().await;
     // Test with retries enabled
     env::set_var("SB_RETRY_MAX", "2");
     let policy_enabled = RetryPolicy::from_env();

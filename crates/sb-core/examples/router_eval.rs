@@ -17,13 +17,9 @@ fn main() {
             domain: Some(dom),
             ip,
             transport_udp: udp,
+            network: if udp { Some("udp") } else { Some("tcp") },
             port,
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         });
         println!("{dom:25} udp={udp} port={:?} => {:?}", port, d);
     }

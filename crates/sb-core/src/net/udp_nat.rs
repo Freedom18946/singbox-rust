@@ -85,6 +85,10 @@ impl NatMap {
         self.map.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     #[inline]
     fn now(&self) -> Instant {
         Instant::now()

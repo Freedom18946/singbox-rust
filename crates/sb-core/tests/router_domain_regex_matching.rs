@@ -33,12 +33,7 @@ fn test_basic_regex_match() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -47,12 +42,7 @@ fn test_basic_regex_match() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 
@@ -62,12 +52,7 @@ fn test_basic_regex_match() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 
@@ -77,12 +62,7 @@ fn test_basic_regex_match() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx4), Decision::Direct);
 }
@@ -110,12 +90,7 @@ fn test_regex_match_multiple_tlds() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx1),
@@ -128,12 +103,7 @@ fn test_regex_match_multiple_tlds() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -146,12 +116,7 @@ fn test_regex_match_multiple_tlds() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 }
@@ -182,12 +147,7 @@ fn test_regex_priority_after_exact() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 
@@ -197,12 +157,7 @@ fn test_regex_priority_after_exact() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 }
@@ -233,12 +188,7 @@ fn test_regex_priority_after_suffix() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 }
@@ -269,12 +219,7 @@ fn test_regex_priority_after_keyword() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 }
@@ -305,12 +250,8 @@ fn test_regex_priority_before_inbound() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
         inbound_tag: Some("http"),
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -320,12 +261,8 @@ fn test_regex_priority_before_inbound() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
         inbound_tag: Some("http"),
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 }
@@ -353,12 +290,7 @@ fn test_regex_match_with_anchors() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -368,12 +300,7 @@ fn test_regex_match_with_anchors() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 
@@ -383,12 +310,7 @@ fn test_regex_match_with_anchors() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 }
@@ -416,12 +338,7 @@ fn test_regex_case_sensitive() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -431,12 +348,7 @@ fn test_regex_case_sensitive() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 }
@@ -464,12 +376,7 @@ fn test_regex_case_insensitive_with_flag() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Proxy(None));
 
@@ -478,12 +385,7 @@ fn test_regex_case_insensitive_with_flag() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 
@@ -492,12 +394,7 @@ fn test_regex_case_insensitive_with_flag() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Proxy(None));
 }
@@ -535,12 +432,7 @@ fn test_multiple_regex_rules() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx1),
@@ -553,12 +445,7 @@ fn test_multiple_regex_rules() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -571,12 +458,7 @@ fn test_multiple_regex_rules() {
         ip: None,
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 }
@@ -603,12 +485,7 @@ fn test_regex_with_no_domain() {
         ip: Some("8.8.8.8".parse().unwrap()),
         transport_udp: false,
         port: None,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Direct);
 }
@@ -715,12 +592,7 @@ fn test_regex_real_world_ad_blocking() {
             ip: None,
             transport_udp: false,
             port: None,
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         };
         assert_eq!(
             engine.decide(&ctx),
@@ -739,12 +611,7 @@ fn test_regex_real_world_ad_blocking() {
             ip: None,
             transport_udp: false,
             port: None,
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            ..Default::default()
         };
         assert_eq!(
             engine.decide(&ctx),

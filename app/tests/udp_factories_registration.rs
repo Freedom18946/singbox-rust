@@ -1,7 +1,8 @@
-use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType};
-use sb_core::adapter::bridge::build_bridge;
-use sb_core::routing::engine::Engine;
+use sb_config::ir::{ConfigIR, InboundIR, InboundType};
+// use sb_core::adapter::bridge::build_bridge;
+// use sb_core::routing::engine::Engine;
 
+#[allow(dead_code)]
 fn base_ir() -> ConfigIR {
     let mut ir = ConfigIR::default();
     ir.inbounds.push(InboundIR {
@@ -11,8 +12,8 @@ fn base_ir() -> ConfigIR {
         sniff: false,
         udp: true,
         basic_auth: None,
-        override_host: None,
         override_port: None,
+        ..Default::default()
     });
     ir
 }
@@ -35,7 +36,7 @@ fn registers_udp_factory_for_shadowsocks() {
     let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
     let eng = Engine::new(ir_static);
 
-    let bridge = build_bridge(ir_static, eng);
+    let bridge = build_bridge(ir_static, eng, sb_core::context::Context::default());
     assert!(bridge.find_udp_factory("ss").is_some());
 }
 
@@ -55,7 +56,7 @@ fn registers_udp_factory_for_tuic() {
     });
     let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
     let eng = Engine::new(ir_static);
-    let bridge = build_bridge(ir_static, eng);
+    let bridge = build_bridge(ir_static, eng, sb_core::context::Context::default());
     assert!(bridge.find_udp_factory("tuic").is_some());
 }
 
@@ -74,6 +75,6 @@ fn registers_udp_factory_for_hysteria2() {
     });
     let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
     let eng = Engine::new(ir_static);
-    let bridge = build_bridge(ir_static, eng);
+    let bridge = build_bridge(ir_static, eng, sb_core::context::Context::default());
     assert!(bridge.find_udp_factory("hy2").is_some());
 }

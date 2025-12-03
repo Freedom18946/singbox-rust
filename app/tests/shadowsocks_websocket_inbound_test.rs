@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! E2E Integration Tests for Shadowsocks Inbound with WebSocket Transport
 //!
 //! Test Coverage:
@@ -6,7 +7,7 @@
 //! 3. Connection handling over WebSocket
 //! 4. Backward compatibility (TCP fallback when no transport specified)
 
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::transport_config::{TransportConfig, TransportType, WebSocketTransportConfig};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -46,7 +47,11 @@ async fn test_shadowsocks_inbound_with_websocket_transport() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "aes-256-gcm".to_string(),
-        password: "test-password-123".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "default".to_string(),
+            password: "test-password-123".to_string(),
+        }],
         router,
         multiplex: None,
         transport_layer: Some(TransportConfig::WebSocket(ws_config)),
@@ -68,7 +73,11 @@ async fn test_shadowsocks_inbound_tcp_fallback() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "aes-256-gcm".to_string(),
-        password: "test-password-123".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser {
+            name: "default".to_string(),
+            password: "test-password-123".to_string(),
+        }],
         router,
         multiplex: None,
         transport_layer: None, // No transport specified - should default to TCP

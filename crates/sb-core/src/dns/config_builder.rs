@@ -569,9 +569,11 @@ fn build_ruleset_from_rule(
     use std::time::SystemTime;
 
     // Build DefaultRule with suffix/keyword/exact
-    let mut dr = DefaultRule::default();
-    dr.domain_suffix = r.domain_suffix.clone();
-    dr.domain_keyword = r.keyword.clone();
+    let mut dr = DefaultRule {
+        domain_suffix: r.domain_suffix.clone(),
+        domain_keyword: r.keyword.clone(),
+        ..Default::default()
+    };
     if !r.domain.is_empty() {
         let mut v = Vec::new();
         for d in &r.domain {
@@ -733,8 +735,10 @@ mod tests {
     #[test]
     fn hydrate_dns_ir_does_not_override_ir_values() {
         let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
-        let mut ir = sb_config::ir::DnsIR::default();
-        ir.ttl_default_s = Some(120);
+        let ir = sb_config::ir::DnsIR {
+            ttl_default_s: Some(120),
+            ..Default::default()
+        };
         let hydrated = hydrate_dns_ir_from_env(&ir);
         assert_eq!(hydrated.ttl_default_s, Some(120));
     }
@@ -777,9 +781,6 @@ mod tests {
 
         let passthrough = overlay.explain("other.com").await.unwrap();
         assert_eq!(passthrough["decision"], serde_json::json!("passthrough"));
-        assert_eq!(
-            passthrough["inner"]["resolver"],
-            serde_json::json!("dummy")
-        );
+        assert_eq!(passthrough["inner"]["resolver"], serde_json::json!("dummy"));
     }
 }

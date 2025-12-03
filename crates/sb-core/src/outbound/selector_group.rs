@@ -352,14 +352,9 @@ impl SelectorGroup {
         let weak = Arc::downgrade(&self);
         let interval = self.test_interval;
         tokio::spawn(async move {
-            loop {
-                // Attempt to upgrade; exit when the selector is dropped (e.g., hot reload)
-                if let Some(selector) = weak.upgrade() {
-                    tokio::time::sleep(interval).await;
-                    selector.run_health_checks().await;
-                } else {
-                    break;
-                }
+            while let Some(selector) = weak.upgrade() {
+                tokio::time::sleep(interval).await;
+                selector.run_health_checks().await;
             }
         });
     }

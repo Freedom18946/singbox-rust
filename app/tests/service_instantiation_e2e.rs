@@ -23,7 +23,7 @@ fn test_service_instantiation() -> Result<()> {
     });
 
     let ir = to_ir_v1(&config);
-    let bridge = Bridge::new_from_config(&ir)?;
+    let bridge = Bridge::new_from_config(&ir, sb_core::context::Context::default())?;
 
     assert_eq!(bridge.services.len(), 1);
     let service = &bridge.services[0];

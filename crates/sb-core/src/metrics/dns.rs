@@ -76,7 +76,7 @@ pub fn record_rtt(_rtt_ms: f64) {
     #[cfg(feature = "metrics")]
     {
         let hv = get_or_register_histogram_vec("dns_rtt_ms", "DNS RTT (ms)", &[], None);
-        hv.with_label_values(&[]).observe(_rtt_ms);
+        hv.with_label_values(&[] as &[&str]).observe(_rtt_ms);
     }
 }
 pub fn record_error(_c: DnsErrorClass) {
@@ -99,7 +99,7 @@ pub fn set_cache_size(_size: usize) {
     #[cfg(feature = "metrics")]
     {
         let gv = get_or_register_gauge_vec_f64("dns_cache_size", "DNS cache size", &[]);
-        gv.with_label_values(&[]).set(_size as f64);
+        gv.with_label_values(&[] as &[&str]).set(_size as f64);
     }
 }
 pub fn record_successful_query(_q: DnsQueryType, _rtt_ms: f64, _from_cache: bool) {
@@ -113,7 +113,7 @@ pub fn record_successful_query(_q: DnsQueryType, _rtt_ms: f64, _from_cache: bool
         let from_cache = if _from_cache { "1" } else { "0" };
         cv.with_label_values(&[_q.as_str(), from_cache]).inc();
         let hv = get_or_register_histogram_vec("dns_rtt_ms", "DNS RTT (ms)", &[], None);
-        hv.with_label_values(&[]).observe(_rtt_ms);
+        hv.with_label_values(&[] as &[&str]).observe(_rtt_ms);
     }
 }
 pub fn record_failed_query(_q: DnsQueryType, _class: DnsErrorClass) {

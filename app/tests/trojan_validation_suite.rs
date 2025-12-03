@@ -7,9 +7,12 @@
 //! - Connection management (pooling, timeouts)
 //! - Security validation (replay protection, auth failures)
 
+use rcgen::CertificateParams;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -20,9 +23,6 @@ use tokio_rustls::rustls::{
     ServerConfig,
 };
 use tokio_rustls::TlsAcceptor;
-use rcgen::CertificateParams;
-use std::io::Write;
-use tempfile::NamedTempFile;
 
 use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
@@ -69,7 +69,7 @@ fn generate_test_certs(cn: &str, expired: bool) -> (String, String) {
         params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(1);
         params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(365);
     }
-    
+
     let cert = rcgen::Certificate::from_params(params).unwrap();
     let cert_pem = cert.serialize_pem().unwrap();
     let key_pem = cert.serialize_private_key_pem();
@@ -77,7 +77,14 @@ fn generate_test_certs(cn: &str, expired: bool) -> (String, String) {
 }
 
 // Helper: Start Trojan server with optional custom certs
-async fn start_trojan_server_with_certs(cert_pem: Option<String>, key_pem: Option<String>) -> (SocketAddr, mpsc::Sender<()>, Option<(NamedTempFile, NamedTempFile)>) {
+async fn start_trojan_server_with_certs(
+    cert_pem: Option<String>,
+    key_pem: Option<String>,
+) -> (
+    SocketAddr,
+    mpsc::Sender<()>,
+    Option<(NamedTempFile, NamedTempFile)>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind Trojan server");
@@ -98,11 +105,14 @@ async fn start_trojan_server_with_certs(cert_pem: Option<String>, key_pem: Optio
     };
 
     let (cert_path, key_path) = if let Some((ref c, ref k)) = temp_files {
-        (c.path().to_str().unwrap().to_string(), k.path().to_str().unwrap().to_string())
+        (
+            c.path().to_str().unwrap().to_string(),
+            k.path().to_str().unwrap().to_string(),
+        )
     } else {
         ("test_cert.pem".to_string(), "test_key.pem".to_string()) // Fallback/Mock
     };
-    
+
     let config = TrojanInboundConfig {
         listen: addr,
         password: "password".to_string(),
@@ -129,7 +139,7 @@ async fn start_trojan_server() -> (SocketAddr, mpsc::Sender<()>) {
     // Generate default self-signed certs for default server
     let (c, k) = generate_test_certs("localhost", false);
     let (addr, tx, _files) = start_trojan_server_with_certs(Some(c), Some(k)).await;
-    // Keep files alive by leaking them or storing in a global map? 
+    // Keep files alive by leaking them or storing in a global map?
     // For tests, we can just return them or let them drop if start_trojan_server_with_certs keeps them?
     // Wait, NamedTempFile deletes on drop. We need to keep them alive.
     // Modified start_trojan_server_with_certs to return the files.
@@ -233,7 +243,7 @@ async fn test_trojan_tls_handshake_stress() {
     };
 
     let connector = Arc::new(TrojanConnector::new(client_config));
-    
+
     // Run 100 handshakes by default (CI friendly); bump to 1000 via env when needed
     let handshake_count: usize = std::env::var("SB_TROJAN_TLS_HANDSHAKES")
         .ok()
@@ -243,14 +253,14 @@ async fn test_trojan_tls_handshake_stress() {
     for _ in 0..handshake_count {
         let connector = connector.clone();
         let echo_addr = echo_addr;
-        
+
         handles.push(tokio::spawn(async move {
             let target = Target {
                 host: echo_addr.ip().to_string(),
                 port: echo_addr.port(),
                 kind: TransportKind::Tcp,
             };
-            
+
             match connector.dial(target, DialOpts::default()).await {
                 Ok(mut stream) => {
                     let _ = stream.write_all(b"ping").await;
@@ -292,7 +302,9 @@ async fn test_trojan_sni_verification() {
     };
 
     let good_connector = TrojanConnector::new(client_config(expected_sni));
-    let ok = good_connector.dial(target.clone(), DialOpts::default()).await;
+    let ok = good_connector
+        .dial(target.clone(), DialOpts::default())
+        .await;
     assert!(ok.is_ok(), "SNI match should succeed");
 
     let bad_connector = TrojanConnector::new(client_config("wrong.sni.test"));
@@ -308,7 +320,8 @@ async fn test_trojan_sni_verification() {
 #[tokio::test]
 async fn test_trojan_cert_validation_valid() {
     let (cert, key) = generate_test_certs("localhost", false);
-    let (server_addr, _stop_tx, _files) = start_trojan_server_with_certs(Some(cert), Some(key)).await;
+    let (server_addr, _stop_tx, _files) =
+        start_trojan_server_with_certs(Some(cert), Some(key)).await;
 
     let client_config = TrojanConfig {
         server: server_addr.to_string(),
@@ -338,7 +351,8 @@ async fn test_trojan_cert_validation_valid() {
 #[tokio::test]
 async fn test_trojan_cert_validation_expired() {
     let (cert, key) = generate_test_certs("localhost", true); // Expired
-    let (server_addr, _stop_tx, _files) = start_trojan_server_with_certs(Some(cert), Some(key)).await;
+    let (server_addr, _stop_tx, _files) =
+        start_trojan_server_with_certs(Some(cert), Some(key)).await;
 
     let client_config = TrojanConfig {
         server: server_addr.to_string(),
@@ -371,7 +385,8 @@ async fn test_trojan_cert_validation_expired() {
 #[tokio::test]
 async fn test_trojan_cert_validation_self_signed() {
     let (cert, key) = generate_test_certs("localhost", false);
-    let (server_addr, _stop_tx, _files) = start_trojan_server_with_certs(Some(cert), Some(key)).await;
+    let (server_addr, _stop_tx, _files) =
+        start_trojan_server_with_certs(Some(cert), Some(key)).await;
 
     let client_config = TrojanConfig {
         server: server_addr.to_string(),
@@ -395,14 +410,18 @@ async fn test_trojan_cert_validation_self_signed() {
 
     // Should fail due to untrusted cert
     let result = connector.dial(target, DialOpts::default()).await;
-    assert!(result.is_err(), "Self-signed cert should fail without skip_cert_verify");
+    assert!(
+        result.is_err(),
+        "Self-signed cert should fail without skip_cert_verify"
+    );
 }
 
 #[tokio::test]
 async fn test_trojan_alpn_negotiation() {
     let expected_sni = "alpn.test";
     let alpn = vec!["h2".to_string()];
-    let (server_addr, stop_tx) = start_sni_enforced_trojan_server(expected_sni, Some(alpn.clone())).await;
+    let (server_addr, stop_tx) =
+        start_sni_enforced_trojan_server(expected_sni, Some(alpn.clone())).await;
 
     let make_cfg = |alpn: Option<Vec<String>>| TrojanConfig {
         server: server_addr.to_string(),
@@ -462,20 +481,20 @@ async fn test_trojan_connection_pooling() {
     };
 
     let connector = Arc::new(TrojanConnector::new(client_config));
-    
+
     // Test 100+ concurrent connections
     let mut handles = vec![];
     for i in 0..120 {
         let connector = connector.clone();
         let echo_addr = echo_addr;
-        
+
         handles.push(tokio::spawn(async move {
             let target = Target {
                 host: echo_addr.ip().to_string(),
                 port: echo_addr.port(),
                 kind: TransportKind::Tcp,
             };
-            
+
             match connector.dial(target, DialOpts::default()).await {
                 Ok(mut stream) => {
                     let data = format!("conn{}", i);
@@ -506,8 +525,15 @@ async fn test_trojan_connection_pooling() {
     }
 
     // Expect at least 115 out of 120 connections to succeed (95%+)
-    assert!(success_count >= 115, "Only {} out of 120 concurrent connections succeeded", success_count);
-    println!("Connection pooling test: {}/120 concurrent connections succeeded", success_count);
+    assert!(
+        success_count >= 115,
+        "Only {} out of 120 concurrent connections succeeded",
+        success_count
+    );
+    println!(
+        "Connection pooling test: {}/120 concurrent connections succeeded",
+        success_count
+    );
 }
 
 #[tokio::test]
@@ -529,23 +555,32 @@ async fn test_trojan_timeout_handling() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    
+
     // Connect to unreachable host should timeout
     let target = Target {
         host: "192.0.2.1".to_string(), // TEST-NET-1, should be unreachable
         port: 9999,
         kind: TransportKind::Tcp,
     };
-    
+
     let start = std::time::Instant::now();
     let result = connector.dial(target, DialOpts::default()).await;
     let elapsed = start.elapsed();
-    
-    assert!(result.is_err(), "Connection to unreachable host should fail");
-    assert!(elapsed.as_secs() <= 3, "Timeout should respect connect_timeout_sec setting");
-    
-    println!("Timeout test: Connection failed as expected in {:?}", elapsed);
-    
+
+    assert!(
+        result.is_err(),
+        "Connection to unreachable host should fail"
+    );
+    assert!(
+        elapsed.as_secs() <= 3,
+        "Timeout should respect connect_timeout_sec setting"
+    );
+
+    println!(
+        "Timeout test: Connection failed as expected in {:?}",
+        elapsed
+    );
+
     // Test read/write timeout with slow server
     // TODO: Implement slow echo server for read/write timeout testing
 }
@@ -581,16 +616,18 @@ async fn test_trojan_auth_failure() {
 
     // Should fail or be closed immediately
     let result = connector.dial(target, DialOpts::default()).await;
-    
-    // Depending on implementation, it might connect but fail to read/write, 
+
+    // Depending on implementation, it might connect but fail to read/write,
     // or fail handshake. Trojan usually closes connection on auth failure.
     if let Ok(mut stream) = result {
         let write_result = stream.write_all(b"test").await;
         let mut buf = [0u8; 1];
         let read_result = stream.read(&mut buf).await;
-        
-        assert!(write_result.is_err() || read_result.is_err() || read_result.unwrap() == 0, 
-                "Connection should be closed on auth failure");
+
+        assert!(
+            write_result.is_err() || read_result.is_err() || read_result.unwrap() == 0,
+            "Connection should be closed on auth failure"
+        );
     }
 }
 

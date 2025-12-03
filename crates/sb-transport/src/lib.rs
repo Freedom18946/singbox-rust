@@ -19,8 +19,7 @@
 //!   to handle network instability globally.
 //!   **可靠性层**：集成了 `circuit_breaker` 和 `retry` 逻辑，提供了一种全局处理网络不稳定的标准方式。
 //!
-//! ## Modules / 模块
-//! - `dialer`: Network connection dialer abstraction and implementation / 网络连接拨号器抽象和实现
+//! ## Modules /        let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>; abstraction and implementation / 网络连接拨号器抽象和实现
 //! - `tls`: TLS connection wrapper (requires `transport_tls` feature) / TLS 连接包装器
 //! - `util`: Transport utility functions (e.g., timeout handling) / 传输工具函数
 //! - `mem`: In-memory transport (for testing) / 内存传输（用于测试）
@@ -38,7 +37,7 @@
 //! R96: Top-level module exports and re-exposures / 顶层模块导出和重新暴露
 
 /// Network connection dialer module
-/// Provides `Dialer` trait and various dialer implementations
+/// Provides `Dialer` trait        let dialer = TcpDialer::default();mentations
 ///
 /// 网络连接拨号器模块
 /// 提供了 `Dialer` trait 和各种拨号器实现
@@ -103,6 +102,9 @@ pub mod grpc;
 /// 仅在启用 `transport_mux` feature 时可用
 #[cfg(feature = "transport_mux")]
 pub mod multiplex;
+
+#[cfg(feature = "transport_mux")]
+pub use yamux;
 
 /// HTTPUpgrade transport layer module
 /// Establishes byte stream tunnel via HTTP/1.1 Upgrade

@@ -39,6 +39,7 @@ pub struct VlessConfig {
     pub grpc_metadata: Vec<(String, String)>,
     pub http_upgrade_path: Option<String>,
     pub http_upgrade_headers: Vec<(String, String)>,
+    pub multiplex: Option<sb_config::ir::MultiplexOptionsIR>,
 }
 
 impl Default for VlessConfig {
@@ -62,6 +63,7 @@ impl Default for VlessConfig {
             grpc_metadata: Vec::new(),
             http_upgrade_path: None,
             http_upgrade_headers: Vec::new(),
+            multiplex: None,
         }
     }
 }
@@ -230,6 +232,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
             self.config.grpc_authority.as_deref(),
             &self.config.grpc_metadata,
             None,
+            self.config.multiplex.as_ref(),
         );
 
         let mut stream = builder

@@ -31,20 +31,18 @@ fn start_echo_server() -> SocketAddr {
     let addr = listener.local_addr().unwrap();
 
     thread::spawn(move || {
-        for stream in listener.incoming() {
-            if let Ok(mut s) = stream {
-                thread::spawn(move || {
-                    let mut buf = [0u8; 4096];
-                    loop {
-                        match s.read(&mut buf) {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => {
-                                let _ = s.write_all(&buf[..n]);
-                            }
+        for mut s in listener.incoming().flatten() {
+            thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match s.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            let _ = s.write_all(&buf[..n]);
                         }
                     }
-                });
-            }
+                }
+            });
         }
     });
 
@@ -90,6 +88,7 @@ async fn start_socks5_inbound(
         router,
         outbounds,
         udp_nat_ttl: Duration::from_secs(60),
+        users: None,
     };
 
     tokio::spawn(async move {
@@ -121,8 +120,9 @@ async fn start_http_inbound(
     let cfg = HttpProxyConfig {
         listen: addr,
         router,
-        outbounds,
+        outbounds: outbounds.clone(),
         tls: None,
+        users: None,
     };
 
     tokio::spawn(async move {
@@ -310,8 +310,7 @@ async fn test_e2e_concurrent_connections() {
     let mut handles = vec![];
 
     for i in 0..10 {
-        let socks_addr = socks_addr;
-        let echo_addr = echo_addr;
+
 
         let handle = tokio::spawn(async move {
             let mut stream = TcpStream::connect(socks_addr).await.unwrap();

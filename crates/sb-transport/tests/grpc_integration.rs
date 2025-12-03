@@ -18,11 +18,8 @@ mod grpc_tests {
     #[tokio::test]
     async fn test_grpc_dialer_creation() {
         let config = GrpcConfig {
-            service_name: "TestService".to_string(),
-            method_name: "TestMethod".to_string(),
-            metadata: vec![("key".to_string(), "value".to_string())],
-            enable_tls: false,
-            server_name: None,
+            service_name: "TunService".to_string(),
+            ..Default::default()
         };
         let _dialer = GrpcDialer::new(config.clone());
         // Just verify it compiles and creates successfully

@@ -36,7 +36,7 @@ rustls = "0.23"
 rustls-pemfile = "2.0"
 sb-config = { path = "../sb-config" }
 sb-metrics = { path = "../sb-metrics" }
-sb-platform = { path = "../sb-platform" }
+sb-platform = { path = "../sb-platform", features = ["tun"] }
 sb-types = { path = "../sb-types" }
 sb-transport = { path = "../sb-transport", optional = true, default-features = false, features = ["transport_ws", "transport_h2", "transport_tls", "transport_httpupgrade", "transport_mux", "transport_grpc"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -44,6 +44,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 sha2 = "0.10"
 smallvec = "1.15"  # 新增：用于小向量（如 DNS addrs）
+smoltcp = { version = "0.11", default-features = false, features = ["std", "log", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }
 socket2 = "0.6"  # 新增：用于 socket 配置
 thiserror = "1.0"
 tokio = { version = "1.47", features = ["full"] }
@@ -108,7 +109,6 @@ default = [
 ]
 
 # 历史/代码中出现过的功能位（按字母序归并；全部先落空数组，行为不变）
-adapter            = []
 analyze_json       = []
 bench              = []
 cache_stats        = []
@@ -150,6 +150,7 @@ out_tuic           = ["out_quic", "tls_rustls"]
 out_vless          = []
 out_vmess          = []
 out_wireguard      = []
+out_tailscale      = []
 preview            = []
 preview_route      = []
 router             = []

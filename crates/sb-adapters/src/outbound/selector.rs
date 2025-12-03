@@ -97,14 +97,16 @@ impl UdpOutboundFactory for SelectorOutbound {
     }
 }
 
+type OutboundBuilderResult = Option<(
+    Arc<dyn OutboundConnector>,
+    Option<Arc<dyn UdpOutboundFactory>>,
+)>;
+
 pub fn build_selector_outbound(
     param: &OutboundParam,
     ir: &OutboundIR,
     ctx: &registry::AdapterOutboundContext,
-) -> Option<(
-    Arc<dyn OutboundConnector>,
-    Option<Arc<dyn UdpOutboundFactory>>,
-)> {
+) -> OutboundBuilderResult {
     let name = ir
         .name
         .clone()

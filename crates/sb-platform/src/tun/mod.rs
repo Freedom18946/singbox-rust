@@ -3,18 +3,18 @@
 //! # 🇨🇳 模块说明 (Module Description)
 //!
 //! 本模块提供了**虚拟网络设备 (TUN Device)** 的统一抽象。
-//! 它是 SingBox 实现**透明代理 (Transparent Proxy)** 的核心组件。通过创建 TUN 设备，
-//! SingBox 可以像操作系统内核一样直接接收和处理 IP 数据包，从而接管系统的网络流量。
+//! 它是 `SingBox` 实现**透明代理 (Transparent Proxy)** 的核心组件。通过创建 TUN 设备，
+//! `SingBox` 可以像操作系统内核一样直接接收和处理 IP 数据包，从而接管系统的网络流量。
 //!
 //! This module provides a unified abstraction for **TUN Devices**.
-//! It is the core component for SingBox's **Transparent Proxy** functionality. By creating a TUN device,
-//! SingBox can receive and process IP packets directly like an OS kernel, effectively capturing system network traffic.
+//! It is the core component for `SingBox`'s **Transparent Proxy** functionality. By creating a TUN device,
+//! `SingBox` can receive and process IP packets directly like an OS kernel, effectively capturing system network traffic.
 //!
 //! ## 🚀 战略逻辑 (Strategic Logic)
 //!
 //! 1.  **流量接管 (Traffic Capture)**:
-//!     -   作为用户态与内核态之间的桥梁，将网络流量从内核路由表引流到 SingBox 进程中。
-//!     -   Acts as a bridge between user space and kernel space, diverting network traffic from the kernel routing table into the SingBox process.
+//!     -   作为用户态与内核态之间的桥梁，将网络流量从内核路由表引流到 `SingBox` 进程中。
+//!     -   Acts as a bridge between user space and kernel space, diverting network traffic from the kernel routing table into the `SingBox` process.
 //!
 //! 2.  **跨平台一致性 (Cross-Platform Consistency)**:
 //!     -   **Linux**: 封装 `/dev/net/tun` 字符设备与 `ioctl` 调用。
@@ -112,15 +112,54 @@ pub enum TunError {
 /// # 🇨🇳 接口定义 (Interface Definition)
 ///
 /// `TunDevice` 定义了所有平台必须实现的最小功能集。
-/// 任何实现了此 Trait 的结构体都可以被 `AsyncTunDevice` 包装，从而接入 SingBox 的事件循环。
+/// 任何实现了此 Trait 的结构体都可以被 `AsyncTunDevice` 包装，从而接入 `SingBox` 的事件循环。
 ///
 /// `TunDevice` defines the minimal feature set that all platforms must implement.
-/// Any struct implementing this trait can be wrapped by `AsyncTunDevice` to integrate with SingBox's event loop.
+/// Any struct implementing this trait can be wrapped by `AsyncTunDevice` to integrate with `SingBox`'s event loop.
 ///
 /// ## 关键方法 (Key Methods)
 ///
 /// -   `read/write`: 同步阻塞读写接口（由 `AsyncTunDevice` 在 `spawn_blocking` 中调用，或在支持异步的平台上直接异步调用）。
 /// -   `mtu`: 获取最大传输单元，对于分片和重组至关重要。
+#[cfg(unix)]
+pub trait TunDevice: Send + Sync + std::os::fd::AsRawFd {
+    /// Create and configure a new TUN device
+    ///
+    /// # Errors
+    /// Returns error if device creation or configuration fails
+    fn create(config: &TunConfig) -> Result<Self, TunError>
+    where
+        Self: Sized;
+
+    /// Read data from the TUN device
+    ///
+    /// # Errors
+    /// Returns error if read operation fails
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, TunError>;
+
+    /// Write data to the TUN device
+    ///
+    /// # Errors
+    /// Returns error if write operation fails
+    fn write(&mut self, buf: &[u8]) -> Result<usize, TunError>;
+
+    /// Close the TUN device
+    ///
+    /// # Errors
+    /// Returns error if close operation fails
+    fn close(&mut self) -> Result<(), TunError>;
+
+    /// Get the device name
+    fn name(&self) -> &str;
+
+    /// Get the device MTU
+    fn mtu(&self) -> u32;
+
+    /// Check if the device is active
+    fn is_active(&self) -> bool;
+}
+
+#[cfg(not(unix))]
 pub trait TunDevice: Send + Sync {
     /// Create and configure a new TUN device
     fn create(config: &TunConfig) -> Result<Self, TunError>
@@ -155,6 +194,9 @@ pub struct AsyncTunDevice {
 
 impl AsyncTunDevice {
     /// Create a new async TUN device
+    ///
+    /// # Errors
+    /// Returns error if device creation fails
     pub fn new(config: &TunConfig) -> Result<Self, TunError> {
         let inner = create_platform_device(config)?;
         let runtime_handle = Arc::new(tokio::runtime::Handle::current());
@@ -166,37 +208,52 @@ impl AsyncTunDevice {
     }
 
     /// Read data asynchronously
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, TunError> {
+    ///
+    /// # Errors
+    /// Returns error if read fails
+    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, TunError> {
         tokio::task::block_in_place(|| self.inner.read(buf))
     }
 
     /// Write data asynchronously
-    pub async fn write(&mut self, buf: &[u8]) -> Result<usize, TunError> {
+    ///
+    /// # Errors
+    /// Returns error if write fails
+    pub fn write(&mut self, buf: &[u8]) -> Result<usize, TunError> {
         tokio::task::block_in_place(|| self.inner.write(buf))
     }
 
     /// Close the device asynchronously
-    pub async fn close(&mut self) -> Result<(), TunError> {
+    ///
+    /// # Errors
+    /// Returns error if close fails
+    pub fn close(&mut self) -> Result<(), TunError> {
         self.inner.close()
     }
 
     /// Get device name
+    #[must_use]
     pub fn name(&self) -> &str {
         self.inner.name()
     }
 
     /// Get device MTU
+    #[must_use]
     pub fn mtu(&self) -> u32 {
         self.inner.mtu()
     }
 
     /// Check if device is active
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.inner.is_active()
     }
 }
 
 /// Create a platform-specific TUN device
+///
+/// # Errors
+/// Returns error if platform is unsupported or device creation fails
 pub fn create_platform_device(config: &TunConfig) -> Result<Box<dyn TunDevice>, TunError> {
     #[cfg(target_os = "linux")]
     {
@@ -227,6 +284,7 @@ pub struct TunManager {
 
 impl TunManager {
     /// Create a new TUN manager
+    #[must_use]
     pub fn new() -> Self {
         Self {
             devices: std::collections::HashMap::new(),
@@ -234,7 +292,10 @@ impl TunManager {
     }
 
     /// Create and register a new TUN device
-    pub async fn create_device(&mut self, config: &TunConfig) -> Result<(), TunError> {
+    ///
+    /// # Errors
+    /// Returns error if device creation fails
+    pub fn create_device(&mut self, config: &TunConfig) -> Result<(), TunError> {
         let device = AsyncTunDevice::new(config)?;
         let name = device.name().to_string();
         self.devices.insert(name, device);
@@ -242,9 +303,12 @@ impl TunManager {
     }
 
     /// Remove and close a TUN device
-    pub async fn remove_device(&mut self, name: &str) -> Result<(), TunError> {
+    ///
+    /// # Errors
+    /// Returns error if closing the device fails
+    pub fn remove_device(&mut self, name: &str) -> Result<(), TunError> {
         if let Some(mut device) = self.devices.remove(name) {
-            device.close().await?;
+            device.close()?;
         }
         Ok(())
     }
@@ -255,14 +319,18 @@ impl TunManager {
     }
 
     /// List all active devices
+    #[must_use]
     pub fn list_devices(&self) -> Vec<&str> {
-        self.devices.keys().map(|s| s.as_str()).collect()
+        self.devices.keys().map(std::string::String::as_str).collect()
     }
 
     /// Close all devices
-    pub async fn close_all(&mut self) -> Result<(), TunError> {
-        for (_, device) in self.devices.iter_mut() {
-            device.close().await?;
+    ///
+    /// # Errors
+    /// Returns error if closing any device fails
+    pub fn close_all(&mut self) -> Result<(), TunError> {
+        for device in self.devices.values_mut() {
+            device.close()?;
         }
         self.devices.clear();
         Ok(())
@@ -336,7 +404,7 @@ mod tests {
         assert_eq!(manager.list_devices().len(), 0);
 
         // Test cleanup - silently ignore errors in test cleanup
-        let _ = manager.close_all().await;
+        let _ = manager.close_all();
     }
 
     #[test]

@@ -1,4 +1,4 @@
-#![cfg(all(feature = "net_e2e"))]
+#![cfg(feature = "net_e2e")]
 //! E2E: TUIC UDP session round-trip using adapters inbound server.
 
 use std::net::SocketAddr;

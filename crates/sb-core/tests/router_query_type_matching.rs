@@ -33,12 +33,8 @@ fn test_query_type_a_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -51,12 +47,8 @@ fn test_query_type_a_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::AAAA),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_aaaa), Decision::Direct);
 }
@@ -82,12 +74,8 @@ fn test_query_type_aaaa_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::AAAA),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -100,12 +88,8 @@ fn test_query_type_aaaa_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_a), Decision::Direct);
 }
@@ -131,12 +115,8 @@ fn test_query_type_cname_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::CNAME),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Direct);
 }
@@ -162,12 +142,8 @@ fn test_query_type_mx_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::MX),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Reject);
 }
@@ -193,12 +169,8 @@ fn test_query_type_txt_record() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::TXT),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -235,12 +207,8 @@ fn test_query_type_priority_after_process() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -251,11 +219,8 @@ fn test_query_type_priority_after_process() {
         transport_udp: true,
         port: Some(53),
         process_name: Some("firefox"),
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -268,12 +233,8 @@ fn test_query_type_priority_after_process() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx3),
@@ -302,12 +263,8 @@ fn test_query_type_no_query_type_fallback() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Direct);
 }
@@ -341,12 +298,8 @@ fn test_multiple_query_type_rules() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_a),
@@ -359,12 +312,8 @@ fn test_multiple_query_type_rules() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::AAAA),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_aaaa),
@@ -377,12 +326,8 @@ fn test_multiple_query_type_rules() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::MX),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_mx), Decision::Reject);
 
@@ -392,12 +337,8 @@ fn test_multiple_query_type_rules() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::TXT),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_txt), Decision::Direct);
 }
@@ -543,12 +484,8 @@ fn test_query_type_combined_with_domain_rules() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::AAAA),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -558,12 +495,8 @@ fn test_query_type_combined_with_domain_rules() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::AAAA),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -600,12 +533,8 @@ fn test_real_world_ipv4_ipv6_routing() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::A),
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_ipv4),
@@ -618,12 +547,8 @@ fn test_real_world_ipv4_ipv6_routing() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::AAAA),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_ipv6), Decision::Direct);
 
@@ -633,12 +558,8 @@ fn test_real_world_ipv4_ipv6_routing() {
         ip: None,
         transport_udp: true,
         port: Some(53),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
         query_type: Some(DnsRecordType::MX),
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_mx), Decision::Reject);
 }

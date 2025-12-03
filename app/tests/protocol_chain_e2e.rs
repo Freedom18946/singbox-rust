@@ -97,6 +97,7 @@ async fn test_socks5_to_direct_chain() {
         router: router_handle.clone(),
         outbounds: outbounds.clone(),
         udp_nat_ttl: Duration::from_secs(60),
+        users: Some(vec![]),
     };
 
     tokio::spawn(async move {
@@ -158,7 +159,7 @@ async fn test_socks5_to_direct_chain() {
 #[tokio::test]
 async fn test_http_to_socks5_chain() {
     use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
-    use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle, RouteTarget};
+    use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
     use sb_core::router::{Router, RouterHandle};
     use std::sync::Arc;
     use tokio::sync::{mpsc, oneshot};
@@ -199,15 +200,16 @@ async fn test_http_to_socks5_chain() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let cfg = HttpProxyConfig {
+    let http_config = HttpProxyConfig {
         listen: http_addr,
         router: router_handle.clone(),
         outbounds: outbounds.clone(),
+        users: Some(vec![]),
         tls: None,
     };
 
     tokio::spawn(async move {
-        let _ = serve_http(cfg, stop_rx, Some(ready_tx)).await;
+        let _ = serve_http(http_config, stop_rx, Some(ready_tx)).await;
     });
 
     ready_rx.await.expect("HTTP server failed to start");

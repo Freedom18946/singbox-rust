@@ -229,6 +229,7 @@ impl DerpService {
     }
 
     /// Minimal HTTP server stub (200 for "/"  or "/health", 404 otherwise).
+    #[allow(clippy::too_many_arguments)]
     async fn run_http_server(
         listener: TcpListener,
         shutdown: Arc<Notify>,
@@ -401,7 +402,7 @@ impl DerpService {
             .position(|&b| b == b'\n')
             .map(|i| i + 1)
             .unwrap_or(prefix.len());
-        
+
         let remaining_data = if handshake_len < prefix.len() {
             prefix[handshake_len..].to_vec()
         } else {
@@ -607,8 +608,7 @@ impl DerpService {
             .write_to_async(&mut write_half)
             .await
             .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
+                io::Error::other(
                     format!("Failed to send ServerKey: {}", e),
                 )
             })?;
@@ -626,8 +626,7 @@ impl DerpService {
             }
             Err(e) => {
                 client_registry.metrics().connect_failed("handshake");
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     format!("Failed to read ClientInfo: {}", e),
                 ));
             }
@@ -642,14 +641,12 @@ impl DerpService {
         if is_mesh_peer {
             if let Err(e) = client_registry.register_mesh_peer(client_key, tx) {
                 tracing::error!(service = "derp", peer = %peer, error = %e, "Failed to register mesh peer");
-                return Err(io::Error::new(io::ErrorKind::Other, e));
+                return Err(io::Error::other(e));
             }
             tracing::info!(service = "derp", peer = %peer, key = ?client_key, "Mesh peer registered");
-        } else {
-            if let Err(e) = client_registry.register_client(client_key, peer, tx) {
-                tracing::error!(service = "derp", peer = %peer, error = %e, "Failed to register client");
-                return Err(io::Error::new(io::ErrorKind::Other, e));
-            }
+        } else if let Err(e) = client_registry.register_client(client_key, peer, tx) {
+            tracing::error!(service = "derp", peer = %peer, error = %e, "Failed to register client");
+            return Err(io::Error::other(e));
         }
 
         // Broadcast peer presence to other clients
@@ -1222,7 +1219,7 @@ fn load_or_generate_server_key(key_path: Option<&str>) -> io::Result<PublicKey> 
         match load_key_from_file(path) {
             Ok(key) => {
                 tracing::info!(service = "derp", path = path, "Loaded server key from file");
-                return Ok(key);
+                Ok(key)
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 // File doesn't exist, generate and save new key
@@ -1242,8 +1239,7 @@ fn load_or_generate_server_key(key_path: Option<&str>) -> io::Result<PublicKey> 
             }
             Err(e) => {
                 // Other error (permissions, corruption, etc.)
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(io::Error::other(
                     format!("Failed to load server key from {}: {}", path, e),
                 ))
             }
@@ -1265,7 +1261,7 @@ fn generate_secure_server_key() -> io::Result<PublicKey> {
     let rng = SystemRandom::new();
     let mut key = [0u8; 32];
     rng.fill(&mut key)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("RNG error: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("RNG error: {}", e)))?;
     Ok(key)
 }
 
@@ -2147,7 +2143,7 @@ mod tests {
 
     #[test]
     fn test_load_or_generate_creates_new_key() {
-        use std::path::Path;
+
         use tempfile::tempdir;
 
         let temp_dir = tempdir().unwrap();

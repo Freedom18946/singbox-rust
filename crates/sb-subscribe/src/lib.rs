@@ -56,10 +56,10 @@ pub struct MergeStats {
 }
 
 #[cfg(test)]
-fn _hash_for_test(s: &str) -> String {
+fn _hash_for_test(_s: &str) -> String {
     #[cfg(feature = "subs_hash")]
     {
-        format!("{}", blake3::hash(s.as_bytes()).to_hex())
+        format!("{}", blake3::hash(_s.as_bytes()).to_hex())
     }
     #[cfg(not(feature = "subs_hash"))]
     {

@@ -18,6 +18,7 @@ rustls = { version = "0.23", features = ["ring"] }
 tokio-rustls = "0.26"
 rustls-pki-types = "1"
 rcgen = "0.13"
+webpki-roots = "0.26"
 
 # Cryptography
 ring = "0.17"
@@ -27,11 +28,19 @@ rand = "0.8"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 hex = "0.4"
 base64 = "0.22"
 
 # Error handling
 thiserror = "2.0"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# ACME (optional)
+instant-acme = { version = "0.7", optional = true }
+
 
 # Logging
 tracing = "0.1"
@@ -39,8 +48,9 @@ tracing = "0.1"
 [features]
 default = ["reality"]
 reality = []
-utls = []
 ech = []
+acme = ["dep:instant-acme"]
+
 
 [lints]
 workspace = true

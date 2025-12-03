@@ -7,24 +7,24 @@
 //! - QPS limiting validation
 //! - Metrics verification
 
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use std::io::Write;
-use tempfile::NamedTempFile;
 
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
-use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
+use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
+use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
 use sb_adapters::TransportKind;
-use sb_core::router::engine::RouterHandle;
 use sb_core::net::rate_limit_metrics;
+use sb_core::router::engine::RouterHandle;
 
 // Initialize crypto provider for TLS operations
 fn init_crypto() {
@@ -63,7 +63,7 @@ fn generate_test_certs(cn: &str) -> (String, String) {
     let mut params = rcgen::CertificateParams::new(vec![cn.to_string()]);
     params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(1);
     params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(365);
-    
+
     let cert = rcgen::Certificate::from_params(params).unwrap();
     let cert_pem = cert.serialize_pem().unwrap();
     let key_pem = cert.serialize_private_key_pem();
@@ -74,7 +74,11 @@ fn generate_test_certs(cn: &str) -> (String, String) {
 async fn start_trojan_server_with_rate_limit(
     max_conn: usize,
     window_sec: u64,
-) -> (SocketAddr, mpsc::Sender<()>, Option<(NamedTempFile, NamedTempFile)>) {
+) -> (
+    SocketAddr,
+    mpsc::Sender<()>,
+    Option<(NamedTempFile, NamedTempFile)>,
+) {
     // Set environment variables for rate limiting
     std::env::set_var("SB_INBOUND_RATE_LIMIT_PER_IP", max_conn.to_string());
     std::env::set_var("SB_INBOUND_RATE_LIMIT_WINDOW_SEC", window_sec.to_string());
@@ -92,7 +96,7 @@ async fn start_trojan_server_with_rate_limit(
     cert_file.write_all(cert.as_bytes()).unwrap();
     let mut key_file = NamedTempFile::new().unwrap();
     key_file.write_all(key.as_bytes()).unwrap();
-    
+
     let cert_path = cert_file.path().to_str().unwrap().to_string();
     let key_path = key_file.path().to_str().unwrap().to_string();
     let temp_files = Some((cert_file, key_file));
@@ -177,20 +181,20 @@ async fn test_trojan_high_load_rate_limiting() {
     };
 
     let connector = Arc::new(TrojanConnector::new(client_config));
-    
+
     // Spawn 100 concurrent connections
     let mut handles = vec![];
     for i in 0..100 {
         let connector = connector.clone();
         let echo_addr = echo_addr;
-        
+
         handles.push(tokio::spawn(async move {
             let target = Target {
                 host: echo_addr.ip().to_string(),
                 port: echo_addr.port(),
                 kind: TransportKind::Tcp,
             };
-            
+
             match connector.dial(target, DialOpts::default()).await {
                 Ok(mut stream) => {
                     // Try to send/receive data
@@ -199,8 +203,10 @@ async fn test_trojan_high_load_rate_limiting() {
                             let mut buf = [0u8; 4];
                             match tokio::time::timeout(
                                 Duration::from_secs(2),
-                                stream.read_exact(&mut buf)
-                            ).await {
+                                stream.read_exact(&mut buf),
+                            )
+                            .await
+                            {
                                 Ok(Ok(_)) => (i, true),
                                 _ => (i, false),
                             }
@@ -221,12 +227,18 @@ async fn test_trojan_high_load_rate_limiting() {
     let successful = results.iter().filter(|(_, success)| *success).count();
     let failed = results.len() - successful;
 
-    println!("Trojan high load test: {} successful, {} rate-limited", successful, failed);
-    
+    println!(
+        "Trojan high load test: {} successful, {} rate-limited",
+        successful, failed
+    );
+
     // We expect some connections to be rate-limited
     assert!(failed > 0, "Expected some connections to be rate-limited");
     // But not all should fail
-    assert!(successful >= 10, "Expected at least 10 connections to succeed");
+    assert!(
+        successful >= 10,
+        "Expected at least 10 connections to succeed"
+    );
 }
 
 // =============================================================================
@@ -249,36 +261,36 @@ async fn test_shadowsocks_high_load_rate_limiting() {
     };
 
     let connector = Arc::new(ShadowsocksConnector::new(client_config).unwrap());
-    
+
     // Spawn 100 concurrent connections
     let mut handles = vec![];
     for i in 0..100 {
         let connector = connector.clone();
         let echo_addr = echo_addr;
-        
+
         handles.push(tokio::spawn(async move {
             let target = Target {
                 host: echo_addr.ip().to_string(),
                 port: echo_addr.port(),
                 kind: TransportKind::Tcp,
             };
-            
+
             match connector.dial(target, DialOpts::default()).await {
-                Ok(mut stream) => {
-                    match stream.write_all(b"ping").await {
-                        Ok(_) => {
-                            let mut buf = [0u8; 4];
-                            match tokio::time::timeout(
-                                Duration::from_secs(2),
-                                stream.read_exact(&mut buf)
-                            ).await {
-                                Ok(Ok(_)) => (i, true),
-                                _ => (i, false),
-                            }
+                Ok(mut stream) => match stream.write_all(b"ping").await {
+                    Ok(_) => {
+                        let mut buf = [0u8; 4];
+                        match tokio::time::timeout(
+                            Duration::from_secs(2),
+                            stream.read_exact(&mut buf),
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => (i, true),
+                            _ => (i, false),
                         }
-                        Err(_) => (i, false),
                     }
-                }
+                    Err(_) => (i, false),
+                },
                 Err(_) => (i, false),
             }
         }));
@@ -292,10 +304,16 @@ async fn test_shadowsocks_high_load_rate_limiting() {
     let successful = results.iter().filter(|(_, success)| *success).count();
     let failed = results.len() - successful;
 
-    println!("Shadowsocks high load test: {} successful, {} rate-limited", successful, failed);
-    
+    println!(
+        "Shadowsocks high load test: {} successful, {} rate-limited",
+        successful, failed
+    );
+
     assert!(failed > 0, "Expected some connections to be rate-limited");
-    assert!(successful >= 10, "Expected at least 10 connections to succeed");
+    assert!(
+        successful >= 10,
+        "Expected at least 10 connections to succeed"
+    );
 }
 
 // =============================================================================
@@ -327,7 +345,7 @@ async fn test_rate_limit_metrics_recording() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    
+
     // Make 20 connections (should trigger rate limiting)
     for _ in 0..20 {
         let target = Target {
@@ -335,7 +353,7 @@ async fn test_rate_limit_metrics_recording() {
             port: echo_addr.port(),
             kind: TransportKind::Tcp,
         };
-        
+
         let _ = connector.dial(target, DialOpts::default()).await;
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -348,8 +366,11 @@ async fn test_rate_limit_metrics_recording() {
         .with_label_values(&["trojan", "connection_limit"])
         .get();
 
-    println!("Rate limited counter: initial={}, final={}", initial_rate_limited, final_rate_limited);
-    
+    println!(
+        "Rate limited counter: initial={}, final={}",
+        initial_rate_limited, final_rate_limited
+    );
+
     assert!(
         final_rate_limited > initial_rate_limited,
         "Expected rate_limited metric to increase"
@@ -381,7 +402,7 @@ async fn test_auth_failure_ban() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    
+
     // Make multiple failed auth attempts
     for i in 0..15 {
         let target = Target {
@@ -389,16 +410,16 @@ async fn test_auth_failure_ban() {
             port: echo_addr.port(),
             kind: TransportKind::Tcp,
         };
-        
+
         let result = connector.dial(target, DialOpts::default()).await;
-        
+
         if let Ok(mut stream) = result {
             let _ = stream.write_all(b"test").await;
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        
+
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         println!("Auth failure attempt {}", i + 1);
     }
 

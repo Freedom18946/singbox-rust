@@ -83,8 +83,8 @@ fn mask_prefix(bytes: &mut [u8], prefix: u8) {
     let full = (prefix / 8) as usize;
     let rem = (prefix % 8) as usize;
     if full < bytes.len() {
-        for i in full + 1..bytes.len() {
-            bytes[i] = 0;
+        for item in bytes.iter_mut().skip(full + 1) {
+            *item = 0;
         }
         if rem > 0 {
             let mask = (!0u8) << (8 - rem);

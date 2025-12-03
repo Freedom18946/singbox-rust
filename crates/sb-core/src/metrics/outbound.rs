@@ -1,10 +1,11 @@
+#![allow(clippy::duplicated_attributes)]
 // Minimal outbound metrics API used across the codebase.
 // Implemented with metrics crate (when enabled) and no-op otherwise.
 #![cfg_attr(
     any(test),
     allow(dead_code, unused_imports, unused_variables, unused_must_use)
 )]
-#![cfg_attr(not(feature = "metrics"), allow(unused_variables, unused_imports))]
+#![cfg_attr(not(feature = "metrics"), allow(dead_code, unused_variables))]
 
 #[cfg(feature = "metrics")]
 use crate::metrics::registry_ext::{
@@ -141,7 +142,7 @@ pub fn record_connect_duration(_duration_ms: f64) {
             &[],
             None,
         );
-        hv.with_label_values(&[]).observe(_duration_ms);
+        hv.with_label_values(&[] as &[&str]).observe(_duration_ms);
     }
 }
 

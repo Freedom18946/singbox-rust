@@ -254,7 +254,10 @@ async fn test_connection_pooling_100_concurrent() {
 
     println!("Concurrent connections: {}", num_concurrent);
     println!("Successful: {}", success_count);
-    println!("Success rate: {:.1}%", (success_count as f64 / num_concurrent as f64) * 100.0);
+    println!(
+        "Success rate: {:.1}%",
+        (success_count as f64 / num_concurrent as f64) * 100.0
+    );
     println!("Time elapsed: {:.2}s", elapsed.as_secs_f64());
 
     assert!(
@@ -285,14 +288,11 @@ async fn test_connection_timeout_handling() {
     let timeout_duration = Duration::from_millis(10);
 
     // Try to connect with very short timeout - this should timeout
-    let result = timeout(
-        timeout_duration,
-        async {
-            // Simulate a slow operation
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            Ok::<(), std::io::Error>(())
-        }
-    )
+    let result = timeout(timeout_duration, async {
+        // Simulate a slow operation
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        Ok::<(), std::io::Error>(())
+    })
     .await;
 
     assert!(result.is_err(), "Operation should timeout");
@@ -343,7 +343,10 @@ async fn test_authentication_password_validation() {
 
     // Verify password is set
     assert_eq!(config.password, "secure-password-123");
-    assert!(config.password.len() >= 10, "Password should be sufficiently long");
+    assert!(
+        config.password.len() >= 10,
+        "Password should be sufficiently long"
+    );
     println!("✓ Password-based authentication configured");
 }
 

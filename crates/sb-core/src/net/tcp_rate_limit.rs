@@ -44,7 +44,7 @@ impl TcpRateLimitConfig {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(100);
-        
+
         let window_sec = std::env::var("SB_INBOUND_RATE_LIMIT_WINDOW_SEC")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -76,7 +76,8 @@ pub struct TcpRateLimiter {
 
 impl TcpRateLimiter {
     pub fn new(config: TcpRateLimitConfig) -> Self {
-        let cap = NonZeroUsize::new(config.max_tracked_ips).unwrap_or(NonZeroUsize::new(10000).unwrap());
+        let cap =
+            NonZeroUsize::new(config.max_tracked_ips).unwrap_or(NonZeroUsize::new(10000).unwrap());
         Self {
             config,
             connection_tracker: Arc::new(Mutex::new(LruCache::new(cap))),
@@ -97,7 +98,7 @@ impl TcpRateLimiter {
         let window = self.config.window;
 
         let timestamps = tracker.get_or_insert_mut(ip, VecDeque::new);
-        
+
         // Remove expired timestamps
         while let Some(&t) = timestamps.front() {
             if now.duration_since(t) > window {
@@ -127,7 +128,7 @@ impl TcpRateLimiter {
         let window = self.config.auth_failure_window;
 
         let timestamps = tracker.get_or_insert_mut(ip, VecDeque::new);
-        
+
         // Remove expired timestamps
         while let Some(&t) = timestamps.front() {
             if now.duration_since(t) > window {
@@ -138,7 +139,7 @@ impl TcpRateLimiter {
         }
 
         timestamps.push_back(now);
-        
+
         timestamps.len() > self.config.max_auth_failures
     }
 
@@ -161,7 +162,7 @@ impl TcpRateLimiter {
                     break;
                 }
             }
-            
+
             timestamps.len() > self.config.max_auth_failures
         } else {
             false
@@ -185,10 +186,7 @@ impl TcpRateLimiter {
         let now = Instant::now();
 
         // Token bucket algorithm: refill rate = max_qps tokens/second
-        let (mut tokens, last_update) = tracker
-            .get(&ip)
-            .copied()
-            .unwrap_or((max_qps as f64, now));
+        let (mut tokens, last_update) = tracker.get(&ip).copied().unwrap_or((max_qps as f64, now));
 
         // Calculate elapsed time and refill tokens
         let elapsed = now.duration_since(last_update).as_secs_f64();
@@ -246,7 +244,7 @@ mod tests {
         assert!(!limiter.allow_connection(ip));
 
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Should be allowed again after window expires
         assert!(limiter.allow_connection(ip));
     }
@@ -262,13 +260,13 @@ mod tests {
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
         assert!(!limiter.is_banned(ip));
-        
+
         limiter.record_auth_failure(ip);
         limiter.record_auth_failure(ip);
         limiter.record_auth_failure(ip);
-        
+
         assert!(!limiter.is_banned(ip)); // 3 failures is exactly the limit, not > limit
-        
+
         limiter.record_auth_failure(ip);
         assert!(limiter.is_banned(ip)); // 4th failure triggers ban
     }
@@ -284,17 +282,26 @@ mod tests {
 
         // First 10 requests should be allowed (initial bucket full)
         for _ in 0..10 {
-            assert!(limiter.allow_request(ip), "Initial requests should be allowed");
+            assert!(
+                limiter.allow_request(ip),
+                "Initial requests should be allowed"
+            );
         }
 
         // 11th request should be blocked (bucket empty)
-        assert!(!limiter.allow_request(ip), "Request beyond QPS should be blocked");
+        assert!(
+            !limiter.allow_request(ip),
+            "Request beyond QPS should be blocked"
+        );
 
         // Wait for token refill (100ms = 1 token at 10 QPS)
         std::thread::sleep(Duration::from_millis(110));
-        
+
         // Should be allowed again after refill
-        assert!(limiter.allow_request(ip), "Request should be allowed after token refill");
+        assert!(
+            limiter.allow_request(ip),
+            "Request should be allowed after token refill"
+        );
     }
 
     #[test]

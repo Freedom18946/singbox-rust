@@ -2,6 +2,7 @@ use sb_config::ir::{OutboundIR, OutboundType};
 use sb_core::adapter::{
     Bridge, OutboundConnector, OutboundParam, UdpOutboundFactory, UdpOutboundSession,
 };
+use sb_core::context::{Context, ContextRegistry};
 use sb_core::outbound::selector_group::ProxyMember;
 use std::io;
 use std::sync::Arc;
@@ -46,14 +47,14 @@ struct MockConnector;
 #[async_trait::async_trait]
 impl OutboundConnector for MockConnector {
     async fn connect(&self, _host: &str, _port: u16) -> io::Result<TcpStream> {
-        Err(io::Error::new(io::ErrorKind::Other, "mock connector"))
+        Err(io::Error::other("mock connector"))
     }
 }
 
 #[tokio::test]
 async fn test_selector_udp_support() {
     // 1. Setup Bridge
-    let mut bridge = Bridge::new();
+    let mut bridge = Bridge::new(Context::new());
 
     // 2. Register mock members
     let member1_tag = "proxy1".to_string();
@@ -102,7 +103,10 @@ async fn test_selector_udp_support() {
     };
 
     let bridge_arc = Arc::new(bridge);
-    let ctx = sb_core::adapter::registry::AdapterOutboundContext { bridge: bridge_arc };
+    let ctx = sb_core::adapter::registry::AdapterOutboundContext {
+        bridge: bridge_arc.clone(),
+        context: ContextRegistry::from(&bridge_arc.context),
+    };
 
     let (_connector, udp_factory) =
         build_selector_outbound(&param, &ir, &ctx).expect("failed to build selector");

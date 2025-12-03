@@ -34,7 +34,7 @@ async fn test_http2_server_client_echo() {
         host: "localhost".to_string(),
         ..Default::default()
     };
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let h2_dialer = Http2Dialer::new(config, tcp_dialer);
 
     // Connect to server
@@ -97,7 +97,7 @@ async fn test_http2_large_message() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Create HTTP/2 client
-    let tcp_dialer = Box::new(TcpDialer) as Box<dyn Dialer>;
+    let tcp_dialer = Box::new(TcpDialer::default()) as Box<dyn Dialer>;
     let h2_dialer = Http2Dialer::new(Http2Config::default(), tcp_dialer);
 
     let mut client_stream = h2_dialer

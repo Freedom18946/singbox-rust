@@ -18,7 +18,6 @@ use x25519_dalek::{PublicKey, StaticSecret};
 /// HPKE context for encryption/decryption
 /// 用于加密/解密的 HPKE 上下文
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct HpkeContext {
     key: Vec<u8>,
     base_nonce: Vec<u8>,
@@ -86,9 +85,9 @@ impl HpkeContext {
 /// HPKE sender (client-side encryption)
 /// HPKE 发送方（客户端加密）
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct HpkeSender {
     kem: HpkeKem,
+    #[allow(dead_code)]
     kdf: HpkeKdf,
     aead: HpkeAead,
 }
@@ -169,16 +168,7 @@ impl HpkeSender {
         Ok((key, base_nonce))
     }
 
-    #[allow(dead_code)]
-    fn build_labeled_info(&self, label: &[u8], info: &[u8], length: usize) -> Vec<u8> {
-        let mut labeled_info = Vec::new();
-        labeled_info.extend_from_slice(&(length as u16).to_be_bytes());
-        labeled_info.extend_from_slice(b"HPKE-v1");
-        labeled_info.extend_from_slice(&(label.len() as u16).to_be_bytes());
-        labeled_info.extend_from_slice(label);
-        labeled_info.extend_from_slice(info);
-        labeled_info
-    }
+
 }
 
 #[cfg(test)]

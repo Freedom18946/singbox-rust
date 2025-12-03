@@ -13,7 +13,25 @@ mod tests {
     use std::sync::Once;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::{TcpListener, UdpSocket};
+    use tokio::net::{TcpListener, TcpStream, UdpSocket};
+    use std::sync::Arc;
+
+    async fn run_server(server: Arc<HysteriaV1Inbound>, target_addr: SocketAddr) {
+        loop {
+            if let Ok((mut stream, _)) = server.accept().await {
+                tokio::spawn(async move {
+                    // Consume connect request (IPv4: 1+1+4+2 = 8 bytes)
+                    let mut buf = [0u8; 8];
+                    if stream.read_exact(&mut buf).await.is_err() { return; }
+                    
+                    // Connect to target
+                    if let Ok(mut target) = TcpStream::connect(target_addr).await {
+                        let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;
+                    }
+                });
+            }
+        }
+    }
 
     static INIT: Once = Once::new();
 
@@ -111,7 +129,7 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
 
         // Start server
         if let Err(e) = server.start().await {
@@ -119,8 +137,13 @@ mod tests {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            run_server(s, echo_addr).await;
+        });
+
         // Get actual server port
-        let server_port = server_addr.port();
+        let server_port = server.local_addr().await.unwrap().port();
 
         // Configure Hysteria v1 client
         let client_config = HysteriaV1Config {
@@ -180,14 +203,19 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 100,
             down_mbps: 100,
@@ -283,7 +311,6 @@ mod tests {
 
     /// Test authentication with valid credentials
     #[tokio::test]
-    #[ignore = "Server doesn't expose actual bound port - needs HysteriaV1Inbound API improvement"]
     async fn test_hysteria_v1_authentication_valid() {
         init_crypto();
         let echo_addr = start_echo_server().await;
@@ -304,14 +331,19 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 100,
             down_mbps: 100,
@@ -354,14 +386,20 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            let echo_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 100,
             down_mbps: 100,
@@ -401,14 +439,20 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            let echo_addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 100,
             down_mbps: 100,
@@ -457,14 +501,19 @@ mod tests {
                 recv_window: Some(100),
             };
 
-            let server = HysteriaV1Inbound::new(server_config);
+            let server = Arc::new(HysteriaV1Inbound::new(server_config));
             if server.start().await.is_err() {
                 continue;
             }
 
+            let s = server.clone();
+            tokio::spawn(async move {
+                run_server(s, echo_addr).await;
+            });
+
             let client_config = HysteriaV1Config {
                 server: "127.0.0.1".to_string(),
-                port: server_addr.port(),
+                port: server.local_addr().await.unwrap().port(),
                 protocol: "udp".to_string(),
                 up_mbps,
                 down_mbps,
@@ -516,14 +565,14 @@ mod tests {
                 recv_window: Some(100),
             };
 
-            let server = HysteriaV1Inbound::new(server_config);
+            let server = Arc::new(HysteriaV1Inbound::new(server_config));
             if server.start().await.is_err() {
                 continue;
             }
 
             let client_config = HysteriaV1Config {
                 server: "127.0.0.1".to_string(),
-                port: server_addr.port(),
+                port: server.local_addr().await.unwrap().port(),
                 protocol: protocol.to_string(),
                 up_mbps: 100,
                 down_mbps: 100,
@@ -567,14 +616,19 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 100,
             down_mbps: 100,
@@ -615,14 +669,19 @@ mod tests {
             recv_window: Some(1000),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 1000,
             down_mbps: 1000,
@@ -671,14 +730,19 @@ mod tests {
             recv_window: Some(100),
         };
 
-        let server = HysteriaV1Inbound::new(server_config);
+        let server = Arc::new(HysteriaV1Inbound::new(server_config));
         if server.start().await.is_err() {
             return;
         }
 
+        let s = server.clone();
+        tokio::spawn(async move {
+            run_server(s, echo_addr).await;
+        });
+
         let client_config = HysteriaV1Config {
             server: "127.0.0.1".to_string(),
-            port: server_addr.port(),
+            port: server.local_addr().await.unwrap().port(),
             protocol: "udp".to_string(),
             up_mbps: 100,
             down_mbps: 100,

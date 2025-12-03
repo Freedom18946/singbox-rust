@@ -5,7 +5,6 @@ use serde_json::json;
 
 #[test]
 fn test_endpoint_instantiation() -> Result<()> {
-    #[cfg(feature = "adapters")]
     sb_adapters::register_all();
 
     let config = json!({
@@ -25,7 +24,7 @@ fn test_endpoint_instantiation() -> Result<()> {
     });
 
     let ir = to_ir_v1(&config);
-    let bridge = Bridge::new_from_config(&ir)?;
+    let bridge = Bridge::new_from_config(&ir, sb_core::context::Context::default())?;
 
     assert_eq!(bridge.endpoints.len(), 1);
     let endpoint = &bridge.endpoints[0];

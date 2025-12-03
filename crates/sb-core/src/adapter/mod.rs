@@ -13,9 +13,12 @@
 //! sb-adapters provides concrete implementations; sb-core defines interfaces and bridging logic.
 //! sb-adapters 提供具体实现；sb-core 定义接口和桥接逻辑。
 
+use crate::context::Context;
 use crate::endpoint::{endpoint_registry, Endpoint, EndpointContext};
+#[cfg(feature = "router")]
+use crate::router::RouterHandle;
 use crate::service::{service_registry, Service, ServiceContext};
-use sb_config::ir::Credentials;
+use sb_config::ir::{Credentials, MultiplexOptionsIR};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -87,13 +90,14 @@ pub trait UdpOutboundSession: Send + Sync + std::fmt::Debug + 'static {
     async fn recv_from(&self) -> std::io::Result<(Vec<u8>, SocketAddr)>;
 }
 
+/// Future returning a UDP outbound session.
+pub type UdpOutboundFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
+>;
+
 /// Factory that creates UDP outbound sessions (per SOCKS UDP association).
 pub trait UdpOutboundFactory: Send + Sync + std::fmt::Debug + 'static {
-    fn open_session(
-        &self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
-    >;
+    fn open_session(&self) -> UdpOutboundFuture;
 }
 
 /// Inbound construction parameters (derived from IR).
@@ -165,7 +169,10 @@ pub struct InboundParam {
     /// Hysteria v1 QUIC receive window for connection
     pub hysteria_recv_window_conn: Option<u64>,
     /// Hysteria v1 QUIC receive window for stream
+    /// Hysteria v1 QUIC receive window for stream
     pub hysteria_recv_window: Option<u64>,
+    /// Multiplex options
+    pub multiplex: Option<MultiplexOptionsIR>,
 }
 
 /// AnyTLS user parameters passed to the adapter layer.
@@ -197,6 +204,18 @@ pub struct OutboundParam {
     pub ssh_private_key_passphrase: Option<String>,
     pub ssh_host_key_verification: Option<bool>,
     pub ssh_known_hosts_path: Option<String>,
+    // Dialer options
+    pub bind_interface: Option<String>,
+    pub inet4_bind_address: Option<std::net::Ipv4Addr>,
+    pub inet6_bind_address: Option<std::net::Ipv6Addr>,
+    pub routing_mark: Option<u32>,
+    pub reuse_addr: Option<bool>,
+    pub connect_timeout: Option<std::time::Duration>,
+    pub tcp_fast_open: Option<bool>,
+    pub tcp_multi_path: Option<bool>,
+    pub udp_fragment: Option<bool>,
+    /// Multiplex options
+    pub multiplex: Option<MultiplexOptionsIR>,
 }
 
 impl Default for OutboundParam {
@@ -219,6 +238,16 @@ impl Default for OutboundParam {
             ssh_private_key_passphrase: None,
             ssh_host_key_verification: None,
             ssh_known_hosts_path: None,
+            bind_interface: None,
+            inet4_bind_address: None,
+            inet6_bind_address: None,
+            routing_mark: None,
+            reuse_addr: None,
+            connect_timeout: None,
+            tcp_fast_open: None,
+            tcp_multi_path: None,
+            udp_fragment: None,
+            multiplex: None,
         }
     }
 }
@@ -250,13 +279,20 @@ pub struct Bridge {
     pub udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>>,
     /// Endpoints (WireGuard, Tailscale, etc.)
     pub endpoints: Vec<Arc<dyn Endpoint>>,
+
     /// Background services (Resolved, DERP, SSM API, etc.)
     pub services: Vec<Arc<dyn Service>>,
+    /// Global runtime context
+    pub context: Context,
+    /// Router handle (if available)
+    #[cfg(feature = "router")]
+    pub router: Option<Arc<RouterHandle>>,
+    pub experimental: Option<sb_config::ir::ExperimentalIR>,
 }
 
 impl Bridge {
     /// Creates a new empty bridge.
-    pub fn new() -> Self {
+    pub fn new(context: Context) -> Self {
         Self {
             inbounds: vec![],
             inbound_kinds: vec![],
@@ -264,12 +300,16 @@ impl Bridge {
             udp_factories: HashMap::new(),
             endpoints: vec![],
             services: vec![],
+            context,
+            #[cfg(feature = "router")]
+            router: None,
+            experimental: None,
         }
     }
 
     /// Create bridge from IR configuration
-    pub fn new_from_config(ir: &sb_config::ir::ConfigIR) -> anyhow::Result<Self> {
-        let mut bridge = Self::new();
+    pub fn new_from_config(ir: &sb_config::ir::ConfigIR, context: Context) -> anyhow::Result<Self> {
+        let mut bridge = Self::new(context);
 
         // Build inbound services from IR
         #[cfg(feature = "scaffold")]
@@ -712,7 +752,7 @@ impl Bridge {
 
 impl Default for Bridge {
     fn default() -> Self {
-        Self::new()
+        Self::new(Context::new())
     }
 }
 

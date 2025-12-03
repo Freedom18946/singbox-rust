@@ -13,6 +13,7 @@ fn direct_inbound_missing_override_errors() {
             basic_auth: None,
             override_host: None,
             override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![sb_config::ir::OutboundIR {
             ty: sb_config::ir::OutboundType::Direct,
@@ -22,11 +23,13 @@ fn direct_inbound_missing_override_errors() {
         route: sb_config::ir::RouteIR {
             rules: vec![],
             default: Some("direct".into()),
+            ..Default::default()
         },
         ntp: None,
         dns: None,
+        ..Default::default()
     };
 
-    let res = Bridge::new_from_config(&ir);
+    let res = Bridge::new_from_config(&ir, sb_core::context::Context::default());
     assert!(res.is_err(), "expected error for missing override fields");
 }

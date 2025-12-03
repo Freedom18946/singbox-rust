@@ -170,10 +170,10 @@ async fn connect_tcp(addr: String, config_path: PathBuf, outbound: Option<String
     #[cfg(feature = "router")]
     let bridge = {
         let engine = sb_core::routing::engine::Engine::new(&ir);
-        sb_core::adapter::bridge::build_bridge(&ir, engine)
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
     };
     #[cfg(not(feature = "router"))]
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, ());
+    let bridge = sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
     // Parse host:port
     let (host, port) = parse_addr(&addr).context("invalid address, expected host:port")?;
@@ -244,10 +244,10 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
         #[cfg(feature = "router")]
         let bridge = {
             let engine = sb_core::routing::engine::Engine::new(&ir);
-            sb_core::adapter::bridge::build_bridge(&ir, engine)
+            sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
         };
         #[cfg(not(feature = "router"))]
-        let bridge = sb_core::adapter::bridge::build_bridge(&ir, ());
+        let bridge = sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
         bridge.find_udp_factory(name)
     } else {

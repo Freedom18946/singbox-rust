@@ -1,11 +1,11 @@
-//! Platform-specific abstractions for SingBox
+//! Platform-specific abstractions for `SingBox`
 //!
 //! # 🇨🇳 模块说明 (Module Description)
 //!
-//! `sb-platform` 是 SingBox 架构中的**底层基石 (Foundation)**，负责屏蔽操作系统之间的差异，
+//! `sb-platform` 是 `SingBox` 架构中的**底层基石 (Foundation)**，负责屏蔽操作系统之间的差异，
 //! 为上层业务逻辑（如 `sb-adapters` 和 `sb-core`）提供统一的、跨平台的系统级能力接口。
 //!
-//! This crate serves as the **Foundation** in the SingBox architecture, abstracting away
+//! This crate serves as the **Foundation** in the `SingBox` architecture, abstracting away
 //! operating system differences to provide unified, cross-platform system-level interfaces
 //! for upper-layer business logic (such as `sb-adapters` and `sb-core`).
 //!
@@ -28,7 +28,7 @@
 //! ### Process Matching ([`process`])
 //! -   **功能**: 根据网络连接信息（五元组）反查发起该连接的本地进程信息（PID, 路径, 名称）。
 //! -   **Function**: Reverse-lookups local process information (PID, path, name) based on network connection info (5-tuple).
-//! -   **实现策略**: 优先使用原生 API (libproc, GetExtendedTcpTable) 以获得最佳性能，
+//! -   **实现策略**: 优先使用原生 API (libproc, `GetExtendedTcpTable`) 以获得最佳性能，
 //!     降级时使用命令行工具 (lsof, netstat) 以保证兼容性。
 //!
 //! ### TUN Device Management ([`tun`])
@@ -73,6 +73,7 @@
 )]
 
 pub mod process;
+pub mod system_proxy;
 pub mod tun;
 
 /// OS detection constants and utilities

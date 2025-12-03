@@ -1,11 +1,12 @@
+
 #[cfg(test)]
 mod tests {
-    use crate::service::{Service, ServiceContext, StartStage};
+    use crate::service::{ServiceContext, StartStage};
     use crate::services::derp::protocol::{DerpFrame, FrameType};
-    use crate::services::derp::{build_derp_service, DerpService};
+    use crate::services::derp::build_derp_service;
     use sb_config::ir::{ServiceIR, ServiceType};
     use std::net::SocketAddr;
-    use std::sync::Arc;
+
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;

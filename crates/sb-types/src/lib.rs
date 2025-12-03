@@ -40,11 +40,10 @@ pub enum IssueCode {
     // CLI / General Interaction
     // CLI / 通用交互
     // ========================================================================
-    
     /// Invalid command line argument provided.
     /// 提供了无效的命令行参数。
     CliInvalidArg,
-    
+
     /// IO failure during CLI operation (e.g., config file not readable).
     /// CLI 操作期间的 IO 失败（例如，配置文件不可读）。
     CliIoFail,
@@ -55,27 +54,26 @@ pub enum IssueCode {
     // ========================================================================
     // Strategic Note: These codes allow the UI to highlight specific config lines.
     // 战略说明：这些代码允许 UI 高亮显示特定的配置行。
-
     /// Field is not recognized by the schema.
     /// 模式无法识别该字段。
     UnknownField,
-    
+
     /// A required field is missing.
     /// 缺少必填字段。
     MissingRequired,
-    
+
     /// Field value has an incorrect type (e.g., string instead of int).
     /// 字段值类型不正确（例如，应为 int 却为 string）。
     TypeMismatch,
-    
+
     /// Numerical value is out of allowed range.
     /// 数值超出允许范围。
     RangeExceeded,
-    
+
     /// Value is not one of the allowed enum variants.
     /// 值不是允许的枚举变体之一。
     InvalidEnum,
-    
+
     /// Logical conflict between two fields (e.g., A requires B to be unset).
     /// 两个字段之间的逻辑冲突（例如，A 要求 B 未设置）。
     Conflict,
@@ -83,7 +81,6 @@ pub enum IssueCode {
     // ----- Legacy compatibility / 遗留兼容性 -----
     // Kept for backward compatibility with older config parsers.
     // 保留以向后兼容旧的配置解析器。
-    
     InvalidType,
     OutOfRange,
     DuplicateTag,
@@ -96,7 +93,6 @@ pub enum IssueCode {
     // CLI Tools Specific
     // CLI 工具特定
     // ========================================================================
-
     /// Minimization skipped because the field uses negation logic.
     /// 由于字段使用否定逻辑，跳过了最小化。
     MinimizeSkippedByNegation,
@@ -105,15 +101,14 @@ pub enum IssueCode {
     // TLS / Security Layer
     // TLS / 安全层
     // ========================================================================
-
     /// TLS handshake timed out.
     /// TLS 握手超时。
     TlsHandshakeTimeout,
-    
+
     /// TLS protocol error (e.g., version mismatch).
     /// TLS 协议错误（例如，版本不匹配）。
     TlsHandshakeProtocol,
-    
+
     /// Certificate validation failed.
     /// 证书验证失败。
     TlsCertInvalid,
@@ -122,23 +117,22 @@ pub enum IssueCode {
     // Network / Transport Layer
     // 网络 / 传输层
     // ========================================================================
-
     /// General network timeout.
     /// 通用网络超时。
     NetTimeout,
-    
+
     /// Connection refused by peer.
     /// 连接被对端拒绝。
     NetRefused,
-    
+
     /// Protocol level error (e.g., HTTP/2 framing error).
     /// 协议层错误（例如，HTTP/2 帧错误）。
     NetProto,
-    
+
     /// Network certificate issue (generic).
     /// 网络证书问题（通用）。
     NetCert,
-    
+
     /// Uncategorized network error.
     /// 未分类的网络错误。
     NetOther,
@@ -147,19 +141,18 @@ pub enum IssueCode {
     // Upstream / Proxy Layer
     // 上游 / 代理层
     // ========================================================================
-
     /// Upstream proxy timed out.
     /// 上游代理超时。
     UpstreamTimeout,
-    
+
     /// Upstream returned ICMP error.
     /// 上游返回 ICMP 错误。
     UpstreamIcmp,
-    
+
     /// Upstream refused connection.
     /// 上游拒绝连接。
     UpstreamRefused,
-    
+
     /// Uncategorized upstream error.
     /// 未分类的上游错误。
     UpstreamOther,
@@ -228,11 +221,11 @@ pub struct IssuePayload {
     /// Error kind/category (e.g., "schema", "cli", "network").
     /// 错误种类/类别（例如 "schema", "cli", "network"）。
     pub kind: String,
-    
+
     /// Stable machine-readable code.
     /// 稳定的机器可读代码。
     pub code: IssueCode,
-    
+
     /// Optional RFC6901 JSON Pointer pointing to the offending location.
     /// 可选的 RFC6901 JSON 指针，指向出错位置。
     ///
@@ -240,11 +233,11 @@ pub struct IssuePayload {
     /// 主要用于配置验证，以告诉 UI 确切是哪一行错误。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ptr: Option<String>,
-    
+
     /// Human-readable message.
     /// 人类可读的消息。
     pub msg: String,
-    
+
     /// Optional remediation hint.
     /// 可选的补救提示。
     ///
@@ -252,7 +245,7 @@ pub struct IssuePayload {
     /// 示例："尝试增加超时值。"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
-    
+
     /// Optional build/runtime fingerprint for correlation.
     /// 可选的构建/运行时指纹，用于关联。
     #[serde(skip_serializing_if = "Option::is_none")]

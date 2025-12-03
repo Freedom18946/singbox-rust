@@ -14,6 +14,7 @@ use crate::log::Level;
 
 #[cfg(feature = "router")]
 use crate::routing::engine::{Engine as RouterEngine, Input as RouterInput};
+use sb_platform::process::{ConnectionInfo, Protocol};
 
 // Unified engine alias with lifetime for both router and stub modes
 #[cfg(feature = "router")]
@@ -181,6 +182,46 @@ pub(crate) async fn handle(
     // Build route input and decide
     #[cfg(feature = "router")]
     let d = {
+        // Process matching
+        let mut process_name: Option<String> = None;
+        let mut process_path: Option<String> = None;
+
+        if let Some(matcher) = &br.context.process_matcher {
+            let find_process = {
+                let opts = br.context.network.route_options();
+                opts.find_process
+            };
+            if find_process {
+                if let (Ok(local_addr), Ok(remote_addr)) = (cli.local_addr(), cli.peer_addr()) {
+                    let conn_info = ConnectionInfo {
+                        local_addr,
+                        remote_addr,
+                        protocol: Protocol::Tcp,
+                    };
+                    if let Ok(info) = matcher.match_connection(&conn_info).await {
+                        process_name = Some(info.name);
+                        process_path = Some(info.path);
+                    }
+                }
+            }
+        }
+
+        let mut matched_rule_sets = Vec::new();
+        if let Some(router) = &br.router {
+            if let Some(db) = router.rule_set_db() {
+                if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+                    db.match_ip(ip, &mut matched_rule_sets);
+                } else {
+                    db.match_host(&host, &mut matched_rule_sets);
+                }
+            }
+        }
+        let rule_set_opt = if matched_rule_sets.is_empty() {
+            None
+        } else {
+            Some(matched_rule_sets.as_slice())
+        };
+
         let input = RouterInput {
             host: &host,
             port,
@@ -195,6 +236,12 @@ pub(crate) async fn handle(
                 None
             },
             sniff_protocol: Some("http"),
+            wifi_ssid: None,
+            wifi_bssid: None,
+            process_name: process_name.as_deref(),
+            process_path: process_path.as_deref(),
+            user_agent: None,
+            rule_set: rule_set_opt,
         };
         eng.decide(&input, false)
     };
@@ -356,7 +403,7 @@ impl InboundService for HttpConnect {
         let br = self
             .bridge
             .clone()
-            .unwrap_or_else(|| Arc::new(Bridge::new()));
+            .unwrap_or_else(|| Arc::new(Bridge::new(crate::context::Context::new())));
 
         // 使用当前 tokio runtime 或创建新的
         match tokio::runtime::Handle::try_current() {

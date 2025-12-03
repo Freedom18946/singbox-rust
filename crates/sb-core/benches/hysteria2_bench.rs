@@ -27,6 +27,9 @@ fn bench_auth_hash_generation(c: &mut Criterion) {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -51,6 +54,9 @@ fn bench_auth_hash_with_salamander(c: &mut Criterion) {
         alpn: None,
         salamander: Some("benchmark-salamander-key".to_string()),
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -75,6 +81,9 @@ fn bench_obfuscation(c: &mut Criterion) {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     let outbound = Hysteria2Outbound::new(config).unwrap();
@@ -127,6 +136,9 @@ fn bench_config_creation(c: &mut Criterion) {
                 alpn: None,
                 salamander: None,
                 brutal: None,
+                tls_ca_paths: vec![],
+                tls_ca_pem: vec![],
+                zero_rtt_handshake: false,
             })
         })
     });
@@ -149,6 +161,9 @@ fn bench_config_creation(c: &mut Criterion) {
                     up_mbps: 500,
                     down_mbps: 1000,
                 }),
+                tls_ca_paths: vec![],
+                tls_ca_pem: vec![],
+                zero_rtt_handshake: false,
             })
         })
     });
@@ -169,6 +184,9 @@ fn bench_outbound_creation(c: &mut Criterion) {
         alpn: Some(vec!["h3".to_string(), "hysteria2".to_string()]),
         salamander: None,
         brutal: None,
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
+        zero_rtt_handshake: false,
     };
 
     c.bench_function("outbound_creation", |b| {
@@ -208,6 +226,9 @@ fn bench_congestion_control_variants(c: &mut Criterion) {
             } else {
                 None
             },
+            tls_ca_paths: vec![],
+            tls_ca_pem: vec![],
+            zero_rtt_handshake: false,
         };
 
         group.bench_with_input(BenchmarkId::new("create_outbound", name), name, |b, _| {

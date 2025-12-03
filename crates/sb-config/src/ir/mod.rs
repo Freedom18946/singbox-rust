@@ -31,11 +31,12 @@ pub struct Credentials {
 
 /// Inbound proxy type.
 /// 入站代理类型。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum InboundType {
     /// SOCKS5 proxy.
     /// SOCKS5 代理。
+    #[default]
     Socks,
     /// HTTP CONNECT proxy.
     /// HTTP CONNECT 代理。
@@ -318,11 +319,35 @@ pub struct MultiplexOptionsIR {
     /// Enable padding.
     #[serde(default)]
     pub padding: Option<bool>,
+    /// Brutal congestion control configuration.
+    #[serde(default)]
+    pub brutal: Option<BrutalIR>,
+    /// Initial stream window size.
+    #[serde(default)]
+    pub initial_stream_window: Option<u32>,
+    /// Maximum stream window size.
+    #[serde(default)]
+    pub max_stream_window: Option<u32>,
+    /// Enable keepalive.
+    #[serde(default)]
+    pub enable_keepalive: Option<bool>,
+    /// Keepalive interval in seconds.
+    #[serde(default)]
+    pub keepalive_interval: Option<u64>,
+}
+
+/// Brutal congestion control configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct BrutalIR {
+    /// Upload bandwidth in Mbps.
+    pub up: u64,
+    /// Download bandwidth in Mbps.
+    pub down: u64,
 }
 
 /// Inbound listener configuration.
 /// 入站监听器配置。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct InboundIR {
     /// Inbound type.
     /// 入站类型。
@@ -345,6 +370,10 @@ pub struct InboundIR {
     /// HTTP 入站的基本认证（可选）。
     #[serde(default)]
     pub basic_auth: Option<Credentials>,
+    /// Generic users list for SOCKS/HTTP/Mixed inbound authentication.
+    /// SOCKS/HTTP/Mixed 入站认证的通用用户列表。
+    #[serde(default)]
+    pub users: Option<Vec<Credentials>>,
     /// Override destination host (for direct inbound).
     /// 覆盖目标主机（用于直接入站）。
     #[serde(default)]
@@ -401,6 +430,12 @@ pub struct InboundIR {
     /// Trojan 多用户配置。
     #[serde(default)]
     pub users_trojan: Option<Vec<TrojanUserIR>>,
+    /// Trojan fallback target address (e.g. "127.0.0.1:80").
+    #[serde(default)]
+    pub fallback: Option<String>,
+    /// Trojan fallback targets by ALPN.
+    #[serde(default)]
+    pub fallback_for_alpn: Option<std::collections::HashMap<String, String>>,
 
     // Protocol-specific fields (AnyTLS)
     /// AnyTLS multi-user configuration.
@@ -588,6 +623,46 @@ pub struct OutboundIR {
     /// VLESS 加密参数（例如 "none"）。
     #[serde(default)]
     pub encryption: Option<String>,
+    // Dialer options
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    #[serde(default)]
+    pub inet4_bind_address: Option<String>,
+    #[serde(default)]
+    pub inet6_bind_address: Option<String>,
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    #[serde(default)]
+    pub connect_timeout: Option<String>,
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    /// Multiplex options
+    #[serde(default)]
+    pub multiplex: Option<MultiplexOptionsIR>,
+
+    // Multiplex (yamux) options
+    /// Maximum concurrent streams for multiplex
+    /// 多路复用最大并发流数
+    #[serde(default)]
+    pub mux_max_streams: Option<usize>,
+    /// Multiplex window size for flow control (bytes)
+    /// 多路复用流量控制窗口大小（字节）
+    #[serde(default)]
+    pub mux_window_size: Option<u32>,
+    /// Enable multiplex padding for traffic analysis resistance
+    /// 启用多路复用填充以抵抗流量分析
+    #[serde(default)]
+    pub mux_padding: Option<bool>,
+    /// Multiplex connection reuse timeout (seconds)
+    /// 多路复用连接复用超时（秒）
+    #[serde(default)]
+    pub mux_reuse_timeout: Option<u64>,
 
     // VMess-specific fields
     /// VMess security/cipher (e.g., "aes-128-gcm", "chacha20-poly1305", "auto").
@@ -907,6 +982,18 @@ pub struct RuleIR {
     /// 域名精确匹配列表。
     #[serde(default)]
     pub domain: Vec<String>,
+    /// Domain suffix match list (e.g., ".google.com").
+    /// 域名后缀匹配列表（例如 ".google.com"）。
+    #[serde(default)]
+    pub domain_suffix: Vec<String>,
+    /// Domain keyword match list.
+    /// 域名关键字匹配列表。
+    #[serde(default)]
+    pub domain_keyword: Vec<String>,
+    /// Domain regex match list.
+    /// 域名正则表达式匹配列表。
+    #[serde(default)]
+    pub domain_regex: Vec<String>,
     /// Geosite category list.
     /// Geosite 分类列表。
     #[serde(default)]
@@ -925,8 +1012,12 @@ pub struct RuleIR {
     pub port: Vec<String>,
     /// Process name list.
     /// 进程名称列表。
+    #[serde(default, alias = "process")]
+    pub process_name: Vec<String>,
+    /// Process path list.
+    /// 进程路径列表。
     #[serde(default)]
-    pub process: Vec<String>,
+    pub process_path: Vec<String>,
     /// Network type: `"tcp"` or `"udp"`.
     /// 网络类型：`"tcp"` 或 `"udp"`。
     #[serde(default)]
@@ -951,12 +1042,56 @@ pub struct RuleIR {
     /// User-Agent 模式列表。
     #[serde(default)]
     pub user_agent: Vec<String>,
+    /// WiFi SSID list.
+    /// WiFi SSID 列表。
+    #[serde(default)]
+    pub wifi_ssid: Vec<String>,
+    /// WiFi BSSID list.
+    /// WiFi BSSID 列表。
+    #[serde(default)]
+    pub wifi_bssid: Vec<String>,
+    /// Rule set list.
+    /// 规则集列表。
+    #[serde(default)]
+    pub rule_set: Vec<String>,
+    /// IP-based rule set list.
+    /// 基于 IP 的规则集列表。
+    #[serde(default)]
+    pub rule_set_ipcidr: Vec<String>,
+    /// User ID list (UID-based matching, Linux/macOS).
+    /// 用户 ID 列表（基于 UID 的匹配，Linux/macOS）。
+    #[serde(default)]
+    pub user_id: Vec<u32>,
+    /// User name list (resolved to UID, Linux/macOS).
+    /// 用户名列表（解析为 UID，Linux/macOS）。
+    #[serde(default, alias = "uid")]
+    pub user: Vec<String>,
+    /// Group ID list (GID-based matching, Linux/macOS).
+    /// 组 ID 列表（基于 GID 的匹配，Linux/macOS）。
+    #[serde(default)]
+    pub group_id: Vec<u32>,
+    /// Group name list (resolved to GID, Linux/macOS).
+    /// 组名列表（解析为 GID，Linux/macOS）。
+    #[serde(default, alias = "gid")]
+    pub group: Vec<String>,
 
     // Negative match conditions (exclusions)
     /// Exclude domains.
     /// 排除域名。
     #[serde(default)]
     pub not_domain: Vec<String>,
+    /// Exclude domain suffixes.
+    /// 排除域名后缀。
+    #[serde(default)]
+    pub not_domain_suffix: Vec<String>,
+    /// Exclude domain keywords.
+    /// 排除域名关键字。
+    #[serde(default)]
+    pub not_domain_keyword: Vec<String>,
+    /// Exclude domain regex.
+    /// 排除域名正则表达式。
+    #[serde(default)]
+    pub not_domain_regex: Vec<String>,
     /// Exclude geosite categories.
     /// 排除 Geosite 分类。
     #[serde(default)]
@@ -975,8 +1110,12 @@ pub struct RuleIR {
     pub not_port: Vec<String>,
     /// Exclude process names.
     /// 排除进程名称。
+    #[serde(default, alias = "not_process")]
+    pub not_process_name: Vec<String>,
+    /// Exclude process paths.
+    /// 排除进程路径。
     #[serde(default)]
-    pub not_process: Vec<String>,
+    pub not_process_path: Vec<String>,
     /// Exclude network types.
     /// 排除网络类型。
     #[serde(default)]
@@ -1001,6 +1140,38 @@ pub struct RuleIR {
     /// 排除 User-Agent 模式。
     #[serde(default)]
     pub not_user_agent: Vec<String>,
+    /// Exclude WiFi SSIDs.
+    /// 排除 WiFi SSID。
+    #[serde(default)]
+    pub not_wifi_ssid: Vec<String>,
+    /// Exclude WiFi BSSIDs.
+    /// 排除 WiFi BSSID。
+    #[serde(default)]
+    pub not_wifi_bssid: Vec<String>,
+    /// Exclude rule sets.
+    /// 排除规则集。
+    #[serde(default)]
+    pub not_rule_set: Vec<String>,
+    /// Exclude IP-based rule sets.
+    /// 排除基于 IP 的规则集。
+    #[serde(default)]
+    pub not_rule_set_ipcidr: Vec<String>,
+    /// Exclude user IDs.
+    /// 排除用户 ID。
+    #[serde(default)]
+    pub not_user_id: Vec<u32>,
+    /// Exclude user names.
+    /// 排除用户名。
+    #[serde(default)]
+    pub not_user: Vec<String>,
+    /// Exclude group IDs.
+    /// 排除组 ID。
+    #[serde(default)]
+    pub not_group_id: Vec<u32>,
+    /// Exclude group names.
+    /// 排除组名。
+    #[serde(default)]
+    pub not_group: Vec<String>,
 
     // Actions
     /// Target outbound tag.
@@ -1019,9 +1190,123 @@ pub struct RouteIR {
     /// Routing rules (evaluated in order).
     #[serde(default)]
     pub rules: Vec<RuleIR>,
+    /// Rule sets.
+    #[serde(default)]
+    pub rule_set: Vec<RuleSetIR>,
     /// Default outbound name (fallback).
     #[serde(default)]
     pub default: Option<String>,
+    /// Final outbound for unmatched traffic (alias of `default` in some configs).
+    #[serde(default, alias = "final")]
+    pub final_outbound: Option<String>,
+
+    // ──────────────────────────────────────────────────────────────────
+    // GeoIP/Geosite Download Configuration
+    // ──────────────────────────────────────────────────────────────────
+    /// GeoIP database local path.
+    #[serde(default)]
+    pub geoip_path: Option<String>,
+    /// GeoIP database download URL.
+    /// GeoIP 数据库下载 URL。
+    #[serde(default)]
+    pub geoip_download_url: Option<String>,
+
+    /// GeoIP download detour outbound tag.
+    /// GeoIP 下载分流出站标签。
+    #[serde(default)]
+    pub geoip_download_detour: Option<String>,
+
+    /// Geosite database local path.
+    #[serde(default)]
+    pub geosite_path: Option<String>,
+    /// Geosite database download URL.
+    /// Geosite 数据库下载 URL。
+    #[serde(default)]
+    pub geosite_download_url: Option<String>,
+
+    /// Geosite download detour outbound tag.
+    /// Geosite 下载分流出站标签。
+    #[serde(default)]
+    pub geosite_download_detour: Option<String>,
+
+    /// Default rule set download detour outbound tag.
+    /// 默认规则集下载分流出站标签。
+    #[serde(default)]
+    pub default_rule_set_download_detour: Option<String>,
+
+    // ──────────────────────────────────────────────────────────────────
+    // Process and Interface Options
+    // ──────────────────────────────────────────────────────────────────
+    /// Enable process name/path detection for routing rules.
+    /// 启用路由规则的进程名称/路径检测。
+    #[serde(default)]
+    pub find_process: Option<bool>,
+
+    /// Automatically detect the default network interface.
+    /// 自动检测默认网络接口。
+    #[serde(default)]
+    pub auto_detect_interface: Option<bool>,
+
+    /// Default network interface name for outbound connections.
+    /// 出站连接的默认网络接口名称。
+    #[serde(default)]
+    pub default_interface: Option<String>,
+
+    // ──────────────────────────────────────────────────────────────────
+    // Routing Mark
+    // ──────────────────────────────────────────────────────────────────
+    /// SO_MARK value for routing (Linux only).
+    /// 路由的 SO_MARK 值（仅限 Linux）。
+    #[serde(default)]
+    pub mark: Option<u32>,
+
+    // ──────────────────────────────────────────────────────────────────
+    // DNS and Network Strategy
+    // ──────────────────────────────────────────────────────────────────
+    /// Default DNS resolver tag.
+    /// 默认 DNS 解析器标签。
+    #[serde(default)]
+    pub default_resolver: Option<String>,
+
+    /// Network selection strategy: "ipv4_only" | "ipv6_only" | "prefer_ipv4" | "prefer_ipv6".
+    /// 网络选择策略："ipv4_only" | "ipv6_only" | "prefer_ipv4" | "prefer_ipv6"。
+    #[serde(default)]
+    pub network_strategy: Option<String>,
+
+    /// Default network type(s) for outbound connections.
+    #[serde(default)]
+    pub default_network_type: Option<String>,
+    /// Fallback network type(s) for outbound connections.
+    #[serde(default)]
+    pub default_fallback_network_type: Option<String>,
+    /// Delay before using fallback network type.
+    #[serde(default)]
+    pub default_fallback_delay: Option<String>,
+}
+
+/// Rule set configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct RuleSetIR {
+    /// Rule set tag.
+    pub tag: String,
+    /// Rule set type ("local" | "remote").
+    #[serde(rename = "type")]
+    pub ty: String,
+    /// Rule set format ("binary" | "source").
+    #[serde(default)]
+    pub format: String,
+    /// Path to local rule set file.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// URL to remote rule set.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Download detour outbound tag.
+    #[serde(default)]
+    pub download_detour: Option<String>,
+    /// Update interval (e.g., "24h").
+    #[serde(default)]
+    pub update_interval: Option<String>,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1279,8 +1564,11 @@ pub struct ConfigIR {
     /// This mirrors Go's top-level `experimental` field and allows unknown or
     /// forward-compatible options to be preserved without strong typing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub experimental: Option<serde_json::Value>,
+    pub experimental: Option<ExperimentalIR>,
 }
+
+pub mod experimental;
+pub use experimental::*;
 
 /// Certificate configuration (global)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -1392,10 +1680,13 @@ impl ConfigIR {
                 || !r.not_geoip.is_empty()
                 || !r.not_ipcidr.is_empty()
                 || !r.not_port.is_empty()
-                || !r.not_process.is_empty()
+                || !r.not_process_name.is_empty()
                 || !r.not_network.is_empty()
                 || !r.not_protocol.is_empty()
                 || !r.not_alpn.is_empty()
+                || !r.not_wifi_ssid.is_empty()
+                || !r.not_wifi_bssid.is_empty()
+                || !r.not_rule_set.is_empty()
         })
     }
 

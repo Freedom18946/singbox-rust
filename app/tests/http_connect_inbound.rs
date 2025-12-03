@@ -1,5 +1,5 @@
 #![allow(clippy::manual_flatten, clippy::assertions_on_constants)]
-use sb_config::ir::{ConfigIR, InboundType, OutboundType};
+use sb_config::ir::ConfigIR;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
@@ -91,7 +91,7 @@ fn http_connect(
         last_cr = buf[0] == b'\r';
     }
     // 跳过头直到空行
-    let mut blank = 0;
+    let mut blank = 1;
     let mut prev = 0u8;
     loop {
         let n = s.read(&mut buf).unwrap();
@@ -118,6 +118,8 @@ fn http_connect(
 
 #[test]
 fn http_connect_end2end_direct() {
+    let _ = tracing_subscriber::fmt().with_env_filter("debug").try_init();
+    sb_adapters::register_all();
     let (echo_addr, _h) = start_echo();
     if echo_addr.port() == 0 {
         return;
@@ -139,12 +141,13 @@ fn http_connect_end2end_direct() {
     };
     let http_addr = l.local_addr().unwrap();
     drop(l);
+    thread::sleep(Duration::from_millis(100));
     let config = json!({
         "inbounds": [{
             "type": "http",
             "tag": "http-in",
             "listen": http_addr.ip().to_string(),
-            "listen_port": http_addr.port()
+            "port": http_addr.port()
         }],
         "outbounds": [{
             "type": "direct",
@@ -160,10 +163,18 @@ fn http_connect_end2end_direct() {
     });
     let ir: ConfigIR = to_ir_v1(&config);
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng.clone());
+    let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();
     let rt = Runtime::new(eng, br, sb).start();
-    thread::sleep(Duration::from_millis(80));
+    
+    // Wait for server to start
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(100));
+        if std::net::TcpStream::connect(http_addr).is_ok() {
+            break;
+        }
+    }
+    
     let out = http_connect(http_addr, echo_addr, b"hello http-connect");
     if out.is_empty() {
         return;

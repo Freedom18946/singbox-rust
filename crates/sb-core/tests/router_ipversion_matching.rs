@@ -34,12 +34,7 @@ fn test_ipversion_ipv4_match() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -52,12 +47,7 @@ fn test_ipversion_ipv4_match() {
         ip: Some(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_v6), Decision::Direct);
 }
@@ -85,12 +75,7 @@ fn test_ipversion_ipv6_match() {
         ))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Direct);
 
@@ -100,12 +85,7 @@ fn test_ipversion_ipv6_match() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_v4), Decision::Proxy(None));
 }
@@ -139,12 +119,7 @@ fn test_ipversion_priority_after_query_type() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Reject);
 
@@ -155,11 +130,7 @@ fn test_ipversion_priority_after_query_type() {
         transport_udp: false,
         port: Some(443),
         process_name: Some("firefox"),
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -172,12 +143,7 @@ fn test_ipversion_priority_after_query_type() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx3),
@@ -206,12 +172,7 @@ fn test_ipversion_no_ip_fallback() {
         ip: None,
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Direct);
 }
@@ -241,12 +202,7 @@ fn test_multiple_ipversion_rules() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_v4),
@@ -259,12 +215,7 @@ fn test_multiple_ipversion_rules() {
         ip: Some(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_v6), Decision::Direct);
 }
@@ -394,12 +345,7 @@ fn test_ipversion_combined_with_cidr_rules() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx1), Decision::Direct);
 
@@ -409,12 +355,7 @@ fn test_ipversion_combined_with_cidr_rules() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -450,12 +391,7 @@ fn test_real_world_dual_stack_routing() {
         ))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_v6), Decision::Direct);
 
@@ -465,12 +401,7 @@ fn test_real_world_dual_stack_routing() {
         ip: Some(IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))),
         transport_udp: false,
         port: Some(443),
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx_v4),

@@ -37,8 +37,7 @@ fn test_inbound_tag_exact_match() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Proxy(None));
 
@@ -52,8 +51,7 @@ fn test_inbound_tag_exact_match() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Direct);
 
@@ -67,8 +65,7 @@ fn test_inbound_tag_exact_match() {
         process_path: None,
         inbound_tag: None,
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 }
@@ -98,8 +95,7 @@ fn test_outbound_tag_exact_match() {
         process_path: None,
         inbound_tag: None,
         outbound_tag: Some("direct"),
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Reject);
 
@@ -113,8 +109,7 @@ fn test_outbound_tag_exact_match() {
         process_path: None,
         inbound_tag: None,
         outbound_tag: Some("proxy"),
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 }
@@ -144,8 +139,7 @@ fn test_inbound_tag_case_insensitive() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Proxy(None));
 
@@ -159,8 +153,7 @@ fn test_inbound_tag_case_insensitive() {
         process_path: None,
         inbound_tag: Some("HTTP"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Proxy(None));
 
@@ -174,8 +167,7 @@ fn test_inbound_tag_case_insensitive() {
         process_path: None,
         inbound_tag: Some("HtTp"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Proxy(None));
 }
@@ -209,8 +201,7 @@ fn test_combined_inbound_and_domain_rules() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx), Decision::Proxy(None));
 
@@ -224,8 +215,7 @@ fn test_combined_inbound_and_domain_rules() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Reject);
 
@@ -239,8 +229,7 @@ fn test_combined_inbound_and_domain_rules() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 }
@@ -274,8 +263,7 @@ fn test_inbound_and_outbound_together() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: Some("wireguard"),
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -292,8 +280,7 @@ fn test_inbound_and_outbound_together() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: Some("wireguard"),
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx2), Decision::Reject);
 
@@ -307,8 +294,7 @@ fn test_inbound_and_outbound_together() {
         process_path: None,
         inbound_tag: Some("tun"),
         outbound_tag: Some("direct"),
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 }
@@ -347,8 +333,7 @@ fn test_priority_order_with_inbound_outbound() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx),
@@ -365,8 +350,7 @@ fn test_priority_order_with_inbound_outbound() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -383,8 +367,7 @@ fn test_priority_order_with_inbound_outbound() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx3),
@@ -460,8 +443,7 @@ fn test_multiple_inbound_rules() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx1),
@@ -478,8 +460,7 @@ fn test_multiple_inbound_rules() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(
         engine.decide(&ctx2),
@@ -496,8 +477,7 @@ fn test_multiple_inbound_rules() {
         process_path: None,
         inbound_tag: Some("tun"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx3), Decision::Direct);
 
@@ -511,8 +491,7 @@ fn test_multiple_inbound_rules() {
         process_path: None,
         inbound_tag: Some("unknown"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx4), Decision::Reject);
 }
@@ -551,8 +530,7 @@ fn test_real_world_scenario_selective_proxy() {
         process_path: None,
         inbound_tag: Some("tun"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_tun), Decision::Proxy(None));
 
@@ -566,8 +544,7 @@ fn test_real_world_scenario_selective_proxy() {
         process_path: None,
         inbound_tag: Some("http"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_http), Decision::Direct);
 
@@ -581,8 +558,7 @@ fn test_real_world_scenario_selective_proxy() {
         process_path: None,
         inbound_tag: Some("socks5"),
         outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     };
     assert_eq!(engine.decide(&ctx_socks), Decision::Direct);
 }

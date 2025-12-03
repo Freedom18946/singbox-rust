@@ -26,7 +26,7 @@ use super::{DnsAnswer, DnsUpstream, RecordType};
 use crate::dns::transport::{DnsTransport, LocalTransport};
 
 #[cfg(any(feature = "dns_dhcp", feature = "dns_resolved"))]
-use notify::{Watcher, RecursiveMode, RecommendedWatcher};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 // Helper: parse EDNS0 Client Subnet from env (global default)
 fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
@@ -61,8 +61,8 @@ fn mask_prefix(bytes: &mut [u8], prefix: u8) {
     let full = (prefix / 8) as usize;
     let rem = (prefix % 8) as usize;
     if full < bytes.len() {
-        for i in full + 1..bytes.len() {
-            bytes[i] = 0;
+        for item in bytes.iter_mut().skip(full + 1) {
+            *item = 0;
         }
         if rem > 0 {
             let mask = (!0u8) << (8 - rem);
@@ -219,6 +219,7 @@ fn parse_nameserver_addr(token: &str) -> Option<SocketAddr> {
 }
 
 #[cfg(feature = "dns_tailscale")]
+#[allow(dead_code)]
 pub(crate) fn parse_tailscale_spec(
     spec: &str,
     tag: Option<&str>,
@@ -329,7 +330,7 @@ fn record_upstream_watch_error(kind: &'static str, upstream: &str, error: &str) 
             "upstream" => upstream.to_string(),
             // We might want to limit cardinality of error strings, but for now use full error or a simplified one.
             // Using full error might be dangerous. Let's just count.
-            "error" => "watch_error" 
+            "error" => "watch_error"
         )
         .increment(1);
     }
@@ -723,13 +724,16 @@ impl DhcpUpstream {
         let upstreams_clone = upstreams.clone();
         let path_clone = resolv_path.clone();
         let name_clone = name.clone();
-        
+
         // Watch parent directory to handle atomic replacements (e.g. vim, some system tools)
-        let watch_path = resolv_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| resolv_path.clone());
+        let watch_path = resolv_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| resolv_path.clone());
         let target_filename = resolv_path.file_name().map(|f| f.to_owned());
 
-        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            match res {
+        let mut watcher =
+            notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
                 Ok(event) => {
                     let should_reload = if let Some(target) = &target_filename {
                         event.paths.iter().any(|p| p.file_name() == Some(target))
@@ -738,13 +742,13 @@ impl DhcpUpstream {
                     };
 
                     if should_reload {
-                         tracing::debug!(
-                             target: "sb_core::dns",
-                             upstream = %name_clone,
-                             event = ?event.kind,
-                             "resolv.conf changed, reloading"
-                         );
-                         reload_dhcp_servers(&name_clone, &path_clone, &upstreams_clone);
+                        tracing::debug!(
+                            target: "sb_core::dns",
+                            upstream = %name_clone,
+                            event = ?event.kind,
+                            "resolv.conf changed, reloading"
+                        );
+                        reload_dhcp_servers(&name_clone, &path_clone, &upstreams_clone);
                     }
                 }
                 Err(e) => {
@@ -756,19 +760,19 @@ impl DhcpUpstream {
                     );
                     record_upstream_watch_error("dhcp", &name_clone, &e.to_string());
                 }
-            }
-        }).ok();
+            })
+            .ok();
 
         if let Some(w) = &mut watcher {
-             if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
-                 tracing::warn!(
-                     target: "sb_core::dns",
-                     upstream = %name,
-                     path = %watch_path.display(),
-                     error = %e,
-                     "failed to watch resolv.conf parent directory"
-                 );
-             }
+            if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
+                tracing::warn!(
+                    target: "sb_core::dns",
+                    upstream = %name,
+                    path = %watch_path.display(),
+                    error = %e,
+                    "failed to watch resolv.conf parent directory"
+                );
+            }
         }
 
         Ok(Self {
@@ -808,7 +812,7 @@ fn reload_dhcp_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<dyn D
             return;
         }
     };
-    
+
     if servers.is_empty() {
         tracing::warn!(
             target: "sb_core::dns",
@@ -825,7 +829,7 @@ fn reload_dhcp_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<dyn D
         .into_iter()
         .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
         .collect();
-        
+
     tracing::info!(
         target: "sb_core::dns",
         upstream = %name,
@@ -877,7 +881,7 @@ impl DnsUpstream for DhcpUpstream {
                     }
                 }
             }
-            
+
             // If all members failed, force a reload and retry once
             if attempt == 0 {
                 reload_dhcp_servers(&self.name, &self.resolv_path, &self.upstreams);
@@ -1038,7 +1042,7 @@ impl ResolvedUpstream {
         let name = tag
             .map(|t| format!("resolved::{t}"))
             .unwrap_or_else(|| format!("resolved://{}", resolv_path.display()));
-            
+
         let upstreams = Arc::new(RwLock::new(Vec::new()));
         let fallback = Arc::new(SystemUpstream::new());
 
@@ -1049,13 +1053,16 @@ impl ResolvedUpstream {
         let upstreams_clone = upstreams.clone();
         let path_clone = resolv_path.clone();
         let name_clone = name.clone();
-        
+
         // Watch parent directory to handle atomic replacements
-        let watch_path = resolv_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| resolv_path.clone());
+        let watch_path = resolv_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| resolv_path.clone());
         let target_filename = resolv_path.file_name().map(|f| f.to_owned());
 
-        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            match res {
+        let mut watcher =
+            notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
                 Ok(event) => {
                     let should_reload = if let Some(target) = &target_filename {
                         event.paths.iter().any(|p| p.file_name() == Some(target))
@@ -1064,13 +1071,13 @@ impl ResolvedUpstream {
                     };
 
                     if should_reload {
-                         tracing::debug!(
-                             target: "sb_core::dns",
-                             upstream = %name_clone,
-                             event = ?event.kind,
-                             "resolved stub changed, reloading"
-                         );
-                         reload_resolved_servers(&name_clone, &path_clone, &upstreams_clone);
+                        tracing::debug!(
+                            target: "sb_core::dns",
+                            upstream = %name_clone,
+                            event = ?event.kind,
+                            "resolved stub changed, reloading"
+                        );
+                        reload_resolved_servers(&name_clone, &path_clone, &upstreams_clone);
                     }
                 }
                 Err(e) => {
@@ -1082,19 +1089,19 @@ impl ResolvedUpstream {
                     );
                     record_upstream_watch_error("resolved", &name_clone, &e.to_string());
                 }
-            }
-        }).ok();
+            })
+            .ok();
 
         if let Some(w) = &mut watcher {
-             if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
-                 tracing::warn!(
-                     target: "sb_core::dns",
-                     upstream = %name,
-                     path = %watch_path.display(),
-                     error = %e,
-                     "failed to watch resolved stub parent directory"
-                 );
-             }
+            if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
+                tracing::warn!(
+                    target: "sb_core::dns",
+                    upstream = %name,
+                    path = %watch_path.display(),
+                    error = %e,
+                    "failed to watch resolved stub parent directory"
+                );
+            }
         }
 
         Ok(Self {
@@ -1132,17 +1139,17 @@ fn reload_resolved_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<d
     // If it doesn't exist yet, we might watch the parent.
     // The original logic tried candidates.
     // Let's stick to the path we have. If it's the default, it's likely correct.
-    
+
     let servers = match discover_nameservers_from_file(path) {
         Ok(s) => s,
         Err(err) => {
-             // If file doesn't exist, it might be transient.
-             tracing::debug!(target: "sb_core::dns", upstream = %name, error = %err, "failed to read resolved stub");
-             // Don't clear upstreams immediately on read error to avoid flapping?
-             // But if file is gone, maybe we should.
-             // Original logic tried multiple paths.
-             // Let's just try to read.
-             return;
+            // If file doesn't exist, it might be transient.
+            tracing::debug!(target: "sb_core::dns", upstream = %name, error = %err, "failed to read resolved stub");
+            // Don't clear upstreams immediately on read error to avoid flapping?
+            // But if file is gone, maybe we should.
+            // Original logic tried multiple paths.
+            // Let's just try to read.
+            return;
         }
     };
 
@@ -1162,7 +1169,7 @@ fn reload_resolved_servers(name: &str, path: &Path, upstreams: &RwLock<Vec<Arc<d
         .into_iter()
         .map(|addr| Arc::new(UdpUpstream::new(addr)) as Arc<dyn DnsUpstream>)
         .collect();
-        
+
     tracing::info!(
         target: "sb_core::dns",
         upstream = %name,
@@ -2128,7 +2135,9 @@ pub struct TailscaleLocalUpstream {
 #[cfg(feature = "dns_tailscale")]
 impl TailscaleLocalUpstream {
     pub fn new(tag: Option<&str>) -> Self {
-        let name = tag.map(|t| format!("tailscale::{t}")).unwrap_or_else(|| "tailscale://local".to_string());
+        let name = tag
+            .map(|t| format!("tailscale::{t}"))
+            .unwrap_or_else(|| "tailscale://local".to_string());
         let upstream = Self {
             name,
             upstreams: RwLock::new(Vec::new()),
@@ -2146,7 +2155,7 @@ impl TailscaleLocalUpstream {
             .arg("status")
             .arg("--json")
             .output();
-            
+
         let output = match output {
             Ok(o) => o,
             Err(e) => {
@@ -2154,7 +2163,7 @@ impl TailscaleLocalUpstream {
                 return Err(e.into());
             }
         };
-        
+
         if !output.status.success() {
             tracing::debug!(target: "sb_core::dns", upstream = %self.name, status = ?output.status, "tailscale status command failed");
             return Err(anyhow::anyhow!("tailscale status failed"));
@@ -2162,25 +2171,23 @@ impl TailscaleLocalUpstream {
 
         let v: serde_json::Value = serde_json::from_slice(&output.stdout)?;
         let backend_state = v.get("BackendState").and_then(|v| v.as_str()).unwrap_or("");
-        
+
         if backend_state == "Running" {
-             // Tailscale is running. Use 100.100.100.100
-             let addr: SocketAddr = "100.100.100.100:53".parse().unwrap();
-             let up = Arc::new(UdpUpstream::new(addr));
-             *self.upstreams.write() = vec![up];
-             tracing::debug!(target: "sb_core::dns", upstream = %self.name, "tailscale is running, using 100.100.100.100");
+            // Tailscale is running. Use 100.100.100.100
+            let addr: SocketAddr = "100.100.100.100:53".parse().unwrap();
+            let up = Arc::new(UdpUpstream::new(addr));
+            *self.upstreams.write() = vec![up];
+            tracing::debug!(target: "sb_core::dns", upstream = %self.name, "tailscale is running, using 100.100.100.100");
         } else {
-             tracing::warn!(target: "sb_core::dns", upstream = %self.name, state = %backend_state, "tailscale not running");
-             self.upstreams.write().clear();
+            tracing::warn!(target: "sb_core::dns", upstream = %self.name, state = %backend_state, "tailscale not running");
+            self.upstreams.write().clear();
         }
         *self.last_refresh.lock() = Instant::now();
         Ok(())
     }
 
     fn maybe_refresh(&self) {
-        let need = {
-            self.last_refresh.lock().elapsed() >= self.refresh_interval
-        };
+        let need = { self.last_refresh.lock().elapsed() >= self.refresh_interval };
         if need {
             let _ = self.refresh();
         }
@@ -2200,7 +2207,7 @@ impl DnsUpstream for TailscaleLocalUpstream {
             self.fallback.query(domain, record_type).await
         }
     }
-    
+
     fn name(&self) -> &str {
         &self.name
     }

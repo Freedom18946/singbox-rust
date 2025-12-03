@@ -12,11 +12,17 @@ use async_trait::async_trait;
 use std::net::SocketAddr;
 use tokio::net::{lookup_host, TcpStream, UdpSocket};
 use tokio::time::{timeout, Duration};
+use futures::StreamExt;
 
 /// Direct outbound connector that connects directly to targets
 #[derive(Debug, Clone)]
 pub struct DirectConnector {
     connect_timeout: Duration,
+    bind_interface: Option<String>,
+    routing_mark: Option<u32>,
+    reuse_addr: bool,
+    tcp_fast_open: bool,
+    tcp_multi_path: bool,
 }
 
 impl DirectConnector {
@@ -24,33 +30,66 @@ impl DirectConnector {
     pub const fn new() -> Self {
         Self {
             connect_timeout: Duration::from_secs(10),
+            bind_interface: None,
+            routing_mark: None,
+            reuse_addr: false,
+            tcp_fast_open: false,
+            tcp_multi_path: false,
+        }
+    }
+
+    pub fn with_options(
+        connect_timeout: Option<Duration>,
+        bind_interface: Option<String>,
+        routing_mark: Option<u32>,
+        reuse_addr: Option<bool>,
+        tcp_fast_open: Option<bool>,
+        tcp_multi_path: Option<bool>,
+    ) -> Self {
+        Self {
+            connect_timeout: connect_timeout.unwrap_or(Duration::from_secs(10)),
+            bind_interface,
+            routing_mark,
+            reuse_addr: reuse_addr.unwrap_or(false), // This line was intended to be replaced, but the replacement was syntactically incorrect. Reverting to original for correctness.
+            tcp_fast_open: tcp_fast_open.unwrap_or(false),
+            tcp_multi_path: tcp_multi_path.unwrap_or(false),
         }
     }
 
     /// Create a new direct connector with custom timeout
+    /// Create a new direct connector with custom timeout
     pub const fn with_timeout(connect_timeout: Duration) -> Self {
-        Self { connect_timeout }
+        Self {
+            connect_timeout,
+            bind_interface: None,
+            routing_mark: None,
+            reuse_addr: false,
+            tcp_fast_open: false,
+            tcp_multi_path: false,
+        }
     }
 
-    /// Resolve endpoint to socket address
-    async fn resolve_endpoint(&self, endpoint: &Endpoint) -> SbResult<SocketAddr> {
+    /// Resolve endpoint to socket addresses
+    async fn resolve_endpoint(&self, endpoint: &Endpoint) -> SbResult<Vec<SocketAddr>> {
         match &endpoint.host {
-            Host::Ip(ip) => Ok(SocketAddr::new(*ip, endpoint.port)),
+            Host::Ip(ip) => Ok(vec![SocketAddr::new(*ip, endpoint.port)]),
             Host::Name(domain) => {
                 let addr_str = format!("{}:{}", domain, endpoint.port);
-                let mut addrs = lookup_host(&addr_str).await.map_err(|e| {
+                let addrs = lookup_host(&addr_str).await.map_err(|e| {
                     SbError::network(
                         ErrorClass::Connection,
                         format!("DNS resolution failed: {e}"),
                     )
                 })?;
 
-                addrs.next().ok_or_else(|| {
-                    SbError::network(
+                let addrs: Vec<_> = addrs.collect();
+                if addrs.is_empty() {
+                    return Err(SbError::network(
                         ErrorClass::Connection,
                         "No addresses resolved for domain".to_string(),
-                    )
-                })
+                    ));
+                }
+                Ok(addrs)
             }
         }
     }
@@ -76,28 +115,131 @@ impl AsyncOutboundConnector for DirectConnector {
                     operation: "acquire_semaphore".to_string(),
                 })
             })?;
-        let addr = self.resolve_endpoint(&ctx.dst).await?;
+        
+        let addrs = self.resolve_endpoint(&ctx.dst).await?;
+        
+        // Happy Eyeballs (RFC 8305) simplified implementation
+        // 1. Prefer IPv6 if available (assuming system resolver order is respected)
+        // 2. Race connections with a delay
+        
+        // If only one address, connect directly
+        if addrs.len() == 1 {
+            return self.connect_addr(addrs[0]).await;
+        }
 
-        let stream = timeout(self.connect_timeout, TcpStream::connect(addr))
-            .await
-            .map_err(|_| SbError::timeout("tcp_connect", self.connect_timeout.as_millis() as u64))?
-            .map_err(|e| {
-                SbError::network(
-                    ErrorClass::Connection,
-                    format!("TCP connection failed: {e}"),
-                )
-            })?;
+        // Sort addresses: interleave IPv6 and IPv4 if both present, preserving order otherwise
+        let mut sorted_addrs = Vec::new();
+        let mut v6 = Vec::new();
+        let mut v4 = Vec::new();
+        for addr in addrs {
+            if addr.is_ipv6() {
+                v6.push(addr);
+            } else {
+                v4.push(addr);
+            }
+        }
+        
+        // Simple interleaving
+        let mut v6_iter = v6.into_iter();
+        let mut v4_iter = v4.into_iter();
+        loop {
+            match (v6_iter.next(), v4_iter.next()) {
+                (Some(a6), Some(a4)) => {
+                    sorted_addrs.push(a6);
+                    sorted_addrs.push(a4);
+                }
+                (Some(a6), None) => sorted_addrs.push(a6),
+                (None, Some(a4)) => sorted_addrs.push(a4),
+                (None, None) => break,
+            }
+        }
 
-        Ok(stream)
+        let mut tasks = futures::stream::FuturesUnordered::new();
+        let mut addrs_iter = sorted_addrs.into_iter();
+        
+        // Start first connection
+        if let Some(addr) = addrs_iter.next() {
+            let fut = self.connect_addr_captured(addr);
+            tasks.push(fut);
+        }
+
+        let delay = Duration::from_millis(250);
+        let mut delay_fut = Box::pin(tokio::time::sleep(delay));
+        let mut last_error = None;
+
+        loop {
+            tokio::select! {
+                res = tasks.next(), if !tasks.is_empty() => {
+                    match res {
+                        Some(Ok(stream)) => return Ok(stream),
+                        Some(Err(e)) => {
+                            last_error = Some(e);
+                            // If tasks empty and no more addrs, break
+                            if tasks.is_empty() && addrs_iter.len() == 0 {
+                                break;
+                            }
+                        }
+                        None => break, // Should not happen due to !tasks.is_empty()
+                    }
+                }
+                _ = &mut delay_fut, if addrs_iter.len() > 0 => {
+                    // Time to start next connection
+                    if let Some(addr) = addrs_iter.next() {
+                        let fut = self.connect_addr_captured(addr);
+                        tasks.push(fut);
+                    }
+                    // Reset delay
+                    delay_fut = Box::pin(tokio::time::sleep(delay));
+                }
+                else => {
+                    // No more tasks and no more addrs (or delay not active)
+                    break;
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| SbError::network(
+            ErrorClass::Connection,
+            "All connection attempts failed".to_string(),
+        )))
     }
 
     async fn connect_udp(&self, ctx: &ConnCtx) -> SbResult<Box<dyn UdpTransport>> {
-        let addr = self.resolve_endpoint(&ctx.dst).await?;
+        let addrs = self.resolve_endpoint(&ctx.dst).await?;
+        let addr = addrs[0];
 
         // For UDP, we create a socket and connect it to the target
-        let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| {
+        let socket = if addr.is_ipv4() {
+            tokio::net::UdpSocket::bind("0.0.0.0:0")
+        } else {
+            tokio::net::UdpSocket::bind("[::]:0")
+        }
+        .await
+        .map_err(|e| {
             SbError::network(ErrorClass::Connection, format!("UDP bind failed: {e}"))
         })?;
+
+        #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+        if let Some(iface) = &self.bind_interface {
+            let s = socket2::SockRef::from(&socket);
+            s.bind_device(Some(iface.as_bytes())).map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("Failed to bind to device {iface}: {e}"),
+                )
+            })?;
+        }
+
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if let Some(mark) = self.routing_mark {
+            let s = socket2::SockRef::from(&socket);
+            s.set_mark(mark).map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("Failed to set routing mark {mark}: {e}"),
+                )
+            })?;
+        }
 
         socket.connect(addr).await.map_err(|e| {
             SbError::network(ErrorClass::Connection, format!("UDP connect failed: {e}"))
@@ -106,6 +248,171 @@ impl AsyncOutboundConnector for DirectConnector {
         Ok(Box::new(DirectUdpTransport::new(socket)))
     }
 }
+
+impl DirectConnector {
+    async fn connect_addr(&self, addr: SocketAddr) -> SbResult<TcpStream> {
+        let socket = if addr.is_ipv4() {
+            tokio::net::TcpSocket::new_v4()
+        } else {
+            tokio::net::TcpSocket::new_v6()
+        }
+        .map_err(|e| {
+            SbError::network(
+                ErrorClass::Connection,
+                format!("Failed to create TCP socket: {e}"),
+            )
+        })?;
+
+        #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+        if let Some(iface) = &self.bind_interface {
+            let s = socket2::SockRef::from(&socket);
+            s.bind_device(Some(iface.as_bytes())).map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("Failed to bind to device {iface}: {e}"),
+                )
+            })?;
+        }
+
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if let Some(mark) = self.routing_mark {
+            let s = socket2::SockRef::from(&socket);
+            s.set_mark(mark).map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("Failed to set routing mark {mark}: {e}"),
+                )
+            })?;
+        }
+
+        if self.reuse_addr {
+            let s = socket2::SockRef::from(&socket);
+            s.set_reuse_address(true).map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("Failed to set reuse address: {e}"),
+                )
+            })?;
+        }
+
+        if self.tcp_fast_open {
+            #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios"))]
+            {
+                let s = socket2::SockRef::from(&socket);
+                // let _ = s.set_tcp_fastopen_connect(true);
+                // TODO: Enable TFO when supported by socket2/platform
+                let _ = s; // suppress unused warning
+            }
+        }
+
+        timeout(self.connect_timeout, socket.connect(addr))
+            .await
+            .map_err(|_| SbError::timeout("tcp_connect", self.connect_timeout.as_millis() as u64))?
+            .map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("TCP connection failed: {e}"),
+                )
+            })
+    }
+
+    // Helper for capturing self fields for async block
+    fn connect_addr_captured(&self, addr: SocketAddr) -> impl std::future::Future<Output = SbResult<TcpStream>> + Send + 'static {
+        let connect_timeout = self.connect_timeout;
+        let _bind_interface = self.bind_interface.clone();
+        let _routing_mark = self.routing_mark;
+        let reuse_addr = self.reuse_addr;
+        let tcp_fast_open = self.tcp_fast_open;
+        let tcp_multi_path = self.tcp_multi_path;
+
+        async move {
+            let socket = if addr.is_ipv4() {
+                tokio::net::TcpSocket::new_v4()
+            } else {
+                tokio::net::TcpSocket::new_v6()
+            }
+            .map_err(|e| {
+                SbError::network(
+                    ErrorClass::Connection,
+                    format!("Failed to create TCP socket: {e}"),
+                )
+            })?;
+
+            #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
+            if let Some(iface) = &bind_interface {
+                let s = socket2::SockRef::from(&socket);
+                s.bind_device(Some(iface.as_bytes())).map_err(|e| {
+                    SbError::network(
+                        ErrorClass::Connection,
+                        format!("Failed to bind to device {iface}: {e}"),
+                    )
+                })?;
+            }
+
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            if let Some(mark) = routing_mark {
+                let s = socket2::SockRef::from(&socket);
+                s.set_mark(mark).map_err(|e| {
+                    SbError::network(
+                        ErrorClass::Connection,
+                        format!("Failed to set routing mark {mark}: {e}"),
+                    )
+                })?;
+            }
+
+            if reuse_addr {
+                let s = socket2::SockRef::from(&socket);
+                s.set_reuse_address(true).map_err(|e| {
+                    SbError::network(
+                        ErrorClass::Connection,
+                        format!("Failed to set reuse address: {e}"),
+                    )
+                })?;
+            }
+
+            if tcp_fast_open {
+                // Note: TFO connect support varies by platform and tokio version.
+                // socket2 provides set_tcp_fastopen_connect on some platforms.
+                #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios"))]
+                {
+                    let s = socket2::SockRef::from(&socket);
+                    // On some platforms/versions this might be missing or named differently.
+                    // We'll try to use what's available or log a warning if not supported.
+                    // For now, we assume standard socket2 support if compiled.
+                     // let _ = s.set_tcp_fastopen_connect(true);
+                    // TODO: Enable TFO when supported by socket2/platform
+                    let _ = s; // suppress unused warning
+                }
+            }
+
+            if tcp_multi_path {
+                #[cfg(target_os = "linux")]
+                {
+                    // MPTCP is usually protocol 262
+                    // But socket creation is where it matters (IPPROTO_MPTCP).
+                    // Since we already created the socket as TCP, we can't easily switch to MPTCP
+                    // unless we change the socket creation logic.
+                    // However, some implementations allow setting it via setsockopt.
+                    // For now, we'll log a warning that it's not fully supported on existing socket.
+                    // Or we can try to set it if supported.
+                    // socket2 doesn't expose MPTCP constants directly usually.
+                }
+            }
+
+            timeout(connect_timeout, socket.connect(addr))
+                .await
+                .map_err(|_| SbError::timeout("tcp_connect", connect_timeout.as_millis() as u64))?
+                .map_err(|e| {
+                    SbError::network(
+                        ErrorClass::Connection,
+                        format!("TCP connection failed: {e}"),
+                    )
+                })
+        }
+    }
+}
+
+
 
 fn global_limiters() -> (&'static tokio::sync::Semaphore, u64) {
     use std::sync::OnceLock;
@@ -216,7 +523,9 @@ mod tests {
 
         let result = connector.resolve_endpoint(&endpoint).await;
         assert!(result.is_ok());
-        let addr = result.unwrap();
+        let addrs = result.unwrap();
+        assert!(!addrs.is_empty());
+        let addr = addrs[0];
         assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
         assert_eq!(addr.port(), 8080);
     }
@@ -229,7 +538,9 @@ mod tests {
         let result = connector.resolve_endpoint(&endpoint).await;
         // This might fail in some environments, but should work in most cases
         if result.is_ok() {
-            let addr = result.unwrap();
+            let addrs = result.unwrap();
+            assert!(!addrs.is_empty());
+            let addr = addrs[0];
             assert_eq!(addr.port(), 8080);
             // localhost should resolve to either 127.0.0.1 or ::1
             assert!(addr.ip().is_loopback());

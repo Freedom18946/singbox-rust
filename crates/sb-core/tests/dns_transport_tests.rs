@@ -85,6 +85,7 @@ async fn test_doh_transport_construction() -> Result<()> {
 #[cfg(feature = "dns_doq")]
 #[tokio::test]
 async fn test_doq_transport_construction() -> Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     // Test that DoQ transport can be constructed
     let server = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(9, 9, 9, 9)), 853);
     let transport =
@@ -171,7 +172,7 @@ fn test_transport_names_unique() {
     // Ensure each transport has a unique name
     use std::collections::HashSet;
 
-    let names = vec!["udp", "dot", "doh"];
+    let names = ["udp", "dot", "doh"];
     let unique_names: HashSet<_> = names.iter().collect();
 
     assert_eq!(

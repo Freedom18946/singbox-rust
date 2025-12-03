@@ -1,524 +1,251 @@
-    Checking sb-transport v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-transport)
-    Checking serial_test v2.0.0
-    Checking app v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/app)
-    Checking trycmd v0.15.10
-    Checking sb-admin-contract v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-admin-contract)
-error[E0428]: the name `MultiplexConfig` is defined multiple times
-   --> crates/sb-transport/src/multiplex.rs:520:1
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- previous definition of the type `MultiplexConfig` here
-...
-520 | pub struct MultiplexConfig {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `MultiplexConfig` redefined here
-    |
-    = note: `MultiplexConfig` must be defined only once in the type namespace of this module
-
-error[E0433]: failed to resolve: use of unresolved module or unlinked crate `tokio_stream`
-   --> crates/sb-transport/src/grpc.rs:218:30
-    |
-218 |         let request_stream = tokio_stream::wrappers::ReceiverStream::new(outbound_rx);
-    |                              ^^^^^^^^^^^^ use of unresolved module or unlinked crate `tokio_stream`
-    |
-    = help: if you wanted to use a crate named `tokio_stream`, use `cargo add tokio_stream` to add it to your `Cargo.toml`
-
-error[E0433]: failed to resolve: could not find `serde_helpers` in `sb_metrics`
-   --> crates/sb-transport/src/multiplex.rs:543:31
-    |
-543 |         serde(default, with = "sb_metrics::serde_helpers::option_duration_secs")
-    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ could not find `serde_helpers` in `sb_metrics`
-
-error[E0412]: cannot find type `HashMap` in this scope
-   --> crates/sb-transport/src/http2.rs:139:21
-    |
-139 |     pool: Arc<Mutex<HashMap<(String, u16), SendRequest<Bytes>>>>,
-    |                     ^^^^^^^ not found in this scope
-    |
-help: consider importing this struct
-    |
- 69 + use std::collections::HashMap;
-    |
-
-error[E0433]: failed to resolve: use of undeclared type `HashMap`
-   --> crates/sb-transport/src/http2.rs:149:39
-    |
-149 |             pool: Arc::new(Mutex::new(HashMap::new())),
-    |                                       ^^^^^^^ use of undeclared type `HashMap`
-    |
-help: consider importing this struct
-    |
- 69 + use std::collections::HashMap;
-    |
-
-error[E0412]: cannot find type `Control` in crate `yamux`
-   --> crates/sb-transport/src/multiplex.rs:197:21
-    |
-197 |     control: yamux::Control,
-    |                     ^^^^^^^ not found in `yamux`
-
-error[E0412]: cannot find type `Control` in crate `yamux`
-   --> crates/sb-transport/src/multiplex.rs:205:28
-    |
-205 |     fn new(control: yamux::Control, closed: Arc<std::sync::atomic::AtomicBool>) -> Self {
-    |                            ^^^^^^^ not found in `yamux`
-
-error[E0412]: cannot find type `MultiplexServerConfig` in this scope
-   --> crates/sb-transport/src/multiplex.rs:595:13
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- similarly named struct `MultiplexConfig` defined here
-...
-595 |     config: MultiplexServerConfig,
-    |             ^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `MultiplexConfig`
-
-error[E0412]: cannot find type `MultiplexServerConfig` in this scope
-   --> crates/sb-transport/src/multiplex.rs:606:63
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- similarly named struct `MultiplexConfig` defined here
-...
-606 |     pub fn new(tcp_listener: tokio::net::TcpListener, config: MultiplexServerConfig) -> Self {
-    |                                                               ^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `MultiplexConfig`
-
-error[E0412]: cannot find type `MultiplexServerConfig` in this scope
-   --> crates/sb-transport/src/multiplex.rs:629:30
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- similarly named struct `MultiplexConfig` defined here
-...
-629 |     pub fn config(&self) -> &MultiplexServerConfig {
-    |                              ^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `MultiplexConfig`
-
-error[E0412]: cannot find type `MultiplexServerConfig` in this scope
-   --> crates/sb-transport/src/multiplex.rs:634:44
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- similarly named struct `MultiplexConfig` defined here
-...
-634 |     fn create_server_yamux_config(config: &MultiplexServerConfig) -> Config {
-    |                                            ^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `MultiplexConfig`
-
-error[E0412]: cannot find type `MultiplexServerConfig` in this scope
-   --> crates/sb-transport/src/multiplex.rs:656:17
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- similarly named struct `MultiplexConfig` defined here
-...
-656 |         config: MultiplexServerConfig,
-    |                 ^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `MultiplexConfig`
-
-error[E0412]: cannot find type `MultiplexServerConfig` in this scope
-   --> crates/sb-transport/src/multiplex.rs:692:17
-    |
-127 | pub struct MultiplexConfig {
-    | -------------------------- similarly named struct `MultiplexConfig` defined here
-...
-692 |         config: MultiplexServerConfig,
-    |                 ^^^^^^^^^^^^^^^^^^^^^ help: a struct with a similar name exists: `MultiplexConfig`
-
-warning: unused import: `Method`
-  --> crates/sb-transport/src/http2.rs:74:12
+    Checking sb-core v0.1.0 (/Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-core)
+error[E0603]: module `labels` is private
+  --> crates/sb-core/src/metrics/registry_ext.rs:88:17
    |
-74 | use http::{Method, Request, Uri};
-   |            ^^^^^^
+88 |     sb_metrics::labels::ensure_allowed_labels(name, labels);
+   |                 ^^^^^^  --------------------- function `ensure_allowed_labels` is not publicly re-exported
+   |                 |
+   |                 private module
+   |
+note: the module `labels` is defined here
+  --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics/src/lib.rs:77:1
+   |
+77 | mod labels;
+   | ^^^^^^^^^^
+
+error[E0603]: module `labels` is private
+   --> crates/sb-core/src/metrics/registry_ext.rs:122:17
+    |
+122 |     sb_metrics::labels::ensure_allowed_labels(name, labels);
+    |                 ^^^^^^  --------------------- function `ensure_allowed_labels` is not publicly re-exported
+    |                 |
+    |                 private module
+    |
+note: the module `labels` is defined here
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics/src/lib.rs:77:1
+    |
+ 77 | mod labels;
+    | ^^^^^^^^^^
+
+error[E0603]: module `labels` is private
+   --> crates/sb-core/src/metrics/registry_ext.rs:156:17
+    |
+156 |     sb_metrics::labels::ensure_allowed_labels(name, labels);
+    |                 ^^^^^^  --------------------- function `ensure_allowed_labels` is not publicly re-exported
+    |                 |
+    |                 private module
+    |
+note: the module `labels` is defined here
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics/src/lib.rs:77:1
+    |
+ 77 | mod labels;
+    | ^^^^^^^^^^
+
+error[E0603]: module `labels` is private
+   --> crates/sb-core/src/metrics/registry_ext.rs:250:17
+    |
+250 |     sb_metrics::labels::ensure_allowed_labels(name, labels);
+    |                 ^^^^^^  --------------------- function `ensure_allowed_labels` is not publicly re-exported
+    |                 |
+    |                 private module
+    |
+note: the module `labels` is defined here
+   --> /Users/bob/Desktop/Projects/ING/sing/singbox-rust/crates/sb-metrics/src/lib.rs:77:1
+    |
+ 77 | mod labels;
+    | ^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+  --> crates/sb-core/src/inbound/tun.rs:17:5
+   |
+17 | use tokio::sync::Mutex;
+   |     ^^^^^^^^^^^^^^^^^^
    |
    = note: `#[warn(unused_imports)]` on by default
 
-warning: unused import: `BytesMut`
-  --> crates/sb-transport/src/grpc.rs:43:25
+warning: unused import: `debug`
+  --> crates/sb-core/src/inbound/tun.rs:18:15
    |
-43 | use bytes::{Buf, Bytes, BytesMut};
-   |                         ^^^^^^^^
+18 | use tracing::{debug, error, info, warn};
+   |               ^^^^^
 
-warning: unused import: `futures::stream::Stream`
-  --> crates/sb-transport/src/grpc.rs:44:5
+warning: unused import: `crate::outbound::crypto_types::HostPort as Hp`
+   --> crates/sb-core/src/outbound/mod.rs:448:29
+    |
+448 |                         use crate::outbound::crypto_types::HostPort as Hp;
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `router_index_decide_geosite` and `router_index_decide_transport_port`
+  --> crates/sb-core/src/router/engine.rs:15:55
    |
-44 | use futures::stream::Stream;
-   |     ^^^^^^^^^^^^^^^^^^^^^^^
+15 |     normalize_host, router_index_decide_exact_suffix, router_index_decide_geosite,
+   |                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 |     router_index_decide_ip, router_index_decide_transport_port, runtime_override_udp, shared_index,
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-warning: unused imports: `TunnelRequest` and `TunnelResponse`
-   --> crates/sb-transport/src/grpc.rs:204:22
+warning: unused imports: `ConfigIR` and `RuleIR`
+   --> crates/sb-core/src/router/mod.rs:180:21
     |
-204 |         use tunnel::{TunnelRequest, TunnelResponse};
-    |                      ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+180 | use sb_config::ir::{ConfigIR, RuleIR};
+    |                     ^^^^^^^^  ^^^^^^
 
-warning: unused import: `std::sync::Arc`
-  --> crates/sb-transport/src/circuit_breaker.rs:27:5
+warning: unused import: `ipnet::IpNet`
+   --> crates/sb-core/src/router/mod.rs:181:5
+    |
+181 | use ipnet::IpNet;
+    |     ^^^^^^^^^^^^
+
+warning: unused import: `std::str::FromStr`
+   --> crates/sb-core/src/router/mod.rs:182:5
+    |
+182 | use std::str::FromStr;
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CompositeRule`, `Decision`, `DnsRecordType`, `DomainRegexMatcher`, and `ProcessPathRegexMatcher`
+   --> crates/sb-core/src/router/mod.rs:183:28
+    |
+183 | use crate::router::rules::{CompositeRule, Decision, DomainRegexMatcher, ProcessPathRegexMatcher, DnsRecordType};
+    |                            ^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: unused imports: `delete`, `post`, and `put`
+ --> crates/sb-core/src/services/ssmapi/server.rs:6:15
+  |
+6 |     routing::{delete, get, post, put},
+  |               ^^^^^^       ^^^^  ^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> crates/sb-core/src/services/ssmapi/server.rs:10:5
    |
-27 | use std::sync::Arc;
-   |     ^^^^^^^^^^^^^^
+10 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0119]: conflicting implementations of trait `std::fmt::Debug` for type `multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:518:10
+error[E0277]: `std::result::Result<usize, TunError>` is not a future
+   --> crates/sb-core/src/inbound/tun.rs:135:41
     |
-125 | #[derive(Debug, Clone)]
-    |          ----- first implementation here
-...
-518 | #[derive(Debug, Clone)]
-    |          ^^^^^ conflicting implementation for `multiplex::MultiplexConfig`
-
-error[E0119]: conflicting implementations of trait `Default` for type `multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:548:1
+135 |             match device.read(&mut buf).await {
+    |                                         ^^^^^ `std::result::Result<usize, TunError>` is not a future
     |
-160 | impl Default for MultiplexConfig {
-    | -------------------------------- first implementation here
-...
-548 | impl Default for MultiplexConfig {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ conflicting implementation for `multiplex::MultiplexConfig`
-
-error[E0119]: conflicting implementations of trait `Clone` for type `multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:518:17
+    = help: the trait `futures::Future` is not implemented for `std::result::Result<usize, TunError>`
+    = note: std::result::Result<usize, TunError> must be a future or must implement `IntoFuture` to be awaited
+    = note: required for `std::result::Result<usize, TunError>` to implement `std::future::IntoFuture`
+help: remove the `.await`
     |
-125 | #[derive(Debug, Clone)]
-    |                 ----- first implementation here
-...
-518 | #[derive(Debug, Clone)]
-    |                 ^^^^^ conflicting implementation for `multiplex::MultiplexConfig`
-
-error[E0119]: conflicting implementations of trait `Serialize` for type `multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:519:38
-    |
-126 | #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    |                                      ---------------- first implementation here
-...
-519 | #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    |                                      ^^^^^^^^^^^^^^^^ conflicting implementation for `multiplex::MultiplexConfig`
-    |
-    = note: this error originates in the derive macro `serde::Serialize` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0119]: conflicting implementations of trait `Deserialize<'_>` for type `multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:519:56
-    |
-126 | #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    |                                                        ------------------ first implementation here
-...
-519 | #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    |                                                        ^^^^^^^^^^^^^^^^^^ conflicting implementation for `multiplex::MultiplexConfig`
-    |
-    = note: this error originates in the derive macro `serde::Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0308]: mismatched types
-   --> crates/sb-transport/src/multiplex.rs:386:35
-    |
-386 |                         return Ok(conn.clone());
-    |                                -- ^^^^^^^^^^^^ expected `Arc<MultiplexConnection>`, found `&MultiplexConnection`
-    |                                |
-    |                                arguments to this enum variant are incorrect
-    |
-    = note: expected struct `std::sync::Arc<MultiplexConnection>`
-            found reference `&MultiplexConnection`
-help: the type constructed contains `&MultiplexConnection` due to the type of the argument passed
-   --> crates/sb-transport/src/multiplex.rs:386:32
-    |
-386 |                         return Ok(conn.clone());
-    |                                ^^^------------^
-    |                                   |
-    |                                   this argument influences the type of `Ok`
-note: tuple variant defined here
-   --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/result.rs:552:5
-    |
-552 |     Ok(#[stable(feature = "rust1", since = "1.0.0")] T),
-    |     ^^
-
-error[E0599]: no method named `control` found for struct `yamux::Connection` in the current scope
-   --> crates/sb-transport/src/multiplex.rs:398:34
-    |
-398 |         let control = connection.control();
-    |                                  ^^^^^^^ method not found in `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>`
-
-error[E0599]: the method `next` exists for struct `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>`, but its trait bounds were not satisfied
-   --> crates/sb-transport/src/multiplex.rs:405:44
-    |
-405 |             while let Some(_) = connection.next().await {
-    |                                            ^^^^ method cannot be called on `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>` due to unsatisfied trait bounds
-    |
-   ::: /Users/bob/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/yamux-0.13.7/src/connection.rs:80:1
-    |
- 80 | pub struct Connection<T> {
-    | ------------------------ doesn't satisfy `_: StreamExt` or `_: Stream`
-    |
-    = note: the following trait bounds were not satisfied:
-            `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>: futures::Stream`
-            which is required by `yamux::Connection<Compat<Box<dyn AsyncReadWrite>>>: futures::StreamExt`
-
-error[E0308]: mismatched types
-    --> crates/sb-transport/src/multiplex.rs:418:30
-     |
- 418 |             connections.push(mux_conn.clone());
-     |                         ---- ^^^^^^^^^^^^^^^^ expected `MultiplexConnection`, found `Arc<MultiplexConnection>`
-     |                         |
-     |                         arguments to this method are incorrect
-     |
-     = note: expected struct `MultiplexConnection`
-                found struct `std::sync::Arc<MultiplexConnection>`
-note: method defined here
-    --> /Users/bob/.rustup/toolchains/1.90.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs:2521:12
-     |
-2521 |     pub fn push(&mut self, value: T) {
-     |            ^^^^
-
-error[E0609]: no field `upgrade_protocol` on type `HttpUpgradeServerConfig`
-   --> crates/sb-transport/src/httpupgrade.rs:386:25
-    |
-386 |             self.config.upgrade_protocol
-    |                         ^^^^^^^^^^^^^^^^ unknown field
-    |
-    = note: available field is: `path`
-
-error[E0063]: missing fields `early_data_header_name` and `max_early_data` in initializer of `websocket::WebSocketConfig`
-   --> crates/sb-transport/src/websocket.rs:114:9
-    |
-114 |         Self {
-    |         ^^^^ missing `early_data_header_name` and `max_early_data`
-
-error[E0599]: no method named `http2_keep_alive_timeout` found for struct `Endpoint` in the current scope
-   --> crates/sb-transport/src/grpc.rs:151:33
-    |
-151 |             endpoint = endpoint.http2_keep_alive_timeout(timeout);
-    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^ private field, not a method
-    |
-help: there is a method `keep_alive_timeout` with a similar name
-    |
-151 -             endpoint = endpoint.http2_keep_alive_timeout(timeout);
-151 +             endpoint = endpoint.keep_alive_timeout(timeout);
+135 -             match device.read(&mut buf).await {
+135 +             match device.read(&mut buf) {
     |
 
-error[E0609]: no field `send_tx` on type `Pin<&mut GrpcStreamAdapter>`
-   --> crates/sb-transport/src/grpc.rs:306:14
+error[E0277]: `std::result::Result<usize, TunError>` is not a future
+   --> crates/sb-core/src/inbound/tun.rs:150:66
     |
-306 |         self.send_tx.send(data).map_err(|e| {
-    |              ^^^^^^^ unknown field
+150 |                         if let Err(e) = device.write(&tx_packet).await {
+    |                                                                  ^^^^^ `std::result::Result<usize, TunError>` is not a future
     |
-    = note: available fields are: `tx`, `rx`, `read_buffer`
-
-error[E0599]: no method named `is_idle` found for reference `&Vec<MultiplexConnection>` in the current scope
-   --> crates/sb-transport/src/multiplex.rs:318:29
+    = help: the trait `futures::Future` is not implemented for `std::result::Result<usize, TunError>`
+    = note: std::result::Result<usize, TunError> must be a future or must implement `IntoFuture` to be awaited
+    = note: required for `std::result::Result<usize, TunError>` to implement `std::future::IntoFuture`
+help: remove the `.await`
     |
-318 |                     if conn.is_idle(idle_timeout).await {
-    |                             ^^^^^^^ method not found in `&Vec<MultiplexConnection>`
-
-error[E0277]: `(std::string::String, u16)` doesn't implement `std::fmt::Display`
-   --> crates/sb-transport/src/multiplex.rs:319:64
-    |
-319 |                         debug!("Removing idle connection: {}", key);
-    |                                                           --   ^^^ `(std::string::String, u16)` cannot be formatted with the default formatter
-    |                                                           |
-    |                                                           required by this formatting parameter
-    |
-    = help: the trait `std::fmt::Display` is not implemented for `(std::string::String, u16)`
-    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
-    = note: required for `&(std::string::String, u16)` to implement `std::fmt::Display`
-    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0599]: no method named `is_healthy` found for reference `&Vec<MultiplexConnection>` in the current scope
-   --> crates/sb-transport/src/multiplex.rs:325:30
-    |
-325 |                     if !conn.is_healthy().await {
-    |                              ^^^^^^^^^^
-    |
-help: there is a method `is_empty` with a similar name
-    |
-325 -                     if !conn.is_healthy().await {
-325 +                     if !conn.is_empty().await {
+150 -                         if let Err(e) = device.write(&tx_packet).await {
+150 +                         if let Err(e) = device.write(&tx_packet) {
     |
 
-error[E0277]: `(std::string::String, u16)` doesn't implement `std::fmt::Display`
-   --> crates/sb-transport/src/multiplex.rs:326:69
+error[E0277]: `std::result::Result<(), TunError>` is not a future
+   --> crates/sb-core/src/inbound/tun.rs:162:32
     |
-326 |                         debug!("Removing unhealthy connection: {}", key);
-    |                                                                --   ^^^ `(std::string::String, u16)` cannot be formatted with the default formatter
-    |                                                                |
-    |                                                                required by this formatting parameter
+162 |         let _ = device.close().await;
+    |                                ^^^^^ `std::result::Result<(), TunError>` is not a future
     |
-    = help: the trait `std::fmt::Display` is not implemented for `(std::string::String, u16)`
-    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
-    = note: required for `&(std::string::String, u16)` to implement `std::fmt::Display`
-    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0609]: no field `protocol` on type `&multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:523:9
+    = help: the trait `futures::Future` is not implemented for `std::result::Result<(), TunError>`
+    = note: std::result::Result<(), TunError> must be a future or must implement `IntoFuture` to be awaited
+    = note: required for `std::result::Result<(), TunError>` to implement `std::future::IntoFuture`
+help: remove the `.await`
     |
-523 |     pub protocol: String,
-    |         ^^^^^^^^ unknown field
-    |
-    = note: available fields are: `max_num_streams`, `initial_stream_window`, `max_stream_window`, `enable_keepalive`, `keepalive_interval` ... and 5 others
-
-error[E0609]: no field `max_streams` on type `&multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:526:9
-    |
-526 |     pub max_streams: u32,
-    |         ^^^^^^^^^^^ unknown field
-    |
-    = note: available fields are: `max_num_streams`, `initial_stream_window`, `max_stream_window`, `enable_keepalive`, `keepalive_interval` ... and 5 others
-
-error[E0609]: no field `min_streams` on type `&multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:532:9
-    |
-532 |     pub min_streams: u32,
-    |         ^^^^^^^^^^^ unknown field
-    |
-    = note: available fields are: `max_num_streams`, `initial_stream_window`, `max_stream_window`, `enable_keepalive`, `keepalive_interval` ... and 5 others
-
-error[E0609]: no field `keep_alive_interval` on type `&multiplex::MultiplexConfig`
-   --> crates/sb-transport/src/multiplex.rs:545:9
-    |
-545 |     pub keep_alive_interval: Option<Duration>,
-    |         ^^^^^^^^^^^^^^^^^^^ unknown field
-    |
-help: a field with a similar name exists
-    |
-545 -     pub keep_alive_interval: Option<Duration>,
-545 +     pub keepalive_interval: Option<Duration>,
+162 -         let _ = device.close().await;
+162 +         let _ = device.close();
     |
 
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `protocol`
-   --> crates/sb-transport/src/multiplex.rs:523:9
+warning: unused variable: `budget`
+   --> crates/sb-core/src/router/engine.rs:745:13
     |
-523 |     pub protocol: String,
-    |         ^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `max_streams`
-   --> crates/sb-transport/src/multiplex.rs:526:9
-    |
-526 |     pub max_streams: u32,
-    |         ^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0308]: mismatched types
-   --> crates/sb-transport/src/multiplex.rs:519:56
-    |
-519 | #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    |                                                        ^^^^^^^^^^^^^^^^^^ expected `usize`, found `u32`
-    |
-    = note: this error originates in the derive macro `serde::Deserialize` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `min_streams`
-   --> crates/sb-transport/src/multiplex.rs:532:9
-    |
-532 |     pub min_streams: u32,
-    |         ^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `keep_alive_interval`
-   --> crates/sb-transport/src/multiplex.rs:545:9
-    |
-545 |     pub keep_alive_interval: Option<Duration>,
-    |         ^^^^^^^^^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `protocol`
-   --> crates/sb-transport/src/multiplex.rs:523:5
-    |
-523 |     pub protocol: String,
-    |     ^^^^^^^^^^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `max_streams`
-   --> crates/sb-transport/src/multiplex.rs:526:5
-    |
-526 |     pub max_streams: u32,
-    |     ^^^^^^^^^^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `min_streams`
-   --> crates/sb-transport/src/multiplex.rs:532:5
-    |
-532 |     pub min_streams: u32,
-    |     ^^^^^^^^^^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `keep_alive_interval`
-   --> crates/sb-transport/src/multiplex.rs:545:5
-    |
-545 |     pub keep_alive_interval: Option<Duration>,
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: all struct fields are already assigned
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `protocol`
-   --> crates/sb-transport/src/multiplex.rs:551:13
-    |
-551 |             protocol: "yamux".to_string(),
-    |             ^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: available fields are: `max_num_streams`, `initial_stream_window`, `max_stream_window`, `enable_keepalive`, `keepalive_interval` ... and 2 others
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `max_streams`
-   --> crates/sb-transport/src/multiplex.rs:552:13
-    |
-552 |             max_streams: 0, // 0 means default (usually 256 or similar)
-    |             ^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: available fields are: `max_num_streams`, `initial_stream_window`, `max_stream_window`, `enable_keepalive`, `keepalive_interval` ... and 2 others
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `min_streams`
-   --> crates/sb-transport/src/multiplex.rs:554:13
-    |
-554 |             min_streams: 0,
-    |             ^^^^^^^^^^^ `multiplex::MultiplexConfig` does not have this field
-    |
-    = note: available fields are: `max_num_streams`, `initial_stream_window`, `max_stream_window`, `enable_keepalive`, `keepalive_interval` ... and 2 others
-
-error[E0560]: struct `multiplex::MultiplexConfig` has no field named `keep_alive_interval`
-   --> crates/sb-transport/src/multiplex.rs:557:13
-    |
-557 |             keep_alive_interval: Some(Duration::from_secs(30)),
-    |             ^^^^^^^^^^^^^^^^^^^ unknown field
-    |
-help: a field with a similar name exists
-    |
-557 -             keep_alive_interval: Some(Duration::from_secs(30)),
-557 +             keepalive_interval: Some(Duration::from_secs(30)),
-    |
-
-error[E0433]: failed to resolve: use of undeclared type `MultiplexServerConfig`
-   --> crates/sb-transport/src/multiplex.rs:625:33
-    |
-625 |         Self::new(tcp_listener, MultiplexServerConfig::default())
-    |                                 ^^^^^^^^^^^^^^^^^^^^^
-    |                                 |
-    |                                 use of undeclared type `MultiplexServerConfig`
-    |                                 help: a struct with a similar name exists: `MultiplexConfig`
-
-warning: unused variable: `cx`
-   --> crates/sb-transport/src/http2.rs:380:48
-    |
-380 |     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-    |                                                ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+745 |         let budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_budget`
     |
     = note: `#[warn(unused_variables)]` on by default
 
-warning: variable does not need to be mutable
-   --> crates/sb-transport/src/http2.rs:380:22
+warning: unused variable: `idx`
+   --> crates/sb-core/src/router/engine.rs:749:13
     |
-380 |     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-    |                      ----^^^^
-    |                      |
-    |                      help: remove this `mut`
+749 |         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+    |             ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+error[E0599]: no method named `connect` found for struct `std::sync::Arc<TuicOutbound>` in the current scope
+   --> crates/sb-core/src/runtime/switchboard.rs:642:52
+    |
+642 | ...                   let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
+    |                                          ^^^^^^^ method not found in `std::sync::Arc<TuicOutbound>`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: the following traits which provide `connect` are implemented but not in scope; perhaps you want to import one of them
+    |
+  6 + use crate::adapter::OutboundConnector;
+    |
+  6 + use crate::outbound::types::OutboundTcp;
+    |
+
+error[E0599]: no method named `connect` found for struct `std::sync::Arc<Hysteria2Outbound>` in the current scope
+   --> crates/sb-core/src/runtime/switchboard.rs:694:52
+    |
+694 | ...                   let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
+    |                                          ^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `get_connection` with a similar name, but with different arguments
+   --> crates/sb-core/src/outbound/hysteria2.rs:238:5
+    |
+238 |     pub async fn get_connection(&self) -> io::Result<Connection> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following traits which provide `connect` are implemented but not in scope; perhaps you want to import one of them
+    |
+  6 + use crate::adapter::OutboundConnector;
+    |
+  6 + use crate::outbound::types::OutboundTcp;
+    |
+
+error[E0599]: no method named `connect` found for struct `std::sync::Arc<ShadowTlsOutbound>` in the current scope
+   --> crates/sb-core/src/runtime/switchboard.rs:815:52
+    |
+815 | ...                   let s = self.inner.connect(&hp).await.map_err(AdapterError::Io)?;
+    |                                          ^^^^^^^ method not found in `std::sync::Arc<ShadowTlsOutbound>`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `OutboundTcp` which provides `connect` is implemented but not in scope; perhaps you want to import it
+    |
+  6 + use crate::outbound::types::OutboundTcp;
+    |
+
+warning: unused import: `AsyncWriteExt`
+  --> crates/sb-core/src/inbound/tun.rs:16:31
+   |
+16 | use tokio::io::{AsyncReadExt, AsyncWriteExt};
+   |                               ^^^^^^^^^^^^^
+
+warning: unused import: `AsyncReadExt`
+  --> crates/sb-core/src/inbound/tun.rs:16:17
+   |
+16 | use tokio::io::{AsyncReadExt, AsyncWriteExt};
+   |                 ^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> crates/sb-core/src/runtime/transport.rs:293:13
+    |
+293 |         let mut builder = apply_layers(
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
     |
     = note: `#[warn(unused_mut)]` on by default
 
-warning: unused variable: `error`
-   --> crates/sb-transport/src/retry.rs:265:35
-    |
-265 |     pub fn is_transient_dns_error(error: &DialError) -> bool {
-    |                                   ^^^^^ help: if this is intentional, prefix it with an underscore: `_error`
-
-warning: unused variable: `is_timeout`
-   --> crates/sb-transport/src/circuit_breaker.rs:399:36
-    |
-399 |     fn should_count_failure(&self, is_timeout: bool) -> bool {
-    |                                    ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_timeout`
-
-Some errors have detailed explanations: E0063, E0119, E0277, E0308, E0412, E0428, E0433, E0560, E0599...
-For more information about an error, try `rustc --explain E0063`.
-warning: `sb-transport` (lib) generated 9 warnings
-error: could not compile `sb-transport` (lib) due to 63 previous errors; 9 warnings emitted
+Some errors have detailed explanations: E0277, E0599, E0603.
+For more information about an error, try `rustc --explain E0277`.
+warning: `sb-core` (lib) generated 15 warnings
+error: could not compile `sb-core` (lib) due to 10 previous errors; 15 warnings emitted

@@ -281,6 +281,10 @@ impl Dialer for QuicDialer {
         let wrapped_stream = QuicStreamAdapter::new(send_stream, recv_stream);
         Ok(Box::new(wrapped_stream))
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// QUIC stream adapter / QUIC 流适配器

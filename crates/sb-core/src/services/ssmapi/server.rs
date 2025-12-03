@@ -3,11 +3,11 @@
 use super::{api, traffic::TrafficManager, user::UserManager};
 use crate::service::{Service, ServiceContext, StartStage};
 use axum::{
-    routing::{delete, get, post, put},
+    routing::get,
     Router,
 };
 use sb_config::ir::ServiceIR;
-use std::collections::HashMap;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -211,6 +211,7 @@ pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<
 mod tests {
     use super::*;
     use sb_config::ir::ServiceType;
+    use std::collections::HashMap;
 
     fn create_test_ir() -> ServiceIR {
         let mut servers = HashMap::new();
@@ -241,6 +242,7 @@ mod tests {
             derp_stun_listen_port: None,
             derp_tls_cert_path: None,
             derp_tls_key_path: None,
+            derp_server_key_path: None,
         }
     }
 

@@ -162,7 +162,7 @@ impl<D: Dialer> SecureTlsDialer<D> {
 }
 
 #[async_trait]
-impl<D: Dialer + Send + Sync> Dialer for SecureTlsDialer<D> {
+impl<D: Dialer + Send + Sync + 'static> Dialer for SecureTlsDialer<D> {
     async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;
@@ -214,6 +214,10 @@ impl<D: Dialer + Send + Sync> Dialer for SecureTlsDialer<D> {
         }
 
         Ok(Box::new(tls_stream))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -269,8 +273,8 @@ mod tests {
     #[tokio::test]
     async fn test_secure_tls_dialer_creation() {
         // This test verifies the dialer can be created without environment variables
-        let inner = TcpDialer;
-        let result = SecureTlsDialer::from_env(inner);
+        let dialer = TcpDialer::default();
+        let result = SecureTlsDialer::from_env(dialer);
         assert!(result.is_ok());
     }
 }

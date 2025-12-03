@@ -18,12 +18,14 @@
 //!   计算旧配置和新配置之间的差异，以尽量减少变动（例如，仅重启更改的入站）。
 
 use crate::adapter::Bridge;
+use crate::context::{install_context_registry, ClashServer, Context, Startable, V2RayServer};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine;
 use crate::service::{Service, StartStage as ServiceStage};
-use anyhow::{Context, Result};
+use anyhow::{Context as AnyhowContext, Result};
 use sb_config::ir::diff::Diff;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
@@ -33,7 +35,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug)]
 pub enum ReloadMsg {
     /// Apply new configuration with hot reload
-    Apply(sb_config::ir::ConfigIR),
+    Apply(Box<sb_config::ir::ConfigIR>),
     /// Begin graceful shutdown with deadline
     Shutdown { deadline: Instant },
 }
@@ -44,6 +46,7 @@ pub enum ReloadMsg {
 pub struct State {
     pub engine: Engine<'static>,
     pub bridge: Arc<Bridge>,
+    pub context: Context,
     pub health: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "service_ntp")]
     pub ntp: Option<tokio::task::JoinHandle<()>>,
@@ -56,7 +59,10 @@ pub struct State {
 #[derive(Debug)]
 pub struct State {
     pub bridge: Arc<Bridge>,
+    pub context: Context,
     pub health: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(feature = "service_ntp")]
+    pub ntp: Option<tokio::task::JoinHandle<()>>,
     pub started_at: Instant,
     /// Current configuration IR for diff computation during reload
     pub current_ir: sb_config::ir::ConfigIR,
@@ -80,10 +86,16 @@ pub struct SupervisorHandle {
 
 #[cfg(feature = "router")]
 impl State {
-    pub fn new(engine: Engine<'static>, bridge: Bridge, ir: sb_config::ir::ConfigIR) -> Self {
+    pub fn new(
+        engine: Engine<'static>,
+        bridge: Bridge,
+        context: Context,
+        ir: sb_config::ir::ConfigIR,
+    ) -> Self {
         Self {
             engine,
             bridge: Arc::new(bridge),
+            context,
             health: None,
             #[cfg(feature = "service_ntp")]
             ntp: None,
@@ -95,10 +107,13 @@ impl State {
 
 #[cfg(not(feature = "router"))]
 impl State {
-    pub fn new(_engine: (), bridge: Bridge, ir: sb_config::ir::ConfigIR) -> Self {
+    pub fn new(_engine: (), bridge: Bridge, context: Context, ir: sb_config::ir::ConfigIR) -> Self {
         Self {
             bridge: Arc::new(bridge),
+            context,
             health: None,
+            #[cfg(feature = "service_ntp")]
+            ntp: None,
             started_at: Instant::now(),
             current_ir: ir,
         }
@@ -112,12 +127,31 @@ impl Supervisor {
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
 
+        // Configure logging
+        if let Some(log_ir) = &ir.log {
+            crate::log::configure(log_ir);
+        }
+
         // Build initial engine and bridge
         let engine = Engine::from_ir(&ir).context("failed to build engine from initial config")?;
         let engine_static = engine.clone_as_static();
 
+        // Create runtime context and wire experimental sidecars from IR
+        let context = build_context_from_ir(&ir);
+        ensure_geo_assets(&ir).await;
+
+        install_context_registry(&context);
+
+        // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
+        run_context_stage(&context, ServiceStage::Initialize)?;
+        tracing::debug!(target: "sb_core::runtime", "Context managers initialized");
+
         // Build bridge via adapter bridge to enable routed inbounds/outbounds
-        let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone());
+        let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
+
+        // Start context managers (after bridge is built but before inbounds start)
+        run_context_stage(&context, ServiceStage::Start)?;
+        tracing::info!(target: "sb_core::runtime", "Context managers started");
 
         // Configure DNS resolver from IR (if provided)
         if let Some(dns_ir) = ir.dns.as_ref() {
@@ -128,18 +162,18 @@ impl Supervisor {
         // Apply TLS certificate configuration (global trust augmentation)
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
-        let initial_state = State::new(engine_static, bridge, ir);
+        let initial_state = State::new(engine_static, bridge, context, ir);
+        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await;
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
-        let (inbounds, endpoints, services, bridge_for_health, _ntp_cfg) = {
+        let (inbounds, endpoints, services, bridge_for_health) = {
             let state_guard = state.read().await;
             (
                 state_guard.bridge.inbounds.clone(),
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.bridge.clone(),
-                state_guard.current_ir.ntp.clone(),
             )
         };
 
@@ -155,6 +189,14 @@ impl Supervisor {
         start_endpoints(&endpoints);
         start_services(&services);
 
+        // PostStart stage for context managers (after all inbounds/endpoints/services started)
+        {
+            let state_guard = state.read().await;
+            run_context_stage(&state_guard.context, ServiceStage::PostStart)?;
+            run_context_stage(&state_guard.context, ServiceStage::Started)?;
+            tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete");
+        }
+
         // Optional health task
         if std::env::var("SB_HEALTH_ENABLE").is_ok() {
             let health_bridge = bridge_for_health.clone();
@@ -166,38 +208,8 @@ impl Supervisor {
         }
         #[cfg(feature = "service_ntp")]
         {
-            // Spawn NTP service if enabled in config
-            let mut sw = state.write().await;
-            if let Some(ntp_cfg) = _ntp_cfg {
-                if ntp_cfg.enabled {
-                    let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
-                        (Some(s), Some(p)) => format!("{s}:{p}"),
-                        (Some(s), None) => {
-                            if s.contains(':') {
-                                s.clone()
-                            } else {
-                                format!("{s}:123")
-                            }
-                        }
-                        (None, Some(p)) => format!("time.google.com:{p}"),
-                        (None, None) => crate::services::ntp::NtpConfig::default().server,
-                    };
-                    let interval = std::time::Duration::from_millis(
-                        ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
-                    );
-                    let timeout =
-                        std::time::Duration::from_millis(ntp_cfg.timeout_ms.unwrap_or(1500));
-                    let ntp =
-                        crate::services::ntp::NtpService::new(crate::services::ntp::NtpConfig {
-                            enabled: true,
-                            server,
-                            interval,
-                            timeout,
-                        })
-                        .spawn();
-                    sw.ntp = ntp;
-                }
-            }
+            let ntp_cfg = { state.read().await.current_ir.ntp.clone() };
+            install_ntp_task(&state, ntp_cfg).await;
         }
 
         let state_clone = Arc::clone(&state);
@@ -208,7 +220,7 @@ impl Supervisor {
             while let Some(msg) = rx.recv().await {
                 match msg {
                     ReloadMsg::Apply(new_ir) => {
-                        if let Err(e) = Self::handle_reload(&state_clone, new_ir).await {
+                        if let Err(e) = Self::handle_reload(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         }
                     }
@@ -236,8 +248,30 @@ impl Supervisor {
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
 
-        let bridge = Bridge::from_ir(&ir).context("failed to build bridge from initial config")?;
-        let initial_state = State::new((), bridge, ir);
+        // Configure logging
+        if let Some(log_ir) = &ir.log {
+            crate::log::configure(log_ir);
+        }
+
+        // Create runtime context and wire experimental sidecars from IR
+        let context = build_context_from_ir(&ir);
+        ensure_geo_assets(&ir).await;
+
+        install_context_registry(&context);
+
+        // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
+        run_context_stage(&context, ServiceStage::Initialize)?;
+        tracing::debug!(target: "sb_core::runtime", "Context managers initialized (no-router)");
+
+        let bridge = crate::adapter::bridge::build_bridge(&ir, (), context.clone());
+
+        // Start context managers
+        run_context_stage(&context, ServiceStage::Start)?;
+        tracing::info!(target: "sb_core::runtime", "Context managers started (no-router)");
+
+        let initial_state = State::new((), bridge, context, ir);
+        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await;
+
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
@@ -262,6 +296,20 @@ impl Supervisor {
         start_endpoints(&endpoints);
         start_services(&services);
 
+        #[cfg(feature = "service_ntp")]
+        {
+            let ntp_cfg = { state.read().await.current_ir.ntp.clone() };
+            install_ntp_task(&state, ntp_cfg).await;
+        }
+
+        // PostStart stage for context managers
+        {
+            let state_guard = state.read().await;
+            run_context_stage(&state_guard.context, ServiceStage::PostStart)?;
+            run_context_stage(&state_guard.context, ServiceStage::Started)?;
+            tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete (no-router)");
+        }
+
         // Event loop (simplified for non-router case)
         let state_clone = Arc::clone(&state);
         let cancel_ev = cancel.clone();
@@ -269,7 +317,7 @@ impl Supervisor {
             while let Some(msg) = rx.recv().await {
                 match msg {
                     ReloadMsg::Apply(new_ir) => {
-                        if let Err(e) = Self::handle_reload_no_router(&state_clone, new_ir).await {
+                        if let Err(e) = Self::handle_reload_no_router(&state_clone, *new_ir).await {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         }
                     }
@@ -309,7 +357,7 @@ impl Supervisor {
 
         // Always apply the new IR to the runtime
         self.tx
-            .send(ReloadMsg::Apply(new_ir.clone()))
+            .send(ReloadMsg::Apply(Box::new(new_ir.clone())))
             .await
             .context("failed to send reload message")?;
 
@@ -364,8 +412,13 @@ impl Supervisor {
         state: &Arc<RwLock<State>>,
         new_ir: sb_config::ir::ConfigIR,
     ) -> Result<()> {
+        // Configure logging
+        if let Some(log_ir) = &new_ir.log {
+            crate::log::configure(log_ir);
+        }
+
         // Step 0: Ask old inbounds to stop accepting (best-effort)
-        let (old_endpoints, old_services) = {
+        let (old_endpoints, old_services, old_context) = {
             let state_guard = state.read().await;
             for ib in &state_guard.bridge.inbounds {
                 ib.request_shutdown();
@@ -373,6 +426,7 @@ impl Supervisor {
             (
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
+                state_guard.context.clone(),
             )
         };
 
@@ -389,8 +443,23 @@ impl Supervisor {
         let new_engine = Engine::from_ir(&new_ir).context("failed to build new engine")?;
         let new_engine_static = new_engine.clone_as_static();
 
+        // Build new context from new IR (supports dynamic service reconfiguration)
+        let new_context = build_context_from_ir(&new_ir);
+        ensure_geo_assets(&new_ir).await;
+
+        install_context_registry(&new_context);
+
+        // Initialize new context managers
+        run_context_stage(&new_context, ServiceStage::Initialize)?;
+        tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
+
         // Build new bridge via adapter bridge
-        let new_bridge = crate::adapter::bridge::build_bridge(&new_ir, new_engine.clone());
+        let new_bridge =
+            crate::adapter::bridge::build_bridge(&new_ir, new_engine.clone(), new_context.clone());
+
+        // Start new context managers
+        run_context_stage(&new_context, ServiceStage::Start)?;
+        tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
         // Update DNS resolver from IR if present
         if let Some(dns_ir) = new_ir.dns.as_ref() {
@@ -405,6 +474,7 @@ impl Supervisor {
         let new_bridge_arc = Arc::new(new_bridge);
         let new_endpoints = new_bridge_arc.endpoints.clone();
         let new_services = new_bridge_arc.services.clone();
+        populate_bridge_managers(&new_context, &new_bridge_arc).await;
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -416,6 +486,11 @@ impl Supervisor {
         start_endpoints(&new_endpoints);
         start_services(&new_services);
 
+        // PostStart stage for new managers
+        run_context_stage(&new_context, ServiceStage::PostStart)?;
+        run_context_stage(&new_context, ServiceStage::Started)?;
+        tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload");
+
         // Update state atomically
         {
             let mut state_guard = state.write().await;
@@ -425,16 +500,22 @@ impl Supervisor {
                 old_health.abort();
             }
             #[cfg(feature = "service_ntp")]
+            if let Some(old_ntp) = state_guard.ntp.take() {
+                old_ntp.abort();
+            }
+            #[cfg(feature = "service_ntp")]
             {
                 if let Some(h) = state_guard.ntp.take() {
                     h.abort();
                 }
             }
 
-            // Replace engine, bridge, and current IR
+            // Replace engine, bridge, context, and current IR
             state_guard.engine = new_engine_static;
             state_guard.bridge = new_bridge_arc;
+            state_guard.context = new_context;
             state_guard.current_ir = new_ir;
+            install_context_registry(&state_guard.context);
 
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
@@ -445,44 +526,17 @@ impl Supervisor {
                 });
                 state_guard.health = Some(health_handle);
             }
-            #[cfg(feature = "service_ntp")]
-            {
-                if let Some(ntp_cfg) = &state_guard.current_ir.ntp {
-                    if ntp_cfg.enabled {
-                        let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
-                            (Some(s), Some(p)) => format!("{s}:{p}"),
-                            (Some(s), None) => {
-                                if s.contains(':') {
-                                    s.clone()
-                                } else {
-                                    format!("{s}:123")
-                                }
-                            }
-                            (None, Some(p)) => format!("time.google.com:{p}"),
-                            (None, None) => crate::services::ntp::NtpConfig::default().server,
-                        };
-                        let interval = std::time::Duration::from_millis(
-                            ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000),
-                        );
-                        let timeout =
-                            std::time::Duration::from_millis(ntp_cfg.timeout_ms.unwrap_or(1500));
-                        let ntp = crate::services::ntp::NtpService::new(
-                            crate::services::ntp::NtpConfig {
-                                enabled: true,
-                                server,
-                                interval,
-                                timeout,
-                            },
-                        )
-                        .spawn();
-                        state_guard.ntp = ntp;
-                    }
-                }
-            }
+        }
+
+        #[cfg(feature = "service_ntp")]
+        {
+            let ntp_cfg = { state.read().await.current_ir.ntp.clone() };
+            install_ntp_task(state, ntp_cfg).await;
         }
 
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
+        shutdown_context(&old_context);
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
 
@@ -495,8 +549,13 @@ impl Supervisor {
         state: &Arc<RwLock<State>>,
         new_ir: sb_config::ir::ConfigIR,
     ) -> Result<()> {
+        // Configure logging
+        if let Some(log_ir) = &new_ir.log {
+            crate::log::configure(log_ir);
+        }
+
         // Step 0: Ask old inbounds to stop accepting (best-effort)
-        let (old_endpoints, old_services) = {
+        let (old_endpoints, old_services, old_context) = {
             let state_guard = state.read().await;
             for ib in &state_guard.bridge.inbounds {
                 ib.request_shutdown();
@@ -504,6 +563,7 @@ impl Supervisor {
             (
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
+                state_guard.context.clone(),
             )
         };
 
@@ -516,13 +576,28 @@ impl Supervisor {
             tokio::time::sleep(Duration::from_millis(grace_ms)).await;
         }
 
+        // Build new context from new IR (supports dynamic service reconfiguration)
+        let new_context = build_context_from_ir(&new_ir);
+        ensure_geo_assets(&new_ir).await;
+
+        install_context_registry(&new_context);
+
+        // Initialize new context managers (Box Runtime Parity)
+        run_context_stage(&new_context, ServiceStage::Initialize)?;
+        tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload (no-router)");
+
         // Build new bridge (no engine needed)
-        let new_bridge = Bridge::from_ir(&new_ir).context("failed to build new bridge")?;
+        let new_bridge = crate::adapter::bridge::build_bridge(&new_ir, (), new_context.clone());
+
+        // Start new context managers
+        run_context_stage(&new_context, ServiceStage::Start)?;
+        tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
 
         // Start new inbound listeners
         let new_bridge_arc = Arc::new(new_bridge);
         let new_endpoints = new_bridge_arc.endpoints.clone();
         let new_services = new_bridge_arc.services.clone();
+        populate_bridge_managers(&new_context, &new_bridge_arc).await;
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -534,6 +609,11 @@ impl Supervisor {
         start_endpoints(&new_endpoints);
         start_services(&new_services);
 
+        // PostStart stage for new managers (no-router)
+        run_context_stage(&new_context, ServiceStage::PostStart)?;
+        run_context_stage(&new_context, ServiceStage::Started)?;
+        tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload (no-router)");
+
         // Update state atomically
         {
             let mut state_guard = state.write().await;
@@ -543,9 +623,11 @@ impl Supervisor {
                 old_health.abort();
             }
 
-            // Replace bridge and current IR (no engine field in non-router State)
+            // Replace bridge, context, and current IR (no engine field in non-router State)
             state_guard.bridge = new_bridge_arc;
+            state_guard.context = new_context;
             state_guard.current_ir = new_ir;
+            install_context_registry(&state_guard.context);
 
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
@@ -558,8 +640,15 @@ impl Supervisor {
             }
         }
 
+        #[cfg(feature = "service_ntp")]
+        {
+            let ntp_cfg = { state.read().await.current_ir.ntp.clone() };
+            install_ntp_task(state, ntp_cfg).await;
+        }
+
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
+        shutdown_context(&old_context);
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully (no router)");
 
@@ -621,11 +710,12 @@ impl Supervisor {
             .as_millis();
         let shutdown_success = Instant::now() < deadline;
 
-        let (endpoints, services) = {
+        let (endpoints, services, ctx) = {
             let guard = state.read().await;
             (
                 guard.bridge.endpoints.clone(),
                 guard.bridge.services.clone(),
+                guard.context.clone(),
             )
         };
 
@@ -635,10 +725,15 @@ impl Supervisor {
             if let Some(health) = state_guard.health.take() {
                 health.abort();
             }
+            #[cfg(feature = "service_ntp")]
+            if let Some(ntp) = state_guard.ntp.take() {
+                ntp.abort();
+            }
         }
 
         stop_endpoints(&endpoints);
         stop_services(&services);
+        shutdown_context(&ctx);
 
         // Log shutdown completion
         let shutdown_json = serde_json::json!({
@@ -683,7 +778,7 @@ impl SupervisorHandle {
 
         // Always forward the reload request
         self.tx
-            .send(ReloadMsg::Apply(new_ir.clone()))
+            .send(ReloadMsg::Apply(Box::new(new_ir.clone())))
             .await
             .context("failed to send reload message")?;
 
@@ -728,6 +823,319 @@ pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationTo
 
 fn has_async_runtime() -> bool {
     tokio::runtime::Handle::try_current().is_ok()
+}
+
+fn run_context_stage(ctx: &Context, stage: ServiceStage) -> Result<()> {
+    let label = match stage {
+        ServiceStage::Initialize => "initialize",
+        ServiceStage::Start => "start",
+        ServiceStage::PostStart => "post-start",
+        ServiceStage::Started => "mark started",
+    };
+
+    ctx.network
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} NetworkManager"))?;
+    ctx.connections
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} ConnectionManager"))?;
+    ctx.task_monitor
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} TaskMonitor"))?;
+    ctx.platform
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} PlatformInterface"))?;
+    ctx.inbound_manager
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} InboundManager"))?;
+    ctx.outbound_manager
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} OutboundManager"))?;
+    ctx.endpoint_manager
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} EndpointManager"))?;
+    ctx.service_manager
+        .start(stage)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context(format!("failed to {label} ServiceManager"))?;
+
+    Ok(())
+}
+
+fn wire_experimental_sidecars(mut context: Context, ir: &sb_config::ir::ConfigIR) -> Context {
+    if let Some(exp) = &ir.experimental {
+        if let Some(cache_cfg) = &exp.cache_file {
+            if cache_cfg.enabled {
+                let cache_svc = Arc::new(crate::services::cache_file::CacheFileService::new(
+                    cache_cfg,
+                ));
+                context = context.with_cache_file(cache_svc);
+                tracing::info!(target: "sb_core::runtime", path = ?cache_cfg.path, "cache file service wired");
+            }
+        }
+
+        if let Some(clash_cfg) = &exp.clash_api {
+            let clash_server = Arc::new(crate::services::clash_api::ClashApiServer::new(
+                clash_cfg.clone(),
+            ));
+            if let Err(e) = clash_server.start() {
+                tracing::warn!(target: "sb_core::runtime", error = %e, "failed to start Clash API server");
+            } else {
+                context = context.with_clash_server(clash_server);
+                tracing::info!(target: "sb_core::runtime", controller = ?clash_cfg.external_controller, "Clash API server wired");
+            }
+        }
+
+        if let Some(v2ray_cfg) = &exp.v2ray_api {
+            let v2ray_server = Arc::new(crate::services::v2ray_api::V2RayApiServer::new(
+                v2ray_cfg.clone(),
+            ));
+            if let Err(e) = v2ray_server.start() {
+                tracing::warn!(target: "sb_core::runtime", error = %e, "failed to start V2Ray API server");
+            } else {
+                context = context.with_v2ray_server(v2ray_server);
+                tracing::info!(target: "sb_core::runtime", listen = ?v2ray_cfg.listen, "V2Ray API server wired");
+            }
+        }
+    }
+
+    context
+}
+
+fn build_context_from_ir(ir: &sb_config::ir::ConfigIR) -> Context {
+    let mut ctx = Context::new();
+    ctx.network.apply_route_options(&ir.route);
+    ctx = wire_experimental_sidecars(ctx, ir);
+    log_geo_download_hints(ir);
+    if let Some(p) = &ir.route.geoip_path {
+        std::env::set_var("GEOIP_PATH", p);
+    }
+    if let Some(p) = &ir.route.geosite_path {
+        std::env::set_var("GEOSITE_PATH", p);
+    }
+    if let Some(strategy) = &ir.route.network_strategy {
+        std::env::set_var("SB_NETWORK_STRATEGY", strategy);
+    }
+    #[cfg(feature = "service_ntp")]
+    {
+        if let Some(ntp_cfg) = &ir.ntp {
+            if ntp_cfg.enabled {
+                let marker = Arc::new(crate::services::ntp::NtpMarker::from(ntp_cfg));
+                ctx = ctx.with_ntp_service(marker);
+            }
+        }
+    }
+    ctx
+}
+
+fn log_geo_download_hints(ir: &sb_config::ir::ConfigIR) {
+    if ir.route.geoip_download_url.is_some() || ir.route.geoip_download_detour.is_some() {
+        tracing::info!(
+            target: "sb_core::runtime",
+            url = ?ir.route.geoip_download_url,
+            detour = ?ir.route.geoip_download_detour,
+            path = ?ir.route.geoip_path,
+            "geoip download options detected (download not yet automated; ensure path is pre-seeded)"
+        );
+    }
+    if ir.route.geosite_download_url.is_some() || ir.route.geosite_download_detour.is_some() {
+        tracing::info!(
+            target: "sb_core::runtime",
+            url = ?ir.route.geosite_download_url,
+            detour = ?ir.route.geosite_download_detour,
+            path = ?ir.route.geosite_path,
+            "geosite download options detected (download not yet automated; ensure path is pre-seeded)"
+        );
+    }
+}
+
+/// Best-effort GeoIP/Geosite fetcher (ignores detour for now).
+async fn ensure_geo_assets(ir: &sb_config::ir::ConfigIR) {
+    if let (Some(path), Some(url)) = (&ir.route.geoip_path, &ir.route.geoip_download_url) {
+        if !Path::new(path).exists() {
+            if let Err(e) = download_file(url, path).await {
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    error = %e,
+                    path = %path,
+                    detour = ?ir.route.geoip_download_detour,
+                    "geoip download failed"
+                );
+            } else {
+                tracing::info!(target: "sb_core::runtime", path = %path, url = %url, "geoip downloaded");
+            }
+        }
+    }
+    if let (Some(path), Some(url)) = (&ir.route.geosite_path, &ir.route.geosite_download_url) {
+        if !Path::new(path).exists() {
+            if let Err(e) = download_file(url, path).await {
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    error = %e,
+                    path = %path,
+                    detour = ?ir.route.geosite_download_detour,
+                    "geosite download failed"
+                );
+            } else {
+                tracing::info!(target: "sb_core::runtime", path = %path, url = %url, "geosite downloaded");
+            }
+        }
+    }
+}
+
+async fn download_file(url: &str, path: &str) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("build http client for geo download")?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .context("send geo download request")?
+        .error_for_status()
+        .context("geo download http status")?;
+    let bytes = resp.bytes().await.context("read geo download body")?;
+
+    if let Some(parent) = Path::new(path).parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .context("create geo download directory")?;
+    }
+    tokio::fs::write(path, &bytes)
+        .await
+        .context("write geo download file")?;
+    Ok(())
+}
+
+fn shutdown_context(ctx: &Context) {
+    // Close sidecars
+    if let Some(clash) = &ctx.clash_server {
+        if let Err(e) = clash.close() {
+            tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close Clash API server");
+        }
+    }
+    if let Some(v2ray) = &ctx.v2ray_server {
+        if let Err(e) = v2ray.close() {
+            tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close V2Ray API server");
+        }
+    }
+
+    // Close managers (reverse order of start)
+    if let Err(e) = ctx.service_manager.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close ServiceManager");
+    }
+    if let Err(e) = ctx.endpoint_manager.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close EndpointManager");
+    }
+    if let Err(e) = ctx.outbound_manager.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close OutboundManager");
+    }
+    if let Err(e) = ctx.inbound_manager.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close InboundManager");
+    }
+    if let Err(e) = ctx.platform.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close PlatformInterface");
+    }
+    if let Err(e) = ctx.task_monitor.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close TaskMonitor");
+    }
+    if let Err(e) = ctx.connections.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close ConnectionManager");
+    }
+    if let Err(e) = ctx.network.close() {
+        tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close NetworkManager");
+    }
+}
+
+#[cfg(feature = "service_ntp")]
+fn spawn_ntp_from_ir(ntp_cfg: Option<sb_config::ir::NtpIR>) -> Option<tokio::task::JoinHandle<()>> {
+    let ntp_cfg = ntp_cfg?;
+    if !ntp_cfg.enabled {
+        return None;
+    }
+    let server = match (&ntp_cfg.server, ntp_cfg.server_port) {
+        (Some(s), Some(p)) => format!("{s}:{p}"),
+        (Some(s), None) => {
+            if s.contains(':') {
+                s.clone()
+            } else {
+                format!("{s}:123")
+            }
+        }
+        (None, Some(p)) => format!("time.google.com:{p}"),
+        (None, None) => crate::services::ntp::NtpConfig::default().server,
+    };
+    let interval = std::time::Duration::from_millis(ntp_cfg.interval_ms.unwrap_or(30 * 60 * 1000));
+    let timeout = std::time::Duration::from_millis(ntp_cfg.timeout_ms.unwrap_or(1500));
+    crate::services::ntp::NtpService::new(crate::services::ntp::NtpConfig {
+        enabled: true,
+        server,
+        interval,
+        timeout,
+    })
+    .spawn()
+}
+
+#[cfg(feature = "service_ntp")]
+async fn install_ntp_task(state: &Arc<RwLock<State>>, cfg: Option<sb_config::ir::NtpIR>) {
+    let ntp_marker = cfg.as_ref().filter(|c| c.enabled).map(|c| {
+        Arc::new(crate::services::ntp::NtpMarker::from(c)) as Arc<dyn crate::context::NtpService>
+    });
+    let handle = spawn_ntp_from_ir(cfg);
+
+    let mut guard = state.write().await;
+    guard.ntp = handle;
+    guard.context.ntp_service = ntp_marker;
+}
+
+/// Populate endpoint/service managers from the assembled bridge for parity with Go managers.
+async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) {
+    // Register inbounds with InboundManager
+    // InboundManager stores Arc<dyn Any>, inbounds are indexed but not tagged
+    for (idx, ib) in bridge.inbounds.iter().enumerate() {
+        let tag = bridge.inbound_kinds.get(idx)
+            .map(|k| k.to_string())
+            .unwrap_or_else(|| format!("inbound_{}", idx));
+        ctx.inbound_manager
+            .add_handler(tag, Arc::new(ib.clone()) as Arc<dyn std::any::Any + Send + Sync>)
+            .await;
+    }
+    
+    // Register outbounds with OutboundManager
+    // Outbounds are stored as (name, kind, connector) tuples
+    // OutboundManager likely has a different API or doesn't need explicit registration since
+    // Bridge already maintains outbounds vector. Skip for now as there's no add_outbound method.
+    
+    // Register endpoints with EndpointManager
+    for ep in &bridge.endpoints {
+        ctx.endpoint_manager
+            .add_endpoint(ep.tag().to_string(), ep.clone())
+            .await;
+    }
+    
+    // Register services with ServiceManager
+    for svc in &bridge.services {
+        ctx.service_manager
+            .add_service(svc.tag().to_string(), svc.clone())
+            .await;
+    }
+    
+    tracing::info!(
+        target: "sb_core::runtime",
+        inbounds = bridge.inbounds.len(),
+        outbounds = bridge.outbounds.len(),
+        endpoints = bridge.endpoints.len(),
+        services = bridge.services.len(),
+        "Bridge components registered with context managers"
+    );
 }
 
 /// Start all endpoints through their lifecycle stages. Uses best-effort logging on failure.
@@ -852,7 +1260,8 @@ impl Bridge {
     pub fn from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Self> {
         // This should use existing bridge construction logic
         // For now, create a minimal bridge
-        Self::new_from_config(ir).context("failed to create bridge from config")
+        Self::new_from_config(ir, crate::context::Context::new())
+            .context("failed to create bridge from config")
     }
 }
 
@@ -944,9 +1353,10 @@ mod tests {
 
     #[tokio::test]
     async fn start_stop_endpoints_runs_all_stages() {
-        let ep = Arc::new(DummyEndpoint::new("ep1"));
-        start_endpoints(&[ep.clone()]);
-        let stages = ep.stages.lock().unwrap().clone();
+        let ep_impl = Arc::new(DummyEndpoint::new("ep1"));
+        let ep: Arc<dyn Endpoint> = ep_impl.clone();
+        start_endpoints(std::slice::from_ref(&ep));
+        let stages = ep_impl.stages.lock().unwrap().clone();
         assert_eq!(
             stages,
             vec![
@@ -956,15 +1366,16 @@ mod tests {
                 EndpointStage::Started
             ]
         );
-        stop_endpoints(&[ep.clone()]);
-        assert_eq!(ep.closes.load(Ordering::SeqCst), 1);
+        stop_endpoints(std::slice::from_ref(&ep));
+        assert_eq!(ep_impl.closes.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
     async fn start_stop_services_runs_all_stages() {
-        let svc = Arc::new(DummyService::new("svc1"));
-        start_services(&[svc.clone()]);
-        let stages = svc.stages.lock().unwrap().clone();
+        let svc_impl = Arc::new(DummyService::new("svc1"));
+        let svc: Arc<dyn Service> = svc_impl.clone();
+        start_services(std::slice::from_ref(&svc));
+        let stages = svc_impl.stages.lock().unwrap().clone();
         assert_eq!(
             stages,
             vec![
@@ -974,7 +1385,7 @@ mod tests {
                 ServiceStage::Started
             ]
         );
-        stop_services(&[svc.clone()]);
-        assert_eq!(svc.closes.load(Ordering::SeqCst), 1);
+        stop_services(std::slice::from_ref(&svc));
+        assert_eq!(svc_impl.closes.load(Ordering::SeqCst), 1);
     }
 }

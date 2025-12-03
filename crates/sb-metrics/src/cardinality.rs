@@ -5,11 +5,11 @@
 //! 本模块通过跟踪唯一的标签组合并在基数超过阈值时发出警告，从而防止标签爆炸。
 //!
 //! ## Strategic Logic / 战略逻辑
-//! In dynamic proxy environments, labels like "target_domain" or "client_ip" can have unbounded cardinality.
+//! In dynamic proxy environments, labels like "`target_domain`" or "`client_ip`" can have unbounded cardinality.
 //! Without this safeguard, Prometheus memory usage could grow indefinitely, crashing the service.
 //! This module acts as a **safety valve**, detecting anomalies before they cause critical failures.
 //!
-//! 在动态代理环境中，像 "target_domain" 或 "client_ip" 这样的标签可能具有无限的基数。
+//! 在动态代理环境中，像 "`target_domain`" 或 "`client_ip`" 这样的标签可能具有无限的基数。
 //! 如果没有此保护措施，Prometheus 的内存使用量可能会无限增长，导致服务崩溃。
 //! 本模块充当**安全阀**，在异常导致严重故障之前检测到它们。
 //!

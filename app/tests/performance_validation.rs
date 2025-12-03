@@ -11,8 +11,8 @@
 //!   cargo test --package app --test performance_validation -- --ignored --nocapture
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -85,7 +85,7 @@ async fn start_echo_server() -> SocketAddr {
 #[tokio::test]
 async fn bench_tcp_baseline_throughput() {
     println!("\n=== TCP Baseline Throughput Benchmark ===");
-    
+
     let echo_addr = start_echo_server().await;
     let chunk_size = 1024 * 1024; // 1 MB chunks
     let num_chunks = 100; // 100 MB total
@@ -109,14 +109,18 @@ async fn bench_tcp_baseline_throughput() {
     println!("Throughput: {:.2} MB/s", throughput);
 
     // TCP baseline should achieve >500 MB/s on localhost
-    assert!(throughput > 200.0, "TCP baseline too slow: {:.2} MB/s", throughput);
+    assert!(
+        throughput > 200.0,
+        "TCP baseline too slow: {:.2} MB/s",
+        throughput
+    );
     println!("✅ TCP baseline: {:.2} MB/s", throughput);
 }
 
 #[tokio::test]
 async fn bench_tcp_baseline_latency() {
     println!("\n=== TCP Baseline Latency Benchmark ===");
-    
+
     let echo_addr = start_echo_server().await;
     let iterations = 1000;
     let mut latencies = vec![];
@@ -155,18 +159,18 @@ async fn bench_tcp_baseline_latency() {
 async fn bench_shadowsocks_aes256gcm_throughput() {
     println!("\n=== Shadowsocks AES-256-GCM Throughput Benchmark ===");
     println!("Target: ≥80 MiB/s");
-    
+
     // Note: This is a placeholder showing the structure
     // Real implementation would:
     // 1. Start Shadowsocks inbound server with AES-256-GCM
     // 2. Connect with Shadowsocks client
     // 3. Transfer large amounts of data
     // 4. Measure throughput
-    
+
     // Simulated result for demonstration
     let simulated_throughput = 82.5; // MiB/s
     let target = 80.0;
-    
+
     let result = BenchResult::new(
         "Shadowsocks AES-256-GCM",
         "Throughput",
@@ -174,10 +178,10 @@ async fn bench_shadowsocks_aes256gcm_throughput() {
         "MiB/s",
         target,
     );
-    
+
     result.print();
     assert!(result.passed, "Failed to meet target throughput");
-    
+
     println!("\n⚠️  Note: This is a placeholder test");
     println!("    Real implementation requires:");
     println!("    - Shadowsocks server setup with AES-256-GCM");
@@ -190,11 +194,11 @@ async fn bench_shadowsocks_aes256gcm_throughput() {
 async fn bench_shadowsocks_chacha20_throughput() {
     println!("\n=== Shadowsocks ChaCha20-Poly1305 Throughput Benchmark ===");
     println!("Target: ≥120 MiB/s");
-    
+
     // Simulated result
     let simulated_throughput = 125.0; // MiB/s
     let target = 120.0;
-    
+
     let result = BenchResult::new(
         "Shadowsocks ChaCha20",
         "Throughput",
@@ -202,10 +206,10 @@ async fn bench_shadowsocks_chacha20_throughput() {
         "MiB/s",
         target,
     );
-    
+
     result.print();
     assert!(result.passed, "Failed to meet target throughput");
-    
+
     println!("\n⚠️  Note: This is a placeholder test");
 }
 
@@ -218,17 +222,17 @@ async fn bench_shadowsocks_chacha20_throughput() {
 async fn bench_trojan_tls_throughput() {
     println!("\n=== Trojan TLS Throughput Benchmark ===");
     println!("Target: ≥95% of Go baseline");
-    
+
     // Simulated results
     let go_baseline = 450.0; // MB/s (hypothetical Go baseline)
     let rust_throughput = 435.0; // MB/s
     let percentage = (rust_throughput / go_baseline) * 100.0;
     let target_percentage = 95.0;
-    
+
     println!("Go baseline: {:.2} MB/s", go_baseline);
     println!("Rust implementation: {:.2} MB/s", rust_throughput);
     println!("Percentage: {:.1}%", percentage);
-    
+
     let result = BenchResult::new(
         "Trojan TLS",
         "Throughput (%Go)",
@@ -236,10 +240,10 @@ async fn bench_trojan_tls_throughput() {
         "%",
         target_percentage,
     );
-    
+
     result.print();
     assert!(result.passed, "Failed to meet Go baseline target");
-    
+
     println!("\n⚠️  Note: This is a placeholder test");
 }
 
@@ -248,22 +252,22 @@ async fn bench_trojan_tls_throughput() {
 async fn bench_trojan_handshake_latency() {
     println!("\n=== Trojan TLS Handshake Latency Benchmark ===");
     println!("Target: ≤10ms (localhost)");
-    
+
     // Simulated result
     let avg_handshake_ms = 8.5;
     let target = 10.0;
-    
+
     // Invert comparison for latency (lower is better)
     let passed = avg_handshake_ms <= target;
-    
+
     let status = if passed { "✅ PASS" } else { "❌ FAIL" };
     println!(
         "{} Trojan TLS - Handshake Latency: {:.2} ms (target: ≤{:.2} ms)",
         status, avg_handshake_ms, target
     );
-    
+
     assert!(passed, "Handshake latency too high");
-    
+
     println!("\n⚠️  Note: This is a placeholder test");
 }
 
@@ -275,31 +279,25 @@ async fn bench_trojan_handshake_latency() {
 async fn test_idle_memory_usage() {
     println!("\n=== Idle Memory Usage Test ===");
     println!("Target: ≤50 MB");
-    
+
     // Simple estimation based on process
     let estimated_mb = 45.0; // Simulated
     let target = 50.0;
-    
-    let _result = BenchResult::new(
-        "System",
-        "Idle Memory",
-        estimated_mb,
-        "MB",
-        50.0,
-    );
-    
+
+    let _result = BenchResult::new("System", "Idle Memory", estimated_mb, "MB", 50.0);
+
     // Invert for memory (lower is better, but we still want to pass if under target)
     let passed = estimated_mb <= target;
-    
+
     println!("Estimated idle memory: {:.2} MB", estimated_mb);
     println!("Target: ≤{:.2} MB", target);
-    
+
     if passed {
         println!("✅ PASS - Memory within limits");
     } else {
         println!("❌ FAIL - Memory exceeds limit");
     }
-    
+
     assert!(passed, "Idle memory too high");
 }
 
@@ -308,11 +306,11 @@ async fn test_idle_memory_usage() {
 async fn test_1000_connections_memory() {
     println!("\n=== 1000 Connections Memory Usage Test ===");
     println!("Target: ≤500 MB");
-    
+
     let echo_addr = start_echo_server().await;
     let connection_count = Arc::new(AtomicUsize::new(0));
     let mut handles = vec![];
-    
+
     // Create 1000 connections (lighter version for quick test)
     for _ in 0..100 {
         let count = Arc::clone(&connection_count);
@@ -324,18 +322,18 @@ async fn test_1000_connections_memory() {
         });
         handles.push(handle);
     }
-    
+
     tokio::time::sleep(Duration::from_millis(500)).await;
     let active = connection_count.load(Ordering::SeqCst);
-    
+
     println!("Active connections: {}", active);
     println!("✅ Connection management working");
-    
+
     // Wait for cleanup
     for handle in handles {
         let _ = handle.await;
     }
-    
+
     println!("\n⚠️  Note: Full 1000 connection test requires --ignored flag");
 }
 

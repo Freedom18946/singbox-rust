@@ -202,13 +202,13 @@ async fn bench_baseline_direct_tcp() {
 
     // Throughput test (1MB chunks, 50 iterations)
     let (throughput, throughput_failed) =
-        measure_throughput(|| connect_fn(), 1024 * 1024, 50).await;
+        measure_throughput(&connect_fn, 1024 * 1024, 50).await;
 
     // Latency test (1000 iterations)
-    let ((p50, p95, p99), latency_failed) = measure_latency(|| connect_fn(), 1000).await;
+    let ((p50, p95, p99), latency_failed) = measure_latency(&connect_fn, 1000).await;
 
     // Connection time (100 iterations)
-    let (conn_time, conn_failed) = measure_connection_time(|| connect_fn(), 100).await;
+    let (conn_time, conn_failed) = measure_connection_time(&connect_fn, 100).await;
 
     let total_requests = 50 + 1000 + 100;
     let failed_requests = throughput_failed + latency_failed + conn_failed;
@@ -273,13 +273,13 @@ async fn bench_socks5_proxy() {
 
     // Throughput test
     let (throughput, throughput_failed) =
-        measure_throughput(|| connect_fn(), 1024 * 1024, 30).await;
+        measure_throughput(&connect_fn, 1024 * 1024, 30).await;
 
     // Latency test
-    let ((p50, p95, p99), latency_failed) = measure_latency(|| connect_fn(), 500).await;
+    let ((p50, p95, p99), latency_failed) = measure_latency(&connect_fn, 500).await;
 
     // Connection time
-    let (conn_time, conn_failed) = measure_connection_time(|| connect_fn(), 100).await;
+    let (conn_time, conn_failed) = measure_connection_time(&connect_fn, 100).await;
 
     let total_requests = 30 + 500 + 100;
     let failed_requests = throughput_failed + latency_failed + conn_failed;

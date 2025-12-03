@@ -14,7 +14,7 @@ use anytls_rs::session::{Session, Stream};
 use anytls_rs::util::auth::hash_password;
 use anytls_rs::util::AnyTlsError;
 use bytes::Bytes;
-use sb_core::adapter::{AnyTlsUserParam, InboundParam, InboundService};
+use sb_core::adapter::{InboundParam, InboundService};
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, registry,
@@ -27,7 +27,7 @@ use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio_rustls::TlsAcceptor;
@@ -73,6 +73,7 @@ impl std::fmt::Debug for AnyTlsInboundAdapter {
 }
 
 impl AnyTlsInboundAdapter {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         param: &InboundParam,
         router: Arc<router::RouterHandle>,
@@ -126,10 +127,10 @@ impl InboundService for AnyTlsInboundAdapter {
             }
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 runtime
                     .block_on(serve_anytls(cfg, stop_rx))
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                    .map_err(std::io::Error::other)
             }
         }
     }
@@ -236,7 +237,7 @@ async fn handle_connection(
 }
 
 async fn handle_stream(
-    cfg: Arc<AnyTlsServerConfig>,
+    _cfg: Arc<AnyTlsServerConfig>,
     conn_ctx: Arc<ConnectionCtx>,
     stream: Arc<Stream>,
     session: Arc<Session>,
@@ -409,12 +410,10 @@ async fn connect_via_router(dest: &SocksDestination, ctx: &ConnectionCtx) -> Res
             ip: None,
             transport_udp: false,
             port: Some(dest.port),
-            process_name: None,
-            process_path: None,
             inbound_tag: Some(ANYTLS_INBOUND_TAG),
-            outbound_tag: None,
             auth_user: ctx.user.as_deref(),
-            query_type: None,
+            network: Some("tcp"),
+            ..Default::default()
         };
         let d = engine.decide(&route_ctx);
         if matches!(d, RDecision::Reject) {

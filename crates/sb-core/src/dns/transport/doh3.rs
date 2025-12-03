@@ -55,19 +55,15 @@ impl Doh3Transport {
         for p in extra_ca_paths {
             if let Ok(bytes) = std::fs::read(p) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
-                for it in rustls_pemfile::certs(&mut rd) {
-                    if let Ok(der) = it {
-                        let _ = roots.add(der);
-                    }
+                for der in rustls_pemfile::certs(&mut rd).flatten() {
+                    let _ = roots.add(der);
                 }
             }
         }
         for pem in extra_ca_pem {
             let mut rd = std::io::BufReader::new(pem.as_bytes());
-            for it in rustls_pemfile::certs(&mut rd) {
-                if let Ok(der) = it {
-                    let _ = roots.add(der);
-                }
+            for der in rustls_pemfile::certs(&mut rd).flatten() {
+                let _ = roots.add(der);
             }
         }
 
@@ -140,7 +136,7 @@ impl Doh3Transport {
         let (mut driver, mut send_request) = h3::client::new(h3_quinn::Connection::new(conn))
             .await
             .map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("H3 handshake failed: {}", e))
+                io::Error::other(format!("H3 handshake failed: {}", e))
             })?;
 
         // Spawn driver task to run in background
@@ -159,8 +155,7 @@ impl Doh3Transport {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         let mut stream = send_request.send_request(req).await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("H3 send_request failed: {}", e),
             )
         })?;
@@ -170,17 +165,16 @@ impl Doh3Transport {
             .send_data(Bytes::copy_from_slice(packet))
             .await
             .map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("H3 send_data failed: {}", e))
+                io::Error::other(format!("H3 send_data failed: {}", e))
             })?;
 
         stream.finish().await.map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("H3 finish failed: {}", e))
+            io::Error::other(format!("H3 finish failed: {}", e))
         })?;
 
         // Receive HTTP/3 response
         let resp = stream.recv_response().await.map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
+            io::Error::other(
                 format!("H3 recv_response failed: {}", e),
             )
         })?;

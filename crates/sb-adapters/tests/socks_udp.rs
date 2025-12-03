@@ -5,23 +5,21 @@
 //! This module tests SOCKS5 UDP support with mock servers to verify
 //! the UDP encapsulation/decapsulation works correctly.
 
-use sb_adapters::{
-    outbound::socks5::Socks5Connector,
-    traits::{DialOpts, ResolveMode, Target},
-    Result,
-};
+use sb_adapters::Result;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 
 /// Mock SOCKS5 server for testing UDP ASSOCIATE
+#[allow(dead_code)]
 struct MockSocks5Server {
     tcp_listener: TcpListener,
     udp_relay: UdpSocket,
 }
 
+#[allow(dead_code)]
 impl MockSocks5Server {
     async fn new() -> Result<Self> {
         let tcp_listener = TcpListener::bind("127.0.0.1:0").await?;

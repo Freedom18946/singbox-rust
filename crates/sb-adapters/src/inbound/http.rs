@@ -8,6 +8,8 @@
 use anyhow::{anyhow, Result};
 use sb_core::obs::access;
 use sb_transport::IoStream;
+use sb_config::ir::Credentials;
+use base64::{Engine as _, engine::general_purpose};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -151,7 +153,11 @@ pub struct HttpProxyConfig {
     pub outbounds: Arc<OutboundRegistryHandle>,
     /// Optional TLS configuration
     /// 可选的 TLS 配置
+    /// Optional TLS configuration
+    /// 可选的 TLS 配置
     pub tls: Option<sb_transport::TlsConfig>,
+    /// User credentials for authentication
+    pub users: Option<Vec<Credentials>>,
 }
 
 /// Ready signal notifier - sends when socket binding completes
@@ -174,9 +180,9 @@ pub async fn serve_http(
     let mut hb = interval(Duration::from_millis(500));
     tokio::spawn(async move {
         loop {
-            hb.tick().await;
-            // Avoid log spam in production; visible at debug level when needed.
-            tracing::debug!("http: accept-loop heartbeat");
+            let _ = hb.tick().await;
+            // Avoid log spam in production;
+            // tracing::debug!("http: accept-loop heartbeat");
         }
     });
 
@@ -185,7 +191,10 @@ pub async fn serve_http(
 
     loop {
         select! {
-            _ = stop_rx.recv(), if !disable_stop => break,
+            _ = stop_rx.recv(), if !disable_stop => {
+                eprintln!("serve_http: stop signal received");
+                break;
+            },
             r = listener.accept() => {
                 let (cli, peer) = match r {
                     Ok((cli, peer)) => {
@@ -240,7 +249,7 @@ pub async fn serve_http(
                         Box::new(cli)
                     };
 
-                    if let Err(e) = handle_client(stream, peer, &cfg_clone).await {
+                    if let Err(e) = serve_conn(stream, peer, &cfg_clone).await {
                         warn!(peer=%peer, error=%e, "http connect session error");
                     }
                 });
@@ -268,34 +277,35 @@ pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()
     serve_http(cfg, stop_rx, None).await
 }
 
-async fn handle_client<S>(mut cli: S, peer: SocketAddr, _cfg: &HttpProxyConfig) -> Result<()>
+pub async fn serve_conn<S>(mut cli: S, peer: SocketAddr, cfg: &HttpProxyConfig) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
     use tracing::info;
     info!(?peer, "http: accepted");
-    let (method, target) = match read_request_line(&mut cli).await {
-        Ok(mt) => mt,
+
+    // Read request head (including headers) to support auth
+    let (method, target, _version, headers) = match read_request_head(&mut cli).await {
+        Ok(v) => v,
         Err(e) => {
-            #[cfg(feature = "metrics")]
+             #[cfg(feature = "metrics")]
             {
                 metrics::counter!("http_respond_total", "code" => "400").increment(1);
                 counter!("http_requests_total", "method"=>"_parse_error", "code"=>"400")
                     .increment(1);
             }
-            // Record parse-related error using unified HTTP classifier
             sb_core::metrics::http::record_error_display(&e);
             sb_core::metrics::record_inbound_error_display("http", &e);
-            return respond_400(&mut cli, "read_line").await.map(|_| ());
+            return respond_400(&mut cli, "read_head").await.map(|_| ());
         }
     };
+
     info!(?peer, method=%method, target=%target, "http: request line");
+
     if method != "CONNECT" {
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("http_respond_total", "code" => "405").increment(1);
-            // Record method name as is (low cardinality); avoid move, clone once
-            // 将方法名原样落盘（低基数）；避免 move，clone 一次
             counter!("http_requests_total", "method"=>method.clone(), "code"=>"405").increment(1);
         }
         sb_core::metrics::http::inc_405_responses();
@@ -305,6 +315,46 @@ where
         );
         return respond_405_stream(&mut cli).await.map(|_| ());
     }
+
+    // Handle Authentication
+    if let Some(users) = &cfg.users {
+        if !users.is_empty() {
+            let mut authenticated = false;
+            // Parse headers for Proxy-Authorization
+            let headers_str = String::from_utf8_lossy(&headers);
+            for line in headers_str.lines() {
+                if line.to_lowercase().starts_with("proxy-authorization:") {
+                    let val = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
+                    if let Some(cred) = val.strip_prefix("Basic ") {
+                         if let Ok(decoded) = general_purpose::STANDARD.decode(cred) {
+                            if let Ok(auth_str) = String::from_utf8(decoded) {
+                                if let Some((u, p)) = auth_str.split_once(':') {
+                                    for user in users {
+                                        let expected_u = user.username.as_deref().or(user.username_env.as_deref()).unwrap_or("");
+                                        let expected_p = user.password.as_deref().or(user.password_env.as_deref()).unwrap_or("");
+                                        if u == expected_u && p == expected_p {
+                                            authenticated = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                         }
+                    }
+                }
+                if authenticated { break; }
+            }
+
+            if !authenticated {
+                // Respond 407
+                let resp = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                cli.write_all(resp).await?;
+                cli.flush().await?;
+                return Ok(());
+            }
+        }
+    }
+
     // Parse host:port (keep original parsing function/error handling in project)
     // 解析 host:port（保持项目里原有的解析函数/错误处理）
     let (host, port) = split_host_port(&target).ok_or_else(|| anyhow!("bad CONNECT target"))?;
@@ -321,12 +371,8 @@ where
             ip: None,
             transport_udp: false,
             port: Some(port),
-            process_name: None,
-            process_path: None,
-            inbound_tag: None,
-            outbound_tag: None,
-            auth_user: None,
-            query_type: None,
+            network: Some("tcp"),
+            ..Default::default()
         };
         let d = eng.decide(&ctx);
         #[cfg(feature = "metrics")]
@@ -433,7 +479,7 @@ where
                             }
                         } else {
                             // Pool empty or all endpoints down - try OutboundRegistry named connector
-                            if let Ok(s) = _cfg
+                            if let Ok(s) = cfg
                                 .outbounds
                                 .connect_io(
                                     &OutRouteTarget::Named(name.clone()),
@@ -462,7 +508,7 @@ where
                         }
                     } else {
                         // Pool not found - try OutboundRegistry named connector
-                        if let Ok(s) = _cfg
+                        if let Ok(s) = cfg
                             .outbounds
                             .connect_io(
                                 &OutRouteTarget::Named(name.clone()),
@@ -494,7 +540,7 @@ where
                     }
                 } else {
                     // No proxy pool registry - try OutboundRegistry named connector
-                    if let Ok(s) = _cfg
+                    if let Ok(s) = cfg
                         .outbounds
                         .connect_io(
                             &OutRouteTarget::Named(name.clone()),
@@ -569,6 +615,7 @@ where
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn read_request_line<S>(cli: &mut S) -> Result<(String, String)>
 where
     S: tokio::io::AsyncRead + Unpin,
@@ -606,7 +653,9 @@ where
 }
 
 #[allow(dead_code)]
-async fn read_request_head(cli: &mut TcpStream) -> Result<(String, String, String, Vec<u8>)> {
+async fn read_request_head<S>(cli: &mut S) -> Result<(String, String, String, Vec<u8>)> 
+where S: tokio::io::AsyncRead + Unpin
+{
     let mut buf = Vec::with_capacity(1024);
     let mut tmp = [0u8; 512];
     loop {

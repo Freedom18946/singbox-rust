@@ -8,6 +8,10 @@ use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
 use sb_core::router::sniff::extract_sni_from_tls_client_hello;
 use sb_core::routing::engine::{Engine, Input};
 
+fn extract_alpn_from_tls_client_hello(buf: &[u8]) -> Option<String> {
+    sb_core::router::sniff::sniff_tls_client_hello(buf).and_then(|info| info.alpn)
+}
+
 /// Build a minimal TLS ClientHello with SNI and ALPN
 fn build_tls_client_hello(sni: &str, alpn: &str) -> Vec<u8> {
     let mut hs: Vec<u8> = Vec::new();
@@ -103,11 +107,12 @@ fn test_sni_based_routing() {
     let mut cfg = ConfigIR::default();
     cfg.route = RouteIR {
         rules: vec![RuleIR {
-            domain: vec!["api.example.com".into()],
-            outbound: Some("proxy".into()),
+            protocol: vec!["tls".into()],
+            outbound: Some("out-1".into()),
             ..Default::default()
         }],
         default: Some("direct".into()),
+        ..Default::default()
     };
 
     let eng = Engine::new(&cfg);
@@ -122,24 +127,25 @@ fn test_sni_based_routing() {
             sniff_host: Some(&sni), // Provide sniffed SNI
             sniff_alpn: None,
             sniff_protocol: None,
+            ..Default::default()
         },
         false,
     );
     assert_eq!(
-        dec.outbound, "proxy",
+        dec.outbound, "out-1",
         "SNI-based routing should select proxy"
     );
 
     // Test 2: Without SNI, IP doesn't match -> direct
     let dec2 = eng.decide(
         &Input {
-            host: "192.0.2.1",
+            host: "example.com",
             port: 443,
             network: "tcp",
             protocol: "tun",
-            sniff_host: None,
             sniff_alpn: None,
             sniff_protocol: None,
+            ..Default::default()
         },
         false,
     );
@@ -151,7 +157,7 @@ fn test_sni_based_routing() {
 
 #[test]
 fn test_alpn_based_routing() {
-    use sb_core::router::sniff::extract_alpn_from_tls_client_hello;
+
 
     // Build ClientHello with ALPN
     let ch = build_tls_client_hello("example.com", "h2");
@@ -174,6 +180,7 @@ fn test_alpn_based_routing() {
             },
         ],
         default: Some("direct".into()),
+        ..Default::default()
     };
 
     let eng = Engine::new(&cfg);
@@ -188,6 +195,7 @@ fn test_alpn_based_routing() {
             sniff_host: None,
             sniff_alpn: Some(&alpn),
             sniff_protocol: None,
+            ..Default::default()
         },
         false,
     );
@@ -199,9 +207,7 @@ fn test_alpn_based_routing() {
 
 #[test]
 fn test_combined_sni_and_alpn_routing() {
-    use sb_core::router::sniff::{
-        extract_alpn_from_tls_client_hello, extract_sni_from_tls_client_hello,
-    };
+    use sb_core::router::sniff::extract_sni_from_tls_client_hello;
 
     // Build ClientHello with both SNI and ALPN
     let ch = build_tls_client_hello("api.cdn.example.com", "h2");
@@ -218,6 +224,7 @@ fn test_combined_sni_and_alpn_routing() {
             ..Default::default()
         }],
         default: Some("direct".into()),
+        ..Default::default()
     };
 
     let eng = Engine::new(&cfg);
@@ -232,6 +239,7 @@ fn test_combined_sni_and_alpn_routing() {
             sniff_host: Some(&sni),
             sniff_alpn: Some(&alpn),
             sniff_protocol: None,
+            ..Default::default()
         },
         false,
     );
@@ -253,6 +261,7 @@ fn test_combined_sni_and_alpn_routing() {
             sniff_host: Some(&sni),
             sniff_alpn: Some(&alpn_http1),
             sniff_protocol: None,
+            ..Default::default()
         },
         false,
     );

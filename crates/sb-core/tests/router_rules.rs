@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::rules::*;
 use std::net::{IpAddr, Ipv4Addr};
 
@@ -7,12 +8,7 @@ fn ctx(dom: Option<&str>, ip: Option<IpAddr>, udp: bool, port: Option<u16>) -> R
         ip,
         transport_udp: udp,
         port,
-        process_name: None,
-        process_path: None,
-        inbound_tag: None,
-        outbound_tag: None,
-        auth_user: None,
-        query_type: None,
+        ..Default::default()
     }
 }
 

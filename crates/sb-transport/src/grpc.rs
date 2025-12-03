@@ -40,9 +40,8 @@
 
 use crate::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
-use bytes::{Buf, Bytes, BytesMut};
-use futures::stream::Stream;
-use futures::{SinkExt, StreamExt};
+use bytes::{Buf, Bytes};
+use futures::StreamExt;
 use http::Uri;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -180,6 +179,10 @@ impl Dialer for GrpcDialer {
 
         Ok(Box::new(adapter))
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// gRPC stream adapter / gRPC 流适配器
@@ -217,7 +220,6 @@ impl GrpcStreamAdapter {
     pub async fn new(channel: Channel, _config: &GrpcConfig) -> Result<Self, DialError> {
         use tonic::Request;
         use tunnel::tunnel_service_client::TunnelServiceClient;
-        use tunnel::{TunnelRequest, TunnelResponse};
 
         let mut client = TunnelServiceClient::new(channel);
 
@@ -301,8 +303,7 @@ impl AsyncRead for GrpcStreamAdapter {
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
                 format!("gRPC stream error: {}", e),
             ))),
             Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
@@ -319,7 +320,9 @@ impl AsyncWrite for GrpcStreamAdapter {
     ) -> Poll<std::io::Result<usize>> {
         // Send data via gRPC stream
         let data = Bytes::copy_from_slice(buf);
-        let request = tunnel::TunnelRequest { data: data.to_vec() };
+        let request = tunnel::TunnelRequest {
+            data: data.to_vec(),
+        };
         self.tx.send(request).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -410,6 +413,8 @@ impl GrpcServer {
                                 config.service_name
                             );
 
+                            // Placeholder: wrap TCP stream directly for basic functionality
+                            // In production, this should handle gRPC framing and service dispatch
                             // Placeholder: wrap TCP stream directly for basic functionality
                             // In production, this should handle gRPC framing and service dispatch
                             let stream: IoStream = Box::new(tcp_stream);

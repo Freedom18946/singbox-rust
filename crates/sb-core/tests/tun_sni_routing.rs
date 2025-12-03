@@ -89,6 +89,7 @@ fn sni_drives_routing_decision() {
                 ..Default::default()
             }],
             default: Some("direct".into()),
+            ..Default::default()
         },
         ..Default::default()
     };
@@ -103,6 +104,7 @@ fn sni_drives_routing_decision() {
             sniff_host: None,
             sniff_alpn: None,
             sniff_protocol: None,
+            ..Default::default()
         },
         false,
     );

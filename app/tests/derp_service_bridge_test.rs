@@ -75,6 +75,8 @@ async fn derp_service_bridge_mock_relay_e2e() -> Result<()> {
     b.read_exact(&mut buf).await?;
     assert_eq!(&buf, b"ping");
 
-    service.close().map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    service
+        .close()
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     Ok(())
 }

@@ -11,8 +11,6 @@ use anytls_rs::session::Session;
 use anytls_rs::util::auth::hash_password;
 use bytes::Bytes;
 use sb_core::adapter::OutboundConnector;
-use std::io::Cursor;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -142,14 +140,11 @@ impl OutboundConnector for AnyTlsConnector {
         let session = self
             .get_or_create_session()
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         // Open a stream on the session
         let (stream, _rx) = session.open_stream().await.map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("failed to open stream: {}", e),
-            )
+            std::io::Error::other(format!("failed to open stream: {}", e))
         })?;
 
         // Send target address (SOCKS5 style)
@@ -211,10 +206,7 @@ impl OutboundConnector for AnyTlsConnector {
         stream_writer
             .send_data(Bytes::from(target_buf))
             .map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("failed to send target: {}", e),
-                )
+                std::io::Error::other(format!("failed to send target: {}", e))
             })?;
 
         // Bridge tasks

@@ -222,13 +222,14 @@ fn outbound_scaffold_socks_and_http_connect() {
                 ..Default::default()
             }],
             default: Some("S".into()),
+            ..Default::default()
         },
         ntp: None,
         dns: None,
         ..Default::default()
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng.clone());
+    let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
     let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(120));

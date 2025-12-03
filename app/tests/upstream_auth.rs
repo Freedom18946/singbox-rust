@@ -126,11 +126,7 @@ fn upstream_http_basic_auth_sent() {
             ty: InboundType::Http,
             listen: http_in.ip().to_string(),
             port: http_in.port(),
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Http,
@@ -148,16 +144,18 @@ fn upstream_http_basic_auth_sent() {
         route: RouteIR {
             rules: vec![RuleIR {
                 domain: vec!["*".into()],
-                outbound: Some("B".into()),
+                outbound: Some("P".into()),
                 ..Default::default()
             }],
-            default: Some("B".into()),
+            default: Some("P".into()),
+            ..Default::default()
         },
         ntp: None,
         dns: None,
+        ..Default::default()
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng.clone());
+    let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = sb_core::runtime::switchboard::SwitchboardBuilder::from_config_ir(&ir).unwrap();
     let rt = Runtime::new(eng, br, sb).start();
     thread::sleep(Duration::from_millis(120));

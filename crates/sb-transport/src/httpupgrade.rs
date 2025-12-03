@@ -170,7 +170,9 @@ impl Dialer for HttpUpgradeDialer {
                 .map_err(|e| DialError::Other(format!("Failed to read upgrade response: {}", e)))?;
 
             if n == 0 {
-                return Err(DialError::Other("Connection closed during handshake".into()));
+                return Err(DialError::Other(
+                    "Connection closed during handshake".into(),
+                ));
             }
 
             header_bytes.extend_from_slice(&buffer[..n]);
@@ -217,6 +219,10 @@ impl Dialer for HttpUpgradeDialer {
 
         debug!("HTTP upgrade handshake successful");
         Ok(stream)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

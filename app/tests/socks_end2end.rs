@@ -75,10 +75,8 @@ fn end_to_end_echo() {
             listen: socks_addr.ip().to_string(),
             port: socks_addr.port(),
             sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
+            udp: true,
+            ..Default::default()
         }],
         ..Default::default()
     };

@@ -1,6 +1,5 @@
 //! Test for SSH outbound adapter registration and instantiation.
 
-
 #[test]
 fn test_ssh_outbound_registration() {
     // Ensure SSH outbound is registered

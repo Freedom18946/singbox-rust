@@ -10,6 +10,7 @@ use std::thread;
 
 #[test]
 fn rule_selects_named_outbound() {
+    sb_adapters::register_all();
     // echo upstream（用来证明 direct 可连通）
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
@@ -65,7 +66,7 @@ fn rule_selects_named_outbound() {
     });
     let ir: ConfigIR = to_ir_v1(&config);
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng);
+    let br = build_bridge(&ir, eng, sb_core::context::Context::default());
     // 桥里应该能找到 direct
     assert!(br.find_outbound("direct").is_some());
 }

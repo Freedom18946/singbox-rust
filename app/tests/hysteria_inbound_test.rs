@@ -58,6 +58,7 @@ fn test_hysteria_v1_inbound_registration() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        ..Default::default()
     };
 
     // Verify inbound type
@@ -148,6 +149,7 @@ fn test_hysteria_v1_inbound_multi_user() {
         tls_server_name: Some("example.com".to_string()),
         tls_alpn: Some(vec!["hysteria".to_string()]),
         multiplex: None,
+        ..Default::default()
     };
 
     // Verify multi-user configuration
@@ -217,6 +219,7 @@ fn test_hysteria_v1_inbound_wechat_video_protocol() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        ..Default::default()
     };
 
     // Verify wechat-video protocol
@@ -279,6 +282,7 @@ fn test_hysteria_v1_inbound_serde() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        ..Default::default()
     };
 
     // Serialize to JSON
