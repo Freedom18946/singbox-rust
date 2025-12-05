@@ -17,9 +17,9 @@ use tokio::{
 
 use tracing::{debug, info, warn};
 
+use sb_config::ir::Credentials;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
-use sb_config::ir::Credentials;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -263,7 +263,6 @@ async fn handle_tls(cli: TcpStream, peer: SocketAddr, cfg: &MixedInboundConfig) 
         };
         let mut stream = PeekedStream::new(tls_stream, first);
         crate::inbound::socks::serve_conn(&mut stream, peer, &socks_cfg, None).await
-
     } else {
         // Assume HTTP over TLS
         debug!(peer=%peer, "mixed/tls: detected HTTP protocol (or unknown)");

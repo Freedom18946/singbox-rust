@@ -254,24 +254,34 @@ pub(crate) async fn handle_conn(
                                 }
                             }
                         }
+                        let clash_mode_str = br_owned
+                            .context
+                            .clash_server
+                            .as_ref()
+                            .map(|s| s.get_mode());
+                        let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
+                            "rule" => "Rule",
+                            "global" => "Global",
+                            "direct" => "Direct",
+                            _ => s,
+                        });
                         let input = RouterInput {
                             host: &dst_host,
                             port: dst_port,
                             network: "udp",
                             protocol: "socks",
-                            sniff_host: None,
                             sniff_alpn: sniffed.alpn.as_deref(),
                             sniff_protocol: sniffed.protocol,
-                            wifi_ssid: None,
-                            wifi_bssid: None,
-                            process_name: None,
-                            process_path: None,
-                            user_agent: None,
                             rule_set: if matched_rule_sets.is_empty() {
                                 None
                             } else {
                                 Some(&matched_rule_sets)
                             },
+                            clash_mode: clash_mode_ref,
+                            network_type: Some(br_owned.context.network_monitor.get_network_type()),
+                            network_is_expensive: Some(br_owned.context.network_monitor.is_expensive()),
+                            network_is_constrained: Some(br_owned.context.network_monitor.is_constrained()),
+                            ..Default::default()
                         };
                         eng_owned.decide(&input, false)
                     };
@@ -297,10 +307,11 @@ pub(crate) async fn handle_conn(
                                         let relay_c = relay.clone();
                                         let sess_c = sess.clone();
                                         tokio::spawn(async move {
-                                            while let Ok((data, src_addr)) = sess_c.recv_from().await {
+                                            while let Ok((data, src_addr)) =
+                                                sess_c.recv_from().await
+                                            {
                                                 // Wrap and forward to client
-                                                let mut pkt =
-                                                    Vec::with_capacity(data.len() + 10);
+                                                let mut pkt = Vec::with_capacity(data.len() + 10);
                                                 pkt.extend_from_slice(&[0x00, 0x00, 0x00]); // RSV RSV FRAG
                                                 match src_addr.ip() {
                                                     std::net::IpAddr::V4(v4) => {
@@ -545,6 +556,18 @@ pub(crate) async fn handle_conn(
                 }
             }
         }
+        let clash_mode_str = bridge
+            .context
+            .clash_server
+            .as_ref()
+            .map(|s| s.get_mode());
+        let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
+            "rule" => "Rule",
+            "global" => "Global",
+            "direct" => "Direct",
+            _ => s,
+        });
+
         let input = RouterInput {
             host: &host,
             port,
@@ -553,16 +576,19 @@ pub(crate) async fn handle_conn(
             sniff_host: sniff_host_ref,
             sniff_alpn: sniff_alpn_ref,
             sniff_protocol: sniff_proto_ref,
-            wifi_ssid: None,
-            wifi_bssid: None,
             process_name: process_name.as_deref(),
             process_path: process_path.as_deref(),
-            user_agent: None,
             rule_set: if matched_rule_sets.is_empty() {
                 None
             } else {
                 Some(&matched_rule_sets)
             },
+            clash_mode: clash_mode_ref,
+            package_name: process_name.as_deref(),
+            network_type: Some(bridge.context.network_monitor.get_network_type()),
+            network_is_expensive: Some(bridge.context.network_monitor.is_expensive()),
+            network_is_constrained: Some(bridge.context.network_monitor.is_constrained()),
+            ..Default::default()
         };
         eng.decide(&input, false)
     };

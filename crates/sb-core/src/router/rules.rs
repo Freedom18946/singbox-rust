@@ -88,6 +88,126 @@ impl PartialEq for ProcessPathRegexMatcher {
 
 impl Eq for ProcessPathRegexMatcher {}
 
+/// AdGuard-style rule pattern type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdGuardPatternType {
+    /// `||domain^` - Match domain and all subdomains
+    DomainAndSubdomains,
+    /// `|domain` - Match domain start
+    DomainStart,
+    /// Plain pattern - Match if contains
+    Contains,
+}
+
+/// AdGuard-style rule matcher (Adblock filter syntax)
+///
+/// Supports patterns like:
+/// - `||example.org^` - Block domain and subdomains
+/// - `@@||example.org^` - Exception (unblock)
+/// - `|example.org^` - Block exact domain start
+/// - `example.org` - Block if contains pattern
+#[derive(Debug, Clone)]
+pub struct AdGuardRuleMatcher {
+    /// Original pattern for display/debugging
+    pattern: String,
+    /// Whether this is an exception rule (starts with @@)
+    is_exception: bool,
+    /// Pattern type
+    pattern_type: AdGuardPatternType,
+    /// Cleaned pattern for matching (without ||, @@, ^)
+    match_pattern: String,
+}
+
+impl AdGuardRuleMatcher {
+    /// Parse an AdGuard-style rule pattern
+    pub fn parse(pattern: &str) -> Result<Self, String> {
+        let pattern = pattern.trim();
+        if pattern.is_empty() {
+            return Err("empty pattern".to_string());
+        }
+
+        // Check for exception rules (@@)
+        let (is_exception, remaining) = if let Some(rest) = pattern.strip_prefix("@@") {
+            (true, rest)
+        } else {
+            (false, pattern)
+        };
+
+        // Determine pattern type
+        let (pattern_type, match_pattern) = if let Some(rest) = remaining.strip_prefix("||") {
+            // ||domain^ - domain and subdomains
+            let clean = rest.trim_end_matches('^').to_ascii_lowercase();
+            (AdGuardPatternType::DomainAndSubdomains, clean)
+        } else if let Some(rest) = remaining.strip_prefix('|') {
+            // |domain - domain start
+            let clean = rest.trim_end_matches('^').to_ascii_lowercase();
+            (AdGuardPatternType::DomainStart, clean)
+        } else {
+            // Plain pattern - contains
+            let clean = remaining.trim_end_matches('^').to_ascii_lowercase();
+            (AdGuardPatternType::Contains, clean)
+        };
+
+        if match_pattern.is_empty() {
+            return Err("empty match pattern after parsing".to_string());
+        }
+
+        Ok(Self {
+            pattern: pattern.to_string(),
+            is_exception,
+            pattern_type,
+            match_pattern,
+        })
+    }
+
+    /// Check if this rule matches the given domain
+    pub fn matches(&self, domain: &str) -> bool {
+        let domain = domain.to_ascii_lowercase();
+        
+        match self.pattern_type {
+            AdGuardPatternType::DomainAndSubdomains => {
+                // Match exact domain or any subdomain
+                // ||example.org^ matches: example.org, www.example.org, sub.www.example.org
+                // but NOT: notexample.org
+                if domain == self.match_pattern {
+                    return true;
+                }
+                // Check if domain ends with .pattern
+                if domain.ends_with(&format!(".{}", self.match_pattern)) {
+                    return true;
+                }
+                false
+            }
+            AdGuardPatternType::DomainStart => {
+                // Match if domain starts with pattern
+                domain.starts_with(&self.match_pattern)
+            }
+            AdGuardPatternType::Contains => {
+                // Match if domain contains pattern
+                domain.contains(&self.match_pattern)
+            }
+        }
+    }
+
+    /// Check if this is an exception rule
+    pub fn is_exception(&self) -> bool {
+        self.is_exception
+    }
+
+    /// Get the original pattern
+    pub fn pattern(&self) -> &str {
+        &self.pattern
+    }
+}
+
+impl PartialEq for AdGuardRuleMatcher {
+    fn eq(&self, other: &Self) -> bool {
+        self.pattern == other.pattern
+    }
+}
+
+impl Eq for AdGuardRuleMatcher {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuleKind {
     Exact(String),                             // exact:example.com
@@ -152,6 +272,26 @@ pub struct CompositeRule {
     pub ip_is_private: bool,
     pub ip_version: Vec<String>, // ipv4, ipv6
 
+    // P1 Parity: Additional positive matchers
+    pub clash_mode: Vec<String>,
+    pub client: Vec<String>,
+    pub package_name: Vec<String>,
+    pub network_type: Vec<String>,
+    pub network_is_expensive: Option<bool>,
+    pub network_is_constrained: Option<bool>,
+    pub ip_accept_any: bool,
+    pub outbound_tag: Vec<String>,
+    /// OS-level user name list (e.g., "root", "nobody")
+    pub user: Vec<String>,
+    /// OS-level user ID list (UID)
+    pub user_id: Vec<u32>,
+    /// OS-level group name list (e.g., "wheel", "staff")
+    pub group: Vec<String>,
+    /// OS-level group ID list (GID)
+    pub group_id: Vec<u32>,
+    /// AdGuard-style filter rules (e.g., "||example.org^")
+    pub adguard: Vec<AdGuardRuleMatcher>,
+
     // Negative matchers
     pub not_domain: Vec<String>,
     pub not_domain_suffix: Vec<String>,
@@ -179,6 +319,23 @@ pub struct CompositeRule {
     pub not_auth_user: Vec<String>,
     pub not_ip_is_private: bool,
 
+    // P1 Parity: Additional negative matchers
+    pub not_clash_mode: Vec<String>,
+    pub not_client: Vec<String>,
+    pub not_package_name: Vec<String>,
+    pub not_network_type: Vec<String>,
+    pub not_outbound_tag: Vec<String>,
+    /// Negative: OS-level user name list
+    pub not_user: Vec<String>,
+    /// Negative: OS-level user ID list
+    pub not_user_id: Vec<u32>,
+    /// Negative: OS-level group name list
+    pub not_group: Vec<String>,
+    /// Negative: OS-level group ID list
+    pub not_group_id: Vec<u32>,
+    /// Negative: AdGuard-style filter rules
+    pub not_adguard: Vec<AdGuardRuleMatcher>,
+
     pub decision: Decision,
 }
 
@@ -196,7 +353,7 @@ pub struct RouteCtx<'a> {
     pub query_type: Option<DnsRecordType>,
     pub wifi_ssid: Option<&'a str>,
     pub wifi_bssid: Option<&'a str>,
-    pub network: Option<&'a str>, // tcp/udp
+    pub network: Option<&'a str>,  // tcp/udp
     pub protocol: Option<&'a str>, // http/tls/etc
     pub user_agent: Option<&'a str>,
     pub geosite_codes: Vec<String>,
@@ -205,6 +362,28 @@ pub struct RouteCtx<'a> {
     pub rule_sets: Vec<String>,
     pub source_ip: Option<IpAddr>,
     pub source_port: Option<u16>,
+
+    // P1 Parity: Additional routing context fields
+    /// Current Clash API mode (e.g., "rule", "global", "direct")
+    pub clash_mode: Option<&'a str>,
+    /// Client name/version string
+    pub client: Option<&'a str>,
+    /// Android package name (TUN mode)
+    pub package_name: Option<&'a str>,
+    /// Network type: "wifi", "cellular", "ethernet", etc.
+    pub network_type: Option<&'a str>,
+    /// Whether the current network is metered/expensive
+    pub network_is_expensive: Option<bool>,
+    /// Whether the current network is constrained
+    pub network_is_constrained: Option<bool>,
+    /// OS-level user name (e.g., "root", "nobody")
+    pub user: Option<&'a str>,
+    /// OS-level user ID (UID)
+    pub user_id: Option<u32>,
+    /// OS-level group name (e.g., "wheel", "staff")
+    pub group: Option<&'a str>,
+    /// OS-level group ID (GID)
+    pub group_id: Option<u32>,
 }
 
 impl CompositeRule {
@@ -212,7 +391,11 @@ impl CompositeRule {
         // 1. Negation checks (if any match, rule fails)
         if !self.not_domain.is_empty() {
             if let Some(domain) = ctx.domain {
-                if self.not_domain.iter().any(|d| domain.eq_ignore_ascii_case(d)) {
+                if self
+                    .not_domain
+                    .iter()
+                    .any(|d| domain.eq_ignore_ascii_case(d))
+                {
                     return false;
                 }
             }
@@ -220,7 +403,11 @@ impl CompositeRule {
         if !self.not_domain_suffix.is_empty() {
             if let Some(domain) = ctx.domain {
                 let domain = domain.to_ascii_lowercase();
-                if self.not_domain_suffix.iter().any(|s| domain.ends_with(&s.to_ascii_lowercase())) {
+                if self
+                    .not_domain_suffix
+                    .iter()
+                    .any(|s| domain.ends_with(&s.to_ascii_lowercase()))
+                {
                     return false;
                 }
             }
@@ -228,7 +415,11 @@ impl CompositeRule {
         if !self.not_domain_keyword.is_empty() {
             if let Some(domain) = ctx.domain {
                 let domain = domain.to_ascii_lowercase();
-                if self.not_domain_keyword.iter().any(|k| domain.contains(&k.to_ascii_lowercase())) {
+                if self
+                    .not_domain_keyword
+                    .iter()
+                    .any(|k| domain.contains(&k.to_ascii_lowercase()))
+                {
                     return false;
                 }
             }
@@ -241,9 +432,13 @@ impl CompositeRule {
             }
         }
         if !self.not_geosite.is_empty()
-            && self.not_geosite.iter().any(|g| ctx.geosite_codes.iter().any(|c| c == g)) {
-                return false;
-            }
+            && self
+                .not_geosite
+                .iter()
+                .any(|g| ctx.geosite_codes.iter().any(|c| c == g))
+        {
+            return false;
+        }
         if !self.not_ip_cidr.is_empty() {
             if let Some(ip) = ctx.ip {
                 if self.not_ip_cidr.iter().any(|n| n.contains(&ip)) {
@@ -267,7 +462,11 @@ impl CompositeRule {
         }
         if !self.not_source_geoip.is_empty() {
             if let Some(code) = &ctx.source_geoip_code {
-                if self.not_source_geoip.iter().any(|c| c.eq_ignore_ascii_case(code)) {
+                if self
+                    .not_source_geoip
+                    .iter()
+                    .any(|c| c.eq_ignore_ascii_case(code))
+                {
                     return false;
                 }
             }
@@ -281,7 +480,11 @@ impl CompositeRule {
         }
         if !self.not_port_range.is_empty() {
             if let Some(port) = ctx.port {
-                if self.not_port_range.iter().any(|(s, e)| port >= *s && port <= *e) {
+                if self
+                    .not_port_range
+                    .iter()
+                    .any(|(s, e)| port >= *s && port <= *e)
+                {
                     return false;
                 }
             }
@@ -295,35 +498,55 @@ impl CompositeRule {
         }
         if !self.not_source_port_range.is_empty() {
             if let Some(port) = ctx.source_port {
-                if self.not_source_port_range.iter().any(|(s, e)| port >= *s && port <= *e) {
+                if self
+                    .not_source_port_range
+                    .iter()
+                    .any(|(s, e)| port >= *s && port <= *e)
+                {
                     return false;
                 }
             }
         }
         if !self.not_network.is_empty() {
             if let Some(network) = ctx.network {
-                if self.not_network.iter().any(|n| n.eq_ignore_ascii_case(network)) {
+                if self
+                    .not_network
+                    .iter()
+                    .any(|n| n.eq_ignore_ascii_case(network))
+                {
                     return false;
                 }
             }
         }
         if !self.not_protocol.is_empty() {
             if let Some(protocol) = ctx.protocol {
-                if self.not_protocol.iter().any(|p| p.eq_ignore_ascii_case(protocol)) {
+                if self
+                    .not_protocol
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(protocol))
+                {
                     return false;
                 }
             }
         }
         if !self.not_process_name.is_empty() {
             if let Some(name) = ctx.process_name {
-                if self.not_process_name.iter().any(|n| name.eq_ignore_ascii_case(n)) {
+                if self
+                    .not_process_name
+                    .iter()
+                    .any(|n| name.eq_ignore_ascii_case(n))
+                {
                     return false;
                 }
             }
         }
         if !self.not_process_path.is_empty() {
             if let Some(path) = ctx.process_path {
-                if self.not_process_path.iter().any(|p| path.eq_ignore_ascii_case(p)) {
+                if self
+                    .not_process_path
+                    .iter()
+                    .any(|p| path.eq_ignore_ascii_case(p))
+                {
                     return false;
                 }
             }
@@ -344,15 +567,23 @@ impl CompositeRule {
         }
         if !self.not_wifi_bssid.is_empty() {
             if let Some(bssid) = ctx.wifi_bssid {
-                if self.not_wifi_bssid.iter().any(|b| b.eq_ignore_ascii_case(bssid)) {
+                if self
+                    .not_wifi_bssid
+                    .iter()
+                    .any(|b| b.eq_ignore_ascii_case(bssid))
+                {
                     return false;
                 }
             }
         }
         if !self.not_rule_set.is_empty()
-            && self.not_rule_set.iter().any(|rs| ctx.rule_sets.iter().any(|r| r == rs)) {
-                return false;
-            }
+            && self
+                .not_rule_set
+                .iter()
+                .any(|rs| ctx.rule_sets.iter().any(|r| r == rs))
+        {
+            return false;
+        }
         if !self.not_user_agent.is_empty() {
             if let Some(ua) = ctx.user_agent {
                 if self.not_user_agent.iter().any(|u| ua.contains(u)) {
@@ -362,190 +593,572 @@ impl CompositeRule {
         }
         if !self.not_inbound_tag.is_empty() {
             if let Some(tag) = ctx.inbound_tag {
-                if self.not_inbound_tag.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+                if self
+                    .not_inbound_tag
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(tag))
+                {
                     return false;
                 }
             }
         }
         if !self.not_auth_user.is_empty() {
             if let Some(user) = ctx.auth_user {
-                if self.not_auth_user.iter().any(|u| u.eq_ignore_ascii_case(user)) {
+                if self
+                    .not_auth_user
+                    .iter()
+                    .any(|u| u.eq_ignore_ascii_case(user))
+                {
                     return false;
                 }
             }
         }
         if self.not_ip_is_private {
-             if let Some(ip) = ctx.ip {
-                 if Engine::is_private_ip(&ip) {
-                     return false;
-                 }
-             }
+            if let Some(ip) = ctx.ip {
+                if Engine::is_private_ip(&ip) {
+                    return false;
+                }
+            }
         }
 
         // 2. Positive checks (all non-empty fields must match)
         if !self.domain.is_empty() {
             let matched = if let Some(domain) = ctx.domain {
                 self.domain.iter().any(|d| domain.eq_ignore_ascii_case(d))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.domain_suffix.is_empty() {
             let matched = if let Some(domain) = ctx.domain {
                 let domain = domain.to_ascii_lowercase();
-                self.domain_suffix.iter().any(|s| domain.ends_with(&s.to_ascii_lowercase()))
-            } else { false };
-            if !matched { return false; }
+                self.domain_suffix
+                    .iter()
+                    .any(|s| domain.ends_with(&s.to_ascii_lowercase()))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.domain_keyword.is_empty() {
             let matched = if let Some(domain) = ctx.domain {
                 let domain = domain.to_ascii_lowercase();
-                self.domain_keyword.iter().any(|k| domain.contains(&k.to_ascii_lowercase()))
-            } else { false };
-            if !matched { return false; }
+                self.domain_keyword
+                    .iter()
+                    .any(|k| domain.contains(&k.to_ascii_lowercase()))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.domain_regex.is_empty() {
             let matched = if let Some(domain) = ctx.domain {
                 self.domain_regex.iter().any(|r| r.is_match(domain))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.geosite.is_empty() {
-            let matched = self.geosite.iter().any(|g| ctx.geosite_codes.iter().any(|c| c == g));
-            if !matched { return false; }
+            let matched = self
+                .geosite
+                .iter()
+                .any(|g| ctx.geosite_codes.iter().any(|c| c == g));
+            if !matched {
+                return false;
+            }
         }
         if !self.ip_cidr.is_empty() {
             let matched = if let Some(ip) = ctx.ip {
                 self.ip_cidr.iter().any(|n| n.contains(&ip))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.geoip.is_empty() {
             let matched = if let Some(code) = &ctx.geoip_code {
                 self.geoip.iter().any(|c| c.eq_ignore_ascii_case(code))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.source_ip_cidr.is_empty() {
             let matched = if let Some(ip) = ctx.source_ip {
                 self.source_ip_cidr.iter().any(|n| n.contains(&ip))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.source_geoip.is_empty() {
             let matched = if let Some(code) = &ctx.source_geoip_code {
-                self.source_geoip.iter().any(|c| c.eq_ignore_ascii_case(code))
-            } else { false };
-            if !matched { return false; }
+                self.source_geoip
+                    .iter()
+                    .any(|c| c.eq_ignore_ascii_case(code))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.port.is_empty() {
             let matched = if let Some(port) = ctx.port {
                 self.port.contains(&port)
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.port_range.is_empty() {
             let matched = if let Some(port) = ctx.port {
-                self.port_range.iter().any(|(s, e)| port >= *s && port <= *e)
-            } else { false };
-            if !matched { return false; }
+                self.port_range
+                    .iter()
+                    .any(|(s, e)| port >= *s && port <= *e)
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.source_port.is_empty() {
             let matched = if let Some(port) = ctx.source_port {
                 self.source_port.contains(&port)
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.source_port_range.is_empty() {
             let matched = if let Some(port) = ctx.source_port {
-                self.source_port_range.iter().any(|(s, e)| port >= *s && port <= *e)
-            } else { false };
-            if !matched { return false; }
+                self.source_port_range
+                    .iter()
+                    .any(|(s, e)| port >= *s && port <= *e)
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.network.is_empty() {
             let matched = if let Some(network) = ctx.network {
                 self.network.iter().any(|n| n.eq_ignore_ascii_case(network))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.protocol.is_empty() {
             let matched = if let Some(protocol) = ctx.protocol {
-                self.protocol.iter().any(|p| p.eq_ignore_ascii_case(protocol))
-            } else { false };
-            if !matched { return false; }
+                self.protocol
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(protocol))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.process_name.is_empty() {
             let matched = if let Some(name) = ctx.process_name {
-                self.process_name.iter().any(|n| name.eq_ignore_ascii_case(n))
-            } else { false };
-            if !matched { return false; }
+                self.process_name
+                    .iter()
+                    .any(|n| name.eq_ignore_ascii_case(n))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.process_path.is_empty() {
             let matched = if let Some(path) = ctx.process_path {
-                self.process_path.iter().any(|p| path.eq_ignore_ascii_case(p))
-            } else { false };
-            if !matched { return false; }
+                self.process_path
+                    .iter()
+                    .any(|p| path.eq_ignore_ascii_case(p))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.process_path_regex.is_empty() {
             let matched = if let Some(path) = ctx.process_path {
                 self.process_path_regex.iter().any(|r| r.is_match(path))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.wifi_ssid.is_empty() {
             let matched = if let Some(ssid) = ctx.wifi_ssid {
                 self.wifi_ssid.iter().any(|s| s == ssid)
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.wifi_bssid.is_empty() {
             let matched = if let Some(bssid) = ctx.wifi_bssid {
-                self.wifi_bssid.iter().any(|b| b.eq_ignore_ascii_case(bssid))
-            } else { false };
-            if !matched { return false; }
+                self.wifi_bssid
+                    .iter()
+                    .any(|b| b.eq_ignore_ascii_case(bssid))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.rule_set.is_empty() {
-            let matched = self.rule_set.iter().any(|rs| ctx.rule_sets.iter().any(|r| r == rs));
-            if !matched { return false; }
+            let matched = self
+                .rule_set
+                .iter()
+                .any(|rs| ctx.rule_sets.iter().any(|r| r == rs));
+            if !matched {
+                return false;
+            }
         }
         if !self.user_agent.is_empty() {
             let matched = if let Some(ua) = ctx.user_agent {
                 self.user_agent.iter().any(|u| ua.contains(u))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.inbound_tag.is_empty() {
             let matched = if let Some(tag) = ctx.inbound_tag {
                 self.inbound_tag.iter().any(|t| t.eq_ignore_ascii_case(tag))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.auth_user.is_empty() {
             let matched = if let Some(user) = ctx.auth_user {
                 self.auth_user.iter().any(|u| u.eq_ignore_ascii_case(user))
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.query_type.is_empty() {
             let matched = if let Some(qt) = ctx.query_type {
                 self.query_type.contains(&qt)
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if self.ip_is_private {
             let matched = if let Some(ip) = ctx.ip {
                 Engine::is_private_ip(&ip)
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
         if !self.ip_version.is_empty() {
             let matched = if let Some(ip) = ctx.ip {
                 if ip.is_ipv4() {
-                    self.ip_version.iter().any(|v| v == "4" || v.eq_ignore_ascii_case("ipv4"))
+                    self.ip_version
+                        .iter()
+                        .any(|v| v == "4" || v.eq_ignore_ascii_case("ipv4"))
                 } else {
-                    self.ip_version.iter().any(|v| v == "6" || v.eq_ignore_ascii_case("ipv6"))
+                    self.ip_version
+                        .iter()
+                        .any(|v| v == "6" || v.eq_ignore_ascii_case("ipv6"))
                 }
-            } else { false };
-            if !matched { return false; }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // P1 Parity: Additional negation checks
+        // ─────────────────────────────────────────────────────────────────────
+        if !self.not_clash_mode.is_empty() {
+            if let Some(mode) = ctx.clash_mode {
+                if self
+                    .not_clash_mode
+                    .iter()
+                    .any(|m| m.eq_ignore_ascii_case(mode))
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.not_client.is_empty() {
+            if let Some(client) = ctx.client {
+                if self.not_client.iter().any(|c| client.contains(c)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_package_name.is_empty() {
+            if let Some(pkg) = ctx.package_name {
+                if self
+                    .not_package_name
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(pkg))
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.not_network_type.is_empty() {
+            if let Some(nt) = ctx.network_type {
+                if self
+                    .not_network_type
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(nt))
+                {
+                    return false;
+                }
+            }
+        }
+        if !self.not_outbound_tag.is_empty() {
+            if let Some(tag) = ctx.outbound_tag {
+                if self
+                    .not_outbound_tag
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(tag))
+                {
+                    return false;
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // P1 Parity: Additional positive checks
+        // ─────────────────────────────────────────────────────────────────────
+        if !self.clash_mode.is_empty() {
+            let matched = if let Some(mode) = ctx.clash_mode {
+                self.clash_mode.iter().any(|m| m.eq_ignore_ascii_case(mode))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.client.is_empty() {
+            let matched = if let Some(client) = ctx.client {
+                self.client.iter().any(|c| client.contains(c))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.package_name.is_empty() {
+            let matched = if let Some(pkg) = ctx.package_name {
+                self.package_name.iter().any(|p| p.eq_ignore_ascii_case(pkg))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.network_type.is_empty() {
+            let matched = if let Some(nt) = ctx.network_type {
+                self.network_type.iter().any(|t| t.eq_ignore_ascii_case(nt))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if let Some(is_expensive) = self.network_is_expensive {
+            if ctx.network_is_expensive != Some(is_expensive) {
+                return false;
+            }
+        }
+        if let Some(is_constrained) = self.network_is_constrained {
+            if ctx.network_is_constrained != Some(is_constrained) {
+                return false;
+            }
+        }
+        if !self.outbound_tag.is_empty() {
+            let matched = if let Some(tag) = ctx.outbound_tag {
+                self.outbound_tag.iter().any(|t| t.eq_ignore_ascii_case(tag))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        // ip_accept_any: special DNS rule behavior, no matching logic here
+        // (affects how DNS resolver handles multiple A/AAAA records)
+
+        // ─────────────────────────────────────────────────────────────────────
+        // OS-level user/group negation checks
+        // ─────────────────────────────────────────────────────────────────────
+        if !self.not_user.is_empty() {
+            if let Some(user) = ctx.user {
+                if self.not_user.iter().any(|u| u.eq_ignore_ascii_case(user)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_user_id.is_empty() {
+            if let Some(uid) = ctx.user_id {
+                if self.not_user_id.contains(&uid) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_group.is_empty() {
+            if let Some(group) = ctx.group {
+                if self.not_group.iter().any(|g| g.eq_ignore_ascii_case(group)) {
+                    return false;
+                }
+            }
+        }
+        if !self.not_group_id.is_empty() {
+            if let Some(gid) = ctx.group_id {
+                if self.not_group_id.contains(&gid) {
+                    return false;
+                }
+            }
+        }
+        // AdGuard-style negation checks
+        if !self.not_adguard.is_empty() {
+            if let Some(domain) = ctx.domain {
+                // If any non-exception rule matches, fail
+                // Exception rules in not_adguard are treated as "if this exception matches, fail"
+                for rule in &self.not_adguard {
+                    if rule.matches(domain) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // OS-level user/group positive checks
+        // ─────────────────────────────────────────────────────────────────────
+        if !self.user.is_empty() {
+            let matched = if let Some(user) = ctx.user {
+                self.user.iter().any(|u| u.eq_ignore_ascii_case(user))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.user_id.is_empty() {
+            let matched = if let Some(uid) = ctx.user_id {
+                self.user_id.contains(&uid)
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.group.is_empty() {
+            let matched = if let Some(group) = ctx.group {
+                self.group.iter().any(|g| g.eq_ignore_ascii_case(group))
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.group_id.is_empty() {
+            let matched = if let Some(gid) = ctx.group_id {
+                self.group_id.contains(&gid)
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // AdGuard-style positive checks
+        // ─────────────────────────────────────────────────────────────────────
+        if !self.adguard.is_empty() {
+            let matched = if let Some(domain) = ctx.domain {
+                // AdGuard matching with exception support:
+                // 1. Check if any exception rule matches first
+                // 2. If exception matches, treat as non-match (allow through)
+                // 3. If no exception, check blocking rules
+                let has_exception_match = self
+                    .adguard
+                    .iter()
+                    .filter(|r| r.is_exception())
+                    .any(|r| r.matches(domain));
+                
+                if has_exception_match {
+                    // Exception rule matched, treat as non-match for this rule set
+                    false
+                } else {
+                    // Check if any blocking rule matches
+                    self.adguard
+                        .iter()
+                        .filter(|r| !r.is_exception())
+                        .any(|r| r.matches(domain))
+                }
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
         }
 
         true
@@ -1074,4 +1687,142 @@ pub fn init_from_env() {
     let eng = Engine::build(rules);
     install_global(eng);
     tracing::info!(enabled=%enable, rules=n, "router: global rules engine installed");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_adguard_domain_and_subdomains() {
+        let matcher = AdGuardRuleMatcher::parse("||example.org^").expect("parse");
+        
+        // Should match exact domain
+        assert!(matcher.matches("example.org"));
+        // Should match subdomains
+        assert!(matcher.matches("www.example.org"));
+        assert!(matcher.matches("sub.www.example.org"));
+        assert!(matcher.matches("deep.sub.www.example.org"));
+        
+        // Should NOT match unrelated domains
+        assert!(!matcher.matches("notexample.org"));
+        assert!(!matcher.matches("example.org.com"));
+        assert!(!matcher.matches("myexample.org"));
+    }
+
+    #[test]
+    fn test_adguard_domain_start() {
+        let matcher = AdGuardRuleMatcher::parse("|example^").expect("parse");
+        
+        // Should match domains starting with pattern
+        assert!(matcher.matches("example.org"));
+        assert!(matcher.matches("example.com"));
+        assert!(matcher.matches("example"));
+        
+        // Should NOT match domains not starting with pattern
+        assert!(!matcher.matches("www.example.org"));
+        assert!(!matcher.matches("notexample.org"));
+    }
+
+    #[test]
+    fn test_adguard_contains() {
+        let matcher = AdGuardRuleMatcher::parse("tracker").expect("parse");
+        
+        // Should match if contains pattern
+        assert!(matcher.matches("ads-tracker.example.com"));
+        assert!(matcher.matches("tracker.example.com"));
+        assert!(matcher.matches("example.tracker.com"));
+        assert!(matcher.matches("tracker"));
+        
+        // Should NOT match if doesn't contain pattern
+        assert!(!matcher.matches("example.com"));
+        assert!(!matcher.matches("track.example.com"));
+    }
+
+    #[test]
+    fn test_adguard_exception() {
+        let matcher = AdGuardRuleMatcher::parse("@@||ads.example.org^").expect("parse");
+        
+        // Should be marked as exception
+        assert!(matcher.is_exception());
+        
+        // Should still match domains
+        assert!(matcher.matches("ads.example.org"));
+        assert!(matcher.matches("www.ads.example.org"));
+    }
+
+    #[test]
+    fn test_adguard_case_insensitive() {
+        let matcher = AdGuardRuleMatcher::parse("||Example.ORG^").expect("parse");
+        
+        assert!(matcher.matches("example.org"));
+        assert!(matcher.matches("EXAMPLE.ORG"));
+        assert!(matcher.matches("www.Example.Org"));
+    }
+
+    #[test]
+    fn test_adguard_invalid_patterns() {
+        assert!(AdGuardRuleMatcher::parse("").is_err());
+        assert!(AdGuardRuleMatcher::parse("   ").is_err());
+        assert!(AdGuardRuleMatcher::parse("||^").is_err());
+    }
+
+    #[test]
+    fn test_adguard_composite_rule_blocking() {
+        let rule = AdGuardRuleMatcher::parse("||ads.example.org^").expect("parse");
+        
+        let composite = CompositeRule {
+            adguard: vec![rule],
+            decision: Decision::Reject,
+            ..Default::default()
+        };
+
+        // Should match ad domain
+        let ctx_ads = RouteCtx {
+            domain: Some("ads.example.org"),
+            ..Default::default()
+        };
+        assert!(composite.matches(&ctx_ads));
+
+        // Should not match regular domain
+        let ctx_regular = RouteCtx {
+            domain: Some("www.example.org"),
+            ..Default::default()
+        };
+        assert!(!composite.matches(&ctx_regular));
+    }
+
+    #[test]
+    fn test_adguard_composite_rule_with_exception() {
+        // Block all of example.org, but allow safe.example.org
+        let block_rule = AdGuardRuleMatcher::parse("||example.org^").expect("parse");
+        let exception_rule = AdGuardRuleMatcher::parse("@@||safe.example.org^").expect("parse");
+        
+        let composite = CompositeRule {
+            adguard: vec![block_rule, exception_rule],
+            decision: Decision::Reject,
+            ..Default::default()
+        };
+
+        // Should NOT match safe subdomain (exception applies)
+        let ctx_safe = RouteCtx {
+            domain: Some("safe.example.org"),
+            ..Default::default()
+        };
+        assert!(!composite.matches(&ctx_safe));
+
+        // Should match other subdomains
+        let ctx_ads = RouteCtx {
+            domain: Some("ads.example.org"),
+            ..Default::default()
+        };
+        assert!(composite.matches(&ctx_ads));
+
+        // Should match main domain
+        let ctx_main = RouteCtx {
+            domain: Some("example.org"),
+            ..Default::default()
+        };
+        assert!(composite.matches(&ctx_main));
+    }
 }

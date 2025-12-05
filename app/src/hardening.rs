@@ -10,8 +10,8 @@
 //! ## Strategic Features / 战略特性
 //! - **Resource Limits / 资源限制**: Increases file descriptor limits to handle high concurrency (C10K+).
 //!   提高文件描述符限制以处理高并发 (C10K+)。
-//! - **Privilege Drop / 权限降级**: Prevents the process from gaining new privileges (no_new_privs).
-//!   防止进程获取新权限 (no_new_privs)。
+//! - **Privilege Drop / 权限降级**: Prevents the process from gaining new privileges (`no_new_privs`).
+//!   防止进程获取新权限 (`no_new_privs`)。
 //! - **Anti-Debugging / 反调试**: Disables core dumps to prevent sensitive memory leakage.
 //!   禁用核心转储以防止敏感内存泄漏。
 

@@ -310,8 +310,6 @@ async fn test_e2e_concurrent_connections() {
     let mut handles = vec![];
 
     for i in 0..10 {
-
-
         let handle = tokio::spawn(async move {
             let mut stream = TcpStream::connect(socks_addr).await.unwrap();
 

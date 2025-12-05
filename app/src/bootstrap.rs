@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Context, Result};
 use sb_config::Config;
-use sb_core::adapter::InboundService;
 use tracing::{error, info, warn};
 
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -8,7 +7,6 @@ use std::sync::Arc;
 
 use tokio::{
     net::TcpStream,
-    sync::mpsc,
     time::{timeout, Duration},
 };
 
@@ -26,23 +24,6 @@ use sb_core::router::RouterHandle;
 #[cfg(feature = "router")]
 use std::collections::HashMap;
 
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::socks::udp::serve_socks5_udp_service;
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::trojan::{serve as serve_trojan, TrojanInboundConfig, TrojanUser};
-#[cfg(all(feature = "tun", feature = "adapters"))]
-use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
-#[cfg(feature = "adapters")]
-use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
-
 const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
 const DEFAULT_URLTEST_INTERVAL_MS: u64 = 60_000;
 const DEFAULT_URLTEST_TIMEOUT_MS: u64 = 5_000;
@@ -53,7 +34,7 @@ fn parse_alpn_tokens(src: &str) -> Vec<String> {
         .flat_map(|part| part.split_whitespace())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 
@@ -107,17 +88,7 @@ fn create_router_handle() -> Arc<sb_core::router::engine::RouterHandle> {
     Arc::new(setup_dns_routing())
 }
 
-/// Convert string like "127.0.0.1:8080" to SocketAddr with friendly error.
-fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
-    s.parse::<SocketAddr>()
-        .or_else(|_| {
-            let t = s.trim();
-            t.parse::<SocketAddr>()
-        })
-        .with_context(|| format!("invalid listen addr in config: '{s}'"))
-}
-
-/// Build OutboundRegistry from ConfigIR (minimal: direct/block/http/socks)
+/// Build `OutboundRegistry` from `ConfigIR` (minimal: direct/block/http/socks)
 ///
 /// # Strategic Logic / 战略逻辑
 /// This function acts as the **Translation Layer** between the Configuration Intermediate Representation (IR)
@@ -126,14 +97,15 @@ fn parse_listen_addr(s: &str) -> Result<SocketAddr> {
 /// 此函数充当配置中间表示 (IR) 与具体运行时出站注册表之间的 **转换层**。
 ///
 /// It iterates through the configured outbounds and instantiates the corresponding `OutboundImpl`.
-/// Note that complex selectors (like URLTest) require a two-pass approach:
+/// Note that complex selectors (like `URLTest`) require a two-pass approach:
 /// 1. Instantiate all concrete outbounds (Direct, Socks, etc.).
 /// 2. Instantiate selectors that reference the concrete outbounds.
 ///
 /// 它遍历配置的出站并实例化相应的 `OutboundImpl`。
-/// 注意，复杂的选择器（如 URLTest）需要两遍扫描的方法：
+/// 注意，复杂的选择器（如 `URLTest`）需要两遍扫描的方法：
 /// 1. 实例化所有具体出站（Direct, Socks 等）。
 /// 2. 实例化引用具体出站的选择器。
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> OutboundRegistry {
     use sb_core::outbound::{HttpProxyConfig, OutboundImpl, Socks5Config};
 
@@ -280,19 +252,14 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                 #[cfg(feature = "router")]
                 {
                     use sb_core::outbound::shadowsocks::{ShadowsocksCipher, ShadowsocksConfig};
-                    let server = match &ob.server {
-                        Some(s) => s.clone(),
-                        None => {
-                            tracing::warn!(outbound=%name, "shadowsocks requires server");
-                            continue;
-                        }
+                    let Some(server) = &ob.server else {
+                        tracing::warn!(outbound=%name, "shadowsocks requires server");
+                        continue;
                     };
-                    let port = match ob.port {
-                        Some(p) => p,
-                        None => {
-                            tracing::warn!(outbound=%name, "shadowsocks requires port");
-                            continue;
-                        }
+                    let server = server.clone();
+                    let Some(port) = ob.port else {
+                        tracing::warn!(outbound=%name, "shadowsocks requires port");
+                        continue;
                     };
                     let password = match &ob.password {
                         Some(p) if !p.is_empty() => p.clone(),
@@ -329,7 +296,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                         {
                             // Use multiplex config from IR directly
                             if ob.multiplex.as_ref().is_some_and(|m| m.enabled) {
-                                cfg.multiplex = ob.multiplex.clone();
+                                cfg.multiplex.clone_from(&ob.multiplex);
                             }
                         }
 
@@ -636,7 +603,7 @@ fn to_adapter_connector(
     }
 }
 
-/// Convert ConfigIR to router rules text (mirrors config_loader::config_ir_to_router_rules)
+/// Convert `ConfigIR` to router rules text (mirrors `config_loader::config_ir_to_router_rules`)
 #[cfg(feature = "router")]
 fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
     let mut rules = Vec::new();
@@ -689,7 +656,10 @@ fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
     rules.join("\n")
 }
 
-/// Build a RouterIndex from Config using IR rules
+/// Build a `RouterIndex` from Config using IR rules
+///
+/// # Errors
+/// Returns an error if IR conversion or router index building fails.
 #[cfg(feature = "router")]
 pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::router::RouterIndex>> {
     let cfg_ir = sb_config::present::to_ir(cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?;
@@ -704,12 +674,12 @@ pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::route
 }
 
 fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
-    let qp = format!("{}:{}", host, port);
+    let qp = format!("{host}:{port}");
     let mut it = qp
         .to_socket_addrs()
-        .with_context(|| format!("resolve failed: {}", qp))?;
+        .with_context(|| format!("resolve failed: {qp}"))?;
     it.next()
-        .ok_or_else(|| anyhow!("no address resolved for {}", qp))
+        .ok_or_else(|| anyhow!("no address resolved for {qp}"))
 }
 
 /// Start the proxy runtime from configuration.
@@ -742,6 +712,7 @@ fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
 /// - Proxy registry initialization fails
 /// - Inbound/outbound setup fails
 /// - Network binding fails
+#[allow(clippy::cognitive_complexity)]
 pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     // Install proxy health registry (from default proxy env + proxy pools)
     init_proxy_registry_from_env();
@@ -796,6 +767,26 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     )
     .await;
 
+    // 3) Start experimental services if configured
+    // 3) 如果配置了实验性服务则启动
+    #[cfg(feature = "clash_api")]
+    if let Some(ref exp) = cfg_ir.experimental {
+        if let Some(ref clash) = exp.clash_api {
+            if let Some(ref listen) = clash.external_controller {
+                start_clash_api_server(listen.clone(), clash.secret.clone());
+            }
+        }
+    }
+
+    #[cfg(feature = "v2ray_api")]
+    if let Some(ref exp) = cfg_ir.experimental {
+        if let Some(ref v2ray) = exp.v2ray_api {
+            if let Some(ref listen) = v2ray.listen {
+                start_v2ray_api_server(listen.clone());
+            }
+        }
+    }
+
     Ok(Runtime {
         #[cfg(feature = "router")]
         router: rh,
@@ -814,435 +805,99 @@ fn parse_addr(s: &str) -> Result<SocketAddr> {
         .map_err(|e| anyhow::anyhow!("invalid listen addr in config '{s}': {e}"))
 }
 
-fn socks_udp_should_start() -> bool {
-    // 显式开关优先；其次只要配置了监听地址也启动
-    let enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    enabled
-        || std::env::var("SB_SOCKS_UDP_LISTEN")
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false)
-}
-
-fn parse_udp_bind_from_env() -> Option<SocketAddr> {
-    if let Ok(list) = std::env::var("SB_SOCKS_UDP_LISTEN") {
-        let first = list
-            .split(|c: char| c == ',' || c.is_whitespace())
-            .find(|s| !s.is_empty());
-        if let Some(tok) = first {
-            if let Ok(sa) = tok.parse::<SocketAddr>() {
-                return Some(sa);
-            }
-        }
-    }
-    None
-}
-
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
+/// Delegates to `inbound_starter` module to reduce complexity
 #[allow(clippy::unused_async)]
 async fn start_inbounds_from_ir(
     inbounds: &[sb_config::ir::InboundIR],
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
 ) {
-    use sb_config::ir::InboundType;
-    info!("start_inbounds_from_ir: count={}", inbounds.len());
+    app::inbound_starter::start_inbounds_from_ir(
+        inbounds,
+        #[cfg(feature = "router")]
+        router,
+        outbounds,
+    )
+    .await;
+}
 
-    for ib in inbounds {
-        info!("Starting inbound: type={:?} listen={}", ib.ty, ib.listen);
-        match ib.ty {
-            InboundType::Http => {
-                #[cfg(feature = "adapters")]
-                {
-                    let listen_str = if ib.listen.contains(':') {
-                        ib.listen.clone()
-                    } else {
-                        format!("{}:{}", ib.listen, ib.port)
-                    };
-                    if let Ok(addr) = parse_listen_addr(&listen_str) {
-                        let (_tx, rx) = mpsc::channel::<()>(1);
-                        let cfg = HttpProxyConfig {
-                            listen: addr,
-                            #[cfg(feature = "router")]
-                            router: router.clone(),
-                            #[cfg(not(feature = "router"))]
-                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                            outbounds: outbounds.clone(),
-                            tls: None,
-                            users: ib.users.clone(),
-                        };
-                        tokio::spawn(async move {
-                            if let Err(e) = serve_http(cfg, rx, None).await {
-                                warn!(addr=%listen_str, error=%e, "http inbound failed");
-                            }
-                        });
-                    } else {
-                        warn!(%listen_str, "http inbound: invalid listen address");
-                    }
-                }
-                #[cfg(not(feature = "adapters"))]
-                {
-                    warn!("http inbound requires 'adapters' feature; skipping");
-                }
-            }
-            InboundType::Socks => {
-                #[cfg(feature = "adapters")]
-                {
-                    let listen_str = if ib.listen.contains(':') {
-                        ib.listen.clone()
-                    } else {
-                        format!("{}:{}", ib.listen, ib.port)
-                    };
-                    if let Ok(addr) = parse_listen_addr(&listen_str) {
-                        let (_tx, rx) = mpsc::channel::<()>(1);
-                        let cfg = SocksInboundConfig {
-                            listen: addr,
-                            udp_bind: parse_udp_bind_from_env(),
-                            #[cfg(feature = "router")]
-                            router: router.clone(),
-                            #[cfg(not(feature = "router"))]
-                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                            outbounds: outbounds.clone(),
-                            udp_nat_ttl: Duration::from_secs(60),
-                            users: ib.users.clone(),
-                        };
-                        tokio::spawn(async move {
-                            if let Err(e) = serve_socks(cfg, rx, None).await {
-                                warn!(addr=%listen_str, error=%e, "socks inbound failed");
-                            }
-                        });
-                        // start UDP association service if config or env enables
-                        if ib.udp || socks_udp_should_start() {
-                            tokio::spawn(async move {
-                                if let Err(e) = serve_socks5_udp_service().await {
-                                    warn!(error=%e, "socks udp service failed");
-                                }
-                            });
-                        }
-                    } else {
-                        warn!(%listen_str, "socks inbound: invalid listen address");
-                    }
-                }
-                #[cfg(not(feature = "adapters"))]
-                {
-                    warn!("socks inbound requires 'adapters' feature; skipping");
-                }
-            }
-            InboundType::Mixed => {
-                #[cfg(feature = "adapters")]
-                {
-                    let listen_str = if ib.listen.contains(':') {
-                        ib.listen.clone()
-                    } else {
-                        format!("{}:{}", ib.listen, ib.port)
-                    };
-                    if let Ok(addr) = parse_listen_addr(&listen_str) {
-                        let (_tx, rx) = mpsc::channel::<()>(1);
-                        let cfg = MixedInboundConfig {
-                            listen: addr,
-                            #[cfg(feature = "router")]
-                            router: router.clone(),
-                            #[cfg(not(feature = "router"))]
-                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                            outbounds: outbounds.clone(),
-                            read_timeout: None,
-                            tls: None,
-                            users: ib.users.clone(),
-                            set_system_proxy: false,
-                        };
-                        tokio::spawn(async move {
-                            if let Err(e) = serve_mixed(cfg, rx, None).await {
-                                warn!(addr=%listen_str, error=%e, "mixed inbound failed");
-                            }
-                        });
-                    } else {
-                        warn!(%listen_str, "mixed inbound: invalid listen address");
-                    }
-                }
-                #[cfg(not(feature = "adapters"))]
-                {
-                    warn!("mixed inbound requires 'adapters' feature; skipping");
-                }
-            }
-            InboundType::Tun => {
-                // Phase 1: spawn TUN inbound skeleton with defaults
-                #[cfg(all(feature = "tun", feature = "adapters"))]
-                {
-                    let cfg = TunInboundConfig::default();
-                    let inbound = TunInbound::new(cfg, {
-                        #[cfg(feature = "router")]
-                        {
-                            router.clone()
-                        }
-                        #[cfg(not(feature = "router"))]
-                        {
-                            Arc::new(sb_core::router::RouterHandle::from_env())
-                        }
-                    });
-                    tokio::spawn(async move {
-                        if let Err(e) = inbound.serve().await {
-                            warn!(error=%e, "tun inbound failed");
-                        }
-                    });
-                    info!("tun inbound spawned (phase1 skeleton)");
-                }
-                #[cfg(any(not(feature = "tun"), not(feature = "adapters")))]
-                {
-                    warn!("config includes tun inbound, but feature 'tun' is disabled; skipping");
-                }
-            }
-            InboundType::Direct => {
-                // Direct forwarder: listen locally and forward to override_host:override_port
-                let dst_host = match &ib.override_host {
-                    Some(h) => h.clone(),
-                    None => {
-                        warn!("direct inbound missing override_host/override_address; skipping");
-                        continue;
-                    }
-                };
-                let Some(dst_port) = ib.override_port else {
-                    warn!("direct inbound missing override_port; skipping");
-                    continue;
-                };
-                let listen_str = if ib.listen.contains(':') {
-                    ib.listen.clone()
-                } else {
-                    format!("{}:{}", ib.listen, ib.port)
-                };
-                match parse_listen_addr(&listen_str) {
-                    Ok(addr) => {
-                        let f_dst = format!("{dst_host}:{dst_port}");
-                        let forward = sb_core::inbound::direct::DirectForward::new(
-                            addr, dst_host, dst_port, ib.udp,
-                        );
-                        tokio::task::spawn_blocking(move || {
-                            let _ = forward.serve();
-                        });
-                        info!(addr=%listen_str, dst=%f_dst, "direct inbound spawned");
-                    }
-                    Err(e) => {
-                        warn!(addr=%listen_str, error=%e, "direct inbound: invalid listen address");
-                    }
-                }
-            }
-            InboundType::Trojan => {
-                #[cfg(feature = "adapters")]
-                {
-                    let listen_str = if ib.listen.contains(':') {
-                        ib.listen.clone()
-                    } else {
-                        format!("{}:{}", ib.listen, ib.port)
-                    };
-                    if let Ok(addr) = parse_listen_addr(&listen_str) {
-                        let (_tx, rx) = mpsc::channel::<()>(1);
+/// Start Clash API server in background task.
+/// 在后台任务中启动 Clash API 服务器。
+#[cfg(feature = "clash_api")]
+fn start_clash_api_server(listen: String, secret: Option<String>) {
+    use std::net::SocketAddr;
 
-                        // Map users
-                        let users = ib
-                            .users_trojan
-                            .as_ref()
-                            .map(|v| {
-                                v.iter()
-                                    .map(|u| TrojanUser::new(u.name.clone(), u.password.clone()))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
+    let listen_addr: SocketAddr = match listen.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!(error = %e, listen = %listen, "Invalid Clash API listen address, skipping");
+            return;
+        }
+    };
 
-                        // Map fallback
-                        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
-                        let fallback_for_alpn = ib
-                            .fallback_for_alpn
-                            .as_ref()
-                            .map(|m| {
-                                m.iter()
-                                    .filter_map(|(k, v)| {
-                                        parse_listen_addr(v).ok().map(|a| (k.clone(), a))
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
+    let config = sb_api::types::ApiConfig {
+        listen_addr,
+        enable_cors: true,
+        cors_origins: None,
+        auth_token: secret,
+        enable_traffic_ws: true,
+        enable_logs_ws: true,
+        traffic_broadcast_interval_ms: 1000,
+        log_buffer_size: 100,
+    };
 
-                        let cfg = TrojanInboundConfig {
-                            listen: addr,
-                            #[allow(deprecated)]
-                            password: None,
-                            users,
-                            cert_path: ib.tls_cert_path.clone().unwrap_or_default(),
-                            key_path: ib.tls_key_path.clone().unwrap_or_default(),
-                            #[cfg(feature = "router")]
-                            router: router.clone(),
-                            #[cfg(not(feature = "router"))]
-                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                            #[cfg(feature = "tls_reality")]
-                            reality: None,
-                            multiplex: None,
-                            transport_layer: None,
-                            fallback,
-                            fallback_for_alpn,
-                        };
-                        let listen_str_log = listen_str.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = serve_trojan(cfg, rx).await {
-                                warn!(addr=%listen_str, error=%e, "trojan inbound failed");
-                            }
-                        });
-                        info!(addr=%listen_str_log, "trojan inbound spawned");
-                    } else {
-                        warn!(%listen_str, "trojan inbound: invalid listen address");
-                    }
+    match sb_api::clash::ClashApiServer::new(config) {
+        Ok(server) => {
+            info!(listen = %listen_addr, "Starting Clash API server");
+            tokio::spawn(async move {
+                if let Err(e) = server.start().await {
+                    error!(error = %e, "Clash API server error");
                 }
-                #[cfg(not(feature = "adapters"))]
-                {
-                    warn!("trojan inbound requires 'adapters' feature; skipping");
+            });
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to create Clash API server");
+        }
+    }
+}
+
+/// Start V2Ray API server in background task.
+/// 在后台任务中启动 V2Ray API 服务器。
+#[cfg(feature = "v2ray_api")]
+fn start_v2ray_api_server(listen: String) {
+    use std::net::SocketAddr;
+
+    let listen_addr: SocketAddr = match listen.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!(error = %e, listen = %listen, "Invalid V2Ray API listen address, skipping");
+            return;
+        }
+    };
+
+    let config = sb_api::types::ApiConfig {
+        listen_addr,
+        enable_cors: false,
+        cors_origins: None,
+        auth_token: None,
+        enable_traffic_ws: false,
+        enable_logs_ws: false,
+        traffic_broadcast_interval_ms: 1000,
+        log_buffer_size: 100,
+    };
+
+    match sb_api::v2ray::SimpleV2RayApiServer::new(config) {
+        Ok(server) => {
+            info!(listen = %listen_addr, "Starting V2Ray API server");
+            tokio::spawn(async move {
+                if let Err(e) = server.start().await {
+                    error!(error = %e, "V2Ray API server error");
                 }
-            }
-            InboundType::Vless => {
-                #[cfg(feature = "adapters")]
-                {
-                    let listen_str = if ib.listen.contains(':') {
-                        ib.listen.clone()
-                    } else {
-                        format!("{}:{}", ib.listen, ib.port)
-                    };
-                    if let Ok(addr) = parse_listen_addr(&listen_str) {
-                        let (_tx, rx) = mpsc::channel::<()>(1);
-
-                        let uuid = match ib
-                            .uuid
-                            .as_ref()
-                            .and_then(|u| uuid::Uuid::parse_str(u).ok())
-                        {
-                            Some(u) => u,
-                            None => {
-                                warn!(%listen_str, "vless inbound missing or invalid uuid; skipping");
-                                continue;
-                            }
-                        };
-
-                        // Map fallback
-                        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
-                        let fallback_for_alpn = ib
-                            .fallback_for_alpn
-                            .as_ref()
-                            .map(|m| {
-                                m.iter()
-                                    .filter_map(|(k, v)| {
-                                        parse_listen_addr(v).ok().map(|a| (k.clone(), a))
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        let cfg = VlessInboundConfig {
-                            listen: addr,
-                            uuid,
-                            #[cfg(feature = "router")]
-                            router: router.clone(),
-                            #[cfg(not(feature = "router"))]
-                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                            #[cfg(feature = "tls_reality")]
-                            reality: None,
-                            multiplex: None,
-                            transport_layer: None,
-                            fallback,
-                            fallback_for_alpn,
-                            flow: ib.flow.clone(),
-                        };
-                        let listen_str_log = listen_str.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = serve_vless(cfg, rx).await {
-                                warn!(addr=%listen_str, error=%e, "vless inbound failed");
-                            }
-                        });
-                        info!(addr=%listen_str_log, "vless inbound spawned");
-                    } else {
-                        warn!(%listen_str, "vless inbound: invalid listen address");
-                    }
-                }
-                #[cfg(not(feature = "adapters"))]
-                {
-                    warn!("vless inbound requires 'adapters' feature; skipping");
-                }
-            }
-            InboundType::Vmess => {
-                #[cfg(feature = "adapters")]
-                {
-                    let listen_str = if ib.listen.contains(':') {
-                        ib.listen.clone()
-                    } else {
-                        format!("{}:{}", ib.listen, ib.port)
-                    };
-                    if let Ok(addr) = parse_listen_addr(&listen_str) {
-                        let (_tx, rx) = mpsc::channel::<()>(1);
-
-                        let uuid = match ib
-                            .uuid
-                            .as_ref()
-                            .and_then(|u| uuid::Uuid::parse_str(u).ok())
-                        {
-                            Some(u) => u,
-                            None => {
-                                warn!(%listen_str, "vmess inbound missing or invalid uuid; skipping");
-                                continue;
-                            }
-                        };
-
-                        // Map fallback
-                        let fallback = ib.fallback.as_ref().and_then(|s| parse_listen_addr(s).ok());
-                        let fallback_for_alpn = ib
-                            .fallback_for_alpn
-                            .as_ref()
-                            .map(|m| {
-                                m.iter()
-                                    .filter_map(|(k, v)| {
-                                        parse_listen_addr(v).ok().map(|a| (k.clone(), a))
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        let cfg = VmessInboundConfig {
-                            listen: addr,
-                            uuid,
-                            security: "chacha20-poly1305".to_string(),
-                            #[cfg(feature = "router")]
-                            router: router.clone(),
-                            #[cfg(not(feature = "router"))]
-                            router: Arc::new(sb_core::router::RouterHandle::from_env()),
-                            multiplex: None,
-                            transport_layer: None,
-                            fallback,
-                            fallback_for_alpn,
-                        };
-                        let listen_str_log = listen_str.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = serve_vmess(cfg, rx).await {
-                                warn!(addr=%listen_str, error=%e, "vmess inbound failed");
-                            }
-                        });
-                        info!(addr=%listen_str_log, "vmess inbound spawned");
-                    } else {
-                        warn!(%listen_str, "vmess inbound: invalid listen address");
-                    }
-                }
-                #[cfg(not(feature = "adapters"))]
-                {
-                    warn!("vmess inbound requires 'adapters' feature; skipping");
-                }
-            }
-            InboundType::Redirect | InboundType::Tproxy => {
-                warn!(
-                    kind=?ib.ty,
-                    "inbound type not supported in this build; consider using 'tun' or SOCKS/HTTP inbound"
-                );
-            }
-            _ => {
-                warn!(
-                    kind=?ib.ty,
-                    "inbound type requires adapters feature; enable 'app/adapters' or route through sb_core bridge"
-                );
-            }
+            });
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to create V2Ray API server");
         }
     }
 }

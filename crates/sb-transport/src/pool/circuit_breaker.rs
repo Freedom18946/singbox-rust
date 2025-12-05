@@ -101,8 +101,8 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for CircuitBreakerDialer<D> {
                 // 返回指示熔断器拒绝的特定错误（通过 io::Error -> DialError）
                 Err(std::io::Error::other("circuit breaker open - request rejected").into())
             }
-            }
         }
+    }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self

@@ -78,7 +78,6 @@ impl Default for VmessConfig {
             http_upgrade_headers: Vec::new(),
             multiplex: None,
         }
-
     }
 }
 

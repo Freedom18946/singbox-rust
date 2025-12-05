@@ -84,8 +84,6 @@ pub mod standard;
 #[cfg(feature = "reality")]
 pub mod reality;
 
-
-
 /// Encrypted Client Hello
 /// 加密客户端 Hello
 #[cfg(feature = "ech")]
@@ -95,6 +93,14 @@ pub mod ech;
 /// ACME (自动证书管理环境)
 #[cfg(feature = "acme")]
 pub mod acme;
+
+/// uTLS Client Fingerprinting
+/// uTLS 客户端指纹模拟
+///
+/// Provides TLS client fingerprinting to mimic browsers like Chrome, Firefox, Safari.
+/// 提供 TLS 客户端指纹模拟，模仿 Chrome、Firefox、Safari 等浏览器。
+#[cfg(feature = "utls")]
+pub mod utls;
 
 // Re-exports
 pub use standard::StandardTlsConnector;

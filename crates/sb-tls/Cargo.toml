@@ -50,6 +50,7 @@ default = ["reality"]
 reality = []
 ech = []
 acme = ["dep:instant-acme"]
+utls = []  # uTLS client fingerprinting
 
 
 [lints]

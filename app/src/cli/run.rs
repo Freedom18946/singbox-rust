@@ -246,7 +246,7 @@ pub async fn run(args: RunArgs) -> Result<()> {
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    error!(error=%e, "router index build failed on reload")
+                                                    error!(error=%e, "router index build failed on reload");
                                                 }
                                             }
                                         }

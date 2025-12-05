@@ -39,6 +39,9 @@ fn test_direct_inbound_instantiation() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        users_trojan: None,
+        users_vless: None,
+        users_vmess: None,
     };
 
     // Try to build the Direct inbound adapter directly
@@ -103,6 +106,9 @@ fn test_direct_inbound_requires_override_host() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        users_trojan: None,
+        users_vless: None,
+        users_vmess: None,
     };
 
     #[cfg(feature = "adapters")]
@@ -161,6 +167,9 @@ fn test_direct_inbound_requires_override_port() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        users_trojan: None,
+        users_vless: None,
+        users_vmess: None,
     };
 
     #[cfg(feature = "adapters")]
@@ -219,6 +228,9 @@ fn test_direct_inbound_network_modes() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        users_trojan: None,
+        users_vless: None,
+        users_vmess: None,
     };
 
     // Test UDP only
@@ -256,6 +268,9 @@ fn test_direct_inbound_network_modes() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        users_trojan: None,
+        users_vless: None,
+        users_vmess: None,
     };
 
     // Test both TCP and UDP
@@ -293,6 +308,9 @@ fn test_direct_inbound_network_modes() {
         tls_server_name: None,
         tls_alpn: None,
         multiplex: None,
+        users_trojan: None,
+        users_vless: None,
+        users_vmess: None,
     };
 
     #[cfg(feature = "adapters")]

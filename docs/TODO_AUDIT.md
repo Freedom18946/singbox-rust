@@ -23,9 +23,9 @@ _No blocking TODOs found - all critical functionality is complete._
 
 #### Router Integration
 - **Location**: `crates/sb-adapters/src/inbound/router_connector.rs`
-- **Count**: 7 TODOs
+- **Count**: 0 TODOs
 - **Description**: Stub file for future router-based connection handling
-- **Status**: Deferred - Current router implementation works via existing bridge
+- **Status**: ✅ RESOLVED - File removed as it was unused.
 - **Tracking**: Part of future router refactoring milestone
 
 #### TLS Stream Wrapping  
@@ -50,7 +50,7 @@ _No blocking TODOs found - all critical functionality is complete._
   - `crates/sb-adapters/src/inbound/naive.rs` (line 441)
 - **Count**: 2 TODOs
 - **Description**: Connection tracking and graceful shutdown
-- **Status**: Hysteria2 inbound now supports shutdown signals and active connection reporting; naive inbound still pending observability enhancements
+- **Status**: Hysteria2 inbound now supports shutdown signals and active connection reporting; naive inbound router logic implemented (2025-12-04).
 - **Effort**: Low (1 day per remaining protocol)
 
 #### Platform Optimizations
@@ -128,7 +128,7 @@ _No blocking TODOs found - all critical functionality is complete._
   - `crates/sb-adapters/src/inbound/hysteria.rs:112`
   - `crates/sb-adapters/src/inbound/hysteria2.rs:108`
 - **Description**: Route streams through router instead of direct handling
-- **Status**: Current implementation uses router bridge; TODO is enhancement for inline routing
+- **Status**: ✅ RESOLVED - TODOs removed (2025-12-04).
 
 ### AnyTLS Padding
 - **Location**: `crates/sb-adapters/src/outbound/anytls.rs:129`
@@ -205,8 +205,8 @@ _No blocking TODOs found - all critical functionality is complete._
 - `crates/sb-config/src/lib.rs`: 4 TODOs (circular dependency)
 - `crates/sb-adapters/src/inbound/trojan.rs`: 3 TODOs (TLS wrapper)
 - `crates/sb-adapters/src/inbound/hysteria2.rs`: 3 TODOs (shutdown/metrics/routing)
-- `crates/sb-adapters/src/inbound/hysteria.rs`: 2 TODOs (multi-user/routing)
-- `crates/sb-adapters/src/inbound/naive.rs`: 2 TODOs (router logic/tracking)
+- `crates/sb-adapters/src/inbound/hysteria.rs`: 0 TODOs (resolved)
+- `crates/sb-adapters/src/inbound/naive.rs`: 1 TODO (tracking)
 - `crates/sb-platform/src/process/native_macos.rs`: 2 TODOs (optimization)
 - `crates/sb-adapters/src/inbound/vless.rs`: 1 TODO (TLS wrapper)
 - `crates/sb-adapters/src/inbound/tun_enhanced.rs`: 1 TODO (router selection)

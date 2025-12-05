@@ -27,6 +27,8 @@ pub mod runtime;
 pub mod sniff;
 // R13：导出 analyze（离线分析，不影响运行路径）
 pub mod analyze;
+/// Routing context population helpers for P1 parity.
+pub mod context_pop;
 // R15：可选试验模块
 #[cfg(feature = "suffix_trie")]
 pub mod suffix_trie;
@@ -133,6 +135,15 @@ pub struct RouteCtx<'a> {
     pub inbound_tag: Option<&'a str>,
     pub auth_user: Option<&'a str>,
     pub query_type: Option<crate::router::rules::DnsRecordType>,
+    // P1 Parity: Additional routing context fields
+    pub clash_mode: Option<&'a str>,
+    pub client: Option<&'a str>,
+    pub package_name: Option<&'a str>,
+    pub network_type: Option<&'a str>,
+    pub network_is_expensive: Option<bool>,
+    pub network_is_constrained: Option<bool>,
+    pub ip_accept_any: Option<bool>,
+    pub outbound_tag: Option<&'a str>,
 }
 
 impl<'a> Default for RouteCtx<'a> {
@@ -153,6 +164,14 @@ impl<'a> Default for RouteCtx<'a> {
             inbound_tag: None,
             auth_user: None,
             query_type: None,
+            clash_mode: None,
+            client: None,
+            package_name: None,
+            network_type: None,
+            network_is_expensive: None,
+            network_is_constrained: None,
+            ip_accept_any: None,
+            outbound_tag: None,
         }
     }
 }
@@ -177,8 +196,6 @@ use std::{
 };
 use tokio::fs as tfs;
 use tokio::time::sleep;
-
-
 
 #[cfg(feature = "metrics")]
 #[inline]

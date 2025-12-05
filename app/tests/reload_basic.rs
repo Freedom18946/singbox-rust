@@ -52,13 +52,15 @@ async fn test_basic_reload() -> anyhow::Result<()> {
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
-    let mut stderr = child.stderr.take().expect("failed to capture stderr");
+    let stderr = child.stderr.take().expect("failed to capture stderr");
     tokio::spawn(async move {
         use tokio::io::{AsyncBufReadExt, BufReader};
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();
         while let Ok(n) = reader.read_line(&mut line).await {
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             print!("SERVER STDERR: {}", line);
             line.clear();
         }

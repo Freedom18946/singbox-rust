@@ -53,14 +53,20 @@ pub mod hysteria;
 pub mod hysteria2;
 #[cfg(feature = "adapter-shadowsocks")]
 pub mod shadowsocks;
+#[cfg(feature = "adapter-shadowsocks")]
+pub mod shadowsocksr;
 #[cfg(feature = "adapter-shadowtls")]
 pub mod shadowtls;
 #[cfg(feature = "adapter-socks")]
-pub mod socks5;
-#[cfg(feature = "adapter-socks")]
 pub mod socks4;
+#[cfg(feature = "adapter-socks")]
+pub mod socks5;
 #[cfg(feature = "adapter-ssh")]
 pub mod ssh;
+#[cfg(feature = "adapter-tailscale")]
+pub mod tailscale;
+#[cfg(feature = "adapter-tor")]
+pub mod tor;
 #[cfg(feature = "adapter-trojan")]
 pub mod trojan;
 #[cfg(feature = "tuic")]
@@ -69,6 +75,8 @@ pub mod tuic;
 pub mod vless;
 #[cfg(feature = "adapter-vmess")]
 pub mod vmess;
+#[cfg(feature = "adapter-wireguard-outbound")]
+pub mod wireguard;
 // Selector group adapters (always available since they're core functionality)
 // 选择器组适配器（始终可用，因为它们是核心功能）
 pub mod selector;
@@ -167,7 +175,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for socks4::Socks4Connector {
     fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
         use sb_config::ir::OutboundType;
 
-        if ir.ty !=  OutboundType::Socks {
+        if ir.ty != OutboundType::Socks {
             return Err(crate::error::AdapterError::InvalidConfig(
                 "Expected SOCKS4 outbound type",
             ));
@@ -198,7 +206,6 @@ impl TryFrom<&sb_config::ir::OutboundIR> for socks4::Socks4Connector {
     }
 }
 
-
 #[cfg(feature = "adapter-shadowsocks")]
 impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocks::ShadowsocksConnector {
     type Error = crate::error::AdapterError;
@@ -206,6 +213,47 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocks::ShadowsocksConnector {
     fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
         // For now, create default connector - real implementation would parse IR
         Ok(Self::default())
+    }
+}
+
+#[cfg(feature = "adapter-shadowsocks")]
+impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocksr::ShadowsocksROutbound {
+    type Error = crate::error::AdapterError;
+
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::ShadowsocksR {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected ShadowsocksR outbound type",
+            ));
+        }
+
+        let server = ir
+            .server
+            .as_ref()
+            .ok_or(crate::error::AdapterError::InvalidConfig(
+                "ShadowsocksR requires server address",
+            ))?
+            .clone();
+        let port = ir.port.unwrap_or(0);
+        let method = ir.method.clone().unwrap_or_default();
+        let password = ir.password.clone().unwrap_or_default();
+        let obfs = ir.obfs.clone().unwrap_or_default();
+        let protocol = ir.protocol.clone().unwrap_or_default();
+
+        let config = shadowsocksr::ShadowsocksROutboundConfig {
+            server,
+            port,
+            method,
+            password,
+            obfs,
+            obfs_param: ir.obfs_param.clone(),
+            protocol,
+            protocol_param: ir.protocol_param.clone(),
+        };
+
+        Ok(Self::new(config).map_err(|e| crate::error::AdapterError::Other(e.to_string()))?)
     }
 }
 

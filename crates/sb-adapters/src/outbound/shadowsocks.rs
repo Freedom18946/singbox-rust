@@ -109,7 +109,8 @@ impl ShadowsocksConnector {
         // Create multiplex dialer if configured
         // 如果配置了多路复用，创建多路复用拨号器
         let multiplex_dialer = if let Some(mux_config) = config.multiplex.clone() {
-            let tcp_dialer = Box::new(sb_transport::TcpDialer::default()) as Box<dyn sb_transport::Dialer>;
+            let tcp_dialer =
+                Box::new(sb_transport::TcpDialer::default()) as Box<dyn sb_transport::Dialer>;
             Some(std::sync::Arc::new(
                 sb_transport::multiplex::MultiplexDialer::new(mux_config, tcp_dialer),
             ))

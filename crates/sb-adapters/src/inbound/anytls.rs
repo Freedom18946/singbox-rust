@@ -126,8 +126,7 @@ impl InboundService for AnyTlsInboundAdapter {
                 Ok(())
             }
             Err(_) => {
-                let runtime = tokio::runtime::Runtime::new()
-                    .map_err(std::io::Error::other)?;
+                let runtime = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
                 runtime
                     .block_on(serve_anytls(cfg, stop_rx))
                     .map_err(std::io::Error::other)

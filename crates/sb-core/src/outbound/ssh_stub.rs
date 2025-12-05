@@ -400,6 +400,7 @@ impl OutboundTcp for SshOutbound {
             counter!("ssh_connect_total", "target" => target.host.clone()).increment(1);
         }
 
+        #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
         let connection = self.get_or_create_connection().await.map_err(|e| {

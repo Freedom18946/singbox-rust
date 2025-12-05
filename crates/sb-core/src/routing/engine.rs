@@ -42,6 +42,28 @@ pub struct Input<'a> {
     pub user_agent: Option<&'a str>,
     /// Optional Rule Set tags
     pub rule_set: Option<&'a [String]>,
+    /// Optional Clash Mode
+    pub clash_mode: Option<&'a str>,
+    /// Optional Client Name
+    pub client: Option<&'a str>,
+    /// Optional Package Name
+    pub package_name: Option<&'a str>,
+    /// Optional Network Type
+    pub network_type: Option<&'a str>,
+    /// Optional Network Is Expensive
+    pub network_is_expensive: Option<bool>,
+    /// Optional Network Is Constrained
+    pub network_is_constrained: Option<bool>,
+    /// Optional Outbound Tag
+    pub outbound_tag: Option<&'a str>,
+    /// Optional OS-level user name (e.g., "root", "nobody")
+    pub user: Option<&'a str>,
+    /// Optional OS-level user ID (UID)
+    pub user_id: Option<u32>,
+    /// Optional OS-level group name (e.g., "wheel", "staff")
+    pub group: Option<&'a str>,
+    /// Optional OS-level group ID (GID)
+    pub group_id: Option<u32>,
 }
 
 pub struct Engine<'a> {
@@ -350,6 +372,156 @@ impl<'a> Engine<'a> {
                 return (false, steps);
             }
         }
+        if !r.clash_mode.is_empty() {
+            let m = inp
+                .clash_mode
+                .map(|s| r.clash_mode.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "clash_mode".into(),
+                value: inp.clash_mode.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.client.is_empty() {
+            let m = inp
+                .client
+                .map(|s| r.client.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "client".into(),
+                value: inp.client.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.package_name.is_empty() {
+            let m = inp
+                .package_name
+                .map(|s| r.package_name.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "package_name".into(),
+                value: inp.package_name.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.network_type.is_empty() {
+            let m = inp
+                .network_type
+                .map(|s| r.network_type.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "network_type".into(),
+                value: inp.network_type.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if let Some(expensive) = r.network_is_expensive {
+            let m = inp.network_is_expensive == Some(expensive);
+            steps.push(Step {
+                kind: "network_is_expensive".into(),
+                value: format!("{:?}", inp.network_is_expensive),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if let Some(constrained) = r.network_is_constrained {
+            let m = inp.network_is_constrained == Some(constrained);
+            steps.push(Step {
+                kind: "network_is_constrained".into(),
+                value: format!("{:?}", inp.network_is_constrained),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.outbound_tag.is_empty() {
+            let m = inp
+                .outbound_tag
+                .map(|s| r.outbound_tag.iter().any(|x| x == s))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "outbound_tag".into(),
+                value: inp.outbound_tag.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        // OS-level user matching
+        if !r.user.is_empty() {
+            let m = inp
+                .user
+                .map(|s| r.user.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "user".into(),
+                value: inp.user.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.user_id.is_empty() {
+            let m = inp
+                .user_id
+                .map(|uid| r.user_id.contains(&uid))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "user_id".into(),
+                value: format!("{:?}", inp.user_id),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        // OS-level group matching
+        if !r.group.is_empty() {
+            let m = inp
+                .group
+                .map(|s| r.group.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "group".into(),
+                value: inp.group.unwrap_or("").into(),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
+        if !r.group_id.is_empty() {
+            let m = inp
+                .group_id
+                .map(|gid| r.group_id.contains(&gid))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "group_id".into(),
+                value: format!("{:?}", inp.group_id),
+                matched: m,
+            });
+            if !m {
+                return (false, steps);
+            }
+        }
 
         // 否定维度
         if !r.not_domain.is_empty() && is_ip.is_none() {
@@ -505,6 +677,76 @@ impl<'a> Engine<'a> {
                 return (false, steps);
             }
         }
+        if !r.not_clash_mode.is_empty() {
+            let n = inp
+                .clash_mode
+                .map(|s| r.not_clash_mode.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_clash_mode".into(),
+                value: inp.clash_mode.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_client.is_empty() {
+            let n = inp
+                .client
+                .map(|s| r.not_client.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_client".into(),
+                value: inp.client.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_package_name.is_empty() {
+            let n = inp
+                .package_name
+                .map(|s| r.not_package_name.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_package_name".into(),
+                value: inp.package_name.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_network_type.is_empty() {
+            let n = inp
+                .network_type
+                .map(|s| r.not_network_type.iter().any(|x| x.eq_ignore_ascii_case(s)))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_network_type".into(),
+                value: inp.network_type.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
+        if !r.not_outbound_tag.is_empty() {
+            let n = inp
+                .outbound_tag
+                .map(|s| r.not_outbound_tag.iter().any(|x| x == s))
+                .unwrap_or(false);
+            steps.push(Step {
+                kind: "not_outbound_tag".into(),
+                value: inp.outbound_tag.unwrap_or("").into(),
+                matched: !n,
+            });
+            if n {
+                return (false, steps);
+            }
+        }
 
         (true, steps)
     }
@@ -524,7 +766,10 @@ impl<'a> Engine<'a> {
             if ok {
                 let (canon, chain) = Self::rule_canonical(r);
                 let rid = sha8(&canon);
-                let out = r.outbound.clone().unwrap_or_else(|| self.default_outbound());
+                let out = r
+                    .outbound
+                    .clone()
+                    .unwrap_or_else(|| self.default_outbound());
                 let trace = if want_trace {
                     Some(Trace {
                         steps,
@@ -618,15 +863,7 @@ mod tests {
                 port: 443,
                 network: "tcp",
                 protocol: "socks",
-                sniff_host: None,
-                sniff_alpn: None,
-                sniff_protocol: None,
-                wifi_ssid: None,
-                wifi_bssid: None,
-                process_name: None,
-                process_path: None,
-                user_agent: None,
-                rule_set: None,
+                ..Default::default()
             },
             false,
         );
@@ -637,15 +874,7 @@ mod tests {
                 port: 25,
                 network: "tcp",
                 protocol: "socks",
-                sniff_host: None,
-                sniff_alpn: None,
-                sniff_protocol: None,
-                wifi_ssid: None,
-                wifi_bssid: None,
-                process_name: None,
-                process_path: None,
-                user_agent: None,
-                rule_set: None,
+                ..Default::default()
             },
             false,
         );
@@ -673,15 +902,8 @@ mod tests {
                 port: 6881,
                 network: "tcp",
                 protocol: "socks",
-                sniff_host: None,
-                sniff_alpn: None,
                 sniff_protocol: Some("bittorrent"),
-                wifi_ssid: None,
-                wifi_bssid: None,
-                process_name: None,
-                process_path: None,
-                user_agent: None,
-                rule_set: None,
+                ..Default::default()
             },
             false,
         );
@@ -709,15 +931,8 @@ mod tests {
                 port: 443,
                 network: "tcp",
                 protocol: "socks",
-                sniff_host: None,
-                sniff_alpn: None,
                 sniff_protocol: Some("tls"),
-                wifi_ssid: None,
-                wifi_bssid: None,
-                process_name: None,
-                process_path: None,
-                user_agent: None,
-                rule_set: None,
+                ..Default::default()
             },
             false,
         );

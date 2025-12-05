@@ -173,6 +173,12 @@ pub struct InboundParam {
     pub hysteria_recv_window: Option<u64>,
     /// Multiplex options
     pub multiplex: Option<MultiplexOptionsIR>,
+    /// Trojan multi-user authentication (JSON-encoded for now)
+    pub users_trojan: Option<String>,
+    /// VLESS multi-user authentication (JSON-encoded for now)
+    pub users_vless: Option<String>,
+    /// VMess multi-user authentication (JSON-encoded for now)
+    pub users_vmess: Option<String>,
 }
 
 /// AnyTLS user parameters passed to the adapter layer.

@@ -607,11 +607,7 @@ impl DerpService {
         server_key_frame
             .write_to_async(&mut write_half)
             .await
-            .map_err(|e| {
-                io::Error::other(
-                    format!("Failed to send ServerKey: {}", e),
-                )
-            })?;
+            .map_err(|e| io::Error::other(format!("Failed to send ServerKey: {}", e)))?;
 
         // Read ClientInfo frame
         let client_key = match DerpFrame::read_from_async(&mut read_half).await {
@@ -626,9 +622,10 @@ impl DerpService {
             }
             Err(e) => {
                 client_registry.metrics().connect_failed("handshake");
-                return Err(io::Error::other(
-                    format!("Failed to read ClientInfo: {}", e),
-                ));
+                return Err(io::Error::other(format!(
+                    "Failed to read ClientInfo: {}",
+                    e
+                )));
             }
         };
 
@@ -1239,9 +1236,10 @@ fn load_or_generate_server_key(key_path: Option<&str>) -> io::Result<PublicKey> 
             }
             Err(e) => {
                 // Other error (permissions, corruption, etc.)
-                Err(io::Error::other(
-                    format!("Failed to load server key from {}: {}", path, e),
-                ))
+                Err(io::Error::other(format!(
+                    "Failed to load server key from {}: {}",
+                    path, e
+                )))
             }
         }
     } else {
@@ -2143,7 +2141,6 @@ mod tests {
 
     #[test]
     fn test_load_or_generate_creates_new_key() {
-
         use tempfile::tempdir;
 
         let temp_dir = tempdir().unwrap();

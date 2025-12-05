@@ -102,15 +102,7 @@ impl ExplainEngine {
                 port,
                 network,
                 protocol: "socks",
-                sniff_host: None,
-                sniff_alpn: None,
-                sniff_protocol: None,
-                wifi_ssid: None,
-                wifi_bssid: None,
-                process_name: None,
-                process_path: None,
-                user_agent: None,
-                rule_set: None,
+                ..Default::default()
             },
             with_trace,
         );

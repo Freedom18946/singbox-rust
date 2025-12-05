@@ -109,7 +109,10 @@ impl MacOsPlatformHook {
             is_ipv6,
         });
 
-        debug!("Added route: {} via {:?} interface {:?}", destination, gateway, interface);
+        debug!(
+            "Added route: {} via {:?} interface {:?}",
+            destination, gateway, interface
+        );
         Ok(())
     }
 
@@ -121,7 +124,10 @@ impl MacOsPlatformHook {
         if let Some(gw) = gateway {
             self.add_route(cidr, Some(&gw), None, cidr.contains(':'))?;
         } else {
-            warn!("Could not determine default gateway for exclude route: {}", cidr);
+            warn!(
+                "Could not determine default gateway for exclude route: {}",
+                cidr
+            );
         }
 
         Ok(())
@@ -161,9 +167,9 @@ impl MacOsPlatformHook {
         let mut rules = String::new();
 
         // Table for excluded addresses
-        rules.push_str(&format!(
-            "table <singbox_exclude> persist {{ 127.0.0.0/8, ::1/128, 224.0.0.0/4, ff00::/8 }}\n"
-        ));
+        rules.push_str(
+            "table <singbox_exclude> persist { 127.0.0.0/8, ::1/128, 224.0.0.0/4, ff00::/8 }\n",
+        );
 
         // Add excluded CIDRs to table
         if !config.exclude_routes.is_empty() {
@@ -182,18 +188,18 @@ impl MacOsPlatformHook {
         ));
 
         // Block rules for excluded addresses
-        rules.push_str(&format!(
+        rules.push_str(
             "# Skip excluded addresses\n\
              pass quick from <singbox_exclude>\n\
-             pass quick to <singbox_exclude>\n"
-        ));
+             pass quick to <singbox_exclude>\n",
+        );
 
         // Redirect rules (rdr for divert-to style redirection)
         // Note: macOS pf has limited redirect capabilities compared to Linux
-        rules.push_str(&format!(
+        rules.push_str(
             "# Redirect outgoing traffic through TUN\n\
-             # Note: Full transparent redirect requires additional setup\n"
-        ));
+             # Note: Full transparent redirect requires additional setup\n",
+        );
 
         // Write rules to file
         let mut file = fs::File::create(PF_RULES_FILE)?;
@@ -271,10 +277,7 @@ pass quick on {interface}
                 return Ok(());
             }
             warn!("Command failed: {} {} - {}", cmd, args.join(" "), stderr);
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Command failed: {}", stderr),
-            ));
+            return Err(io::Error::other(format!("Command failed: {}", stderr)));
         }
 
         Ok(())

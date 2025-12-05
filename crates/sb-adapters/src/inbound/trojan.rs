@@ -8,31 +8,31 @@
 //! - Routes via sb-core router/outbounds
 
 use anyhow::{anyhow, Result};
+use sb_core::net::rate_limit_metrics;
+use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
 use sb_core::outbound::{registry, selector::PoolSelector};
-use sb_core::net::tcp_rate_limit::{TcpRateLimiter, TcpRateLimitConfig};
-use sb_core::net::rate_limit_metrics;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
-use sha2::{Sha224, Digest};
+use sha2::{Digest, Sha224};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::net::{SocketAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
+use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tokio_rustls::rustls::{self, ServerConfig};
 use tokio_rustls::TlsAcceptor;
-use tokio::net::UdpSocket;
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
@@ -116,12 +116,12 @@ impl TrojanInboundConfig {
     /// Build password hash map for O(1) lookup
     fn build_user_map(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
-        
+
         // Add configured users
         for user in &self.users {
             map.insert(user.password_hash.clone(), user.name.clone());
         }
-        
+
         // Backward compatibility: add single password if present
         #[allow(deprecated)]
         if let Some(ref pwd) = self.password {
@@ -131,7 +131,7 @@ impl TrojanInboundConfig {
                 map.insert(hash_hex, "default".to_string());
             }
         }
-        
+
         map
     }
 }
@@ -247,8 +247,8 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { 
-                // tracing::debug!("trojan: accept-loop heartbeat"); 
+            _ = hb.tick() => {
+                // tracing::debug!("trojan: accept-loop heartbeat");
             }
             r = listener.accept() => {
                 let (mut stream, peer) = match r {
@@ -289,7 +289,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                     let _guard = scopeguard::guard((), |_| {
                         rate_limit_metrics::dec_active_connections("trojan");
                     });
-                    
+
                     // Helper to handle the stream after TLS/Mux negotiation
                     async fn handle_inner_stream(
                         cfg: &TrojanInboundConfig,
@@ -350,7 +350,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                                             let mut connection = Connection::new(compat_stream, config, Mode::Server);
 
                                             debug!(%peer, "trojan: mux session started");
-                                            
+
                                             // Accept streams from mux session
                                             while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                                                 match result {
@@ -396,12 +396,12 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
 
                                 let mut config = Config::default();
                                 config.set_max_num_streams(mux_cfg.max_num_streams);
-                                
+
                                 let compat_stream = stream.compat();
                                 let mut connection = Connection::new(compat_stream, config, Mode::Server);
 
                                 debug!(%peer, "trojan: mux session started (no TLS)");
-                                
+
                                 while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                                     match result {
                                         Ok(stream) => {
@@ -562,7 +562,7 @@ async fn handle_conn_impl(
 ) -> Result<()> {
     // Build user authentication map
     let user_map = cfg.build_user_map();
-    
+
     if user_map.is_empty() {
         return Err(anyhow!("trojan: no users configured"));
     }
@@ -573,47 +573,45 @@ async fn handle_conn_impl(
     // For simplicity, if we can't read 56 bytes, we assume it's not a valid Trojan request.
     // However, standard fallback handles "not valid trojan request".
     // If we get EOF before 56 bytes, it's definitely not Trojan.
-    
+
     match tls.read_exact(&mut hash_buf).await {
         Ok(_) => {
             let submitted_hash = String::from_utf8_lossy(&hash_buf).to_string();
-            
+
             // Verify password hash
             if let Some(auth_user) = user_map.get(&submitted_hash) {
                 debug!(%peer, user=%auth_user, "trojan: authenticated");
-                
+
                 // Read CRLF after hash
                 let mut crlf = [0u8; 2];
                 tls.read_exact(&mut crlf).await?;
                 if &crlf != b"\r\n" {
                     return Err(anyhow!("trojan: expected CRLF after password hash"));
                 }
-                
+
                 // Read command byte
                 let mut cmd_byte = [0u8; 1];
                 tls.read_exact(&mut cmd_byte).await?;
                 let command = TrojanCommand::from_u8(cmd_byte[0])
                     .ok_or_else(|| anyhow!("trojan: unsupported command: 0x{:02x}", cmd_byte[0]))?;
-                
+
                 // Parse address (SOCKS5-like format)
                 let (host, port) = parse_trojan_address(tls).await?;
-                
+
                 // Read final CRLF
                 let mut crlf2 = [0u8; 2];
                 tls.read_exact(&mut crlf2).await?;
                 if &crlf2 != b"\r\n" {
                     return Err(anyhow!("trojan: expected CRLF after address"));
                 }
-                
+
                 debug!(%peer, %command, %host, %port, "trojan: parsed request");
-                
+
                 match command {
                     TrojanCommand::Connect => {
                         handle_tcp_connect(cfg, tls, peer, &host, port, auth_user).await
                     }
-                    TrojanCommand::UdpAssociate => {
-                        handle_udp_associate(tls, peer).await
-                    }
+                    TrojanCommand::UdpAssociate => handle_udp_associate(tls, peer).await,
                 }
             } else {
                 // Invalid user
@@ -642,7 +640,7 @@ async fn handle_conn_impl(
             // We should probably use `read` instead of `read_exact` and check if it *looks* like a hash?
             // But Trojan hash is just hex. "GET " is hex-ish? No 'G' is not hex.
             // So if we read bytes and they are not hex, we should fallback.
-            
+
             // Refined logic:
             // 1. Read up to 56 bytes.
             // 2. If we get < 56 bytes and EOF, fallback.
@@ -651,7 +649,7 @@ async fn handle_conn_impl(
             //      - If valid user -> proceed.
             //      - If invalid user -> fallback.
             //    - If not hex -> fallback.
-            
+
             // However, implementing "read up to" with `read_exact` is tricky.
             // Let's stick to the current logic: if read fails, we assume broken connection.
             // But if we want to support HTTP fallback (e.g. browser visiting the port),
@@ -666,12 +664,12 @@ async fn handle_conn_impl(
             // This is a known limitation of simple Trojan implementations.
             // We will proceed with the "invalid user -> fallback" logic which covers most cases.
             if let Some(_fallback_addr) = cfg.fallback {
-                 // If we failed to read 56 bytes, we can't easily fallback because we don't know how much we read
-                 // unless we use `read_buf` or similar.
-                 // For now, return error.
-                 Err(anyhow!("trojan: failed to read protocol header: {}", e))
+                // If we failed to read 56 bytes, we can't easily fallback because we don't know how much we read
+                // unless we use `read_buf` or similar.
+                // For now, return error.
+                Err(anyhow!("trojan: failed to read protocol header: {}", e))
             } else {
-                 Err(anyhow!("trojan: failed to read protocol header: {}", e))
+                Err(anyhow!("trojan: failed to read protocol header: {}", e))
             }
         }
     }
@@ -682,14 +680,15 @@ async fn handle_fallback(
     target: SocketAddr,
     prefix: &[u8],
 ) -> Result<()> {
-    let mut remote = tokio::net::TcpStream::connect(target).await
+    let mut remote = tokio::net::TcpStream::connect(target)
+        .await
         .map_err(|e| anyhow!("trojan: failed to connect to fallback {}: {}", target, e))?;
-    
+
     if !prefix.is_empty() {
         use tokio::io::AsyncWriteExt;
         remote.write_all(prefix).await?;
     }
-    
+
     let _ = tokio::io::copy_bidirectional(stream, &mut remote).await;
     Ok(())
 }
@@ -701,7 +700,7 @@ async fn parse_trojan_address(
 ) -> Result<(String, u16)> {
     let mut atyp = [0u8; 1];
     stream.read_exact(&mut atyp).await?;
-    
+
     let host = match atyp[0] {
         // IPv4
         0x01 => {
@@ -715,8 +714,7 @@ async fn parse_trojan_address(
             stream.read_exact(&mut len).await?;
             let mut domain = vec![0u8; len[0] as usize];
             stream.read_exact(&mut domain).await?;
-            String::from_utf8(domain)
-                .map_err(|_| anyhow!("trojan: invalid domain name"))?
+            String::from_utf8(domain).map_err(|_| anyhow!("trojan: invalid domain name"))?
         }
         // IPv6
         0x04 => {
@@ -724,14 +722,19 @@ async fn parse_trojan_address(
             stream.read_exact(&mut addr).await?;
             Ipv6Addr::from(addr).to_string()
         }
-        _ => return Err(anyhow!("trojan: unsupported address type: 0x{:02x}", atyp[0])),
+        _ => {
+            return Err(anyhow!(
+                "trojan: unsupported address type: 0x{:02x}",
+                atyp[0]
+            ))
+        }
     };
-    
+
     // Read port (big-endian)
     let mut port_buf = [0u8; 2];
     stream.read_exact(&mut port_buf).await?;
     let port = u16::from_be_bytes(port_buf);
-    
+
     Ok((host, port))
 }
 
@@ -758,21 +761,27 @@ async fn handle_udp_associate(
             };
 
             // Read length
-            if rh.read_exact(&mut len_buf).await.is_err() { break; }
+            if rh.read_exact(&mut len_buf).await.is_err() {
+                break;
+            }
             let length = u16::from_be_bytes(len_buf) as usize;
 
             // Read CRLF
-            if rh.read_exact(&mut crlf_buf).await.is_err() { break; }
+            if rh.read_exact(&mut crlf_buf).await.is_err() {
+                break;
+            }
             if &crlf_buf != b"\r\n" {
                 return Err(anyhow!("trojan: expected CRLF after length"));
             }
 
             // Read payload
             let mut payload = vec![0u8; length];
-            if rh.read_exact(&mut payload).await.is_err() { break; }
+            if rh.read_exact(&mut payload).await.is_err() {
+                break;
+            }
 
             // Resolve and send
-            // Note: We resolve every time for simplicity, or we could cache. 
+            // Note: We resolve every time for simplicity, or we could cache.
             // Since we use UdpSocket::send_to, we need SocketAddr.
             // If host is domain, we need to resolve.
             // For now, simple resolution.
@@ -936,4 +945,3 @@ async fn handle_tcp_connect(
     let _ = tokio::io::copy_bidirectional(tls, &mut upstream).await;
     Ok(())
 }
-

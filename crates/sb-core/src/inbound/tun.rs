@@ -13,8 +13,6 @@ use smoltcp::wire::{HardwareAddress, IpCidr, Ipv4Address};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-
 use tracing::{error, info, warn};
 
 /// TUN interface configuration
@@ -114,11 +112,14 @@ impl TunInboundService {
         // Initialize smoltcp interface
         let mut config = Config::new(HardwareAddress::Ip);
         config.random_seed = rand::random();
-        
+
         let mut iface = Interface::new(config, &mut TunPhy::new(device.mtu()), Instant::now());
         iface.update_ip_addrs(|ip_addrs| {
             if let Some(ipv4) = self.config.ipv4 {
-                let _ = ip_addrs.push(IpCidr::new(smoltcp::wire::IpAddress::Ipv4(Ipv4Address::from_bytes(&ipv4.octets())), 24));
+                let _ = ip_addrs.push(IpCidr::new(
+                    smoltcp::wire::IpAddress::Ipv4(Ipv4Address::from_bytes(&ipv4.octets())),
+                    24,
+                ));
             }
         });
 
@@ -138,12 +139,12 @@ impl TunInboundService {
                         continue;
                     }
                     let packet = &mut buf[..len];
-                    
+
                     // Feed to smoltcp
                     let timestamp = Instant::now();
                     let mut phy = TunPhy::new(device.mtu());
                     phy.rx_buf = Some(packet.to_vec()); // Simple buffering for demo
-                    
+
                     iface.poll(timestamp, &mut phy, &mut sockets);
                     // Check for outgoing packets in phy.tx_buf and write to device
                     if let Some(tx_packet) = phy.tx_buf {
@@ -158,7 +159,7 @@ impl TunInboundService {
                 }
             }
         }
-        
+
         let _ = device.close();
         Ok(())
     }
@@ -173,7 +174,11 @@ struct TunPhy {
 
 impl TunPhy {
     fn new(mtu: u32) -> Self {
-        Self { mtu, rx_buf: None, tx_buf: None }
+        Self {
+            mtu,
+            rx_buf: None,
+            tx_buf: None,
+        }
     }
 }
 
@@ -182,7 +187,9 @@ impl Device for TunPhy {
     type TxToken<'a> = TunTxToken<'a>;
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        self.rx_buf.take().map(|buf| (TunRxToken(buf), TunTxToken(self)))
+        self.rx_buf
+            .take()
+            .map(|buf| (TunRxToken(buf), TunTxToken(self)))
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {

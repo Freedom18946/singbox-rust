@@ -41,10 +41,7 @@ async fn test_supervisor_lifecycle() {
         ..Default::default()
     };
 
-    let _diff = supervisor
-        .reload(new_ir.clone())
-        .await
-        .expect("reload");
+    let _diff = supervisor.reload(new_ir.clone()).await.expect("reload");
     // Diff might be empty if SB_RUNTIME_DIFF is not set, but reload should succeed.
 
     // 5. Verify new state

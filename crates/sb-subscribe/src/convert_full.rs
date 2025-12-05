@@ -1,8 +1,8 @@
 //! R100: Aggregates subscription into {dsl, view_json, bindings_json, hashes} (minijson).
 //! [Chinese] R100: 将订阅文本聚合为 {dsl, view_json, bindings_json, hashes}（minijson）。
 //!
-//! - Dependencies: subs_full (internally enables subs_view + subs_bindings), optional subs_hash for blake3.
-//! [Chinese] - 依赖：subs_full（内部启用 subs_view + subs_bindings），可选 subs_hash 计算 blake3。
+//!   - Dependencies: subs_full (internally enables subs_view + subs_bindings), optional subs_hash for blake3.
+//!   - [Chinese] 依赖：subs_full（内部启用 subs_view + subs_bindings），可选 subs_hash 计算 blake3。
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 

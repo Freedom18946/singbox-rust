@@ -1,6 +1,29 @@
+//! Adapter registration functions for integrating with sb-core.
+
+#[cfg(any(
+    all(feature = "adapter-http", feature = "http", feature = "router"),
+    all(feature = "adapter-socks", feature = "socks", feature = "router"),
+    all(
+        feature = "adapter-http",
+        feature = "adapter-socks",
+        feature = "mixed",
+        feature = "router"
+    )
+))]
 use std::io;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, Once};
+#[cfg(any(
+    all(feature = "adapter-http", feature = "http", feature = "router"),
+    all(feature = "adapter-socks", feature = "socks", feature = "router"),
+    all(
+        feature = "adapter-http",
+        feature = "adapter-socks",
+        feature = "mixed",
+        feature = "router"
+    )
+))]
+use std::sync::Mutex;
+use std::sync::{Arc, Once};
 
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::registry;
@@ -32,6 +55,7 @@ pub fn register_all() {
         #[cfg(feature = "adapter-shadowsocks")]
         {
             let _ = registry::register_outbound("shadowsocks", build_shadowsocks_outbound);
+            let _ = registry::register_outbound("shadowsocksr", build_shadowsocksr_outbound);
         }
         #[cfg(feature = "adapter-trojan")]
         {
@@ -62,6 +86,9 @@ pub fn register_all() {
         }
         {
             let _ = registry::register_outbound("wireguard", build_wireguard_outbound);
+        }
+        {
+            let _ = registry::register_outbound("tailscale", build_tailscale_outbound);
         }
         {
             let _ = registry::register_outbound("hysteria", build_hysteria_outbound);
@@ -156,6 +183,16 @@ pub fn register_all() {
         {
             let _ = registry::register_inbound("redirect", build_redirect_inbound);
             let _ = registry::register_inbound("tproxy", build_tproxy_inbound);
+        }
+
+        #[cfg(feature = "dns")]
+        {
+            let _ = registry::register_inbound("dns", build_dns_inbound);
+        }
+
+        #[cfg(feature = "ssh")]
+        {
+            let _ = registry::register_inbound("ssh", build_ssh_inbound);
         }
 
         // Register endpoint and service stubs (WireGuard, Tailscale, Resolved, DERP, SSM)
@@ -283,12 +320,10 @@ fn build_http_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // HTTP proxy uses CONNECT method, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::other(
-                format!(
-                    "HTTP proxy uses CONNECT method for {}:{}; use switchboard registry instead",
-                    host, port
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "HTTP proxy uses CONNECT method for {}:{}; use switchboard registry instead",
+                host, port
+            )))
         }
     }
 
@@ -379,12 +414,10 @@ fn build_socks_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // SOCKS5 uses proxy protocol, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::other(
-                format!(
-                    "SOCKS5 uses proxy protocol for {}:{}; use switchboard registry instead",
-                    host, port
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "SOCKS5 uses proxy protocol for {}:{}; use switchboard registry instead",
+                host, port
+            )))
         }
     }
 
@@ -460,12 +493,10 @@ fn build_socks4_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // SOCKS4 uses proxy protocol, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::other(
-                format!(
-                    "SOCKS4 uses proxy protocol for {}:{}; use switchboard registry instead",
-                    host, port
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "SOCKS4 uses proxy protocol for {}:{}; use switchboard registry instead",
+                host, port
+            )))
         }
     }
 
@@ -560,6 +591,58 @@ fn build_shadowsocks_outbound(
 #[cfg(not(all(feature = "adapter-shadowsocks", feature = "out_ss")))]
 #[allow(dead_code)]
 fn build_shadowsocks_outbound(
+    _param: &OutboundParam,
+    _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
+) -> OutboundBuilderResult {
+    None
+}
+
+#[cfg(all(feature = "adapter-shadowsocks", feature = "out_ss"))]
+fn build_shadowsocksr_outbound(
+    _param: &OutboundParam,
+    ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
+) -> OutboundBuilderResult {
+    use crate::outbound::shadowsocksr::ShadowsocksROutbound;
+
+    // Use TryFrom to build adapter from IR
+    let adapter = ShadowsocksROutbound::try_from(ir).ok()?;
+    let adapter_arc = Arc::new(adapter);
+
+    // Wrapper
+    #[derive(Clone)]
+    struct ShadowsocksRConnectorWrapper {
+        inner: Arc<ShadowsocksROutbound>,
+    }
+
+    impl std::fmt::Debug for ShadowsocksRConnectorWrapper {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+             f.debug_struct("ShadowsocksRConnectorWrapper")
+                .field("inner", &self.inner)
+                .finish()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for ShadowsocksRConnectorWrapper {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+            Err(std::io::Error::other(
+                "ShadowsocksR adapter connector is not usable directly; use switchboard registry instead",
+            ))
+        }
+    }
+
+    let wrapper = ShadowsocksRConnectorWrapper {
+        inner: adapter_arc,
+    };
+    
+    Some((Arc::new(wrapper), None))
+}
+
+#[cfg(not(all(feature = "adapter-shadowsocks", feature = "out_ss")))]
+#[allow(dead_code)]
+fn build_shadowsocksr_outbound(
     _param: &OutboundParam,
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
@@ -889,11 +972,102 @@ fn build_vless_inbound(
 #[cfg(all(feature = "adapter-trojan", feature = "router"))]
 #[allow(dead_code)]
 fn build_trojan_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("trojan");
-    None
+    use crate::inbound::trojan::{TrojanInboundConfig, TrojanUser};
+    use std::net::SocketAddr;
+
+    // Parse listen address
+    let listen_str = format!("{}:{}", param.listen, param.port);
+    let listen: SocketAddr = match listen_str.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!(
+                "Failed to parse Trojan listen address '{}': {}",
+                listen_str, e
+            );
+            return None;
+        }
+    };
+
+    // Parse users
+    let mut users = Vec::new();
+    if let Some(users_json) = &param.users_trojan {
+        match serde_json::from_str::<Vec<sb_config::ir::TrojanUserIR>>(users_json) {
+            Ok(user_irs) => {
+                for u in user_irs {
+                    users.push(TrojanUser::new(u.name, u.password));
+                }
+            }
+            Err(e) => {
+                warn!("Failed to parse Trojan users JSON: {}", e);
+            }
+        }
+    }
+
+    if let Some(password) = &param.password {
+        if !password.is_empty() {
+            users.push(TrojanUser::new("default".to_string(), password.clone()));
+        }
+    }
+
+    if users.is_empty() {
+        warn!("Trojan inbound requires at least one user or password");
+        return None;
+    }
+
+    // TLS cert/key
+    let cert_path = match (&param.tls_cert_pem, &param.tls_cert_path) {
+        (Some(pem), _) => {
+            // Write inline PEM to temporary file
+            let temp_path = format!("/tmp/trojan_cert_{}.pem", std::process::id());
+            if let Err(e) = std::fs::write(&temp_path, pem) {
+                warn!("Failed to write Trojan TLS certificate to temp file: {}", e);
+                return None;
+            }
+            temp_path
+        }
+        (None, Some(path)) => path.clone(),
+        (None, None) => {
+            warn!("Trojan inbound requires TLS certificate");
+            return None;
+        }
+    };
+
+    let key_path = match (&param.tls_key_pem, &param.tls_key_path) {
+        (Some(pem), _) => {
+            let temp_path = format!("/tmp/trojan_key_{}.pem", std::process::id());
+            if let Err(e) = std::fs::write(&temp_path, pem) {
+                warn!("Failed to write Trojan TLS private key to temp file: {}", e);
+                return None;
+            }
+            temp_path
+        }
+        (None, Some(path)) => path.clone(),
+        (None, None) => {
+            warn!("Trojan inbound requires TLS private key");
+            return None;
+        }
+    };
+
+    #[allow(deprecated)]
+    let config = TrojanInboundConfig {
+        listen,
+        password: None,
+        users,
+        cert_path,
+        key_path,
+        router: ctx.router.clone(),
+        #[cfg(feature = "tls_reality")]
+        reality: None,
+        multiplex: None,
+        transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+    };
+
+    Some(Arc::new(TrojanInboundAdapter::new(config)))
 }
 
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
@@ -950,7 +1124,7 @@ fn build_naive_inbound(
     {
         use crate::inbound::naive::NaiveInboundAdapter;
 
-        match NaiveInboundAdapter::new(param, ctx.router.clone()) {
+        match NaiveInboundAdapter::create(param, ctx.router.clone(), ctx.outbounds.clone()) {
             Ok(adapter) => Some(Arc::from(adapter)),
             Err(e) => {
                 warn!("Failed to build Naive inbound: {}", e);
@@ -1415,8 +1589,49 @@ fn build_direct_inbound(
     }
 }
 
+#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
+fn build_tun_inbound(
+    _param: &InboundParam,
+    _ctx: &registry::AdapterInboundContext<'_>,
+) -> Option<Arc<dyn InboundService>> {
+    stub_inbound("tun");
+    None
+}
+
 fn stub_inbound(kind: &str) {
     warn!(target: "crate::register", inbound=%kind, "adapter inbound not implemented yet; falling back to scaffold");
+}
+
+#[cfg(feature = "dns")]
+fn build_dns_inbound(
+    param: &InboundParam,
+    _ctx: &registry::AdapterInboundContext<'_>,
+) -> Option<Arc<dyn InboundService>> {
+    use crate::inbound::dns::DnsInboundAdapter;
+
+    match DnsInboundAdapter::create(param) {
+        Ok(adapter) => Some(Arc::from(adapter)),
+        Err(e) => {
+            warn!("Failed to build DNS inbound: {}", e);
+            None
+        }
+    }
+}
+
+#[cfg(feature = "ssh")]
+fn build_ssh_inbound(
+    param: &InboundParam,
+    _ctx: &registry::AdapterInboundContext<'_>,
+) -> Option<Arc<dyn InboundService>> {
+    use crate::inbound::ssh::SshInboundAdapter;
+
+    match SshInboundAdapter::create(param) {
+        Ok(adapter) => Some(Arc::from(adapter)),
+        Err(e) => {
+            warn!("Failed to build SSH inbound: {}", e);
+            None
+        }
+    }
 }
 
 #[cfg(feature = "adapter-dns")]
@@ -1484,8 +1699,7 @@ fn build_dns_outbound(
     #[async_trait::async_trait]
     impl OutboundConnector for DnsConnectorWrapper {
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "DNS outbound does not support generic TCP connections; use it for DNS resolution only",
             ))
         }
@@ -1511,8 +1725,8 @@ fn build_direct_outbound(
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    use sb_core::outbound::DirectConnector;
     use sb_core::adapter::{UdpOutboundFactory, UdpOutboundSession};
+    use sb_core::outbound::DirectConnector;
     use std::net::SocketAddr;
     use tokio::net::UdpSocket;
 
@@ -1567,9 +1781,9 @@ fn build_direct_outbound(
             // Simple resolution for now, ideally use system resolver or internal DNS
             let addr_str = format!("{}:{}", host, port);
             let mut addrs = tokio::net::lookup_host(&addr_str).await?;
-            let addr = addrs.next().ok_or_else(|| {
-                std::io::Error::other("DNS resolution failed")
-            })?;
+            let addr = addrs
+                .next()
+                .ok_or_else(|| std::io::Error::other("DNS resolution failed"))?;
             self.socket.send_to(data, addr).await?;
             Ok(())
         }
@@ -1634,70 +1848,79 @@ fn build_tor_outbound(
     ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    #[cfg(feature = "adapter-socks")]
+    #[cfg(feature = "adapter-tor")]
     {
-        use crate::outbound::socks5::Socks5Connector;
-        use sb_config::outbound::Socks5Config;
+        use crate::outbound::tor::TorOutbound;
+        
+        // Check for fields (tor_extra_args is Vec<String>)
+        let proxy_addr = ir
+            .tor_proxy_addr
+            .clone()
+            .unwrap_or_else(|| "127.0.0.1:9050".to_string());
 
-        // Default Tor SOCKS5 proxy address
-        let default_tor_proxy = "127.0.0.1:9050".to_string();
-
-        // Get Tor proxy address from IR, fall back to default
-        let proxy_addr = ir.tor_proxy_addr.as_ref().unwrap_or(&default_tor_proxy);
-
-        // Create SOCKS5 config (Tor doesn't require authentication by default)
-        let config = Socks5Config {
-            server: proxy_addr.clone(),
-            tag: ir.name.clone(),
-            username: None, // Tor SOCKS5 doesn't use auth
-            password: None,
-            connect_timeout_sec: Some(30),
-            tls: None, // Tor SOCKS5 doesn't use TLS
-        };
-
-        let connector = Socks5Connector::new(config);
-        let connector_arc = Arc::new(connector);
-
-        // Wrapper that implements OutboundConnector trait
-        // Note: Tor uses SOCKS5 proxy protocol and should be used via switchboard registry
-        #[derive(Clone)]
-        struct TorConnectorWrapper {
-            inner: Arc<Socks5Connector>,
+        if ir.tor_executable_path.is_some()
+            || !ir.tor_extra_args.is_empty()
+            || ir.tor_data_directory.is_some()
+            || ir.tor_options.is_some()
+        {
+             // Log warning if executable path is set but we are using Arti
+             // For parity, we might want to support external Tor via SOCKS, but for now we prioritize Arti.
+             if ir.tor_executable_path.is_some() {
+                 warn!(
+                    target: "sb_adapters::tor",
+                    "tor exec path present but using embedded Arti; running external tor daemon at {} is not supported in this mode",
+                    proxy_addr
+                );
+             }
         }
 
-        impl std::fmt::Debug for TorConnectorWrapper {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct("TorConnectorWrapper")
-                    .field("proxy", &"127.0.0.1:9050")
-                    .field("inner", &self.inner)
-                    .finish()
+        // Create TorOutbound (Arti)
+        // Using dummy context since TorOutbound doesn't use it yet.
+        // In real impl, we should pass context from factory if possible.
+        let ctx = sb_core::context::Context::new();
+        match TorOutbound::new(ir, &ctx) {
+            Ok(adapter) => {
+                let adapter_arc = Arc::new(adapter);
+                
+                // Wrapper
+                #[derive(Clone)]
+                struct TorConnectorWrapper {
+                    inner: Arc<TorOutbound>,
+                }
+            
+                impl std::fmt::Debug for TorConnectorWrapper {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                         f.debug_struct("TorConnectorWrapper")
+                            .field("inner", &self.inner)
+                            .finish()
+                    }
+                }
+            
+                #[async_trait::async_trait]
+                impl OutboundConnector for TorConnectorWrapper {
+                    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+                        // Tor uses SOCKS-like or internal dialing, cannot return raw TcpStream easily without virtual network 
+                        // or just failing like other proxies.
+                         Err(std::io::Error::other(
+                            "Tor adapter connector is not usable directly; use switchboard registry instead",
+                        ))
+                    }
+                }
+            
+                let wrapper = TorConnectorWrapper {
+                    inner: adapter_arc,
+                };
+                
+                Some((Arc::new(wrapper), None))
+            },
+            Err(e) => {
+                warn!(target: "sb_adapters::tor", "Failed to create TorOutbound: {}", e);
+                None
             }
         }
-
-        #[async_trait::async_trait]
-        impl OutboundConnector for TorConnectorWrapper {
-            async fn connect(
-                &self,
-                host: &str,
-                port: u16,
-            ) -> std::io::Result<tokio::net::TcpStream> {
-                // Tor uses SOCKS5 proxy protocol, cannot return raw TcpStream
-                // Use switchboard registry instead
-                Err(std::io::Error::other(
-                format!("Tor uses SOCKS5 proxy protocol for {}:{}; use switchboard registry instead", host, port),
-            ))
-            }
-        }
-
-        let wrapper = TorConnectorWrapper {
-            inner: connector_arc,
-        };
-
-        // Return TCP connector wrapper (UDP over Tor can be added later)
-        Some((Arc::new(wrapper), None))
     }
 
-    #[cfg(not(feature = "adapter-socks"))]
+    #[cfg(not(feature = "adapter-tor"))]
     {
         stub_outbound("tor");
         None
@@ -1802,6 +2025,61 @@ fn build_wireguard_outbound(
     None
 }
 
+#[cfg(feature = "adapter-tailscale")]
+fn build_tailscale_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
+) -> OutboundBuilderResult {
+    use crate::outbound::tailscale::{TailscaleConfig, TailscaleConnector};
+    use sb_core::outbound::direct_connector::DirectConnector;
+
+    let direct = DirectConnector::with_options(
+        param.connect_timeout,
+        param.bind_interface.clone(),
+        param.routing_mark,
+        param.reuse_addr,
+        param.tcp_fast_open,
+        param.tcp_multi_path,
+    );
+
+    // NOTE: Tailscale-specific fields are defined in EndpointIR, not OutboundIR.
+    // For now, use defaults with outbound name as tag.
+    // Future: add tailscale fields to OutboundIR or use EndpointIR for configuration.
+    let cfg = TailscaleConfig {
+        tag: ir.name.clone(),
+        ..Default::default()
+    };
+
+    let connector = TailscaleConnector::new(Arc::new(direct), cfg);
+    Some((Arc::new(connector), None))
+}
+
+#[cfg(not(feature = "adapter-tailscale"))]
+fn build_tailscale_outbound(
+    param: &OutboundParam,
+    _ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
+) -> OutboundBuilderResult {
+    use sb_core::outbound::direct_connector::DirectConnector;
+
+    warn!(
+        target: "sb_adapters::tailscale",
+        "tailscale outbound not built; falling back to direct connector"
+    );
+
+    let direct = DirectConnector::with_options(
+        param.connect_timeout,
+        param.bind_interface.clone(),
+        param.routing_mark,
+        param.reuse_addr,
+        param.tcp_fast_open,
+        param.tcp_multi_path,
+    );
+
+    Some((Arc::new(direct), None))
+}
+
 #[cfg(feature = "adapter-hysteria")]
 fn build_hysteria_outbound(
     param: &OutboundParam,
@@ -1816,7 +2094,8 @@ fn build_hysteria_outbound(
 
     // Hysteria v1 specific configuration
     let protocol = ir
-        .hysteria_protocol.clone()
+        .hysteria_protocol
+        .clone()
         .unwrap_or_else(|| "udp".to_string());
 
     let up_mbps = ir.up_mbps.unwrap_or(10);
@@ -1830,7 +2109,8 @@ fn build_hysteria_outbound(
 
     // ALPN (convert Vec<String> if present, otherwise default)
     let alpn = ir
-        .tls_alpn.clone()
+        .tls_alpn
+        .clone()
         .unwrap_or_else(|| vec!["hysteria".to_string()]);
 
     // QUIC receive windows
@@ -1880,12 +2160,10 @@ fn build_hysteria_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Hysteria v1 uses QUIC stream, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::other(
-                format!(
-                    "Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead",
-                    host, port
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "Hysteria v1 uses QUIC stream for {}:{}; use switchboard registry instead",
+                host, port
+            )))
         }
     }
 
@@ -1920,11 +2198,7 @@ fn build_shadowtls_outbound(
     let port = ir.port.or(param.port).unwrap_or(443);
 
     // SNI is required for TLS
-    let sni = ir
-        .tls_sni
-        .as_ref()
-        .map(|s| s.clone())
-        .unwrap_or_else(|| server.clone());
+    let sni = ir.tls_sni.clone().unwrap_or_else(|| server.clone());
 
     // ALPN from tls_alpn (Vec<String>), convert to single comma-separated string
     let alpn = ir.tls_alpn.as_ref().map(|v| v.join(","));
@@ -1964,10 +2238,10 @@ fn build_shadowtls_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // ShadowTLS uses encrypted TLS stream, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("ShadowTLS uses encrypted TLS stream for {}:{}; use switchboard registry instead", host, port),
-            ))
+            Err(std::io::Error::other(format!(
+                "ShadowTLS uses encrypted TLS stream for {}:{}; use switchboard registry instead",
+                host, port
+            )))
         }
     }
 
@@ -2055,8 +2329,7 @@ fn build_tuic_outbound(
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // TUIC is QUIC-based, cannot return TcpStream directly
             // This is a fundamental architecture limitation
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "TUIC is QUIC-based and cannot provide TcpStream; use switchboard registry instead",
             ))
         }
@@ -2150,8 +2423,7 @@ fn build_hysteria2_outbound(
         async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // Hysteria2 is QUIC-based, cannot return TcpStream directly
             // This is a fundamental architecture limitation
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(std::io::Error::other(
                 "Hysteria2 is QUIC-based and cannot provide TcpStream; use switchboard registry instead"
             ))
         }
@@ -2249,13 +2521,10 @@ fn build_ssh_outbound(
         async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
             // SSH uses tunnel proxy protocol, cannot return raw TcpStream
             // Use switchboard registry instead
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "SSH uses tunnel proxy for {}:{}; use switchboard registry instead",
-                    host, port
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "SSH uses tunnel proxy for {}:{}; use switchboard registry instead",
+                host, port
+            )))
         }
     }
 
@@ -2357,6 +2626,53 @@ impl InboundService for HttpInboundAdapter {
     }
 }
 
+#[cfg(all(feature = "adapter-trojan", feature = "router"))]
+#[derive(Debug)]
+struct TrojanInboundAdapter {
+    cfg: crate::inbound::trojan::TrojanInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(all(feature = "adapter-trojan", feature = "router"))]
+impl TrojanInboundAdapter {
+    fn new(cfg: crate::inbound::trojan::TrojanInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(all(feature = "adapter-trojan", feature = "router"))]
+impl InboundService for TrojanInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock().unwrap();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            crate::inbound::trojan::serve(cfg, rx)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().unwrap().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock().unwrap();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
+        }
+    }
+}
+
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
 #[derive(Debug)]
 struct SocksInboundAdapter {
@@ -2410,36 +2726,6 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
         .parse()
         .ok()
         .or_else(|| format!("{listen}:{port}").parse().ok())
-}
-
-#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-struct TunInboundAdapter {
-    inner: crate::inbound::tun::TunInbound,
-}
-
-#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-impl std::fmt::Debug for TunInboundAdapter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TunInboundAdapter").finish_non_exhaustive()
-    }
-}
-
-#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-impl TunInboundAdapter {
-    fn new(inner: crate::inbound::tun::TunInbound) -> Self {
-        Self { inner }
-    }
-}
-
-#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-impl InboundService for TunInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        self.inner.serve()
-    }
-
-    fn request_shutdown(&self) {
-        tracing::debug!("tun inbound adapter does not support async shutdown yet");
-    }
 }
 
 // ========== ShadowTLS Inbound ==========
@@ -2551,19 +2837,6 @@ impl InboundService for MixedInboundAdapter {
 }
 
 // ========== TUN Inbound ==========
-
-#[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
-#[allow(dead_code)]
-fn build_tun_inbound(
-    _param: &InboundParam,
-    ctx: &registry::AdapterInboundContext<'_>,
-) -> Option<Arc<dyn InboundService>> {
-    use crate::inbound::tun::{TunInbound, TunInboundConfig};
-
-    let cfg = TunInboundConfig::default();
-    let inbound = TunInbound::new(cfg, ctx.router.clone());
-    Some(Arc::new(TunInboundAdapter::new(inbound)))
-}
 
 // ========== Redirect Inbound (Linux only) ==========
 
@@ -2728,8 +3001,6 @@ impl InboundService for TuicInboundAdapter {
         }
     }
 }
-
-
 
 // Selector and URLTest builders
 fn build_selector_outbound(

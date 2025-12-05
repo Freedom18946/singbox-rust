@@ -273,7 +273,7 @@ impl MultiplexDialer {
         // manage their windows. Note that yamux 0.13.8 doesn't expose per-stream window configuration
         // in the public API - it uses internal defaults.
         config.set_max_connection_receive_window(None);
-        
+
         // Note: yamux 0.13.8 doesn't expose set_keep_alive_interval or set_receive_window in the public API.
         // Keep-alive and window management are handled internally by the yamux implementation.
 
@@ -318,7 +318,7 @@ impl MultiplexDialer {
 
         debug!("Creating new connection for {:?}", key);
         let stream = self.dialer.connect(host, port).await?;
-        
+
         let stream = if self.config.enable_padding {
             debug!("Enabling padding for multiplex connection");
             let padded = PaddingStream::new(stream, true);
@@ -422,8 +422,8 @@ impl MultiplexDialer {
                 // A smarter LRU strategy would require async locking of last_used timestamps,
                 // which adds complexity while holding the pool lock.
                 if !connections.is_empty() {
-                     debug!("Pool full for {:?}, evicting oldest connection", key);
-                     connections.remove(0);
+                    debug!("Pool full for {:?}, evicting oldest connection", key);
+                    connections.remove(0);
                 }
             }
 
@@ -620,12 +620,15 @@ impl MultiplexListener {
         stream_tx: tokio::sync::mpsc::UnboundedSender<IoStream>,
     ) -> Result<(), DialError> {
         let stream: IoStream = if config.enable_padding {
-            debug!("Enabling padding for multiplex connection from {}", peer_addr);
+            debug!(
+                "Enabling padding for multiplex connection from {}",
+                peer_addr
+            );
             Box::new(PaddingStream::new(tcp_stream, false))
         } else {
             Box::new(tcp_stream)
         };
-        
+
         let compat_stream = stream.compat();
         let yamux_config = Self::create_server_yamux_config(&config);
         let mut connection = Connection::new(compat_stream, yamux_config, Mode::Server);

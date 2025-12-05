@@ -321,7 +321,10 @@ impl TunManager {
     /// List all active devices
     #[must_use]
     pub fn list_devices(&self) -> Vec<&str> {
-        self.devices.keys().map(std::string::String::as_str).collect()
+        self.devices
+            .keys()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     /// Close all devices
@@ -352,6 +355,9 @@ mod macos;
 
 #[cfg(target_os = "windows")]
 mod windows;
+
+/// TUN configuration validation for auto_route and auto_redirect.
+pub mod validation;
 
 #[cfg(target_os = "macos")]
 pub use macos::MacOsTun;

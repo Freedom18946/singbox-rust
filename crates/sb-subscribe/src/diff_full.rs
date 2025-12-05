@@ -1,10 +1,10 @@
 //! R104: Subscription diffing (purely offline).
 //! [Chinese] R104: 订阅差异对比（纯离线）。
 //!
-//! - Input: lhs/rhs text + format=clash|singbox + keyword/suffix mode + normalize flag.
-//! [Chinese] - 输入：lhs/rhs 文本 + format=clash|singbox + keyword/suffix 模式 + 是否 normalize。
-//! - Output: minijson: { ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }.
-//! [Chinese] - 输出：minijson：{ ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }。
+//!   - Input: lhs/rhs text + format=clash|singbox + keyword/suffix mode + normalize flag.
+//!   - [Chinese] 输入：lhs/rhs 文本 + format=clash|singbox + keyword/suffix 模式 + 是否 normalize。
+//!   - Output: minijson: { ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }.
+//!   - [Chinese] 输出：minijson：{ ok, format, mode, normalized, kinds_count_diff, outbound_kinds_diff, dsl_patch }。
 use crate::model::Profile;
 use sb_core::router::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};

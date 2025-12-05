@@ -86,6 +86,12 @@ pub enum InboundType {
     /// TUIC proxy server.
     /// TUIC 代理服务器。
     Tuic,
+    /// DNS server inbound.
+    /// DNS 服务器入站。
+    Dns,
+    /// SSH tunnel inbound.
+    /// SSH 隧道入站。
+    Ssh,
 }
 
 impl InboundType {
@@ -110,6 +116,8 @@ impl InboundType {
             InboundType::Hysteria => "hysteria",
             InboundType::Hysteria2 => "hysteria2",
             InboundType::Tuic => "tuic",
+            InboundType::Dns => "dns",
+            InboundType::Ssh => "ssh",
         }
     }
 }
@@ -180,6 +188,9 @@ pub enum OutboundType {
     /// Tailscale outbound (stub).
     /// Tailscale 出站 (存根)。
     Tailscale,
+    /// ShadowsocksR outbound.
+    /// ShadowsocksR 出站。
+    ShadowsocksR,
 }
 
 impl OutboundType {
@@ -207,6 +218,7 @@ impl OutboundType {
             OutboundType::Hysteria => "hysteria",
             OutboundType::Wireguard => "wireguard",
             OutboundType::Tailscale => "tailscale",
+            OutboundType::ShadowsocksR => "shadowsocksr",
         }
     }
 }
@@ -791,6 +803,52 @@ pub struct OutboundIR {
     /// TUIC 的 UDP 中继模式 ("native" | "quic")
     #[serde(default)]
     pub udp_relay_mode: Option<String>,
+
+    // ==== UDP over TCP configuration ====
+    /// Enable UDP over TCP transport (v1 or v2 protocol)
+    /// 启用 UDP over TCP 传输（v1 或 v2 协议）
+    #[serde(default)]
+    pub udp_over_tcp: Option<bool>,
+    /// UDP over TCP version: 1 or 2 (default: 2 for sing-box compatibility)
+    /// UDP over TCP 版本：1 或 2（默认：2，与 sing-box 兼容）
+    #[serde(default)]
+    pub udp_over_tcp_version: Option<u8>,
+
+    // ==== uTLS Client Fingerprinting ====
+    /// uTLS client fingerprint for TLS connections
+    /// (e.g., "chrome", "firefox", "safari", "ios", "edge", "random")
+    /// uTLS 客户端指纹用于 TLS 连接
+    #[serde(default)]
+    pub utls_fingerprint: Option<String>,
+
+    // Protocol-specific fields (ShadowsocksR)
+    /// ShadowsocksR obfuscation parameter.
+    /// ShadowsocksR 混淆参数。
+    #[serde(default)]
+    pub obfs_param: Option<String>,
+    /// ShadowsocksR protocol.
+    /// ShadowsocksR 协议。
+    #[serde(default)]
+    pub protocol: Option<String>,
+    /// ShadowsocksR protocol parameter.
+    /// ShadowsocksR 协议参数。
+    #[serde(default)]
+    pub protocol_param: Option<String>,
+
+    // Tor fields
+    /// Tor executable path (legacy/embedded usage).
+    /// Tor 可执行文件路径（遗留/嵌入式用法）。
+    #[serde(default)]
+    pub tor_executable_path: Option<String>,
+    /// Tor extra arguments.
+    /// Tor 额外参数。
+    #[serde(default)]
+    pub tor_extra_args: Vec<String>,
+    /// Tor data directory.
+    /// Tor 数据目录。
+    #[serde(default)]
+    pub tor_data_directory: Option<String>,
+
     /// Whether TUIC should tunnel UDP over stream
     /// TUIC 是否应通过流隧道传输 UDP
     #[serde(default)]
@@ -923,23 +981,11 @@ pub struct OutboundIR {
     #[serde(default)]
     pub wireguard_persistent_keepalive: Option<u16>,
 
-    // Tor-specific fields
     /// Tor SOCKS5 proxy address (default: 127.0.0.1:9050).
     /// Tor SOCKS5 代理地址（默认：127.0.0.1:9050）。
     #[serde(default)]
     pub tor_proxy_addr: Option<String>,
-    /// Path to Tor executable (for embedded Tor support, future).
-    /// Tor 可执行文件路径（用于嵌入式 Tor 支持，未来）。
-    #[serde(default)]
-    pub tor_executable_path: Option<String>,
-    /// Extra command-line arguments for Tor process.
-    /// Tor 进程的额外命令行参数。
-    #[serde(default)]
-    pub tor_extra_args: Option<Vec<String>>,
-    /// Tor data directory for persistent state.
-    /// 用于持久状态的 Tor 数据目录。
-    #[serde(default)]
-    pub tor_data_directory: Option<String>,
+    // tor_executable_path, tor_extra_args, tor_data_directory already defined above
     /// Torrc configuration options (key-value pairs).
     /// Torrc 配置选项（键值对）。
     #[serde(default)]
@@ -1075,6 +1121,50 @@ pub struct RuleIR {
     #[serde(default, alias = "gid")]
     pub group: Vec<String>,
 
+    // P1 Parity: Additional routing rule fields (Go compatibility)
+    /// Clash API mode (e.g., "rule", "global", "direct").
+    /// Clash API 模式（例如 "rule", "global", "direct"）。
+    #[serde(default)]
+    pub clash_mode: Vec<String>,
+    /// Client name or version patterns.
+    /// 客户端名称或版本模式。
+    #[serde(default)]
+    pub client: Vec<String>,
+    /// Android package names (for Android TUN mode).
+    /// Android 包名（用于 Android TUN 模式）。
+    #[serde(default)]
+    pub package_name: Vec<String>,
+    /// Network type (e.g., "wifi", "cellular", "ethernet").
+    /// 网络类型（例如 "wifi", "cellular", "ethernet"）。
+    #[serde(default)]
+    pub network_type: Vec<String>,
+    /// Metered/expensive network flag.
+    /// 计费/昂贵网络标志。
+    #[serde(default)]
+    pub network_is_expensive: Option<bool>,
+    /// Match constrained network status.
+    /// 匹配受限网络状态。
+    #[serde(default)]
+    pub network_is_constrained: Option<bool>,
+    /// Accept any resolved IP (used in DNS rules).
+    /// 接受任何解析的 IP（用于 DNS 规则）。
+    #[serde(default)]
+    pub ip_accept_any: Option<bool>,
+    /// Match specific outbound tag (as input).
+    /// 匹配特定出站标签（作为输入）。
+    #[serde(default)]
+    pub outbound_tag: Vec<String>,
+
+    // ==== AdGuard-style rules ====
+    /// AdGuard-style filter rules (e.g., "||example.org^", "@@||safe.example.org^")
+    /// AdGuard 风格过滤规则（例如 "||example.org^", "@@||safe.example.org^"）
+    #[serde(default)]
+    pub adguard: Vec<String>,
+    /// AdGuard-style rules (negative match, exclusion)
+    /// AdGuard 风格规则（否定匹配，排除）
+    #[serde(default)]
+    pub not_adguard: Vec<String>,
+
     // Negative match conditions (exclusions)
     /// Exclude domains.
     /// 排除域名。
@@ -1172,6 +1262,40 @@ pub struct RuleIR {
     /// 排除组名。
     #[serde(default)]
     pub not_group: Vec<String>,
+    /// Exclude Clash API modes.
+    /// 排除 Clash API 模式。
+    #[serde(default)]
+    pub not_clash_mode: Vec<String>,
+    /// Exclude client patterns.
+    /// 排除客户端模式。
+    #[serde(default)]
+    pub not_client: Vec<String>,
+    /// Exclude Android package names.
+    /// 排除 Android 包名。
+    #[serde(default)]
+    pub not_package_name: Vec<String>,
+    /// Exclude network types.
+    /// 排除网络类型（如 wifi/cellular）。
+    #[serde(default)]
+    pub not_network_type: Vec<String>,
+    /// Exclude outbound tags.
+    /// 排除出站标签。
+    #[serde(default)]
+    pub not_outbound_tag: Vec<String>,
+
+    // ==== Headless/Logical rule support ====
+    /// Rule type: "default" (default) or "logical" for combined rules.
+    /// 规则类型："default"（默认）或 "logical" 用于组合规则。
+    #[serde(default, rename = "type")]
+    pub rule_type: Option<String>,
+    /// Logical mode for combined rules: "and" or "or".
+    /// 组合规则的逻辑模式："and" 或 "or"。
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Sub-rules for logical rule type.
+    /// 逻辑规则类型的子规则。
+    #[serde(default)]
+    pub rules: Vec<Box<RuleIR>>,
 
     // Actions
     /// Target outbound tag.
@@ -1606,6 +1730,7 @@ impl OutboundIR {
             OutboundType::Hysteria => "hysteria",
             OutboundType::Wireguard => "wireguard",
             OutboundType::Tailscale => "tailscale",
+            OutboundType::ShadowsocksR => "shadowsocksr",
         }
     }
 

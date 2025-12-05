@@ -6,8 +6,14 @@
 //! 本模块提供 DNS 传输的核心 trait 和实现（UDP、TCP、DoH、DoT、DoQ 等），
 //! 具有与 Go 对等的生命周期管理。
 
+use std::sync::Arc;
+
+use super::resolver::DnsResolver;
 use anyhow::Result;
 use async_trait::async_trait;
+
+#[cfg(feature = "dns_dhcp")]
+use crate::dns::upstream::DhcpUpstream;
 
 /// Lifecycle stages for DNS transport initialization.
 /// DNS 传输初始化的生命周期阶段。
@@ -137,11 +143,35 @@ pub type DohClient = DohTransport;
 pub type DotClient = DotTransport;
 
 // Placeholder for DHCP resolver - needs implementation
-pub struct DhcpResolver;
+#[derive(Clone)]
+pub struct DhcpResolver {
+    inner: Option<Arc<DnsResolver>>,
+}
 
 impl DhcpResolver {
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        #[cfg(feature = "dns_dhcp")]
+        {
+            // Discover DHCP-provided nameservers (resolv.conf) and delegate to standard resolver.
+            let upstream = DhcpUpstream::from_spec("dhcp", None).unwrap_or_else(|e| {
+                tracing::warn!(
+                    target: "sb_core::dns",
+                    error = %e,
+                    "failed to initialize DHCP upstream; falling back to system resolver"
+                );
+                // DhcpUpstream construction is infallible today; this is a defensive fallback.
+                DhcpUpstream::from_spec("dhcp", None).expect("DhcpUpstream fallback")
+            });
+            let resolver = DnsResolver::new(vec![Arc::new(upstream)]).with_name("dhcp".to_string());
+            return Self {
+                inner: Some(Arc::new(resolver)),
+            };
+        }
+
+        #[cfg(not(feature = "dns_dhcp"))]
+        {
+            Self { inner: None }
+        }
     }
 }
 
@@ -153,9 +183,12 @@ impl Default for DhcpResolver {
 
 #[async_trait]
 impl super::Resolver for DhcpResolver {
-    async fn resolve(&self, _domain: &str) -> Result<super::DnsAnswer> {
-        // Placeholder implementation
-        anyhow::bail!("DHCP DNS resolver not implemented yet")
+    async fn resolve(&self, domain: &str) -> Result<super::DnsAnswer> {
+        if let Some(resolver) = &self.inner {
+            return resolver.resolve(domain).await;
+        }
+
+        anyhow::bail!("DHCP DNS resolver requires the `dns_dhcp` feature")
     }
 
     fn name(&self) -> &'static str {

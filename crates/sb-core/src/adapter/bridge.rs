@@ -27,8 +27,6 @@ use std::sync::Arc;
 #[allow(unused_imports)]
 use std::time::Instant;
 
-
-
 fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHandle> {
     let mut reg = OutboundRegistry::default();
     for (name, _kind, conn) in &br.outbounds {
@@ -235,6 +233,24 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         .as_ref()
         .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
 
+    // Serialize Trojan users to JSON if present
+    let users_trojan = ib
+        .users_trojan
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
+
+    // Serialize VLESS users to JSON if present
+    let users_vless = ib
+        .users_vless
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
+
+    // Serialize VMess users to JSON if present
+    let users_vmess = ib
+        .users_vmess
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
+
     InboundParam {
         kind: ib.ty.ty_str().to_string(),
         listen: ib.listen.clone(),
@@ -269,6 +285,9 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         hysteria_recv_window_conn: ib.hysteria_recv_window_conn,
         hysteria_recv_window: ib.hysteria_recv_window,
         multiplex: ib.multiplex.clone(),
+        users_trojan,
+        users_vless,
+        users_vmess,
     }
 }
 
@@ -349,7 +368,6 @@ fn try_adapter_inbound(
 /// Attempts to create an outbound connector using the adapter registry (when feature enabled).
 /// Supplies adapter builders with runtime context (bridge) so they can resolve dependencies.
 fn try_adapter_outbound(p: &OutboundParam, ob: &OutboundIR, br: &Bridge) -> Option<BuiltOutbound> {
-
     if let Some(builder) = registry::get_outbound(&p.kind) {
         let ctx = registry::AdapterOutboundContext {
             bridge: Arc::new(br.clone()),
@@ -368,9 +386,6 @@ struct BuiltOutbound {
 }
 
 // no-op wrapper for non-adapter builds (registry is available regardless)
-
-
-
 
 /// Helper: assembles basic outbounds (excluding selectors).
 fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
@@ -531,8 +546,6 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
     }
 }
 
-
-
 #[cfg(feature = "router")]
 pub fn build_bridge<'a>(
     cfg: &'a ConfigIR,
@@ -616,7 +629,6 @@ pub fn build_bridge<'a>(
 /// without routing engine dependencies.
 #[cfg(not(feature = "router"))]
 pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
-
     crate::endpoint::register_builtins();
     crate::services::register_builtins();
     let mut br = Bridge::new(context);

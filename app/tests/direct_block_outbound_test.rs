@@ -44,10 +44,7 @@ fn test_direct_outbound_registration() {
 
     let (_connector, udp_factory) = result.unwrap();
     // Connector is already Arc<dyn OutboundConnector>, not Option
-    assert!(
-        udp_factory.is_some(),
-        "Direct outbound should support UDP"
-    );
+    assert!(udp_factory.is_some(), "Direct outbound should support UDP");
 }
 
 #[test]

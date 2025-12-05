@@ -65,7 +65,8 @@ impl MacOsTun {
         }
 
         // Connect to the utun control
-        #[allow(clippy::cast_possible_truncation)] // SockaddrCtl is always 32 bytes on all platforms
+        #[allow(clippy::cast_possible_truncation)]
+        // SockaddrCtl is always 32 bytes on all platforms
         let addr = SockaddrCtl {
             sc_len: std::mem::size_of::<SockaddrCtl>() as u8,
             sc_family: AF_SYSTEM,
@@ -138,14 +139,18 @@ impl MacOsTun {
     fn get_utun_name(fd: RawFd) -> Result<String, TunError> {
         // Query the interface name using socket options
         let mut ifname = [0u8; libc::IF_NAMESIZE];
-        #[allow(clippy::cast_possible_truncation)]  // IF_NAMESIZE is a small constant
+        #[allow(clippy::cast_possible_truncation)] // IF_NAMESIZE is a small constant
         let mut len = libc::IF_NAMESIZE as libc::socklen_t;
 
         // SAFETY:
         // - 不变量：fd 是有效的文件描述符，ifname 是大小为 IF_NAMESIZE 的可变缓冲区
         // - 并发/别名：ifname 为局部变量，由当前线程独占访问
         // - FFI/平台契约：getsockopt 系统调用参数类型和大小正确
-        #[allow(clippy::cast_possible_truncation, clippy::ptr_as_ptr, clippy::borrow_as_ptr)] // Required for C FFI
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::ptr_as_ptr,
+            clippy::borrow_as_ptr
+        )] // Required for C FFI
         let result = unsafe {
             libc::getsockopt(
                 fd,
@@ -199,7 +204,9 @@ impl MacOsTun {
         let output = std::process::Command::new("route")
             .args(["add", "default", "-interface", &self.name])
             .output()
-            .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv4 route: {e}")))?;
+            .map_err(|e| {
+                TunError::OperationFailed(format!("Failed to add default IPv4 route: {e}"))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -217,7 +224,9 @@ impl MacOsTun {
             let output = std::process::Command::new("route")
                 .args(["add", "-inet6", "default", "-interface", &self.name])
                 .output()
-                .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv6 route: {e}")))?;
+                .map_err(|e| {
+                    TunError::OperationFailed(format!("Failed to add default IPv6 route: {e}"))
+                })?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);

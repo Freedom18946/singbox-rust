@@ -1,15 +1,15 @@
 #[cfg(feature = "out_ss")]
 use super::crypto_types::{HostPort, OutboundTcp};
-use sb_transport::Dialer;
-use std::sync::Arc;
 #[cfg(feature = "out_ss")]
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 #[cfg(feature = "out_ss")]
 use async_trait::async_trait;
 #[cfg(feature = "out_ss")]
 use chacha20poly1305::ChaCha20Poly1305;
+use sb_transport::Dialer;
 #[cfg(feature = "out_ss")]
 use std::pin::Pin;
+use std::sync::Arc;
 #[cfg(feature = "out_ss")]
 use std::task::{Context, Poll};
 #[cfg(feature = "out_ss")]
@@ -68,10 +68,7 @@ impl ShadowsocksConfig {
     }
 
     #[cfg(feature = "v2ray_transport")]
-    pub fn with_multiplex(
-        mut self,
-        multiplex: Option<sb_config::ir::MultiplexOptionsIR>,
-    ) -> Self {
+    pub fn with_multiplex(mut self, multiplex: Option<sb_config::ir::MultiplexOptionsIR>) -> Self {
         self.multiplex = multiplex;
         self
     }
@@ -123,16 +120,14 @@ impl ShadowsocksOutbound {
                     if let Some(i) = mux_ir.keepalive_interval {
                         mux_config.keepalive_interval = i;
                     }
-                    
+
                     let base = ShadowsocksBaseDialer {
                         config: config.clone(),
                     };
-                    Some(Arc::new(
-                        sb_transport::multiplex::MultiplexDialer::new(
-                            mux_config,
-                            Box::new(base),
-                        ),
-                    ))
+                    Some(Arc::new(sb_transport::multiplex::MultiplexDialer::new(
+                        mux_config,
+                        Box::new(base),
+                    )))
                 }
             } else {
                 None
@@ -158,19 +153,24 @@ struct ShadowsocksBaseDialer {
 #[cfg(all(feature = "out_ss", feature = "v2ray_transport"))]
 #[async_trait]
 impl sb_transport::Dialer for ShadowsocksBaseDialer {
-    async fn connect(&self, _host: &str, _port: u16) -> Result<sb_transport::IoStream, sb_transport::dialer::DialError> {
+    async fn connect(
+        &self,
+        _host: &str,
+        _port: u16,
+    ) -> Result<sb_transport::IoStream, sb_transport::dialer::DialError> {
         // Connect to the proxy server
-        let stream = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
-            .await
-            .inspect_err(|_e| {
-                #[cfg(feature = "metrics")]
-                crate::telemetry::outbound_connect(
-                    "shadowsocks",
-                    "error",
-                    Some(crate::telemetry::err_kind(_e)),
-                );
-            })
-            .map_err(sb_transport::dialer::DialError::Io)?;
+        let stream =
+            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
+                .await
+                .inspect_err(|_e| {
+                    #[cfg(feature = "metrics")]
+                    crate::telemetry::outbound_connect(
+                        "shadowsocks",
+                        "error",
+                        Some(crate::telemetry::err_kind(_e)),
+                    );
+                })
+                .map_err(sb_transport::dialer::DialError::Io)?;
         Ok(Box::new(stream))
     }
 

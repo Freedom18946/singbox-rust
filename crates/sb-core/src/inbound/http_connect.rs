@@ -222,26 +222,61 @@ pub(crate) async fn handle(
             Some(matched_rule_sets.as_slice())
         };
 
+        let clash_mode_str = br
+            .context
+            .clash_server
+            .as_ref()
+            .map(|s| s.get_mode());
+        let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
+            "rule" => "Rule",
+            "global" => "Global",
+            "direct" => "Direct",
+            _ => s,
+        });
+
+        // For HTTP CONNECT, if sniff is enabled, we assume basic HTTP properties
+        let sniff_host_ref = if sniff_enabled { Some(host.as_str()) } else { None };
+        let sniff_alpn_ref = if sniff_enabled { Some("http/1.1") } else { None };
+        let sniff_proto_ref = if sniff_enabled { Some("http") } else { None };
+
+        // Parse User-Agent
+        let user_agent = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("User-Agent"))
+            .map(|(_, v)| v.as_str());
+
+        // Simple client inference from User-Agent (can be expanded)
+        let client_ref = user_agent.map(|ua| {
+            if ua.to_lowercase().contains("clash") {
+                "Clash"
+            } else if ua.to_lowercase().contains("chrome") {
+                "Chrome"
+            } else if ua.to_lowercase().contains("mozilla") {
+                "Browser"
+            } else {
+                "Unknown"
+            }
+        });
+
         let input = RouterInput {
             host: &host,
             port,
             network: "tcp",
-            protocol: "http-connect",
-            sniff_host: Some(&host),
-            // For HTTP CONNECT control plane, we don't have stream bytes yet.
-            // When sniff is enabled, we can still hint ALPN as http/1.1.
-            sniff_alpn: if sniff_enabled {
-                Some("http/1.1")
-            } else {
-                None
-            },
-            sniff_protocol: Some("http"),
-            wifi_ssid: None,
-            wifi_bssid: None,
+            protocol: "http",
+            sniff_host: sniff_host_ref,
+            sniff_alpn: sniff_alpn_ref,
+            sniff_protocol: sniff_proto_ref,
             process_name: process_name.as_deref(),
             process_path: process_path.as_deref(),
-            user_agent: None,
+            user_agent,
             rule_set: rule_set_opt,
+            clash_mode: clash_mode_ref,
+            client: client_ref,
+            package_name: process_name.as_deref(),
+            network_type: Some(br.context.network_monitor.get_network_type()),
+            network_is_expensive: Some(br.context.network_monitor.is_expensive()),
+            network_is_constrained: Some(br.context.network_monitor.is_constrained()),
+            ..Default::default()
         };
         eng.decide(&input, false)
     };

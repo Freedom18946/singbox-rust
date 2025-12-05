@@ -1101,33 +1101,38 @@ async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) {
     // Register inbounds with InboundManager
     // InboundManager stores Arc<dyn Any>, inbounds are indexed but not tagged
     for (idx, ib) in bridge.inbounds.iter().enumerate() {
-        let tag = bridge.inbound_kinds.get(idx)
+        let tag = bridge
+            .inbound_kinds
+            .get(idx)
             .map(|k| k.to_string())
             .unwrap_or_else(|| format!("inbound_{}", idx));
         ctx.inbound_manager
-            .add_handler(tag, Arc::new(ib.clone()) as Arc<dyn std::any::Any + Send + Sync>)
+            .add_handler(
+                tag,
+                Arc::new(ib.clone()) as Arc<dyn std::any::Any + Send + Sync>,
+            )
             .await;
     }
-    
+
     // Register outbounds with OutboundManager
     // Outbounds are stored as (name, kind, connector) tuples
     // OutboundManager likely has a different API or doesn't need explicit registration since
     // Bridge already maintains outbounds vector. Skip for now as there's no add_outbound method.
-    
+
     // Register endpoints with EndpointManager
     for ep in &bridge.endpoints {
         ctx.endpoint_manager
             .add_endpoint(ep.tag().to_string(), ep.clone())
             .await;
     }
-    
+
     // Register services with ServiceManager
     for svc in &bridge.services {
         ctx.service_manager
             .add_service(svc.tag().to_string(), svc.clone())
             .await;
     }
-    
+
     tracing::info!(
         target: "sb_core::runtime",
         inbounds = bridge.inbounds.len(),

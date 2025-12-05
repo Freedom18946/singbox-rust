@@ -355,7 +355,8 @@ impl AcmeManager {
             .await
             .map_err(|e| AcmeError::Protocol(e.to_string()))?;
 
-        self.process_authorizations(&mut order, authorizations).await?;
+        self.process_authorizations(&mut order, authorizations)
+            .await?;
 
         let (cert_chain, private_key_pem) = self.finalize_order(&mut order).await?;
 
@@ -385,7 +386,10 @@ impl AcmeManager {
     }
 
     #[cfg(feature = "acme")]
-    async fn finalize_order(&self, order: &mut instant_acme::Order) -> Result<(String, String), AcmeError> {
+    async fn finalize_order(
+        &self,
+        order: &mut instant_acme::Order,
+    ) -> Result<(String, String), AcmeError> {
         // Generate CSR
         let mut params = rcgen::CertificateParams::new(self.config.domains.clone())
             .map_err(|e| AcmeError::Certificate(e.to_string()))?;
@@ -433,7 +437,6 @@ impl AcmeManager {
             }
         }
     }
-
 
     #[cfg(feature = "acme")]
     #[allow(clippy::cognitive_complexity)]

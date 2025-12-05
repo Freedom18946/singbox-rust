@@ -2,10 +2,7 @@
 
 use super::{api, traffic::TrafficManager, user::UserManager};
 use crate::service::{Service, ServiceContext, StartStage};
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{routing::get, Router};
 use sb_config::ir::ServiceIR;
 
 use std::net::SocketAddr;

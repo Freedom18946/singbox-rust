@@ -107,7 +107,9 @@ impl OutboundConnector for Socks4Connector {
                     .await
                     .with_context(|| format!("Failed to connect to SOCKS4 proxy {}", proxy_addr))
                     .map_err(|e| AdapterError::Other(e.to_string()))?
-                    .with_context(|| format!("TCP connection to SOCKS4 proxy {} failed", proxy_addr))
+                    .with_context(|| {
+                        format!("TCP connection to SOCKS4 proxy {} failed", proxy_addr)
+                    })
                     .map_err(|e| AdapterError::Other(e.to_string()))?;
 
             // Perform SOCKS4/SOCKS4a handshake
@@ -231,7 +233,7 @@ impl Socks4Connector {
         }
         request.push(0x00); // Null terminator
 
-        // SOCKS4a: Domain name (null-terminated string)  
+        // SOCKS4a: Domain name (null-terminated string)
         if use_socks4a {
             request.extend_from_slice(target.host.as_bytes());
             request.push(0x00); // Null terminator

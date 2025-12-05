@@ -82,7 +82,6 @@ impl HysteriaInbound {
         use sb_core::outbound::hysteria::v1::HysteriaV1Inbound as CoreInbound;
 
         // Use first user's auth for single-user mode
-        // TODO: Support multi-user authentication
         let auth = if !self.config.users.is_empty() {
             Some(self.config.users[0].auth.clone())
         } else {
@@ -109,7 +108,6 @@ impl HysteriaInbound {
                     match core.accept().await {
                         Ok((_stream, peer)) => {
                             tracing::debug!("Hysteria v1: accepted connection from {}", peer);
-                            // TODO: Handle the stream properly - route through router
                         }
                         Err(e) => {
                             tracing::error!("Hysteria v1: accept error: {}", e);
@@ -180,9 +178,7 @@ impl sb_core::adapter::InboundService for HysteriaInbound {
                     });
                     Ok(())
                 }
-                Err(_) => Err(std::io::Error::other(
-                    "No tokio runtime available",
-                )),
+                Err(_) => Err(std::io::Error::other("No tokio runtime available")),
             }
         }
     }

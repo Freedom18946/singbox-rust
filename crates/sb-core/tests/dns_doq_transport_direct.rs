@@ -3,8 +3,6 @@ use sb_core::dns::transport::{DnsTransport, DoqTransport};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-
-
 fn build_dns_resp(id: u16, qname: &[u8], qtype: u16) -> Vec<u8> {
     let mut out = Vec::new();
     // header: ID, flags=0x8180 (standard response, no error), QD=1, AN=1, NS=0, AR=0

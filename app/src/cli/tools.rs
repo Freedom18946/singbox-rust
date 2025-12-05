@@ -42,7 +42,7 @@ pub enum ToolsCmd {
         /// Destination directory to write geoip.db and geosite.db
         #[arg(long, value_name = "DIR", default_value = "./data")]
         dest: PathBuf,
-        /// GeoIP database URL
+        /// `GeoIP` database URL
         #[arg(
             long,
             default_value = "https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db"
@@ -93,7 +93,7 @@ pub enum ToolsCmd {
         /// Domain to lookup
         #[arg(value_name = "DOMAIN")]
         domain: String,
-        /// DNS server address (e.g. udp://1.1.1.1)
+        /// DNS server address (e.g. <udp://1.1.1.1>)
         #[arg(short = 's', long = "server")]
         server: Option<String>,
         /// Config file path (to use DNS config)
@@ -173,7 +173,8 @@ async fn connect_tcp(addr: String, config_path: PathBuf, outbound: Option<String
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
     };
     #[cfg(not(feature = "router"))]
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
     // Parse host:port
     let (host, port) = parse_addr(&addr).context("invalid address, expected host:port")?;
@@ -244,10 +245,15 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
         #[cfg(feature = "router")]
         let bridge = {
             let engine = sb_core::routing::engine::Engine::new(&ir);
-            sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
+            sb_core::adapter::bridge::build_bridge(
+                &ir,
+                engine,
+                sb_core::context::Context::default(),
+            )
         };
         #[cfg(not(feature = "router"))]
-        let bridge = sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
+        let bridge =
+            sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
         bridge.find_udp_factory(name)
     } else {
@@ -278,17 +284,12 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
         // udp -> stdout
         let s2 = tokio::spawn(async move {
             let mut stdout = tokio::io::stdout();
-            loop {
-                match sess.recv_from().await {
-                    Ok((data, _src)) => {
-                        if tokio::io::AsyncWriteExt::write_all(&mut stdout, &data)
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
+            while let Ok((data, _src)) = sess.recv_from().await {
+                if tokio::io::AsyncWriteExt::write_all(&mut stdout, &data)
+                    .await
+                    .is_err()
+                {
+                    break;
                 }
             }
             let _ = tokio::io::AsyncWriteExt::flush(&mut stdout).await;
@@ -298,7 +299,7 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
     }
 
     // Fallback: direct UDP
-    let target = format!("{}:{}", host, port);
+    let target = format!("{host}:{port}");
     let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.context("bind udp")?);
     sock.connect(&target).await.context("connect udp")?;
 
@@ -406,7 +407,7 @@ async fn synctime(server: String, timeout: u64) -> Result<()> {
 
     let t0 = ntp_now_seconds();
     let offset = compute_ntp_offset(t0, &buf);
-    println!("ntp_server={server} offset_seconds={:.6}", offset);
+    println!("ntp_server={server} offset_seconds={offset:.6}");
     Ok(())
 }
 
@@ -440,14 +441,14 @@ async fn geodata_update(
             .get(url)
             .send()
             .await
-            .with_context(|| format!("GET {}", url))?;
+            .with_context(|| format!("GET {url}"))?;
         if !rsp.status().is_success() {
             anyhow::bail!("download failed: {} {}", rsp.status(), url);
         }
         let bytes = rsp
             .bytes()
             .await
-            .with_context(|| format!("read body from {}", url))?;
+            .with_context(|| format!("read body from {url}"))?;
         Ok(bytes.to_vec())
     }
 
@@ -463,12 +464,7 @@ async fn geodata_update(
             hasher.update(data);
             let got = format!("{:x}", hasher.finalize());
             if !got.eq_ignore_ascii_case(expect) {
-                anyhow::bail!(
-                    "{} sha256 mismatch: expected={}, got={}",
-                    label,
-                    expect,
-                    got
-                );
+                anyhow::bail!("{label} sha256 mismatch: expected={expect}, got={got}");
             }
         }
         tokio::fs::write(path, data)
@@ -547,7 +543,7 @@ fn ntp_now_seconds() -> f64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap();
-    (now.as_secs() + NTP_UNIX_DELTA) as f64 + (now.subsec_nanos() as f64) / 1e9
+    (now.as_secs() + NTP_UNIX_DELTA) as f64 + f64::from(now.subsec_nanos()) / 1e9
 }
 
 // Compute NTP offset using a simplified approach when originate timestamp is unavailable in request
@@ -558,9 +554,9 @@ fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
         if b.len() < 8 {
             return 0.0;
         }
-        let secs = u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as u64;
-        let frac = u32::from_be_bytes([b[4], b[5], b[6], b[7]]) as u64;
-        (secs as f64) + (frac as f64) / (u32::MAX as f64 + 1.0)
+        let secs = u64::from(u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+        let frac = u64::from(u32::from_be_bytes([b[4], b[5], b[6], b[7]]));
+        (secs as f64) + (frac as f64) / (f64::from(u32::MAX) + 1.0)
     }
     // In a fully correct exchange we would use t1 (originate), t2 (receive), t3 (transmit), t4 (arrival)
     // Here we approximate with t1≈0 because we didn't set transmit timestamp in the request.
@@ -573,7 +569,7 @@ fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
     let t2n = t2 - base;
     let t3n = t3 - base;
     // offset ≈ ((t2 - t1) + (t3 - t0)) / 2 with t1≈0, using normalized values
-    ((t2n - t1) + (t3n - t0n)) / 2.0
+    f64::midpoint(t2n - t1, t3n - t0n)
 }
 
 #[cfg(test)]
@@ -656,7 +652,7 @@ async fn dns_lookup(
     let resolver: Arc<dyn Resolver> = if let Some(s) = server {
         // Build single upstream resolver
         let up = sb_core::dns::config_builder::build_upstream(&s)?
-            .ok_or_else(|| anyhow::anyhow!("invalid upstream address: {}", s))?;
+            .ok_or_else(|| anyhow::anyhow!("invalid upstream address: {s}"))?;
         Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![up]))
     } else if let Some(p) = config {
         // Load from config
@@ -701,7 +697,7 @@ async fn dns_lookup(
 
     let answer = resolver.resolve(&domain).await?;
     for ip in answer.ips {
-        println!("{}", ip);
+        println!("{ip}");
     }
 
     Ok(())

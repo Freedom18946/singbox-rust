@@ -29,4 +29,7 @@ pub mod manager;
 #[cfg(feature = "scaffold")]
 pub mod unsupported;
 
+/// Loopback detection for preventing routing loops.
+pub mod loopback;
+
 pub use manager::InboundManager;

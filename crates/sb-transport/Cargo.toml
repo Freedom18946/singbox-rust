@@ -19,6 +19,13 @@ transport_h2 = ["dep:h2", "dep:http"]
 transport_grpc = ["dep:tonic", "dep:prost", "dep:async-stream", "transport_h2", "tonic-build"]
 transport_mux = ["dep:yamux"]
 transport_httpupgrade = []
+transport_obfs = []       # simple-obfs plugin support
+transport_uot = []        # UDP over TCP support
+transport_sip003 = []     # SIP003 plugin protocol
+transport_trojan = ["dep:sha2", "dep:hex"]     # Trojan transport
+transport_grpc_lite = []  # Lightweight gRPC without tonic
+transport_wireguard = ["dep:boringtun"]  # WireGuard transport
+transport_tailscale = []  # Tailscale MagicDNS and coordination
 failpoints = ["dep:fail"]
 
 [dependencies]
@@ -55,6 +62,10 @@ prost = { version = "0.13", optional = true }
 async-stream = { version = "0.3", optional = true }
 yamux = { version = "0.13", optional = true }
 prometheus = { workspace = true, optional = true }
+boringtun = { git = "https://github.com/cloudflare/boringtun", branch = "master", optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+sb-platform = { path = "../sb-platform" }
 
 [build-dependencies]
 tonic-build = { version = "0.12", optional = true }

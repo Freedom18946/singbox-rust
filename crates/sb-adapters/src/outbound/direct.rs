@@ -88,10 +88,9 @@ impl Outbound for DirectOutbound {
             }
             Address::Domain(host, port) => {
                 // Resolve all addresses and use Happy Eyeballs
-                let addrs: Vec<SocketAddr> =
-                    tokio::net::lookup_host((host.as_str(), port))
-                        .await?
-                        .collect();
+                let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+                    .await?
+                    .collect();
                 Self::happy_eyeballs_connect(addrs).await
             }
         }

@@ -85,6 +85,7 @@ impl OutboundTcp for ShadowTlsOutbound {
 
         record_connect_attempt(crate::outbound::OutboundKind::ShadowTls);
 
+        #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
         // Connect to the ShadowTLS server (decoy)

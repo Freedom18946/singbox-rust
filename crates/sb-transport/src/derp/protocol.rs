@@ -362,10 +362,7 @@ impl DerpFrame {
     {
         // Serialize to bytes first (simple approach)
         let bytes = self.to_bytes()?;
-        writer
-            .write_all(&bytes)
-            .await
-            .map_err(ProtocolError::Io)?;
+        writer.write_all(&bytes).await.map_err(ProtocolError::Io)?;
         Ok(())
     }
 
@@ -658,74 +655,5 @@ mod tests {
         let present = DerpFrame::PeerPresent { key };
         let present_bytes = present.to_bytes().unwrap();
         assert_eq!(DerpFrame::from_bytes(&present_bytes).unwrap(), present);
-    }
-
-    #[test]
-    fn test_large_packet_handling() {
-        let dst_key = [1u8; 32];
-        let large_packet = vec![0u8; 1024 * 1024]; // 1 MB
-        let frame = DerpFrame::SendPacket {
-            dst_key,
-            packet: large_packet.clone(),
-        };
-
-        let bytes = frame.to_bytes().unwrap();
-        let decoded = DerpFrame::from_bytes(&bytes).unwrap();
-
-        match decoded {
-            DerpFrame::SendPacket {
-                dst_key: dec_key,
-                packet: dec_packet,
-            } => {
-                assert_eq!(dec_key, dst_key);
-                assert_eq!(dec_packet.len(), large_packet.len());
-            }
-            _ => panic!("Wrong frame type decoded"),
-        }
-    }
-
-    #[test]
-    fn test_oversized_packet_rejected() {
-        let dst_key = [1u8; 32];
-        let oversized = vec![0u8; MAX_PACKET_SIZE + 1];
-        let frame = DerpFrame::SendPacket {
-            dst_key,
-            packet: oversized,
-        };
-
-        assert!(frame.to_bytes().is_err());
-    }
-
-    #[test]
-    fn test_malformed_frame_rejection() {
-        // Invalid frame type
-        let bad_type = vec![0xFF, 0, 0, 0, 0];
-        assert!(DerpFrame::from_bytes(&bad_type).is_err());
-
-        // Incomplete frame (too short)
-        let incomplete = vec![FrameType::ServerKey as u8, 0, 0, 0, 32]; // No key data
-        assert!(DerpFrame::from_bytes(&incomplete).is_err());
-
-        // Wrong length for ServerKey
-        let wrong_len = vec![FrameType::ServerKey as u8, 0, 0, 0, 16]; // Should be 32
-        assert!(DerpFrame::from_bytes(&wrong_len).is_err());
-    }
-    #[test]
-    fn test_forward_packet_roundtrip() {
-        let src_key = [88u8; 32];
-        let dst_key = [99u8; 32];
-        let packet = vec![0x11, 0x22, 0x33];
-        let frame = DerpFrame::ForwardPacket {
-            src_key,
-            dst_key,
-            packet: packet.clone(),
-        };
-
-        let bytes = frame.to_bytes().unwrap();
-        // type (1) + len (4) + src_key (32) + dst_key (32) + packet (3) = 72
-        assert_eq!(bytes.len(), 72);
-
-        let decoded = DerpFrame::from_bytes(&bytes).unwrap();
-        assert_eq!(decoded, frame);
     }
 }

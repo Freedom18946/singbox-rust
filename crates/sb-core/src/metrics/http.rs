@@ -101,13 +101,17 @@ pub fn set_active_connections(_count: usize) {
 /// Increment active connections
 pub fn inc_active_connections() {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[] as &[&str]).inc();
+    HTTP_ACTIVE_CONNECTIONS
+        .with_label_values(&[] as &[&str])
+        .inc();
 }
 
 /// Decrement active connections
 pub fn dec_active_connections() {
     #[cfg(feature = "metrics")]
-    HTTP_ACTIVE_CONNECTIONS.with_label_values(&[] as &[&str]).dec();
+    HTTP_ACTIVE_CONNECTIONS
+        .with_label_values(&[] as &[&str])
+        .dec();
 }
 
 /// Error classes for HTTP operations

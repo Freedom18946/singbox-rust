@@ -50,7 +50,9 @@ fn start_echo() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
 
 #[test]
 fn http_inbound_basic_auth_required() {
-    let _ = tracing_subscriber::fmt().with_env_filter("debug").try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("debug")
+        .try_init();
     sb_adapters::register_all();
     let (echo_addr, _eh) = start_echo();
     if echo_addr.port() == 0 {
@@ -108,7 +110,7 @@ fn http_inbound_basic_auth_required() {
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let switchboard = OutboundSwitchboard::new();
     let rt = Runtime::new(eng, br, switchboard).start();
-    
+
     // no auth → 407
     {
         // Wait for server to start with retry

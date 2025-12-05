@@ -91,7 +91,7 @@ impl TcpSessionManager {
         tun_writer: Arc<dyn TunWriter + Send + Sync>,
     ) -> Arc<TcpSession> {
         let (to_outbound_tx, to_outbound_rx) = mpsc::channel::<Bytes>(64);
-        
+
         let outbound_addr = outbound
             .peer_addr()
             .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
@@ -106,7 +106,7 @@ impl TcpSessionManager {
         // Spawn relay tasks
         let tuple_copy = tuple;
         let sessions = Arc::clone(&self.sessions);
-        
+
         // TUN -> Outbound relay
         tokio::spawn(relay_tun_to_outbound(
             to_outbound_rx,
@@ -118,7 +118,7 @@ impl TcpSessionManager {
 
         // Insert into session map
         self.sessions.insert(tuple, Arc::clone(&session));
-        
+
         debug!(
             "TCP session created: {}:{} -> {}:{}",
             tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
@@ -165,7 +165,7 @@ async fn relay_tun_to_outbound(
     let tuple_copy = tuple;
     let tun_writer_copy = Arc::clone(&tun_writer);
     let sessions_copy = Arc::clone(&sessions);
-    
+
     tokio::spawn(async move {
         relay_outbound_to_tun(
             &mut outbound_read,
@@ -213,7 +213,7 @@ async fn relay_outbound_to_tun(
     let mut buf = vec![0u8; 8192];
     let mut seq = 1000u32; // Simplified: real impl should track actual seq
     let mut ack = 1000u32;
-    
+
     loop {
         match outbound_read.read(&mut buf).await {
             Ok(0) => {
@@ -222,9 +222,11 @@ async fn relay_outbound_to_tun(
                     "TCP session EOF: {}:{} -> {}:{}",
                     tuple.src_ip, tuple.src_port, tuple.dst_ip, tuple.dst_port
                 );
-                
+
                 // Send FIN packet
-                if let Ok(fin_packet) = build_tcp_response_packet(tuple.reverse(), &[], seq, ack, 0x11) {
+                if let Ok(fin_packet) =
+                    build_tcp_response_packet(tuple.reverse(), &[], seq, ack, 0x11)
+                {
                     let _ = tun_writer.write_packet(&fin_packet).await;
                 }
                 break;
@@ -238,7 +240,7 @@ async fn relay_outbound_to_tun(
                     tuple.dst_ip,
                     tuple.dst_port
                 );
-                
+
                 // Build response packet (reversed tuple for reply direction)
                 match build_tcp_response_packet(tuple.reverse(), &buf[..n], seq, ack, 0x18) {
                     Ok(packet) => {
@@ -291,7 +293,7 @@ pub fn build_tcp_response_packet(
     flags: u8,
 ) -> std::io::Result<Vec<u8>> {
     use std::net::Ipv4Addr;
-    
+
     match (tuple.src_ip, tuple.dst_ip) {
         (IpAddr::V4(src), IpAddr::V4(dst)) => {
             // Use external packet construction module
@@ -328,7 +330,7 @@ mod tests {
             "93.184.216.34".parse().unwrap(),
             80,
         );
-        
+
         let reversed = tuple.reverse();
         assert_eq!(reversed.src_ip, tuple.dst_ip);
         assert_eq!(reversed.src_port, tuple.dst_port);
@@ -340,7 +342,7 @@ mod tests {
     fn test_session_manager_create() {
         let mgr = TcpSessionManager::new();
         assert_eq!(mgr.count(), 0);
-        
+
         // Session creation requires actual TcpStream, skip in unit test
         // Integration test will cover this
     }
@@ -353,11 +355,10 @@ mod tests {
             "93.184.216.34".parse().unwrap(),
             80,
         );
-        
+
         let packet = build_tcp_response_packet(tuple, b"Hello", 1000, 2000, 0x18);
         assert!(packet.is_ok());
         let packet = packet.unwrap();
         assert!(packet.len() >= 40); // IP + TCP headers minimum
     }
 }
-

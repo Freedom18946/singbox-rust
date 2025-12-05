@@ -153,10 +153,10 @@ mod config_tests {
                 skip_cert_verify: true,
                 udp_relay_mode: UdpRelayMode::Native,
                 udp_over_stream: false,
-            sni: None,
-            tls_ca_paths: vec![],
-            tls_ca_pem: vec![],
-            zero_rtt_handshake: false,
+                sni: None,
+                tls_ca_paths: vec![],
+                tls_ca_pem: vec![],
+                zero_rtt_handshake: false,
             };
 
             assert_eq!(config.congestion_control, Some(expected.to_string()));

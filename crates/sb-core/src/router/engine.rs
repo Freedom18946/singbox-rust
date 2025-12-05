@@ -11,11 +11,11 @@ use std::time::Instant;
 use tracing::warn;
 // no PhantomData needed in the compatibility layer
 
+use crate::geoip::lookup_with_metrics_decision;
 use crate::router::{
-    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
-    runtime_override_udp, RouterIndex, shared_index,
+    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip, runtime_override_udp,
+    shared_index, RouteTarget, RouterIndex,
 };
-
 
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`
 pub struct RouterHandle {
@@ -581,7 +581,7 @@ impl RouterHandle {
     /// 通用决策入口：支持所有规则类型的复合匹配
     pub fn decide(&self, ctx: &crate::router::RouteCtx) -> crate::router::rules::Decision {
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
-        
+
         // 1. 构造 rules::RouteCtx 并填充元数据
         let mut rules_ctx = crate::router::rules::RouteCtx {
             domain: ctx.host,
@@ -603,6 +603,13 @@ impl RouterHandle {
             inbound_tag: ctx.inbound_tag,
             auth_user: ctx.auth_user,
             query_type: ctx.query_type,
+            clash_mode: ctx.clash_mode,
+            client: ctx.client,
+            package_name: ctx.package_name,
+            network_type: ctx.network_type,
+            network_is_expensive: ctx.network_is_expensive,
+            network_is_constrained: ctx.network_is_constrained,
+            outbound_tag: ctx.outbound_tag,
             // Negation fields are handled by CompositeRule::matches using the same context
             ..Default::default()
         };
@@ -610,9 +617,9 @@ impl RouterHandle {
         // Resolve GeoSite
         if let Some(host) = ctx.host {
             if let Some(geosite_db) = &self.geosite_db {
-                 rules_ctx.geosite_codes = geosite_db.lookup_categories(host);
+                rules_ctx.geosite_codes = geosite_db.lookup_categories(host);
             }
-            
+
             // Resolve RuleSet (domain)
             if let Some(rule_set_db) = &self.rule_set_db {
                 let mut matched_tags = Vec::new();
@@ -620,7 +627,7 @@ impl RouterHandle {
                 rules_ctx.rule_sets.extend(matched_tags);
             }
         }
-        
+
         // Resolve GeoIP
         if let Some(ip) = ctx.ip {
             if let Some(geoip_db) = &self.geoip_db {
@@ -628,11 +635,11 @@ impl RouterHandle {
                     rules_ctx.geoip_code = Some(code);
                 }
             }
-             // Resolve RuleSet (IP)
+            // Resolve RuleSet (IP)
             if let Some(rule_set_db) = &self.rule_set_db {
                 let mut matched_tags = Vec::new();
                 rule_set_db.match_ip(ip, &mut matched_tags);
-                 rules_ctx.rule_sets.extend(matched_tags);
+                rules_ctx.rule_sets.extend(matched_tags);
             }
         }
 
@@ -644,14 +651,14 @@ impl RouterHandle {
                 }
             }
         }
-        
+
         // 2. Iterate composite rules
         for rule in &idx.rules {
             if rule.matches(&rules_ctx) {
                 return rule.decision.clone();
             }
         }
-        
+
         // Helper to convert legacy tag to Decision
         let tag_to_decision = |tag: &str| -> crate::router::rules::Decision {
             match tag {
@@ -663,27 +670,29 @@ impl RouterHandle {
 
         // 3. Fallback to legacy optimized checks (if no composite rule matched)
         if idx.rules.is_empty() {
-             // Check exact/suffix first
+            // Check exact/suffix first
             if let Some(host) = ctx.host {
                 if let Some(d) = super::router_index_decide_exact_suffix(&idx, host) {
                     return tag_to_decision(d);
                 }
-                 // Check GeoSite rules
+                // Check GeoSite rules
                 if let Some(geosite_db) = &self.geosite_db {
                     if let Some(d) = super::router_index_decide_geosite(&idx, host, geosite_db) {
                         return tag_to_decision(d);
                     }
                 }
             }
-            
+
             if let Some(ip) = ctx.ip {
                 if let Some(d) = super::router_index_decide_ip(&idx, ip) {
                     return tag_to_decision(d);
                 }
             }
-            
+
             // Check transport/port
-            if let Some(d) = super::router_index_decide_transport_port(&idx, ctx.port, Some(ctx.network)) {
+            if let Some(d) =
+                super::router_index_decide_transport_port(&idx, ctx.port, Some(ctx.network))
+            {
                 return tag_to_decision(d);
             }
         }
@@ -697,7 +706,7 @@ impl RouterHandle {
             crate::net::datagram::UdpTargetAddr::Ip(addr) => (None, Some(addr.ip())),
             crate::net::datagram::UdpTargetAddr::Domain { host, .. } => (Some(host.as_str()), None),
         };
-        
+
         let port = match target {
             crate::net::datagram::UdpTargetAddr::Ip(addr) => Some(addr.port()),
             crate::net::datagram::UdpTargetAddr::Domain { port, .. } => Some(*port),
@@ -741,11 +750,11 @@ impl RouterHandle {
     #[allow(unused_variables)]
     pub async fn decide_udp_async(&self, host: &str) -> String {
         let started = Instant::now();
-        let __budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+        let _budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(5);
-        let __idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+            .unwrap_or(100);
+        let _idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host);
         // 复合缓存键：transport|host_norm（UDP 无端口）
         let cache_key = format!("udp|{}", host_norm);
@@ -778,7 +787,7 @@ impl RouterHandle {
             network: "udp",
             ..Default::default()
         };
-        
+
         let d = self.decide(&ctx);
         // Check if decision is not default (or if we want to cache everything)
         // For now, cache everything

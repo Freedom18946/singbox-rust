@@ -190,7 +190,6 @@ fn test_system_resolver_parsing() -> Result<()> {
 fn test_all_dns_transports_available() {
     // Test that all DNS transports can be imported when features are enabled
 
-
     // This is a compile-time test - if it compiles, all transports are available
     // No runtime assertion needed
 }

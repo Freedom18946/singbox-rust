@@ -3,8 +3,6 @@
 //! Comprehensive integration tests for all inbound and outbound protocol adapters.
 //! This test suite validates that all 36 protocols (17 inbound + 19 outbound) can be registered
 
-
-
 /// Register all adapters before running tests
 fn setup() {
     sb_adapters::register_all();

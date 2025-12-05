@@ -337,45 +337,33 @@ docker run -d \
 
 ### Tailscale Limitations
 
-**Status:** ⚠️ Blocked
+**Status:** ⚠️ Stubbed (direct fallback)
 
-**Reason:** Both `tsnet` (v0.1.0) and `libtailscale` (v0.2.0) crates fail to build on macOS ARM64 due to Go build constraints in gvisor dependencies.
+- Outbound/endpoint configs with `type: "tailscale"` now build and run, but traffic is delegated to the direct connector (no tailnet tunnel).
+- Feature flags: `sb-adapters` `adapter-tailscale`, `adapter-tailscale-endpoint` (optional); sb-core `out_tailscale` remains a placeholder for future native bindings.
 
-**Error example:**
+**Reason:** Both `tsnet` (v0.1.0) and `libtailscale` (v0.2.0) crates fail to build on macOS ARM64 due to Go/gvisor constraints.
+
+**Workarounds today:**
+1) Use WireGuard endpoint instead (recommended):
+```json
+{
+  "endpoints": [{
+    "type": "wireguard",
+    "tag": "wg0",
+    "wireguard_address": ["10.0.0.2/24"],
+    "wireguard_private_key": "YOUR_KEY",
+    "wireguard_peers": [{
+      "public_key": "PEER_KEY",
+      "address": "vpn.example.com",
+      "port": 51820,
+      "allowed_ips": ["0.0.0.0/0"]
+    }]
+  }]
+}
 ```
-build constraints exclude all Go files in gvisor.dev/gvisor/pkg/gohacks
-```
-
-**Workarounds:**
-
-1. **Use WireGuard Endpoint Instead:**
-   ```json
-   {
-     "endpoints": [{
-       "type": "wireguard",
-       "tag": "wg0",
-       "wireguard_address": ["10.0.0.2/24"],
-       "wireguard_private_key": "YOUR_KEY",
-       "wireguard_peers": [{
-         "public_key": "PEER_KEY",
-         "address": "vpn.example.com",
-         "port": 51820,
-         "allowed_ips": ["0.0.0.0/0"]
-       }]
-     }]
-   }
-   ```
-
-2. **Run Tailscale Externally:**
-   - Install Tailscale system package
-   - Configure routes manually
-   - Use Direct outbound for Tailscale addresses
-
-3. **Monitor Build Status:**
-   - Track upstream tsnet/libtailscale releases
-   - Check TAILSCALE_RESEARCH.md for updates
-
-**Research:** See [docs/TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md) for detailed investigation.
+2) Run the system Tailscale client and route via direct outbound (current stub behavior).
+3) Monitor tsnet/libtailscale upstream; see [docs/TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md).
 
 ### WireGuard Endpoint
 

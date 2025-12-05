@@ -327,9 +327,10 @@ impl AsyncRead for Http2StreamAdapter {
 
                 Poll::Ready(Ok(()))
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
-                format!("HTTP/2 read error: {}", e),
-            ))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(format!(
+                "HTTP/2 read error: {}",
+                e
+            )))),
             Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
             Poll::Pending => Poll::Pending,
         }
@@ -360,14 +361,16 @@ impl AsyncWrite for Http2StreamAdapter {
                 let data = Bytes::copy_from_slice(&buf[..to_write]);
                 match self.send_stream.send_data(data, false) {
                     Ok(_) => Poll::Ready(Ok(to_write)),
-                    Err(e) => Poll::Ready(Err(std::io::Error::other(
-                        format!("HTTP/2 write error: {}", e),
-                    ))),
+                    Err(e) => Poll::Ready(Err(std::io::Error::other(format!(
+                        "HTTP/2 write error: {}",
+                        e
+                    )))),
                 }
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(
-                format!("HTTP/2 capacity error: {}", e),
-            ))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(format!(
+                "HTTP/2 capacity error: {}",
+                e
+            )))),
             Poll::Ready(None) => Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "HTTP/2 stream closed",

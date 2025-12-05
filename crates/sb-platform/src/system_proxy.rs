@@ -493,7 +493,9 @@ impl SystemProxyManager {
 
     #[cfg(target_os = "windows")]
     fn enable_windows(&self) -> io::Result<()> {
-        // Registry-based; wininet equivalent would require FFI.
+        use winreg::enums::*;
+        use winreg::RegKey;
+
         let proxy_server = if self.support_socks {
             format!(
                 "http=127.0.0.1:{p};https=127.0.0.1:{p};socks=127.0.0.1:{p}",
@@ -503,55 +505,54 @@ impl SystemProxyManager {
             format!("http=127.0.0.1:{p};https=127.0.0.1:{p}", p = self.port)
         };
 
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-                "/v",
-                "ProxyEnable",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                "1",
-                "/f",
-            ])
-            .output();
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let (settings, _) = hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
 
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-                "/v",
-                "ProxyServer",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &proxy_server,
-                "/f",
-            ])
-            .output();
+        settings.set_value("ProxyEnable", &1u32)?;
+        settings.set_value("ProxyServer", &proxy_server)?;
+        
+        // Add default bypass for localhost if not present?
+        // Logic in Go adds "<local>" usually. Let's add it if missing or just set standard bypass.
+        // For now, minimal change to match previous logic (Command just set server/enable).
+        // Previous logic didn't set override.
+        // But `wininet.rs` detection reads it. 
+        // Let's set a sensible default for bypass if not existing?
+        // Or just leave it? Go implementation usually sets it.
+        // Let's stick to simple Enable for now, matching the `reg add` commands we replaced.
 
+        Self::notify_system_proxy_change();
         info!("System proxy set on Windows -> 127.0.0.1:{}", self.port);
         Ok(())
     }
 
     #[cfg(target_os = "windows")]
     fn disable_windows(&self) -> io::Result<()> {
-        let _ = Command::new("reg")
-            .args([
-                "add",
-                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-                "/v",
-                "ProxyEnable",
-                "/t",
-                "REG_DWORD",
-                "/d",
-                "0",
-                "/f",
-            ])
-            .output();
+        use winreg::enums::*;
+        use winreg::RegKey;
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let (settings, _) = hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
+
+        settings.set_value("ProxyEnable", &0u32)?;
+
+        Self::notify_system_proxy_change();
         info!("System proxy disabled (windows)");
         Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn notify_system_proxy_change() {
+        // Notify system that proxy settings have changed
+        // This makes changes effective immediately without restart
+        use windows::Win32::Networking::WinInet::{
+            InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
+        };
+        
+        // We use a separate function to isolate the unsafe block and dependency
+        unsafe {
+            let _ = InternetSetOptionW(None, INTERNET_OPTION_SETTINGS_CHANGED, None, 0);
+            let _ = InternetSetOptionW(None, INTERNET_OPTION_REFRESH, None, 0);
+        }
     }
 }
 

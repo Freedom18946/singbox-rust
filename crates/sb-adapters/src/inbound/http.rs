@@ -6,10 +6,10 @@
 //! - P1.5：IO 计量统一走 sb_core::net::metered。
 
 use anyhow::{anyhow, Result};
+use base64::{engine::general_purpose, Engine as _};
+use sb_config::ir::Credentials;
 use sb_core::obs::access;
 use sb_transport::IoStream;
-use sb_config::ir::Credentials;
-use base64::{Engine as _, engine::general_purpose};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -288,7 +288,7 @@ where
     let (method, target, _version, headers) = match read_request_head(&mut cli).await {
         Ok(v) => v,
         Err(e) => {
-             #[cfg(feature = "metrics")]
+            #[cfg(feature = "metrics")]
             {
                 metrics::counter!("http_respond_total", "code" => "400").increment(1);
                 counter!("http_requests_total", "method"=>"_parse_error", "code"=>"400")
@@ -326,12 +326,20 @@ where
                 if line.to_lowercase().starts_with("proxy-authorization:") {
                     let val = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
                     if let Some(cred) = val.strip_prefix("Basic ") {
-                         if let Ok(decoded) = general_purpose::STANDARD.decode(cred) {
+                        if let Ok(decoded) = general_purpose::STANDARD.decode(cred) {
                             if let Ok(auth_str) = String::from_utf8(decoded) {
                                 if let Some((u, p)) = auth_str.split_once(':') {
                                     for user in users {
-                                        let expected_u = user.username.as_deref().or(user.username_env.as_deref()).unwrap_or("");
-                                        let expected_p = user.password.as_deref().or(user.password_env.as_deref()).unwrap_or("");
+                                        let expected_u = user
+                                            .username
+                                            .as_deref()
+                                            .or(user.username_env.as_deref())
+                                            .unwrap_or("");
+                                        let expected_p = user
+                                            .password
+                                            .as_deref()
+                                            .or(user.password_env.as_deref())
+                                            .unwrap_or("");
                                         if u == expected_u && p == expected_p {
                                             authenticated = true;
                                             break;
@@ -339,10 +347,12 @@ where
                                     }
                                 }
                             }
-                         }
+                        }
                     }
                 }
-                if authenticated { break; }
+                if authenticated {
+                    break;
+                }
             }
 
             if !authenticated {
@@ -653,8 +663,9 @@ where
 }
 
 #[allow(dead_code)]
-async fn read_request_head<S>(cli: &mut S) -> Result<(String, String, String, Vec<u8>)> 
-where S: tokio::io::AsyncRead + Unpin
+async fn read_request_head<S>(cli: &mut S) -> Result<(String, String, String, Vec<u8>)>
+where
+    S: tokio::io::AsyncRead + Unpin,
 {
     let mut buf = Vec::with_capacity(1024);
     let mut tmp = [0u8; 512];

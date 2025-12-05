@@ -14,7 +14,7 @@ pub mod resolved;
 
 #[cfg(feature = "service_ssmapi")]
 pub mod ssmapi;
-
+pub mod tailscale;
 pub mod v2ray_api;
 
 use std::io::Error;

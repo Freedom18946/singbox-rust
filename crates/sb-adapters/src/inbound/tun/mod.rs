@@ -9,13 +9,13 @@
 #![allow(unused, dead_code)]
 
 use std::io;
-use std::sync::Arc;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::Value;
-use tracing::{debug, trace, warn, info};
+use tracing::{debug, info, trace, warn};
 
 use sb_core::outbound::RouteTarget;
 use sb_core::router::engine::{RouteCtx, Transport};
@@ -214,8 +214,16 @@ impl TunInbound {
         TunPlatformConfig {
             interface_name: self.cfg.name.clone(),
             mtu: self.cfg.mtu,
-            inet4_address: self.cfg.inet4_address.as_ref().and_then(|s| s.split('/').next()?.parse().ok()),
-            inet6_address: self.cfg.inet6_address.as_ref().and_then(|s| s.split('/').next()?.parse().ok()),
+            inet4_address: self
+                .cfg
+                .inet4_address
+                .as_ref()
+                .and_then(|s| s.split('/').next()?.parse().ok()),
+            inet6_address: self
+                .cfg
+                .inet6_address
+                .as_ref()
+                .and_then(|s| s.split('/').next()?.parse().ok()),
             auto_route: self.cfg.auto_route,
             auto_redirect: self.cfg.auto_redirect,
             strict_route: self.cfg.strict_route,
@@ -233,7 +241,9 @@ impl TunInbound {
     /// Configure platform hooks (auto_route, auto_redirect)
     fn configure_platform(&self) -> io::Result<()> {
         if !self.cfg.auto_route && !self.cfg.auto_redirect && !self.cfg.strict_route {
-            debug!("No platform hooks to configure (auto_route/auto_redirect/strict_route all false)");
+            debug!(
+                "No platform hooks to configure (auto_route/auto_redirect/strict_route all false)"
+            );
             return Ok(());
         }
 
@@ -283,7 +293,10 @@ impl TunInbound {
 
         // Configure platform hooks (auto_route, auto_redirect, strict_route)
         if let Err(e) = self.configure_platform() {
-            warn!("Failed to configure platform hooks: {} - continuing without routing", e);
+            warn!(
+                "Failed to configure platform hooks: {} - continuing without routing",
+                e
+            );
         }
         // Spawn test-only memory feeder pump
         #[cfg(test)]
@@ -337,184 +350,191 @@ impl TunInbound {
                             if let Some(pkt) = sys_macos::parse_frame(&buf[..readn]) {
                                 let (ip, port) = pkt.dst_socket();
                                 use std::net::SocketAddr;
-                                    use std::time::{Duration, Instant};
-                                    let dst = Address::Ip(SocketAddr::new(ip, port));
+                                use std::time::{Duration, Instant};
+                                let dst = Address::Ip(SocketAddr::new(ip, port));
 
-                                    // --- 组装 RequestMeta（补齐旧字段以兼容 engine.rs）
-                                    let _meta = RequestMeta {
-                                        inbound: Some(self.cfg.name.clone()),
-                                        inbound_tag: Some(self.cfg.name.clone()),
-                                        user: self.cfg.user_tag.clone(),
-                                        dst: dst.clone(),
-                                        ..Default::default()
-                                    };
+                                // --- 组装 RequestMeta（补齐旧字段以兼容 engine.rs）
+                                let _meta = RequestMeta {
+                                    inbound: Some(self.cfg.name.clone()),
+                                    inbound_tag: Some(self.cfg.name.clone()),
+                                    user: self.cfg.user_tag.clone(),
+                                    dst: dst.clone(),
+                                    ..Default::default()
+                                };
 
-                                    // --- 组装 ConnectParams（携带 timeout/deadline/transport 等）
-                                    let now = Instant::now();
-                                    let timeout = Duration::from_millis(self.cfg.timeout_ms);
-                                    let _params = ConnectParams {
-                                        target: dst.clone(),
-                                        inbound: Some(self.cfg.name.clone()),
-                                        user: self.cfg.user_tag.clone(),
-                                        sniff_host: None,
-                                        // （若后续仅用于日志，可按需映射为字符串；此处不再保留 Transport::Other）
-                                        transport: None,
-                                        connect_timeout: Some(timeout),
-                                        deadline: Some(now + timeout),
-                                    };
+                                // --- 组装 ConnectParams（携带 timeout/deadline/transport 等）
+                                let now = Instant::now();
+                                let timeout = Duration::from_millis(self.cfg.timeout_ms);
+                                let _params = ConnectParams {
+                                    target: dst.clone(),
+                                    inbound: Some(self.cfg.name.clone()),
+                                    user: self.cfg.user_tag.clone(),
+                                    sniff_host: None,
+                                    // （若后续仅用于日志，可按需映射为字符串；此处不再保留 Transport::Other）
+                                    transport: None,
+                                    connect_timeout: Some(timeout),
+                                    deadline: Some(now + timeout),
+                                };
 
-                                    // --- 路由选择
-                                    // Prefer SNI when available for TLS on port 443; otherwise try HTTP Host on port 80
-                                    let sniff_host = if let Some(head) = &pkt.payload_head {
-                                        if port == 443 {
-                                            if let Some(sni) = sb_core::router::sniff::extract_sni_from_tls_client_hello(head) {
+                                // --- 路由选择
+                                // Prefer SNI when available for TLS on port 443; otherwise try HTTP Host on port 80
+                                let sniff_host = if let Some(head) = &pkt.payload_head {
+                                    if port == 443 {
+                                        if let Some(sni) = sb_core::router::sniff::extract_sni_from_tls_client_hello(head) {
                                                 SNI_OK.fetch_add(1, Ordering::Relaxed);
                                                 Some(sni)
                                             } else {
                                                 SNI_FAIL.fetch_add(1, Ordering::Relaxed);
                                                 None
                                             }
-                                        } else if port == 80 {
-                                            sb_core::router::sniff::extract_http_host_from_request(
-                                                head,
-                                            )
-                                        } else {
-                                            None
-                                        }
+                                    } else if port == 80 {
+                                        sb_core::router::sniff::extract_http_host_from_request(head)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                };
+                                let host_str = match sniff_host.as_ref() {
+                                    Some(s) if !s.is_empty() => s.clone(),
+                                    _ => format!("{}:{}", ip, port),
+                                };
+                                // Heuristic ALPN: UDP:443 is likely QUIC → h3
+                                let _sniff_alpn =
+                                    if matches!(pkt.proto, sys_macos::L4::Udp) && port == 443 {
+                                        Some("h3".to_string())
                                     } else {
                                         None
                                     };
-                                    let host_str = match sniff_host.as_ref() {
-                                        Some(s) if !s.is_empty() => s.clone(),
-                                        _ => format!("{}:{}", ip, port),
-                                    };
-                                    // Heuristic ALPN: UDP:443 is likely QUIC → h3
-                                    let _sniff_alpn =
-                                        if matches!(pkt.proto, sys_macos::L4::Udp) && port == 443 {
-                                            Some("h3".to_string())
-                                        } else {
-                                            None
-                                        };
-                                    if let Some(ref a) = _sniff_alpn {
-                                        tracing::debug!("tun sniff alpn={}", a);
-                                    }
-                                    let route_ctx = RouteCtx {
-                                        host: Some(&host_str),
-                                        ip: Some(ip),
-                                        port: Some(port),
-                                        transport: match pkt.proto {
-                                            sys_macos::L4::Tcp => Transport::Tcp,
-                                            sys_macos::L4::Udp => Transport::Udp,
-                                            _ => Transport::Tcp, // fallback
-                                        },
-                                        ..Default::default()
-                                    };
-                                    let selected_target =
-                                        self.router.select_ctx_and_record(route_ctx);
-                                    let selected = match &selected_target {
-                                        RouteTarget::Named(name) => Some(name.clone()),
-                                        RouteTarget::Kind(kind) => Some(format!("{:?}", kind)),
-                                    };
+                                if let Some(ref a) = _sniff_alpn {
+                                    tracing::debug!("tun sniff alpn={}", a);
+                                }
+                                let route_ctx = RouteCtx {
+                                    host: Some(&host_str),
+                                    ip: Some(ip),
+                                    port: Some(port),
+                                    transport: match pkt.proto {
+                                        sys_macos::L4::Tcp => Transport::Tcp,
+                                        sys_macos::L4::Udp => Transport::Udp,
+                                        _ => Transport::Tcp, // fallback
+                                    },
+                                };
+                                let selected_target = self.router.select_ctx_and_record(route_ctx);
+                                let selected = match &selected_target {
+                                    RouteTarget::Named(name) => Some(name.clone()),
+                                    RouteTarget::Kind(kind) => Some(format!("{:?}", kind)),
+                                };
 
-                                    if self.cfg.dry_run {
-                                        debug!(
+                                if self.cfg.dry_run {
+                                    debug!(
                                             "tun parsed {:?} -> {}:{} | selected={:?} | inbound={} user={:?} timeout={}ms",
                                             pkt.proto, ip, port, selected, self.cfg.name, self.cfg.user_tag, self.cfg.timeout_ms
                                         );
-                                    } else {
-                                        // 仅对 TCP 做"探测拨号后立即关闭"；UDP 先跳过到 2.4
-                                        if matches!(pkt.proto, sys_macos::L4::Tcp) {
-                                            // 当前 RequestMeta.transport = Option<String>，用 "tcp"/"udp"/None 表示
-                                            let transport_opt: Option<String> = match pkt.proto {
-                                                sys_macos::L4::Tcp => Some("tcp".to_string()),
-                                                sys_macos::L4::Udp => Some("udp".to_string()),
-                                                _ => None,
-                                            };
-                                            // 2.3e: 计入一帧
-                                            PACKETS_SEEN.fetch_add(1, Ordering::Relaxed);
+                                } else {
+                                    // 仅对 TCP 做"探测拨号后立即关闭"；UDP 先跳过到 2.4
+                                    if matches!(pkt.proto, sys_macos::L4::Tcp) {
+                                        // 当前 RequestMeta.transport = Option<String>，用 "tcp"/"udp"/None 表示
+                                        let transport_opt: Option<String> = match pkt.proto {
+                                            sys_macos::L4::Tcp => Some("tcp".to_string()),
+                                            sys_macos::L4::Udp => Some("udp".to_string()),
+                                            _ => None,
+                                        };
+                                        // 2.3e: 计入一帧
+                                        PACKETS_SEEN.fetch_add(1, Ordering::Relaxed);
 
-                                            let _meta = RequestMeta {
-                                                inbound: Some(self.cfg.name.clone()),
-                                                user: self.cfg.user_tag.clone(),
-                                                transport: transport_opt,
-                                                sniff_host: sniff_host.clone(),
-                                                ..Default::default()
-                                            };
-                                            // 重用之前的路由选择结果
-                                            let _probe_selected = selected.clone();
-                                            // 避免把 tokio::time::timeout() 遮蔽：本地变量不要叫 `timeout`
-                                            let dial_timeout =
-                                                Duration::from_millis(self.cfg.timeout_ms);
-                                            // 实现探测性连接：基于路由选择的目标进行实际连接测试
-                                            let connection_result = match &selected_target {
-                                                RouteTarget::Named(outbound_name) => {
-                                                    debug!("TUN: Probing connection to {}:{} via outbound '{}'", ip, port, outbound_name);
-                                                    // 当前阶段：使用direct连接进行探测
-                                                    // 实际实现中应该通过outbound管理器获取具体的连接器
-                                                    Self::probe_direct_connection(
-                                                        &ip.to_string(),
-                                                        port,
-                                                        dial_timeout,
-                                                    )
-                                                    .await
-                                                }
-                                                RouteTarget::Kind(kind) => {
-                                                    debug!(
-                                                        "TUN: Probing connection to {}:{} via {:?}",
-                                                        ip, port, kind
-                                                    );
-                                                    match kind {
-                                                        sb_core::outbound::OutboundKind::Direct => {
-                                                            Self::probe_direct_connection(&ip.to_string(), port, dial_timeout).await
-                                                        }
-                                                        sb_core::outbound::OutboundKind::Block => {
-                                                            Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "blocked by routing rule"))
-                                                        }
-                                                        _ => {
-                                                            warn!("TUN: Outbound kind {:?} not yet supported for probing", kind);
-                                                            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "outbound not supported"))
-                                                        }
+                                        let _meta = RequestMeta {
+                                            inbound: Some(self.cfg.name.clone()),
+                                            user: self.cfg.user_tag.clone(),
+                                            transport: transport_opt,
+                                            sniff_host: sniff_host.clone(),
+                                            ..Default::default()
+                                        };
+                                        // 重用之前的路由选择结果
+                                        let _probe_selected = selected.clone();
+                                        // 避免把 tokio::time::timeout() 遮蔽：本地变量不要叫 `timeout`
+                                        let dial_timeout =
+                                            Duration::from_millis(self.cfg.timeout_ms);
+                                        // 实现探测性连接：基于路由选择的目标进行实际连接测试
+                                        let connection_result = match &selected_target {
+                                            RouteTarget::Named(outbound_name) => {
+                                                debug!("TUN: Probing connection to {}:{} via outbound '{}'", ip, port, outbound_name);
+                                                // 当前阶段：使用direct连接进行探测
+                                                // 实际实现中应该通过outbound管理器获取具体的连接器
+                                                Self::probe_direct_connection(
+                                                    &ip.to_string(),
+                                                    port,
+                                                    dial_timeout,
+                                                )
+                                                .await
+                                            }
+                                            RouteTarget::Kind(kind) => {
+                                                debug!(
+                                                    "TUN: Probing connection to {}:{} via {:?}",
+                                                    ip, port, kind
+                                                );
+                                                match kind {
+                                                    sb_core::outbound::OutboundKind::Direct => {
+                                                        Self::probe_direct_connection(
+                                                            &ip.to_string(),
+                                                            port,
+                                                            dial_timeout,
+                                                        )
+                                                        .await
+                                                    }
+                                                    sb_core::outbound::OutboundKind::Block => {
+                                                        Err(std::io::Error::new(
+                                                            std::io::ErrorKind::ConnectionRefused,
+                                                            "blocked by routing rule",
+                                                        ))
+                                                    }
+                                                    _ => {
+                                                        warn!("TUN: Outbound kind {:?} not yet supported for probing", kind);
+                                                        Err(std::io::Error::new(
+                                                            std::io::ErrorKind::NotFound,
+                                                            "outbound not supported",
+                                                        ))
                                                     }
                                                 }
-                                            };
+                                            }
+                                        };
 
-                                            match tokio::time::timeout(dial_timeout, async {
-                                                connection_result
-                                            })
-                                            .await
-                                            {
-                                                Ok(Ok(_)) => {
-                                                    // 2.3e: 计数；连接会在 block 结束时自动关闭
-                                                    TCP_PROBE_OK.fetch_add(1, Ordering::Relaxed);
-                                                    debug!(
+                                        match tokio::time::timeout(dial_timeout, async {
+                                            connection_result
+                                        })
+                                        .await
+                                        {
+                                            Ok(Ok(_)) => {
+                                                // 2.3e: 计数；连接会在 block 结束时自动关闭
+                                                TCP_PROBE_OK.fetch_add(1, Ordering::Relaxed);
+                                                debug!(
                                                         "tun probe dial OK -> {}:{} | closed | user={:?} timeout={}ms",
                                                         ip, port, self.cfg.user_tag, self.cfg.timeout_ms
                                                     );
-                                                }
-                                                Ok(Err(e)) => {
-                                                    // 2.3e: 计数
-                                                    TCP_PROBE_FAIL.fetch_add(1, Ordering::Relaxed);
-                                                    warn!(
+                                            }
+                                            Ok(Err(e)) => {
+                                                // 2.3e: 计数
+                                                TCP_PROBE_FAIL.fetch_add(1, Ordering::Relaxed);
+                                                warn!(
                                                         "tun probe dial FAIL -> {}:{} | user={:?} timeout={}ms | {}",
                                                         ip, port, self.cfg.user_tag, self.cfg.timeout_ms, e
                                                     );
-                                                }
-                                                Err(_elapsed) => {
-                                                    warn!(
+                                            }
+                                            Err(_elapsed) => {
+                                                warn!(
                                                         "tun probe dial TIMEOUT -> {}:{} | user={:?} timeout={}ms",
                                                         ip, port, self.cfg.user_tag, self.cfg.timeout_ms
                                                     );
-                                                }
                                             }
-                                        } else {
-                                            trace!(
-                                                "tun pkt {:?} -> {}:{} | skip probe (UDP/Other)",
-                                                pkt.proto,
-                                                ip,
-                                                port
-                                            );
                                         }
+                                    } else {
+                                        trace!(
+                                            "tun pkt {:?} -> {}:{} | skip probe (UDP/Other)",
+                                            pkt.proto,
+                                            ip,
+                                            port
+                                        );
                                     }
+                                }
                             } else {
                                 tracing::trace!("tun unknown/short frame len={}", readn);
                             }
@@ -771,18 +791,14 @@ impl TunInbound {
             RouteTarget::Kind(OutboundKind::Direct) => {
                 TcpStream::connect(format!("{}:{}", host, port)).await
             }
-            RouteTarget::Kind(OutboundKind::Block) => {
-                Err(io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    "blocked by routing rule",
-                ))
-            }
-            _ => {
-                Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "outbound type not yet supported",
-                ))
-            }
+            RouteTarget::Kind(OutboundKind::Block) => Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                "blocked by routing rule",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "outbound type not yet supported",
+            )),
         }
     }
 
@@ -809,7 +825,6 @@ impl TunInbound {
             ip: Some(dst_ip),
             port: Some(dst_port),
             transport: Transport::Tcp,
-            ..Default::default()
         };
 
         let selected_target = self.router.select_ctx_and_record(route_ctx);
@@ -850,11 +865,11 @@ struct MacOsTunWriter {
 impl TunWriter for MacOsTunWriter {
     async fn write_packet(&self, packet: &[u8]) -> std::io::Result<()> {
         use std::io::Write;
-        
+
         // Use spawn_blocking for synchronous file write
         let fd = Arc::clone(&self.fd);
         let packet_owned = packet.to_vec();
-        
+
         tokio::task::spawn_blocking(move || {
             let mut file = fd.lock();
             file.write_all(&packet_owned)?;
@@ -862,7 +877,7 @@ impl TunWriter for MacOsTunWriter {
             Ok::<_, std::io::Error>(())
         })
         .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        .map_err(std::io::Error::other)?
     }
 }
 
@@ -1048,7 +1063,7 @@ mod sys_macos {
         pub fn dst_socket(&self) -> (IpAddr, u16) {
             (self.dst_ip, self.dst_port)
         }
-        
+
         pub fn src_socket(&self) -> (IpAddr, u16) {
             (self.src_ip, self.src_port)
         }
@@ -1062,25 +1077,27 @@ mod sys_macos {
         }
         let _af = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]);
         let pkt = &buf[4..];
-        
+
         // Try IPv4
         if pkt.len() >= 20 && (pkt[0] >> 4) == 4 {
-            return parse_ipv4(pkt).map(|(proto, src_ip, src_port, dst_ip, dst_port, head)| Parsed {
-                proto,
-                src_ip,
-                src_port,
-                dst_ip,
-                dst_port,
-                payload_head: head,
+            return parse_ipv4(pkt).map(|(proto, src_ip, src_port, dst_ip, dst_port, head)| {
+                Parsed {
+                    proto,
+                    src_ip,
+                    src_port,
+                    dst_ip,
+                    dst_port,
+                    payload_head: head,
+                }
             });
         }
-        
+
         // Try IPv6 (not yet implemented)
         if pkt.len() >= 40 && (pkt[0] >> 4) == 6 {
             // IPv6 not yet implemented
             return None;
         }
-        
+
         None
     }
 
@@ -1095,11 +1112,11 @@ mod sys_macos {
             return None;
         }
         let proto = pkt[9];
-        
+
         // Extract source and destination IPs
         let src_ip = IpAddr::V4(Ipv4Addr::new(pkt[12], pkt[13], pkt[14], pkt[15]));
         let dst_ip = IpAddr::V4(Ipv4Addr::new(pkt[16], pkt[17], pkt[18], pkt[19]));
-        
+
         match proto {
             6 /* TCP */ | 17 /* UDP */ => {
                 if pkt.len() < ihl + 4 {
@@ -1110,7 +1127,7 @@ mod sys_macos {
                 let src_port = u16::from_be_bytes([pkt[ihl], pkt[ihl + 1]]);
                 let dst_port = u16::from_be_bytes([pkt[ihl + 2], pkt[ihl + 3]]);
                 let l4 = if proto == 6 { L4::Tcp } else { L4::Udp };
-                
+
                 // Extract payload head (first 64 bytes)
                 let head = if proto == 6 {
                     // TCP data offset in 32-bit words at offset 12 high nibble

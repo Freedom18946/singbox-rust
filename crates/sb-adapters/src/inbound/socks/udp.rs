@@ -1044,7 +1044,6 @@ pub async fn serve_udp_datagrams(sock: Arc<UdpSocket>) -> Result<()> {
         // SOCKS5 UDP header already parsed in parse_udp_datagram above
         // header_len already obtained from parse_udp_datagram
 
-
         let host_str = match &dst {
             UdpTargetAddr::Domain { host, .. } => host.clone(),
             UdpTargetAddr::Ip(sa) => sa.ip().to_string(),

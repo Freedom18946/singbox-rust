@@ -20,7 +20,7 @@ pub struct RouteArgs {
     /// Explain routing decision with matched rule and chain
     #[arg(long = "explain", default_value_t = false)]
     pub explain: bool,
-    /// Include detailed trace information (adds 'trace' field to output without changing core fields: dest, matched_rule, chain, outbound)
+    /// Include detailed trace information (adds 'trace' field to output without changing core fields: dest, `matched_rule`, chain, outbound)
     #[arg(long = "with-trace", alias = "trace", default_value_t = false)]
     pub with_trace: bool,
 }

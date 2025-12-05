@@ -187,7 +187,7 @@ async fn validate_ruleset(file: PathBuf) -> Result<()> {
     let format = source::infer_format_from_path(file.to_str().unwrap_or(""))
         .context("Failed to detect rule-set format (use .srs or .json extension)")?;
 
-    println!("Format: {:?}", format);
+    println!("Format: {format:?}");
 
     // Load and parse
     let ruleset = binary::load_from_file(&file, format)
@@ -199,7 +199,7 @@ async fn validate_ruleset(file: PathBuf) -> Result<()> {
     println!("  Version: {}", ruleset.version);
 
     if let Some(ref etag) = ruleset.etag {
-        println!("  ETag: {}", etag);
+        println!("  ETag: {etag}");
     }
 
     Ok(())
@@ -234,14 +234,14 @@ async fn show_info(file: PathBuf) -> Result<()> {
         }
     }
 
-    println!("  Default Rules: {}", default_count);
-    println!("  Logical Rules: {}", logical_count);
+    println!("  Default Rules: {default_count}");
+    println!("  Logical Rules: {logical_count}");
 
     println!("Domain Index: Optimized matching enabled");
     println!("IP Prefix Tree: Optimized CIDR matching");
 
     if let Some(ref etag) = ruleset.etag {
-        println!("ETag: {}", etag);
+        println!("ETag: {etag}");
     }
 
     println!("Last Updated: {:?}", ruleset.last_updated);
@@ -313,7 +313,7 @@ async fn decompile_ruleset(file: PathBuf, output: Option<PathBuf>) -> Result<()>
         fs::write(&out, pretty).context("write output file")?;
         println!("{}", out.display());
     } else {
-        println!("{}", pretty);
+        println!("{pretty}");
     }
     Ok(())
 }
@@ -455,7 +455,7 @@ async fn match_ruleset(
         source_port: None,
     };
     let is_matched = matcher.matches(&ctx);
-    println!("matched: {}", is_matched);
+    println!("matched: {is_matched}");
     Ok(())
 }
 
@@ -468,10 +468,10 @@ async fn compile_ruleset(input: PathBuf, output: PathBuf, version: Option<u8>) -
         anyhow::bail!("compile expects JSON input (.json)");
     }
     let rs = binary::load_from_file(&input, RuleSetFormat::Source).await?;
-    let ver = version.unwrap_or(
+    let ver = version.unwrap_or_else(|| {
         rs.version
-            .max(sb_core::router::ruleset::RULESET_VERSION_CURRENT),
-    );
+            .max(sb_core::router::ruleset::RULESET_VERSION_CURRENT)
+    });
     binary::write_to_file(&output, &rs.rules, ver).await?;
     println!("{}", output.display());
     Ok(())
@@ -486,10 +486,10 @@ async fn convert_ruleset(input: PathBuf, output: PathBuf, version: Option<u8>) -
     match (in_fmt, out_fmt) {
         (RuleSetFormat::Source, RuleSetFormat::Binary) => {
             let rs = binary::load_from_file(&input, RuleSetFormat::Source).await?;
-            let ver = version.unwrap_or(
+            let ver = version.unwrap_or_else(|| {
                 rs.version
-                    .max(sb_core::router::ruleset::RULESET_VERSION_CURRENT),
-            );
+                    .max(sb_core::router::ruleset::RULESET_VERSION_CURRENT)
+            });
             binary::write_to_file(&output, &rs.rules, ver).await?;
         }
         (RuleSetFormat::Binary, RuleSetFormat::Source) => {

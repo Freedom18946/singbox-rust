@@ -5,8 +5,8 @@
 
 pub mod client_registry;
 pub mod mesh_test;
-pub mod protocol;
 pub mod server;
+pub use sb_transport::derp::protocol;
 
 pub use client_registry::{ClientHandle, ClientRegistry, DerpMetrics};
 pub use protocol::{DerpFrame, FrameType, ProtocolError, PublicKey, PROTOCOL_VERSION};

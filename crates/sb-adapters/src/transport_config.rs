@@ -438,16 +438,21 @@ pub trait InboundStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 
 /// Blanket implementation for any type that satisfies the bounds.
 impl<T> InboundStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
-
-
 /// Wrapper to adapt `AsyncReadWrite` streams to `InboundStream`.
-#[cfg(feature = "sb-transport")]
-#[allow(dead_code)] // Adapter is constructed under specific feature/test paths
+#[cfg(any(
+    feature = "transport_ws",
+    feature = "transport_grpc",
+    feature = "transport_httpupgrade"
+))]
 struct InboundStreamAdapter {
     inner: sb_transport::dialer::IoStream,
 }
 
-#[cfg(feature = "sb-transport")]
+#[cfg(any(
+    feature = "transport_ws",
+    feature = "transport_grpc",
+    feature = "transport_httpupgrade"
+))]
 impl tokio::io::AsyncRead for InboundStreamAdapter {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -458,7 +463,11 @@ impl tokio::io::AsyncRead for InboundStreamAdapter {
     }
 }
 
-#[cfg(feature = "sb-transport")]
+#[cfg(any(
+    feature = "transport_ws",
+    feature = "transport_grpc",
+    feature = "transport_httpupgrade"
+))]
 impl tokio::io::AsyncWrite for InboundStreamAdapter {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
@@ -509,7 +518,9 @@ impl InboundListener {
     /// # Errors
     ///
     /// Returns an error if accepting the connection fails.
-    pub async fn accept(&self) -> Result<(Box<dyn InboundStream>, std::net::SocketAddr), std::io::Error> {
+    pub async fn accept(
+        &self,
+    ) -> Result<(Box<dyn InboundStream>, std::net::SocketAddr), std::io::Error> {
         match self {
             Self::Tcp(listener) => {
                 let (stream, peer) = listener.accept().await?;
@@ -525,7 +536,10 @@ impl InboundListener {
                 })?;
                 // WebSocket listener doesn't expose peer addr easily yet, use dummy
                 let peer = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
-                Ok((Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>, peer))
+                Ok((
+                    Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>,
+                    peer,
+                ))
             }
 
             #[cfg(feature = "transport_grpc")]
@@ -536,7 +550,10 @@ impl InboundListener {
                     .map_err(|e| std::io::Error::other(e.to_string()))?;
                 // gRPC doesn't expose peer addr easily yet, use dummy
                 let peer = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
-                Ok((Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>, peer))
+                Ok((
+                    Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>,
+                    peer,
+                ))
             }
 
             #[cfg(feature = "transport_httpupgrade")]
@@ -548,7 +565,10 @@ impl InboundListener {
                 })?;
                 // HttpUpgrade doesn't expose peer addr easily yet, use dummy
                 let peer = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
-                Ok((Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>, peer))
+                Ok((
+                    Box::new(InboundStreamAdapter { inner: stream }) as Box<dyn InboundStream>,
+                    peer,
+                ))
             }
         }
     }

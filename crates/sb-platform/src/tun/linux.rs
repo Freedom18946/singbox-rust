@@ -89,7 +89,9 @@ impl LinuxTun {
         let output = std::process::Command::new("ip")
             .args(["route", "add", "default", "dev", &self.name])
             .output()
-            .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv4 route: {}", e)))?;
+            .map_err(|e| {
+                TunError::OperationFailed(format!("Failed to add default IPv4 route: {}", e))
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -108,7 +110,9 @@ impl LinuxTun {
             let output = std::process::Command::new("ip")
                 .args(["-6", "route", "add", "default", "dev", &self.name])
                 .output()
-                .map_err(|e| TunError::OperationFailed(format!("Failed to add default IPv6 route: {}", e)))?;
+                .map_err(|e| {
+                    TunError::OperationFailed(format!("Failed to add default IPv6 route: {}", e))
+                })?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);

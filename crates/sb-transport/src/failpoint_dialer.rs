@@ -110,7 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_failpoint_dialer_passthrough() {
-        let inner = TcpDialer;
+        let inner = TcpDialer::default();
         let fp_dialer = FailpointDialer::new(inner);
 
         // Without failpoints enabled, should work like normal dialer
@@ -127,7 +127,7 @@ mod tests {
     #[cfg(feature = "failpoints")]
     #[tokio::test]
     async fn test_failpoint_dialer_injection() {
-        let inner = TcpDialer;
+        let inner = TcpDialer::default();
         let fp_dialer = FailpointDialer::new(inner);
 
         // Set up failpoint

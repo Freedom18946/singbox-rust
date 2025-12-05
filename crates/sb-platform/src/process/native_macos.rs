@@ -24,8 +24,7 @@ use libproc::libproc::proc_pid::pidpath;
 /// macOS native process matcher using libproc
 ///
 /// Uses `pidpath()` native API for 10-100x faster process info retrieval.
-#[derive(Default)]
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct NativeMacOsProcessMatcher;
 
 impl NativeMacOsProcessMatcher {

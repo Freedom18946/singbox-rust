@@ -64,6 +64,12 @@ pub fn build_tailscale_endpoint(
     _ctx: &EndpointContext,
 ) -> Option<Arc<dyn Endpoint>> {
     let tag = ir.tag.as_deref().unwrap_or("tailscale");
+    // If the real adapter is compiled in, delegate to it.
+    #[cfg(feature = "adapter-tailscale-endpoint")]
+    {
+        return crate::endpoint::tailscale::build_tailscale_endpoint(ir, _ctx);
+    }
+
     tracing::warn!(
         endpoint_type = "tailscale",
         tag = tag,

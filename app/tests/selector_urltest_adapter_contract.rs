@@ -82,7 +82,8 @@ fn test_selector_adapter_instantiation() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     // Verify selector was built
     let selector = bridge.find_outbound("my-selector");
@@ -124,7 +125,8 @@ fn test_urltest_adapter_instantiation() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     // Verify urltest was built
     let urltest = bridge.find_outbound("my-urltest");
@@ -160,7 +162,8 @@ fn test_selector_resolves_all_members() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     let selector = bridge.find_outbound("multi-member-selector");
     assert!(
@@ -202,7 +205,8 @@ fn test_urltest_custom_health_check_params() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     let urltest = bridge.find_outbound("custom-urltest");
     assert!(
@@ -236,7 +240,8 @@ fn test_selector_udp_factory_support() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     // Verify selector connector was built
     let selector = bridge.find_outbound("udp-selector");
@@ -275,7 +280,8 @@ fn test_urltest_udp_factory_support() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     // Verify urltest connector was built
     let urltest = bridge.find_outbound("udp-urltest");
@@ -328,7 +334,8 @@ fn test_nested_selectors() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     // All selectors should be built
     assert!(bridge.find_outbound("us-group").is_some());
@@ -362,7 +369,8 @@ fn test_selector_with_missing_member() {
     let ir = to_ir_v1(&cfg);
 
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     // Selector should still be created with available members
     let selector = bridge.find_outbound("partial-selector");
@@ -550,7 +558,11 @@ fn test_selector_invalid_config() {
 
     if let Ok(ir) = result {
         let engine = Engine::new(&ir);
-        let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+        let bridge = sb_core::adapter::bridge::build_bridge(
+            &ir,
+            engine,
+            sb_core::context::Context::default(),
+        );
         let outbound = bridge.find_outbound("invalid-selector");
 
         // If it built, it should probably be degraded or fail to work
@@ -591,7 +603,11 @@ fn test_urltest_invalid_config() {
 
     if let Ok(ir) = result {
         let engine = Engine::new(&ir);
-        let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+        let bridge = sb_core::adapter::bridge::build_bridge(
+            &ir,
+            engine,
+            sb_core::context::Context::default(),
+        );
         let outbound = bridge.find_outbound("invalid-urltest");
 
         if let Some(outbound) = outbound {
@@ -623,7 +639,8 @@ fn test_selector_empty_outbounds() {
 
     let ir = to_ir_v1(&cfg);
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     let selector = bridge.find_outbound("empty-selector");
     if selector.is_none() {
@@ -657,7 +674,8 @@ fn test_urltest_default_values() {
 
     let ir = to_ir_v1(&cfg);
     let engine = Engine::new(&ir);
-    let bridge = sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge =
+        sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     let outbound = bridge
         .find_outbound("default-urltest")

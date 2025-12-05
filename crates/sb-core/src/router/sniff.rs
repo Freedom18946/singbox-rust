@@ -292,6 +292,11 @@ pub fn sniff_datagram(buf: &[u8]) -> SniffOutcome {
         return out;
     }
 
+    if is_ntp_protocol(buf) {
+        out.protocol = Some("ntp");
+        return out;
+    }
+
     out
 }
 
@@ -380,6 +385,38 @@ fn is_rdp_protocol(buf: &[u8]) -> bool {
         return false;
     }
     buf[13] == 0x08
+}
+
+fn is_ntp_protocol(packet: &[u8]) -> bool {
+    if packet.len() < 48 {
+        return false;
+    }
+    let first_byte = packet[0];
+    let li = (first_byte >> 6) & 0x03;
+    let vn = (first_byte >> 3) & 0x07;
+    let mode = first_byte & 0x07;
+
+    if li > 3 {
+        return false;
+    }
+    if vn != 3 && vn != 4 {
+        return false;
+    }
+    if mode != 3 {
+        return false;
+    }
+
+    let root_delay = u32::from_be_bytes([packet[4], packet[5], packet[6], packet[7]]);
+    let root_dispersion = u32::from_be_bytes([packet[8], packet[9], packet[10], packet[11]]);
+
+    if (root_delay as f64) / 65536.0 > 16.0 {
+        return false;
+    }
+    if (root_dispersion as f64) / 65536.0 > 16.0 {
+        return false;
+    }
+
+    true
 }
 
 /// Result of DNS query sniffing
@@ -670,10 +707,23 @@ mod tests {
             0x00, 0x01, // Questions: 1
             0x00, 0x01, // Answer RRs: 1
             0x00, 0x00, // Authority RRs: 0
-            0x00, 0x00, // Additional RRs: 0
-            // ... (truncated - just need flags to differentiate)
+            0x00,
+            0x00, // Additional RRs: 0
+                  // ... (truncated - just need flags to differentiate)
         ];
         let result = sniff_dns_query(&dns_response);
-        assert!(result.is_none(), "DNS response should not be detected as query");
+        assert!(
+            result.is_none(),
+            "DNS response should not be detected as query"
+        );
+    }
+
+    #[test]
+    fn detects_ntp_packet() {
+        let mut ntp = vec![0u8; 48];
+        // LI=0, VN=3, Mode=3 (Client) -> 00 011 011 -> 0x1B
+        ntp[0] = 0x1b;
+        let sniffed = sniff_datagram(&ntp);
+        assert_eq!(sniffed.protocol, Some("ntp"));
     }
 }

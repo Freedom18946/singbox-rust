@@ -118,7 +118,9 @@ fn http_connect(
 
 #[test]
 fn http_connect_end2end_direct() {
-    let _ = tracing_subscriber::fmt().with_env_filter("debug").try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("debug")
+        .try_init();
     sb_adapters::register_all();
     let (echo_addr, _h) = start_echo();
     if echo_addr.port() == 0 {
@@ -166,7 +168,7 @@ fn http_connect_end2end_direct() {
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();
     let rt = Runtime::new(eng, br, sb).start();
-    
+
     // Wait for server to start
     for _ in 0..20 {
         thread::sleep(Duration::from_millis(100));
@@ -174,7 +176,7 @@ fn http_connect_end2end_direct() {
             break;
         }
     }
-    
+
     let out = http_connect(http_addr, echo_addr, b"hello http-connect");
     if out.is_empty() {
         return;

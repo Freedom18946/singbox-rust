@@ -62,11 +62,11 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
-    
+
     // Register adapters early (must be called before Bridge::build or any adapter usage)
     #[cfg(feature = "adapters")]
     sb_adapters::register_all();
-    
+
     if std::env::args().skip(1).any(|arg| arg == "--help-json") {
         app::cli::help::print_help_json::<Args>();
     }

@@ -135,9 +135,7 @@ impl Doh3Transport {
         // Create HTTP/3 connection over QUIC
         let (mut driver, mut send_request) = h3::client::new(h3_quinn::Connection::new(conn))
             .await
-            .map_err(|e| {
-                io::Error::other(format!("H3 handshake failed: {}", e))
-            })?;
+            .map_err(|e| io::Error::other(format!("H3 handshake failed: {}", e)))?;
 
         // Spawn driver task to run in background
         tokio::spawn(async move {
@@ -154,30 +152,27 @@ impl Doh3Transport {
             .body(())
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
-        let mut stream = send_request.send_request(req).await.map_err(|e| {
-            io::Error::other(
-                format!("H3 send_request failed: {}", e),
-            )
-        })?;
+        let mut stream = send_request
+            .send_request(req)
+            .await
+            .map_err(|e| io::Error::other(format!("H3 send_request failed: {}", e)))?;
 
         // Send DNS query data
         stream
             .send_data(Bytes::copy_from_slice(packet))
             .await
-            .map_err(|e| {
-                io::Error::other(format!("H3 send_data failed: {}", e))
-            })?;
+            .map_err(|e| io::Error::other(format!("H3 send_data failed: {}", e)))?;
 
-        stream.finish().await.map_err(|e| {
-            io::Error::other(format!("H3 finish failed: {}", e))
-        })?;
+        stream
+            .finish()
+            .await
+            .map_err(|e| io::Error::other(format!("H3 finish failed: {}", e)))?;
 
         // Receive HTTP/3 response
-        let resp = stream.recv_response().await.map_err(|e| {
-            io::Error::other(
-                format!("H3 recv_response failed: {}", e),
-            )
-        })?;
+        let resp = stream
+            .recv_response()
+            .await
+            .map_err(|e| io::Error::other(format!("H3 recv_response failed: {}", e)))?;
 
         // Check HTTP status
         if !resp.status().is_success() {

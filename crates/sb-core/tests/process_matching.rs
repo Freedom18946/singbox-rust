@@ -10,7 +10,10 @@ async fn test_process_matcher_integration() {
     // 2. Verify ProcessMatcher presence
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
-        assert!(ctx.process_matcher.is_some(), "ProcessMatcher should be initialized on supported platforms");
+        assert!(
+            ctx.process_matcher.is_some(),
+            "ProcessMatcher should be initialized on supported platforms"
+        );
         let matcher = ctx.process_matcher.as_ref().unwrap();
 
         // 3. Attempt to match a dummy connection
@@ -29,6 +32,9 @@ async fn test_process_matcher_integration() {
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
-        assert!(ctx.process_matcher.is_none(), "ProcessMatcher should be None on unsupported platforms");
+        assert!(
+            ctx.process_matcher.is_none(),
+            "ProcessMatcher should be None on unsupported platforms"
+        );
     }
 }

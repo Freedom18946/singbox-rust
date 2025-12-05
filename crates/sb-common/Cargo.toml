@@ -1,0 +1,21 @@
+[package]
+name = "sb-common"
+version = "0.1.0"
+edition = "2021"
+description = "Common utilities for sing-box Rust implementation"
+
+[dependencies]
+tokio = { version = "1", features = ["sync", "time", "net", "io-util", "rt", "macros"] }
+parking_lot = "0.12"
+tracing = "0.1"
+dashmap = "6"
+
+# Optional dependencies for convertor module
+serde_json = { version = "1", optional = true }
+urlencoding = { version = "2", optional = true }
+serde_yaml = { version = "0.9", optional = true }
+
+[features]
+default = []
+conntrack = []
+convertor = ["dep:serde_json", "dep:serde_yaml", "dep:urlencoding"]

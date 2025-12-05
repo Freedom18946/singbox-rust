@@ -143,9 +143,10 @@ impl OutboundConnector for AnyTlsConnector {
             .map_err(std::io::Error::other)?;
 
         // Open a stream on the session
-        let (stream, _rx) = session.open_stream().await.map_err(|e| {
-            std::io::Error::other(format!("failed to open stream: {}", e))
-        })?;
+        let (stream, _rx) = session
+            .open_stream()
+            .await
+            .map_err(|e| std::io::Error::other(format!("failed to open stream: {}", e)))?;
 
         // Send target address (SOCKS5 style)
         // Protocol: ATYP + ADDR + PORT
@@ -205,9 +206,7 @@ impl OutboundConnector for AnyTlsConnector {
 
         stream_writer
             .send_data(Bytes::from(target_buf))
-            .map_err(|e| {
-                std::io::Error::other(format!("failed to send target: {}", e))
-            })?;
+            .map_err(|e| std::io::Error::other(format!("failed to send target: {}", e)))?;
 
         // Bridge tasks
         let (mut local_read, mut local_write) = server_stream.into_split();

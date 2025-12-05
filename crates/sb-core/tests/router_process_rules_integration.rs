@@ -362,7 +362,7 @@ fn test_process_rule_matching_logic() {
     // Test process path regex matching
     let rule = Rule {
         kind: RuleKind::ProcessPathRegex(
-                    ProcessPathRegexMatcher::new(r"(?i).*Chrome\.app$".to_string()).unwrap(),
+            ProcessPathRegexMatcher::new(r"(?i).*Chrome\.app$".to_string()).unwrap(),
         ),
         decision: Decision::Proxy(Some("chrome".to_string())),
     };

@@ -75,5 +75,7 @@ pub mod router;
 #[cfg(feature = "router")]
 pub mod bootstrap;
 
+pub mod inbound_starter;
+
 // Allow referencing the crate by name `app` within this crate as well
 extern crate self as app;

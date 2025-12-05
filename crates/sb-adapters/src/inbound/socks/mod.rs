@@ -39,8 +39,8 @@ use sb_transport::IoStream;
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
 // 本文件只用到了 inbound_parse，其他两个会在具体错误路径里再接入
-use sb_core::telemetry::inbound_parse;
 use sb_config::ir::Credentials;
+use sb_core::telemetry::inbound_parse;
 
 #[cfg(feature = "metrics")]
 use metrics;
@@ -142,22 +142,24 @@ async fn serve_socks_internal(
 /// 兼容性别名 - 运行 SOCKS5 代理
 pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
     // Enable UDP Associate if configured or enabled via env
-    let udp_enabled = std::env::var("SB_SOCKS_UDP_ENABLE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
-    
+    let udp_enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
     let udp_addr = if udp_enabled {
         // Bind UDP socket
         let bind_addr = cfg.udp_bind.unwrap_or_else(|| "0.0.0.0:0".parse().unwrap());
         let sock = tokio::net::UdpSocket::bind(bind_addr).await?;
         let local_addr = sock.local_addr()?;
         let sock = std::sync::Arc::new(sock);
-        
+
         // Spawn UDP handler
         tokio::spawn(async move {
             if let Err(e) = udp::serve_udp_datagrams(sock).await {
                 tracing::warn!("socks/udp serve error: {:?}", e);
             }
         });
-        
+
         info!(addr=?local_addr, "SOCKS5 UDP Associate enabled");
         Some(local_addr)
     } else {
@@ -205,23 +207,22 @@ where
     }
 }
 
-async fn handle_socks4<S>(
-    cli: &mut S,
-    peer: SocketAddr,
-    cfg: &SocksInboundConfig,
-) -> io::Result<()>
+async fn handle_socks4<S>(cli: &mut S, peer: SocketAddr, cfg: &SocksInboundConfig) -> io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
 {
     let cmd = read_u8(cli).await?;
     if cmd != 0x01 {
         // Only CONNECT is supported
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "socks4: bad cmd"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "socks4: bad cmd",
+        ));
     }
     let port = read_u16(cli).await?;
     let mut ip_bytes = [0u8; 4];
     cli.read_exact(&mut ip_bytes).await?;
-    
+
     // Read UserID (null-terminated)
     let mut user_id = Vec::new();
     loop {
@@ -231,25 +232,29 @@ where
         }
         user_id.push(b);
     }
-    
-    let ip = Ipv4Addr::from(ip_bytes);
-    let (endpoint, _host_str) = if ip_bytes[0] == 0 && ip_bytes[1] == 0 && ip_bytes[2] == 0 && ip_bytes[3] != 0 {
-        // SOCKS4a: Read domain
-        let mut domain = Vec::new();
-        loop {
-            let b = read_u8(cli).await?;
-            if b == 0 {
-                break;
-            }
-            domain.push(b);
-        }
-        let host = String::from_utf8_lossy(&domain).to_string();
-        (Endpoint::Domain(host.clone(), port), host)
-    } else {
-        (Endpoint::Ip(SocketAddr::new(IpAddr::V4(ip), port)), ip.to_string())
-    };
 
-    // SOCKS4 doesn't support auth in the standard way (identd is obsolete), 
+    let ip = Ipv4Addr::from(ip_bytes);
+    let (endpoint, _host_str) =
+        if ip_bytes[0] == 0 && ip_bytes[1] == 0 && ip_bytes[2] == 0 && ip_bytes[3] != 0 {
+            // SOCKS4a: Read domain
+            let mut domain = Vec::new();
+            loop {
+                let b = read_u8(cli).await?;
+                if b == 0 {
+                    break;
+                }
+                domain.push(b);
+            }
+            let host = String::from_utf8_lossy(&domain).to_string();
+            (Endpoint::Domain(host.clone(), port), host)
+        } else {
+            (
+                Endpoint::Ip(SocketAddr::new(IpAddr::V4(ip), port)),
+                ip.to_string(),
+            )
+        };
+
+    // SOCKS4 doesn't support auth in the standard way (identd is obsolete),
     // but if users are configured, we might want to reject SOCKS4 or check UserID?
     // Go implementation: "SOCKS4 does not support authentication."
     // If auth is required, we should probably reject SOCKS4?
@@ -260,13 +265,13 @@ where
     // But let's proceed with connection handling.
 
     inbound_parse("socks", "ok", "socks4_request");
-    
+
     // Reply 90 (Request granted)
     // Format: VN(0) | CD(90) | DSTPORT | DSTIP
     let mut resp = [0u8; 8];
     resp[0] = 0x00;
     resp[1] = 0x5A; // 90
-    // Port/IP ignored by client usually, but we send 0
+                    // Port/IP ignored by client usually, but we send 0
     cli.write_all(&resp).await?;
 
     process_request(cli, peer, cfg, endpoint).await
@@ -286,7 +291,7 @@ where
     cli.read_exact(&mut methods).await?;
 
     let mut method = 0xFF; // No acceptable methods
-    
+
     if let Some(users) = &cfg.users {
         if !users.is_empty() {
             if methods.contains(&0x02) {
@@ -302,14 +307,17 @@ where
     cli.write_all(&[0x05, method]).await?;
 
     if method == 0xFF {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "no acceptable auth method"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "no acceptable auth method",
+        ));
     }
 
     if method == 0x02 {
         // Handle Auth
         let ver = read_u8(cli).await?;
         if ver != 0x01 {
-             return Err(io::Error::new(io::ErrorKind::InvalidData, "bad auth ver"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "bad auth ver"));
         }
         let ulen = read_u8(cli).await? as usize;
         let mut uname_bytes = vec![0u8; ulen];
@@ -324,8 +332,16 @@ where
         let mut authenticated = false;
         if let Some(users) = &cfg.users {
             for user in users {
-                let u = user.username.as_deref().or(user.username_env.as_deref()).unwrap_or("");
-                let p = user.password.as_deref().or(user.password_env.as_deref()).unwrap_or("");
+                let u = user
+                    .username
+                    .as_deref()
+                    .or(user.username_env.as_deref())
+                    .unwrap_or("");
+                let p = user
+                    .password
+                    .as_deref()
+                    .or(user.password_env.as_deref())
+                    .unwrap_or("");
                 if u == uname && p == pass {
                     authenticated = true;
                     break;
@@ -337,7 +353,10 @@ where
             cli.write_all(&[0x01, 0x00]).await?; // Success
         } else {
             cli.write_all(&[0x01, 0x01]).await?; // Failure
-            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "auth failed"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "auth failed",
+            ));
         }
     }
 
@@ -479,9 +498,7 @@ where
     if fallback_enabled && matches!(decision, RDecision::Proxy(_)) {
         if let Some(st) = ob_health::global_status() {
             if !st.is_up() {
-                tracing::warn!(
-                    "router: proxy unhealthy; fallback to direct (socks5 inbound)"
-                );
+                tracing::warn!("router: proxy unhealthy; fallback to direct (socks5 inbound)");
                 #[cfg(feature = "metrics")]
                 metrics::counter!(
                     "router_route_fallback_total",
@@ -549,8 +566,7 @@ where
                 Box::new(s)
             }
             Endpoint::Ip(sa) => {
-                let s =
-                    direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
+                let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts).await?;
                 Box::new(s)
             }
         },
@@ -566,10 +582,7 @@ where
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(4096);
-                    PoolSelector::new_with_capacity(
-                        cap,
-                        std::time::Duration::from_millis(ttl),
-                    )
+                    PoolSelector::new_with_capacity(cap, std::time::Duration::from_millis(ttl))
                 });
                 let _health = MultiHealthView;
                 let target_str = match &endpoint {
@@ -581,50 +594,46 @@ where
                     if let Some(_pool) = reg.pools.get(&name) {
                         if let Some(ep) = sel.select(&name, peer, &target_str, &()) {
                             match ep.kind {
-                                sb_core::outbound::endpoint::ProxyKind::Http => {
-                                    match &endpoint {
-                                        Endpoint::Domain(host, port) => Box::new(
-                                            http_proxy_connect_through_proxy(
-                                                &ep.addr.to_string(),
-                                                host,
-                                                *port,
-                                                &opts,
-                                            )
-                                            .await?,
-                                        ),
-                                        Endpoint::Ip(sa) => Box::new(
-                                            http_proxy_connect_through_proxy(
-                                                &ep.addr.to_string(),
-                                                &sa.ip().to_string(),
-                                                sa.port(),
-                                                &opts,
-                                            )
-                                            .await?,
-                                        ),
-                                    }
-                                }
-                                sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                    match &endpoint {
-                                        Endpoint::Domain(host, port) => Box::new(
-                                            socks5_connect_through_socks5(
-                                                &ep.addr.to_string(),
-                                                host,
-                                                *port,
-                                                &opts,
-                                            )
-                                            .await?,
-                                        ),
-                                        Endpoint::Ip(sa) => Box::new(
-                                            socks5_connect_through_socks5(
-                                                &ep.addr.to_string(),
-                                                &sa.ip().to_string(),
-                                                sa.port(),
-                                                &opts,
-                                            )
-                                            .await?,
-                                        ),
-                                    }
-                                }
+                                sb_core::outbound::endpoint::ProxyKind::Http => match &endpoint {
+                                    Endpoint::Domain(host, port) => Box::new(
+                                        http_proxy_connect_through_proxy(
+                                            &ep.addr.to_string(),
+                                            host,
+                                            *port,
+                                            &opts,
+                                        )
+                                        .await?,
+                                    ),
+                                    Endpoint::Ip(sa) => Box::new(
+                                        http_proxy_connect_through_proxy(
+                                            &ep.addr.to_string(),
+                                            &sa.ip().to_string(),
+                                            sa.port(),
+                                            &opts,
+                                        )
+                                        .await?,
+                                    ),
+                                },
+                                sb_core::outbound::endpoint::ProxyKind::Socks5 => match &endpoint {
+                                    Endpoint::Domain(host, port) => Box::new(
+                                        socks5_connect_through_socks5(
+                                            &ep.addr.to_string(),
+                                            host,
+                                            *port,
+                                            &opts,
+                                        )
+                                        .await?,
+                                    ),
+                                    Endpoint::Ip(sa) => Box::new(
+                                        socks5_connect_through_socks5(
+                                            &ep.addr.to_string(),
+                                            &sa.ip().to_string(),
+                                            sa.port(),
+                                            &opts,
+                                        )
+                                        .await?,
+                                    ),
+                                },
                             }
                         } else {
                             // Pool empty or all endpoints down - fallback to direct or default proxy
@@ -634,8 +643,7 @@ where
                                     metrics::counter!("router_route_fallback_total", "from" => "proxy", "to" => "direct", "reason" => "pool_empty").increment(1);
                                     match &endpoint {
                                         Endpoint::Domain(host, port) => Box::new(
-                                            direct_connect_hostport(host, *port, &opts)
-                                                .await?,
+                                            direct_connect_hostport(host, *port, &opts).await?,
                                         ),
                                         Endpoint::Ip(sa) => Box::new(
                                             direct_connect_hostport(
@@ -657,24 +665,18 @@ where
                         // Pool not found - fallback to default proxy
                         match proxy {
                             ProxyChoice::Direct => match &endpoint {
-                                Endpoint::Domain(host, port) => Box::new(
-                                    direct_connect_hostport(host, *port, &opts).await?,
-                                ),
+                                Endpoint::Domain(host, port) => {
+                                    Box::new(direct_connect_hostport(host, *port, &opts).await?)
+                                }
                                 Endpoint::Ip(sa) => Box::new(
-                                    direct_connect_hostport(
-                                        &sa.ip().to_string(),
-                                        sa.port(),
-                                        &opts,
-                                    )
-                                    .await?,
+                                    direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts)
+                                        .await?,
                                 ),
                             },
                             ProxyChoice::Http(addr) => match &endpoint {
                                 Endpoint::Domain(host, port) => Box::new(
-                                    http_proxy_connect_through_proxy(
-                                        addr, host, *port, &opts,
-                                    )
-                                    .await?,
+                                    http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                        .await?,
                                 ),
                                 Endpoint::Ip(sa) => Box::new(
                                     http_proxy_connect_through_proxy(
@@ -688,8 +690,7 @@ where
                             },
                             ProxyChoice::Socks5(addr) => match &endpoint {
                                 Endpoint::Domain(host, port) => Box::new(
-                                    socks5_connect_through_socks5(addr, host, *port, &opts)
-                                        .await?,
+                                    socks5_connect_through_socks5(addr, host, *port, &opts).await?,
                                 ),
                                 Endpoint::Ip(sa) => Box::new(
                                     socks5_connect_through_socks5(
@@ -712,21 +713,16 @@ where
                                 Box::new(s)
                             }
                             Endpoint::Ip(sa) => {
-                                let s = direct_connect_hostport(
-                                    &sa.ip().to_string(),
-                                    sa.port(),
-                                    &opts,
-                                )
-                                .await?;
+                                let s =
+                                    direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts)
+                                        .await?;
                                 Box::new(s)
                             }
                         },
                         ProxyChoice::Http(addr) => match &endpoint {
                             Endpoint::Domain(host, port) => {
-                                let s = http_proxy_connect_through_proxy(
-                                    addr, host, *port, &opts,
-                                )
-                                .await?;
+                                let s = http_proxy_connect_through_proxy(addr, host, *port, &opts)
+                                    .await?;
                                 Box::new(s)
                             }
                             Endpoint::Ip(sa) => {
@@ -743,8 +739,7 @@ where
                         ProxyChoice::Socks5(addr) => match &endpoint {
                             Endpoint::Domain(host, port) => {
                                 let s =
-                                    socks5_connect_through_socks5(addr, host, *port, &opts)
-                                        .await?;
+                                    socks5_connect_through_socks5(addr, host, *port, &opts).await?;
                                 Box::new(s)
                             }
                             Endpoint::Ip(sa) => {
@@ -769,20 +764,15 @@ where
                             Box::new(s)
                         }
                         Endpoint::Ip(sa) => {
-                            let s = direct_connect_hostport(
-                                &sa.ip().to_string(),
-                                sa.port(),
-                                &opts,
-                            )
-                            .await?;
+                            let s = direct_connect_hostport(&sa.ip().to_string(), sa.port(), &opts)
+                                .await?;
                             Box::new(s)
                         }
                     },
                     ProxyChoice::Http(addr) => match &endpoint {
                         Endpoint::Domain(host, port) => {
                             let s =
-                                http_proxy_connect_through_proxy(addr, host, *port, &opts)
-                                    .await?;
+                                http_proxy_connect_through_proxy(addr, host, *port, &opts).await?;
                             Box::new(s)
                         }
                         Endpoint::Ip(sa) => {
@@ -798,8 +788,7 @@ where
                     },
                     ProxyChoice::Socks5(addr) => match &endpoint {
                         Endpoint::Domain(host, port) => {
-                            let s = socks5_connect_through_socks5(addr, host, *port, &opts)
-                                .await?;
+                            let s = socks5_connect_through_socks5(addr, host, *port, &opts).await?;
                             Box::new(s)
                         }
                         Endpoint::Ip(sa) => {
@@ -876,8 +865,9 @@ where
 // inbound_forward("socks","error",Some(err_kind(&e)));
 // timeout: inbound_forward("socks","timeout",Some("timeout"));
 
-async fn reply<S>(cli: &mut S, rep: u8, bnd: Option<SocketAddr>) -> io::Result<()> 
-where S: tokio::io::AsyncWrite + Unpin + Send
+async fn reply<S>(cli: &mut S, rep: u8, bnd: Option<SocketAddr>) -> io::Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin + Send,
 {
     // 统一回复格式：VER=5, REP=rep, RSV=0, ATYP + ADDR + PORT
     // Unified reply format: VER=5, REP=rep, RSV=0, ATYP + ADDR + PORT
@@ -910,15 +900,17 @@ where S: tokio::io::AsyncWrite + Unpin + Send
     cli.write_all(&buf).await
 }
 
-async fn read_u8<S>(s: &mut S) -> io::Result<u8> 
-where S: tokio::io::AsyncRead + Unpin + Send
+async fn read_u8<S>(s: &mut S) -> io::Result<u8>
+where
+    S: tokio::io::AsyncRead + Unpin + Send,
 {
     let mut b = [0u8; 1];
     s.read_exact(&mut b).await?;
     Ok(b[0])
 }
-async fn read_u16<S>(s: &mut S) -> io::Result<u16> 
-where S: tokio::io::AsyncRead + Unpin + Send
+async fn read_u16<S>(s: &mut S) -> io::Result<u16>
+where
+    S: tokio::io::AsyncRead + Unpin + Send,
 {
     let mut b = [0u8; 2];
     s.read_exact(&mut b).await?;

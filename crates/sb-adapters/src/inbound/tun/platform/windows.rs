@@ -105,9 +105,9 @@ impl WindowsPlatformHook {
     /// Parse CIDR notation to destination and mask
     fn parse_cidr(cidr: &str) -> io::Result<(String, String)> {
         if let Some((addr, prefix)) = cidr.split_once('/') {
-            let prefix_len: u8 = prefix.parse().map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidInput, "Invalid CIDR prefix")
-            })?;
+            let prefix_len: u8 = prefix
+                .parse()
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Invalid CIDR prefix"))?;
 
             if addr.contains(':') {
                 // IPv6
@@ -225,7 +225,10 @@ impl WindowsPlatformHook {
             // Use main routing table (without TUN interface)
             self.add_route(&dest, &mask, Some(&gw), None, Some(100), is_ipv6, config)?;
         } else {
-            warn!("Could not determine default gateway for exclude route: {}", cidr);
+            warn!(
+                "Could not determine default gateway for exclude route: {}",
+                cidr
+            );
         }
 
         Ok(())

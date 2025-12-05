@@ -9,10 +9,11 @@ use crate::{
     types::{ConnCtx, Endpoint, Host},
 };
 use async_trait::async_trait;
+use futures::StreamExt;
 use std::net::SocketAddr;
 use tokio::net::{lookup_host, TcpStream, UdpSocket};
 use tokio::time::{timeout, Duration};
-use futures::StreamExt;
+use tracing::warn;
 
 /// Direct outbound connector that connects directly to targets
 #[derive(Debug, Clone)]
@@ -115,13 +116,13 @@ impl AsyncOutboundConnector for DirectConnector {
                     operation: "acquire_semaphore".to_string(),
                 })
             })?;
-        
+
         let addrs = self.resolve_endpoint(&ctx.dst).await?;
-        
+
         // Happy Eyeballs (RFC 8305) simplified implementation
         // 1. Prefer IPv6 if available (assuming system resolver order is respected)
         // 2. Race connections with a delay
-        
+
         // If only one address, connect directly
         if addrs.len() == 1 {
             return self.connect_addr(addrs[0]).await;
@@ -138,7 +139,7 @@ impl AsyncOutboundConnector for DirectConnector {
                 v4.push(addr);
             }
         }
-        
+
         // Simple interleaving
         let mut v6_iter = v6.into_iter();
         let mut v4_iter = v4.into_iter();
@@ -156,7 +157,7 @@ impl AsyncOutboundConnector for DirectConnector {
 
         let mut tasks = futures::stream::FuturesUnordered::new();
         let mut addrs_iter = sorted_addrs.into_iter();
-        
+
         // Start first connection
         if let Some(addr) = addrs_iter.next() {
             let fut = self.connect_addr_captured(addr);
@@ -198,10 +199,12 @@ impl AsyncOutboundConnector for DirectConnector {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| SbError::network(
-            ErrorClass::Connection,
-            "All connection attempts failed".to_string(),
-        )))
+        Err(last_error.unwrap_or_else(|| {
+            SbError::network(
+                ErrorClass::Connection,
+                "All connection attempts failed".to_string(),
+            )
+        }))
     }
 
     async fn connect_udp(&self, ctx: &ConnCtx) -> SbResult<Box<dyn UdpTransport>> {
@@ -215,9 +218,12 @@ impl AsyncOutboundConnector for DirectConnector {
             tokio::net::UdpSocket::bind("[::]:0")
         }
         .await
-        .map_err(|e| {
-            SbError::network(ErrorClass::Connection, format!("UDP bind failed: {e}"))
-        })?;
+        .map_err(|e| SbError::network(ErrorClass::Connection, format!("UDP bind failed: {e}")))?;
+
+        #[cfg(target_os = "android")]
+        if let Err(e) = sb_platform::android_protect::protect_udp_socket(&socket) {
+             warn!("Failed to protect UDP socket: {}", e);
+        }
 
         #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
         if let Some(iface) = &self.bind_interface {
@@ -263,6 +269,11 @@ impl DirectConnector {
             )
         })?;
 
+        #[cfg(target_os = "android")]
+        if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
+             warn!("Failed to protect TCP socket: {}", e);
+        }
+
         #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
         if let Some(iface) = &self.bind_interface {
             let s = socket2::SockRef::from(&socket);
@@ -296,7 +307,12 @@ impl DirectConnector {
         }
 
         if self.tcp_fast_open {
-            #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios"))]
+            #[cfg(any(
+                target_os = "android",
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "ios"
+            ))]
             {
                 let s = socket2::SockRef::from(&socket);
                 // let _ = s.set_tcp_fastopen_connect(true);
@@ -317,7 +333,10 @@ impl DirectConnector {
     }
 
     // Helper for capturing self fields for async block
-    fn connect_addr_captured(&self, addr: SocketAddr) -> impl std::future::Future<Output = SbResult<TcpStream>> + Send + 'static {
+    fn connect_addr_captured(
+        &self,
+        addr: SocketAddr,
+    ) -> impl std::future::Future<Output = SbResult<TcpStream>> + Send + 'static {
         let connect_timeout = self.connect_timeout;
         let _bind_interface = self.bind_interface.clone();
         let _routing_mark = self.routing_mark;
@@ -337,6 +356,11 @@ impl DirectConnector {
                     format!("Failed to create TCP socket: {e}"),
                 )
             })?;
+
+            #[cfg(target_os = "android")]
+            if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
+                 warn!("Failed to protect TCP socket: {}", e);
+            }
 
             #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
             if let Some(iface) = &bind_interface {
@@ -373,13 +397,18 @@ impl DirectConnector {
             if tcp_fast_open {
                 // Note: TFO connect support varies by platform and tokio version.
                 // socket2 provides set_tcp_fastopen_connect on some platforms.
-                #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios"))]
+                #[cfg(any(
+                    target_os = "android",
+                    target_os = "linux",
+                    target_os = "macos",
+                    target_os = "ios"
+                ))]
                 {
                     let s = socket2::SockRef::from(&socket);
                     // On some platforms/versions this might be missing or named differently.
                     // We'll try to use what's available or log a warning if not supported.
                     // For now, we assume standard socket2 support if compiled.
-                     // let _ = s.set_tcp_fastopen_connect(true);
+                    // let _ = s.set_tcp_fastopen_connect(true);
                     // TODO: Enable TFO when supported by socket2/platform
                     let _ = s; // suppress unused warning
                 }
@@ -411,8 +440,6 @@ impl DirectConnector {
         }
     }
 }
-
-
 
 fn global_limiters() -> (&'static tokio::sync::Semaphore, u64) {
     use std::sync::OnceLock;

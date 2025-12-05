@@ -278,9 +278,9 @@ pub mod map {
             builder = builder.reuse_addr(reuse);
         }
         if let Some(timeout) = &ob.connect_timeout {
-             if let Ok(d) = humantime::parse_duration(timeout) {
+            if let Ok(d) = humantime::parse_duration(timeout) {
                 builder = builder.connect_timeout(d);
-             }
+            }
         }
         if let Some(tfo) = ob.tcp_fast_open {
             builder = builder.tcp_fast_open(tfo);
@@ -316,8 +316,6 @@ pub mod map {
             tls_cfg_override,
             ob.multiplex.as_ref(),
         );
-
-
 
         builder
     }
@@ -525,7 +523,9 @@ pub mod map {
         #[test]
         fn override_when_ca_inline_present() {
             let ob = sb_config::ir::OutboundIR {
-                tls_ca_pem: vec!["-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into()],
+                tls_ca_pem: vec![
+                    "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----".into(),
+                ],
                 ..Default::default()
             };
             let ov = tls_override_from_ob(&ob);

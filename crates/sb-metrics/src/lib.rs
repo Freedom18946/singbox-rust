@@ -75,6 +75,7 @@ use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 pub mod labels;
+pub use labels::ensure_allowed_labels;
 
 fn guarded_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec {
     labels::ensure_allowed_labels(name, labels);
@@ -724,18 +725,6 @@ mod legacy {
         v
     });
 
-    /// Build info gauge
-    #[allow(dead_code)] // Initialized for Prometheus export, never directly accessed
-    pub static BUILD_INFO: LazyLock<IntGauge> = LazyLock::new(|| {
-        let g = IntGauge::new("sb_build_info", "Build information").unwrap_or_else(|_| {
-            #[allow(clippy::unwrap_used)] // Fallback to dummy gauge
-            IntGauge::new("dummy_gauge", "dummy").unwrap()
-        });
-        REGISTRY.register(Box::new(g.clone())).ok();
-        g.set(1);
-        g
-    });
-
     /// Prometheus HTTP export failure counter
     pub static PROM_HTTP_FAIL: LazyLock<IntCounterVec> = LazyLock::new(|| {
         let v = super::guarded_counter_vec(
@@ -922,6 +911,7 @@ mod tests {
         // Directly exercise the /metrics handler without binding sockets.
         let req = Request::builder()
             .method(Method::GET)
+            .uri("/metrics")
             .body(Body::empty())
             .unwrap();
         let resp = metrics_http(req).await.unwrap();

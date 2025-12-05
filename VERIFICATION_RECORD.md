@@ -1,7 +1,7 @@
 # Verification Record - Ground-Up Quality Assurance
 
-**Last Updated**: 2025-11-30 13:36:16 +0800  
-**Verification Status**: In Progress (Comprehensive 3-Layer Review)
+**Last Updated**: 2025-12-05 16:29:35 +0800  
+**Verification Status**: P1 Features Complete ✅
 
 ## Verification Methodology
 
@@ -16,6 +16,65 @@ Each feature undergoes three-layer validation:
 - ⚠️ **Skeleton/Stub** - Implementation incomplete
 - ❌ **Not Implemented** - Missing functionality
 - 🔄 **Blocked** - Cannot verify (e.g., cyclic dependencies)
+
+---
+
+## P1 Features Ground-Up Verification (2025-12-05 16:29:35 +0800)
+
+| Feature | Source | Tests | Config | Status |
+|---------|--------|-------|--------|--------|
+| AdGuard Rules | `rules.rs` L90-210 | 8 unit tests ✅ | `RuleIR.adguard/not_adguard` ✅ | ✅ Pass |
+| UoT Config | `uot.rs` (451 lines) | Transport exists | `OutboundIR.udp_over_tcp` ✅ | ✅ Pass |
+| Headless Rules | `ir/mod.rs` L1286-1298 | JSON parse test ✅ | `RuleIR.rule_type/mode/rules` ✅ | ✅ Pass |
+| uTLS Fingerprint | `utls.rs` (524 lines) | 64 tests ✅ | `OutboundIR.utls_fingerprint` ✅ | ✅ Pass |
+
+### Test Execution Log
+
+```bash
+# P1 Config Tests (6/6 passed)
+$ cargo test --test p1_config_verification -p sb-config
+test test_uot_config_parsing ... ok
+test test_utls_fingerprint_parsing ... ok
+test test_headless_rule_parsing ... ok
+test test_adguard_rule_config_parsing ... ok
+test test_rule_with_invert ... ok
+test test_full_p1_config ... ok
+
+# uTLS Module Tests (64/64 passed)
+$ cargo test -p sb-tls
+test result: ok. 64 passed; 0 failed
+
+# AdGuard Unit Tests (8/8 passed)  
+$ cargo test router::rules::tests --features "router" -p sb-core
+```
+
+### P1 Feature Details
+
+#### 1. AdGuard Rule Matching ✅
+
+- **Source**: `crates/sb-core/src/router/rules.rs` L90-210
+- **Struct**: `AdGuardRuleMatcher` with `parse()` and `matches()` methods
+- **Patterns**: `||domain^`, `|domain`, `plain` (contains)
+- **Exception**: `@@` prefix support
+- **Test File**: `crates/sb-config/tests/p1_config_verification.rs`
+
+#### 2. UoT Config Wiring ✅
+
+- **Transport**: `crates/sb-transport/src/uot.rs` (451 lines)
+- **Config Fields**: `udp_over_tcp: Option<bool>`, `udp_over_tcp_version: Option<u8>`
+- **Validator**: `crates/sb-config/src/validator/v2.rs` L972-976
+
+#### 3. Headless/Logical Rules ✅
+
+- **Config Fields**: `rule_type`, `mode`, `rules: Vec<Box<RuleIR>>`
+- **Source**: `crates/sb-config/src/ir/mod.rs` L1286-1298
+- **Supports**: `type: "logical"`, `mode: "and"|"or"`, nested sub-rules
+
+#### 4. uTLS Client Fingerprinting ✅
+
+- **Source**: `crates/sb-tls/src/utls.rs` (524 lines)
+- **Config Field**: `utls_fingerprint: Option<String>`
+- **Fingerprints**: Chrome (58-110), Firefox (55-105), Safari, Edge, Random, Custom
 
 ---
 

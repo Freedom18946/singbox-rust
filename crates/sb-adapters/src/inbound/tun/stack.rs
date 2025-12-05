@@ -49,7 +49,10 @@ impl Device for VirtualTunDevice {
     type RxToken<'a> = VecRxToken;
     type TxToken<'a> = ChannelTxToken;
 
-    fn receive(&mut self, _timestamp: SmolInstant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+    fn receive(
+        &mut self,
+        _timestamp: SmolInstant,
+    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         if let Some(buffer) = self.rx_buffer.take() {
             Some((
                 VecRxToken { buffer },
@@ -121,18 +124,22 @@ impl TunStack {
         // Create a dummy channel for the device initialization
         // The actual RX channel will be managed by the caller injecting packets
         let (_, rx) = mpsc::channel(1);
-        
+
         let device = VirtualTunDevice::new(rx, tx, mtu);
-        
-        let interface = Interface::new(config, &mut VirtualTunDevice::new(mpsc::channel(1).1, mpsc::channel(1).0, mtu), SmolInstant::now());
+
+        let interface = Interface::new(
+            config,
+            &mut VirtualTunDevice::new(mpsc::channel(1).1, mpsc::channel(1).0, mtu),
+            SmolInstant::now(),
+        );
         let socket_set = SocketSet::new(vec![]);
 
         // Re-create proper device/interface structure
-        // Note: smoltcp Interface takes ownership of the device in some versions, 
-        // or just uses it during poll. 
+        // Note: smoltcp Interface takes ownership of the device in some versions,
+        // or just uses it during poll.
         // In current smoltcp, Interface holds state, Device is passed to poll.
         // So we just need to keep the device around.
-        
+
         Self {
             interface,
             socket_set,
@@ -149,7 +156,9 @@ impl TunStack {
         }
 
         // smoltcp poll returns bool indicating if any work was done
-        let _ = self.interface.poll(timestamp, &mut self.device, &mut self.socket_set);
+        let _ = self
+            .interface
+            .poll(timestamp, &mut self.device, &mut self.socket_set);
     }
 
     /// Create a new TCP socket listening on the specified address
@@ -157,11 +166,11 @@ impl TunStack {
         let rx_buffer = tcp::SocketBuffer::new(vec![0; 65535]);
         let tx_buffer = tcp::SocketBuffer::new(vec![0; 65535]);
         let mut socket = tcp::Socket::new(rx_buffer, tx_buffer);
-        
+
         if let Err(e) = socket.listen(addr) {
             error!("Failed to listen on {}: {}", addr, e);
         }
-        
+
         self.socket_set.add(socket)
     }
 
@@ -171,11 +180,14 @@ impl TunStack {
         // and check their state. For now, we assume the caller manages handles.
         None
     }
-    
-    pub fn get_socket_mut<T: smoltcp::socket::AnySocket<'static>>(&mut self, handle: SocketHandle) -> &mut T {
+
+    pub fn get_socket_mut<T: smoltcp::socket::AnySocket<'static>>(
+        &mut self,
+        handle: SocketHandle,
+    ) -> &mut T {
         self.socket_set.get_mut(handle)
     }
-    
+
     pub fn remove_socket(&mut self, handle: SocketHandle) {
         self.socket_set.remove(handle);
     }

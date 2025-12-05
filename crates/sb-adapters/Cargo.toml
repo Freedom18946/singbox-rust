@@ -46,6 +46,10 @@ webpki-roots = { version = "0.26", optional = true }
 # WireGuard userspace implementation
 boringtun = { git = "https://github.com/cloudflare/boringtun", branch = "master", optional = true }
 
+# Tor (Arti) dependencies
+arti-client = { version = "0.23", optional = true, default-features = false, features = ["tokio", "native-tls"] }
+tor-rtcompat = { version = "0.23", optional = true, default-features = false, features = ["tokio", "native-tls"] }
+
 
 # 可选：通用 metrics 宏（仅当启用 feature=metrics 时编译）
 metrics = { version = "0.23", optional = true }
@@ -80,6 +84,12 @@ http = { version = "0.2", optional = true }
 
 # Constant-time comparison for authentication
 subtle = "2.5"
+
+# SSH protocol for SSH inbound/outbound
+russh = { version = "0.49", optional = true }
+russh-keys = { version = "0.49", optional = true }
+ssh-key = { version = "0.6", optional = true }
+
 anytls-rs = { version = "0.5.4", optional = true }
 smoltcp = { version = "0.11", features = ["std", "async", "medium-ethernet", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp", "socket-icmp"] }
 
@@ -126,6 +136,7 @@ metrics = ["dep:metrics", "dep:sb-metrics"]
 # CLI 支持
 clap = ["dep:clap"]
 dns = []
+ssh = ["dep:russh", "dep:russh-keys", "dep:ssh-key"]
 dns_udp = []
 dns_doh = ["sb-core/dns_doh"]
 dns_dot = []
@@ -155,21 +166,25 @@ adapter-http = []
 http-tls = ["adapter-http", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls"]
 socks-tls = ["adapter-socks", "dep:rustls", "dep:webpki-roots", "dep:tokio-rustls", "dep:rustls-pki-types"]
 adapter-shadowsocks = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/serde", "out_ss"]
-adapter-trojan = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "out_trojan"]
-adapter-vmess = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "out_vmess"]
-adapter-vless = ["dep:sb-transport", "sb-transport/transport_mux", "sb-transport/transport_ws", "sb-transport/transport_grpc", "sb-transport/transport_httpupgrade", "sb-transport/serde", "out_vless"]
+adapter-trojan = ["dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots", "out_trojan"]
+adapter-vmess = ["dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "out_vmess"]
+adapter-vless = ["dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "out_vless"]
 adapter-hysteria = ["sb-core/out_hysteria"]
 adapter-hysteria2 = ["out_hysteria2"]
 adapter-shadowtls = ["shadowtls", "dep:sb-transport", "sb-transport/transport_tls", "sb-core/out_shadowtls"]
 adapter-ssh = ["sb-core/out_ssh"]
 adapter-tuic = ["tuic", "out_tuic"]
+adapter-tailscale = ["sb-core/out_tailscale"]
 adapter-wireguard = ["out_wireguard"]
+adapter-wireguard-outbound = ["sb-transport", "sb-transport/transport_wireguard", "out_wireguard"]
 adapter-wireguard-endpoint = ["dep:boringtun", "dep:tun"]
+adapter-tailscale-endpoint = []
 adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 adapter-dns = []
 adapter-tun = ["tun"]
 adapter-redirect = []
 adapter-tproxy = []
+adapter-tor = ["dep:arti-client", "dep:tor-rtcompat"]
 
 # TLS features
 tls_reality = ["dep:sb-tls", "sb-tls/reality"]

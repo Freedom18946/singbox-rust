@@ -76,7 +76,15 @@ impl LinuxPlatformHook {
         // ip route add default dev <interface> table <table_id>
         self.run_command(
             "ip",
-            &["route", "add", "default", "dev", interface, "table", &table_id.to_string()],
+            &[
+                "route",
+                "add",
+                "default",
+                "dev",
+                interface,
+                "table",
+                &table_id.to_string(),
+            ],
         )?;
 
         // Add route entry tracking
@@ -89,7 +97,16 @@ impl LinuxPlatformHook {
         if config.inet6_address.is_some() {
             self.run_command(
                 "ip",
-                &["-6", "route", "add", "default", "dev", interface, "table", &table_id.to_string()],
+                &[
+                    "-6",
+                    "route",
+                    "add",
+                    "default",
+                    "dev",
+                    interface,
+                    "table",
+                    &table_id.to_string(),
+                ],
             )?;
 
             self.configured_routes.lock().unwrap().push(RouteEntry {
@@ -131,7 +148,9 @@ impl LinuxPlatformHook {
         let is_ipv6 = cidr.contains(':');
         let table_str = table_id.to_string();
         let args = if is_ipv6 {
-            vec!["-6", "route", "add", cidr, "dev", interface, "table", &table_str]
+            vec![
+                "-6", "route", "add", cidr, "dev", interface, "table", &table_str,
+            ]
         } else {
             vec!["route", "add", cidr, "dev", interface, "table", &table_str]
         };
@@ -152,23 +171,42 @@ impl LinuxPlatformHook {
         // ip rule add not fwmark <fwmark> lookup <table_id>
         self.run_command(
             "ip",
-            &["rule", "add", "not", "fwmark", &fwmark_str, "lookup", &table_str],
+            &[
+                "rule",
+                "add",
+                "not",
+                "fwmark",
+                &fwmark_str,
+                "lookup",
+                &table_str,
+            ],
         )?;
 
-        self.configured_rules.lock().unwrap().push(
-            format!("ip rule del not fwmark {} lookup {}", fwmark_str, table_str)
-        );
+        self.configured_rules.lock().unwrap().push(format!(
+            "ip rule del not fwmark {} lookup {}",
+            fwmark_str, table_str
+        ));
 
         // IPv6 rule if configured
         if config.inet6_address.is_some() {
             self.run_command(
                 "ip",
-                &["-6", "rule", "add", "not", "fwmark", &fwmark_str, "lookup", &table_str],
+                &[
+                    "-6",
+                    "rule",
+                    "add",
+                    "not",
+                    "fwmark",
+                    &fwmark_str,
+                    "lookup",
+                    &table_str,
+                ],
             )?;
 
-            self.configured_rules.lock().unwrap().push(
-                format!("ip -6 rule del not fwmark {} lookup {}", fwmark_str, table_str)
-            );
+            self.configured_rules.lock().unwrap().push(format!(
+                "ip -6 rule del not fwmark {} lookup {}",
+                fwmark_str, table_str
+            ));
         }
 
         Ok(())
@@ -194,13 +232,31 @@ impl LinuxPlatformHook {
         // Exclude local traffic
         self.run_command(
             "iptables",
-            &["-t", "mangle", "-A", CHAIN_NAME, "-d", "127.0.0.0/8", "-j", "RETURN"],
+            &[
+                "-t",
+                "mangle",
+                "-A",
+                CHAIN_NAME,
+                "-d",
+                "127.0.0.0/8",
+                "-j",
+                "RETURN",
+            ],
         )?;
 
         // Exclude multicast
         self.run_command(
             "iptables",
-            &["-t", "mangle", "-A", CHAIN_NAME, "-d", "224.0.0.0/4", "-j", "RETURN"],
+            &[
+                "-t",
+                "mangle",
+                "-A",
+                CHAIN_NAME,
+                "-d",
+                "224.0.0.0/4",
+                "-j",
+                "RETURN",
+            ],
         )?;
 
         // Exclude UIDs if specified
@@ -208,9 +264,18 @@ impl LinuxPlatformHook {
             self.run_command(
                 "iptables",
                 &[
-                    "-t", "mangle", "-A", CHAIN_NAME,
-                    "-m", "owner", "--uid-owner", &uid.to_string(),
-                    "-j", "MARK", "--set-mark", &fwmark_str,
+                    "-t",
+                    "mangle",
+                    "-A",
+                    CHAIN_NAME,
+                    "-m",
+                    "owner",
+                    "--uid-owner",
+                    &uid.to_string(),
+                    "-j",
+                    "MARK",
+                    "--set-mark",
+                    &fwmark_str,
                 ],
             )?;
         }
@@ -226,25 +291,39 @@ impl LinuxPlatformHook {
             // Exclude local IPv6
             self.run_command(
                 "ip6tables",
-                &["-t", "mangle", "-A", CHAIN_NAME, "-d", "::1/128", "-j", "RETURN"],
+                &[
+                    "-t", "mangle", "-A", CHAIN_NAME, "-d", "::1/128", "-j", "RETURN",
+                ],
             )?;
 
             // Exclude link-local
             self.run_command(
                 "ip6tables",
-                &["-t", "mangle", "-A", CHAIN_NAME, "-d", "fe80::/10", "-j", "RETURN"],
+                &[
+                    "-t",
+                    "mangle",
+                    "-A",
+                    CHAIN_NAME,
+                    "-d",
+                    "fe80::/10",
+                    "-j",
+                    "RETURN",
+                ],
             )?;
         }
 
-        self.configured_rules.lock().unwrap().push(
-            format!("iptables -t mangle -D OUTPUT -j {}", CHAIN_NAME)
-        );
-        self.configured_rules.lock().unwrap().push(
-            format!("iptables -t mangle -F {}", CHAIN_NAME)
-        );
-        self.configured_rules.lock().unwrap().push(
-            format!("iptables -t mangle -X {}", CHAIN_NAME)
-        );
+        self.configured_rules
+            .lock()
+            .unwrap()
+            .push(format!("iptables -t mangle -D OUTPUT -j {}", CHAIN_NAME));
+        self.configured_rules
+            .lock()
+            .unwrap()
+            .push(format!("iptables -t mangle -F {}", CHAIN_NAME));
+        self.configured_rules
+            .lock()
+            .unwrap()
+            .push(format!("iptables -t mangle -X {}", CHAIN_NAME));
 
         Ok(())
     }
@@ -301,9 +380,10 @@ table inet {table} {{
             ));
         }
 
-        self.configured_rules.lock().unwrap().push(
-            format!("nft delete table inet {}", table_name)
-        );
+        self.configured_rules
+            .lock()
+            .unwrap()
+            .push(format!("nft delete table inet {}", table_name));
 
         Ok(())
     }
@@ -312,9 +392,7 @@ table inet {table} {{
     fn run_command(&self, cmd: &str, args: &[&str]) -> io::Result<()> {
         debug!("Running: {} {}", cmd, args.join(" "));
 
-        let output = Command::new(cmd)
-            .args(args)
-            .output()?;
+        let output = Command::new(cmd).args(args).output()?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -351,9 +429,7 @@ table inet {table} {{
         for rule_cmd in rules {
             let parts: Vec<&str> = rule_cmd.split_whitespace().collect();
             if !parts.is_empty() {
-                let _ = Command::new(parts[0])
-                    .args(&parts[1..])
-                    .output();
+                let _ = Command::new(parts[0]).args(&parts[1..]).output();
             }
         }
         self.configured_rules.lock().unwrap().clear();

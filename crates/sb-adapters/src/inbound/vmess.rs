@@ -30,8 +30,8 @@ use anyhow::{anyhow, Result};
 use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey, Nonce as ChaNonce};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
@@ -123,8 +123,8 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { 
-                // debug!("vmess: accept-loop heartbeat"); 
+            _ = hb.tick() => {
+                // debug!("vmess: accept-loop heartbeat");
             }
             r = listener.accept() => {
                 let (mut stream, _peer) = match r {
@@ -160,13 +160,14 @@ async fn handle_fallback(
     target: SocketAddr,
     prefix: &[u8],
 ) -> Result<()> {
-    let mut remote = tokio::net::TcpStream::connect(target).await
+    let mut remote = tokio::net::TcpStream::connect(target)
+        .await
         .map_err(|e| anyhow!("vmess: failed to connect to fallback {}: {}", target, e))?;
-    
+
     if !prefix.is_empty() {
         remote.write_all(prefix).await?;
     }
-    
+
     let _ = tokio::io::copy_bidirectional(stream, &mut remote).await;
     Ok(())
 }
@@ -190,13 +191,13 @@ async fn handle_conn(
     // 步骤 1: 读取并验证认证头
     let mut auth_header = [0u8; AUTH_HEADER_LEN];
     match cli.read_exact(&mut auth_header).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
-             // Read failed. If we have fallback, we can't do much because we don't have data.
-             // But if it's EOF, maybe it's a probe?
-             // If we read partial data, we could fallback.
-             // For simplicity, just error.
-             return Err(anyhow!("vmess: failed to read auth header: {}", e));
+            // Read failed. If we have fallback, we can't do much because we don't have data.
+            // But if it's EOF, maybe it's a probe?
+            // If we read partial data, we could fallback.
+            // For simplicity, just error.
+            return Err(anyhow!("vmess: failed to read auth header: {}", e));
         }
     }
 

@@ -40,6 +40,8 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                 crate::ir::InboundType::Hysteria => "hysteria",
                 crate::ir::InboundType::Hysteria2 => "hysteria2",
                 crate::ir::InboundType::Tuic => "tuic",
+                crate::ir::InboundType::Dns => "dns",
+                crate::ir::InboundType::Ssh => "ssh",
             };
             obj.insert("type".into(), Value::from(ty));
             Value::Object(obj)
@@ -214,6 +216,7 @@ pub fn to_view(ir: &ConfigIR) -> Value {
                 crate::ir::OutboundType::Hysteria => "hysteria",
                 crate::ir::OutboundType::Wireguard => "wireguard",
                 crate::ir::OutboundType::Tailscale => "tailscale",
+                crate::ir::OutboundType::ShadowsocksR => "shadowsocksr",
             };
             obj.insert("type".into(), Value::from(ty));
             Value::Object(obj)

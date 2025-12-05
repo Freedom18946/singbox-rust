@@ -24,8 +24,8 @@
 //! 4. 双向转发
 
 use anyhow::{anyhow, Result};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
@@ -103,14 +103,15 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         match listener {
             crate::transport_config::InboundListener::Tcp(tcp_listener) => {
                 info!("vless: enabling multiplexing over TCP");
-                let mux_listener = sb_transport::multiplex::MultiplexListener::new(tcp_listener, mux_cfg.clone());
-                
+                let mux_listener =
+                    sb_transport::multiplex::MultiplexListener::new(tcp_listener, mux_cfg.clone());
+
                 let mut hb = interval(Duration::from_secs(5));
                 loop {
                     select! {
                         _ = stop_rx.recv() => break,
-                        _ = hb.tick() => { 
-                            // debug!("vless: mux accept-loop heartbeat"); 
+                        _ = hb.tick() => {
+                            // debug!("vless: mux accept-loop heartbeat");
                         }
                         r = mux_listener.accept() => {
                             let stream = match r {
@@ -120,18 +121,18 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                                     continue;
                                 }
                             };
-                            
-                            // Mux streams don't have a direct peer address in the same way, 
+
+                            // Mux streams don't have a direct peer address in the same way,
                             // but we can try to get it from the listener or use a placeholder.
                             // For now, use 0.0.0.0:0 or try to get it if exposed.
                             // MuxListener doesn't expose per-stream peer addr easily yet.
-                            let peer = SocketAddr::from(([0, 0, 0, 0], 0)); 
-                            
+                            let peer = SocketAddr::from(([0, 0, 0, 0], 0));
+
                             let cfg_clone = cfg.clone();
                             // Wrap stream in a way that handle_conn_stream accepts
                             // handle_conn_stream takes &mut (AsyncRead+AsyncWrite+Unpin)
                             // stream is Box<dyn ...> which implements that.
-                            
+
                             tokio::spawn(async move {
                                 let mut stream = stream;
                                 if let Err(e) = handle_conn_stream(&cfg_clone, &mut stream, peer).await {
@@ -145,7 +146,12 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 }
                 return Ok(());
             }
-
+            _ => {
+                warn!("vless: multiplexing not supported for this transport type");
+                return Err(anyhow!(
+                    "vless: multiplexing not supported for this transport type"
+                ));
+            }
         }
     }
 
@@ -155,8 +161,8 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { 
-                // debug!("vless: accept-loop heartbeat"); 
+            _ = hb.tick() => {
+                // debug!("vless: accept-loop heartbeat");
             }
             r = listener.accept() => {
                 let (mut stream, peer) = match r {
@@ -208,13 +214,14 @@ async fn handle_fallback(
     target: SocketAddr,
     prefix: &[u8],
 ) -> Result<()> {
-    let mut remote = tokio::net::TcpStream::connect(target).await
+    let mut remote = tokio::net::TcpStream::connect(target)
+        .await
         .map_err(|e| anyhow!("vless: failed to connect to fallback {}: {}", target, e))?;
-    
+
     if !prefix.is_empty() {
         remote.write_all(prefix).await?;
     }
-    
+
     let _ = tokio::io::copy_bidirectional(stream, &mut remote).await;
     Ok(())
 }
@@ -239,9 +246,9 @@ async fn handle_conn_impl(
     let version = match cli.read_u8().await {
         Ok(v) => v,
         Err(e) => {
-             // Read failed, if we have fallback, try it? 
-             // But we have no data. Just error.
-             return Err(anyhow!("vless: failed to read version: {}", e));
+            // Read failed, if we have fallback, try it?
+            // But we have no data. Just error.
+            return Err(anyhow!("vless: failed to read version: {}", e));
         }
     };
 

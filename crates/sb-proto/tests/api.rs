@@ -135,4 +135,3 @@ fn ss2022_hello_bytes_api() {
     assert!(!bytes.is_empty());
     assert!(bytes.starts_with(b"SS2022\0"));
 }
-

@@ -20,6 +20,12 @@ pub mod mixed;
 
 pub mod direct;
 
+#[cfg(feature = "dns")]
+pub mod dns;
+
+#[cfg(feature = "ssh")]
+pub mod ssh;
+
 #[cfg(feature = "tun")]
 pub mod tun;
 

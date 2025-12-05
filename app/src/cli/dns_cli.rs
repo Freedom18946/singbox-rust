@@ -158,10 +158,9 @@ fn run_upstream(args: UpstreamArgs) -> Result<()> {
 /// Load config from file (supports JSON and YAML)
 fn load_config(path: &str) -> Result<sb_config::Config> {
     if path.ends_with(".yaml") || path.ends_with(".yml") {
-        let data =
-            std::fs::read_to_string(path).with_context(|| format!("read config {}", path))?;
+        let data = std::fs::read_to_string(path).with_context(|| format!("read config {path}"))?;
         serde_yaml::from_str::<sb_config::Config>(&data).with_context(|| "parse config as yaml")
     } else {
-        sb_config::Config::load(path).with_context(|| format!("load config from {}", path))
+        sb_config::Config::load(path).with_context(|| format!("load config from {path}"))
     }
 }

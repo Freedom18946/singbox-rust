@@ -25,10 +25,10 @@ use futures::future::{select_ok, FutureExt};
 use std::net::SocketAddr;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::net::{lookup_host, TcpStream};
+use tokio::net::{lookup_host, TcpStream, TcpSocket};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Errors that may occur during dialing
 /// 拨号过程中可能出现的错误类型
@@ -221,12 +221,12 @@ impl Dialer for TcpDialer {
         // except for potential future use or if we plumb them into socket setup.
         // For now, we just keep the existing logic but allow fields to be set.
         // TODO: Plumb bind_interface, etc. into socket creation.
-        
+
         // 检查是否禁用 Happy Eyeballs
         if std::env::var("SB_HE_DISABLE").is_ok_and(|v| v == "1") {
             debug!("Happy Eyeballs disabled, using traditional dial");
-            let s = TcpStream::connect((host, port)).await?;
-            return Ok(Box::new(s));
+            let addrs = lookup_host((host, port)).await?.collect::<Vec<_>>();
+            return self.try_connect_addrs(&addrs).await;
         }
 
         // 获取延迟配置
@@ -376,7 +376,7 @@ impl TcpDialer {
         let mut last_error = DialError::Other("no addresses provided".into());
 
         for addr in addrs {
-            match TcpStream::connect(addr).await {
+            match Self::connect_tcp_stream(*addr).await {
                 Ok(stream) => {
                     debug!("Successfully connected to {}", addr);
                     return Ok(Box::new(stream));
@@ -398,7 +398,7 @@ impl TcpDialer {
         addr: SocketAddr,
         cancel_token: CancellationToken,
     ) -> Result<IoStream, DialError> {
-        let connect_future = TcpStream::connect(addr);
+        let connect_future = Self::connect_tcp_stream(addr);
 
         tokio::select! {
             result = connect_future => {
@@ -417,6 +417,28 @@ impl TcpDialer {
                 debug!("Connection to {} cancelled", addr);
                 Err(std::io::Error::new(std::io::ErrorKind::Interrupted, format!("connection to {}", addr)).into())
             }
+        }
+    }
+
+    /// Helper to connect a TCP stream with platform-specific protection
+    async fn connect_tcp_stream(addr: SocketAddr) -> std::io::Result<TcpStream> {
+        #[cfg(target_os = "android")]
+        {
+            let socket = if addr.is_ipv4() {
+                TcpSocket::new_v4()?
+            } else {
+                TcpSocket::new_v6()?
+            };
+            
+            if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
+                warn!("Failed to protect TCP socket: {}", e);
+            }
+            
+            socket.connect(addr).await
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            TcpStream::connect(addr).await
         }
     }
 }

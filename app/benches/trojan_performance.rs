@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use tokio::runtime::Runtime;
 use sb_adapters::inbound::trojan::TrojanUser;
+use tokio::runtime::Runtime;
 
 /// Benchmark Trojan binary protocol throughput
 fn bench_trojan_throughput(c: &mut Criterion) {

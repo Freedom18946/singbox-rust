@@ -10,11 +10,11 @@ mod tests {
     };
     use sb_core::outbound::types::{HostPort, OutboundTcp};
     use std::net::SocketAddr;
+    use std::sync::Arc;
     use std::sync::Once;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream, UdpSocket};
-    use std::sync::Arc;
 
     async fn run_server(server: Arc<HysteriaV1Inbound>, target_addr: SocketAddr) {
         loop {
@@ -22,8 +22,10 @@ mod tests {
                 tokio::spawn(async move {
                     // Consume connect request (IPv4: 1+1+4+2 = 8 bytes)
                     let mut buf = [0u8; 8];
-                    if stream.read_exact(&mut buf).await.is_err() { return; }
-                    
+                    if stream.read_exact(&mut buf).await.is_err() {
+                        return;
+                    }
+
                     // Connect to target
                     if let Ok(mut target) = TcpStream::connect(target_addr).await {
                         let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;

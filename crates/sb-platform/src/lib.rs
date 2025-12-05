@@ -75,6 +75,13 @@
 pub mod process;
 pub mod system_proxy;
 pub mod tun;
+pub mod monitor;
+
+/// Android VPN protect hooks for socket protection.
+pub mod android_protect;
+
+/// Windows Internet (WinInet) proxy detection and configuration.
+pub mod wininet;
 
 /// OS detection constants and utilities
 pub mod os {

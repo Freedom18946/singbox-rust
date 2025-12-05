@@ -14,6 +14,8 @@ use aes_gcm::{
 };
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
 
+use sb_core::net::rate_limit_metrics;
+use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
@@ -24,18 +26,16 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
-use sb_core::net::tcp_rate_limit::{TcpRateLimiter, TcpRateLimitConfig};
-use sb_core::net::rate_limit_metrics;
 
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
-use tracing::{info, warn};
-use std::collections::HashMap;
 use tracing::debug;
+use tracing::{info, warn};
 
 #[derive(Clone, Debug)]
 pub enum AeadCipherKind {
@@ -118,13 +118,13 @@ impl ShadowsocksInboundConfig {
     /// Returns map of (master_key -> username)
     fn build_user_map(&self, cipher: &AeadCipherKind) -> HashMap<Vec<u8>, String> {
         let mut map = HashMap::new();
-        
+
         // Add configured users
         for user in &self.users {
             let key = evp_bytes_to_key(&user.password, cipher.key_len());
             map.insert(key, user.name.clone());
         }
-        
+
         // Backward compatibility: add single password if present
         #[allow(deprecated)]
         if let Some(ref pwd) = self.password {
@@ -133,7 +133,7 @@ impl ShadowsocksInboundConfig {
                 map.insert(key, "default".to_string());
             }
         }
-        
+
         map
     }
 }
@@ -366,7 +366,7 @@ async fn handle_udp_relay(
     mut stop_rx: mpsc::Receiver<()>,
 ) -> Result<()> {
     let mut buf = vec![0u8; 65536];
-    
+
     loop {
         select! {
             _ = stop_rx.recv() => break,
@@ -377,10 +377,10 @@ async fn handle_udp_relay(
                             // Too small to be valid (salt + minimal AEAD)
                             continue;
                         }
-                        
+
                         // Extract salt
                         let salt = &buf[..cipher.salt_len()];
-                        
+
                         // Try to authenticate - derive subkey with each user's master key
                         let mut authenticated = false;
                         let mut auth_user = String::new();
@@ -395,19 +395,19 @@ async fn handle_udp_relay(
                                 }
                             }
                         }
-                        
+
                         if !authenticated {
                             debug!(?peer, "shadowsocks: UDP auth failed");
                             continue;
                         }
-                        
+
                         debug!(?peer, user=%auth_user, "shadowsocks: UDP packet authenticated");
-                        
+
                         // Spawn task for this UDP packet
                         let socket_clone = socket.clone();
                         let cipher_clone = cipher.clone();
                         let data = buf[..n].to_vec();
-                        
+
                         tokio::spawn(async move {
                             if let Err(e) = handle_udp_packet(
                                 socket_clone,
@@ -427,7 +427,7 @@ async fn handle_udp_relay(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -442,46 +442,48 @@ async fn handle_udp_packet(
     let salt = &data[..cipher.salt_len()];
     let master_key = &data[..32]; // Placeholder - should use authenticated user's key
     let subkey = hkdf_subkey(master_key, salt)?;
-    
+
     // Decrypt packet
     let encrypted = &data[cipher.salt_len()..];
     let decrypted = aead_decrypt_udp(&cipher, &subkey, 0, encrypted)?;
-    
+
     // Parse target address
     let (target_host, target_port, addr_len) = parse_ss_addr(&decrypted)?;
     let payload = &decrypted[addr_len..];
-    
+
     // Create upstream socket and send
     let upstream = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
-    upstream.connect((target_host.as_str(), target_port)).await?;
+    upstream
+        .connect((target_host.as_str(), target_port))
+        .await?;
     upstream.send(payload).await?;
-    
+
     // Receive response
     let mut resp_buf = vec![0u8; 65536];
     match tokio::time::timeout(Duration::from_secs(5), upstream.recv(&mut resp_buf)).await {
         Ok(Ok(n)) => {
             // Encrypt and send back to client
             let response_data = &resp_buf[..n];
-            
+
             // Generate new salt for response
             let mut resp_salt = vec![0u8; cipher.salt_len()];
             use rand::Rng;
             rand::thread_rng().fill(&mut resp_salt[..]);
-            
+
             let resp_subkey = hkdf_subkey(master_key, &resp_salt)?;
             let encrypted_resp = aead_encrypt_udp(&cipher, &resp_subkey, 0, response_data)?;
-            
+
             let mut full_resp = Vec::new();
             full_resp.extend_from_slice(&resp_salt);
             full_resp.extend_from_slice(&encrypted_resp);
-            
+
             listen_socket.send_to(&full_resp, peer).await?;
         }
         _ => {
             // Timeout or error, ignore
         }
     }
-    
+
     Ok(())
 }
 
@@ -508,10 +510,10 @@ fn aead_encrypt_udp(
 pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
     let method =
         AeadCipherKind::from_method(&cfg.method).ok_or_else(|| anyhow!("unsupported method"))?;
-    
+
     // Build user map for authentication
     let user_map = cfg.build_user_map(&method);
-    
+
     if user_map.is_empty() {
         return Err(anyhow!("shadowsocks: no users configured"));
     }
@@ -547,7 +549,7 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
     let udp_method = method.clone();
     let udp_user_map = user_map.clone();
     let udp_rate_limiter = rate_limiter.clone();
-    
+
     tokio::spawn(async move {
         if let Err(e) = handle_udp_relay(
             udp_socket,
@@ -556,7 +558,9 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
             udp_user_map,
             udp_rate_limiter,
             udp_stop_rx,
-        ).await {
+        )
+        .await
+        {
             warn!(error=%e, "shadowsocks: UDP relay error");
         }
     });
@@ -577,8 +581,8 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
         loop {
             select! {
                 _ = stop_rx.recv() => break,
-                _ = hb.tick() => { 
-                    // tracing::debug!("shadowsocks: accept-loop heartbeat"); 
+                _ = hb.tick() => {
+                    // tracing::debug!("shadowsocks: accept-loop heartbeat");
                 }
                 r = listener.accept() => {
                     let (stream, peer) = match r {
@@ -606,9 +610,9 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                     let method_clone = method.clone();
                     let master_clone = master.clone();
                     let rate_limiter_clone = rate_limiter.clone();
-                    
+
                     rate_limit_metrics::inc_active_connections("shadowsocks");
-                    
+
                     tokio::spawn(async move {
                         let _guard = scopeguard::guard((), |_| {
                             rate_limit_metrics::dec_active_connections("shadowsocks");
@@ -633,8 +637,8 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
         loop {
             select! {
                 _ = stop_rx.recv() => break,
-                _ = hb.tick() => { 
-                    // tracing::debug!("shadowsocks: accept-loop heartbeat"); 
+                _ = hb.tick() => {
+                    // tracing::debug!("shadowsocks: accept-loop heartbeat");
                 }
                 r = listener.accept() => {
                     let (stream, peer) = match r {
@@ -663,9 +667,9 @@ pub async fn serve(cfg: ShadowsocksInboundConfig, mut stop_rx: mpsc::Receiver<()
                     let method_clone = method.clone();
                     let master_clone = master.clone();
                     let rate_limiter_clone = rate_limiter.clone();
-                    
+
                     rate_limit_metrics::inc_active_connections("shadowsocks");
-                    
+
                     tokio::spawn(async move {
                         let _guard = scopeguard::guard((), |_| {
                             rate_limit_metrics::dec_active_connections("shadowsocks");
@@ -699,7 +703,6 @@ where
     handle_conn_impl(_cfg, cipher, master_key, cli, peer, rate_limiter).await
 }
 
-
 async fn handle_conn_impl<T>(
     _cfg: &ShadowsocksInboundConfig,
     cipher: AeadCipherKind,
@@ -715,7 +718,7 @@ where
     // 步骤 1：读取客户端 salt
     let csalt = read_exact_n(&mut cli, cipher.salt_len()).await?;
     let c_subkey = hkdf_subkey(master_key, &csalt)?;
-    
+
     // Create duplex pipe for cleartext traffic
     // 创建用于明文流量的双工管道
     let (mut clear_local, clear_remote) = tokio::io::duplex(65536);
@@ -724,12 +727,13 @@ where
 
     let cipher_read = cipher.clone();
 
-    
     // Spawn Decrypt Pump: CLI(Encrypted) -> Remote(Clear)
     // 启动解密泵：CLI(加密) -> Remote(明文)
     tokio::spawn(async move {
         let mut nonce = 0u64;
-        while let Ok(payload) = read_aead_chunk(&cipher_read, &c_subkey, &mut nonce, &mut cli_r).await {
+        while let Ok(payload) =
+            read_aead_chunk(&cipher_read, &c_subkey, &mut nonce, &mut cli_r).await
+        {
             if remote_w.write_all(&payload).await.is_err() {
                 break;
             }
@@ -747,26 +751,26 @@ where
     // 4. Generate server salt.
     // 5. Send server salt.
     // 6. Relay loop.
-    
+
     // With Mux, we might accept the connection BEFORE router decision (if Mux).
     // If Mux, we accept the connection, establish Mux session.
     // The Mux session establishment implies we are "accepting" the TCP connection.
     // So we should generate server salt and start the encryption pump immediately?
     // Yes, for Mux to work, we need a bidirectional cleartext stream.
     // So we must send the server salt and start encrypting.
-    
+
     // Generate server salt
     let mut ssalt = vec![0u8; cipher.salt_len()];
     use rand::Rng;
     rand::thread_rng().fill(&mut ssalt[..]);
     let s_subkey = hkdf_subkey(master_key, &ssalt)?;
-    
+
     // Send server salt to client
     cli_w.write_all(&ssalt).await?;
-    
+
     let cipher_write = cipher.clone();
     let key_write = s_subkey;
-    
+
     // Spawn Encrypt Pump: Remote(Clear) -> CLI(Encrypted)
     // 启动加密泵：Remote(明文) -> CLI(加密)
     tokio::spawn(async move {
@@ -776,7 +780,16 @@ where
             match remote_r.read(&mut buf).await {
                 Ok(0) => break, // EOF
                 Ok(n) => {
-                    if write_aead_chunk(&cipher_write, &key_write, &mut nonce, &mut cli_w, &buf[..n]).await.is_err() {
+                    if write_aead_chunk(
+                        &cipher_write,
+                        &key_write,
+                        &mut nonce,
+                        &mut cli_w,
+                        &buf[..n],
+                    )
+                    .await
+                    .is_err()
+                    {
                         break;
                     }
                 }
@@ -791,18 +804,18 @@ where
     // Check Mux
     if let Some(mux_cfg) = _cfg.multiplex.clone() {
         // Mux enabled
-        use tokio_util::compat::TokioAsyncReadCompatExt;
-        use sb_transport::yamux::{Config, Connection, Mode};
         use futures::future::poll_fn;
+        use sb_transport::yamux::{Config, Connection, Mode};
+        use tokio_util::compat::TokioAsyncReadCompatExt;
 
         let mut config = Config::default();
         config.set_max_num_streams(mux_cfg.max_num_streams);
-        
+
         let compat_stream = clear_local.compat();
         let mut connection = Connection::new(compat_stream, config, Mode::Server);
 
         debug!(%peer, "ss: mux session started");
-        
+
         while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
             match result {
                 Ok(stream) => {
@@ -812,7 +825,14 @@ where
                         use tokio_util::compat::FuturesAsyncReadCompatExt;
                         let mut tokio_stream = stream.compat();
                         // Handle inner stream (read addr, route, relay)
-                        if let Err(e) = handle_cleartext_stream(&cfg_inner, &mut tokio_stream, peer, &limiter_inner).await {
+                        if let Err(e) = handle_cleartext_stream(
+                            &cfg_inner,
+                            &mut tokio_stream,
+                            peer,
+                            &limiter_inner,
+                        )
+                        .await
+                        {
                             debug!(%peer, error=%e, "ss: mux stream error");
                         }
                     });
@@ -848,36 +868,39 @@ where
     // Here `stream` is a byte stream.
     // We need to read address from it.
     // Address format: [ATYP][ADDR][PORT]
-    
+
     let mut atyp = [0u8; 1];
     stream.read_exact(&mut atyp).await?;
-    
+
     let (host, _port) = match atyp[0] {
-        1 => { // IPv4
+        1 => {
+            // IPv4
             let mut buf = [0u8; 4];
             stream.read_exact(&mut buf).await?;
             (IpAddr::V4(Ipv4Addr::from(buf)).to_string(), 0) // Port read later
         }
-        3 => { // Domain
+        3 => {
+            // Domain
             let mut len = [0u8; 1];
             stream.read_exact(&mut len).await?;
             let mut buf = vec![0u8; len[0] as usize];
             stream.read_exact(&mut buf).await?;
             (String::from_utf8_lossy(&buf).to_string(), 0)
         }
-        4 => { // IPv6
+        4 => {
+            // IPv6
             let mut buf = [0u8; 16];
             stream.read_exact(&mut buf).await?;
             (IpAddr::V6(Ipv6Addr::from(buf)).to_string(), 0)
         }
         _ => return Err(anyhow!("bad atyp")),
     };
-    
+
     // Read port
     let mut port_buf = [0u8; 2];
     stream.read_exact(&mut port_buf).await?;
     let port_val = u16::from_be_bytes(port_buf);
-    
+
     let _ = host;
     let port = port_val;
 

@@ -13,8 +13,8 @@ use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use sb_core::outbound::{
     Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
-use sb_core::router::{self, Transport};
 use sb_core::router::engine::RouteCtx;
+use sb_core::router::{self, Transport};
 use sb_transport::IoStream;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -319,7 +319,7 @@ async fn handle_tcp_relay(
     let upstream = match connect_via_router(&cfg, &host, port).await {
         Ok(s) => s,
         Err(e) => {
-            let _ = send.write_all(&vec![0x01; 16]).await;
+            let _ = send.write_all(&[0x01; 16]).await;
             return Err(e);
         }
     };

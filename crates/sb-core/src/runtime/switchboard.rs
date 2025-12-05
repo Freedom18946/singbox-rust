@@ -4,13 +4,12 @@
 //! mapping routing decisions to actual connector implementations.
 
 use crate::error::SbResult;
-use crate::outbound::types::OutboundTcp;
+
 use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
-
 
 /// Transport type for connection requests
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -621,6 +620,7 @@ impl SwitchboardBuilder {
             OutboundType::Tuic => {
                 #[cfg(feature = "out_tuic")]
                 {
+                    use crate::outbound::types::OutboundTcp as _; // Trait import for .connect()
                     if let Some(cfg) = tuic_from_ir(ir)? {
                         #[derive(Debug, Clone)]
                         struct TuicConnector {
@@ -673,6 +673,7 @@ impl SwitchboardBuilder {
             OutboundType::Hysteria2 => {
                 #[cfg(feature = "out_hysteria2")]
                 {
+                    use crate::outbound::types::OutboundTcp as _; // Trait import for .connect()
                     if let Some(cfg) = hysteria2_from_ir(ir)? {
                         #[derive(Debug, Clone)]
                         struct Hy2Connector {
@@ -787,6 +788,7 @@ impl SwitchboardBuilder {
             OutboundType::Shadowtls => {
                 #[cfg(feature = "out_shadowtls")]
                 {
+                    use crate::outbound::types::OutboundTcp as _; // Trait import for .connect()
                     if let Some(cfg) = shadowtls_from_ir(ir)? {
                         #[derive(Clone)]
                         struct StlConnector {

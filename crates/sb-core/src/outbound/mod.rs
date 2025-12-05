@@ -445,9 +445,8 @@ impl OutboundRegistryHandle {
                     }
                     #[cfg(feature = "out_ss")]
                     Some(OutboundImpl::Shadowsocks(cfg)) => {
-
-                        use crate::outbound::traits::OutboundConnectorIo;
                         use crate::outbound::shadowsocks::ShadowsocksOutbound;
+                        use crate::outbound::traits::OutboundConnectorIo;
                         use crate::types::{
                             ConnCtx, Endpoint as CEndpoint, Host as CHost, Network,
                         };

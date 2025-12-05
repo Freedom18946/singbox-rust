@@ -51,7 +51,7 @@ static ALLOWED_LABEL_KEYS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 /// Panics if any label key is not in the allowed list.
 pub fn ensure_allowed_labels(metric: &str, labels: &[&str]) {
     for &k in labels {
-        assert!(ALLOWED_LABEL_KEYS.contains(k), 
+        assert!(ALLOWED_LABEL_KEYS.contains(k),
                 "sb-metrics: label key '{k}' not allowed for metric '{metric}'. Register it in labels.rs"
             );
     }

@@ -13,11 +13,16 @@ use base64::Engine;
 use bytes::Bytes;
 use h2::server::{Builder, SendResponse};
 use http::StatusCode;
-use sb_core::router;
+use sb_core::outbound::{
+    Endpoint as OutEndpoint, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
+};
+use sb_core::router::engine::RouteCtx;
+use sb_core::router::{self, Transport};
+use sb_transport::dialer::AsyncReadWrite;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 
@@ -34,6 +39,8 @@ pub struct NaiveInboundConfig {
     pub username: Option<String>,
     /// Optional password for authentication
     pub password: Option<String>,
+    /// Outbound registry for upstream connection
+    pub outbounds: Arc<OutboundRegistryHandle>,
 }
 
 /// Main server loop
@@ -220,10 +227,22 @@ async fn handle_stream(
 
     debug!(%peer, %host, port, "naive: CONNECT request");
 
-    // Router integration (Sprint 20 Phase 1.2)
-    // For now, use direct connection (router integration will be added next)
-    // TODO: Add router decision logic (Direct/Proxy/Reject)
-    let upstream = TcpStream::connect((host.as_str(), port))
+    // Router integration
+    let ctx = RouteCtx {
+        host: Some(&host),
+        ip: None,
+        port: Some(port),
+        transport: Transport::Tcp,
+    };
+    let target: OutRouteTarget = cfg.router.select_ctx_and_record(ctx);
+    let endpoint = match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => OutEndpoint::Ip(SocketAddr::new(ip, port)),
+        Err(_) => OutEndpoint::Domain(host.clone(), port),
+    };
+
+    let upstream = cfg
+        .outbounds
+        .connect_preferred(&target, endpoint)
         .await
         .map_err(|e| anyhow!("Failed to connect to target: {}", e))?;
 
@@ -263,9 +282,9 @@ fn parse_target(target: &str) -> Result<(String, u16)> {
 async fn relay_h2_tcp(
     mut h2_send: h2::SendStream<Bytes>,
     mut h2_recv: h2::RecvStream,
-    mut tcp: TcpStream,
+    tcp: Box<dyn AsyncReadWrite>,
 ) -> Result<()> {
-    let (mut tcp_read, mut tcp_write) = tcp.split();
+    let (mut tcp_read, mut tcp_write) = tokio::io::split(tcp);
 
     let h2_to_tcp = async {
         // Read from HTTP/2 stream, write to TCP
@@ -330,9 +349,10 @@ impl NaiveInboundAdapter {
     ///
     /// # Returns
     /// A boxed InboundService or an error if parameters are invalid.
-    pub fn new(
+    pub fn create(
         param: &sb_core::adapter::InboundParam,
         router: Arc<router::RouterHandle>,
+        outbounds: Arc<OutboundRegistryHandle>,
     ) -> Result<Box<dyn sb_core::adapter::InboundService>> {
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
@@ -390,6 +410,7 @@ impl NaiveInboundAdapter {
             router,
             username,
             password,
+            outbounds,
         };
 
         Ok(Box::new(NaiveInboundAdapter {
@@ -426,7 +447,7 @@ impl sb_core::adapter::InboundService for NaiveInboundAdapter {
                 let runtime = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
                 runtime
                     .block_on(serve(config, stop_rx))
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                    .map_err(std::io::Error::other)
             }
         }
     }

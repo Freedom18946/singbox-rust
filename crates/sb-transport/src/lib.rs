@@ -41,6 +41,7 @@
 ///
 /// 网络连接拨号器模块
 /// 提供了 `Dialer` trait 和各种拨号器实现
+pub mod derp;
 pub mod dialer;
 pub mod pool {
     pub mod circuit_breaker;
@@ -123,6 +124,76 @@ pub mod httpupgrade;
 /// 仅在启用 `transport_quic` feature 时可用
 #[cfg(feature = "transport_quic")]
 pub mod quic;
+
+/// Simple obfuscation plugin module
+/// Provides HTTP and TLS obfuscation for traffic disguising
+/// Only available when `transport_obfs` feature is enabled
+///
+/// 简单混淆插件模块
+/// 提供 HTTP 和 TLS 流量混淆
+/// 仅在启用 `transport_obfs` feature 时可用
+#[cfg(feature = "transport_obfs")]
+pub mod simple_obfs;
+
+/// UDP over TCP module
+/// Provides UDP packet tunneling over TCP connections
+/// Only available when `transport_uot` feature is enabled
+///
+/// UDP over TCP 模块
+/// 提供通过 TCP 连接传输 UDP 数据包
+/// 仅在启用 `transport_uot` feature 时可用
+#[cfg(feature = "transport_uot")]
+pub mod uot;
+
+/// SIP003 plugin protocol module
+/// Provides Shadowsocks plugin support
+/// Only available when `transport_sip003` feature is enabled
+///
+/// SIP003 插件协议模块
+/// 提供 Shadowsocks 插件支持
+/// 仅在启用 `transport_sip003` feature 时可用
+#[cfg(feature = "transport_sip003")]
+pub mod sip003;
+
+/// Trojan transport module
+/// Provides Trojan protocol transport layer
+/// Only available when `transport_trojan` feature is enabled
+///
+/// Trojan 传输模块
+/// 提供 Trojan 协议传输层
+/// 仅在启用 `transport_trojan` feature 时可用
+#[cfg(feature = "transport_trojan")]
+pub mod trojan;
+
+/// Lightweight gRPC module
+/// Provides minimal gRPC-like transport without full tonic
+/// Only available when `transport_grpc_lite` feature is enabled
+///
+/// 轻量级 gRPC 模块
+/// 提供无需完整 tonic 的简化 gRPC 传输
+/// 仅在启用 `transport_grpc_lite` feature 时可用
+#[cfg(feature = "transport_grpc_lite")]
+pub mod grpc_lite;
+
+/// WireGuard transport module
+/// Provides userspace WireGuard tunnel transport based on boringtun
+/// Only available when `transport_wireguard` feature is enabled
+///
+/// WireGuard 传输模块
+/// 提供基于 boringtun 的用户空间 WireGuard 隧道传输
+/// 仅在启用 `transport_wireguard` feature 时可用
+#[cfg(feature = "transport_wireguard")]
+pub mod wireguard;
+
+/// Tailscale DNS transport module
+/// Provides MagicDNS resolution and DERP relay support
+/// Only available when `transport_tailscale` feature is enabled
+///
+/// Tailscale DNS 传输模块
+/// 提供 MagicDNS 解析和 DERP 中继支持
+/// 仅在启用 `transport_tailscale` feature 时可用
+#[cfg(feature = "transport_tailscale")]
+pub mod tailscale_dns;
 
 /// Transport utility module
 /// Provides common transport utility functions such as timeout handling

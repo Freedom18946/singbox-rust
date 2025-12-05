@@ -6,8 +6,8 @@ use sb_core::net::metered;
 use sb_core::outbound::{
     Endpoint as OutEndpoint, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
-use sb_core::router::{self, Transport};
 use sb_core::router::engine::RouteCtx;
+use sb_core::router::{self, Transport};
 use sb_transport::IoStream;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -391,10 +391,7 @@ impl sb_core::adapter::InboundService for Hysteria2Inbound {
                     });
                     Ok(())
                 }
-                Err(_) => Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "No tokio runtime available",
-                )),
+                Err(_) => Err(std::io::Error::other("No tokio runtime available")),
             }
         }
     }

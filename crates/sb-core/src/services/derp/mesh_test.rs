@@ -1,9 +1,8 @@
-
 #[cfg(test)]
 mod tests {
     use crate::service::{ServiceContext, StartStage};
-    use crate::services::derp::protocol::{DerpFrame, FrameType};
     use crate::services::derp::build_derp_service;
+    use crate::services::derp::protocol::{DerpFrame, FrameType};
     use sb_config::ir::{ServiceIR, ServiceType};
     use std::net::SocketAddr;
 

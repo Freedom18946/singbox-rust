@@ -2,13 +2,13 @@ use crate::service::StartStage;
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use sb_config::ir::RouteIR;
+use sb_platform::process::ProcessMatcher;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use sb_platform::process::ProcessMatcher;
 
 /// Trait for components that support lifecycle stages.
 /// 支持生命周期阶段的组件的 trait。
@@ -89,6 +89,7 @@ pub struct Context {
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
     pub process_matcher: Option<Arc<ProcessMatcher>>,
+    pub network_monitor: Arc<sb_platform::monitor::NetworkMonitor>,
 }
 
 /// Global registry exposing runtime managers for components that need late binding.
@@ -107,6 +108,7 @@ pub struct ContextRegistry {
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
     pub process_matcher: Option<Arc<ProcessMatcher>>,
+    pub network_monitor: Arc<sb_platform::monitor::NetworkMonitor>,
 }
 
 impl From<&Context> for ContextRegistry {
@@ -125,6 +127,7 @@ impl From<&Context> for ContextRegistry {
             v2ray_server: ctx.v2ray_server.clone(),
             ntp_service: ctx.ntp_service.clone(),
             process_matcher: ctx.process_matcher.clone(),
+            network_monitor: ctx.network_monitor.clone(),
         }
     }
 }
@@ -165,6 +168,7 @@ impl Context {
                     None
                 }
             },
+            network_monitor: Arc::new(sb_platform::monitor::NetworkMonitor::new()),
         }
     }
 
@@ -294,7 +298,9 @@ impl NetworkManager {
                 tracing::info!("Auto-detected default interface: {}", iface);
                 opts.default_interface = Some(iface);
             } else {
-                tracing::warn!("Auto-detect interface enabled but failed to detect default interface");
+                tracing::warn!(
+                    "Auto-detect interface enabled but failed to detect default interface"
+                );
             }
         }
     }
@@ -649,6 +655,7 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {}
 pub trait ClashServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;
     fn close(&self) -> anyhow::Result<()>;
+    fn get_mode(&self) -> String;
 }
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;

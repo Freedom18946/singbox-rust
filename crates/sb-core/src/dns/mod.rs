@@ -49,6 +49,9 @@ mod integration_tests;
 #[cfg(feature = "dns_udp")]
 pub mod udp;
 
+/// DNS rule actions for extended routing (rewrite, reject, proxy, ECS).
+pub mod rule_action;
+
 /// DNS 解析结果：包含 IP 列表和 TTL 信息
 #[derive(Clone, Debug)]
 pub struct DnsAnswer {

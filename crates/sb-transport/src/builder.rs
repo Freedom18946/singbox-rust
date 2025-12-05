@@ -66,7 +66,11 @@ impl TransportBuilder {
 
     /// Set bind interface (if underlying dialer is TCP)
     pub fn bind_interface(mut self, interface: String) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.bind_interface = Some(interface);
         }
         self
@@ -74,7 +78,11 @@ impl TransportBuilder {
 
     /// Set IPv4 bind address (if underlying dialer is TCP)
     pub fn bind_v4(mut self, addr: std::net::Ipv4Addr) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.bind_v4 = Some(addr);
         }
         self
@@ -82,7 +90,11 @@ impl TransportBuilder {
 
     /// Set IPv6 bind address (if underlying dialer is TCP)
     pub fn bind_v6(mut self, addr: std::net::Ipv6Addr) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.bind_v6 = Some(addr);
         }
         self
@@ -90,7 +102,11 @@ impl TransportBuilder {
 
     /// Set routing mark (if underlying dialer is TCP)
     pub fn routing_mark(mut self, mark: u32) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.routing_mark = Some(mark);
         }
         self
@@ -98,7 +114,11 @@ impl TransportBuilder {
 
     /// Set reuse address (if underlying dialer is TCP)
     pub fn reuse_addr(mut self, reuse: bool) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.reuse_addr = reuse;
         }
         self
@@ -106,7 +126,11 @@ impl TransportBuilder {
 
     /// Set connect timeout (if underlying dialer is TCP)
     pub fn connect_timeout(mut self, timeout: std::time::Duration) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.connect_timeout = Some(timeout);
         }
         self
@@ -114,7 +138,11 @@ impl TransportBuilder {
 
     /// Set TCP Fast Open (if underlying dialer is TCP)
     pub fn tcp_fast_open(mut self, enable: bool) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.tcp_fast_open = enable;
         }
         self
@@ -122,7 +150,11 @@ impl TransportBuilder {
 
     /// Set TCP Multi-Path (if underlying dialer is TCP)
     pub fn tcp_multi_path(mut self, enable: bool) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.tcp_multi_path = enable;
         }
         self
@@ -130,7 +162,11 @@ impl TransportBuilder {
 
     /// Set UDP Fragment (if underlying dialer is TCP - note: this might be a misnomer in sb-core usage but adding for compatibility)
     pub fn udp_fragment(mut self, enable: bool) -> Self {
-        if let Some(tcp) = self.inner.as_any_mut().downcast_mut::<crate::dialer::TcpDialer>() {
+        if let Some(tcp) = self
+            .inner
+            .as_any_mut()
+            .downcast_mut::<crate::dialer::TcpDialer>()
+        {
             tcp.udp_fragment = enable;
         }
         self

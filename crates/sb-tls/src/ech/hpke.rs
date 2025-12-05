@@ -167,8 +167,6 @@ impl HpkeSender {
 
         Ok((key, base_nonce))
     }
-
-
 }
 
 #[cfg(test)]

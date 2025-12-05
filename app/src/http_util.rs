@@ -10,11 +10,12 @@
 //! 或为特定协议提供底层控制。
 //!
 //! ## Strategic Features / 战略特性
-//! - **Raw TCP Writing / 原始 TCP 写入**: Writes HTTP/1.1 responses directly to `TcpStream` for maximum performance and minimal overhead.
-//!   直接向 `TcpStream` 写入 HTTP/1.1 响应，以获得最大性能和最小开销。
-//! - **Hyper Integration / Hyper 集成**: Provides helpers for `hyper::Response` when the full HTTP stack is available.
-//!   当完整的 HTTP 栈可用时，提供 `hyper::Response` 的辅助工具。
-
+//!
+//!   - **Raw TCP Writing / 原始 TCP 写入**: Writes HTTP/1.1 responses directly to `TcpStream` for maximum performance and minimal overhead.
+//!     直接向 `TcpStream` 写入 HTTP/1.1 响应，以获得最大性能和最小开销。
+//!   - **Hyper Integration / Hyper 集成**: Provides helpers for `hyper::Response` when the full HTTP stack is available.
+//!     当完整的 HTTP 栈可用时，提供 `hyper::Response` 的辅助工具。
+//!
 //! HTTP utility functions for building responses
 //!
 //! All `Response::builder().expect()` calls in this module are safe because

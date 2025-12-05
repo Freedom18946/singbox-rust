@@ -53,8 +53,8 @@ pub async fn serve(cfg: ShadowTlsInboundConfig, mut stop_rx: mpsc::Receiver<()>)
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => { 
-                // debug!("shadowtls: accept-loop heartbeat"); 
+            _ = hb.tick() => {
+                // debug!("shadowtls: accept-loop heartbeat");
             }
             r = listener.accept() => {
                 let (cli, peer) = match r {

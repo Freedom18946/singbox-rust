@@ -780,7 +780,7 @@ impl<D: Dialer> EchDialer<D> {
     /// };
     ///
     /// let tls_config = webpki_roots_config();
-    /// let dialer = EchDialer::new(TcpDialer, tls_config, ech_config)?;
+    /// let dialer = EchDialer::new(TcpDialer::default(), tls_config, ech_config)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(
@@ -853,7 +853,7 @@ impl<D: Dialer> EchDialer<D> {
     /// use sb_transport::{EchDialer, TcpDialer, webpki_roots_config};
     ///
     /// let tls_config = webpki_roots_config();
-    /// let dialer = EchDialer::from_env(TcpDialer, tls_config)?;
+    /// let dialer = EchDialer::from_env(TcpDialer::default(), tls_config)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn from_env(inner: D, config: Arc<rustls::ClientConfig>) -> Result<Self, DialError> {
@@ -1539,7 +1539,7 @@ mod ech_tests {
         };
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::new(TcpDialer, tls_config, ech_config);
+        let result = EchDialer::new(TcpDialer::default(), tls_config, ech_config);
 
         // 应该失败，因为 enabled=true 但没有提供配置
         assert!(result.is_err());
@@ -1563,7 +1563,7 @@ mod ech_tests {
         };
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::new(TcpDialer, tls_config, ech_config);
+        let result = EchDialer::new(TcpDialer::default(), tls_config, ech_config);
 
         // 应该成功，因为 ECH 被禁用
         assert!(result.is_ok());
@@ -1581,7 +1581,7 @@ mod ech_tests {
         };
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::new(TcpDialer, tls_config, ech_config);
+        let result = EchDialer::new(TcpDialer::default(), tls_config, ech_config);
 
         // 应该成功
         assert!(result.is_ok());
@@ -1599,7 +1599,7 @@ mod ech_tests {
         };
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::new(TcpDialer, tls_config, ech_config);
+        let result = EchDialer::new(TcpDialer::default(), tls_config, ech_config);
 
         assert!(result.is_ok());
         let dialer = result.unwrap();
@@ -1618,7 +1618,7 @@ mod ech_tests {
         };
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::new(TcpDialer, tls_config, ech_config);
+        let result = EchDialer::new(TcpDialer::default(), tls_config, ech_config);
 
         assert!(result.is_ok());
         let dialer = result.unwrap();
@@ -1640,7 +1640,7 @@ mod ech_tests {
         };
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::new(TcpDialer, tls_config, ech_config);
+        let result = EchDialer::new(TcpDialer::default(), tls_config, ech_config);
 
         assert!(result.is_err());
         if let Err(DialError::Tls(msg)) = result {
@@ -1656,7 +1656,7 @@ mod ech_tests {
         std::env::remove_var("SB_ECH_CONFIG");
 
         let tls_config = smoke_empty_roots_config();
-        let result = EchDialer::from_env(TcpDialer, tls_config);
+        let result = EchDialer::from_env(TcpDialer::default(), tls_config);
 
         assert!(result.is_err());
         if let Err(DialError::Tls(msg)) = result {

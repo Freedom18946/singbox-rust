@@ -157,8 +157,6 @@ fn test_sni_based_routing() {
 
 #[test]
 fn test_alpn_based_routing() {
-
-
     // Build ClientHello with ALPN
     let ch = build_tls_client_hello("example.com", "h2");
     let alpn = extract_alpn_from_tls_client_hello(&ch).expect("ALPN extraction failed");

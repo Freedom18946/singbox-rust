@@ -155,7 +155,7 @@ pub enum Commands {
     Merge(merge::MergeArgs),
     /// Format configuration files
     Format(format::FormatArgs),
-    /// GeoIP tooling (list/lookup/export)
+    /// `GeoIP` tooling (list/lookup/export)
     #[cfg(feature = "router")]
     Geoip(geoip::GeoipArgs),
     /// Geosite tooling (list/lookup/export/matcher)

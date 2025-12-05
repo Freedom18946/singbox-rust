@@ -281,7 +281,7 @@ async fn geosite_matcher(path: &PathBuf, category: &str) -> Result<()> {
         .with_context(|| format!("open geosite file: {}", path.display()))?;
     let rules = db
         .category_rules(category)
-        .with_context(|| format!("category {}", category))?;
+        .with_context(|| format!("category {category}"))?;
     let stdin = BufReader::new(tokio::io::stdin());
     tokio::pin!(stdin);
     let mut lines = stdin.lines();
@@ -341,7 +341,7 @@ fn write_ruleset_json(output: &str, category: &str, rules: GeoRules) -> Result<(
         return Ok(());
     }
     let out_path = if output == "geosite-<category>.json" {
-        format!("geosite-{}.json", category)
+        format!("geosite-{category}.json")
     } else {
         output.to_string()
     };
@@ -349,7 +349,7 @@ fn write_ruleset_json(output: &str, category: &str, rules: GeoRules) -> Result<(
         &out_path,
         serde_json::to_string_pretty(&out_json)?.as_bytes(),
     )
-    .with_context(|| format!("write {}", out_path))?;
+    .with_context(|| format!("write {out_path}"))?;
     Ok(())
 }
 
@@ -380,7 +380,7 @@ impl GeositeBin {
         let version = data[0];
         cur += 1;
         if version != 0 {
-            anyhow::bail!("unsupported geosite version: {}", version);
+            anyhow::bail!("unsupported geosite version: {version}");
         }
         // entry length
         let (entry_len, n) = read_uvarint(&data[cur..])?;
@@ -413,7 +413,7 @@ impl GeositeBin {
             .meta
             .iter()
             .find(|m| m.code == cat)
-            .ok_or_else(|| anyhow::anyhow!("category not found: {}", category))?;
+            .ok_or_else(|| anyhow::anyhow!("category not found: {category}"))?;
         let mut off = self.content_start + meta.index;
         let mut domain = Vec::new();
         let mut domain_suffix = Vec::new();
@@ -491,9 +491,9 @@ fn read_uvarint(data: &[u8]) -> Result<(u64, usize)> {
     let mut s: u32 = 0;
     for (i, b) in data.iter().copied().enumerate() {
         if b < 0x80 {
-            return Ok((x | ((b as u64) << s), i + 1));
+            return Ok((x | (u64::from(b) << s), i + 1));
         }
-        x |= ((b & 0x7F) as u64) << s;
+        x |= u64::from(b & 0x7F) << s;
         s += 7;
         if s >= 64 {
             anyhow::bail!("uvarint overflow");

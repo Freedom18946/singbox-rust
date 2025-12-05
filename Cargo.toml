@@ -5,6 +5,7 @@ members = [
   "benches",
   "crates/sb-adapters",
   "crates/sb-admin-contract",
+  "crates/sb-common",
   "crates/sb-core",
   "crates/sb-config",
   "crates/sb-metrics",

@@ -201,8 +201,7 @@ async fn bench_baseline_direct_tcp() {
     println!("\n=== Benchmarking Direct TCP (Baseline) ===");
 
     // Throughput test (1MB chunks, 50 iterations)
-    let (throughput, throughput_failed) =
-        measure_throughput(&connect_fn, 1024 * 1024, 50).await;
+    let (throughput, throughput_failed) = measure_throughput(&connect_fn, 1024 * 1024, 50).await;
 
     // Latency test (1000 iterations)
     let ((p50, p95, p99), latency_failed) = measure_latency(&connect_fn, 1000).await;
@@ -272,8 +271,7 @@ async fn bench_socks5_proxy() {
     println!("Note: Currently using direct connection (SOCKS5 server TODO)");
 
     // Throughput test
-    let (throughput, throughput_failed) =
-        measure_throughput(&connect_fn, 1024 * 1024, 30).await;
+    let (throughput, throughput_failed) = measure_throughput(&connect_fn, 1024 * 1024, 30).await;
 
     // Latency test
     let ((p50, p95, p99), latency_failed) = measure_latency(&connect_fn, 500).await;

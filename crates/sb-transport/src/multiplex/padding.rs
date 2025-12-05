@@ -1,9 +1,9 @@
+use pin_project_lite::pin_project;
+use rand::Rng;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use rand::Rng;
-use pin_project_lite::pin_project;
 
 pin_project! {
     pub struct PaddingStream<S> {
@@ -73,7 +73,7 @@ where
                         Poll::Ready(Ok(())) => {
                             if read_buf.filled().is_empty() {
                                 // EOF before padding length?
-                                return Poll::Ready(Ok(())); 
+                                return Poll::Ready(Ok(()));
                             }
                             let len = this.read_len_buf[0] as usize;
                             if len == 0 {
@@ -100,7 +100,10 @@ where
                         Poll::Ready(Ok(())) => {
                             let n = read_buf.filled().len();
                             if n == 0 {
-                                return Poll::Ready(Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF during padding")));
+                                return Poll::Ready(Err(io::Error::new(
+                                    io::ErrorKind::UnexpectedEof,
+                                    "EOF during padding",
+                                )));
                             }
                             *this.read_pos += n;
                         }
@@ -131,7 +134,7 @@ where
             match this.write_state {
                 WriteState::Initial => {
                     let mut rng = rand::thread_rng();
-                    let len: u8 = rng.gen(); 
+                    let len: u8 = rng.gen();
                     let mut padding = vec![len];
                     for _ in 0..len {
                         padding.push(rng.gen());
@@ -173,15 +176,16 @@ where
                 // We can't easily drive poll_write here without a buffer to write.
                 // But we have write_buf.
                 // Let's try to drive write state.
-                match this.inner.as_mut().poll_write(cx, &[]) { // Trigger write? No.
-                     // Just return Pending if not done?
-                     // Or try to advance state?
-                     // It's complicated to call poll_write from poll_flush.
-                     // Let's assume poll_write is called enough.
-                     // But if user calls flush immediately...
-                     Poll::Ready(Ok(_)) => this.inner.poll_flush(cx), // Fallback
-                     Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-                     Poll::Pending => Poll::Pending,
+                match this.inner.as_mut().poll_write(cx, &[]) {
+                    // Trigger write? No.
+                    // Just return Pending if not done?
+                    // Or try to advance state?
+                    // It's complicated to call poll_write from poll_flush.
+                    // Let's assume poll_write is called enough.
+                    // But if user calls flush immediately...
+                    Poll::Ready(Ok(_)) => this.inner.poll_flush(cx), // Fallback
+                    Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
+                    Poll::Pending => Poll::Pending,
                 }
             }
         }

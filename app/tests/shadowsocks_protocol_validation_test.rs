@@ -313,7 +313,10 @@ async fn test_multi_user_different_passwords() {
     };
 
     // Passwords should be different
-    assert_ne!(user1_config.users[0].password, user2_config.users[0].password);
+    assert_ne!(
+        user1_config.users[0].password,
+        user2_config.users[0].password
+    );
     assert_ne!(user1_config.listen, user2_config.listen);
 
     println!("✓ Multi-user with different passwords validated");

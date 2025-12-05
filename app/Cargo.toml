@@ -61,7 +61,7 @@ io_local_alpha = ["sb-runtime/io_local_alpha"]
 
 # Minimal stub: enable Prometheus CLI paths under acceptance builds
 prom = []
-tls_reality = ["sb-tls"]
+tls_reality = ["sb-tls", "sb-adapters/tls_reality"]
 tls_ech = ["sb-tls/ech"]
 
 ## Empty features for check-cfg quieting
@@ -140,6 +140,8 @@ service_ntp = ["sb-core/service_ntp"]
 service_resolved = ["sb-core/service_resolved", "sb-adapters/service_resolved"]
 service_ssmapi   = ["sb-core/service_ssmapi", "sb-adapters/service_ssmapi"]
 service_derp     = ["sb-core/service_derp", "sb-adapters/service_derp"]
+clash_api        = ["sb-api"]
+v2ray_api        = ["sb-api"]
 hickory-proto = ["dep:hickory-proto"]
 adapter-http = ["sb-adapters/adapter-http"]
 out_tuic = ["sb-core/out_tuic"]
@@ -319,6 +321,7 @@ sb-subscribe = { path = "../crates/sb-subscribe", optional = true }
 sb-tls      = { path = "../crates/sb-tls", package = "sb-tls", optional = true }
 futures-util= { version = "0.3", optional = true }
 sb-runtime  = { path = "../crates/sb-runtime", optional = true }
+sb-api      = { path = "../crates/sb-api", optional = true }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"], optional = true }
 uuid        = { version = "1", features = ["v4"] }
 

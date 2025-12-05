@@ -325,7 +325,6 @@ impl SsAeadUdpSocket {
 
         Ok((data_len, target))
     }
-
 }
 
 /// Decrypt AEAD data (reuse from TCP module with import)
