@@ -535,7 +535,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 .and_then(|v| v.as_str())
                 .unwrap_or("127.0.0.1")
                 .to_string();
-            let port = i.get("port").and_then(|v| v.as_u64()).unwrap_or(1080) as u16;
+            let port = i
+                .get("listen_port")
+                .or_else(|| i.get("port"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1080) as u16;
             let sniff = i.get("sniff").and_then(|v| v.as_bool()).unwrap_or(false);
             // Network selection: if network == "udp", set udp=true; if "tcp" or missing, false
             let udp = if let Some(net) = i.get("network").and_then(|v| v.as_str()) {
