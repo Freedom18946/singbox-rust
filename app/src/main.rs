@@ -70,7 +70,6 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "failpoints")]
     sb_core::util::failpoint::init_from_env();
 
-    #[cfg(feature = "panic_log")]
     app::panic::install();
 
     #[cfg(feature = "hardening")]
@@ -97,6 +96,8 @@ async fn main() -> anyhow::Result<()> {
         cli::Commands::Prefetch(a) => cli::prefetch::main(a),
         cli::Commands::Auth(a) => cli::auth::main(a),
         cli::Commands::Prom(a) => cli::prom::main(a),
+        #[cfg(feature = "dev-cli")]
+        cli::Commands::Report(a) => cli::report::main(a),
         #[cfg(feature = "bench-cli")]
         cli::Commands::Bench(a) => cli::bench::main(a).await,
         cli::Commands::GenCompletions(a) => {

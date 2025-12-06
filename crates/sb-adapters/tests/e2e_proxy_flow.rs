@@ -70,8 +70,8 @@ fn build_direct_proxy() -> (Arc<OutboundRegistryHandle>, Arc<RouterHandle>) {
 async fn start_socks5_inbound(
     router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
-) -> SocketAddr {
-    let (_stop_tx, stop_rx) = mpsc::channel(1);
+) -> (SocketAddr, mpsc::Sender<()>) {
+    let (stop_tx, stop_rx) = mpsc::channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
 
     // Bind to get a free port
@@ -98,15 +98,15 @@ async fn start_socks5_inbound(
     // Wait for server to signal it's ready
     ready_rx.await.expect("Server failed to start");
 
-    addr
+    (addr, stop_tx)
 }
 
 /// Start HTTP CONNECT inbound server
 async fn start_http_inbound(
     router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
-) -> SocketAddr {
-    let (_stop_tx, stop_rx) = mpsc::channel(1);
+) -> (SocketAddr, mpsc::Sender<()>) {
+    let (stop_tx, stop_rx) = mpsc::channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
 
     // Bind to get a free port
@@ -132,7 +132,7 @@ async fn start_http_inbound(
     // Wait for server to signal it's ready
     ready_rx.await.expect("Server failed to start");
 
-    addr
+    (addr, stop_tx)
 }
 
 /// Test SOCKS5 inbound → direct outbound flow
@@ -145,7 +145,7 @@ async fn test_e2e_socks5_to_direct() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start SOCKS5 inbound
-    let socks_addr = start_socks5_inbound(router, outbounds).await;
+    let (socks_addr, _stop_handle) = start_socks5_inbound(router, outbounds).await;
 
     // Connect via SOCKS5 client
     let mut stream = TcpStream::connect(socks_addr).await.unwrap();
@@ -207,7 +207,7 @@ async fn test_e2e_http_to_direct() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start HTTP inbound
-    let http_addr = start_http_inbound(router, outbounds).await;
+    let (http_addr, _stop_handle) = start_http_inbound(router, outbounds).await;
 
     // Connect via HTTP CONNECT client
     let mut stream = TcpStream::connect(http_addr).await.unwrap();
@@ -259,7 +259,7 @@ async fn test_e2e_large_data_transfer() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start SOCKS5 inbound
-    let socks_addr = start_socks5_inbound(router, outbounds).await;
+    let (socks_addr, _stop_handle) = start_socks5_inbound(router, outbounds).await;
 
     // Connect and do SOCKS5 handshake
     let mut stream = TcpStream::connect(socks_addr).await.unwrap();
@@ -304,7 +304,7 @@ async fn test_e2e_concurrent_connections() {
     let (outbounds, router) = build_direct_proxy();
 
     // Start SOCKS5 inbound
-    let socks_addr = start_socks5_inbound(router, outbounds).await;
+    let (socks_addr, _stop_handle) = start_socks5_inbound(router, outbounds).await;
 
     // Create 10 concurrent connections
     let mut handles = vec![];

@@ -25,33 +25,37 @@
 use hyper::{Body, Response, StatusCode};
 use std::io::Write;
 
-pub fn write_200_json(s: &mut std::net::TcpStream, body: &serde_json::Value) {
+#[allow(dead_code)]
+pub fn write_200_json(s: &mut std::net::TcpStream, body: &serde_json::Value) -> std::io::Result<()> {
     let b = serde_json::to_vec(body).unwrap_or_default();
-    let _ = write!(
+    write!(
         s,
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         b.len()
-    );
-    let _ = s.write_all(&b);
+    )?;
+    s.write_all(&b)
 }
 
-pub fn write_503_json(s: &mut std::net::TcpStream, body: &serde_json::Value) {
+#[allow(dead_code)]
+pub fn write_503_json(s: &mut std::net::TcpStream, body: &serde_json::Value) -> std::io::Result<()> {
     let b = serde_json::to_vec(body).unwrap_or_default();
-    let _ = write!(s, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", b.len());
-    let _ = s.write_all(&b);
+    write!(s, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", b.len())?;
+    s.write_all(&b)
 }
 
-pub fn write_200_octet(s: &mut std::net::TcpStream, mime: &str, buf: &[u8]) {
-    let _ = write!(
+#[allow(dead_code)]
+pub fn write_200_octet(s: &mut std::net::TcpStream, mime: &str, buf: &[u8]) -> std::io::Result<()> {
+    write!(
         s,
         "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n",
         mime,
         buf.len()
-    );
-    let _ = s.write_all(buf);
+    )?;
+    s.write_all(buf)
 }
 
-pub fn write_400(s: &mut std::net::TcpStream, msg: &str) {
+#[allow(dead_code)]
+pub fn write_400(s: &mut std::net::TcpStream, msg: &str) -> std::io::Result<()> {
     // Convert to JSON error response
     let json_body = serde_json::json!({
         "error": msg,
@@ -61,16 +65,17 @@ pub fn write_400(s: &mut std::net::TcpStream, msg: &str) {
     });
     let body_str =
         serde_json::to_string(&json_body).unwrap_or_else(|_| r#"{"error":"unknown"}"#.to_string());
-    let _ = write!(
+    write!(
         s,
         "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
         body_str.len(),
         body_str
-    );
+    )
 }
 
-pub fn write_404(s: &mut std::net::TcpStream) {
-    let _ = write!(s, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+#[allow(dead_code)]
+pub fn write_404(s: &mut std::net::TcpStream) -> std::io::Result<()> {
+    write!(s, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
 }
 
 // Hyper response helpers for sb-explaind

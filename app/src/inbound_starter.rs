@@ -68,7 +68,6 @@ fn parse_udp_bind_from_env() -> Option<SocketAddr> {
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 #[cfg(feature = "router")]
 #[allow(
-    clippy::unused_async,
     clippy::cognitive_complexity,
     clippy::too_many_lines
 )]
@@ -89,8 +88,7 @@ pub async fn start_inbounds_from_ir(
                     #[cfg(feature = "router")]
                     router.clone(),
                     outbounds.clone(),
-                )
-                .await;
+                );
                 #[cfg(not(feature = "adapters"))]
                 warn!("http inbound requires 'adapters' feature; skipping");
             }
@@ -101,8 +99,7 @@ pub async fn start_inbounds_from_ir(
                     #[cfg(feature = "router")]
                     router.clone(),
                     outbounds.clone(),
-                )
-                .await;
+                );
                 #[cfg(not(feature = "adapters"))]
                 warn!("socks inbound requires 'adapters' feature; skipping");
             }
@@ -113,8 +110,7 @@ pub async fn start_inbounds_from_ir(
                     #[cfg(feature = "router")]
                     router.clone(),
                     outbounds.clone(),
-                )
-                .await;
+                );
                 #[cfg(not(feature = "adapters"))]
                 warn!("mixed inbound requires 'adapters' feature; skipping");
             }
@@ -124,14 +120,13 @@ pub async fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
-                )
-                .await;
+                );
                 #[cfg(any(not(feature = "tun"), not(feature = "adapters")))]
                 warn!("config includes tun inbound, but feature 'tun' is disabled; skipping");
             }
             InboundType::Direct => {
                 #[cfg(feature = "router")]
-                start_direct_inbound(ib).await;
+                start_direct_inbound(ib);
                 #[cfg(not(feature = "router"))]
                 warn!("direct inbound requires 'router' feature; skipping");
             }
@@ -141,8 +136,7 @@ pub async fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
-                )
-                .await;
+                );
                 #[cfg(not(feature = "adapters"))]
                 warn!("trojan inbound requires 'adapters' feature; skipping");
             }
@@ -152,8 +146,7 @@ pub async fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
-                )
-                .await;
+                );
                 #[cfg(not(feature = "adapters"))]
                 warn!("vless inbound requires 'adapters' feature; skipping");
             }
@@ -163,8 +156,7 @@ pub async fn start_inbounds_from_ir(
                     ib,
                     #[cfg(feature = "router")]
                     router.clone(),
-                )
-                .await;
+                );
                 #[cfg(not(feature = "adapters"))]
                 warn!("vmess inbound requires 'adapters' feature; skipping");
             }
@@ -185,8 +177,8 @@ pub async fn start_inbounds_from_ir(
 }
 
 #[cfg(feature = "adapters")]
-#[allow(clippy::unused_async)]
-async fn start_http_inbound(
+#[cfg(feature = "adapters")]
+fn start_http_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
@@ -219,8 +211,8 @@ async fn start_http_inbound(
 }
 
 #[cfg(feature = "adapters")]
-#[allow(clippy::unused_async)]
-async fn start_socks_inbound(
+#[cfg(feature = "adapters")]
+fn start_socks_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
@@ -262,8 +254,8 @@ async fn start_socks_inbound(
 }
 
 #[cfg(feature = "adapters")]
-#[allow(clippy::unused_async)]
-async fn start_mixed_inbound(
+#[cfg(feature = "adapters")]
+fn start_mixed_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
@@ -298,8 +290,8 @@ async fn start_mixed_inbound(
 }
 
 #[cfg(all(feature = "tun", feature = "adapters"))]
-#[allow(clippy::unused_async)]
-async fn start_tun_inbound(_ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
+#[cfg(all(feature = "tun", feature = "adapters"))]
+fn start_tun_inbound(_ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
     let cfg = TunInboundConfig::default();
     let inbound = TunInbound::new(cfg, {
         #[cfg(feature = "router")]
@@ -320,8 +312,8 @@ async fn start_tun_inbound(_ib: &InboundIR, #[cfg(feature = "router")] router: A
 }
 
 #[cfg(feature = "router")]
-#[allow(clippy::unused_async, clippy::cognitive_complexity)]
-async fn start_direct_inbound(ib: &InboundIR) {
+#[cfg(feature = "router")]
+fn start_direct_inbound(ib: &InboundIR) {
     let dst_host = if let Some(h) = &ib.override_host {
         h.clone()
     } else {
@@ -354,8 +346,8 @@ async fn start_direct_inbound(ib: &InboundIR) {
 }
 
 #[cfg(feature = "adapters")]
-#[allow(clippy::unused_async)]
-async fn start_trojan_inbound(
+#[cfg(feature = "adapters")]
+fn start_trojan_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
 ) {
@@ -421,8 +413,7 @@ async fn start_trojan_inbound(
 }
 
 #[cfg(feature = "adapters")]
-#[allow(clippy::unused_async)]
-async fn start_vless_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
+fn start_vless_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
     } else {
@@ -476,8 +467,7 @@ async fn start_vless_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: 
 }
 
 #[cfg(feature = "adapters")]
-#[allow(clippy::unused_async)]
-async fn start_vmess_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
+fn start_vmess_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
     } else {

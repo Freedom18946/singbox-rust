@@ -410,8 +410,11 @@ mod tests {
     async fn test_resolver_stats_tracking() {
         use std::sync::atomic::Ordering;
 
+        // Provide both A and AAAA responses to avoid spurious failures from
+        // concurrent resolve_both_records() which queries both record types
         let upstream = Arc::new(
             MockUpstream::new("test")
+                // success.com - both A and AAAA succeed
                 .with_response(
                     "success.com",
                     RecordType::A,
@@ -424,22 +427,39 @@ mod tests {
                     }),
                 )
                 .with_response(
+                    "success.com",
+                    RecordType::AAAA,
+                    Ok(DnsAnswer {
+                        ips: vec![IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))],
+                        ttl: Duration::from_secs(300),
+                        source: crate::dns::cache::Source::Upstream,
+                        rcode: crate::dns::cache::Rcode::NoError,
+                        created_at: std::time::Instant::now(),
+                    }),
+                )
+                // fail.com - both A and AAAA fail
+                .with_response(
                     "fail.com",
                     RecordType::A,
+                    Err(anyhow::anyhow!("upstream error")),
+                )
+                .with_response(
+                    "fail.com",
+                    RecordType::AAAA,
                     Err(anyhow::anyhow!("upstream error")),
                 ),
         );
 
         let resolver = DnsResolver::new(vec![upstream]);
 
-        // Test successful query increments success counter
+        // Test successful query increments success counter (A + AAAA both succeed = 2)
         let _ = resolver.resolve("success.com").await;
-        assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 1);
+        assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 2);
         assert_eq!(resolver.stats.queries_failed.load(Ordering::Relaxed), 0);
 
-        // Test failed query increments failed counter (will try all upstreams)
+        // Test failed query increments failed counter (A + AAAA both fail = 2)
         let _ = resolver.resolve("fail.com").await;
-        assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 1);
-        assert_eq!(resolver.stats.queries_failed.load(Ordering::Relaxed), 1);
+        assert_eq!(resolver.stats.queries_success.load(Ordering::Relaxed), 2);
+        assert_eq!(resolver.stats.queries_failed.load(Ordering::Relaxed), 2);
     }
 }

@@ -36,7 +36,7 @@
 //!         host: "example.com".to_string(),
 //!         ..Default::default()
 //!     };
-//!     let dialer = Http2Dialer::new(config, Box::new(sb_transport::TcpDialer));
+//!     let dialer = Http2Dialer::new(config, Box::new(sb_transport::TcpDialer::default()));
 //!     let stream = dialer.connect("example.com", 443).await?;
 //!     // Use stream for communication...
 //!     Ok(())

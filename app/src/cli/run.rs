@@ -48,7 +48,6 @@ pub struct RunArgs {
     no_banner: bool,
 }
 
-#[allow(dead_code)]
 fn parse_addr(s: &str) -> std::result::Result<SocketAddr, String> {
     s.parse().map_err(|e| format!("invalid addr `{s}`: {e}"))
 }
@@ -76,13 +75,8 @@ fn file_mtime(path: &str) -> SystemTime {
 
 pub async fn run(args: RunArgs) -> Result<()> {
     // Global Panic Hook / 全局 Panic 钩子
-    // Ensures panics are logged to both stderr (for CLI users) and tracing (for log files/collectors).
-    // 确保 panic 同时记录到 stderr（供 CLI 用户使用）和 tracing（供日志文件/收集器使用）。
-    std::panic::set_hook(Box::new(|info| {
-        eprintln!("[PANIC] {info}"); // 兜底到 stderr
-                                     // 如果你们全局已 init tracing，则同时打到 tracing：
-        tracing::error!("panic: {}", info);
-    }));
+    // Handled by app::panic::install() called in main.rs
+    // 确保 panic 同时记录到 stderr 和 tracing 由全局 hook 处理
 
     // --check：零副作用配置校验
     if args.check {

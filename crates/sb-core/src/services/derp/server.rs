@@ -302,7 +302,7 @@ impl DerpService {
                         };
 
                         if let Err(e) = result {
-                            tracing::debug!(service = "derp", peer = %peer_addr, error = %e, "Connection closed");
+                            tracing::error!(service = "derp", peer = %peer_addr, error = %e, "Connection closed with error");
                         }
                     });
                 }
@@ -609,9 +609,10 @@ impl DerpService {
             .await
             .map_err(|e| io::Error::other(format!("Failed to send ServerKey: {}", e)))?;
 
-        // Read ClientInfo frame
+        // Read ClientInfo frame (or ServerKey if mesh peer)
         let client_key = match DerpFrame::read_from_async(&mut read_half).await {
             Ok(DerpFrame::ClientInfo { key }) => key,
+            Ok(DerpFrame::ServerKey { key }) if is_mesh_peer => key,
             Ok(other) => {
                 tracing::warn!(service = "derp", peer = %peer, frame = ?other.frame_type(), "Expected ClientInfo");
                 client_registry.metrics().connect_failed("handshake");
@@ -770,47 +771,64 @@ impl DerpService {
 
                     // Read response
                     let mut buf = vec![0u8; 1024];
-                    match stream.read(&mut buf).await {
-                        Ok(n) if n > 0 => {
-                            let response = String::from_utf8_lossy(&buf[..n]);
-                            if response.contains("101 Switching Protocols") {
-                                tracing::info!(service = "derp", peer = %peer_addr_str, "Mesh handshake successful");
+                    let mut filled = 0;
+                    let mut handshake_done = false;
 
-                                let peer_addr = stream
-                                    .peer_addr()
-                                    .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
+                    loop {
+                        match stream.read(&mut buf[filled..]).await {
+                            Ok(n) if n > 0 => {
+                                filled += n;
+                                let response = String::from_utf8_lossy(&buf[..filled]);
+                                if let Some(idx) = response.find("\r\n\r\n") {
+                                    if response.contains("101 Switching Protocols") {
+                                        tracing::info!(service = "derp", peer = %peer_addr_str, "Mesh handshake successful");
 
-                                // Find end of header to preserve extra bytes (like ServerKey)
-                                let prefix = if let Some(idx) = response.find("\r\n\r\n") {
-                                    buf[idx + 4..n].to_vec()
-                                } else {
-                                    Vec::new()
-                                };
+                                        let peer_addr = stream
+                                            .peer_addr()
+                                            .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
 
-                                let prefixed_stream = PrefixedStream::new(stream, prefix);
+                                        let prefix = buf[idx + 4..filled].to_vec();
+                                        let prefixed_stream = PrefixedStream::new(stream, prefix);
 
-                                if let Err(e) = Self::handle_derp_client(
-                                    prefixed_stream,
-                                    peer_addr,
-                                    tag.clone(),
-                                    client_registry.clone(),
-                                    server_key,
-                                    true,
-                                )
-                                .await
-                                {
-                                    tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh client error");
+                                        if let Err(e) = Self::handle_derp_client(
+                                            prefixed_stream,
+                                            peer_addr,
+                                            tag.clone(),
+                                            client_registry.clone(),
+                                            server_key,
+                                            true,
+                                        )
+                                        .await
+                                        {
+                                            tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh client error");
+                                            tokio::time::sleep(Duration::from_secs(1)).await;
+                                        }
+                                        handshake_done = true;
+                                        break;
+                                    } else {
+                                        tracing::warn!(service = "derp", peer = %peer_addr_str, response = %response, "Mesh handshake failed - expected 101");
+                                        handshake_done = true;
+                                        break;
+                                    }
                                 }
-                            } else {
-                                tracing::warn!(service = "derp", peer = %peer_addr_str, response = %response, "Mesh handshake failed");
+                                if filled == buf.len() {
+                                    tracing::error!(service = "derp", peer = %peer_addr_str, "Mesh handshake buffer overflow");
+                                    break;
+                                }
+                            }
+                            Ok(_) => {
+                                tracing::warn!(service = "derp", peer = %peer_addr_str, "Mesh handshake closed");
+                                break;
+                            }
+                            Err(e) => {
+                                tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh handshake read error");
+                                break;
                             }
                         }
-                        Ok(_) => {
-                            tracing::warn!(service = "derp", peer = %peer_addr_str, "Mesh handshake closed")
-                        }
-                        Err(e) => {
-                            tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh handshake read error")
-                        }
+                    }
+
+                    if !handshake_done {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
                 Err(e) => {
@@ -1841,12 +1859,21 @@ mod tests {
         use sb_config::ir::ServiceType;
         use tokio::net::TcpStream;
 
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping derp test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
         // Create server
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("test-derp".to_string()),
             derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(0), // Random port
+            derp_listen_port: Some(port),
             derp_stun_enabled: Some(false),
             derp_config_path: None,
             derp_verify_client_endpoint: None,

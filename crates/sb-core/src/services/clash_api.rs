@@ -37,10 +37,11 @@
 
 use crate::context::ClashServer;
 use sb_config::ir::ClashApiIR;
+#[cfg(any(feature = "service_clash_api", test))]
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::oneshot;
+// use tokio::sync::oneshot;
 
 #[cfg(feature = "service_clash_api")]
 use axum::{
@@ -50,6 +51,8 @@ use axum::{
     routing::{delete, get},
     Router,
 };
+#[cfg(feature = "service_clash_api")]
+use tokio::sync::oneshot;
 
 /// Clash API Server state.
 #[derive(Debug, Clone)]
@@ -91,7 +94,7 @@ pub struct ClashApiServer {
     started: AtomicBool,
     state: ClashApiState,
     #[cfg(feature = "service_clash_api")]
-    shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
+    shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 impl ClashApiServer {
@@ -117,12 +120,15 @@ impl ClashApiServer {
     }
 
     /// Get the listen address.
+    #[cfg(any(feature = "service_clash_api", test))]
     fn listen_addr(&self) -> Option<SocketAddr> {
         self.cfg
             .external_controller
             .as_ref()
             .and_then(|addr| addr.parse().ok())
     }
+
+
 
     /// Create the Axum router with all Clash API endpoints.
     #[cfg(feature = "service_clash_api")]
@@ -164,7 +170,7 @@ impl ClashServer for ClashApiServer {
                 listen = ?self.cfg.external_controller,
                 "Clash API server start requested (stub - enable 'service_clash_api' feature)"
             );
-            return Ok(());
+            Ok(())
         }
 
         #[cfg(feature = "service_clash_api")]

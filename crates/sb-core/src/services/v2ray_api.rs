@@ -15,6 +15,7 @@
 use crate::context::V2RayServer;
 use sb_config::ir::V2RayApiIR;
 use std::collections::HashMap;
+#[cfg(any(feature = "service_v2ray_api", test))]
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -182,6 +183,7 @@ impl V2RayApiServer {
     }
 
     /// Get listen address
+    #[cfg(any(feature = "service_v2ray_api", test))]
     fn listen_addr(&self) -> Option<SocketAddr> {
         self.cfg.listen.as_ref().and_then(|addr| addr.parse().ok())
     }
@@ -212,7 +214,7 @@ impl V2RayServer for V2RayApiServer {
                 stats_enabled = self.state.enabled,
                 "V2Ray API server start requested (stub - enable 'service_v2ray_api' feature)"
             );
-            return Ok(());
+            Ok(())
         }
 
         #[cfg(feature = "service_v2ray_api")]

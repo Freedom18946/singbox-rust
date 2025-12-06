@@ -2554,7 +2554,8 @@ fn stub_outbound(kind: &str) {
 #[cfg(all(test, feature = "adapter-dns"))]
 mod tests {
     use super::*;
-    use sb_config::ir::{OutboundIR, OutboundType};
+    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType, OutboundType, OutboundIR};
+
 
     #[test]
     fn build_dns_outbound_accepts_doh() {
@@ -2570,10 +2571,119 @@ mod tests {
             port: None,
             ..Default::default()
         };
-        let built = build_dns_outbound(&param, &ir);
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let built = build_dns_outbound(&param, &ir, &ctx);
         assert!(
             built.is_some(),
             "DoH outbound should construct successfully"
+        );
+    }
+
+
+    #[test]
+    #[cfg(feature = "adapter-hysteria2")]
+    fn test_hysteria2_inbound_fields() {
+        // Create a test InboundIR for Hysteria2
+        let ir = InboundIR {
+            ty: InboundType::Hysteria2,
+            listen: "127.0.0.1".to_string(),
+            port: 8443,
+            sniff: false,
+            udp: false,
+            basic_auth: None,
+            override_host: None,
+            override_port: None,
+            method: None,
+            password: None,
+            users_shadowsocks: None,
+            network: None,
+            uuid: None,
+            alter_id: None,
+            users_vmess: None,
+            flow: None,
+            users_vless: None,
+            users_trojan: None,
+            users_anytls: None,
+            anytls_padding: None,
+            users_hysteria2: Some(vec![Hysteria2UserIR {
+                name: "test_user".to_string(),
+                password: "test_password".to_string(),
+            }]),
+            congestion_control: Some("bbr".to_string()),
+            salamander: None,
+            obfs: Some("test_obfs".to_string()),
+            brutal_up_mbps: Some(100),
+            brutal_down_mbps: Some(100),
+            transport: None,
+            ws_path: None,
+            ws_host: None,
+            h2_path: None,
+            h2_host: None,
+            grpc_service: None,
+            tls_enabled: None,
+            tls_cert_path: Some("test_cert.pem".to_string()),
+            tls_key_path: Some("test_key.pem".to_string()),
+            tls_cert_pem: None,
+            tls_key_pem: None,
+            tls_server_name: None,
+            tls_alpn: None,
+            multiplex: None,
+            ..Default::default()
+        };
+
+        // Verify Hysteria2 fields are set
+        assert!(ir.users_hysteria2.is_some());
+        assert_eq!(ir.congestion_control, Some("bbr".to_string()));
+        assert_eq!(ir.obfs, Some("test_obfs".to_string()));
+        assert_eq!(ir.brutal_up_mbps, Some(100));
+        assert_eq!(ir.brutal_down_mbps, Some(100));
+    }
+
+    #[test]
+    #[cfg(feature = "adapter-shadowtls")]
+    fn test_shadowtls_outbound_registration() {
+        // Create a test OutboundIR for ShadowTLS
+        let ir = OutboundIR {
+            ty: OutboundType::Shadowtls,
+            server: Some("example.com".to_string()),
+            port: Some(443),
+            tls_sni: Some("example.com".to_string()),
+            tls_alpn: Some(vec!["http/1.1".to_string(), "h2".to_string()]),
+            skip_cert_verify: Some(false),
+            ..Default::default()
+        };
+
+        let param = OutboundParam {
+            kind: "shadowtls".into(),
+            name: Some("shadowtls_test".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+
+        // Build ShadowTLS outbound
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let result = build_shadowtls_outbound(&param, &ir, &ctx);
+
+        // Verify outbound was created successfully
+        assert!(
+            result.is_some(),
+            "ShadowTLS outbound should construct successfully"
+        );
+        let (_connector, udp_factory) = result.unwrap();
+        assert!(
+            udp_factory.is_none(),
+            "ShadowTLS should not provide UDP factory"
         );
     }
 }
@@ -3019,103 +3129,6 @@ fn build_urltest_outbound(
     crate::outbound::urltest::build_urltest_outbound(param, ir, ctx)
 }
 
-#[cfg(test)]
-mod tests {
-    // use super::*;
-    // use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType, OutboundType};
 
-    #[test]
-    #[cfg(feature = "adapter-hysteria2")]
-    fn test_hysteria2_inbound_fields() {
-        // Create a test InboundIR for Hysteria2
-        let ir = InboundIR {
-            ty: InboundType::Hysteria2,
-            listen: "127.0.0.1".to_string(),
-            port: 8443,
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
-            method: None,
-            password: None,
-            users_shadowsocks: None,
-            network: None,
-            uuid: None,
-            alter_id: None,
-            users_vmess: None,
-            flow: None,
-            users_vless: None,
-            users_trojan: None,
-            users_anytls: None,
-            anytls_padding: None,
-            users_hysteria2: Some(vec![Hysteria2UserIR {
-                name: "test_user".to_string(),
-                password: "test_password".to_string(),
-            }]),
-            congestion_control: Some("bbr".to_string()),
-            salamander: None,
-            obfs: Some("test_obfs".to_string()),
-            brutal_up_mbps: Some(100),
-            brutal_down_mbps: Some(100),
-            transport: None,
-            ws_path: None,
-            ws_host: None,
-            h2_path: None,
-            h2_host: None,
-            grpc_service: None,
-            tls_enabled: None,
-            tls_cert_path: Some("test_cert.pem".to_string()),
-            tls_key_path: Some("test_key.pem".to_string()),
-            tls_cert_pem: None,
-            tls_key_pem: None,
-            tls_server_name: None,
-            tls_alpn: None,
-            multiplex: None,
-        };
 
-        // Verify Hysteria2 fields are set
-        assert!(ir.users_hysteria2.is_some());
-        assert_eq!(ir.congestion_control, Some("bbr".to_string()));
-        assert_eq!(ir.obfs, Some("test_obfs".to_string()));
-        assert_eq!(ir.brutal_up_mbps, Some(100));
-        assert_eq!(ir.brutal_down_mbps, Some(100));
-    }
 
-    #[test]
-    #[cfg(feature = "adapter-shadowtls")]
-    fn test_shadowtls_outbound_registration() {
-        // Create a test OutboundIR for ShadowTLS
-        let ir = OutboundIR {
-            ty: OutboundType::Shadowtls,
-            server: Some("example.com".to_string()),
-            port: Some(443),
-            tls_sni: Some("example.com".to_string()),
-            tls_alpn: Some(vec!["http/1.1".to_string(), "h2".to_string()]),
-            skip_cert_verify: Some(false),
-            ..Default::default()
-        };
-
-        let param = OutboundParam {
-            kind: "shadowtls".into(),
-            name: Some("shadowtls_test".into()),
-            server: None,
-            port: None,
-            ..Default::default()
-        };
-
-        // Build ShadowTLS outbound
-        let result = build_shadowtls_outbound(&param, &ir);
-
-        // Verify outbound was created successfully
-        assert!(
-            result.is_some(),
-            "ShadowTLS outbound should construct successfully"
-        );
-        let (_connector, udp_factory) = result.unwrap();
-        assert!(
-            udp_factory.is_none(),
-            "ShadowTLS should not provide UDP factory"
-        );
-    }
-}

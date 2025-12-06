@@ -42,7 +42,7 @@ pub async fn run_go1124(ir: &ConfigIr) -> Result<()> {
         }
     }
     Err(anyhow!(
-        "config.inbounds 里未找到受支持的入站（支持：socks, http）。实际类型：{}",
+        "No supported inbound found in config.inbounds (supported: socks, http). Actual types: {}",
         seen.join(", ")
     ))
 }

@@ -75,7 +75,6 @@ use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 pub mod labels;
-pub use labels::ensure_allowed_labels;
 
 fn guarded_counter_vec(name: &str, help: &str, labels: &[&str]) -> IntCounterVec {
     labels::ensure_allowed_labels(name, labels);

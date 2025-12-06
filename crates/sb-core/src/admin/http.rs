@@ -301,27 +301,64 @@ fn handle(
     rt_handle: Option<&Handle>,
 ) -> std::io::Result<()> {
     let lim = limits();
-    // Basic slowloris + timeout guard on first line
-    let mut total_read = 0usize;
-    let line = read_line(&mut cli, &mut total_read)?;
-    let (method, path, _ver) = parse_path(&line);
-    let headers = read_headers(&mut cli)?;
-    // security gate
     let peer_opt = cli.peer_addr().ok();
-    if let Some(peer) = peer_opt {
-        // concurrency limiter
-        if let Ok(_g) = inc_concurrency(peer.ip(), &lim) {
-            // rate limit check
-            if !rate_check(peer.ip(), &lim) {
-                let body = json_err("rate_limited", "too many requests");
+    
+    // Early concurrency check BEFORE reading any data
+    let _conn_guard = if let Some(peer) = &peer_opt {
+        match inc_concurrency(peer.ip(), &lim) {
+            Ok(g) => Some(g),
+            Err(()) => {
+                let body = json_err("too_many_connections", "per-ip concurrency exceeded");
                 let _ = write_json(&mut cli, 429, &body);
                 return Ok(());
             }
-        } else {
-            let body = json_err("too_many_connections", "per-ip concurrency exceeded");
+        }
+    } else {
+        None
+    };
+
+    // Check rate limit early
+    if let Some(peer) = &peer_opt {
+        if !rate_check(peer.ip(), &lim) {
+            let body = json_err("rate_limited", "too many requests");
             let _ = write_json(&mut cli, 429, &body);
             return Ok(());
         }
+    }
+
+    // Now read request line - handle IO errors gracefully
+    let mut total_read = 0usize;
+    let line = match read_line(&mut cli, &mut total_read) {
+        Ok(l) => l,
+        Err(e) => {
+            // For header too large or timeout, send proper HTTP error
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                let body = json_err("request_too_large", "headers exceed limit");
+                let _ = write_json(&mut cli, 431, &body);
+            } else if e.kind() == std::io::ErrorKind::TimedOut {
+                let body = json_err("timeout", "request timeout");
+                let _ = write_json(&mut cli, 408, &body);
+            }
+            // For other errors (connection closed, etc.), just return
+            return Ok(());
+        }
+    };
+    
+    let (method, path, _ver) = parse_path(&line);
+    
+    let headers = match read_headers(&mut cli) {
+        Ok(h) => h,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                let body = json_err("request_too_large", "headers exceed limit");
+                let _ = write_json(&mut cli, 431, &body);
+            }
+            return Ok(());
+        }
+    };
+    
+    // security gate for non-local access
+    if let Some(peer) = peer_opt {
         if !is_loopback_or_private(&peer) && admin_token.is_none() {
             let body = json_err("forbidden", "token required for non-local access");
             return write_json(&mut cli, 403, &body);

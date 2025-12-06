@@ -58,6 +58,7 @@ mod http2_tests {
 mod tls_tests {
     #[test]
     fn test_tls_config_validation() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         // Creating a client config should succeed
         let cfg = sb_transport::tls::webpki_roots_config();
         // Ensure ALPN list is initialized (may be empty by default)

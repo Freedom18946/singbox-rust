@@ -184,7 +184,7 @@ impl TailscaleConnector {
         };
 
         #[cfg(feature = "adapter-wireguard-outbound")]
-        let wireguard = Arc::new(Mutex::new(None));
+        let wireguard = Arc::new(Mutex::new(None::<Arc<crate::outbound::wireguard::WireGuardOutbound>>));
 
         let coordinator = if mode == TailscaleMode::Managed {
             let url = config.control_url.as_deref().unwrap_or("https://controlplane.tailscale.com");
@@ -213,24 +213,32 @@ impl TailscaleConnector {
                  loop {
                      if rx.changed().await.is_err() { break; }
                      {
-                         let map_ref = rx.borrow();
-                         if let Some(map) = map_ref.as_ref() {
-                            // Dumb logic: update to first peer's first endpoint
-                            // In reality, this requires multi-peer management.
-                            if let Some(peer) = map.peers.first() {
-                                if let Some(ep_src) = peer.endpoints.first() {
-                                    if let Ok(addr) = ep_src.parse::<SocketAddr>() {
-                                        #[cfg(feature = "adapter-wireguard-outbound")]
-                                        {
-                                            let guard = wg_clone.lock().await;
-                                            if let Some(wg) = guard.as_ref() {
-                                                wg.set_peer_endpoint(addr).await;
-                                            }
-                                        }
+                        let addr_opt = {
+                            let map_ref = rx.borrow();
+                            if let Some(map) = map_ref.as_ref() {
+                                if let Some(peer) = map.peers.first() {
+                                    if let Some(ep_src) = peer.endpoints.first() {
+                                        ep_src.parse::<SocketAddr>().ok()
+                                    } else {
+                                        None
                                     }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        };
+                        
+                        if let Some(addr) = addr_opt {
+                            #[cfg(feature = "adapter-wireguard-outbound")]
+                            {
+                                let guard = wg_clone.lock().await;
+                                if let Some(wg) = guard.as_ref() {
+                                    wg.set_peer_endpoint(addr).await;
                                 }
                             }
-                         }
+                        }
                      }
                  }
             });
@@ -389,7 +397,7 @@ impl CoreOutboundConnector for TailscaleConnector {
                 #[cfg(feature = "adapter-wireguard-outbound")]
                 {
                     let guard = self.wireguard.lock().await;
-                    if let Some(ref wg) = *guard {
+                    if let Some(ref _wg) = *guard {
                         debug!(
                             target: "sb_adapters::tailscale",
                             tag = tag,

@@ -1,3 +1,10 @@
+//! Admin HTTP hardening tests
+//!
+//! These tests require the `router` feature to be enabled as they use
+//! Runtime::dummy_engine() which requires router functionality.
+
+#![cfg(feature = "router")]
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;

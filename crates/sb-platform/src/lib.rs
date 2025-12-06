@@ -75,6 +75,7 @@
 pub mod process;
 pub mod system_proxy;
 pub mod tun;
+/// Network monitoring utilities for detecting network changes.
 pub mod monitor;
 
 /// Android VPN protect hooks for socket protection.

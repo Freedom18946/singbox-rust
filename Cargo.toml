@@ -25,7 +25,7 @@ members = [
 exclude = [
   "crates/sb-adapters/fuzz"
 ]
-# 默认只构建 app（其它 crate 在需要时由 feature/依赖拉起）
+# Default to building only app (other crates pulled in as needed dependencies)
 default-members = ["app"]
 
 [workspace.package]
@@ -36,7 +36,7 @@ homepage = "https://example.com/your/home"
 readme = "README.md"
 
 [workspace.metadata.check-cfg]
-# 空壳声明，避免 unexpected cfg 噪音；真正受用范围由各 crate features 决定
+# Empty shell declaration to avoid unexpected cfg noise; actua usage defined by crate features
 
 [workspace.lints.rust]
 warnings = { level = "deny", priority = -1 }
@@ -97,9 +97,9 @@ opt-level = 3         # highest codegen optimization
 lto = "fat"           # link-time optimization across crates
 codegen-units = 1     # single codegen unit for better inlining
 
-# 说明：
-# - 统一常用 crates 的版本，减少 features/版本不一致导致的编译报错
-# - 其它依赖请在各子 crate 内单独声明（避免 workspace 可选特性的限制）
+# Notes:
+# - Unify versions of common crates to reduce compilation errors due to features/version mismatch
+# - Declare other dependencies inside individual crates (to avoid workspace optional feature limitations)
 
 [patch.crates-io]
 # Override crates.io tun2socks with a local build-time stub to keep

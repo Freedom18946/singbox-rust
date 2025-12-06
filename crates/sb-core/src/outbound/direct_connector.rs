@@ -13,7 +13,6 @@ use futures::StreamExt;
 use std::net::SocketAddr;
 use tokio::net::{lookup_host, TcpStream, UdpSocket};
 use tokio::time::{timeout, Duration};
-use tracing::warn;
 
 /// Direct outbound connector that connects directly to targets
 #[derive(Debug, Clone)]

@@ -343,8 +343,8 @@ async fn test_brutal_congestion_control() {
     assert_eq!(brutal.down_mbps, 50);
 
     // Test bandwidth conversion
-    assert_eq!(brutal.up_bytes_per_sec(), 100 * 1_000_000 / 8);
-    assert_eq!(brutal.down_bytes_per_sec(), 50 * 1_000_000 / 8);
+    assert_eq!(brutal.up_bytes_per_sec(), 100 * 1024 * 1024 / 8);
+    assert_eq!(brutal.down_bytes_per_sec(), 50 * 1024 * 1024 / 8);
 
     // Test MultiplexConfig with Brutal
     let config = MultiplexConfig {

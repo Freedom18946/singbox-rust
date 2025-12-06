@@ -63,24 +63,30 @@ pub fn build_tailscale_endpoint(
     ir: &EndpointIR,
     _ctx: &EndpointContext,
 ) -> Option<Arc<dyn Endpoint>> {
-    let tag = ir.tag.as_deref().unwrap_or("tailscale");
+
     // If the real adapter is compiled in, delegate to it.
     #[cfg(feature = "adapter-tailscale-endpoint")]
     {
         return crate::endpoint::tailscale::build_tailscale_endpoint(ir, _ctx);
     }
 
-    tracing::warn!(
-        endpoint_type = "tailscale",
-        tag = tag,
-        "Tailscale endpoint is not implemented; requires tailscale-go bindings or tsnet integration"
-    );
+    #[cfg(not(feature = "adapter-tailscale-endpoint"))]
+    {
+        let tag = ir.tag.as_deref().unwrap_or("tailscale");
+        tracing::warn!(
+            endpoint_type = "tailscale",
+            tag = tag,
+            "Tailscale endpoint is not implemented; requires tailscale-go bindings or tsnet integration"
+        );
 
-    // Return stub that will error when start() is called
-    Some(Arc::new(StubEndpoint {
-        ty_str: "tailscale",
-        tag: tag.to_string(),
-    }))
+        // Return stub that will error when start() is called
+        Some(Arc::new(StubEndpoint {
+            ty_str: "tailscale",
+            tag: tag.to_string(),
+        }))
+    }
+
+
 }
 
 /// Register all endpoint stubs.
@@ -189,9 +195,20 @@ mod tests {
         assert_eq!(endpoint.endpoint_type(), "tailscale");
         assert_eq!(endpoint.tag(), "ts0");
 
-        // Starting should fail with helpful error
+        // Starting should fail with helpful error if stub, or succeed if real
         let result = endpoint.start(StartStage::Initialize);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not implemented"));
+
+        #[cfg(not(feature = "adapter-tailscale-endpoint"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("not implemented"));
+        }
+
+        #[cfg(feature = "adapter-tailscale-endpoint")]
+        {
+             if let Err(e) = &result {
+                 assert!(!e.to_string().contains("not implemented"));
+             }
+        }
     }
 }

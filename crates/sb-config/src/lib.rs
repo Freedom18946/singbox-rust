@@ -25,12 +25,12 @@
 //! - [`compat`]: **Migration Layer** - Handles the transformation from legacy formats.
 //!   **迁移层** - 处理从旧格式的转换。
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
-use std::net::{SocketAddr, ToSocketAddrs};
+// use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
 
 // Removed sb_core dependencies to break circular dependency
@@ -514,8 +514,7 @@ impl Config {
     }
 }
 
-/// 解析 (host, port) -> SocketAddr（严格失败）
-#[allow(dead_code)]
+/*
 fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
     let qp = format!("{}:{}", host, port);
     let mut it = qp
@@ -524,6 +523,7 @@ fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
     it.next()
         .ok_or_else(|| anyhow!("no address resolved for {}", qp))
 }
+*/
 
 pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
     use serde_json::Map;
@@ -561,7 +561,7 @@ pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
     Value::Object(merged)
 }
 
-#[allow(dead_code)]
+/*
 fn auth_user_pass(a: Option<&Auth>) -> (Option<String>, Option<String>) {
     if let Some(x) = a {
         (Some(x.username.clone()), Some(x.password.clone()))
@@ -569,6 +569,7 @@ fn auth_user_pass(a: Option<&Auth>) -> (Option<String>, Option<String>) {
         (None, None)
     }
 }
+*/
 
 fn default_vless_network() -> String {
     "tcp".to_string()

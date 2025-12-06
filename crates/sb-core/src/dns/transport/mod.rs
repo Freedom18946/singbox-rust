@@ -163,9 +163,9 @@ impl DhcpResolver {
                 DhcpUpstream::from_spec("dhcp", None).expect("DhcpUpstream fallback")
             });
             let resolver = DnsResolver::new(vec![Arc::new(upstream)]).with_name("dhcp".to_string());
-            return Self {
+            Self {
                 inner: Some(Arc::new(resolver)),
-            };
+            }
         }
 
         #[cfg(not(feature = "dns_dhcp"))]

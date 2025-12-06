@@ -7,6 +7,7 @@
 pub struct NetworkMonitor;
 
 impl NetworkMonitor {
+    /// Create a new network monitor instance.
     pub fn new() -> Self {
         Self
     }

@@ -81,7 +81,7 @@ use tokio::time::{timeout, Duration};
 /// use sb_transport::Dialer;
 ///
 /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-///     let dialer = TcpDialer;
+///     let dialer = TcpDialer::default();
 ///
 ///     // Connect with 10s timeout
 ///     // 10秒超时连接
@@ -169,7 +169,7 @@ pub async fn dial_with_timeout<D: Dialer + Send + Sync>(
 /// use sb_transport::{connect_with_timeout, TcpDialer};
 ///
 /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-///     let dialer = TcpDialer;
+///     let dialer = TcpDialer::default();
 ///     let address = ("example.com", 80);
 ///
 ///     // Connect with timeout using address tuple

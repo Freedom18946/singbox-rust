@@ -46,6 +46,7 @@
 #[cfg(feature = "transport_tls")]
 #[tokio::test]
 async fn tls_dialer_compiles() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     // 导入必要的类型和 trait
     use sb_transport::dialer::TcpDialer;
     use sb_transport::tls::{smoke_empty_roots_config, TlsDialer};

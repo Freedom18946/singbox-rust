@@ -1,0 +1,29 @@
+{
+    "log": {
+        "level": "debug"
+    },
+    "inbounds": [
+        {
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": 17890
+        }
+    ],
+    "outbounds": [
+        {
+            "type": "trojan",
+            "tag": "hk-01",
+            "server": "lmnode-ixd2fh5v0uq1v7z-lmhk.lma1b2.com",
+            "port": 53401,
+            "password": "e1e2acb6-1805-4376-9f48-edefe83a259a"
+        },
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route": {
+        "final": "hk-01"
+    }
+}

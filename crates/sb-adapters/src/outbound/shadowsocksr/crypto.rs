@@ -17,7 +17,7 @@ pub trait SsrCipher: Send + Sync {
 pub struct Cipher;
 
 impl Cipher {
-    pub fn new(method: &str, _password: &str) -> Box<dyn SsrCipher> {
+    pub fn create(method: &str, _password: &str) -> Box<dyn SsrCipher> {
         match method.to_lowercase().as_str() {
             "none" | "plain" => Box::new(PlainCipher),
             // TODO: Implement other ciphers (rc4-md5, aes-128-cfb, etc.)

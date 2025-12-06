@@ -34,7 +34,7 @@ impl MonitoringSystem {
     pub fn new(config: ReportConfig) -> (Self, MonitoringSystemHandle) {
         let bridge = Arc::new(MetricsBridge::new());
         let traffic_collector = TrafficCollector::new(bridge.clone());
-        let connection_collector = ConnectionCollector::new();
+        let connection_collector = ConnectionCollector::new(bridge.clone());
         let performance_collector = PerformanceCollector::new(bridge.clone());
         let reporter = RealtimeReporter::new(config);
 

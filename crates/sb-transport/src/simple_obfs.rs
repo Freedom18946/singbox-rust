@@ -10,8 +10,8 @@
 //! ## References
 //! - https://github.com/shadowsocks/simple-obfs
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use std::io::{self, Error, ErrorKind};
+use bytes::{BufMut, Bytes, BytesMut};
+use std::io::{self, ErrorKind};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -85,6 +85,7 @@ pub struct SimpleObfsStream<S> {
     state: ObfsState,
     read_buffer: BytesMut,
     write_buffer: BytesMut,
+    #[allow(dead_code)]
     pending_data: Option<Bytes>,
 }
 
@@ -316,7 +317,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SimpleObfsStream<S> {
 
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for SimpleObfsStream<S> {
     fn poll_write(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
@@ -350,6 +351,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for SimpleObfsStream<S> {
         }
     }
 
+    #[allow(unused_mut)]
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
@@ -380,7 +382,7 @@ mod tests {
             path: Some("/api".to_string()),
         };
         
-        let stream = SimpleObfsStream::new(std::io::Cursor::new(vec![]), config);
+        let stream = SimpleObfsStream::new(std::io::Cursor::<Vec<u8>>::new(vec![]), config);
         let data = stream.build_http_request(b"test payload");
         let request = String::from_utf8_lossy(&data);
         
@@ -397,7 +399,7 @@ mod tests {
             path: None,
         };
         
-        let stream = SimpleObfsStream::new(std::io::Cursor::new(vec![]), config);
+        let stream = SimpleObfsStream::new(std::io::Cursor::<Vec<u8>>::new(vec![]), config);
         let data = stream.build_tls_client_hello(b"test");
         
         // Check TLS record header

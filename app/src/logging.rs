@@ -279,7 +279,9 @@ where
 
         if let Some(config) = LOGGING_CONFIG.get() {
             if let Some(sampling) = &config.sampling {
-                if !should_sample(metadata.target(), sampling) { // Skip this event
+                if !should_sample(metadata.target(), sampling) {
+                    // Rate limit exceeded; skip event
+                    return;
                 }
             }
         }

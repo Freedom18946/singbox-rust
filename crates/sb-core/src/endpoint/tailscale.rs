@@ -125,24 +125,7 @@ impl TailscaleEndpoint {
         *self.tailscale_ip.read()
     }
 
-    /// Initialize the WireGuard tunnel and coordination.
-    async fn initialize(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.set_state(TailscaleState::Initializing);
-        
-        tracing::info!(
-            tag = %self.config.tag,
-            hostname = ?self.config.hostname,
-            "Initializing Tailscale endpoint"
-        );
 
-        // TODO: Initialize boringtun WireGuard tunnel
-        // TODO: Connect to coordination server
-        // TODO: Perform authentication if auth_key provided
-        // TODO: Set up DERP relay connections
-
-        self.set_state(TailscaleState::Running);
-        Ok(())
-    }
 }
 
 impl std::fmt::Debug for TailscaleEndpoint {

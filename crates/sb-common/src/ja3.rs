@@ -248,10 +248,11 @@ impl fmt::Display for Ja3Fingerprint {
 /// Simple MD5 implementation for JA3 hashing.
 /// This is a minimal implementation - in production, use a proper crypto library.
 mod md5 {
-    pub struct Digest([u8; 16]);
+    pub(super) struct Digest([u8; 16]);
 
     impl Digest {
-        pub fn bytes(&self) -> &[u8; 16] {
+        #[allow(dead_code)]
+        pub(super) fn bytes(&self) -> &[u8; 16] {
             &self.0
         }
     }
@@ -266,7 +267,7 @@ mod md5 {
     }
 
     /// Compute MD5 hash of data.
-    pub fn compute(data: &[u8]) -> Digest {
+    pub(super) fn compute(data: &[u8]) -> Digest {
         // Constants from RFC 1321
         const S: [u32; 64] = [
             7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20,

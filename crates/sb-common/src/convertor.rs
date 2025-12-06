@@ -599,16 +599,16 @@ fn clash_entry_to_node(entry: &YamlValue) -> Option<ProxyNode> {
     // Transport options
     node.transport = string_field(map, "network");
     if let Some(ws_opts) = map
-        .get(&YamlValue::String("ws-opts".into()))
+        .get(YamlValue::String("ws-opts".into()))
         .and_then(|v| v.as_mapping())
     {
         node.ws_path = string_field(ws_opts, "path");
         if let Some(headers) = ws_opts
-            .get(&YamlValue::String("headers".into()))
+            .get(YamlValue::String("headers".into()))
             .and_then(|v| v.as_mapping())
         {
             if let Some(host) = headers
-                .get(&YamlValue::String("Host".into()))
+                .get(YamlValue::String("Host".into()))
                 .and_then(value_to_string)
             {
                 node.ws_host = Some(host);
@@ -617,7 +617,7 @@ fn clash_entry_to_node(entry: &YamlValue) -> Option<ProxyNode> {
     }
 
     if let Some(alpn) = map
-        .get(&YamlValue::String("alpn".into()))
+        .get(YamlValue::String("alpn".into()))
         .and_then(|v| v.as_sequence())
     {
         node.alpn = alpn.iter().filter_map(value_to_string).collect();
@@ -635,12 +635,12 @@ fn clash_entry_to_node(entry: &YamlValue) -> Option<ProxyNode> {
 }
 
 fn string_field(map: &serde_yaml::Mapping, key: &str) -> Option<String> {
-    map.get(&YamlValue::String(key.to_string()))
+    map.get(YamlValue::String(key.to_string()))
         .and_then(value_to_string)
 }
 
 fn u16_field(map: &serde_yaml::Mapping, key: &str) -> Option<u16> {
-    map.get(&YamlValue::String(key.to_string()))
+    map.get(YamlValue::String(key.to_string()))
         .and_then(|v| match v {
             YamlValue::Number(n) => n.as_u64().and_then(|v| u16::try_from(v).ok()),
             YamlValue::String(s) => s.parse::<u16>().ok(),
@@ -649,7 +649,7 @@ fn u16_field(map: &serde_yaml::Mapping, key: &str) -> Option<u16> {
 }
 
 fn bool_field(map: &serde_yaml::Mapping, key: &str) -> Option<bool> {
-    map.get(&YamlValue::String(key.to_string()))
+    map.get(YamlValue::String(key.to_string()))
         .and_then(|v| match v {
             YamlValue::Bool(b) => Some(*b),
             YamlValue::String(s) => {

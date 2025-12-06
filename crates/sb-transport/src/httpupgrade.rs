@@ -31,7 +31,7 @@
 //!         host: "example.com".to_string(),
 //!         ..Default::default()
 //!     };
-//!     let inner = Box::new(TcpDialer);
+//!     let inner = Box::new(TcpDialer::default());
 //!     let dialer = HttpUpgradeDialer::new(config, inner);
 //!     let stream = dialer.connect("example.com", 80).await?;
 //!     // Use stream for raw TCP communication

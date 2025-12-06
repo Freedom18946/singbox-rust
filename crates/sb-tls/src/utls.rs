@@ -432,6 +432,7 @@ impl UtlsConfig {
     }
 
     /// Set ALPN protocols
+    #[must_use]
     pub fn with_alpn(mut self, alpn: Vec<String>) -> Self {
         self.alpn = Some(alpn);
         self
@@ -478,6 +479,7 @@ pub fn available_fingerprints() -> Vec<&'static str> {
 mod tests {
     use super::*;
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn test_fingerprint_parse() {
         assert_eq!("chrome".parse::<UtlsFingerprint>().unwrap(), UtlsFingerprint::Chrome110);

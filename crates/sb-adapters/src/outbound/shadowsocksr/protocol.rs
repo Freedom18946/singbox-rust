@@ -20,7 +20,7 @@ pub trait SsrProtocol: Send + Sync {
 pub struct Protocol;
 
 impl Protocol {
-    pub fn new(name: &str, param: Option<&str>) -> Box<dyn SsrProtocol> {
+    pub fn create(name: &str, param: Option<&str>) -> Box<dyn SsrProtocol> {
         match name.to_lowercase().as_str() {
             "origin" | "plain" => Box::new(OriginProtocol),
             "auth_sha1_v4" => Box::new(AuthSha1V4Protocol::new(param)),

@@ -584,6 +584,8 @@ pub fn is_retryable_error(error: &crate::error::AdapterError) -> bool {
                     | ErrorKind::AddrNotAvailable
                     | ErrorKind::Interrupted
                     | ErrorKind::WouldBlock
+                    | ErrorKind::UnexpectedEof
+                    | ErrorKind::BrokenPipe
             )
         }
         // Timeout errors are retryable
@@ -658,7 +660,6 @@ where
 ///
 /// Returns the last error encountered if all retry attempts fail.
 /// 如果所有重试尝试都失败，则返回最后遇到的错误。
-#[cfg(feature = "metrics")]
 pub async fn with_adapter_retry<F, Fut, T>(
     retry_policy: &RetryPolicy,
     adapter_name: &'static str,
@@ -679,6 +680,7 @@ where
             }
 
             // Record retry attempt
+            #[cfg(feature = "metrics")]
             sb_metrics::inc_adapter_retries_total(adapter_name);
         }
 

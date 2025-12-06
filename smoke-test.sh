@@ -60,22 +60,35 @@ fi
 
 # Test 7: Check CLI with bad config and JSON output
 echo -e "\nTest 7: Check CLI (bad config with JSON)"
-cat > /tmp/bad_test.yaml <<EOF
+BAD_CONFIG=$(mktemp)
+cat > "$BAD_CONFIG" <<EOF
 inbounds: [{type: socks, listen: "127.0.0.1:1080"}]
 outbounds: [{type: direct, name: direct}]
 route: {rules: [{domain_suffix: 123, outbound: direct}]}
 EOF
 
 set +e
-result=$(./target/debug/check --config /tmp/bad_test.yaml --format json 2>/dev/null)
+result=$(./target/debug/check --config "$BAD_CONFIG" --format json 2>/dev/null)
 exit_code=$?
 set -e
+rm -f "$BAD_CONFIG"
 
-if [ $exit_code -ne 0 ] && echo "$result" | grep -q '"issues"' && echo "$result" | jq -e '.issues | length >= 1' > /dev/null 2>&1; then
-    echo "✓ Check CLI bad config detection passed"
+# Check for jq
+if command -v jq >/dev/null 2>&1; then
+    if [ $exit_code -ne 0 ] && echo "$result" | jq -e '.issues | length >= 1' > /dev/null 2>&1; then
+        echo "✓ Check CLI bad config detection passed"
+    else
+        echo "✗ Check CLI bad config detection failed"
+        exit 1
+    fi
 else
-    echo "✗ Check CLI bad config detection failed"
-    exit 1
+    # Fallback to grep if jq missing
+    if [ $exit_code -ne 0 ] && echo "$result" | grep -q '"issues"'; then
+         echo "✓ Check CLI bad config detection passed (jq missing, grep used)"
+    else
+         echo "✗ Check CLI bad config detection failed"
+         exit 1
+    fi
 fi
 
 # Test 8: Check CLI with fingerprint

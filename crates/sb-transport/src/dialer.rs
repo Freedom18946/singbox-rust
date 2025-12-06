@@ -25,10 +25,12 @@ use futures::future::{select_ok, FutureExt};
 use std::net::SocketAddr;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::net::{lookup_host, TcpStream, TcpSocket};
+use tokio::net::{lookup_host, TcpStream};
+#[cfg(target_os = "android")]
+use tokio::net::TcpSocket;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Errors that may occur during dialing
 /// 拨号过程中可能出现的错误类型
@@ -127,7 +129,7 @@ pub type IoStream = Box<dyn AsyncReadWrite + 'static>;
 /// use sb_transport::{Dialer, TcpDialer};
 ///
 /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-///     let dialer = TcpDialer;
+///     let dialer = TcpDialer::default();
 ///     let stream = dialer.connect("example.com", 80).await?;
 ///     // Use stream for communication... / 使用 stream 进行通信...
 ///     Ok(())
@@ -431,7 +433,7 @@ impl TcpDialer {
             };
             
             if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
-                warn!("Failed to protect TCP socket: {}", e);
+                tracing::warn!("Failed to protect TCP socket: {}", e);
             }
             
             socket.connect(addr).await

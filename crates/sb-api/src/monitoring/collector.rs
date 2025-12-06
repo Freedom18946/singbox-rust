@@ -199,7 +199,7 @@ impl TrafficCollector {
 /// Maintains a list of active connections and broadcasts updates when connections open/close.
 /// 维护活动连接列表，并在连接打开/关闭时广播更新。
 pub struct ConnectionCollector {
-    connections: Arc<Mutex<Vec<Connection>>>,
+    bridge: Arc<MetricsBridge>,
     connection_tx: broadcast::Sender<Connection>,
     is_running: Arc<AtomicBool>,
     update_interval: Duration,
@@ -207,11 +207,11 @@ pub struct ConnectionCollector {
 
 impl ConnectionCollector {
     /// Create a new connection collector
-    pub fn new() -> Self {
+    pub fn new(bridge: Arc<MetricsBridge>) -> Self {
         let (connection_tx, _) = broadcast::channel(1000);
 
         Self {
-            connections: Arc::new(Mutex::new(Vec::new())),
+            bridge,
             connection_tx,
             is_running: Arc::new(AtomicBool::new(false)),
             update_interval: Duration::from_millis(5000),
@@ -225,7 +225,7 @@ impl ConnectionCollector {
         }
 
         self.is_running.store(true, Ordering::Relaxed);
-        let connections = self.connections.clone();
+        let bridge = self.bridge.clone();
         let connection_tx = self.connection_tx.clone();
         let is_running = self.is_running.clone();
         let update_interval = self.update_interval;
@@ -237,7 +237,7 @@ impl ConnectionCollector {
                 interval_timer.tick().await;
 
                 // Broadcast current connections status
-                let current_connections = connections.lock().await;
+                let current_connections = bridge.get_connections().await;
                 for connection in current_connections.iter() {
                     if connection_tx.send(connection.clone()).is_err() {
                         log::debug!("No connection subscribers");
@@ -273,42 +273,32 @@ impl ConnectionCollector {
 
     /// Add a new connection
     pub async fn add_connection(&self, connection: Connection) {
-        let mut connections = self.connections.lock().await;
-        connections.push(connection.clone());
+        self.bridge.add_connection(connection.clone()).await;
 
         // Broadcast the new connection immediately
-        let _ = self.connection_tx.send(connection);
+        let _ = self.connection_tx.send(connection.clone());
 
-        if let Some(last) = connections.last() {
-            log::debug!("Added connection: {}", last.id);
-        }
+        log::debug!("Added connection: {}", connection.id);
     }
 
     /// Remove a connection
     pub async fn remove_connection(&self, connection_id: &str) {
-        let mut connections = self.connections.lock().await;
-        if let Some(pos) = connections.iter().position(|c| c.id == connection_id) {
-            let removed = connections.remove(pos);
-            log::debug!("Removed connection: {}", removed.id);
-        }
+        self.bridge.remove_connection(connection_id).await;
+        log::debug!("Removed connection: {}", connection_id);
     }
 
     /// Get all current connections
     pub async fn get_connections(&self) -> Vec<Connection> {
-        self.connections.lock().await.clone()
+        self.bridge.get_connections().await
     }
 
     /// Get connection count
     pub async fn get_connection_count(&self) -> usize {
-        self.connections.lock().await.len()
+        self.bridge.get_connections().await.len()
     }
 }
 
-impl Default for ConnectionCollector {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+
 
 /// Performance metrics collector
 pub struct PerformanceCollector {

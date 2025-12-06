@@ -156,7 +156,9 @@ pub struct GrpcLiteStream<S> {
     inner: S,
     config: GrpcLiteConfig,
     read_buffer: BytesMut,
+    #[allow(dead_code)]
     write_buffer: BytesMut,
+    #[allow(dead_code)]
     headers_sent: bool,
 }
 
@@ -210,7 +212,7 @@ pub enum GrpcFrameType {
 
 impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for GrpcLiteStream<S> {
     fn poll_read(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
@@ -265,6 +267,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for GrpcLiteStream<S> {
         }
     }
 
+    #[allow(unused_mut)]
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }

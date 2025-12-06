@@ -507,6 +507,7 @@ mod tests {
             listen: "127.0.0.1".to_string(),
             port: 5353,
             tcp_enabled: true,
+            resolver: None,
         };
 
         let adapter = DnsInboundAdapter::new(config).unwrap();

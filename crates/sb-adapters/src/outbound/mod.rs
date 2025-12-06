@@ -253,7 +253,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocksr::ShadowsocksROutbound 
             protocol_param: ir.protocol_param.clone(),
         };
 
-        Ok(Self::new(config).map_err(|e| crate::error::AdapterError::Other(e.to_string()))?)
+        Self::new(config).map_err(|e| crate::error::AdapterError::Other(e.to_string()))
     }
 }
 

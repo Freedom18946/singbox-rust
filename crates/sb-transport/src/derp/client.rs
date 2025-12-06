@@ -3,13 +3,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace};
 
-use crate::derp::protocol::{DerpFrame, FrameType, PublicKey};
+use crate::derp::protocol::{DerpFrame, PublicKey};
 
 /// Client for DERP (Designated Encrypted Relay for Packets).
 ///
@@ -91,7 +90,7 @@ impl DerpClient {
 
         match frame {
             DerpFrame::ServerKey { key } => {
-                trace!("Received DERP server key: {:?}", hex::encode(key));
+                trace!("Received DERP server key: {:02x?}", key);
                 // TODO: Verify server key if we have expected one
             }
             _ => {
@@ -109,9 +108,9 @@ impl DerpClient {
         client_info
             .write_to_async(stream)
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         
-        debug!("Sent ClientInfo with key: {:?}", hex::encode(self.public_key));
+        debug!("Sent ClientInfo with key: {:02x?}", self.public_key);
         
         Ok(())
     }
@@ -125,7 +124,7 @@ impl DerpClient {
                 packet: packet.to_vec(),
             };
             frame.write_to_async(stream).await.map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("Failed to send packet: {}", e))
+                io::Error::other(format!("Failed to send packet: {}", e))
             })?;
             Ok(())
         } else {
@@ -143,7 +142,7 @@ impl DerpClient {
                 // Read next frame
                 let frame = DerpFrame::read_from_async(stream)
                     .await
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                    .map_err(|e| io::Error::other(e.to_string()))?;
 
                 match frame {
                     DerpFrame::RecvPacket { src_key, packet } => {
@@ -152,16 +151,16 @@ impl DerpClient {
                     DerpFrame::Ping { data } => {
                         trace!("Received Ping, sending Pong");
                         let pong = DerpFrame::Pong { data };
-                        pong.write_to_async(stream).await.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                        pong.write_to_async(stream).await.map_err(io::Error::other)?;
                     }
                     DerpFrame::KeepAlive => {
                         trace!("Received KeepAlive");
                     }
                     DerpFrame::PeerGone { key } => {
-                        debug!("Peer gone: {:?}", hex::encode(key));
+                        debug!("Peer gone: {:02x?}", key);
                     }
                     DerpFrame::PeerPresent { key } => {
-                        debug!("Peer present: {:?}", hex::encode(key));
+                        debug!("Peer present: {:02x?}", key);
                     }
                     _ => {
                         trace!("Received other frame: {:?}", frame.frame_type());

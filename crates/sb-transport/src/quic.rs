@@ -33,7 +33,7 @@
 //!         server_name: "example.com".to_string(),
 //!         ..Default::default()
 //!     };
-//!     let dialer = QuicDialer::new(config);
+//!     let dialer = QuicDialer::new(config)?;
 //!     let stream = dialer.connect("example.com", 443).await?;
 //!     // Use stream for communication...
 //!     Ok(())
@@ -376,17 +376,19 @@ mod tests {
         assert!(config.ech_config.is_none());
     }
 
-    #[test]
-    fn test_quic_dialer_creation() {
+    #[tokio::test]
+    async fn test_quic_dialer_creation() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let mut config = QuicConfig::default();
         config.server_name = "example.com".to_string();
         let result = QuicDialer::new(config);
-        assert!(result.is_ok());
+        result.expect("Failed to create QUIC dialer");
     }
 
     #[cfg(feature = "transport_ech")]
-    #[test]
-    fn test_quic_dialer_with_ech_disabled() {
+    #[tokio::test]
+    async fn test_quic_dialer_with_ech_disabled() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let mut config = QuicConfig::default();
         config.server_name = "example.com".to_string();
         config.ech_config = Some(sb_tls::EchClientConfig {
@@ -397,16 +399,14 @@ mod tests {
             dynamic_record_sizing_disabled: None,
         });
 
-        let result = QuicDialer::new(config);
-        assert!(result.is_ok());
-
-        let dialer = result.unwrap();
+        let dialer = QuicDialer::new(config)
+            .expect("Failed to create QUIC dialer with ECH disabled");
         assert!(dialer.ech_connector.is_none());
     }
 
     #[cfg(feature = "transport_ech")]
-    #[test]
-    fn test_quic_dialer_with_ech_enabled() {
+    #[tokio::test]
+    async fn test_quic_dialer_with_ech_enabled() {
         let mut config = QuicConfig::default();
         config.server_name = "example.com".to_string();
         config.ech_config = Some(sb_tls::EchClientConfig {
@@ -417,16 +417,15 @@ mod tests {
             dynamic_record_sizing_disabled: None,
         });
 
-        let result = QuicDialer::new(config);
-        assert!(result.is_ok());
+        let dialer = QuicDialer::new(config)
+            .expect("Failed to create QUIC dialer with ECH enabled");
 
-        let dialer = result.unwrap();
         assert!(dialer.ech_connector.is_some());
     }
 
     #[cfg(feature = "transport_ech")]
-    #[test]
-    fn test_quic_dialer_with_invalid_ech_config() {
+    #[tokio::test]
+    async fn test_quic_dialer_with_invalid_ech_config() {
         let mut config = QuicConfig::default();
         config.server_name = "example.com".to_string();
         // Invalid: enabled but no config provided

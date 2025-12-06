@@ -98,6 +98,7 @@ struct WireGuardInner {
     tunn: Mutex<Tunn>,
     socket: UdpSocket,
     peer_endpoint: Mutex<SocketAddr>,
+    #[allow(dead_code)]
     mtu: u16,
 }
 
@@ -214,8 +215,7 @@ impl WireGuardTransport {
                 self.inner.socket.send_to(packet, endpoint).await?;
                 Ok(())
             }
-            TunnResult::Err(e) => Err(io::Error::new(
-                io::ErrorKind::Other,
+            TunnResult::Err(e) => Err(io::Error::other(
                 format!("WireGuard encapsulate error: {:?}", e),
             )),
             _ => Ok(()),
@@ -265,8 +265,7 @@ impl WireGuardTransport {
                 debug!("WireGuard handshake initiated");
                 Ok(())
             }
-            TunnResult::Err(e) => Err(io::Error::new(
-                io::ErrorKind::Other,
+            TunnResult::Err(e) => Err(io::Error::other(
                 format!("WireGuard handshake error: {:?}", e),
             )),
             _ => Ok(()),
@@ -390,8 +389,7 @@ impl AsyncWrite for WireGuardStream {
                         transport.socket.send_to(packet, endpoint).await?;
                         Ok(data_len)
                     }
-                    TunnResult::Err(e) => Err(io::Error::new(
-                        io::ErrorKind::Other,
+                    TunnResult::Err(e) => Err(io::Error::other(
                         format!("WireGuard encapsulate error: {:?}", e),
                     )),
                     _ => Ok(0),
@@ -479,7 +477,7 @@ pub enum WireGuardError {
 
 impl From<WireGuardError> for DialError {
     fn from(e: WireGuardError) -> Self {
-        DialError::Other(e.to_string().into())
+        DialError::Other(e.to_string())
     }
 }
 

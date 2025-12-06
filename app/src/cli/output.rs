@@ -16,8 +16,4 @@ pub fn emit<T: Serialize>(fmt: Format, human: impl FnOnce() -> String, json: &T)
     }
 }
 
-/// Emit SARIF-specific output
-#[allow(dead_code)] // Scaffolding for future SARIF support
-pub fn emit_sarif(sarif_json_text: &str) {
-    println!("{sarif_json_text}");
-}
+

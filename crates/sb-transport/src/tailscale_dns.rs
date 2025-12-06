@@ -269,6 +269,7 @@ pub struct DerpClient {
     /// DERP server URL.
     server_url: String,
     /// Connection timeout.
+    #[allow(dead_code)]
     timeout: Duration,
 }
 
@@ -305,8 +306,7 @@ impl DerpClient {
     /// Send packet through DERP relay.
     pub async fn send(&self, _peer_key: &[u8; 32], _data: &[u8]) -> io::Result<()> {
         // TODO: Implement DERP send
-        Err(io::Error::new(
-            io::ErrorKind::Other,
+        Err(io::Error::other(
             "DERP send not yet implemented",
         ))
     }
@@ -314,8 +314,7 @@ impl DerpClient {
     /// Receive packet from DERP relay.
     pub async fn recv(&self) -> io::Result<(Vec<u8>, [u8; 32])> {
         // TODO: Implement DERP recv
-        Err(io::Error::new(
-            io::ErrorKind::Other,
+        Err(io::Error::other(
             "DERP recv not yet implemented",
         ))
     }

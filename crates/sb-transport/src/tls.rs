@@ -180,7 +180,7 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for TlsDialer<D> {
 ///
 /// let config = webpki_roots_config();
 /// let tls_dialer = TlsDialer {
-///     inner: TcpDialer,
+///     inner: TcpDialer::default(),
 ///     config,
 ///     sni_override: None,
 ///     alpn: None,
@@ -421,7 +421,7 @@ impl<D: Dialer> RealityDialer<D> {
     ///     alpn: vec![],
     /// };
     ///
-    /// let dialer = RealityDialer::new(TcpDialer, config)?;
+    /// let dialer = RealityDialer::new(TcpDialer::default(), config)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(inner: D, config: sb_tls::RealityClientConfig) -> Result<Self, DialError> {
@@ -479,7 +479,7 @@ impl<D: Dialer> RealityDialer<D> {
     /// ```rust,no_run
     /// use sb_transport::{RealityDialer, TcpDialer};
     ///
-    /// let dialer = RealityDialer::from_env(TcpDialer)?;
+    /// let dialer = RealityDialer::from_env(TcpDialer::default())?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn from_env(inner: D) -> Result<Self, DialError> {
@@ -553,7 +553,7 @@ impl<D: Dialer> TlsDialer<D> {
     /// ```rust,no_run
     /// use sb_transport::{TlsDialer, TcpDialer, webpki_roots_config};
     ///
-    /// let base_dialer = TcpDialer;
+    /// let base_dialer = TcpDialer::default();
     /// let tls_config = webpki_roots_config();
     /// let tls_dialer = TlsDialer::from_env(base_dialer, tls_config);
     /// // 此时 tls_dialer 已根据环境变量进行了配置
@@ -1529,6 +1529,7 @@ mod ech_tests {
 
     #[test]
     fn test_ech_dialer_invalid_config() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         // 测试无效的 ECH 配置（enabled 但没有 config）
         let ech_config = sb_tls::EchClientConfig {
             enabled: true,
@@ -1553,6 +1554,7 @@ mod ech_tests {
 
     #[test]
     fn test_ech_dialer_disabled() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         // 测试禁用的 ECH 配置（应该成功创建）
         let ech_config = sb_tls::EchClientConfig {
             enabled: false,
@@ -1571,6 +1573,7 @@ mod ech_tests {
 
     #[test]
     fn test_ech_dialer_with_valid_config() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         // 测试有效的 ECH 配置
         let ech_config = sb_tls::EchClientConfig {
             enabled: true,

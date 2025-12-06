@@ -20,7 +20,7 @@ pub trait SsrObfs: Send + Sync {
 pub struct Obfs;
 
 impl Obfs {
-    pub fn new(name: &str, param: Option<&str>) -> Box<dyn SsrObfs> {
+    pub fn create(name: &str, param: Option<&str>) -> Box<dyn SsrObfs> {
         match name.to_lowercase().as_str() {
             "plain" | "none" => Box::new(PlainObfs),
             "http_simple" => Box::new(HttpSimpleObfs::new(param)),
@@ -57,13 +57,13 @@ impl SsrObfs for PlainObfs {
 
 /// HTTP Simple obfuscation (stub).
 pub struct HttpSimpleObfs {
-    host: String,
+    _host: String,
 }
 
 impl HttpSimpleObfs {
     pub fn new(param: Option<&str>) -> Self {
         Self {
-            host: param.unwrap_or("bing.com").to_string(),
+            _host: param.unwrap_or("bing.com").to_string(),
         }
     }
 }

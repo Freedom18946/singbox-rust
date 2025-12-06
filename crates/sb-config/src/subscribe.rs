@@ -56,6 +56,7 @@ struct ClashSub {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // Fields parsed for future use
 struct ClashProxy {
     name: String,
     #[serde(rename = "type")]
@@ -102,6 +103,7 @@ struct WsOpts {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)] // Fields parsed for future gRPC transport support
 struct GrpcOpts {
     #[serde(default, rename = "grpc-service-name")]
     grpc_service_name: Option<String>,

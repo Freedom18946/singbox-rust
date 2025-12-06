@@ -24,7 +24,7 @@
 //! ## References
 //! - https://shadowsocks.org/guide/sip003.html
 
-use bytes::{Bytes, BytesMut};
+
 use std::collections::HashMap;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
@@ -223,6 +223,7 @@ impl Drop for Sip003Plugin {
 /// SIP003 stream wrapper
 pub struct Sip003Stream {
     inner: TcpStream,
+    #[allow(dead_code)]
     plugin: Arc<RwLock<Sip003Plugin>>,
 }
 

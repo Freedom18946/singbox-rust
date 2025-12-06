@@ -6,8 +6,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
 use tokio::{
-    net::TcpStream,
-    time::{timeout, Duration},
+    time::Duration,
 };
 
 // TEMPORARY: Simplified placeholder router functionality
@@ -45,12 +44,7 @@ fn map_header_entries(entries: &[sb_config::ir::HeaderEntry]) -> Vec<(String, St
         .collect()
 }
 
-#[allow(dead_code)]
-async fn probe(addr: SocketAddr) -> bool {
-    timeout(Duration::from_secs(1), TcpStream::connect(addr))
-        .await
-        .is_ok()
-}
+
 
 /// The Runtime struct holds the core components of the running proxy.
 /// Runtime 结构体持有运行中代理的核心组件。
@@ -794,16 +788,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     })
 }
 
-#[allow(dead_code)]
-fn parse_addr(s: &str) -> Result<SocketAddr> {
-    s.parse::<SocketAddr>()
-        .or_else(|_| {
-            // 容忍用户写入 "127.0.0.1:port" 之外的空格等问题
-            let t = s.trim();
-            t.parse::<SocketAddr>()
-        })
-        .map_err(|e| anyhow::anyhow!("invalid listen addr in config '{s}': {e}"))
-}
+
 
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 /// Delegates to `inbound_starter` module to reduce complexity

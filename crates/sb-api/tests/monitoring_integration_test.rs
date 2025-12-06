@@ -128,16 +128,22 @@ async fn test_connection_monitoring(
     monitoring.bridge().add_connection(test_connection).await;
 
     // Verify connection update is received
-    let connection_update = timeout(Duration::from_millis(6000), connection_rx.recv()).await;
-    assert!(
-        connection_update.is_ok(),
-        "Should receive connection update"
-    );
+    let start_time = tokio::time::Instant::now();
+    let timeout_duration = Duration::from_millis(6000);
+    let mut received_connection = None;
 
-    let received_connection = match connection_update {
-        Ok(Ok(c)) => c,
-        _ => return Ok(()),
-    };
+    while tokio::time::Instant::now().duration_since(start_time) < timeout_duration {
+        if let Ok(Ok(c)) = timeout(Duration::from_millis(100), connection_rx.recv()).await {
+            if c.id == connection_id {
+                received_connection = Some(c);
+                break;
+            }
+        }
+    }
+
+    assert!(received_connection.is_some(), "Should receive connection update for ID {}", connection_id);
+    let received_connection = received_connection.unwrap();
+
     assert_eq!(
         received_connection.id, connection_id,
         "Connection ID should match"

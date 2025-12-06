@@ -62,17 +62,47 @@ impl ValidationResult {
 #[derive(Debug, Clone)]
 pub enum ValidationError {
     /// Route conflict with existing route.
-    RouteConflict { cidr: String, existing: String },
+    RouteConflict {
+        /// CIDR that caused the conflict.
+        cidr: String,
+        /// Existing route that conflicts.
+        existing: String,
+    },
     /// Invalid MTU value.
-    InvalidMtu { value: u32, reason: String },
+    InvalidMtu {
+        /// The invalid MTU value.
+        value: u32,
+        /// Reason why it's invalid.
+        reason: String,
+    },
     /// Missing required permissions.
-    PermissionDenied { operation: String },
+    PermissionDenied {
+        /// Operation that requires permission.
+        operation: String,
+    },
     /// Interface name too long.
-    InvalidInterfaceName { name: String, max_len: usize },
+    InvalidInterfaceName {
+        /// The invalid interface name.
+        name: String,
+        /// Maximum allowed length.
+        max_len: usize,
+    },
     /// Invalid IP address configuration.
-    InvalidAddress { addr: String, reason: String },
+    InvalidAddress {
+        /// The invalid address.
+        addr: String,
+        /// Reason why it's invalid.
+        reason: String,
+    },
     /// Conflicting configuration.
-    ConfigConflict { field1: String, field2: String, reason: String },
+    ConfigConflict {
+        /// First conflicting field.
+        field1: String,
+        /// Second conflicting field.
+        field2: String,
+        /// Reason for conflict.
+        reason: String,
+    },
     /// Other error.
     Other(String),
 }
@@ -388,11 +418,13 @@ pub fn check_route_conflicts(routes: &[String]) -> Vec<ValidationError> {
 }
 
 #[cfg(not(target_os = "linux"))]
+/// Check platform-specific route conflicts (stub for non-Linux).
 pub fn check_route_conflicts(_routes: &[String]) -> Vec<ValidationError> {
     Vec::new()
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -401,7 +433,7 @@ mod tests {
         let config = TunValidationConfig {
             name: "tun0".to_string(),
             mtu: 1500,
-            ipv4: Some("10.0.0.1".parse().unwrap()),
+            ipv4: Some("10.0.0.1".parse().expect("valid ipv4")),
             ipv4_enabled: true,
             ..Default::default()
         };

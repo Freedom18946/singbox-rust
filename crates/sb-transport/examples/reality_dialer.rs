@@ -26,7 +26,7 @@ fn main() {
         alpn: vec!["h2".to_string(), "http/1.1".to_string()],
     };
 
-    match RealityDialer::new(TcpDialer, config) {
+    match RealityDialer::new(TcpDialer::default(), config) {
         Ok(_dialer) => {
             println!("   ✓ REALITY dialer created successfully");
             println!("   - Target: www.apple.com");
@@ -52,7 +52,7 @@ fn main() {
     std::env::set_var("SB_REALITY_SHORT_ID", "abcd");
     std::env::set_var("SB_REALITY_FINGERPRINT", "firefox");
 
-    match RealityDialer::from_env(TcpDialer) {
+    match RealityDialer::from_env(TcpDialer::default()) {
         Ok(dialer) => {
             println!("   ✓ REALITY dialer created from environment");
             println!("   - Target: {}", dialer.connector.config().target);
@@ -90,7 +90,7 @@ fn main() {
         alpn: vec![],
     };
 
-    match RealityDialer::new(TcpDialer, invalid_config) {
+    match RealityDialer::new(TcpDialer::default(), invalid_config) {
         Ok(_) => {
             println!("   ✗ Unexpectedly succeeded with invalid config");
         }

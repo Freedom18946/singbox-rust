@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 /// Source of routing context information.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ContextSource {
     /// Clash API server for mode information.
     pub clash_server: Option<Arc<dyn crate::context::ClashServer>>,
@@ -23,15 +23,7 @@ pub struct ContextSource {
     pub network_monitor: Option<Arc<sb_platform::monitor::NetworkMonitor>>,
 }
 
-impl Default for ContextSource {
-    fn default() -> Self {
-        Self {
-            clash_server: None,
-            #[cfg(feature = "platform")]
-            network_monitor: None,
-        }
-    }
-}
+
 
 /// Owned routing context data for population.
 #[derive(Debug, Clone, Default)]

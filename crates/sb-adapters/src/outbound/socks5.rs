@@ -7,10 +7,11 @@
 //! 它实现了 RFC 1928 中定义的 SOCKS5 协议。
 
 use crate::outbound::prelude::*;
+use anyhow::Context;
 #[cfg(feature = "socks-udp")]
 use crate::traits::OutboundDatagram;
 use crate::traits::ResolveMode;
-use anyhow::Context;
+
 use std::net::{IpAddr, SocketAddr};
 #[cfg(any(feature = "socks-udp", feature = "socks-tls"))]
 use std::sync::Arc;
@@ -202,155 +203,163 @@ impl OutboundConnector for Socks5Connector {
 
         #[cfg(feature = "adapter-socks")]
         {
-            let _span = crate::outbound::span_dial("socks5", &target);
+            let retry_policy = opts.retry_policy.clone();
+            
+            // We need to clone these for the closure
+            let this = self.clone();
+            let target = target.clone();
+            let opts = opts.clone();
 
-            // Start metrics timing
-            // 开始指标计时
-            #[cfg(feature = "metrics")]
-            let start_time = sb_metrics::start_adapter_timer();
+            crate::traits::with_adapter_retry(&retry_policy, "socks5", move || {
+                let this = this.clone();
+                let target = target.clone();
+                let opts = opts.clone();
+                
+                async move {
+                    let _span = crate::outbound::span_dial("socks5", &target);
 
-            if target.kind != TransportKind::Tcp {
-                #[cfg(not(feature = "socks-udp"))]
-                return Err(AdapterError::NotImplemented { what: "socks-udp" });
+                    // Start metrics timing
+                    // 开始指标计时
+                    #[cfg(feature = "metrics")]
+                    let start_time = sb_metrics::start_adapter_timer();
 
-                #[cfg(feature = "socks-udp")]
-                return Err(AdapterError::Protocol(
-                    "Use dial_udp() for UDP connections".to_string(),
-                ));
-            }
+                    if target.kind != TransportKind::Tcp {
+                        #[cfg(not(feature = "socks-udp"))]
+                        return Err(AdapterError::NotImplemented { what: "socks-udp" });
 
-            let dial_result = async {
-                // Parse proxy server address
-                // 解析代理服务器地址
-                let proxy_addr: SocketAddr = self
-                    .config
-                    .server
-                    .parse()
-                    .with_context(|| {
-                        format!("Invalid SOCKS5 proxy address: {}", self.config.server)
-                    })
-                    .map_err(|e| AdapterError::Other(e.to_string()))?;
+                        #[cfg(feature = "socks-udp")]
+                        return Err(AdapterError::Protocol(
+                            "Use dial_udp() for UDP connections".to_string(),
+                        ));
+                    }
 
-                // Connect to proxy server with timeout
-                // 连接到代理服务器 (带超时)
-                let mut stream =
-                    tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr))
-                        .await
-                        .with_context(|| {
-                            format!("Failed to connect to SOCKS5 proxy {}", proxy_addr)
-                        })
-                        .map_err(|e| AdapterError::Other(e.to_string()))?
-                        .with_context(|| {
-                            format!("TCP connection to SOCKS5 proxy {} failed", proxy_addr)
-                        })
-                        .map_err(|e| AdapterError::Other(e.to_string()))?;
+                    let dial_result = async {
+                        // Parse proxy server address
+                        // 解析代理服务器地址
+                        let proxy_addr: SocketAddr = this
+                            .config
+                            .server
+                            .parse()
+                            .map_err(|e| AdapterError::Other(
+                                format!("Invalid SOCKS5 proxy address {}: {}", this.config.server, e)
+                            ))?;
 
-                if self.use_tls {
-                    #[cfg(not(feature = "socks-tls"))]
-                    return Err(AdapterError::NotImplemented { what: "socks-tls" });
-
-                    #[cfg(feature = "socks-tls")]
-                    {
-                        // Create TLS config
-                        // 创建 TLS 配置
-                        let root_store = tokio_rustls::rustls::RootCertStore {
-                            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+                        // Connect to proxy server with timeout
+                        // 连接到代理服务器 (带超时)
+                        let mut stream = match tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr)).await {
+                            Ok(Ok(s)) => s,
+                            Ok(Err(e)) => return Err(AdapterError::Io(e)),
+                            Err(_) => return Err(AdapterError::Timeout(opts.connect_timeout)),
                         };
 
-                        let config = ClientConfig::builder()
-                            .with_root_certificates(root_store)
-                            .with_no_client_auth();
+                        if this.use_tls {
+                            #[cfg(not(feature = "socks-tls"))]
+                            return Err(AdapterError::NotImplemented { what: "socks-tls" });
 
-                        let connector = TlsConnector::from(Arc::new(config));
+                            #[cfg(feature = "socks-tls")]
+                            {
+                                // Create TLS config
+                                // 创建 TLS 配置
+                                let root_store = tokio_rustls::rustls::RootCertStore {
+                                    roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+                                };
 
-                        // Parse host for SNI
-                        // 解析主机名用于 SNI
-                        let host =
-                            self.config.server.split(':').next().ok_or(
-                                AdapterError::InvalidConfig("Invalid proxy server address"),
-                            )?;
+                                let config = ClientConfig::builder()
+                                    .with_root_certificates(root_store)
+                                    .with_no_client_auth();
 
-                        let server_name = ServerName::try_from(host)
-                            .map_err(|_| {
-                                AdapterError::InvalidConfig("Invalid server name for TLS")
-                            })?
-                            .to_owned();
+                                let connector = TlsConnector::from(Arc::new(config));
 
-                        // Perform TLS handshake
-                        // 执行 TLS 握手
-                        let mut tls_stream = tokio::time::timeout(
-                            opts.connect_timeout,
-                            connector.connect(server_name, stream),
-                        )
-                        .await
-                        .with_context(|| {
-                            format!("TLS handshake timeout with SOCKS5 proxy {}", host)
-                        })
-                        .map_err(|e| AdapterError::Other(e.to_string()))?
-                        .with_context(|| format!("TLS handshake failed with SOCKS5 proxy {}", host))
-                        .map_err(|e| AdapterError::Other(e.to_string()))?;
+                                // Parse host for SNI
+                                // 解析主机名用于 SNI
+                                let host =
+                                    this.config.server.split(':').next().ok_or(
+                                        AdapterError::InvalidConfig("Invalid proxy server address"),
+                                    )?;
 
-                        // Perform SOCKS5 handshake over TLS
-                        // 通过 TLS 执行 SOCKS5 握手
-                        self.socks5_handshake_generic(&mut tls_stream, opts.connect_timeout)
-                            .await?;
+                                let server_name = ServerName::try_from(host)
+                                    .map_err(|_| {
+                                        AdapterError::InvalidConfig("Invalid server name for TLS")
+                                    })?
+                                    .to_owned();
 
-                        // Send CONNECT request over TLS
-                        // 通过 TLS 发送 CONNECT 请求
-                        self.socks5_connect_generic(&mut tls_stream, &target, &opts)
-                            .await?;
+                                // Perform TLS handshake
+                                // 执行 TLS 握手
+                                let mut tls_stream = tokio::time::timeout(
+                                    opts.connect_timeout,
+                                    connector.connect(server_name, stream),
+                                )
+                                .await
+                                .with_context(|| {
+                                    format!("TLS handshake timeout with SOCKS5 proxy {}", host)
+                                })
+                                .map_err(|e| AdapterError::Other(e.to_string()))?
+                                .with_context(|| format!("TLS handshake failed with SOCKS5 proxy {}", host))
+                                .map_err(|e| AdapterError::Other(e.to_string()))?;
 
-                        Ok(Box::new(tls_stream) as BoxedStream)
+                                // Perform SOCKS5 handshake over TLS
+                                // 通过 TLS 执行 SOCKS5 握手
+                                this.socks5_handshake_generic(&mut tls_stream, opts.connect_timeout)
+                                    .await?;
+
+                                // Send CONNECT request over TLS
+                                // 通过 TLS 发送 CONNECT 请求
+                                this.socks5_connect_generic(&mut tls_stream, &target, &opts)
+                                    .await?;
+
+                                Ok(Box::new(tls_stream) as BoxedStream)
+                            }
+                        } else {
+                            // Perform SOCKS5 handshake
+                            // 执行 SOCKS5 握手
+                            this.socks5_handshake(&mut stream, opts.connect_timeout)
+                                .await?;
+
+                            // Send CONNECT request
+                            // 发送 CONNECT 请求
+                            this.socks5_connect(&mut stream, &target, &opts).await?;
+
+                            Ok(Box::new(stream) as BoxedStream)
+                        }
                     }
-                } else {
-                    // Perform SOCKS5 handshake
-                    // 执行 SOCKS5 握手
-                    self.socks5_handshake(&mut stream, opts.connect_timeout)
-                        .await?;
+                    .await;
 
-                    // Send CONNECT request
-                    // 发送 CONNECT 请求
-                    self.socks5_connect(&mut stream, &target, &opts).await?;
+                    // Record metrics for the dial attempt (both success and failure)
+                    // 记录拨号尝试的指标 (成功和失败)
+                    #[cfg(feature = "metrics")]
+                    {
+                        let result = match &dial_result {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(e as &dyn core::fmt::Display),
+                        };
+                        sb_metrics::record_adapter_dial("socks5", start_time, result);
+                    }
 
-                    Ok(Box::new(stream) as BoxedStream)
+                    // Handle the result
+                    // 处理结果
+                    match dial_result {
+                        Ok(stream) => {
+                            tracing::debug!(
+                                server = %this.config.server,
+                                target = %format!("{}:{}", target.host, target.port),
+                                has_auth = %this.config.username.is_some(),
+                                "SOCKS5 connection established"
+                            );
+                            Ok(stream)
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                server = %this.config.server,
+                                target = %format!("{}:{}", target.host, target.port),
+                                has_auth = %this.config.username.is_some(),
+                                error = %e,
+                                "SOCKS5 connection failed"
+                            );
+                            Err(e)
+                        }
+                    }
                 }
-            }
-            .await;
-
-            // Record metrics for the dial attempt (both success and failure)
-            // 记录拨号尝试的指标 (成功和失败)
-            #[cfg(feature = "metrics")]
-            {
-                let result = match &dial_result {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(e as &dyn core::fmt::Display),
-                };
-                sb_metrics::record_adapter_dial("socks5", start_time, result);
-            }
-
-            // Handle the result
-            // 处理结果
-            match dial_result {
-                Ok(stream) => {
-                    tracing::debug!(
-                        server = %self.config.server,
-                        target = %format!("{}:{}", target.host, target.port),
-                        has_auth = %self.config.username.is_some(),
-                        "SOCKS5 connection established"
-                    );
-                    Ok(Box::new(stream) as BoxedStream)
-                }
-                Err(e) => {
-                    tracing::debug!(
-                        server = %self.config.server,
-                        target = %format!("{}:{}", target.host, target.port),
-                        has_auth = %self.config.username.is_some(),
-                        error = %e,
-                        "SOCKS5 connection failed"
-                    );
-                    Err(e)
-                }
-            }
+            }).await
         }
     }
 }

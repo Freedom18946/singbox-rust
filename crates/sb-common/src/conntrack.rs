@@ -29,11 +29,14 @@ impl ConnId {
 /// Network protocol type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
+    /// TCP protocol.
     Tcp,
+    /// UDP protocol.
     Udp,
 }
 
 impl Network {
+    /// Get the protocol name as a static string.
     pub fn as_str(&self) -> &'static str {
         match self {
             Network::Tcp => "tcp",

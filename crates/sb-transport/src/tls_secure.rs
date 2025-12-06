@@ -228,6 +228,7 @@ mod tests {
 
     #[test]
     fn test_tls_security_config_from_env() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         // Set environment variables for testing
         std::env::set_var("SB_TLS_MIN", "1.3");
         std::env::set_var(

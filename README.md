@@ -7,14 +7,14 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 
 ---
 
-## 🚨 重要：项目导航权威文档
+## 🚨 IMPORTANT: Authoritative Navigation Document
 
-**⚠️ 开发者必读：在开始任何开发工作之前，请务必阅读并验证 [`PROJECT_STRUCTURE_NAVIGATION.md`](./PROJECT_STRUCTURE_NAVIGATION.md) 的准确性。**
+**⚠️ Developer Must-Read: Before starting any development work, you must read and verify [`PROJECT_STRUCTURE_NAVIGATION.md`](./PROJECT_STRUCTURE_NAVIGATION.md).**
 
-- 📋 **权威性**: 该文档是项目结构的唯一权威参考
-- 🔄 **更新责任**: 任何修改项目结构的开发者都必须同步更新该导航文档
-- ✅ **验证要求**: 新的开发者或 AI 助手在开始工作前必须验证导航文档的准确性
-- 📍 **导航优先**: 所有开发活动都应基于该导航文档进行路径规划
+- 📋 **Authoritative**: This document is the *sole* source of truth for project structure.
+- 🔄 **Update Responsibility**: Any developer modifying the project structure MUST sync this document.
+- ✅ **Verification**: New developers or AI assistants must verify this document's accuracy before work.
+- 📍 **Navigation First**: All development activities should trace paths based on this document.
 
 ---
 

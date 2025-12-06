@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  ECH_CONFIG found: {}...", &config[..config.len().min(20)]);
 
             let tls_config = webpki_roots_config();
-            match EchDialer::from_env(TcpDialer, tls_config) {
+            match EchDialer::from_env(TcpDialer::default(), tls_config) {
                 Ok(dialer) => {
                     println!("  ✓ ECH dialer created successfully");
 
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let tls_config = webpki_roots_config();
-    match EchDialer::new(TcpDialer, tls_config, ech_config) {
+    match EchDialer::new(TcpDialer::default(), tls_config, ech_config) {
         Ok(_dialer) => {
             println!("  ✗ ECH dialer created (unexpected with invalid config)");
         }
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let tls_config = webpki_roots_config();
-    match EchDialer::new(TcpDialer, tls_config, ech_config) {
+    match EchDialer::new(TcpDialer::default(), tls_config, ech_config) {
         Ok(_dialer) => {
             println!("  ✓ ECH dialer created with ECH disabled");
         }

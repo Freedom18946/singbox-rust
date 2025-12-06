@@ -592,8 +592,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 override_host,
                 override_port,
                 users: i.get("users").and_then(|v| {
-                    v.as_array().map(|arr| {
-                        arr.iter()
+                    v.as_array().and_then(|arr| {
+                        let users: Vec<_> = arr
+                            .iter()
                             .filter_map(|u| {
                                 let name = u
                                     .get("username")
@@ -615,7 +616,12 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                                     None
                                 }
                             })
-                            .collect()
+                            .collect();
+                        if users.is_empty() {
+                            None
+                        } else {
+                            Some(users)
+                        }
                     })
                 }),
                 // Protocol-specific fields (all default to None)

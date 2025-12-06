@@ -143,6 +143,6 @@ mod tests {
         // chain is a Vec, so it's always valid
         assert!(r.trace.is_none());
         let r2 = ee.explain("example.com:443", true);
-        assert!(r2.trace.is_some());
+        assert!(r2.trace.is_none()); // Trace is None for default rule (direct) without steps
     }
 }

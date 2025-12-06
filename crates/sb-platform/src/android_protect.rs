@@ -31,18 +31,32 @@ static PROTECT_HANDLER: RwLock<Option<ProtectFn>> = RwLock::new(None);
 ///
 /// This should be called from Android with a callback that invokes
 /// VpnService.protect() on the file descriptor.
+///
+/// Note: If the RwLock is poisoned (due to a panic in another thread),
+/// this function silently fails. This is acceptable since socket protection
+/// is best-effort in error scenarios.
 pub fn set_protect_handler(handler: ProtectFn) {
-    *PROTECT_HANDLER.write().unwrap() = Some(handler);
+    if let Ok(mut guard) = PROTECT_HANDLER.write() {
+        *guard = Some(handler);
+    }
 }
 
 /// Clear the protect handler.
+///
+/// Note: Silently fails if the RwLock is poisoned.
 pub fn clear_protect_handler() {
-    *PROTECT_HANDLER.write().unwrap() = None;
+    if let Ok(mut guard) = PROTECT_HANDLER.write() {
+        *guard = None;
+    }
 }
 
 /// Check if a protect handler is set.
+///
+/// Returns `false` if the RwLock is poisoned.
 pub fn has_protect_handler() -> bool {
-    PROTECT_HANDLER.read().unwrap().is_some()
+    PROTECT_HANDLER
+        .read()
+        .is_ok_and(|guard| guard.is_some())
 }
 
 /// Protect a socket file descriptor.
@@ -51,15 +65,23 @@ pub fn has_protect_handler() -> bool {
 /// Returns Err if the protect callback returned false.
 #[cfg(unix)]
 pub fn protect_socket(fd: i32) -> io::Result<()> {
-    if let Some(ref handler) = *PROTECT_HANDLER.read().unwrap() {
+    let guard = match PROTECT_HANDLER.read() {
+        Ok(g) => g,
+        Err(_) => {
+            // Lock poisoned, treat as no handler set
+            return Ok(());
+        }
+    };
+
+    if let Some(ref handler) = *guard {
         if handler(fd) {
             tracing::trace!("Protected socket fd={}", fd);
             Ok(())
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to protect socket fd={}", fd),
-            ))
+            Err(io::Error::other(format!(
+                "Failed to protect socket fd={}",
+                fd
+            )))
         }
     } else {
         // No handler set, nothing to protect

@@ -19,7 +19,7 @@
 //!
 //! # #[cfg(feature = "transport_tls")]
 //! # async fn demo() {
-//! let base = Box::new(TcpDialer) as Box<dyn sb_transport::Dialer>;
+//! let base = Box::new(TcpDialer::default()) as Box<dyn sb_transport::Dialer>;
 //! let tls_cfg = sb_transport::tls::smoke_empty_roots_config();
 //! let dialer = TransportBuilder::with_inner(base)
 //!     .tls(tls_cfg, None, None)

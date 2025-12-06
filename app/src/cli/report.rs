@@ -1,4 +1,4 @@
-#![allow(dead_code)] // CLI reporting utilities
+
 
 use crate::cli::{buildinfo, fs_scan, health};
 use clap::Parser;

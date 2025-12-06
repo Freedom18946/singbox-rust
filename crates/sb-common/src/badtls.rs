@@ -95,12 +95,16 @@ pub enum TlsIssue {
     DeprecatedVersion(TlsVersion),
     /// Version mismatch between record and handshake.
     VersionMismatch {
+        /// TLS version in the record layer.
         record_version: TlsVersion,
+        /// TLS version in the handshake.
         handshake_version: TlsVersion,
     },
     /// Possible version downgrade attack.
     PossibleDowngrade {
+        /// TLS version offered by the client.
         offered: TlsVersion,
+        /// TLS version negotiated by the server.
         negotiated: TlsVersion,
     },
     /// Invalid or malformed TLS data.

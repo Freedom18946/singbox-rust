@@ -179,6 +179,9 @@ pub enum Commands {
     /// Utility helpers (connect/fetch/synctime)
     #[cfg(feature = "tools")]
     Tools(tools::ToolsArgs),
+    /// Migration progress report
+    #[cfg(feature = "dev-cli")]
+    Report(report::Args),
     /// Display version information
     Version(VersionArgs),
 }

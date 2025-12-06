@@ -374,8 +374,10 @@ mod tests {
     #[test]
     fn test_disabled_fragmentation() {
         let hello = sample_client_hello();
-        let mut config = FragmentConfig::default();
-        config.enabled = false;
+        let config = FragmentConfig {
+            enabled: false,
+            ..Default::default()
+        };
 
         let fragments = fragment_client_hello(&hello, &config);
         assert_eq!(fragments.len(), 1);

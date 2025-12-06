@@ -38,9 +38,9 @@ impl OutboundConnector for ShadowsocksROutbound {
             .await
             .map_err(crate::error::AdapterError::Io)?;
         
-        let cipher = crypto::Cipher::new(&self.config.method, &self.config.password);
-        let obfs = obfs::Obfs::new(&self.config.obfs, self.config.obfs_param.as_deref());
-        let protocol = protocol::Protocol::new(&self.config.protocol, self.config.protocol_param.as_deref());
+        let cipher = crypto::Cipher::create(&self.config.method, &self.config.password);
+        let obfs = obfs::Obfs::create(&self.config.obfs, self.config.obfs_param.as_deref());
+        let protocol = protocol::Protocol::create(&self.config.protocol, self.config.protocol_param.as_deref());
 
         let ssr_stream = stream::ShadowsocksRStream::new(stream, cipher, obfs, protocol);
         

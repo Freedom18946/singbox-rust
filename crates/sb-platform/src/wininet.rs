@@ -51,9 +51,9 @@ impl ProxyConfig {
                 if host_lower.ends_with(&pattern_lower) {
                     return true;
                 }
-            } else if host_lower == pattern_lower {
-                return true;
-            } else if host_lower.ends_with(&format!(".{}", pattern_lower)) {
+            } else if host_lower == pattern_lower
+                || host_lower.ends_with(&format!(".{}", pattern_lower))
+            {
                 return true;
             }
         }

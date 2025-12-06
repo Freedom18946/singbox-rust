@@ -443,7 +443,7 @@ mod tests {
         reg.insert("direct".to_string(), OutboundImpl::Direct);
         let outbounds = OutboundRegistryHandle::new(reg);
 
-        let mut stream = connect_via_router(
+        let mut stream = Hysteria2Inbound::connect_via_router(
             &router,
             &outbounds,
             &upstream_addr.ip().to_string(),

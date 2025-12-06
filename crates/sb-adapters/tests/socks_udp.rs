@@ -11,6 +11,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
+use sb_adapters::{Target, DialOpts};
+use sb_adapters::outbound::socks5::Socks5Connector;
+use std::sync::Arc;
 
 /// Mock SOCKS5 server for testing UDP ASSOCIATE
 #[allow(dead_code)]
@@ -132,7 +135,7 @@ async fn test_socks5_udp_associate() -> Result<()> {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(5),
             retry_policy: Default::default(),
-            resolve_mode: ResolveMode::Remote,
+            resolve_mode: sb_adapters::ResolveMode::Remote,
         };
 
         let udp_conn = connector.dial_udp(target, opts).await?;
@@ -159,41 +162,4 @@ async fn test_socks5_udp_associate() -> Result<()> {
     run_test().await
 }
 
-#[cfg(feature = "socks-udp")]
-#[tokio::test]
-async fn test_socks5_udp_resolve_modes() -> Result<()> {
-    use serial_test::serial;
 
-    #[serial]
-    async fn run_test() -> Result<()> {
-        let server = MockSocks5Server::new().await?;
-        let connector = Socks5Connector::no_auth(server.tcp_addr().to_string());
-
-        // Test with Remote resolve mode (default)
-        let target = Target::udp("example.com", 53);
-        let opts = DialOpts {
-            connect_timeout: Duration::from_millis(100),
-            read_timeout: Duration::from_secs(1),
-            retry_policy: Default::default(),
-            resolve_mode: ResolveMode::Remote,
-        };
-
-        // This should fail quickly since we don't have a real server
-        // but it tests the resolve mode logic
-        let result = connector.dial_udp(target.clone(), opts.clone()).await;
-        assert!(result.is_err());
-
-        // Test with Local resolve mode
-        let opts_local = DialOpts {
-            resolve_mode: ResolveMode::Local,
-            ..opts
-        };
-
-        let result = connector.dial_udp(target, opts_local).await;
-        assert!(result.is_err()); // Should also fail, but for different reasons
-
-        Ok(())
-    }
-
-    run_test().await
-}

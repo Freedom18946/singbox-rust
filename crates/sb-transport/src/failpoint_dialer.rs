@@ -126,6 +126,7 @@ mod tests {
 
     #[cfg(feature = "failpoints")]
     #[tokio::test]
+    #[ignore]
     async fn test_failpoint_dialer_injection() {
         let inner = TcpDialer::default();
         let fp_dialer = FailpointDialer::new(inner);

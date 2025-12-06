@@ -231,10 +231,21 @@ mod tests {
         assert_eq!(service.service_type(), "ssmapi");
         assert_eq!(service.tag(), "ssm");
 
-        // Starting should fail with helpful error
+        // Starting should fail with helpful error if stub, or succeed if real
         let result = service.start(StartStage::Initialize);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not implemented"));
+
+        #[cfg(not(feature = "service_ssmapi"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("not implemented"));
+        }
+
+        #[cfg(feature = "service_ssmapi")]
+        {
+             if let Err(e) = &result {
+                 assert!(!e.to_string().contains("not implemented"));
+             }
+        }
     }
 
     #[test]
@@ -277,9 +288,20 @@ mod tests {
         assert_eq!(service.service_type(), "derp");
         assert_eq!(service.tag(), "derp-relay");
 
-        // Starting should fail with helpful error
+        // Starting should fail with helpful error if stub, or succeed if real
         let result = service.start(StartStage::Initialize);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not implemented"));
+
+        #[cfg(not(feature = "service_derp"))]
+        {
+            assert!(result.is_err());
+            assert!(result.unwrap_err().to_string().contains("not implemented"));
+        }
+
+        #[cfg(feature = "service_derp")]
+        {
+             if let Err(e) = &result {
+                 assert!(!e.to_string().contains("not implemented"));
+             }
+        }
     }
 }

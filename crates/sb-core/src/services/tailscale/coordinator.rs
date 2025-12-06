@@ -1,11 +1,10 @@
 use std::io;
-use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use crate::services::tailscale::crypto::TailscaleNoise;
 
@@ -18,6 +17,7 @@ use crate::services::tailscale::crypto::TailscaleNoise;
 #[derive(Debug)]
 pub struct Coordinator {
     /// HttpClient for API requests.
+    #[allow(dead_code)]
     client: Client,
     /// Control plane URL.
     control_url: String,
@@ -26,6 +26,7 @@ pub struct Coordinator {
     /// Machine Key (Node ID).
     machine_key: String, // actually [u8; 32] usually, but hex string here
     /// Server Public Key (Control Plane).
+    #[allow(dead_code)]
     server_public_key: String,
     /// Network Map sender.
     netmap_tx: watch::Sender<Option<NetworkMap>>,
@@ -176,33 +177,33 @@ impl Coordinator {
         // 2. Initialize Client (Initiator)
         // We use the generated server pub key instead of self.server_public_key for the simulation to work
         let mut client = TailscaleNoise::new(&client_priv, &server_pair.public)
-             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+             .map_err(|e| io::Error::other(e.to_string()))?;
 
         // 3. Initialize Server (Responder - Simulation)
         let mut server = TailscaleNoise::new_responder(&server_pair.private, &[]) // IK doesn't need remote pub upfront
-             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+             .map_err(|e| io::Error::other(e.to_string()))?;
 
         // 4. Exchange Messages
         
         // -> ClientHello
-        let msg1 = client.write_message(b"ClientHello").map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        let msg1 = client.write_message(b"ClientHello").map_err(|e| io::Error::other(e.to_string()))?;
         debug!("Client -> Server: {} bytes", msg1.len());
         
         // Server reads
-        let _ = server.read_message(&msg1).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        let _ = server.read_message(&msg1).map_err(|e| io::Error::other(e.to_string()))?;
         
         // <- ServerHello
-        let msg2 = server.write_message(b"ServerHello").map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        let msg2 = server.write_message(b"ServerHello").map_err(|e| io::Error::other(e.to_string()))?;
         debug!("Server -> Client: {} bytes", msg2.len());
 
         // Client reads
-        let _ = client.read_message(&msg2).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        let _ = client.read_message(&msg2).map_err(|e| io::Error::other(e.to_string()))?;
 
         if client.is_handshake_complete() {
             debug!("Noise handshake verification successful!");
             Ok(())
         } else {
-             Err(io::Error::new(io::ErrorKind::Other, "Handshake failed to complete"))
+             Err(io::Error::other("Handshake failed to complete"))
         }
     }
 
@@ -235,7 +236,9 @@ fn generate_machine_key() -> String {
     // snow requires 32 bytes.
     // fastrand u64 is 8 bytes.
     let mut buf = [0u8; 32];
-    for i in 0..32 { buf[i] = fastrand::u8(..); }
+    for b in &mut buf {
+        *b = fastrand::u8(..);
+    }
     hex::encode(buf)
 }
 

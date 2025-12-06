@@ -66,7 +66,7 @@ impl Default for WireGuardOutboundConfig {
 /// WireGuard outbound connector.
 #[derive(Debug)]
 pub struct WireGuardOutbound {
-    config: WireGuardOutboundConfig,
+    _config: WireGuardOutboundConfig,
     transport: Arc<WireGuardTransport>,
 }
 
@@ -108,7 +108,7 @@ impl WireGuardOutbound {
         });
 
         Ok(Self { 
-            config, 
+            _config: config, 
             transport: transport_arc 
         })
     }

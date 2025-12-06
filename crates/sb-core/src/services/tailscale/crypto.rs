@@ -22,7 +22,7 @@ pub struct TailscaleNoise {
 }
 
 enum NoiseState {
-    Handshaking(HandshakeState),
+    Handshaking(Box<HandshakeState>),
     Transport(TransportState),
 }
 
@@ -37,7 +37,7 @@ impl TailscaleNoise {
             .build_initiator()?;
 
         Ok(Self {
-            state: Some(NoiseState::Handshaking(state)),
+            state: Some(NoiseState::Handshaking(Box::new(state))),
         })
     }
 
@@ -51,7 +51,7 @@ impl TailscaleNoise {
             .build_responder()?;
 
         Ok(Self {
-            state: Some(NoiseState::Handshaking(state)),
+            state: Some(NoiseState::Handshaking(Box::new(state))),
         })
     }
 
@@ -107,10 +107,7 @@ impl TailscaleNoise {
 
     /// Check if handshake is complete.
     pub fn is_handshake_complete(&self) -> bool {
-        match &self.state {
-            Some(NoiseState::Transport(_)) => true,
-            _ => false,
-        }
+        matches!(self.state, Some(NoiseState::Transport(_)))
     }
     
     /// Encrypt a packet (transport phase).

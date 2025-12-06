@@ -25,9 +25,15 @@ pub fn apply() {
     }
 
     let limit = Rlim::from_raw(1_048_576);
-    let _ = setrlimit(Resource::RLIMIT_NOFILE, limit, limit);
-    let _ = set_dumpable(false);
-    let _ = set_no_new_privs();
+    if let Err(e) = setrlimit(Resource::RLIMIT_NOFILE, limit, limit) {
+        eprintln!("Hardening warning: failed to set RLIMIT_NOFILE: {}", e);
+    }
+    if let Err(e) = set_dumpable(false) {
+        eprintln!("Hardening warning: failed to disable core dumps: {}", e);
+    }
+    if let Err(e) = set_no_new_privs() {
+        eprintln!("Hardening warning: failed to set no_new_privs: {}", e);
+    }
 }
 
 #[cfg(not(target_os = "linux"))]

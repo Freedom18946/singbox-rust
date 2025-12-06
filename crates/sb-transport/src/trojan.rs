@@ -184,6 +184,7 @@ pub struct TrojanStream<S> {
     inner: S,
     config: TrojanConfig,
     header_sent: bool,
+    #[allow(dead_code)]
     read_buffer: BytesMut,
 }
 
@@ -233,7 +234,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for TrojanStream<S> {
 
 impl<S: AsyncWrite + Unpin> AsyncWrite for TrojanStream<S> {
     fn poll_write(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
@@ -269,6 +270,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for TrojanStream<S> {
         }
     }
 
+    #[allow(unused_mut)]
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }

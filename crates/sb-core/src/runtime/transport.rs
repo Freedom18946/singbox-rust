@@ -725,6 +725,8 @@ pub mod map {
             let ob = OutboundIR {
                 http_upgrade_path: Some("/up".into()),
                 ws_path: Some("/ws".into()),
+                // Force explicit chain to simulate httpupgrade primary
+                transport: Some(vec!["httpupgrade".into()]),
                 ..Default::default()
             };
             let plans = fallback_chains_from_ir(&ob);

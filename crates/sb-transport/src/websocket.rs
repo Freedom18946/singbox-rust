@@ -29,7 +29,7 @@
 //!
 //! ## Client Usage / 客户端用法
 //! ```rust,no_run
-//! use sb_transport::websocket::WebSocketDialer;
+//! use sb_transport::websocket::{WebSocketDialer, WebSocketConfig};
 //! use sb_transport::Dialer;
 //!
 //! async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,7 +41,7 @@
 //!         ],
 //!         ..Default::default()
 //!     };
-//!     let dialer = WebSocketDialer::new(config, Box::new(sb_transport::TcpDialer));
+//!     let dialer = WebSocketDialer::new(config, Box::new(sb_transport::TcpDialer::default()));
 //!     let stream = dialer.connect("example.com", 80).await?;
 //!     // Use stream for communication...
 //!     Ok(())
@@ -77,7 +77,7 @@ use futures::{SinkExt, StreamExt};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio_tungstenite::tungstenite::handshake::client::Request;
+use tokio_tungstenite::tungstenite::handshake::client::{generate_key, Request};
 use tokio_tungstenite::tungstenite::http::Uri;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig as TungsteniteConfig;
 use tokio_tungstenite::WebSocketStream as TungsteniteStream;
@@ -174,7 +174,11 @@ impl Dialer for WebSocketDialer {
         let mut request = Request::builder()
             .uri(uri)
             .header("Host", host)
-            .header("User-Agent", "singbox-rust/0.1.0");
+            .header("User-Agent", "singbox-rust/0.1.0")
+            .header("Upgrade", "websocket")
+            .header("Connection", "Upgrade")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", generate_key());
 
         // Add custom headers
         // 添加自定义头部

@@ -1,11 +1,11 @@
-//! UDP NAT TTL eviction tests with deterministic time control
+//! UDP NAT TTL eviction tests with real time delays
 //!
-//! These tests use tokio::time::pause/advance to control time deterministically
-//! and test TTL-based eviction behavior without relying on real-time delays.
+//! These tests verify TTL-based eviction behavior using real time delays.
+//! We use short TTL values (10-50ms) to keep tests fast while ensuring
+//! proper time-based expiration logic.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
-use tokio::time::{advance, pause, resume};
 
 use sb_core::net::udp_nat_core::UdpNat;
 
@@ -15,10 +15,8 @@ fn test_addr(port: u16) -> SocketAddr {
 
 #[tokio::test]
 async fn test_ttl_eviction_deterministic() {
-    // Pause time at the start of test
-    pause();
-
-    let mut nat = UdpNat::new(100, Duration::from_secs(60)); // 60 second TTL
+    // Use short TTL for fast tests
+    let mut nat = UdpNat::new(100, Duration::from_millis(30)); // 30ms TTL
 
     // Create initial mapping
     let src = test_addr(1234);
@@ -29,31 +27,28 @@ async fn test_ttl_eviction_deterministic() {
     // Verify session exists
     assert!(nat.lookup_session(&mapped_addr).is_some());
 
-    // Advance time to just before TTL expiration (59 seconds)
-    advance(Duration::from_secs(59)).await;
+    // Wait less than TTL (20ms)
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Session should still exist
     assert_eq!(nat.session_count(), 1);
     assert!(nat.lookup_session(&mapped_addr).is_some());
+    let evicted_before = nat.evict_expired();
+    assert_eq!(evicted_before, 0);
 
-    // Advance time past TTL (62 seconds total)
-    advance(Duration::from_secs(3)).await;
+    // Wait past TTL (another 20ms = 40ms total > 30ms TTL)
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Now evict expired sessions
     let evicted_count = nat.evict_expired();
     assert_eq!(evicted_count, 1);
     assert_eq!(nat.session_count(), 0);
     assert!(nat.lookup_session(&mapped_addr).is_none());
-
-    // Resume time for cleanup
-    resume();
 }
 
 #[tokio::test]
 async fn test_ttl_eviction_with_activity_update() {
-    pause();
-
-    let mut nat = UdpNat::new(100, Duration::from_secs(30)); // 30 second TTL
+    let mut nat = UdpNat::new(100, Duration::from_millis(30)); // 30ms TTL
 
     // Create mapping
     let src = test_addr(1234);
@@ -62,36 +57,32 @@ async fn test_ttl_eviction_with_activity_update() {
     let session = nat.lookup_session(&mapped_addr).unwrap();
     let flow_key = session.flow_key.clone();
 
-    // Advance time to near TTL expiration (25 seconds)
-    advance(Duration::from_secs(25)).await;
+    // Wait near TTL expiration (20ms)
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Update activity (this should reset the TTL countdown)
     nat.update_activity(&flow_key);
 
-    // Advance another 25 seconds (50 seconds total from creation, but only 25 from last activity)
-    advance(Duration::from_secs(25)).await;
+    // Wait another 20ms (40ms from creation, but only 20ms from last activity)
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Session should still exist because activity was updated
     assert_eq!(nat.session_count(), 1);
     let evicted_count = nat.evict_expired();
     assert_eq!(evicted_count, 0); // No eviction yet
 
-    // Advance another 10 seconds (35 seconds from last activity, past 30s TTL)
-    advance(Duration::from_secs(10)).await;
+    // Wait another 20ms (40ms from last activity, past 30ms TTL)
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Now session should expire
     let evicted_count = nat.evict_expired();
     assert_eq!(evicted_count, 1);
     assert_eq!(nat.session_count(), 0);
-
-    resume();
 }
 
 #[tokio::test]
 async fn test_batch_ttl_eviction() {
-    pause();
-
-    let mut nat = UdpNat::new(100, Duration::from_secs(45)); // 45 second TTL
+    let mut nat = UdpNat::new(100, Duration::from_millis(40)); // 40ms TTL
 
     // Create multiple sessions
     let sessions = [
@@ -109,21 +100,21 @@ async fn test_batch_ttl_eviction() {
     }
     assert_eq!(nat.session_count(), 5);
 
-    // Update activity for some sessions partway through
-    advance(Duration::from_secs(20)).await;
+    // Wait partway through TTL (20ms)
+    tokio::time::sleep(Duration::from_millis(20)).await;
 
     // Update activity for sessions 2 and 4 (indices 1 and 3)
     for i in [1, 3] {
         nat.update_activity_by_addr(&mapped_addrs[i]);
     }
 
-    // Advance to TTL expiration for original sessions (50 seconds total)
-    advance(Duration::from_secs(30)).await;
+    // Wait for original sessions to expire (another 30ms = 50ms total > 40ms TTL)
+    tokio::time::sleep(Duration::from_millis(30)).await;
 
     // Evict expired sessions
     let evicted_count = nat.evict_expired();
-    assert_eq!(evicted_count, 3); // Sessions 1, 3, 5 should expire
-    assert_eq!(nat.session_count(), 2); // Sessions 2, 4 should remain
+    assert_eq!(evicted_count, 3); // Sessions 0, 2, 4 should expire
+    assert_eq!(nat.session_count(), 2); // Sessions 1, 3 should remain
 
     // Verify correct sessions remain
     assert!(nat.lookup_session(&mapped_addrs[1]).is_some());
@@ -131,15 +122,11 @@ async fn test_batch_ttl_eviction() {
     assert!(nat.lookup_session(&mapped_addrs[0]).is_none());
     assert!(nat.lookup_session(&mapped_addrs[2]).is_none());
     assert!(nat.lookup_session(&mapped_addrs[4]).is_none());
-
-    resume();
 }
 
 #[tokio::test]
 async fn test_ttl_batch_eviction_limit() {
-    pause();
-
-    let mut nat = UdpNat::new(100, Duration::from_secs(15)); // 15 second TTL
+    let mut nat = UdpNat::new(100, Duration::from_millis(15)); // 15ms TTL
 
     // Create 10 sessions
     for i in 0..10 {
@@ -149,8 +136,8 @@ async fn test_ttl_batch_eviction_limit() {
     }
     assert_eq!(nat.session_count(), 10);
 
-    // Advance time past TTL
-    advance(Duration::from_secs(20)).await;
+    // Wait past TTL (25ms > 15ms)
+    tokio::time::sleep(Duration::from_millis(25)).await;
 
     // Batch evict with limit of 3
     let evicted_count = nat.evict_expired_batch(3);
@@ -161,6 +148,5 @@ async fn test_ttl_batch_eviction_limit() {
     let evicted_count = nat.evict_expired_batch(10);
     assert_eq!(evicted_count, 7);
     assert_eq!(nat.session_count(), 0);
-
-    resume();
 }
+

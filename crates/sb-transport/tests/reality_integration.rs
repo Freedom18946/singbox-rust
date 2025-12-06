@@ -19,7 +19,7 @@ mod reality_tests {
         };
 
         // Create REALITY dialer
-        let dialer = RealityDialer::new(TcpDialer, config);
+        let dialer = RealityDialer::new(TcpDialer::default(), config);
         assert!(dialer.is_ok(), "Failed to create REALITY dialer");
     }
 
@@ -37,7 +37,7 @@ mod reality_tests {
         };
 
         // Should fail to create dialer
-        let dialer = RealityDialer::new(TcpDialer, config);
+        let dialer = RealityDialer::new(TcpDialer::default(), config);
         assert!(dialer.is_err(), "Should fail with invalid config");
     }
 
@@ -52,7 +52,7 @@ mod reality_tests {
         std::env::remove_var("SB_REALITY_PUBLIC_KEY");
 
         // Should fail without required environment variables
-        let dialer = RealityDialer::from_env(TcpDialer);
+        let dialer = RealityDialer::from_env(TcpDialer::default());
         assert!(dialer.is_err(), "Should fail without environment variables");
 
         // Restore environment state
@@ -76,7 +76,7 @@ mod reality_tests {
         std::env::set_var("SB_REALITY_FINGERPRINT", "firefox");
 
         // Should succeed with environment variables
-        let dialer = RealityDialer::from_env(TcpDialer);
+        let dialer = RealityDialer::from_env(TcpDialer::default());
         assert!(dialer.is_ok(), "Should succeed with environment variables");
 
         // Clean up
@@ -96,7 +96,7 @@ mod reality_tests {
         );
 
         // Should succeed and use defaults for optional vars
-        let dialer = RealityDialer::from_env(TcpDialer);
+        let dialer = RealityDialer::from_env(TcpDialer::default());
         assert!(dialer.is_ok(), "Should succeed with defaults");
 
         if let Ok(dialer) = dialer {
