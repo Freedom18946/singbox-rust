@@ -66,6 +66,45 @@ struct ClashProxy {
     username: Option<String>,
     #[serde(default)]
     password: Option<String>,
+    // Trojan/VMess/VLESS specific fields
+    #[serde(default)]
+    uuid: Option<String>,
+    #[serde(default)]
+    cipher: Option<String>,
+    #[serde(default, rename = "alterId")]
+    alter_id: Option<u16>,
+    #[serde(default)]
+    network: Option<String>,
+    #[serde(default)]
+    sni: Option<String>,
+    #[serde(default)]
+    servername: Option<String>,
+    #[serde(default)]
+    tls: Option<bool>,
+    #[serde(default, rename = "skip-cert-verify")]
+    skip_cert_verify: Option<bool>,
+    #[serde(default, rename = "ws-opts")]
+    ws_opts: Option<WsOpts>,
+    #[serde(default, rename = "grpc-opts")]
+    grpc_opts: Option<GrpcOpts>,
+    #[serde(default)]
+    udp: Option<bool>,
+    #[serde(default)]
+    flow: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct WsOpts {
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    headers: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct GrpcOpts {
+    #[serde(default, rename = "grpc-service-name")]
+    grpc_service_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,8 +156,92 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
                     },
                 });
             }
+            "trojan" => {
+                // Extract ws_path and ws_host from ws_opts if present
+                let (ws_path, ws_host) = if let Some(ref opts) = p.ws_opts {
+                    (
+                        opts.path.clone(),
+                        opts.headers.as_ref().and_then(|h| h.get("Host").cloned()),
+                    )
+                } else {
+                    (None, None)
+                };
+                outbounds.push(Outbound::Trojan {
+                    name: p.name.clone(),
+                    server: p.server.clone(),
+                    port: p.port,
+                    password: p.password.clone().unwrap_or_default(),
+                    transport: p.network.clone().map(|n| vec![n]),
+                    ws_path,
+                    ws_host,
+                    h2_path: None,
+                    h2_host: None,
+                    tls_sni: p.sni.clone().or_else(|| p.servername.clone()),
+                    tls_alpn: None,
+                });
+            }
+            "vmess" => {
+                let (ws_path, ws_host) = if let Some(ref opts) = p.ws_opts {
+                    (
+                        opts.path.clone(),
+                        opts.headers.as_ref().and_then(|h| h.get("Host").cloned()),
+                    )
+                } else {
+                    (None, None)
+                };
+                if let Some(ref uuid) = p.uuid {
+                    outbounds.push(Outbound::Vmess {
+                        name: p.name.clone(),
+                        server: p.server.clone(),
+                        port: p.port,
+                        uuid: uuid.clone(),
+                        security: p.cipher.clone().unwrap_or_else(|| "auto".to_string()),
+                        alter_id: p.alter_id.unwrap_or(0),
+                        connect_timeout_sec: None,
+                        transport: p.network.clone().map(|n| vec![n]),
+                        ws_path,
+                        ws_host,
+                        h2_path: None,
+                        h2_host: None,
+                        tls_sni: p.sni.clone().or_else(|| p.servername.clone()),
+                        tls_alpn: None,
+                    });
+                }
+            }
+            "vless" => {
+                let (ws_path, ws_host) = if let Some(ref opts) = p.ws_opts {
+                    (
+                        opts.path.clone(),
+                        opts.headers.as_ref().and_then(|h| h.get("Host").cloned()),
+                    )
+                } else {
+                    (None, None)
+                };
+                if let Some(ref uuid) = p.uuid {
+                    outbounds.push(Outbound::Vless {
+                        name: p.name.clone(),
+                        server: p.server.clone(),
+                        port: p.port,
+                        uuid: uuid.clone(),
+                        flow: p.flow.clone(),
+                        network: p.network.clone().unwrap_or_else(|| "tcp".to_string()),
+                        packet_encoding: None,
+                        connect_timeout_sec: None,
+                        transport: p.network.clone().map(|n| vec![n]),
+                        ws_path,
+                        ws_host,
+                        h2_path: None,
+                        h2_host: None,
+                        tls_sni: p.sni.clone().or_else(|| p.servername.clone()),
+                        tls_alpn: None,
+                    });
+                }
+            }
+            "ss" | "shadowsocks" => {
+                // Shadowsocks: requires method/cipher in Outbound enum - skipped for now
+            }
             _ => {
-                // 其他类型忽略（如 vmess/trojan 等），我们当前不支持，留空即可
+                // Other types ignored (hysteria, etc.)
             }
         }
     }
