@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 #[cfg(feature = "router_keyword")]
 #[test]
 fn explain_contains_keyword_kind() {

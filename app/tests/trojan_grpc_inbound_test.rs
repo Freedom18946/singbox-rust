@@ -7,8 +7,9 @@
 //! 3. TLS + gRPC combination
 //! 4. Backward compatibility (TCP fallback when no transport specified)
 
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_adapters::transport_config::{GrpcTransportConfig, TransportConfig, TransportType};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -40,20 +41,27 @@ async fn test_trojan_inbound_with_grpc_transport() {
 
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
+    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: bind_addr,
-        password: "trojan-password-456".to_string(),
+        password: None,
+        users: vec![TrojanUser::new(
+            "test-user".to_string(),
+            "trojan-password-456".to_string(),
+        )],
         cert_path: "/tmp/test-cert.pem".to_string(),
         key_path: "/tmp/test-key.pem".to_string(),
         router,
         reality: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::Grpc(grpc_config)),
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     // Verify configuration
     assert_eq!(config.listen, bind_addr);
-    assert_eq!(config.password, "trojan-password-456");
+    assert_eq!(config.users.len(), 1);
     assert!(config.transport_layer.is_some());
 }
 
@@ -64,15 +72,22 @@ async fn test_trojan_inbound_tcp_fallback() {
 
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
+    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: bind_addr,
-        password: "trojan-password".to_string(),
+        password: None,
+        users: vec![TrojanUser::new(
+            "test-user".to_string(),
+            "trojan-password".to_string(),
+        )],
         cert_path: "/tmp/cert.pem".to_string(),
         key_path: "/tmp/key.pem".to_string(),
         router,
         reality: None,
         multiplex: None,
         transport_layer: None, // No transport - defaults to TCP
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     // Verify that None transport_layer is accepted
@@ -127,15 +142,22 @@ async fn test_trojan_grpc_with_reality_tls() {
     let bind_addr: SocketAddr = "127.0.0.1:18490".parse().unwrap();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
+    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: bind_addr,
-        password: "trojan-reality".to_string(),
+        password: None,
+        users: vec![TrojanUser::new(
+            "test-user".to_string(),
+            "trojan-reality".to_string(),
+        )],
         cert_path: "/tmp/cert.pem".to_string(),
         key_path: "/tmp/key.pem".to_string(),
         router,
         reality: None, // Would contain RealityServerConfig in real scenario
         multiplex: None,
         transport_layer: Some(TransportConfig::Grpc(grpc_config)),
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     // Verify that gRPC + REALITY combination is supported

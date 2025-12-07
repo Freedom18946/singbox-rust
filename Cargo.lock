@@ -6531,6 +6531,7 @@ name = "sb-platform"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "jni",
  "libc",
  "libproc",
  "log",
@@ -6619,6 +6620,7 @@ dependencies = [
  "rcgen 0.13.2",
  "ring",
  "rustls",
+ "rustls-pemfile",
  "rustls-pki-types",
  "serde",
  "serde_json",

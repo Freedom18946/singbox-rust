@@ -141,8 +141,11 @@ pub struct ProcessMatcher {
     #[cfg(not(feature = "native-process-match"))]
     windows_impl: windows::WindowsProcessMatcher,
     #[cfg(target_os = "windows")]
+    #[cfg(target_os = "windows")]
     #[cfg(feature = "native-process-match")]
     windows_native_impl: native_windows::NativeWindowsProcessMatcher,
+    #[cfg(target_os = "android")]
+    android_impl: android::AndroidProcessMatcher,
 }
 
 impl ProcessMatcher {
@@ -168,8 +171,11 @@ impl ProcessMatcher {
             #[cfg(not(feature = "native-process-match"))]
             windows_impl: windows::WindowsProcessMatcher::new()?,
             #[cfg(target_os = "windows")]
+            #[cfg(target_os = "windows")]
             #[cfg(feature = "native-process-match")]
             windows_native_impl: native_windows::NativeWindowsProcessMatcher::new()?,
+            #[cfg(target_os = "android")]
+            android_impl: android::AndroidProcessMatcher::new()?,
         })
     }
 
@@ -232,8 +238,12 @@ impl ProcessMatcher {
         return self.windows_impl.find_process_id(conn).await;
 
         #[cfg(target_os = "windows")]
+        #[cfg(target_os = "windows")]
         #[cfg(feature = "native-process-match")]
         return self.windows_native_impl.find_process_id(conn).await;
+
+        #[cfg(target_os = "android")]
+        return self.android_impl.find_process_id(conn).await;
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         Err(ProcessMatchError::UnsupportedPlatform)
@@ -257,8 +267,12 @@ impl ProcessMatcher {
         return self.windows_impl.get_process_info(pid).await;
 
         #[cfg(target_os = "windows")]
+        #[cfg(target_os = "windows")]
         #[cfg(feature = "native-process-match")]
         return self.windows_native_impl.get_process_info(pid).await;
+
+        #[cfg(target_os = "android")]
+        return self.android_impl.get_process_info(pid).await;
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         Err(ProcessMatchError::UnsupportedPlatform)
@@ -297,8 +311,12 @@ mod macos_common;
 mod windows;
 
 #[cfg(target_os = "windows")]
+#[cfg(target_os = "windows")]
 #[cfg(feature = "native-process-match")]
 mod native_windows;
+
+#[cfg(target_os = "android")]
+mod android;
 
 #[cfg(test)]
 mod tests {

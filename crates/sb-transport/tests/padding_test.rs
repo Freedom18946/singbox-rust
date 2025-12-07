@@ -1,3 +1,4 @@
+#![cfg(feature = "transport_mux")]
 use sb_transport::multiplex::padding::PaddingStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

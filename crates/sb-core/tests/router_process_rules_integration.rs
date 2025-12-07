@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for process-based routing rules
 //!
 //! Tests the complete process matching pipeline from connection identification

@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::decide_udp_with_rules_and_ips_v46;
 
 #[test]

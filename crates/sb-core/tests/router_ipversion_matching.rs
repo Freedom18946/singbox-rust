@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for IP version matching
 //!
 //! Tests the routing engine's ability to route based on IP version (IPv4 vs IPv6).

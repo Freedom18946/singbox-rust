@@ -62,13 +62,7 @@ async fn start_vmess_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
     let test_uuid = Uuid::new_v4();
 
     let multiplex_config = if multiplex_enabled {
-        Some(MultiplexServerConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            brutal: None,
-        })
+        Some(MultiplexServerConfig::default())
     } else {
         None
     };
@@ -80,6 +74,8 @@ async fn start_vmess_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc:
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: multiplex_config,
         transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
     };
 
     tokio::spawn(async move {
@@ -114,18 +110,7 @@ async fn test_vmess_multiplex_single_stream() {
         packet_encoding: false,
         headers: Default::default(),
         transport_layer: TransportConfig::Tcp,
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
         tls: None,
     };
 
@@ -176,18 +161,7 @@ async fn test_vmess_multiplex_concurrent_streams() {
         packet_encoding: false,
         headers: Default::default(),
         transport_layer: TransportConfig::Tcp,
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
         tls: None,
     };
 
@@ -258,18 +232,7 @@ async fn test_vmess_multiplex_data_integrity() {
         packet_encoding: false,
         headers: Default::default(),
         transport_layer: TransportConfig::Tcp,
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
         tls: None,
     };
 
@@ -381,18 +344,7 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
             packet_encoding: false,
             headers: Default::default(),
             transport_layer: TransportConfig::Tcp,
-            multiplex: Some(MultiplexConfig {
-                max_num_streams: 256,
-                initial_stream_window: 256 * 1024,
-                max_stream_window: 1024 * 1024,
-                enable_keepalive: true,
-                keepalive_interval: 30,
-                max_connections: 4,
-                max_streams_per_connection: 16,
-                connection_idle_timeout: 300,
-                padding: false,
-                brutal: None,
-            }),
+            multiplex: Some(MultiplexConfig::default()),
             tls: None,
         };
 
@@ -443,18 +395,7 @@ async fn test_vmess_multiplex_security_levels() {
             packet_encoding: false,
             headers: Default::default(),
             transport_layer: TransportConfig::Tcp,
-            multiplex: Some(MultiplexConfig {
-                max_num_streams: 256,
-                initial_stream_window: 256 * 1024,
-                max_stream_window: 1024 * 1024,
-                enable_keepalive: true,
-                keepalive_interval: 30,
-                max_connections: 4,
-                max_streams_per_connection: 16,
-                connection_idle_timeout: 300,
-                padding: false,
-                brutal: None,
-            }),
+            multiplex: Some(MultiplexConfig::default()),
             tls: None,
         };
 
@@ -504,18 +445,7 @@ async fn test_vmess_multiplex_alter_id_variations() {
             packet_encoding: false,
             headers: Default::default(),
             transport_layer: TransportConfig::Tcp,
-            multiplex: Some(MultiplexConfig {
-                max_num_streams: 256,
-                initial_stream_window: 256 * 1024,
-                max_stream_window: 1024 * 1024,
-                enable_keepalive: true,
-                keepalive_interval: 30,
-                max_connections: 4,
-                max_streams_per_connection: 16,
-                connection_idle_timeout: 300,
-                padding: false,
-                brutal: None,
-            }),
+            multiplex: Some(MultiplexConfig::default()),
             tls: None,
         };
 

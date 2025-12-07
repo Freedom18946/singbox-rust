@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 // Import Shadowsocks adapters
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
@@ -62,21 +62,17 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
     let multiplex_config = if multiplex_enabled {
-        Some(MultiplexServerConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            brutal: None,
-        })
+        Some(MultiplexServerConfig::default())
     } else {
         None
     };
 
+    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: "aes-256-gcm".to_string(),
-        password: "test-password-123".to_string(),
+        password: None,
+        users: vec![ShadowsocksUser::new("test".to_string(), "test-password-123".to_string())],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: multiplex_config,
         transport_layer: None,
@@ -107,18 +103,7 @@ async fn test_shadowsocks_multiplex_single_stream() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
     };
 
     let connector =
@@ -162,18 +147,7 @@ async fn test_shadowsocks_multiplex_concurrent_streams() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
     };
 
     let connector = Arc::new(
@@ -238,18 +212,7 @@ async fn test_shadowsocks_multiplex_data_integrity() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
     };
 
     let connector = Arc::new(
@@ -347,18 +310,7 @@ async fn test_shadowsocks_multiplex_vs_non_multiplex() {
             method: "aes-256-gcm".to_string(),
             password: "test-password-123".to_string(),
             connect_timeout_sec: Some(10),
-            multiplex: Some(MultiplexConfig {
-                max_num_streams: 256,
-                initial_stream_window: 256 * 1024,
-                max_stream_window: 1024 * 1024,
-                enable_keepalive: true,
-                keepalive_interval: 30,
-                max_connections: 4,
-                max_streams_per_connection: 16,
-                connection_idle_timeout: 300,
-                padding: false,
-                brutal: None,
-            }),
+            multiplex: Some(MultiplexConfig::default()),
         };
 
         let connector = ShadowsocksConnector::new(client_config).unwrap();
@@ -396,18 +348,7 @@ async fn test_shadowsocks_multiplex_sequential_and_concurrent() {
         method: "aes-256-gcm".to_string(),
         password: "test-password-123".to_string(),
         connect_timeout_sec: Some(10),
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
     };
 
     let connector = Arc::new(ShadowsocksConnector::new(client_config).unwrap());

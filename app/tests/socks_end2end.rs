@@ -1,8 +1,11 @@
 #![allow(clippy::manual_flatten)]
-use sb_config::ir::{ConfigIR, InboundIR, InboundType};
-use sb_core::adapter::InboundService;
-use sb_core::inbound::socks5::Socks5;
+use sb_config::ir::ConfigIR;
+use sb_config::validator::v2::to_ir_v1;
+use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
+use sb_core::runtime::switchboard::SwitchboardBuilder;
+use sb_core::runtime::Runtime;
+use serde_json::json;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
@@ -32,16 +35,31 @@ fn start_echo() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
 }
 
 fn socks_client_echo(
-    socks: std::net::SocketAddr,
+    socks_addr: std::net::SocketAddr,
     target: std::net::SocketAddr,
     payload: &[u8],
 ) -> Vec<u8> {
-    let mut s = TcpStream::connect(socks).unwrap();
+    // Retry connect a few times to potential racing startup
+    let mut s = {
+        let mut conn = Err(std::io::Error::other("init"));
+        for _ in 0..10 {
+            match TcpStream::connect(socks_addr) {
+                Ok(x) => {
+                    conn = Ok(x);
+                    break;
+                }
+                Err(_) => thread::sleep(Duration::from_millis(50)),
+            }
+        }
+        conn.expect("failed to connect to socks server")
+    };
+
     // greeting
     s.write_all(&[0x05, 0x01, 0x00]).unwrap();
     let mut rep = [0u8; 2];
     s.read_exact(&mut rep).unwrap();
-    assert_eq!(rep, [0x05, 0x00]);
+    assert_eq!(rep, [0x05, 0x00], "SOCKS5 greeting failed");
+
     // request CONNECT ipv4
     let ip = match target.ip() {
         std::net::IpAddr::V4(v) => v.octets(),
@@ -52,9 +70,11 @@ fn socks_client_echo(
     req.extend_from_slice(&ip);
     req.extend_from_slice(&port);
     s.write_all(&req).unwrap();
+
     let mut r = [0u8; 10];
     s.read_exact(&mut r).unwrap();
-    assert_eq!(r[1], 0x00);
+    assert_eq!(r[1], 0x00, "SOCKS5 connect failed (0x00=success)");
+
     // send/recv
     s.write_all(payload).unwrap();
     let mut buf = vec![0u8; payload.len()];
@@ -64,31 +84,44 @@ fn socks_client_echo(
 
 #[test]
 fn end_to_end_echo() {
-    // 启 echo
+    // Initialize registry
+    sb_adapters::register_all();
+
+    // Start echo server
     let (echo_addr, _h) = start_echo();
-    // 启 socks inbound
-    let socks = TcpListener::bind("127.0.0.1:0").unwrap();
-    let socks_addr = socks.local_addr().unwrap();
-    let ir = ConfigIR {
-        inbounds: vec![InboundIR {
-            ty: InboundType::Socks,
-            listen: socks_addr.ip().to_string(),
-            port: socks_addr.port(),
-            sniff: false,
-            udp: true,
-            ..Default::default()
+
+    // Reserve port for SOCKS
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let socks_addr = l.local_addr().unwrap();
+    drop(l); // Release port
+    thread::sleep(Duration::from_millis(100)); // Allow OS to clear
+
+    // Config with Direct outbound
+    let config = json!({
+        "inbounds": [{
+            "type": "socks",
+            "tag": "socks-in",
+            "listen": socks_addr.ip().to_string(),
+            "port": socks_addr.port()
         }],
-        ..Default::default()
-    };
-    let ir_static: &'static ConfigIR = Box::leak(Box::new(ir));
-    let eng = Engine::new(ir_static);
-    std::thread::spawn(move || {
-        let srv =
-            Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone_as_static());
-        let _ = srv.serve();
+        "outbounds": [{
+            "type": "direct",
+            "tag": "direct"
+        }]
     });
-    std::thread::sleep(Duration::from_millis(100));
-    // 客户端经 socks 访问 echo
+    
+    let ir: ConfigIR = to_ir_v1(&config);
+    let eng = Engine::new(&ir);
+    let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
+    let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();
+    
+    // Start Runtime (Full Stack)
+    let rt = Runtime::new(eng, br, sb).start();
+
+    // Run client verification
     let out = socks_client_echo(socks_addr, echo_addr, b"hello world");
     assert_eq!(&out, b"hello world");
+
+    // Cleanup
+    rt.shutdown();
 }

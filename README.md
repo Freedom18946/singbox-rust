@@ -66,12 +66,37 @@ See [Getting Started](docs/00-getting-started/) for detailed instructions.
 
 ## Key Features
 
-- **High Performance**: Native process matching (149x faster on macOS), zero-copy parsing, linear scaling.
-- **Memory Safe**: Written in Rust for stability and security.
-- **Full Parity**: Supports all 36 protocols from sing-box (Shadowsocks, Trojan, VMess, VLESS, Hysteria, TUIC, etc.).
-- **Advanced TLS**: REALITY, ECH, and Standard TLS 1.3 support.
-- **Mesh Networking**: Built-in DERP service for cross-region relay.
-- **Observability**: Comprehensive Prometheus metrics and tracing.
+### 🚀 Performance
+- **Native Process Matching**: 149x faster on macOS than Go implementation
+- **Zero-Copy Parsing**: Minimal allocations in hot paths
+- **Memory Safe**: No GC pauses, predictable footprint
+
+### 🔐 Security & TLS
+- **REALITY Protocol**: Anti-censorship TLS fingerprinting
+- **ECH (Encrypted Client Hello)**: SNI encryption
+- **uTLS Fingerprinting**: 27+ browser fingerprints (Chrome, Firefox, Safari, Edge)
+- **ACME Auto-Renewal**: Let's Encrypt/ZeroSSL with HTTP-01/DNS-01 challenges
+
+### 🌐 Protocols (36 Total)
+| Inbound | Outbound | Transport |
+| --- | --- | --- |
+| SOCKS (4/5), HTTP | Shadowsocks, VMess | WebSocket, gRPC |
+| Shadowsocks, Trojan | VLESS, Trojan | HTTP Upgrade |
+| VMess, VLESS | Hysteria2, TUIC | QUIC, TCP, UDP |
+| Hysteria2, TUIC | WireGuard, SSH | REALITY, ECH |
+| WireGuard, TUN | Direct, Block | simple-obfs |
+
+### 📊 Observability
+- **Prometheus Metrics**: Connection counts, latency histograms
+- **Clash/V2Ray API**: Traffic stats and rule management
+- **Circuit Breaker**: Automatic failure detection and recovery
+
+### 🔗 Advanced
+- **Smart Routing**: 38 rule types (domain, GeoIP, process, user, etc.)
+- **DERP Mesh**: Tailscale relay for cross-region connectivity
+- **Hot Reload**: Live config updates via Admin API
+
+> 📖 **[Rust-Only Enhancements](docs/RUST_ENHANCEMENTS.md)** - Features beyond Go parity
 
 ---
 

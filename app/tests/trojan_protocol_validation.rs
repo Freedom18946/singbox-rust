@@ -18,7 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
@@ -84,15 +84,19 @@ async fn start_trojan_server(
     let mut key_file = NamedTempFile::new().unwrap();
     key_file.write_all(key_pem.as_bytes()).unwrap();
 
+    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: addr,
-        password: password.to_string(),
+        password: None,
+        users: vec![TrojanUser::new("test".to_string(), password.to_string())],
         cert_path: cert_file.path().to_str().unwrap().to_string(),
         key_path: key_file.path().to_str().unwrap().to_string(),
         router: Arc::new(RouterHandle::new_mock()),
         transport_layer: None,
         multiplex: None,
         reality: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
     };
 
     tokio::spawn(async move {

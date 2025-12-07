@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Comprehensive integration test for hot reload functionality
 //! Validates all requirements for Task 16
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for Auth User matching
 //!
 //! Tests the routing engine's ability to route based on proxy authentication credentials.

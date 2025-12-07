@@ -28,7 +28,11 @@ windows = { version = "0.58", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
     "Win32_Networking_WinInet",
+    "Win32_Networking_WinInet",
 ], optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
 
 [dev-dependencies]
 futures = "0.3"

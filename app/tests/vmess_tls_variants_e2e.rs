@@ -305,9 +305,9 @@ async fn test_vmess_tls_with_multiplex() {
         packet_encoding: false,
         headers: Default::default(),
         multiplex: Some(sb_transport::multiplex::MultiplexConfig {
-            max_connections: 4,
+            max_pool_size: 4,
             max_streams_per_connection: 16,
-            padding: false,
+            enable_padding: false,
             ..Default::default()
         }),
         transport_layer: TransportConfig::Tcp,

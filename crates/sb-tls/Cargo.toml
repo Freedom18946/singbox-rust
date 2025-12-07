@@ -44,13 +44,15 @@ instant-acme = { version = "0.7", optional = true }
 
 # Logging
 tracing = "0.1"
+rustls-pemfile = { version = "2.2.0", optional = true }
 
 [features]
 default = ["reality"]
 reality = []
 ech = []
-acme = ["dep:instant-acme"]
+acme = ["dep:instant-acme", "dep:rustls-pemfile"]
 utls = []  # uTLS client fingerprinting
+rustls-pemfile = ["dep:rustls-pemfile"]
 
 
 [lints]

@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::decide_http;
 use std::fs;
 use std::io::Write;

@@ -10,6 +10,7 @@ use tokio::time::timeout;
 
 /// Test basic reload functionality with port switching
 #[tokio::test]
+#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_basic -- --ignored"]
 async fn test_basic_reload() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -145,6 +146,7 @@ async fn test_basic_reload() -> anyhow::Result<()> {
 
 /// Test reload with invalid configuration
 #[tokio::test]
+#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_basic -- --ignored"]
 async fn test_reload_invalid_config() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -226,6 +228,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
 
 /// Test reload without authentication token
 #[tokio::test]
+#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_basic -- --ignored"]
 async fn test_reload_unauthorized() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");

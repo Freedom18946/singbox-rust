@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 #[cfg(feature = "router_keyword")]
 use sb_core::router::{router_build_index_from_str, router_index_decide_keyword};
 

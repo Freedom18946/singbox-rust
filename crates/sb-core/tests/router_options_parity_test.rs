@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 // Test for Config/Route Options Parity
 use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
 

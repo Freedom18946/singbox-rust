@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 #![cfg(all(feature = "geoip_mmdb", feature = "router"))]
 use std::net::IpAddr;
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 // This test file is disabled due to missing proptest dependency
 // #[cfg(feature = "proptest")]
 /*

@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::router::{self};
 use std::sync::{Mutex, OnceLock};

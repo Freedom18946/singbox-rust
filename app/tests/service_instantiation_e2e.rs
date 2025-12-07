@@ -5,7 +5,6 @@ use serde_json::json;
 
 #[test]
 fn test_service_instantiation() -> Result<()> {
-    #[cfg(feature = "adapters")]
     sb_adapters::register_all();
 
     let config = json!({

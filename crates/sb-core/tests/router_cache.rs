@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::{router_build_index_from_str, shared_index, RouterHandle};
 use std::sync::Arc;
 

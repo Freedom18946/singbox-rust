@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for GeoSite rules in routing engine
 
 use sb_core::router::{geo::GeoSiteDb, router_build_index_from_str, RouterHandle};

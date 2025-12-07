@@ -38,7 +38,11 @@ async fn shadowsocks_udp_roundtrip() {
     let cfg = ShadowsocksInboundConfig {
         listen: ss_listen,
         method: "aes-256-gcm".into(),
-        password: "test-password".into(),
+        password: None,
+        users: vec![sb_adapters::inbound::shadowsocks::ShadowsocksUser::new(
+            "test-user".to_string(),
+            "test-password".to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,

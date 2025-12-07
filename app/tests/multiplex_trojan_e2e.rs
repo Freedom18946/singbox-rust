@@ -18,18 +18,7 @@ fn trojan_multiplex_config_creation() {
         skip_cert_verify: true,
         transport_layer: TransportConfig::Tcp,
         reality: None,
-        multiplex: Some(MultiplexConfig {
-            max_num_streams: 256,
-            initial_stream_window: 256 * 1024,
-            max_stream_window: 1024 * 1024,
-            enable_keepalive: true,
-            keepalive_interval: 30,
-            max_connections: 4,
-            max_streams_per_connection: 16,
-            connection_idle_timeout: 300,
-            padding: false,
-            brutal: None,
-        }),
+        multiplex: Some(MultiplexConfig::default()),
     };
 
     let connector = TrojanConnector::new(client_config);

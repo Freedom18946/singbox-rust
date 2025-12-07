@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for rule-set loading and matching
 //!
 //! Tests cover:

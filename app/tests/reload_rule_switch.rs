@@ -11,6 +11,7 @@ use tokio::time::timeout;
 
 /// Test rule switching via reload
 #[tokio::test]
+#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_rule_switch -- --ignored"]
 async fn test_rule_switch_reload() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -175,6 +176,7 @@ async fn test_rule_switch_reload() -> anyhow::Result<()> {
 
 /// Test complex rule modifications
 #[tokio::test]
+#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_rule_switch -- --ignored"]
 async fn test_complex_rule_modifications() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");

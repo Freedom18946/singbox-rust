@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc;
 
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
@@ -74,10 +74,12 @@ async fn start_ss_server(method: &str, password: &str) -> (SocketAddr, mpsc::Sen
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
+    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: method.to_string(),
-        password: password.to_string(),
+        password: None,
+        users: vec![ShadowsocksUser::new("default".to_string(), password.to_string())],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,

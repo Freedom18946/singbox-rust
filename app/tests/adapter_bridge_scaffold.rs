@@ -44,6 +44,7 @@ mod t_scaffold {
                 basic_auth: None,
                 override_host: None,
                 override_port: None,
+                ..Default::default()
             }],
             outbounds: vec![OutboundIR {
                 ty: OutboundType::Direct,
@@ -56,10 +57,11 @@ mod t_scaffold {
             route: RouteIR::default(),
             ntp: None,
             dns: None,
+            ..Default::default()
         };
         let eng = Engine::new(&ir);
         std::env::set_var("ADAPTER_FORCE", "scaffold");
-        let br = build_bridge(&ir, eng);
+        let br = build_bridge(&ir, eng, sb_core::context::Context::default());
         for ib in &br.inbounds {
             let i = ib.clone();
             thread::spawn(move || {
@@ -104,6 +106,7 @@ mod t_scaffold {
                 basic_auth: None,
                 override_host: None,
                 override_port: None,
+                ..Default::default()
             }],
             outbounds: vec![OutboundIR {
                 ty: OutboundType::Direct,
@@ -113,10 +116,11 @@ mod t_scaffold {
             route: RouteIR::default(),
             ntp: None,
             dns: None,
+            ..Default::default()
         };
         let eng = Engine::new(&ir);
         std::env::set_var("ADAPTER_FORCE", "scaffold");
-        let br = build_bridge(&ir, eng);
+        let br = build_bridge(&ir, eng, sb_core::context::Context::default());
         assert_eq!(br.inbound_kinds.len(), 1);
         assert_eq!(br.inbound_kinds[0], "naive");
         let res = br.inbounds[0].serve();

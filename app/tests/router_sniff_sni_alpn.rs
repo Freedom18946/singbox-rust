@@ -107,7 +107,7 @@ fn test_sni_based_routing() {
     let mut cfg = ConfigIR::default();
     cfg.route = RouteIR {
         rules: vec![RuleIR {
-            protocol: vec!["tls".into()],
+            domain: vec!["api.example.com".into()],
             outbound: Some("out-1".into()),
             ..Default::default()
         }],

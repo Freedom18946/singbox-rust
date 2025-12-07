@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for FakeIP routing
 //!
 //! Tests the integration of FakeIP with the routing decision engine, covering:

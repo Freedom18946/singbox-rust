@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::sync::Arc;

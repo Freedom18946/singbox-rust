@@ -2,7 +2,7 @@
 
 This guide helps users migrate from sing-box Go version 1.12.12 to the Rust implementation, documenting feature parity, configuration compatibility, and known limitations.
 
-**Last Updated:** 2025-11-23  
+**Last Updated:** 2025-12-07  
 **Baseline:** sing-box 1.12.12 (Go)  
 **Target:** singbox-rust v0.2.0+
 
@@ -516,6 +516,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 - **Project Documentation:** [docs/](../)
 - **Feature Parity Matrix:** [GO_PARITY_MATRIX.md](../GO_PARITY_MATRIX.md)
 - **Next Steps:** [NEXT_STEPS.md](../NEXT_STEPS.md)
+- **Rust-Only Enhancements:** [RUST_ENHANCEMENTS.md](RUST_ENHANCEMENTS.md)
 - **Tailscale Research:** [TAILSCALE_RESEARCH.md](TAILSCALE_RESEARCH.md)
 - **WireGuard Guides:**
   - [Quick Start](wireguard-quickstart.md)

@@ -70,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "failpoints")]
     sb_core::util::failpoint::init_from_env();
 
+    #[cfg(feature = "panic_log")]
     app::panic::install();
 
     #[cfg(feature = "hardening")]

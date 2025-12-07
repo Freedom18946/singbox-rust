@@ -6,8 +6,9 @@
 //! It implements the SOCKS5 protocol as defined in RFC 1928.
 //! 它实现了 RFC 1928 中定义的 SOCKS5 协议。
 
-use crate::outbound::prelude::*;
 use anyhow::Context;
+use crate::outbound::prelude::*;
+
 #[cfg(feature = "socks-udp")]
 use crate::traits::OutboundDatagram;
 use crate::traits::ResolveMode;

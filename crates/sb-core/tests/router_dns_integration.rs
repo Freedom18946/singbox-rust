@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Tests for DNS integration in routing decision chain
 
 use std::net::IpAddr;

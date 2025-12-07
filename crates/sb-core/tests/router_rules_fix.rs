@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::analyze::analyze;
 #[cfg(feature = "rules_tool")]
 use sb_core::router::analyze_fix::build_portrange_merge_patch;

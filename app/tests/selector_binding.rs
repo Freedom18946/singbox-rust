@@ -4,6 +4,7 @@ use sb_core::routing::engine::Engine;
 
 #[test]
 fn selector_is_bound_to_members() {
+    sb_adapters::register_all();
     // 构造 IR：directA/directB + selector S = [directA, directB]
     let ir = ConfigIR {
         inbounds: vec![InboundIR {
@@ -50,6 +51,12 @@ fn selector_is_bound_to_members() {
     };
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng, sb_core::context::Context::default());
+    // List all registered outbounds
+    eprintln!("Registered outbounds:");
+    // We can't iterate publically, but we can search for members
+    if br.find_outbound("directA").is_some() { eprintln!("- directA found"); }
+    if br.find_outbound("directB").is_some() { eprintln!("- directB found"); }
+    
     // 选择器应已作为一个命名出站注册
-    assert!(br.find_outbound("S").is_some());
+    assert!(br.find_outbound("S").is_some(), "Selector S not found in bridge!");
 }

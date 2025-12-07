@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 // This test is disabled due to GeoIP API changes
 /*
 use sb_core::geoip::{lookup_with_metrics, set_global_provider, Provider};

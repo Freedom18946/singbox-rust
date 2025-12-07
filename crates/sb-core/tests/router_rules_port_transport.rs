@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 use sb_core::router::{decide_http, RouterHandle};
 
 #[test]

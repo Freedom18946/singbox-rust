@@ -47,6 +47,9 @@ async fn test_vless_inbound_with_httpupgrade_transport() {
         reality: None,
         multiplex: None,
         transport_layer: Some(TransportConfig::HttpUpgrade(http_upgrade_config)),
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+        flow: None,
     };
 
     // Verify configuration
@@ -70,6 +73,9 @@ async fn test_vless_inbound_tcp_fallback() {
         reality: None,
         multiplex: None,
         transport_layer: None, // No transport - defaults to TCP
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+        flow: None,
     };
 
     // Verify that None transport_layer is accepted
@@ -126,6 +132,9 @@ async fn test_vless_httpupgrade_with_reality_tls() {
         reality: None, // Would contain RealityServerConfig in real scenario
         multiplex: None,
         transport_layer: Some(TransportConfig::HttpUpgrade(http_upgrade_config)),
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+        flow: None,
     };
 
     // Verify that HTTPUpgrade + REALITY combination is supported

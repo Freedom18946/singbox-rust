@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for GeoIP rules in routing engine
 
 use sb_core::router::{geo::GeoIpDb, router_build_index_from_str, RouterHandle};

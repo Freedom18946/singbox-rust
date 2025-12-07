@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 //! Integration tests for GeoSite database support in routing engine
 
 use sb_core::router::{

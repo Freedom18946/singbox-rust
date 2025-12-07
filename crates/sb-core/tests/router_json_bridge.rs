@@ -1,3 +1,4 @@
+#![cfg(feature = "router")]
 #[cfg(feature = "json")]
 use sb_core::router::{json_bridge, rules::*};
 
