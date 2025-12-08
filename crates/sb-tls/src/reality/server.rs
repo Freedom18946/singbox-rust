@@ -98,7 +98,7 @@ impl RealityAcceptor {
     /// 如果握手超时或验证失败，则返回错误。
     pub async fn accept<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         let handshake_timeout = Duration::from_secs(self.config.handshake_timeout);
 
@@ -111,7 +111,7 @@ impl RealityAcceptor {
     #[allow(clippy::cognitive_complexity)] // Handshake flow has necessary branching; refactor would risk protocol regressions. Revisit post-acceptance.
     async fn handle_handshake<S>(&self, mut stream: S) -> RealityResult<RealityConnection>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         debug!("Handling REALITY handshake");
 
@@ -261,7 +261,7 @@ impl RealityAcceptor {
         server_name: &str,
     ) -> RealityResult<crate::TlsIoStream>
     where
-        S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         use rustls::pki_types::{CertificateDer, PrivateKeyDer};
         use std::sync::Arc;

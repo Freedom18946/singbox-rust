@@ -37,6 +37,8 @@ use uuid::Uuid;
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
+#[cfg(feature = "tls_reality")]
+use sb_tls::reality::server::RealityConnection;
 
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
@@ -222,7 +224,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                              match acceptor.accept(stream).await {
                                  Ok(connection) => {
                                      match connection {
-                                         sb_tls::RealityConnection::Proxy(tls_stream) => {
+                                         RealityConnection::Proxy(tls_stream) => {
                                              debug!(%peer, "vless: REALITY handshake success (proxy)");
                                              let mut stream = tls_stream;
                                              if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
@@ -231,10 +233,10 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                                                  warn!(%peer, error=%e, "vless: session error");
                                              }
                                          }
-                                         sb_tls::RealityConnection::Fallback { client, target } => {
+                                         RealityConnection::Fallback { client, target } => {
                                              debug!(%peer, "vless: REALITY fallback triggered");
                                              // Fallback is handled by bidirectional copy in handle()
-                                            let conn = sb_tls::RealityConnection::Fallback { client, target };
+                                            let conn = RealityConnection::Fallback { client, target };
                                             if let Err(e) = conn.handle().await {
                                                  warn!(%peer, error=%e, "vless: fallback relay error");
                                             }

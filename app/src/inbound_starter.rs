@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use sb_config::ir::{InboundIR, InboundType};
 #[cfg(feature = "router")]
 use sb_core::adapter::InboundService;
-#[cfg(feature = "router")]
 use sb_core::outbound::OutboundRegistryHandle;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -393,7 +392,6 @@ fn start_trojan_inbound(
             router,
             #[cfg(not(feature = "router"))]
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
-            #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
             transport_layer: None,
@@ -446,7 +444,6 @@ fn start_vless_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<Ro
             router,
             #[cfg(not(feature = "router"))]
             router: Arc::new(sb_core::router::RouterHandle::from_env()),
-            #[cfg(feature = "tls_reality")]
             reality: None,
             multiplex: None,
             transport_layer: None,

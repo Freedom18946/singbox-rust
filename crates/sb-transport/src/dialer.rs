@@ -89,9 +89,9 @@ pub trait AsyncReadWrite: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin +
 /// 为所有满足条件的类型自动实现 `AsyncReadWrite`
 ///
 /// This is a blanket implementation, meaning any type that satisfies
-/// AsyncRead + AsyncWrite + Unpin + Send + Sync will automatically receive this implementation.
+/// AsyncRead + AsyncWrite + Unpin + Send will automatically receive this implementation.
 /// 这是一个 blanket implementation，意味着任何同时满足
-/// AsyncRead + AsyncWrite + Unpin + Send + Sync 的类型都会自动获得该实现
+/// AsyncRead + AsyncWrite + Unpin + Send 的类型都会自动获得该实现
 impl<T> AsyncReadWrite for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 
 /// Unified Async IO Stream Type Alias
