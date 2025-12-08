@@ -8,6 +8,7 @@
 //! - REALITY TLS (when feature is enabled)
 //! - ECH (Encrypted Client Hello, when feature is enabled)
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -74,6 +75,8 @@ async fn start_vmess_tls_server(
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: Some(TransportConfig::Tcp),
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     tokio::spawn(async move {
@@ -96,8 +99,7 @@ async fn test_vmess_standard_tls() {
         server_name: Some("localhost".to_string()),
         alpn: vec!["h2".to_string(), "http/1.1".to_string()],
         insecure: true,
-        cert_path: None,
-        key_path: None,
+        ..Default::default()
     });
 
     // Start VMess server with TLS
@@ -163,8 +165,7 @@ async fn test_vmess_tls_with_alpn() {
             server_name: Some("localhost".to_string()),
             alpn: alpn.clone(),
             insecure: true,
-            cert_path: None,
-            key_path: None,
+            ..Default::default()
         });
 
         let (vmess_addr, test_uuid, _stop_tx) =
@@ -227,8 +228,7 @@ async fn test_vmess_tls_versions() {
             server_name: Some("localhost".to_string()),
             alpn: vec!["h2".to_string()],
             insecure: true,
-            cert_path: None,
-            key_path: None,
+            ..Default::default()
         });
 
         let (vmess_addr, test_uuid, _stop_tx) =
@@ -286,8 +286,7 @@ async fn test_vmess_tls_with_multiplex() {
         server_name: Some("localhost".to_string()),
         alpn: vec!["h2".to_string()],
         insecure: true,
-        cert_path: None,
-        key_path: None,
+        ..Default::default()
     });
 
     let (vmess_addr, test_uuid, _stop_tx) = start_vmess_tls_server(Some(tls_config.clone())).await;
@@ -362,8 +361,7 @@ async fn test_vmess_reality_tls() {
         server_name: Some("www.microsoft.com".to_string()),
         alpn: vec!["h2".to_string()],
         insecure: true,
-        cert_path: None,
-        key_path: None,
+        ..Default::default()
     });
 
     let (vmess_addr, test_uuid, _stop_tx) = start_vmess_tls_server(Some(tls_config.clone())).await;
@@ -426,8 +424,7 @@ async fn test_vmess_ech_tls() {
         server_name: Some("cloudflare.com".to_string()),
         alpn: vec!["h2".to_string()],
         insecure: true,
-        cert_path: None,
-        key_path: None,
+        ..Default::default()
     });
 
     let (vmess_addr, test_uuid, _stop_tx) = start_vmess_tls_server(Some(tls_config.clone())).await;
@@ -487,8 +484,7 @@ async fn test_vmess_tls_data_integrity() {
         server_name: Some("localhost".to_string()),
         alpn: vec!["h2".to_string()],
         insecure: true,
-        cert_path: None,
-        key_path: None,
+        ..Default::default()
     });
 
     let (vmess_addr, test_uuid, _stop_tx) = start_vmess_tls_server(Some(tls_config.clone())).await;

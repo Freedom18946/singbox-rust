@@ -11,6 +11,7 @@ use common::http::{get, post_json};
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::admin::http::spawn_admin;
+use sb_core::context::Context;
 use sb_core::routing::engine::Engine;
 
 #[test]
@@ -40,11 +41,7 @@ fn admin_health_and_explain() {
             ty: InboundType::Socks,
             listen: "127.0.0.1".into(),
             port: 0,
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,
@@ -58,12 +55,12 @@ fn admin_health_and_explain() {
                 ..Default::default()
             }],
             default: Some("direct".into()),
+            ..Default::default()
         },
-        ntp: None,
-        dns: None,
+        ..Default::default()
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng.clone());
+    let br = build_bridge(&ir, eng.clone(), Context::new());
     // Try to spawn admin server; sandboxed CI (macOS seatbelt) may deny binding
     let h = match spawn_admin(
         &admin,

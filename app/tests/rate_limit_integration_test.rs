@@ -7,6 +7,7 @@
 //! - QPS limiting validation
 //! - Metrics verification
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -16,8 +17,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
@@ -101,15 +102,23 @@ async fn start_trojan_server_with_rate_limit(
     let key_path = key_file.path().to_str().unwrap().to_string();
     let temp_files = Some((cert_file, key_file));
 
+    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: addr,
-        password: "test-password".to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![TrojanUser::new(
+            "default".to_string(),
+            "test-password".to_string(),
+        )],
         cert_path,
         key_path,
         router: Arc::new(RouterHandle::new_mock()),
         transport_layer: None,
         multiplex: None,
         reality: None,
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     tokio::spawn(async move {
@@ -138,10 +147,16 @@ async fn start_ss_server_with_rate_limit(
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
+    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: "aes-256-gcm".to_string(),
-        password: "test-pass".to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![ShadowsocksUser::new(
+            "default".to_string(),
+            "test-pass".to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,

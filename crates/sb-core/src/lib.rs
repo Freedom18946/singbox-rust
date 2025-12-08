@@ -81,6 +81,10 @@ pub mod http;
 
 pub mod obs;
 
+/// Debug and diagnostics HTTP server.
+/// 调试和诊断 HTTP 服务器。
+pub mod diagnostics;
+
 // Endpoint management (WireGuard, Tailscale, etc.)
 pub mod endpoint;
 

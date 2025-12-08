@@ -127,6 +127,11 @@ pub use local::LocalTransport;
 pub use tcp::TcpTransport;
 pub use udp::{DefaultUdpDialer, UdpDialer, UdpTransport, UdpUpstream};
 
+#[cfg(feature = "service_resolved")]
+pub mod resolved;
+#[cfg(feature = "service_resolved")]
+pub use resolved::{ResolvedTransport, ResolvedTransportConfig};
+
 #[cfg(feature = "dns_doh")]
 pub use doh::{DohConfig, DohServers, DohTransport};
 #[cfg(feature = "dns_doh3")]

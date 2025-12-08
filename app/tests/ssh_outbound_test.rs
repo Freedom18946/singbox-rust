@@ -21,6 +21,8 @@ fn test_ssh_outbound_registration() {
             credentials: Some(Credentials {
                 username: Some("testuser".into()),
                 password: Some("testpass".into()),
+                username_env: None,
+                password_env: None,
             }),
             ..Default::default()
         };
@@ -82,6 +84,8 @@ fn test_ssh_outbound_with_private_key() {
             credentials: Some(Credentials {
                 username: Some("testuser".into()),
                 password: None, // No password
+                username_env: None,
+                password_env: None,
             }),
             ssh_private_key: Some(
                 "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----".into(),
@@ -116,6 +120,8 @@ fn test_ssh_outbound_config_options() {
             credentials: Some(Credentials {
                 username: Some("testuser".into()),
                 password: Some("testpass".into()),
+                username_env: None,
+                password_env: None,
             }),
             ssh_host_key_verification: Some(false),
             ssh_compression: Some(true),

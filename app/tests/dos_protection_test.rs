@@ -7,17 +7,15 @@
 //! - Resource exhaustion limits (memory, CPU, FD limits)
 //! - Rate limiting under attack scenarios
 
-use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::TransportKind;
@@ -67,10 +65,16 @@ async fn start_ss_server_with_rate_limit(
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
+    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: "chacha20-poly1305".to_string(),
-        password: "test-password".to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![ShadowsocksUser::new(
+            "user".to_string(),
+            "test-password".to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,

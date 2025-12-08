@@ -73,6 +73,10 @@ fn test_http_adapter_builder_with_ir() {
     use sb_config::ir::OutboundIR;
     use sb_config::ir::OutboundType;
     use sb_core::adapter::OutboundParam;
+    use sb_core::adapter::registry;
+    use sb_core::adapter::Bridge;
+    use sb_core::context::{Context, ContextRegistry};
+    use std::sync::Arc;
 
     // Register adapters
     sb_adapters::register_all();
@@ -87,9 +91,10 @@ fn test_http_adapter_builder_with_ir() {
         ..Default::default()
     };
 
-    // Create empty param
+    // Create param with matching name/kind
     let param = OutboundParam {
-        tag: "http-proxy".to_string(),
+        kind: "http".to_string(),
+        name: Some("http-proxy".to_string()),
         server: None,
         port: None,
         credentials: None,
@@ -97,12 +102,14 @@ fn test_http_adapter_builder_with_ir() {
     };
 
     // Try to get the adapter
-    let registry = sb_core::adapter::registry::outbound_registry();
-    let builder = registry
-        .get("http")
-        .expect("HTTP adapter should be registered");
+    let builder = registry::get_outbound("http").expect("HTTP adapter should be registered");
 
-    let result = builder(&param, &ir);
+    let ctx = registry::AdapterOutboundContext {
+        bridge: Arc::new(Bridge::new(Context::new())),
+        context: ContextRegistry::from(&Context::new()),
+    };
+
+    let result = builder(&param, &ir, &ctx);
     println!("Builder result: {:?}", result.is_some());
 
     assert!(

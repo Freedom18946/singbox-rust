@@ -38,7 +38,7 @@ sb-config = { path = "../sb-config" }
 sb-metrics = { path = "../sb-metrics" }
 sb-platform = { path = "../sb-platform", features = ["tun"] }
 sb-types = { path = "../sb-types" }
-sb-transport = { path = "../sb-transport", optional = true, default-features = false, features = ["transport_ws", "transport_h2", "transport_tls", "transport_httpupgrade", "transport_mux", "transport_grpc"] }
+sb-transport = { path = "../sb-transport", default-features = false, features = ["transport_ws", "transport_h2", "transport_tls", "transport_httpupgrade", "transport_mux", "transport_grpc", "transport_wireguard"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -186,7 +186,7 @@ tls                = []
 loom               = ["dep:loom"]
 failpoints         = ["dep:fail"]
 resolv_conf        = ["dep:notify"]
-v2ray_transport    = ["dep:sb-transport"]
+v2ray_transport    = []
 service_ntp        = []
 service_ssmapi     = ["dep:axum"]
 service_clash_api  = ["dep:axum"]

@@ -88,7 +88,10 @@ pub fn build_upstream(addr: &str) -> Result<Option<Arc<dyn DnsUpstream>>> {
     if a.eq_ignore_ascii_case("tailscale") || a.starts_with("tailscale://") {
         return Ok(Some(build_tailscale_dns_upstream(a, None)?));
     }
-    if a.eq_ignore_ascii_case("resolved") || a.starts_with("resolved://") {
+    if a.eq_ignore_ascii_case("resolved")
+        || a.eq_ignore_ascii_case("system")
+        || a.starts_with("resolved://")
+    {
         return Ok(Some(build_resolved_dns_upstream(a, None)?));
     }
     if let Some(rest) = a.strip_prefix("udp://") {
@@ -165,7 +168,10 @@ pub fn build_upstream_from_server(
     if a.eq_ignore_ascii_case("tailscale") || a.starts_with("tailscale://") {
         return Ok(Some(build_tailscale_dns_upstream(a, Some(&srv.tag))?));
     }
-    if a.eq_ignore_ascii_case("resolved") || a.starts_with("resolved://") {
+    if a.eq_ignore_ascii_case("resolved")
+        || a.eq_ignore_ascii_case("system")
+        || a.starts_with("resolved://")
+    {
         return Ok(Some(build_resolved_dns_upstream(a, Some(&srv.tag))?));
     }
     if let Some(rest) = a.strip_prefix("udp://") {
@@ -284,6 +290,12 @@ fn build_tailscale_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<d
 
 #[cfg(feature = "dns_resolved")]
 fn build_resolved_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+    // Accept "system" as an alias for resolved/system resolver.
+    let spec = if spec.eq_ignore_ascii_case("system") {
+        "resolved"
+    } else {
+        spec
+    };
     let up = super::upstream::ResolvedUpstream::from_spec(spec, tag)?;
     Ok(Arc::new(up))
 }

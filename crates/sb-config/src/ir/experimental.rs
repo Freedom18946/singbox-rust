@@ -8,6 +8,8 @@ pub struct ExperimentalIR {
     pub clash_api: Option<ClashApiIR>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub v2ray_api: Option<V2RayApiIR>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug: Option<DebugIR>,
 }
 
 /// Cache file configuration.
@@ -49,6 +51,35 @@ pub struct V2RayApiIR {
     pub listen: Option<String>,
     #[serde(default)]
     pub stats: Option<StatsIR>,
+}
+
+/// Debug/pprof controls (parity with Go `option/debug.go`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct DebugIR {
+    /// Debug HTTP/pprof listen address.
+    #[serde(default)]
+    pub listen: Option<String>,
+    /// GC percent (Go parity; recorded only).
+    #[serde(default)]
+    pub gc_percent: Option<i32>,
+    /// Max stack (Go parity; recorded only).
+    #[serde(default)]
+    pub max_stack: Option<i32>,
+    /// Max threads (Go parity; recorded only).
+    #[serde(default)]
+    pub max_threads: Option<i32>,
+    /// Panic on fault (Go parity; recorded only).
+    #[serde(default)]
+    pub panic_on_fault: Option<bool>,
+    /// Traceback mode (Go parity; recorded only).
+    #[serde(default)]
+    pub trace_back: Option<String>,
+    /// Memory limit bytes (Go parity; recorded only).
+    #[serde(default)]
+    pub memory_limit: Option<u64>,
+    /// OOM killer toggle (Go parity; recorded only).
+    #[serde(default)]
+    pub oom_killer: Option<bool>,
 }
 
 /// V2Ray stats configuration.

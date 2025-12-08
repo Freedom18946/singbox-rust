@@ -19,9 +19,9 @@ fn engine_trace_matches_domain_and_port() {
                 ..Default::default()
             }],
             default: Some("direct".into()),
+            ..Default::default()
         },
-        ntp: None,
-        dns: None,
+        ..Default::default()
     };
     let eng = sb_core::routing::engine::Engine::new(&ir);
     let input = sb_core::routing::engine::Input {
@@ -31,6 +31,7 @@ fn engine_trace_matches_domain_and_port() {
         protocol: "http",
         sniff_host: None,
         sniff_alpn: None,
+        ..Default::default()
     };
     let dec = eng.decide(&input, true);
     assert_eq!(dec.outbound, "direct");
@@ -58,9 +59,9 @@ fn engine_uses_sniff_host_over_original_host() {
                 ..Default::default()
             }],
             default: Some("block".into()),
+            ..Default::default()
         },
-        ntp: None,
-        dns: None,
+        ..Default::default()
     };
     let eng = sb_core::routing::engine::Engine::new(&ir);
     // original host is IP (won't match domain rule); sniff_host provides domain
@@ -70,7 +71,7 @@ fn engine_uses_sniff_host_over_original_host() {
         network: "tcp",
         protocol: "tls",
         sniff_host: Some("sniff.example"),
-        sniff_alpn: None,
+        ..Default::default()
     };
     let dec = eng.decide(&input, false);
     assert_eq!(dec.outbound, "direct");

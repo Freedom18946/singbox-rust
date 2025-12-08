@@ -27,6 +27,7 @@ async fn test_context_service_wiring() {
                 listen: Some("127.0.0.1:8080".into()),
                 stats: None,
             }),
+            debug: None,
         }),
         ..Default::default()
     };

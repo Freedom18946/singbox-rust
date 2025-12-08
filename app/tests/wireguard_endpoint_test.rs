@@ -64,7 +64,7 @@ fn test_wireguard_endpoint_registration() {
 #[cfg(feature = "adapter-wireguard-endpoint")]
 #[test]
 fn test_wireguard_endpoint_instantiation() {
-    use sb_core::endpoint::{Endpoint, EndpointContext};
+    use sb_core::endpoint::EndpointContext;
 
     // Register all endpoints
     sb_adapters::register_all();

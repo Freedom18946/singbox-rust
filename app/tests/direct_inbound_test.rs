@@ -5,7 +5,7 @@ use sb_core::adapter::InboundParam;
 #[test]
 fn test_direct_inbound_instantiation() {
     // Create InboundParam for Direct inbound
-    let _param = InboundParam {
+    let param = InboundParam {
         kind: "direct".to_string(),
         listen: "127.0.0.1".to_string(),
         port: 8080,
@@ -49,7 +49,7 @@ fn test_direct_inbound_instantiation() {
     {
         use sb_adapters::inbound::direct::DirectInboundAdapter;
 
-        let result = DirectInboundAdapter::new(&param);
+        let result = DirectInboundAdapter::create(&param);
         assert!(
             result.is_ok(),
             "Direct inbound should instantiate successfully with valid params"
@@ -72,7 +72,7 @@ fn test_direct_inbound_instantiation() {
 #[test]
 fn test_direct_inbound_requires_override_host() {
     // Create InboundParam without override_host (should fail)
-    let _param = InboundParam {
+    let param = InboundParam {
         kind: "direct".to_string(),
         listen: "127.0.0.1".to_string(),
         port: 8080,
@@ -115,7 +115,7 @@ fn test_direct_inbound_requires_override_host() {
     {
         use sb_adapters::inbound::direct::DirectInboundAdapter;
 
-        let result = DirectInboundAdapter::new(&param);
+        let result = DirectInboundAdapter::create(&param);
         assert!(
             result.is_err(),
             "Direct inbound should fail without override_host"
@@ -133,7 +133,7 @@ fn test_direct_inbound_requires_override_host() {
 #[test]
 fn test_direct_inbound_requires_override_port() {
     // Create InboundParam without override_port (should fail)
-    let _param = InboundParam {
+    let param = InboundParam {
         kind: "direct".to_string(),
         listen: "127.0.0.1".to_string(),
         port: 8080,
@@ -176,7 +176,7 @@ fn test_direct_inbound_requires_override_port() {
     {
         use sb_adapters::inbound::direct::DirectInboundAdapter;
 
-        let result = DirectInboundAdapter::new(&param);
+        let result = DirectInboundAdapter::create(&param);
         assert!(
             result.is_err(),
             "Direct inbound should fail without override_port"
@@ -194,7 +194,7 @@ fn test_direct_inbound_requires_override_port() {
 #[test]
 fn test_direct_inbound_network_modes() {
     // Test TCP only
-    let _param_tcp = InboundParam {
+    let param_tcp = InboundParam {
         kind: "direct".to_string(),
         listen: "127.0.0.1".to_string(),
         port: 8080,
@@ -234,7 +234,7 @@ fn test_direct_inbound_network_modes() {
     };
 
     // Test UDP only
-    let _param_udp = InboundParam {
+    let param_udp = InboundParam {
         kind: "direct".to_string(),
         listen: "127.0.0.1".to_string(),
         port: 8081,
@@ -274,7 +274,7 @@ fn test_direct_inbound_network_modes() {
     };
 
     // Test both TCP and UDP
-    let _param_both = InboundParam {
+    let param_both = InboundParam {
         kind: "direct".to_string(),
         listen: "127.0.0.1".to_string(),
         port: 8082,
@@ -319,15 +319,15 @@ fn test_direct_inbound_network_modes() {
 
         // All network modes should succeed
         assert!(
-            DirectInboundAdapter::new(&param_tcp).is_ok(),
+            DirectInboundAdapter::create(&param_tcp).is_ok(),
             "TCP-only Direct inbound should work"
         );
         assert!(
-            DirectInboundAdapter::new(&param_udp).is_ok(),
+            DirectInboundAdapter::create(&param_udp).is_ok(),
             "UDP-only Direct inbound should work"
         );
         assert!(
-            DirectInboundAdapter::new(&param_both).is_ok(),
+            DirectInboundAdapter::create(&param_both).is_ok(),
             "TCP+UDP Direct inbound should work"
         );
 

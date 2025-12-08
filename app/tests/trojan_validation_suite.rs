@@ -8,6 +8,7 @@
 //! - Security validation (replay protection, auth failures)
 
 use rcgen::CertificateParams;
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -19,17 +20,18 @@ use tokio::sync::mpsc;
 use tokio_rustls::rustls::{
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::ResolvesServerCertUsingSni,
-    sign::{any_supported_type, CertifiedKey},
+    sign::CertifiedKey,
     ServerConfig,
 };
+use tokio_rustls::rustls::crypto::ring::sign::any_supported_type;
 use tokio_rustls::TlsAcceptor;
 
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
 use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
 use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use std::collections::HashMap;
 
 // Helper: Start TCP echo server
 async fn start_echo_server() -> SocketAddr {
@@ -115,13 +117,17 @@ async fn start_trojan_server_with_certs(
 
     let config = TrojanInboundConfig {
         listen: addr,
-        password: "password".to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![TrojanUser::new("user".to_string(), "password".to_string())],
         cert_path,
         key_path,
         router: Arc::new(RouterHandle::new_mock()),
         transport_layer: None,
         multiplex: None,
         reality: None,
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     tokio::spawn(async move {
@@ -166,7 +172,7 @@ fn build_sni_enforced_acceptor(expected_sni: &str, alpn: Option<Vec<String>>) ->
 
     let mut resolver = ResolvesServerCertUsingSni::new();
     resolver
-        .add(expected_sni.to_string(), certified)
+        .add(expected_sni, certified)
         .expect("install SNI cert");
 
     let mut cfg = ServerConfig::builder()
@@ -377,7 +383,7 @@ async fn test_trojan_cert_validation_expired() {
     // Should fail due to expiration
     let result = connector.dial(target, DialOpts::default()).await;
     assert!(result.is_err(), "Expired cert should fail handshake");
-    let err = result.err().unwrap().to_string();
+    let _err = result.err().unwrap().to_string();
     // Error message depends on rustls version/platform, but usually contains "certificate" or "expired"
     // assert!(err.contains("expired") || err.contains("certificate"), "Unexpected error: {}", err);
 }

@@ -17,6 +17,11 @@ mod dbus_impl {
     use tokio::task::JoinHandle;
 
     /// Resolved service implementation using systemd-resolved D-Bus interface.
+    ///
+    /// This service operates in two modes:
+    /// 1. **D-Bus Server Mode**: Exports `org.freedesktop.resolve1.Manager` interface
+    ///    allowing external programs to configure per-link DNS settings.
+    /// 2. **DNS Stub Listener**: Listens on configured address for DNS queries.
     pub struct ResolvedService {
         tag: String,
         listen_addr: String,
@@ -26,6 +31,10 @@ mod dbus_impl {
         server_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
         /// DNS resolver for query handling
         resolver: Arc<dyn DnsResolver>,
+        /// D-Bus server state for per-link DNS configuration
+        resolve1_state: Arc<crate::service::resolve1::Resolve1ManagerState>,
+        /// D-Bus server connection (for cleanup)
+        dbus_server_connection: parking_lot::Mutex<Option<zbus::Connection>>,
     }
 
     impl ResolvedService {
@@ -44,6 +53,9 @@ mod dbus_impl {
                 std::time::Duration::from_secs(60),
             )) as Arc<dyn DnsResolver>;
 
+            // Create resolve1 manager state
+            let resolve1_state = Arc::new(crate::service::resolve1::Resolve1ManagerState::new());
+
             Ok(Self {
                 tag,
                 listen_addr,
@@ -52,22 +64,32 @@ mod dbus_impl {
                 started: AtomicBool::new(false),
                 server_task: parking_lot::Mutex::new(None),
                 resolver,
+                resolve1_state,
+                dbus_server_connection: parking_lot::Mutex::new(None),
             })
         }
 
         /// Connect to systemd-resolved via D-Bus.
-        fn connect_dbus(
+        async fn connect_dbus(
             &self,
-        ) -> Result<zbus::blocking::Connection, Box<dyn std::error::Error + Send + Sync>> {
-            let conn = zbus::blocking::Connection::system()
+        ) -> Result<zbus::Connection, Box<dyn std::error::Error + Send + Sync>> {
+            // Reuse if already connected
+            if let Some(conn) = self.connection.lock().clone() {
+                return Ok(conn);
+            }
+
+            let conn = zbus::Connection::system()
+                .await
                 .map_err(|e| format!("Failed to connect to system D-Bus: {}", e))?;
 
             // Verify systemd-resolved is available
-            let proxy = zbus::blocking::fdo::DBusProxy::new(&conn)
+            let proxy = zbus::fdo::DBusProxy::new(&conn)
+                .await
                 .map_err(|e| format!("Failed to create D-Bus proxy: {}", e))?;
 
             let has_resolved = proxy
                 .list_names()
+                .await
                 .map_err(|e| format!("Failed to list D-Bus names: {}", e))?
                 .iter()
                 .any(|name| name.as_str() == "org.freedesktop.resolve1");
@@ -83,7 +105,58 @@ mod dbus_impl {
                 "Connected to systemd-resolved via D-Bus"
             );
 
+            *self.connection.lock() = Some(conn.clone());
             Ok(conn)
+        }
+
+        /// Resolve hostname via systemd-resolved D-Bus.
+        async fn resolve_via_resolved(
+            &self,
+            name: &str,
+            qtype: u16,
+        ) -> Result<Vec<IpAddr>, Box<dyn std::error::Error + Send + Sync>> {
+            // family: AF_INET(2) or AF_INET6(10) or 0 (unspecified)
+            let family = match qtype {
+                1 => 2,   // A
+                28 => 10, // AAAA
+                _ => 0,   // fallback
+            };
+
+            let conn = self.connect_dbus().await?;
+            let proxy = zbus::ProxyBuilder::new_bare(&conn)
+                .destination("org.freedesktop.resolve1")?
+                .path("/org/freedesktop/resolve1")?
+                .interface("org.freedesktop.resolve1.Manager")?
+                .build()
+                .await?;
+
+            // ResolveHostname(ifindex=0, name, family, flags=0) -> (addresses, canonical)
+            let (addresses, _canonical): (Vec<(i32, i32, Vec<u8>)>, String) = proxy
+                .call("ResolveHostname", &(0i32, name, family, 0u32))
+                .await?;
+
+            let mut ips = Vec::new();
+            for (_family, _ifindex, raw) in addresses {
+                if raw.len() == 4 {
+                    let octets: [u8; 4] = raw
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| "invalid IPv4 length")?;
+                    ips.push(IpAddr::from(octets));
+                } else if raw.len() == 16 {
+                    let octets: [u8; 16] = raw
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| "invalid IPv6 length")?;
+                    ips.push(IpAddr::from(octets));
+                }
+            }
+
+            if ips.is_empty() {
+                return Err("systemd-resolved returned no addresses".into());
+            }
+
+            Ok(ips)
         }
 
         /// Handle a single DNS query and return a response packet.
@@ -130,26 +203,26 @@ mod dbus_impl {
                 "Received DNS query"
             );
 
-            // Use sb-core DNS resolver for query resolution
-            let answer = resolver
-                .resolve(&domain)
-                .await
-                .map_err(|e| format!("DNS resolution failed: {}", e))?;
+            // Use systemd-resolved via D-Bus; fallback to core resolver on failure.
+            let ips = match Self::resolve_via_resolved(self, &domain, qtype).await {
+                Ok(addrs) => addrs,
+                Err(e) => {
+                    tracing::warn!(
+                        target: "sb_adapters::service",
+                        service = "resolved",
+                        domain = %domain,
+                        error = %e,
+                        "D-Bus resolve failed; falling back to core resolver"
+                    );
+                    resolver
+                        .resolve(&domain)
+                        .await
+                        .map(|ans| ans.ips)
+                        .unwrap_or_default()
+                }
+            };
 
-            // Filter IPs by query type
-            let ips: Vec<_> = answer
-                .ips
-                .into_iter()
-                .filter(|ip| {
-                    match (qtype, ip) {
-                        (1, std::net::IpAddr::V4(_)) => true,  // A record
-                        (28, std::net::IpAddr::V6(_)) => true, // AAAA record
-                        _ => false,
-                    }
-                })
-                .collect();
-
-            let ttl = answer.ttl.as_secs() as u32;
+            let ttl = 60; // placeholder TTL; systemd-resolved does not expose TTL via this call
 
             // Build DNS response packet
             let mut response = Vec::with_capacity(512);
@@ -294,9 +367,26 @@ mod dbus_impl {
                         "Initializing Resolved service"
                     );
 
-                    // Connect to D-Bus during initialization
-                    let conn = self.connect_dbus()?;
-                    *self.connection.lock() = Some(conn);
+                    // Start D-Bus server to export org.freedesktop.resolve1.Manager
+                    // This allows external programs (like systemd-networkd, NetworkManager)
+                    // to configure per-link DNS settings via D-Bus.
+                    let state = self.resolve1_state.clone();
+                    let handle = tokio::runtime::Handle::try_current()
+                        .map_err(|_| "No tokio runtime available for D-Bus server")?;
+
+                    let dbus_conn = handle.block_on(async {
+                        crate::service::resolve1::dbus_server::start_dbus_server(state).await
+                    })?;
+
+                    *self.dbus_server_connection.lock() = Some(dbus_conn);
+
+                    tracing::info!(
+                        target: "sb_adapters::service",
+                        service = "resolved",
+                        tag = %self.tag,
+                        "D-Bus server started: org.freedesktop.resolve1.Manager"
+                    );
+
                     Ok(())
                 }
                 StartStage::Start => {
@@ -364,6 +454,16 @@ mod dbus_impl {
             // Abort the DNS server task
             if let Some(handle) = self.server_task.lock().take() {
                 handle.abort();
+            }
+
+            // Close D-Bus server connection
+            if let Some(_conn) = self.dbus_server_connection.lock().take() {
+                tracing::debug!(
+                    target: "sb_adapters::service",
+                    service = "resolved",
+                    tag = %self.tag,
+                    "D-Bus server connection closed"
+                );
             }
 
             *self.connection.lock() = None;

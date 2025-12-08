@@ -47,6 +47,7 @@ async fn start_echo_server() -> SocketAddr {
 }
 
 // Helper: Start UDP echo server
+#[allow(dead_code)]
 async fn start_udp_echo_server() -> SocketAddr {
     let socket = UdpSocket::bind("127.0.0.1:0").await.expect("bind udp");
     let addr = socket.local_addr().unwrap();

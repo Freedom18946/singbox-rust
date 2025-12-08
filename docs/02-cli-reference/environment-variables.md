@@ -606,9 +606,10 @@ Complete reference of all environment variables supported by singbox-rust.
 
 | Variable           | Type | Default | Description              |
 | ------------------ | ---- | ------- | ------------------------ |
-| `SB_PPROF`         | bool | `0`     | Enable pprof             |
-| `SB_PPROF_FREQ`    | int  | `100`   | Profiling frequency (Hz) |
-| `SB_PPROF_MAX_SEC` | int  | `60`    | Max profiling duration   |
+| `SB_PPROF`         | bool | `0`     | Enable pprof (set to `1` when `experimental.debug.listen` is provided) |
+| `SB_PPROF_FREQ`    | int  | `100`   | Profiling frequency (Hz), auto-set when `experimental.debug.listen` is provided |
+| `SB_PPROF_MAX_SEC` | int  | `60`    | Max profiling duration, auto-set when `experimental.debug.listen` is provided |
+| `SB_DEBUG_ADDR`    | string | -     | Debug/pprof server address (populated from `experimental.debug.listen` when present) |
 
 ### Coverage & Debugging
 

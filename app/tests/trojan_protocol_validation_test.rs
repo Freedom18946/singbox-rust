@@ -9,7 +9,8 @@
 //! Run with:
 //!   cargo test --package app --test trojan_protocol_validation_test --features tls_reality -- --nocapture
 
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -59,6 +60,36 @@ fn generate_test_certificate() -> (String, String) {
     )
 }
 
+fn trojan_config(
+    listen: SocketAddr,
+    password: &str,
+    cert_path: String,
+    key_path: String,
+    router: Arc<sb_core::router::RouterHandle>,
+) -> TrojanInboundConfig {
+    TrojanInboundConfig {
+        listen,
+        #[allow(deprecated)]
+        password: None,
+        users: vec![TrojanUser::new("user".to_string(), password.to_string())],
+        cert_path,
+        key_path,
+        router,
+        reality: None,
+        multiplex: None,
+        transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
+    }
+}
+
+fn password_str(cfg: &TrojanInboundConfig) -> &str {
+    cfg.users
+        .first()
+        .map(|u| u.password.as_str())
+        .unwrap_or("")
+}
+
 /// Test helper: Start echo server for testing
 async fn start_echo_server() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -99,19 +130,10 @@ async fn test_tls_handshake_single_connection() {
     let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: bind_addr,
-        password: "test-password-123".to_string(),
-        cert_path,
-        key_path,
-        router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    let config = trojan_config(bind_addr, "test-password-123", cert_path, key_path, router);
 
     // Just verify config can be created
-    assert_eq!(config.password, "test-password-123");
+    assert_eq!(password_str(&config), "test-password-123");
     println!("✓ Single TLS handshake config created");
 }
 
@@ -125,16 +147,13 @@ async fn test_tls_handshake_1000_connections() {
     let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: bind_addr,
-        password: "test-password-handshake".to_string(),
+    let config = trojan_config(
+        bind_addr,
+        "test-password-handshake",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // Simulate 1000 handshakes
     let num_handshakes = 1000;
@@ -171,16 +190,13 @@ async fn test_tls_certificate_validation_valid() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "test-password".to_string(),
-        cert_path: cert_path.clone(),
-        key_path: key_path.clone(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "test-password",
+        cert_path.clone(),
+        key_path.clone(),
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // Verify certificate paths are set correctly
     assert_eq!(config.cert_path, cert_path);
@@ -195,16 +211,13 @@ async fn test_tls_version_enforcement() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "test-password".to_string(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "test-password",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // Config should be created successfully
     assert!(config.cert_path.len() > 0);
@@ -330,21 +343,18 @@ async fn test_authentication_password_validation() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "secure-password-123".to_string(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "secure-password-123",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // Verify password is set
-    assert_eq!(config.password, "secure-password-123");
+    assert_eq!(password_str(&config), "secure-password-123");
     assert!(
-        config.password.len() >= 10,
+        password_str(&config).len() >= 10,
         "Password should be sufficiently long"
     );
     println!("✓ Password-based authentication configured");
@@ -356,16 +366,13 @@ async fn test_authentication_failure_scenario() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let _config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "correct-password".to_string(),
+    let _config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "correct-password",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // In a real scenario, we'd attempt connection with wrong password
     // and verify it's rejected
@@ -380,19 +387,16 @@ async fn test_replay_attack_protection() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "unique-per-connection".to_string(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "unique-per-connection",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // Each connection requires fresh password validation
-    assert!(config.password.len() > 0);
+    assert!(!password_str(&config).is_empty());
     println!("✓ Replay attack protection validated (password-per-connection)");
 }
 
@@ -402,16 +406,13 @@ async fn test_strong_cipher_suite_requirement() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "test-password".to_string(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "test-password",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // rustls by default uses strong cipher suites
     // Config should be accepted
@@ -429,16 +430,13 @@ async fn test_alpn_negotiation() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "test-password".to_string(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "test-password",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // ALPN should be handled by TLS layer
     assert!(config.cert_path.len() > 0);
@@ -451,16 +449,13 @@ async fn test_sni_verification() {
     let (cert_path, key_path) = generate_test_certificate();
     let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
 
-    let config = TrojanInboundConfig {
-        listen: "127.0.0.1:0".parse().unwrap(),
-        password: "test-password".to_string(),
+    let config = trojan_config(
+        "127.0.0.1:0".parse().unwrap(),
+        "test-password",
         cert_path,
         key_path,
         router,
-        reality: None,
-        multiplex: None,
-        transport_layer: None,
-    };
+    );
 
     // SNI should be handled by TLS layer
     assert!(config.listen.port() == 0); // Dynamic port

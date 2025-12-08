@@ -114,6 +114,7 @@ fn test_experimental_options_plumbing() {
             }),
             clash_api: None,
             v2ray_api: None,
+            debug: None,
         }),
         ..Default::default()
     };

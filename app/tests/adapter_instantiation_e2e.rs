@@ -382,7 +382,7 @@ fn test_feature_gate_control() {
         });
 
         let ir = to_ir_v1(&config);
-        let result = Bridge::new_from_config(&ir);
+        let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
         assert!(
             result.is_ok(),
             "HTTP adapter should be available when feature is enabled"
@@ -410,7 +410,7 @@ fn test_feature_gate_control() {
         });
 
         let ir = to_ir_v1(&config);
-        let result = Bridge::new_from_config(&ir);
+        let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
         assert!(
             result.is_ok(),
             "TUIC adapter should be available when feature is enabled"
@@ -437,7 +437,7 @@ fn test_feature_gate_control() {
         });
 
         let ir = to_ir_v1(&config);
-        let result = Bridge::new_from_config(&ir);
+        let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
         assert!(
             result.is_ok(),
             "Hysteria2 adapter should be available when feature is enabled"
@@ -543,7 +543,7 @@ fn test_adapter_registration_idempotent() {
     });
 
     let ir = to_ir_v1(&config);
-    let result = Bridge::new_from_config(&ir);
+    let result = Bridge::new_from_config(&ir, sb_core::context::Context::default());
     assert!(
         result.is_ok(),
         "Adapters should work after multiple registrations"

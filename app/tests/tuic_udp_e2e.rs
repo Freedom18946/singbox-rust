@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use sb_adapters::inbound::tuic::{serve as tuic_serve, TuicInboundConfig, TuicUser};
+use sb_core::UdpOutboundFactory;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router;
 
@@ -75,8 +76,11 @@ async fn tuic_udp_roundtrip() {
         token: "token".into(),
         password: None,
         congestion_control: Some("bbr".into()),
-        alpn: Some("tuic".into()),
+        alpn: Some(vec!["tuic".to_string()]),
         skip_cert_verify: true,
+        sni: Some("localhost".to_string()),
+        tls_ca_paths: vec![],
+        tls_ca_pem: vec![],
         udp_relay_mode: UdpRelayMode::Native,
         udp_over_stream: true,
         zero_rtt_handshake: false,

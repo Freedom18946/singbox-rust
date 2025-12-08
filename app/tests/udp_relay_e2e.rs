@@ -5,6 +5,7 @@
 //! Tests that Shadowsocks, Trojan, and VLESS protocols correctly support UDP relay,
 //! allowing UDP traffic to be proxied through these protocols.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +14,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 // Import adapters
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::inbound::vless::VlessInboundConfig;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
@@ -51,10 +52,16 @@ async fn start_shadowsocks_server() -> (SocketAddr, mpsc::Sender<()>) {
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
+    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: "aes-256-gcm".to_string(),
-        password: "test-password-udp".to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![ShadowsocksUser::new(
+            "user".to_string(),
+            "test-password-udp".to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,
@@ -88,6 +95,9 @@ async fn start_vless_server() -> (SocketAddr, Uuid, mpsc::Sender<()>) {
         reality: None,
         multiplex: None,
         transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
+        flow: None,
     };
 
     tokio::spawn(async move {

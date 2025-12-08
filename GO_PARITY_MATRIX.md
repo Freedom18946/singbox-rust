@@ -1,37 +1,31 @@
-# Go-Rust Parity Matrix (2025-12-06 Strict Calibration v2)
+# Go-Rust Parity Matrix (2025-12-08 Strict Calibration v5)
 
-Objective: align the Rust refactor (`singbox-rust`) with the Go reference implementation (`go_fork_source/sing-box-1.12.12`) across functionality, types, APIs, comments, and directory structure.
+Objective: align the Rust refactor (`singbox-rust`) with the Go reference (`go_fork_source/sing-box-1.12.12`) across functionality, types, APIs, comments, and directory structure.
 
 ## Executive Summary
 
 | Metric | Score | Details |
 | --- | --- | --- |
-| **Functional Parity** | **~98%** | Users will not notice differences in core functionality |
-| **Implementation Strictness** | **~92%** | Architectural/Language divergences documented |
-| **Overall Status** | **✅ CALIBRATED** | All major components verified |
+| Functional Parity | ~95% | Protocols/transports/rules match; remaining gaps are endpoint data planes, resolved transport, and real debug/pprof. |
+| Implementation Strictness | ~82% | Endpoint lifecycle runs; data-plane hooks (WireGuard/Tailscale), resolved per-link/DoT, and pprof are stubbed. |
+| Overall Status | ⚠️ Needs P0 Fixes | Ship endpoint + resolved + pprof parity to reach 100%. |
 
 ### P0 Blockers
 
-**None.**
+| Priority | Component | Gap Description |
+| --- | --- | --- |
+| **P0** | Endpoint System Data Plane | Rust manager runs lifecycle stages, but WireGuard endpoint only instantiates sb-transport peers (no dial/listen/router/DNS hooks, limited multi-peer). Tailscale endpoint is a stub (no tsnet/wgengine). |
+| **P0** | Resolved Service & DNS Transport | Go resolve1 D-Bus with per-link DNS/DoT and `dns/transport/resolved`; Rust has Linux-only D-Bus ResolveHostname + UDP stub, no per-link/DoT/transport, stubs on other platforms. |
 
 ### Critical Divergences
 
 | Component | Go Approach | Rust Approach | Status |
 | --- | --- | --- | --- |
-| **BadTLS** | Active `ReadWaitConn` wraps `tls.Conn` for early data buffering (uTLS) | Passive `TlsAnalyzer` parses `ClientHello` bytecodes | ⚠️ **Architectural Divergence** (Accept) |
-| **DHCP DNS** | Active DHCP client (`dhcpv4`) broadcasts `DHCPDISCOVER` | Passive `/etc/resolv.conf` monitoring | ⚠️ **Behavioral Divergence** (Decision Required) |
-| **Android Package Rules** | Integrated via Android VPN context metadata | JNI bindings in `sb-platform` | ✅ **Integrated** |
-
----
-
-## Strictness Calibration Findings
-
-| Component | Go Implementation | Rust Implementation | Alignment | Recommendation |
-| --- | --- | --- | --- | --- |
-| `common/badtls` | `ReadWaitConn` wraps `tls.Conn` to buffer early data/handshake. Used by `uTLS`. | `TlsAnalyzer` parses `ClientHello` bytes for diagnostics. | ⚠️ **Divergent** | Accept (Rust architecture handles buffering naturally via `rustls` internals). |
-| `dns/transport/dhcp` | Binds UDP:68, broadcasts `DHCPDISCOVER`, parses `OFFER`. | Watches `/etc/resolv.conf` for changes. | ⚠️ **Mismatch** | **DECISION REQUIRED**: Implement active DHCP or rename to `SystemDns`. |
-| `rule_item_package_name` | Uses `ProcessInfo.PackageName` from Android VPN context. | Logic exists in `rules.rs` + JNI hooks in `sb-platform`. | ✅ **Integrated** | No action needed. |
-| `common/ja3` | `ClientHello` struct with `Versions`, `SigAlgs`, `ServerName`. | `Ja3Fingerprint` struct with standard JA3 fields + MD5 hash. | ✅ **Equivalent** | JA3 string computation matches. |
+| Endpoint system (`adapter/endpoint`, `protocol/{wireguard,tailscale}/endpoint.go`) | Lifecycle manager starts WireGuard (gVisor) and Tailscale tsnet endpoints; used by DNS and routing. | Endpoint manager runs stages; WireGuard endpoint spins sb-transport peers but lacks dial/listen/router integration and multi-peer routing; Tailscale endpoint is a stub and stubs register by default. | ❌ P0 — Data plane incomplete |
+| Resolved service + transport (`service/resolved`, `dns/transport/resolved`) | `resolve1` D-Bus server exports full API with per-link DNS, DoT, netmon updates; `dns/transport/resolved` routes per link. | Linux `service_resolved` uses systemd-resolved ResolveHostname + UDP stub; no per-link/DoT or `dns/transport/resolved`; other platforms use stub. | ⚠️ P0 — Platform-limited/stub |
+| Debug/pprof (`debug.go`, `debug_http.go`, `option/debug.go`) | Experimental debug options (GC, stack, threads, panic_on_fault, OOM killer) and `/debug/pprof` HTTP server with real handlers. | `experimental.debug` options present; listen sets SB_DEBUG_ADDR/SB_PPROF/FREQ/MAX_SEC; admin_debug uses the address but has no pprof handlers; sb-explaind `/debug/pprof` returns placeholder SVG (pprof feature). GC/stack/thread/oom are recorded only. | ⚠️ P1 — Env/stub only |
+| DHCP DNS (`dns/transport/dhcp`) | Active DHCPDISCOVER to harvest DNS servers. | Passive `/etc/resolv.conf` watcher; `system` alias added for resolved/system resolver. | ✅ P1 — Accepted divergence (documented) |
+| BadTLS (`common/badtls`) | Active `ReadWaitConn` wrapper for uTLS buffering and handshake inspection. | Passive `TlsAnalyzer` bytecode parser; no connection wrapping. | ✅ P2 — Accepted divergence (rustls handles buffering) |
 
 ---
 
@@ -39,35 +33,36 @@ Objective: align the Rust refactor (`singbox-rust`) with the Go reference implem
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Configuration / Option parity | **~98% Complete** | All major options present. `ShadowsocksROutboundOptions` wired. |
-| Adapter runtime | **~97% Complete** | Adapter lifecycle/prestart hooks aligned. |
-| Protocols - Inbound | **✅ 100% Complete** | All 23 Go inbounds present + 2 Rust-only enhancements. |
-| Protocols - Outbound | **✅ 100% Complete** | All 23 Go outbounds present. |
-| Transport layer | **✅ 100% Complete** | All Go transports + 4 Rust-only additions. |
-| Routing / Rule engine | **~98% Complete** | All 38 Go rule items implemented. |
-| DNS system | **~96% Complete** | DHCP transport is passive-only divergence. |
-| Common utilities | **~92% Complete** | `badtls` is divergent (passive). |
-| Platform integration | **~96% Complete** | Full cross-platform support. |
-| Services / Experimental | **~98% Complete** | Clash API (Full), V2Ray API (Full Stats). |
+| Configuration / Options | ✅ 100% | All Go option structs mapped (incl. `experimental.debug`); runtime pprof still stubbed. |
+| Adapter runtime | ~92% | Endpoint lifecycle wired; data-plane endpoints partial. |
+| Protocols - Inbound | ✅ 100% | 23 Go → 25 Rust (2 extras). |
+| Protocols - Outbound | ✅ 100% | 23/23 aligned. |
+| Transport layer | ✅ 100% | All Go transports + Rust extras. |
+| Routing / Rule engine | ~98% | Rule coverage intact (38 Go rule items). |
+| DNS system | ~90% | Linux ResolveHostname support; per-link/DoT/transport missing; DHCP divergence accepted. |
+| Endpoint system | ~55% | Lifecycle runs; WireGuard data plane partial; Tailscale stub. |
+| Services / Experimental | ~85% | Resolved service partial. |
+| Common utilities | ~95% | BadTLS divergence accepted. |
+| Platform integration | ~92% | Endpoint data planes not wired. |
+| Debug / Observability | ~60% | Config/env wired; pprof/debug HTTP is placeholder only. |
 
 ---
 
 ## Directory Structure Mapping
 
-### Go → Rust Module Mapping
-
-| Go Directory | Rust Crate/Module | Files (Go) | Files (Rust) | Parity |
-| --- | --- | --- | --- | --- |
-| `protocol/` | `sb-adapters/src/{inbound,outbound}/` | 50 | 48+ | ✅ 100% |
-| `transport/` | `sb-transport/src/` | 11 dirs | 25+ files | ✅ 100% |
-| `route/` | `sb-core/src/router/` | 7 files | 44+ files | ✅ 98% |
-| `route/rule/` | `sb-core/src/router/rules.rs` + modules | 38 files | Integrated | ✅ 98% |
-| `dns/` | `sb-core/src/dns/` | 11 files | 28+ files | ✅ 96% |
-| `dns/transport/` | `sb-core/src/dns/transport/` | 5 dirs + 5 files | 9 files | ✅ 96% |
-| `common/` | `sb-common/src/` + `sb-platform/src/` | 24 dirs | 14+ files | ✅ 92% |
-| `option/` | `sb-config/src/` | 47 files | 18+ files | ✅ 98% |
-| `experimental/clashapi/` | `sb-core/src/services/clash_api.rs` | 20 files | 1 file | ✅ 98% |
-| `experimental/v2rayapi/` | `sb-core/src/services/v2ray_api.rs` | 5 files | 1 file | ✅ 98% |
+| Go Directory | Rust Crate/Module | Parity |
+| --- | --- | --- |
+| `protocol/` (23 dirs) | `sb-adapters/src/{inbound,outbound}/` | ✅ |
+| `transport/` (11 dirs) | `sb-transport/src/` | ✅ |
+| `route/` (6 files + rule/) | `sb-core/src/router/` | ✅ |
+| `route/rule/` (38 files) | `sb-core/src/router/rules.rs` + ruleset/ | ✅ |
+| `dns/` (10 files) | `sb-core/src/dns/` | ⚠️ Resolved/DHCP gaps |
+| `dns/transport/` (5 dirs + 5 files) | `sb-core/src/dns/transport/` | ⚠️ Missing resolved transport |
+| `adapter/endpoint/` (3 files) | `sb-core/src/endpoint/` + stubs | ⚠️ Lifecycle wired; data-plane partial |
+| `service/` (3 dirs) | `sb-core/src/services/` + `sb-adapters/src/service/` | ⚠️ Resolved partial |
+| `option/` (47 files) | `sb-config/src/` | ✅ (runtime pprof stub) |
+| `common/` (24 dirs) | `sb-common/src/` + `sb-platform/` | ⚠️ BadTLS divergence |
+| `experimental/` (6 dirs) | `sb-core/src/services/` | ✅ |
 
 ---
 
@@ -119,9 +114,9 @@ Objective: align the Rust refactor (`singbox-rust`) with the Go reference implem
 | Hysteria2 | `protocol/hysteria2` | `sb-adapters/src/outbound/hysteria2.rs` | ✅ Present |
 | TUIC | `protocol/tuic` | `sb-adapters/src/outbound/tuic.rs` | ✅ Present |
 | AnyTLS | `protocol/anytls` | `sb-adapters/src/outbound/anytls.rs` | ✅ Present |
-| **WireGuard** | `protocol/wireguard` | `sb-adapters/src/outbound/wireguard.rs` | ✅ **VERIFIED** |
-| **Tailscale** | `protocol/tailscale` | `sb-adapters/src/outbound/tailscale.rs` | ✅ **VERIFIED** |
-| **Tor** | `protocol/tor` | `sb-adapters/src/outbound/tor.rs` | ✅ **VERIFIED** |
+| WireGuard | `protocol/wireguard` | `sb-adapters/src/outbound/wireguard.rs` | ✅ Present |
+| Tailscale | `protocol/tailscale` | `sb-adapters/src/outbound/tailscale.rs` | ✅ Present |
+| Tor | `protocol/tor` | `sb-adapters/src/outbound/tor.rs` | ✅ Present |
 | SSH | `protocol/ssh` | `sb-adapters/src/outbound/ssh.rs` | ✅ Present |
 | Selector | `protocol/group` | `sb-adapters/src/outbound/selector.rs` | ✅ Present |
 | URLTest | `protocol/group` | `sb-adapters/src/outbound/urltest.rs` | ✅ Present |
@@ -135,14 +130,14 @@ Objective: align the Rust refactor (`singbox-rust`) with the Go reference implem
 | WebSocket | `transport/v2raywebsocket` | `sb-transport/src/websocket.rs` | ✅ Present |
 | HTTP/2 | `transport/v2rayhttp` | `sb-transport/src/http2.rs` | ✅ Present |
 | gRPC | `transport/v2raygrpc` | `sb-transport/src/grpc.rs` | ✅ Present |
-| gRPC Lite | `transport/v2raygrpclite` | `sb-transport/src/grpc_lite.rs` | ✅ **VERIFIED** |
+| gRPC Lite | `transport/v2raygrpclite` | `sb-transport/src/grpc_lite.rs` | ✅ Present |
 | QUIC | `transport/v2rayquic` | `sb-transport/src/quic.rs` | ✅ Present |
 | HTTP Upgrade | `transport/v2rayhttpupgrade` | `sb-transport/src/httpupgrade.rs` | ✅ Present |
-| Simple-Obfs | `transport/simple-obfs` | `sb-transport/src/simple_obfs.rs` | ✅ **VERIFIED** |
-| SIP003 | `transport/sip003` | `sb-transport/src/sip003.rs` | ✅ **VERIFIED** |
-| Trojan | `transport/trojan` | `sb-transport/src/trojan.rs` | ✅ **VERIFIED** |
-| WireGuard | `transport/wireguard` | `sb-transport/src/wireguard.rs` | ✅ **VERIFIED** |
-| UDP over TCP | (in common/) | `sb-transport/src/uot.rs` | ✅ **VERIFIED** |
+| Simple-Obfs | `transport/simple-obfs` | `sb-transport/src/simple_obfs.rs` | ✅ Present |
+| SIP003 | `transport/sip003` | `sb-transport/src/sip003.rs` | ✅ Present |
+| Trojan | `transport/trojan` | `sb-transport/src/trojan.rs` | ✅ Present |
+| WireGuard | `transport/wireguard` | `sb-transport/src/wireguard.rs` | ✅ Present |
+| UDP over TCP | (in common/) | `sb-transport/src/uot.rs` | ✅ Present |
 | Multiplex | (in common/) | `sb-transport/src/multiplex.rs` | ✅ Present |
 | TLS | (in common/) | `sb-transport/src/tls.rs` | ✅ Present |
 | Circuit Breaker | — | `sb-transport/src/circuit_breaker.rs` | ➕ Rust-only |
@@ -152,45 +147,48 @@ Objective: align the Rust refactor (`singbox-rust`) with the Go reference implem
 
 ## Routing & Rules (38 Go → 43+ Rust)
 
-| Go Rule Item | Rust Location | Status |
-| --- | --- | --- |
-| `rule_item_domain.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_domain_keyword.go` | `sb-core/src/router/keyword.rs` | ✅ Implemented |
-| `rule_item_domain_regex.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_cidr.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_port.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_port_range.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_protocol.go` | `sb-core/src/router/sniff.rs` | ✅ Implemented |
-| `rule_item_network.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_process_name.go` | `sb-core/src/router/process_router.rs` | ✅ Implemented |
-| `rule_item_process_path.go` | `sb-core/src/router/process_router.rs` | ✅ Implemented |
-| `rule_item_process_path_regex.go` | `sb-core/src/router/process_router.rs` | ✅ Implemented |
-| `rule_item_user.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_user_id.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_inbound.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_outbound.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_client.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_clash_mode.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_wifi_ssid.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_wifi_bssid.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_adguard.go` | `sb-core/src/router/rules.rs` | ✅ **VERIFIED** |
-| `rule_item_rule_set.go` | `sb-core/src/router/rule_set.rs` | ✅ Implemented |
-| `rule_item_package_name.go` | `sb-core/src/router/rules.rs` | ✅ **Integrated** (JNI) |
-| `rule_item_query_type.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_auth_user.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_ip_is_private.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_ip_accept_any.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_ipversion.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_network_type.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_network_is_expensive.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_item_network_is_constrained.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_headless.go` | `sb-core/src/router/rules.rs` | ✅ **VERIFIED** |
-| `rule_dns.go` | `sb-core/src/dns/rule_engine.rs` | ✅ Implemented |
-| `rule_action.go` | `sb-core/src/dns/rule_action.rs` | ✅ Implemented |
-| `rule_set_local.go` | `sb-core/src/router/ruleset/` | ✅ Implemented |
-| `rule_set_remote.go` | `sb-core/src/router/ruleset/remote.rs` | ✅ Implemented |
-| `rule_abstract.go` | `sb-core/src/router/rules.rs` | ✅ Implemented |
-| `rule_default.go` | `sb-core/src/router/engine.rs` | ✅ Implemented |
+All 38 Go rule items in `route/rule/` are implemented. Rule types:
+- domain, domain_regex, domain_keyword, domain_suffix
+- ip_cidr, ip_accept_any, source_ip_cidr
+- port, port_range, source_port, source_port_range
+- network, network_type, network_is_constrained
+- protocol, user, inbound, outbound
+- geoip, geosite, rule_set, rule_set_local, rule_set_remote
+- process_name, process_path, process_path_regex
+- package_name (android)
+- wifi_ssid, wifi_bssid
+- clash_mode, query_type
+
+No regression detected in this pass.
+
+---
+
+## Endpoint System (WireGuard/Tailscale)
+
+| Component | Go Path | Rust Path | Status | Notes |
+| --- | --- | --- | --- | --- |
+| Endpoint Registry/Manager | `adapter/endpoint/manager.go` (145 LOC) | `sb-core/src/endpoint/mod.rs` | ⚠️ | Lifecycle start/close executed for all endpoints; manager API parity good. |
+| WireGuard Endpoint | `protocol/wireguard/endpoint.go` (~200 LOC) | `sb-core/src/endpoint/wireguard.rs` (180 LOC) | ⚠️ | Instantiates sb-transport peers; **missing**: dial/listen router integration, DNS hooks, multi-peer routing, local address handling. |
+| Tailscale Endpoint | `protocol/tailscale/endpoint.go` (~400 LOC) | `sb-core/src/endpoint/tailscale.rs` (248 LOC) | ❌ | Stub lifecycle only; **missing**: tsnet/wgengine control plane, stack-based dial/listen, DNS/netmon integration, filter checks. |
+| Endpoint Stubs | — | `sb-adapters/src/endpoint_stubs.rs` | ⚠️ | Returns "not implemented"; used as placeholder. |
+
+### Go WireGuard Endpoint Features (missing in Rust)
+
+1. `DialContext(ctx, network, destination)` — Dials through WireGuard tunnel with DNS resolution for FQDNs
+2. `ListenPacket(ctx, destination)` — UDP listener through tunnel
+3. `PrepareConnection(network, source, destination)` — Pre-match routing
+4. `NewConnectionEx/NewPacketConnectionEx` — Router integration for inbound traffic
+5. Multi-peer routing with allowed_ips matching
+6. Local address handling for loopback
+
+### Go Tailscale Endpoint Features (missing in Rust)
+
+1. tsnet.Server with gVisor stack
+2. Control plane authentication (auth_key, ephemeral, advertise routes)
+3. DNS configuration via dnsConfigurtor
+4. Filter for tailscale policy enforcement
+5. netmon interface getter registration
+6. DialContext/ListenPacket via gonet TCP/UDP
 
 ---
 
@@ -212,90 +210,74 @@ Objective: align the Rust refactor (`singbox-rust`) with the Go reference implem
 | FakeIP | `dns/transport/fakeip/` | `sb-core/src/dns/fakeip.rs` | ✅ Present |
 | Hosts | `dns/transport/hosts/` | `sb-core/src/dns/hosts.rs` | ✅ Present |
 | Local | `dns/transport/local/` | `sb-core/src/dns/transport/local.rs` | ✅ Present |
-| DHCP | `dns/transport/dhcp/` | `sb-core/src/dns/upstream.rs` | ⚠️ **Divergent** (Passive) |
+| DHCP | `dns/transport/dhcp/` (2 files) | `sb-core/src/dns/upstream.rs` | ⚠️ Passive only (no DHCPDISCOVER) |
+| Resolved transport | `service/resolved/transport.go` (~200 LOC) | — | ❌ Missing (no per-link/DoT routing) |
 
 ---
 
-## Common Utilities (24 Go → 14+ Rust)
+## Services / Experimental
+
+| Component | Go Path | Rust Path | Status |
+| --- | --- | --- | --- |
+| Clash API Server | `experimental/clashapi/server.go` | `sb-core/src/services/clash_api.rs` | ✅ Present |
+| V2Ray API | `experimental/v2rayapi/` | `sb-core/src/services/v2ray_api.rs` | ✅ Present |
+| Cache File | `experimental/cachefile/` | `sb-core/src/services/cache_file.rs` | ✅ Present |
+| NTP Service | — | `sb-core/src/services/ntp.rs` | ✅ Present |
+| DERP Service | `service/derp/` | `sb-core/src/services/derp/` | ✅ Present |
+| Tailscale Service | — | `sb-core/src/services/tailscale/` | ➕ Rust-only |
+| Resolved Service | `service/resolved/service.go` (~200 LOC) | `sb-core/src/services/resolved.rs` | ⚠️ UDP stub only |
+| Resolved Service (D-Bus) | `service/resolved/resolve1.go` (~450 LOC) | `sb-adapters/src/service/resolved_impl.rs` | ⚠️ Linux ResolveHostname only; no per-link/DoT/netmon |
+| SSM API | `service/ssmapi/` | `sb-core/src/services/ssmapi/` | ✅ Present |
+
+### Go Resolved Service Features (missing in Rust)
+
+1. **resolve1 D-Bus Object** — Exports full org.freedesktop.resolve1.Manager API
+2. **Per-link DNS tracking** — `TransportLink` with address, addressEx, domain, dnsOverTLS
+3. **Network monitor callbacks** — Updates DNS sources on interface changes
+4. **DoT support** — Creates TLS transports when dnsOverTLS is set
+5. **`dns/transport/resolved`** — Separate transport type consuming service data with:
+   - Per-link server selection based on domain matching
+   - rotate/ndots semantics
+   - Parallel exchange for A/AAAA
+   - Name list generation (search domains)
+
+---
+
+## Common Utilities
 
 | Go Module | Rust Location | Status |
 | --- | --- | --- |
-| `common/badtls` | `sb-common/src/badtls.rs` | ⚠️ Divergent (Passive `TlsAnalyzer`) |
+| `common/badtls` (3 files) | `sb-common/src/badtls.rs` | ⚠️ Passive analyzer (not ReadWaitConn) |
 | `common/compatible` | `sb-common/src/compatible.rs` | ✅ Present |
 | `common/conntrack` | `sb-common/src/conntrack.rs` | ✅ Present |
 | `common/convertor` | `sb-common/src/convertor.rs` | ✅ Present |
 | `common/interrupt` | `sb-common/src/interrupt.rs` | ✅ Present |
-| `common/ja3` | `sb-common/src/ja3.rs` | ✅ Present (JA3 Aligned) |
+| `common/ja3` | `sb-common/src/ja3.rs` | ✅ Present |
 | `common/pipelistener` | `sb-common/src/pipelistener.rs` | ✅ Present |
 | `common/tlsfragment` | `sb-common/src/tlsfrag.rs` | ✅ Present |
 | `common/uot` | `sb-transport/src/uot.rs` | ✅ Present |
 | `common/mux` | `sb-transport/src/multiplex.rs` | ✅ Present |
 | `common/sniff` | `sb-core/src/router/sniff.rs` | ✅ Present |
-| `common/geoip` | `sb-core/src/geoip/` | ✅ Present |
-| `common/geosite` | `sb-core/src/geo/` | ✅ Present |
-| `common/srs` | `sb-core/src/router/ruleset/` | ✅ Present |
-| `common/urltest` | `sb-core/src/outbound/` | ✅ Present |
 | `common/process` | `sb-platform/src/process/` | ✅ Present |
-| `common/settings` | `sb-platform/src/` | ✅ Present |
-| `common/dialer` | `sb-transport/src/dialer.rs` | ✅ Present |
-| `common/listener` | `sb-core/src/inbound/` | ✅ Present |
-| `common/tls` | `sb-tls/src/` | ✅ Present |
-| `common/certificate` | `sb-tls/src/acme.rs` | ✅ Present |
-| `common/redir` | `sb-adapters/src/inbound/redirect.rs` | ✅ Present |
-| `common/taskmonitor` | (integrated) | ✅ Merged |
-| `common/badversion` | (integrated) | ✅ Merged |
+| `common/settings` | `sb-platform/src/system_proxy.rs` | ✅ Present |
 
 ---
 
-## Platform Integration (6 Go files → 14+ Rust files)
-
-| Component | Go Path | Rust Path | Status |
-| --- | --- | --- | --- |
-| System Proxy | `common/settings/system_proxy.go` | `sb-platform/src/system_proxy.rs` | ✅ **VERIFIED** |
-| Proxy Windows | `common/settings/proxy_windows.go` | `sb-platform/src/wininet.rs` | ✅ **VERIFIED** |
-| Proxy macOS | `common/settings/proxy_darwin.go` | `sb-platform/src/system_proxy.rs` (macos) | ✅ **VERIFIED** |
-| Proxy Linux | `common/settings/proxy_linux.go` | `sb-platform/src/system_proxy.rs` (linux) | ✅ **VERIFIED** |
-| Proxy Android | `common/settings/proxy_android.go` | `sb-platform/src/android_protect.rs` | ✅ **VERIFIED** |
-| Network Monitor | — | `sb-platform/src/monitor.rs` | ✅ Present |
-| Process Info | `common/process` | `sb-platform/src/process/` | ✅ Present |
-| TUN | `protocol/tun` | `sb-platform/src/tun/` | ✅ Present |
-
----
-
-## Services / Experimental (8 Go dirs → 9 Rust files)
-
-| Component | Go Path | Rust Path | Status |
-| --- | --- | --- | --- |
-| Clash API Server | `experimental/clashapi/server.go` | `sb-core/src/services/clash_api.rs` | ✅ **VERIFIED** |
-| Clash API Meta | `experimental/clashapi/api_meta*.go` | `sb-core/src/services/clash_api.rs` | ✅ Present |
-| Clash API Proxies | `experimental/clashapi/proxies.go` | `sb-core/src/services/clash_api.rs` | ✅ Present |
-| Clash API Connections | `experimental/clashapi/connections.go` | `sb-core/src/services/clash_api.rs` | ✅ Present |
-| Clash API DNS | `experimental/clashapi/dns.go` | `sb-core/src/services/clash_api.rs` | ✅ Present |
-| Clash Traffic Control | `experimental/clashapi/trafficontrol/` | `sb-core/src/services/clash_api.rs` | ✅ Present |
-| V2Ray API Server | `experimental/v2rayapi/server.go` | `sb-core/src/services/v2ray_api.rs` | ✅ **VERIFIED** |
-| V2Ray API Stats | `experimental/v2rayapi/stats.go` | `sb-core/src/services/v2ray_api.rs` | ✅ **VERIFIED** |
-| Cache File | `experimental/cachefile/` | `sb-core/src/services/cache_file.rs` | ✅ Present |
-| NTP Service | — | `sb-core/src/services/ntp.rs` | ✅ Present |
-| DERP Service | — | `sb-core/src/services/derp/` | ➕ Rust-only |
-| Tailscale Service | — | `sb-core/src/services/tailscale/` | ➕ Rust-only |
-
----
-
-## TLS & Security (8 Go → 12 Rust)
+## TLS & Security
 
 | Component | Go Path | Rust Path | Status |
 | --- | --- | --- | --- |
 | Standard TLS | `common/tls` | `sb-tls/src/standard.rs` | ✅ Present |
-| uTLS | (external) | `sb-tls/src/utls.rs` | ✅ **VERIFIED** |
+| uTLS | (external) | `sb-tls/src/utls.rs` | ✅ Present |
 | REALITY | (external) | `sb-tls/src/reality/` | ✅ Present |
 | ECH | (external) | `sb-tls/src/ech/` | ✅ Present |
 | ACME | `option/tls_acme.go` | `sb-tls/src/acme.rs` | ✅ Present |
 | TLS Fragment | `common/tlsfragment` | `sb-common/src/tlsfrag.rs` | ✅ Present |
-| Bad TLS | `common/badtls` | `sb-common/src/badtls.rs` | ⚠️ Divergent (Passive `TlsAnalyzer`) |
+| Bad TLS | `common/badtls` | `sb-common/src/badtls.rs` | ⚠️ Passive |
 
 ---
 
-## Configuration Options (47 Go files → 18 Rust files)
+## Configuration Options
 
 | Go Option File | Rust Coverage | Notes |
 | --- | --- | --- |
@@ -317,99 +299,119 @@ Objective: align the Rust refactor (`singbox-rust`) with the Go reference implem
 | `option/multiplex.go` | ✅ `sb-config/src/lib.rs` | Multiplex config |
 | `option/v2ray_transport.go` | ✅ `sb-config/src/lib.rs` | V2Ray transport config |
 | `option/platform.go` | ✅ `sb-config/src/lib.rs` | Platform options |
-| `option/experimental.go` | ✅ `sb-config/src/lib.rs` | Experimental options |
-| All other `option/*.go` | ✅ Mapped | Full coverage |
+| `option/experimental.go` | ✅ | All fields mapped (cache/clash/v2ray/debug); runtime pprof remains stubbed. |
+| `option/debug.go` | ⚠️ | Config fields mapped; listen → SB_DEBUG_ADDR/SB_PPROF/FREQ/MAX_SEC, but no Go-equivalent pprof/GC behavior. |
 
 ---
 
-## Detailed Implementation Comparison
+## Detailed Implementation Comparisons
 
-### BadTLS: Go vs Rust
+### Endpoint System
 
-**Go Implementation** (`common/badtls/read_wait.go`):
-```go
-type ReadWaitConn struct {
-    tls.Conn
-    halfAccess                    *sync.Mutex
-    rawInput                      *bytes.Buffer
-    hand                          *bytes.Buffer
-    tlsReadRecord                 func() error
-    tlsHandlePostHandshakeMessage func() error
-}
-```
-- Uses reflection to access internal TLS state
-- Actively wraps connections for early data buffering
-- Required for uTLS fingerprinting integration
+**Go (`adapter/endpoint/manager.go` + `protocol/wireguard/endpoint.go` + `protocol/tailscale/endpoint.go`):**
+- Manager executes full lifecycle stages (`StartStateStart`, `StartStatePostStart`) and maintains endpoint registry
+- WireGuard endpoint creates gVisor-based tunnel with:
+  - DNS resolver integration (`dnsRouter.Lookup`)
+  - Full dial/listen methods (TCP/UDP through tunnel)
+  - Connection routing via `router.RouteConnectionEx`
+  - Multi-peer selection based on allowed_ips
+- Tailscale endpoint creates tsnet.Server with:
+  - gVisor network stack (gonet.DialContextTCP/UDP)
+  - Filter policy enforcement
+  - netmon integration
+  - DNS configurator
 
-**Rust Implementation** (`sb-common/src/badtls.rs`):
-```rust
-pub struct TlsAnalyzer {
-    issues: Vec<TlsIssue>,
-}
-```
-- Passive bytecode analysis approach
-- Parses ClientHello/ServerHello for issue detection
-- Does not wrap connections
+**Rust (`sb-core/src/endpoint/{mod,wireguard,tailscale}.rs`):**
+- Manager runs lifecycle stages and holds endpoint registry (✅ parity)
+- WireGuard endpoint instantiates sb-transport peers but:
+  - ❌ No `DialContext/ListenPacket` methods exposed
+  - ❌ No router integration (`RouteConnectionEx`)
+  - ⚠️ Partial multi-peer selection (select_peer exists but unused)
+- Tailscale endpoint is stub:
+  - ❌ No tsnet/wgengine
+  - ❌ No control plane auth
+  - ❌ No stack-based networking
 
-**Assessment**: Different architectural approach. Rust relies on `rustls` internal buffering. Accept divergence.
+### Resolved Service & Transport
 
-### JA3 Fingerprinting: Go vs Rust
+**Go (`service/resolved/service.go` + `resolve1.go` + `transport.go`):**
+- D-Bus service exports full resolve1 API:
+  - `SetLinkDNS`, `SetLinkDNSEx`, `SetLinkDomains`, `SetLinkDefaultRoute`, `SetLinkDNSOverTLS`
+  - Network monitor callback updates links on interface changes
+  - Per-interface DNS tracking with `TransportLink`
+- Transport (`dns/transport/resolved`) routes queries:
+  - Domain matching against link domains
+  - DoT fallback based on `dnsOverTLS` flag
+  - Parallel exchange for A/AAAA
+  - ndots/rotate semantics
 
-**Go** (`common/ja3/ja3.go`):
-- `ClientHello` struct with `Versions`, `SigAlgs`, `ServerName`
-- `Compute()` function parses segment
-- MD5 hash for fingerprint
+**Rust (`sb-core/src/services/resolved.rs` + `sb-adapters/src/service/resolved_impl.rs`):**
+- Core `resolved.rs`: Simple UDP DNS stub using global resolver
+- Adapters `resolved_impl.rs`: Linux D-Bus client (not server!) calling systemd-resolved's ResolveHostname
+  - ⚠️ Client mode only (queries systemd-resolved, doesn't replace it)
+  - ❌ No per-link DNS tracking
+  - ❌ No DoT support
+  - ❌ No `dns/transport/resolved` equivalent
 
-**Rust** (`sb-common/src/ja3.rs`):
-- `Ja3Fingerprint` struct with `version`, `cipher_suites`, `extensions`, `supported_groups`, `ec_point_formats`
-- `from_client_hello()` parses TLS record
-- Inline MD5 implementation for hashing
+### Debug / pprof
 
-**Assessment**: ✅ Functionally equivalent. JA3 string format matches.
+**Go (`debug.go` + `debug_http.go` + `option/debug.go`):**
+- Options: GCPercent, MaxStack, MaxThreads, PanicOnFault, TraceBack, MemoryLimit, OOMKiller
+- `applyDebugOptions`: Calls `runtime/debug.Set*` functions
+- HTTP endpoints: `/debug/gc`, `/debug/memory`, `/debug/pprof/*`
 
-### V2Ray Stats: Go vs Rust
+**Rust:**
+- Config options mapped to env vars (SB_DEBUG_ADDR, SB_PPROF, etc.)
+- admin_debug binds to address but no pprof handlers
+- sb-explaind `/debug/pprof` returns placeholder SVG
+- GC/stack/thread/memory options recorded but no runtime effect
 
-**Go** (`experimental/v2rayapi/stats.go`):
-- `StatsService` with `counters map[string]*atomic.Int64`
-- Counter format: `inbound>>>tag>>>traffic>>>uplink`
-- gRPC-based API
+### DHCP DNS
 
-**Rust** (`sb-core/src/services/v2ray_api.rs`):
-- `StatsManager` with `RwLock<HashMap<String, Arc<StatCounter>>>`
-- Same counter format
-- HTTP/JSON API (gRPC optional)
+**Go (`dns/transport/dhcp/dhcp.go`):**
+- Sends DHCPDISCOVER packets to discover DNS servers
+- Maintains pool of discovered servers
 
-**Assessment**: ✅ Functionally equivalent. Stats format matches.
+**Rust:**
+- Watches `/etc/resolv.conf` only
+- `system` alias for platform resolver
 
----
+### BadTLS
 
-## Rust-Only Enhancements
+**Go (`common/badtls/read_wait.go`):**
+- `ReadWaitConn` wraps connection for uTLS handshake inspection
+- Buffers data for analysis before passing through
 
-| Feature | Location | Status | Notes |
-| --- | --- | --- | --- |
-| DoH3 (DNS over HTTP/3) | `sb-core/src/dns/transport/doh3.rs` | ✅ Complete | Modern DNS transport |
-| Circuit Breaker | `sb-transport/src/circuit_breaker.rs` | ✅ Complete | Connection resilience |
-| DERP Transport | `sb-transport/src/derp/` | ✅ Complete | Tailscale relay support |
-| TUN Enhanced | `sb-adapters/src/inbound/tun_enhanced.rs` | ✅ Complete | macOS-specific optimizations |
-| TUN macOS | `sb-adapters/src/inbound/tun_macos.rs` | ✅ Complete | Native macOS support |
-| SOCKS4 Outbound | `sb-adapters/src/outbound/socks4.rs` | ✅ Complete | Legacy protocol support |
-| Metrics Extension | `sb-core/src/metrics/` | ✅ Complete | Enhanced telemetry |
-| Resource Pressure | `sb-transport/src/resource_pressure.rs` | ✅ Complete | Adaptive resource management |
+**Rust (`sb-common/src/badtls.rs`):**
+- `TlsAnalyzer` passive bytecode parser
+- No connection wrapper (rustls handles buffering)
 
 ---
 
 ## Summary Statistics
 
-| Category | Go Files/Dirs | Rust Files | Coverage |
-| --- | --- | --- | --- |
-| Protocol Inbound | 23 | 25 | 100% + extras |
-| Protocol Outbound | 23 | 23 | 100% |
-| Transports | 11 | 15 | 100% + extras |
-| Rule Items | 38 | Integrated | 100% |
-| DNS Components | 15+ | 28+ | 96% |
-| Common Utilities | 24 | 14+ | 92% |
-| Platform | 7 | 14+ | 96% |
-| Services | 26 | 9+ | 98% |
-| Config Options | 47 | 18+ | 98% |
+| Category | Coverage |
+| --- | --- |
+| Protocol Inbound | 100% (+2 Rust extras) |
+| Protocol Outbound | 100% |
+| Transports | 100% (+ Rust extras) |
+| Rule Items | 100% (38/38) |
+| DNS Components | ~88% (resolved per-link/DoT/transport missing; DHCP passive) |
+| Endpoint System | ~50% (manager wired; WireGuard partial; Tailscale stub) |
+| Services | ~85% (resolved gap) |
+| Config Options | 100% (runtime pprof stub) |
+| Common Utilities | ~90% (badtls) |
+| Debug/Observability | ~55% (env wired; pprof placeholder) |
 
-**Total Parity Score**: **~97.5%** (rounded to ~98% in summary)
+---
+
+## File Count Comparison
+
+| Area | Go Files | Rust Files | Notes |
+| --- | --- | --- | --- |
+| Protocol | 23 protocol dirs | 47+ inbound/outbound files | Rust has modular split |
+| Transport | 11 transport dirs | 28 transport files | Rust adds extras |
+| Route/Rule | 38 rule files | 43+ router files | Rust has additional helpers |
+| DNS | 10 dns files + 5 transport | 27 dns files + 9 transport | Rust has enhanced features |
+| Option | 47 option files | ~20 config files | Rust uses fewer, larger modules |
+| Common | 24 common dirs | 9 sb-common files | Some moved to sb-platform |

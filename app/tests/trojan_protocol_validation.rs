@@ -10,7 +10,6 @@
 
 use std::io::Write;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::NamedTempFile;
@@ -84,9 +83,9 @@ async fn start_trojan_server(
     let mut key_file = NamedTempFile::new().unwrap();
     key_file.write_all(key_pem.as_bytes()).unwrap();
 
-    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: addr,
+        #[allow(deprecated)]
         password: None,
         users: vec![TrojanUser::new("test".to_string(), password.to_string())],
         cert_path: cert_file.path().to_str().unwrap().to_string(),

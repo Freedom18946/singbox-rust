@@ -529,7 +529,7 @@ fn test_dns_outbound_adapter_path() -> Result<()> {
     });
 
     let ir = to_ir_v1(&cfg);
-    let result = Bridge::new_from_config(&ir);
+    let result = Bridge::new_from_config(&ir, sb_core::context::Context::new());
 
     // Verify Bridge can be created with DNS outbound
     assert!(

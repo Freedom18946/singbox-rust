@@ -6,6 +6,8 @@
 //! - Failover Scenarios
 //! - DNS Integration
 
+use std::collections::HashMap;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,14 +15,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
-use sb_adapters::inbound::trojan::TrojanInboundConfig;
+use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
+use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use tempfile::NamedTempFile;
 
 // Helper: Start TCP echo server
 async fn start_echo_server() -> SocketAddr {
@@ -49,6 +50,13 @@ async fn start_echo_server() -> SocketAddr {
     addr
 }
 
+fn generate_test_certs() -> (String, String) {
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let cert_pem = cert.serialize_pem().unwrap();
+    let key_pem = cert.serialize_private_key_pem();
+    (cert_pem, key_pem)
+}
+
 // Helper: Start Trojan server
 async fn start_trojan_server() -> (SocketAddr, mpsc::Sender<()>) {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -59,17 +67,34 @@ async fn start_trojan_server() -> (SocketAddr, mpsc::Sender<()>) {
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
+    let (cert_pem, key_pem) = generate_test_certs();
+    let mut cert_file = NamedTempFile::new().unwrap();
+    cert_file.write_all(cert_pem.as_bytes()).unwrap();
+    let mut key_file = NamedTempFile::new().unwrap();
+    key_file.write_all(key_pem.as_bytes()).unwrap();
+
+    #[allow(deprecated)]
     let config = TrojanInboundConfig {
         listen: addr,
-        users: vec!["trojan-pass".to_string()],
-        tls: None,
+        #[allow(deprecated)]
+        password: None,
+        users: vec![TrojanUser::new(
+            "default".to_string(),
+            "trojan-pass".to_string(),
+        )],
+        cert_path: cert_file.path().to_string_lossy().to_string(),
+        key_path: key_file.path().to_string_lossy().to_string(),
         router: Arc::new(RouterHandle::new_mock()),
         transport_layer: None,
         multiplex: None,
         fallback: None,
+        fallback_for_alpn: HashMap::new(),
+        reality: None,
     };
 
     tokio::spawn(async move {
+        let _cert_file = cert_file;
+        let _key_file = key_file;
         if let Err(e) = sb_adapters::inbound::trojan::serve(config, stop_rx).await {
             eprintln!("Trojan server error: {}", e);
         }
@@ -89,10 +114,16 @@ async fn start_ss_server() -> (SocketAddr, mpsc::Sender<()>) {
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
+    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: "aes-256-gcm".to_string(),
-        password: "ss-pass".to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![ShadowsocksUser::new(
+            "default".to_string(),
+            "ss-pass".to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,
@@ -119,7 +150,7 @@ async fn test_chain_trojan_to_shadowsocks() {
     // to forward to the Shadowsocks server.
     // For this validation suite, we'll verify the components can be instantiated and connected.
 
-    let echo_addr = start_echo_server().await;
+    let _echo_addr = start_echo_server().await;
     let (ss_addr, _ss_stop) = start_ss_server().await;
     let (trojan_addr, _trojan_stop) = start_trojan_server().await;
 
@@ -132,7 +163,7 @@ async fn test_chain_trojan_to_shadowsocks() {
         connect_timeout_sec: Some(5),
         multiplex: None,
     };
-    let ss_connector = ShadowsocksConnector::new(ss_client_config).unwrap();
+    let _ss_connector = ShadowsocksConnector::new(ss_client_config).unwrap();
 
     // 2. Verify direct connection to Trojan works
     let trojan_client_config = TrojanConfig {
@@ -147,7 +178,7 @@ async fn test_chain_trojan_to_shadowsocks() {
         reality: None,
         multiplex: None,
     };
-    let trojan_connector = TrojanConnector::new(trojan_client_config);
+    let _trojan_connector = TrojanConnector::new(trojan_client_config);
 
     // Full chaining requires modifying the inbound server's router, which is complex in unit tests.
     // We'll mark this as a placeholder for the full integration test.

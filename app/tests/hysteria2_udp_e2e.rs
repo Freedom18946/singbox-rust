@@ -70,6 +70,9 @@ async fn hysteria2_udp_roundtrip() {
         alpn: None,
         salamander: None,
         brutal: None,
+        tls_ca_paths: Vec::new(),
+        tls_ca_pem: Vec::new(),
+        zero_rtt_handshake: false,
     };
     let out = Arc::new(Out::new(ob_cfg).expect("outbound"));
     let factory = out.clone();

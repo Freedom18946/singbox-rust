@@ -51,12 +51,12 @@ impl Startable for crate::outbound::OutboundManager {
 impl Startable for crate::endpoint::EndpointManager {
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::debug!(target: "sb_core::context", ?stage, "EndpointManager stage");
-        Ok(())
+        self.run_stage(stage)
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::debug!(target: "sb_core::context", "EndpointManager closing");
-        Ok(())
+        self.shutdown()
     }
 }
 

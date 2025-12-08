@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
@@ -59,10 +59,10 @@ async fn start_ss_server(method: &str, password: &str) -> (SocketAddr, mpsc::Sen
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
-    #[allow(deprecated)]
     let config = ShadowsocksInboundConfig {
         listen: addr,
         method: method.to_string(),
+        #[allow(deprecated)]
         password: None,
         users: vec![ShadowsocksUser::new("test".to_string(), password.to_string())],
         router: Arc::new(RouterHandle::new_mock()),

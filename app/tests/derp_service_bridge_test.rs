@@ -4,6 +4,7 @@ use anyhow::Result;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::Bridge;
 use sb_core::service::StartStage;
+use sb_core::context::Context;
 use serde_json::json;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -47,7 +48,7 @@ async fn derp_service_bridge_mock_relay_e2e() -> Result<()> {
     });
 
     let ir = to_ir_v1(&config);
-    let bridge = Bridge::new_from_config(&ir)?;
+    let bridge = Bridge::new_from_config(&ir, Context::new())?;
     assert_eq!(bridge.services.len(), 1);
     let service = bridge.services[0].clone();
 

@@ -3,8 +3,8 @@
 //! Verifies that tools connect/run properly use adapter registry and can
 //! instantiate configured outbounds from config files.
 
-// use std::process::Command;
 use std::io::Write;
+use assert_cmd::Command;
 use tempfile::NamedTempFile;
 
 /// Test that adapter registration works in test context
@@ -198,7 +198,7 @@ fn tools_connect_unknown_outbound_error() {
 #[cfg(all(feature = "tools", feature = "adapters", feature = "adapters",))]
 fn tools_connect_shadowsocks_adapter() {
     // Verify Shadowsocks adapter can be loaded (if feature enabled)
-    let mut config_json = serde_json::json!({
+    let config_json = serde_json::json!({
         "log": {
             "level": "error"
         },

@@ -8,6 +8,7 @@
 //! - Multi-user authentication
 
 use sha2::{Digest, Sha224};
+use std::collections::HashMap;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -15,6 +16,9 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_rustls::rustls::pki_types::ServerName;
+use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use tokio_rustls::TlsConnector;
 
 use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_core::router::engine::RouterHandle;
@@ -62,6 +66,23 @@ fn generate_test_certs(cn: &str) -> (String, String) {
     )
 }
 
+fn build_tls_connector(cert_pem: &str) -> TlsConnector {
+    let mut roots = RootCertStore::empty();
+    let mut reader = std::io::Cursor::new(cert_pem.as_bytes());
+    let certs: Vec<_> = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<_, _>>()
+        .expect("parse cert");
+    for cert in certs {
+        roots.add(cert).expect("add cert to store");
+    }
+
+    let config = ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    TlsConnector::from(Arc::new(config))
+}
+
 // Helper: Start Trojan server with users
 async fn start_trojan_server_with_users(
     users: Vec<TrojanUser>,
@@ -93,6 +114,8 @@ async fn start_trojan_server_with_users(
         multiplex: None,
         #[cfg(feature = "tls_reality")]
         reality: None,
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     tokio::spawn(async move {
@@ -145,14 +168,12 @@ async fn test_binary_protocol_correct_password() {
         start_trojan_server_with_users(vec![user], cert.clone(), key.clone()).await;
 
     // Connect with TLS
-    let connector = tokio_native_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-    let connector = tokio_native_tls::TlsConnector::from(connector);
-
+    let connector = build_tls_connector(&cert);
     let stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
 
     // Send binary Trojan request (CONNECT to example.com:80)
     let req = build_trojan_request("test-password", 0x01, "example.com", 80);
@@ -172,16 +193,14 @@ async fn test_binary_protocol_wrong_password() {
     let user = TrojanUser::new("user1".to_string(), "correct-password".to_string());
     let (cert, key) = generate_test_certs("localhost");
     let (server_addr, _stop, _cert_f, _key_f) =
-        start_trojan_server_with_users(vec![user], cert, key).await;
+        start_trojan_server_with_users(vec![user], cert.clone(), key).await;
 
-    let connector = tokio_native_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-    let connector = tokio_native_tls::TlsConnector::from(connector);
-
+    let connector = build_tls_connector(&cert);
     let stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
 
     // Send request with wrong password
     let req = build_trojan_request("wrong-password", 0x01, "example.com", 80);
@@ -196,10 +215,12 @@ async fn test_binary_protocol_wrong_password() {
     .await;
 
     // Should either timeout or return error
-    assert!(
-        result.is_err() || result.unwrap().is_err() || result.unwrap().unwrap() == 0,
-        "Wrong password should cause connection close"
-    );
+    let failed = match result {
+        Err(_) => true,
+        Ok(Err(_)) => true,
+        Ok(Ok(bytes_read)) => bytes_read == 0,
+    };
+    assert!(failed, "Wrong password should cause connection close");
 
     println!("✅ Binary protocol with wrong password rejected");
 }
@@ -216,17 +237,16 @@ async fn test_binary_protocol_multi_user() {
 
     let (cert, key) = generate_test_certs("localhost");
     let (server_addr, _stop, _cert_f, _key_f) =
-        start_trojan_server_with_users(users, cert, key).await;
+        start_trojan_server_with_users(users, cert.clone(), key).await;
 
-    let connector = tokio_native_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-    let connector = tokio_native_tls::TlsConnector::from(connector);
+    let connector = build_tls_connector(&cert);
 
     // Test alice
     let stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
     let req = build_trojan_request("alice-password", 0x01, "example.com", 80);
     tls_stream.write_all(&req).await.unwrap();
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -234,7 +254,10 @@ async fn test_binary_protocol_multi_user() {
 
     // Test bob
     let stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
     let req = build_trojan_request("bob-password", 0x01, "google.com", 443);
     tls_stream.write_all(&req).await.unwrap();
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -242,7 +265,10 @@ async fn test_binary_protocol_multi_user() {
 
     // Test charlie
     let stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
     let req = build_trojan_request("charlie-password", 0x01, "github.com", 443);
     tls_stream.write_all(&req).await.unwrap();
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -257,16 +283,15 @@ async fn test_binary_protocol_ipv4_address() {
     let user = TrojanUser::new("user1".to_string(), "test-pwd".to_string());
     let (cert, key) = generate_test_certs("localhost");
     let (server_addr, _stop, _cert_f, _key_f) =
-        start_trojan_server_with_users(vec![user], cert, key).await;
+        start_trojan_server_with_users(vec![user], cert.clone(), key).await;
 
-    let connector = tokio_native_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-    let connector = tokio_native_tls::TlsConnector::from(connector);
+    let connector = build_tls_connector(&cert);
 
     let stream = tokio::net::TcpStream::connect(server_addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
 
     // Build IPv4 request manually
     let mut buf = Vec::new();
@@ -316,6 +341,8 @@ async fn test_binary_protocol_backward_compat() {
         multiplex: None,
         #[cfg(feature = "tls_reality")]
         reality: None,
+        fallback: None,
+        fallback_for_alpn: HashMap::new(),
     };
 
     tokio::spawn(async move {
@@ -324,14 +351,13 @@ async fn test_binary_protocol_backward_compat() {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
-    let connector = tokio_native_tls::native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap();
-    let connector = tokio_native_tls::TlsConnector::from(connector);
+    let connector = build_tls_connector(&cert);
 
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-    let mut tls_stream = connector.connect("localhost", stream).await.unwrap();
+    let mut tls_stream = connector
+        .connect(ServerName::try_from("localhost").unwrap(), stream)
+        .await
+        .unwrap();
 
     let req = build_trojan_request("legacy-password", 0x01, "example.com", 80);
     tls_stream.write_all(&req).await.unwrap();

@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 //! E2E Integration Tests for Shadowsocks Inbound with WebSocket Transport
 //!
 //! Test Coverage:
@@ -47,6 +46,7 @@ async fn test_shadowsocks_inbound_with_websocket_transport() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "aes-256-gcm".to_string(),
+        #[allow(deprecated)]
         password: None,
         users: vec![ShadowsocksUser {
             name: "default".to_string(),
@@ -73,6 +73,7 @@ async fn test_shadowsocks_inbound_tcp_fallback() {
     let config = ShadowsocksInboundConfig {
         listen: bind_addr,
         method: "aes-256-gcm".to_string(),
+        #[allow(deprecated)]
         password: None,
         users: vec![ShadowsocksUser {
             name: "default".to_string(),

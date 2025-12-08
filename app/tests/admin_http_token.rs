@@ -2,6 +2,7 @@
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::admin::http::spawn_admin;
+use sb_core::context::Context;
 use sb_core::routing::engine::Engine;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -47,11 +48,7 @@ fn admin_requires_token_when_configured() {
             ty: InboundType::Socks,
             listen: "127.0.0.1".into(),
             port: 0,
-            sniff: false,
-            udp: false,
-            basic_auth: None,
-            override_host: None,
-            override_port: None,
+            ..Default::default()
         }],
         outbounds: vec![OutboundIR {
             ty: OutboundType::Direct,
@@ -65,12 +62,12 @@ fn admin_requires_token_when_configured() {
                 ..Default::default()
             }],
             default: Some("direct".into()),
+            ..Default::default()
         },
-        ntp: None,
-        dns: None,
+        ..Default::default()
     };
     let eng = Engine::new(&ir);
-    let br = build_bridge(&ir, eng.clone());
+    let br = build_bridge(&ir, eng.clone(), Context::new());
     let th = match spawn_admin(
         &h,
         eng.clone_as_static(),

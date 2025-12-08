@@ -28,6 +28,7 @@ use crate::bootstrap;
 #[cfg(feature = "dev-cli")]
 use crate::env_dump;
 use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
+use sb_config::ir::ConfigIR;
 // Temporarily disabled for minimal CLI
 //use sb_core::router::engine::Router as CoreRouter;
 //use sb_core::router::RouterHandle;
@@ -73,6 +74,39 @@ fn file_mtime(path: &str) -> SystemTime {
         .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
+fn apply_debug_options(ir: &ConfigIR) {
+    if let Some(exp) = ir.experimental.as_ref() {
+        if let Some(debug) = exp.debug.as_ref() {
+            if let Some(listen) = debug.listen.as_ref() {
+                std::env::set_var("SB_DEBUG_ADDR", listen);
+                // Enable pprof collection path in sb-explaind if present.
+                std::env::set_var("SB_PPROF", "1");
+                // Provide sane defaults for sb-explaind if not set.
+                if std::env::var("SB_PPROF_FREQ").is_err() {
+                    std::env::set_var("SB_PPROF_FREQ", "100"); // 100 Hz sampling
+                }
+                if std::env::var("SB_PPROF_MAX_SEC").is_err() {
+                    std::env::set_var("SB_PPROF_MAX_SEC", "60"); // align with docs default
+                }
+            }
+            if let Some(freq) = debug.gc_percent {
+                tracing::info!(gc_percent = freq, "debug option gc_percent recorded (Go parity, no-op)");
+            }
+            if let Some(limit) = debug.memory_limit {
+                tracing::info!(memory_limit = limit, "debug option memory_limit recorded (Go parity, no-op)");
+            }
+            if debug.panic_on_fault.is_some()
+                || debug.max_stack.is_some()
+                || debug.max_threads.is_some()
+                || debug.trace_back.is_some()
+                || debug.oom_killer.is_some()
+            {
+                tracing::info!("debug options recorded for parity; behavior is platform-dependent/no-op in Rust build");
+            }
+        }
+    }
+}
+
 pub async fn run(args: RunArgs) -> Result<()> {
     // Global Panic Hook / 全局 Panic 钩子
     // Handled by app::panic::install() called in main.rs
@@ -104,18 +138,6 @@ pub async fn run(args: RunArgs) -> Result<()> {
             std::process::exit(2);
         }
     }
-
-    // Initialize observability (tracing + metrics) once
-    #[cfg(feature = "dev-cli")]
-    crate::tracing_init::init_observability_once();
-
-    // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
-    #[cfg(feature = "dev-cli")]
-    env_dump::print_once_if_enabled();
-
-    // Initialize admin debug server if enabled
-    #[cfg(all(feature = "observe", feature = "admin_debug"))]
-    crate::admin_debug::init(None).await;
 
     if !args.no_banner {
         info!("singbox-rust booting…");
@@ -180,6 +202,21 @@ pub async fn run(args: RunArgs) -> Result<()> {
             }
         }
     }
+
+    // Apply debug/pprof options from config (experimental.debug)
+    apply_debug_options(cfg.ir());
+
+    // Initialize observability (tracing + metrics) once
+    #[cfg(feature = "dev-cli")]
+    crate::tracing_init::init_observability_once();
+
+    // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
+    #[cfg(feature = "dev-cli")]
+    env_dump::print_once_if_enabled();
+
+    // Initialize admin debug server if enabled (after debug options applied)
+    #[cfg(all(feature = "observe", feature = "admin_debug"))]
+    crate::admin_debug::init(None).await;
 
     // 进入引导
     let boot = async {
