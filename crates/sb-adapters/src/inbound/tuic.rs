@@ -17,7 +17,9 @@ use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
 use sb_transport::IoStream;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use sb_core::adapter::InboundService;
+use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -705,5 +707,49 @@ mod tests {
         stream.write_all(b"ping").await.expect("write to upstream");
         let echoed = echo_rx.await.expect("receive upstream data");
         assert_eq!(&echoed, b"ping");
+    }
+}
+
+#[derive(Debug)]
+pub struct TuicInboundAdapter {
+    cfg: TuicInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+impl TuicInboundAdapter {
+    pub fn new(cfg: TuicInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+impl InboundService for TuicInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock().unwrap();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            serve(cfg, rx)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().unwrap().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock().unwrap();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
+        }
     }
 }

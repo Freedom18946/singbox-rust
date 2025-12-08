@@ -850,6 +850,42 @@ where
     handle_cleartext_stream(_cfg, &mut clear_local, peer, rate_limiter).await
 }
 
+use sb_core::adapter::InboundService;
+use parking_lot::Mutex;
+
+#[derive(Debug)]
+pub struct ShadowsocksInboundAdapter {
+    config: ShadowsocksInboundConfig,
+    stop_tx: Mutex<Option<mpsc::Sender<()>>>,
+}
+
+impl ShadowsocksInboundAdapter {
+    pub fn new(config: ShadowsocksInboundConfig) -> Self {
+        Self {
+            config,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+impl InboundService for ShadowsocksInboundAdapter {
+    fn serve(&self) -> std::io::Result<()> {
+        let (tx, rx) = mpsc::channel(1);
+        *self.stop_tx.lock() = Some(tx);
+        
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            serve(self.config.clone(), rx).await
+        }).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+
+    fn request_shutdown(&self) {
+        if let Some(tx) = self.stop_tx.lock().take() {
+            let _ = tx.try_send(());
+        }
+    }
+}
+
 async fn handle_cleartext_stream<T>(
     _cfg: &ShadowsocksInboundConfig,
     stream: &mut T,

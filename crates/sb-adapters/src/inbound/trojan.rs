@@ -14,6 +14,9 @@ use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use sb_core::adapter::InboundService;
+use std::io;
+use std::sync::Mutex;
 use sb_core::outbound::{registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -944,4 +947,48 @@ async fn handle_tcp_connect(
     // Relay bidirectionally
     let _ = tokio::io::copy_bidirectional(tls, &mut upstream).await;
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct TrojanInboundAdapter {
+    cfg: TrojanInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+impl TrojanInboundAdapter {
+    pub fn new(cfg: TrojanInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+impl InboundService for TrojanInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock().unwrap();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            serve(cfg, rx)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().unwrap().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock().unwrap();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
+        }
+    }
 }

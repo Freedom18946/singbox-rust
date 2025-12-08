@@ -10,13 +10,17 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::Notify;
 
-pub struct ResolvedService {
+/// Architectural Divergence:
+/// The Go reference implementation of `resolved` service acts as a D-Bus server (org.freedesktop.resolve1.Manager).
+/// The Rust implementation currently acts as a simple UDP DNS forwarder for local applications (e.g. 127.0.0.53:53).
+/// This service is renamed to `DnsForwarderService` to reflect its actual behavior, though it corresponds to `resolved` config type.
+pub struct DnsForwarderService {
     tag: String,
     listen_addr: SocketAddr,
     running: Arc<Notify>,
 }
 
-impl ResolvedService {
+impl DnsForwarderService {
     pub fn new(ir: &ServiceIR) -> Self {
         let host = ir
             .resolved_listen
@@ -196,7 +200,7 @@ impl ResolvedService {
     }
 }
 
-impl Service for ResolvedService {
+impl Service for DnsForwarderService {
     fn service_type(&self) -> &str {
         "resolved"
     }
@@ -222,11 +226,11 @@ impl Service for ResolvedService {
     }
 }
 
-pub fn build_resolved_service(
+pub fn build_dns_forwarder_service(
     ir: &ServiceIR,
     _ctx: &crate::service::ServiceContext,
 ) -> Option<Arc<dyn Service>> {
-    Some(Arc::new(ResolvedService::new(ir)))
+    Some(Arc::new(DnsForwarderService::new(ir)))
 }
 
 #[cfg(test)]
@@ -258,7 +262,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolved_service() {
+    async fn test_dns_forwarder_service() {
         // Setup global resolver
         crate::dns::global::set(Arc::new(MockResolver));
 
@@ -271,7 +275,7 @@ mod tests {
             "resolved_listen_port": port
         });
         let ir: ServiceIR = serde_json::from_value(ir_json).unwrap();
-        let service = Arc::new(ResolvedService::new(&ir));
+        let service = Arc::new(DnsForwarderService::new(&ir));
         let service_clone = service.clone();
 
         tokio::spawn(async move {

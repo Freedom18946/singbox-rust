@@ -357,6 +357,40 @@ pub struct BrutalIR {
     pub down: u64,
 }
 
+/// Hysteria2 Masquerade configuration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MasqueradeIR {
+    #[serde(rename = "type")]
+    pub type_: String,
+    #[serde(default)]
+    pub file: Option<MasqueradeFileIR>,
+    #[serde(default)]
+    pub proxy: Option<MasqueradeProxyIR>,
+    #[serde(default)]
+    pub string: Option<MasqueradeStringIR>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MasqueradeFileIR {
+    pub directory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MasqueradeProxyIR {
+    pub url: String,
+    #[serde(default)]
+    pub rewrite_host: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MasqueradeStringIR {
+    pub content: String,
+    #[serde(default)]
+    pub headers: Option<std::collections::HashMap<String, String>>, // simplified map
+    #[serde(default)]
+    pub status_code: u16,
+}
+
 /// Inbound listener configuration.
 /// 入站监听器配置。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -426,6 +460,9 @@ pub struct InboundIR {
     /// VMess 多用户配置。
     #[serde(default)]
     pub users_vmess: Option<Vec<VmessUserIR>>,
+    /// VMess security (e.g., "auto", "aes-128-gcm", "chacha20-poly1305").
+    #[serde(default)]
+    pub security: Option<String>,
 
     // Protocol-specific fields (VLESS)
     /// VLESS flow control (e.g., "xtls-rprx-vision").
@@ -484,6 +521,10 @@ pub struct InboundIR {
     /// Hysteria2 Brutal 拥塞控制下载限制 (Mbps)。
     #[serde(default)]
     pub brutal_down_mbps: Option<u32>,
+    /// Hysteria2 Masquerade configuration.
+    /// Hysteria2 Masquerade 配置。
+    #[serde(default)]
+    pub masquerade: Option<MasqueradeIR>,
 
     // Protocol-specific fields (TUIC)
     /// TUIC multi-user configuration.
@@ -574,7 +615,6 @@ pub struct InboundIR {
     pub tls_server_name: Option<String>,
     /// TLS ALPN protocols.
     /// TLS ALPN 协议。
-    #[serde(default)]
     pub tls_alpn: Option<Vec<String>>,
 
     // Multiplex options
@@ -582,6 +622,50 @@ pub struct InboundIR {
     /// 流多路复用的多路复用配置。
     #[serde(default)]
     pub multiplex: Option<MultiplexOptionsIR>,
+
+    // Tun options
+    /// Tun interface configuration.
+    #[serde(default)]
+    pub tun: Option<TunOptionsIR>,
+}
+
+/// Tun inbound options.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TunOptionsIR {
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub mtu: Option<u32>,
+    #[serde(default)]
+    pub dry_run: Option<bool>,
+    #[serde(default)]
+    pub user_tag: Option<String>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub auto_route: Option<bool>,
+    #[serde(default)]
+    pub auto_redirect: Option<bool>,
+    #[serde(default)]
+    pub strict_route: Option<bool>,
+    #[serde(default)]
+    pub inet4_address: Option<String>,
+    #[serde(default)]
+    pub inet6_address: Option<String>,
+    #[serde(default)]
+    pub table_id: Option<u32>,
+    #[serde(default)]
+    pub fwmark: Option<u32>,
+    #[serde(default)]
+    pub exclude_routes: Option<Vec<String>>,
+    #[serde(default)]
+    pub include_routes: Option<Vec<String>>,
+    #[serde(default)]
+    pub exclude_uids: Option<Vec<u32>>,
+    #[serde(default)]
+    pub exclude_processes: Option<Vec<String>>,
 }
 
 /// Outbound proxy configuration.

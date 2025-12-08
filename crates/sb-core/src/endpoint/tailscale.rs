@@ -200,6 +200,292 @@ impl TailscaleControlPlane for StubControlPlane {
     }
 }
 
+// ============================================================================
+// DaemonControlPlane - Connects to local tailscaled daemon via Unix socket
+// ============================================================================
+
+use std::path::PathBuf;
+use parking_lot::RwLock;
+
+/// Status response from Tailscale Local API.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct TailscaleStatus {
+    /// Backend state: "Running", "NeedsLogin", etc.
+    #[serde(default)]
+    pub backend_state: String,
+    /// Our Tailscale IPs.
+    #[serde(default)]
+    pub tailscale_i_ps: Vec<String>,
+    /// Auth URL for login (if needed).
+    #[serde(default)]
+    pub auth_url: Option<String>,
+    /// Self node info.
+    #[serde(default)]
+    pub self_node: Option<SelfNode>,
+}
+
+/// Self node info from status.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct SelfNode {
+    #[serde(default)]
+    pub d_n_s_name: String,
+    #[serde(default)]
+    pub tailscale_i_ps: Vec<String>,
+    #[serde(default)]
+    pub online: bool,
+}
+
+/// Control plane backed by local Tailscale daemon socket.
+///
+/// Connects to `tailscaled` via its Local API (Unix socket on Linux/macOS,
+/// named pipe on Windows) to query status and authenticate.
+///
+/// Data plane (dial/listen) goes through system network stack after
+/// Tailscale sets up routes.
+pub struct DaemonControlPlane {
+    /// Path to tailscaled socket.
+    socket_path: PathBuf,
+    /// Endpoint configuration.
+    config: TailscaleEndpointConfig,
+    /// Cached status from daemon.
+    status: RwLock<Option<TailscaleStatus>>,
+}
+
+impl DaemonControlPlane {
+    /// Default socket path on Unix.
+    #[cfg(unix)]
+    pub const DEFAULT_SOCKET_PATH: &'static str = "/var/run/tailscale/tailscaled.sock";
+    
+    /// Alternative socket path on macOS (user installation).
+    #[cfg(target_os = "macos")]
+    pub const MACOS_USER_SOCKET: &'static str = 
+        "/Users/Shared/tailscale/tailscaled.sock";
+
+    /// Create new DaemonControlPlane with default socket path.
+    pub fn new(config: TailscaleEndpointConfig) -> Self {
+        let socket_path = Self::find_socket_path();
+        Self {
+            socket_path,
+            config,
+            status: RwLock::new(None),
+        }
+    }
+
+    /// Create with explicit socket path.
+    pub fn with_socket(socket_path: PathBuf, config: TailscaleEndpointConfig) -> Self {
+        Self {
+            socket_path,
+            config,
+            status: RwLock::new(None),
+        }
+    }
+
+    /// Find the tailscaled socket path.
+    #[cfg(unix)]
+    fn find_socket_path() -> PathBuf {
+        let default = PathBuf::from(Self::DEFAULT_SOCKET_PATH);
+        if default.exists() {
+            return default;
+        }
+        
+        #[cfg(target_os = "macos")]
+        {
+            let macos_path = PathBuf::from(Self::MACOS_USER_SOCKET);
+            if macos_path.exists() {
+                return macos_path;
+            }
+        }
+        
+        // Return default even if not found - will error on connect
+        default
+    }
+
+    #[cfg(not(unix))]
+    fn find_socket_path() -> PathBuf {
+        // Windows uses named pipe
+        PathBuf::from(r"\\.\pipe\ProtectedPrefix\Tailscale\tailscaled")
+    }
+
+    /// Query status from daemon via HTTP over Unix socket.
+    async fn query_status(&self) -> Result<TailscaleStatus, Box<dyn std::error::Error + Send + Sync>> {
+        #[cfg(unix)]
+        {
+            use tokio::net::UnixStream;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            
+            let mut stream = UnixStream::connect(&self.socket_path).await
+                .map_err(|e| format!("Failed to connect to tailscaled socket {:?}: {}", self.socket_path, e))?;
+            
+            // Send HTTP request
+            let request = "GET /localapi/v0/status HTTP/1.1\r\nHost: local-tailscaled.sock\r\nConnection: close\r\n\r\n";
+            stream.write_all(request.as_bytes()).await?;
+            
+            // Read response
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).await?;
+            
+            // Parse HTTP response (skip headers)
+            let response_str = String::from_utf8_lossy(&response);
+            let body_start = response_str.find("\r\n\r\n")
+                .map(|i| i + 4)
+                .unwrap_or(0);
+            let body = &response_str[body_start..];
+            
+            let status: TailscaleStatus = serde_json::from_str(body)
+                .map_err(|e| format!("Failed to parse tailscale status: {} (body: {})", e, &body[..body.len().min(200)]))?;
+            
+            Ok(status)
+        }
+        
+        #[cfg(not(unix))]
+        {
+            Err("Tailscale daemon integration not yet implemented for this platform".into())
+        }
+    }
+}
+
+impl std::fmt::Debug for DaemonControlPlane {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DaemonControlPlane")
+            .field("socket_path", &self.socket_path)
+            .field("tag", &self.config.tag)
+            .finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl TailscaleControlPlane for DaemonControlPlane {
+    async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!(
+            tag = %self.config.tag,
+            socket = %self.socket_path.display(),
+            "Connecting to Tailscale daemon"
+        );
+        
+        // Query status to verify daemon is running
+        let status = self.query_status().await?;
+        *self.status.write() = Some(status.clone());
+        
+        match status.backend_state.as_str() {
+            "Running" => {
+                info!(
+                    tag = %self.config.tag,
+                    ips = ?status.tailscale_i_ps,
+                    "Tailscale daemon connected and authenticated"
+                );
+                Ok(())
+            }
+            "NeedsLogin" => {
+                if let Some(url) = &status.auth_url {
+                    warn!(
+                        tag = %self.config.tag,
+                        auth_url = %url,
+                        "Tailscale needs authentication - please login"
+                    );
+                }
+                Err(format!("Tailscale needs authentication: {}", status.auth_url.as_deref().unwrap_or("")).into())
+            }
+            state => {
+                warn!(
+                    tag = %self.config.tag,
+                    state = %state,
+                    "Unexpected Tailscale state"
+                );
+                Err(format!("Tailscale daemon in unexpected state: {}", state).into())
+            }
+        }
+    }
+
+    async fn stop(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        debug!(tag = %self.config.tag, "DaemonControlPlane stopped (daemon continues running)");
+        Ok(())
+    }
+
+    fn tailscale_ips(&self) -> Vec<IpAddr> {
+        let status = self.status.read();
+        if let Some(status) = status.as_ref() {
+            // Try self_node first, fall back to root TailscaleIPs
+            let ips = status.self_node.as_ref()
+                .map(|n| &n.tailscale_i_ps)
+                .unwrap_or(&status.tailscale_i_ps);
+            
+            ips.iter()
+                .filter_map(|s| s.parse::<IpAddr>().ok())
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    async fn dial(
+        &self,
+        network: Network,
+        addr: SocketAddr,
+    ) -> Result<EndpointStream, Box<dyn std::error::Error + Send + Sync>> {
+        // Tailscale sets up routes, so we dial through normal system stack
+        // and the kernel routes to Tailscale interface
+        match network {
+            Network::Tcp => {
+                debug!(
+                    tag = %self.config.tag,
+                    addr = %addr,
+                    "Dialing through Tailscale (system routing)"
+                );
+                let tcp = tokio::net::TcpStream::connect(addr).await?;
+                Ok(Box::new(tcp) as EndpointStream)
+            }
+            Network::Udp => {
+                Err("UDP dial not directly supported - use listen_packet".into())
+            }
+        }
+    }
+
+    async fn listen(
+        &self,
+        network: Network,
+        port: u16,
+    ) -> Result<Arc<UdpSocket>, Box<dyn std::error::Error + Send + Sync>> {
+        match network {
+            Network::Udp => {
+                // Bind to Tailscale IP if we have one
+                let bind_addr = self.tailscale_ips()
+                    .into_iter()
+                    .next()
+                    .map(|ip| SocketAddr::new(ip, port))
+                    .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port));
+                
+                debug!(
+                    tag = %self.config.tag,
+                    bind = %bind_addr,
+                    "Listening on Tailscale IP"
+                );
+                
+                let socket = UdpSocket::bind(bind_addr).await?;
+                Ok(Arc::new(socket))
+            }
+            Network::Tcp => {
+                Err("TCP listen not supported via this method".into())
+            }
+        }
+    }
+
+    fn auth_status(&self) -> AuthStatus {
+        let status = self.status.read();
+        match status.as_ref().map(|s| s.backend_state.as_str()) {
+            Some("Running") => AuthStatus::Authenticated,
+            Some("NeedsLogin") => AuthStatus::WaitingForAuth,
+            Some("Stopped") => AuthStatus::NotStarted,
+            _ => AuthStatus::NotStarted,
+        }
+    }
+
+    fn auth_url(&self) -> Option<String> {
+        self.status.read().as_ref().and_then(|s| s.auth_url.clone())
+    }
+}
+
 /// Tailscale endpoint that acts as a Tailnet node.
 pub struct TailscaleEndpoint {
     config: TailscaleEndpointConfig,
@@ -207,31 +493,51 @@ pub struct TailscaleEndpoint {
     /// Control plane provider.
     control_plane: parking_lot::RwLock<Option<Arc<dyn TailscaleControlPlane>>>,
     /// Our Tailscale IPs once assigned.
-    local_addresses: parking_lot::RwLock<Vec<IpNet>>,
+    local_addresses: Arc<parking_lot::RwLock<Vec<IpNet>>>,
     /// Connection handler for inbound routing.
     connection_handler: parking_lot::RwLock<Option<Arc<dyn ConnectionHandler>>>,
     /// Worker task handle.
     worker: parking_lot::Mutex<Option<JoinHandle<()>>>,
     /// Last error message.
     last_error: Arc<parking_lot::RwLock<Option<String>>>,
+    /// Router handle for policy checks.
+    #[cfg(feature = "router")]
+    router: Option<Arc<crate::router::RouterHandle>>,
 }
 
 impl TailscaleEndpoint {
     /// Create from IR configuration.
-    pub fn new(ir: &EndpointIR) -> Self {
-        Self::with_config(TailscaleEndpointConfig::from_ir(ir))
+    pub fn new(
+        ir: &EndpointIR,
+        #[cfg(feature = "router")]
+        router: Option<Arc<crate::router::RouterHandle>>,
+    ) -> Self {
+        #[cfg(feature = "router")]
+        {
+            Self::with_config(TailscaleEndpointConfig::from_ir(ir), router)
+        }
+        #[cfg(not(feature = "router"))]
+        {
+            Self::with_config(TailscaleEndpointConfig::from_ir(ir))
+        }
     }
 
     /// Create with explicit config.
-    pub fn with_config(config: TailscaleEndpointConfig) -> Self {
+    pub fn with_config(
+        config: TailscaleEndpointConfig,
+        #[cfg(feature = "router")]
+        router: Option<Arc<crate::router::RouterHandle>>,
+    ) -> Self {
         Self {
             config,
             state: AtomicU8::new(TailscaleState::Stopped as u8),
             control_plane: parking_lot::RwLock::new(None),
-            local_addresses: parking_lot::RwLock::new(Vec::new()),
+            local_addresses: Arc::new(parking_lot::RwLock::new(vec![])),
             connection_handler: parking_lot::RwLock::new(None),
             worker: parking_lot::Mutex::new(None),
             last_error: Arc::new(parking_lot::RwLock::new(None)),
+            #[cfg(feature = "router")]
+            router,
         }
     }
 
@@ -292,6 +598,28 @@ impl TailscaleEndpoint {
             .next()
             .ok_or_else(|| format!("Failed to resolve {}", host).into())
     }
+    /// Convert destination to loopback if it matches a local address.
+    fn translate_local_destination(&self, dest: &Socksaddr) -> (Socksaddr, Option<Socksaddr>) {
+        if let Some(ip) = dest.addr() {
+            let local_addrs = self.local_addresses.read();
+            for local_prefix in local_addrs.iter() {
+                if local_prefix.contains(&ip) {
+                    // Replace with loopback
+                    let loopback_ip = if ip.is_ipv4() {
+                        IpAddr::V4(Ipv4Addr::LOCALHOST)
+                    } else {
+                        IpAddr::V6(Ipv6Addr::LOCALHOST)
+                    };
+                    let translated = Socksaddr {
+                        host: SocksaddrHost::Ip(loopback_ip),
+                        port: dest.port,
+                    };
+                    return (translated, Some(dest.clone()));
+                }
+            }
+        }
+        (dest.clone(), None)
+    }
 }
 
 impl std::fmt::Debug for TailscaleEndpoint {
@@ -342,6 +670,7 @@ impl Endpoint for TailscaleEndpoint {
                 if let Some(control_plane) = cp {
                     let tag = self.config.tag.clone();
                     let err_slot = self.last_error.clone();
+                    let local_addrs = self.local_addresses.clone();
                     let state_ptr = &self.state as *const AtomicU8 as usize;
 
                     let handle = tokio::spawn(async move {
@@ -356,6 +685,7 @@ impl Endpoint for TailscaleEndpoint {
                                         IpAddr::V6(_) => IpNet::new(ip, 128).unwrap(),
                                     })
                                     .collect();
+                                *local_addrs.write() = nets;
                                 let state = unsafe { &*(state_ptr as *const AtomicU8) };
                                 state.store(TailscaleState::Running as u8, Ordering::Relaxed);
                                 info!(tag = %tag, "Tailscale control plane started");
@@ -472,6 +802,43 @@ impl Endpoint for TailscaleEndpoint {
         debug!(tag = %self.config.tag, "Connection handler registered");
     }
 
+
+
+    fn prepare_connection(
+        &self,
+        network: Network,
+        source: Socksaddr,
+        destination: Socksaddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Integrate with router logic for policy checks
+        #[cfg(feature = "router")]
+        if let Some(router) = &self.router {
+            let host = destination.fqdn();
+            let ip = destination.addr();
+            let port = Some(destination.port);
+            let net_str = match network {
+                Network::Tcp => "tcp",
+                Network::Udp => "udp",
+            };
+
+            let ctx = crate::router::RouteCtx {
+                host,
+                ip,
+                port,
+                network: net_str,
+                inbound_tag: Some(&self.config.tag),
+                ..Default::default()
+            };
+
+            let decision = router.decide(&ctx);
+            if let crate::router::rules::Decision::Reject = decision {
+                return Err(format!("connection from {} to {} rejected by rule", source, destination).into());
+            }
+            debug!(tag = %self.config.tag, "connection allowed by router: {:?}", decision);
+        }
+        Ok(())
+    }
+
     fn new_connection_ex(
         &self,
         conn: EndpointStream,
@@ -488,6 +855,23 @@ impl Endpoint for TailscaleEndpoint {
                 destination: Some(destination.clone()),
                 origin_destination: None,
             };
+
+            // Translate local destination if needed
+            let (translated_dest, origin) = self.translate_local_destination(&destination);
+            // let check_destination = translated_dest.clone(); // Removed unused
+            if origin.is_some() {
+               // Update context with translated destination?
+               // The original code in WireGuard updates metadata.destination.
+            }
+            // Note: InboundContext destination is updated logic in WireGuard:
+            // metadata.destination = Some(translated_dest.clone());
+            // if origin.is_some() { metadata.origin_destination = Some(destination.clone()); }
+
+            let mut metadata = metadata;
+            metadata.destination = Some(translated_dest);
+            if origin.is_some() {
+                metadata.origin_destination = Some(destination.clone());
+            }
 
             info!(
                 tag = %self.config.tag,
@@ -524,6 +908,14 @@ impl Endpoint for TailscaleEndpoint {
                 origin_destination: None,
             };
 
+            // Translate local destination if needed
+            let (translated_dest, origin) = self.translate_local_destination(&destination);
+            let mut metadata = metadata;
+            metadata.destination = Some(translated_dest);
+            if origin.is_some() {
+                metadata.origin_destination = Some(destination.clone());
+            }
+
             info!(
                 tag = %self.config.tag,
                 "Inbound UDP from {} to {}",
@@ -551,7 +943,14 @@ pub fn build_tailscale_endpoint(
     if ir.ty != EndpointType::Tailscale {
         return None;
     }
-    Some(Arc::new(TailscaleEndpoint::new(ir)))
+    #[cfg(feature = "router")]
+    {
+        Some(Arc::new(TailscaleEndpoint::new(ir, _ctx.router.clone())))
+    }
+    #[cfg(not(feature = "router"))]
+    {
+        Some(Arc::new(TailscaleEndpoint::new(ir)))
+    }
 }
 
 #[cfg(test)]
@@ -564,6 +963,9 @@ mod tests {
             tag: "test".to_string(),
             ..Default::default()
         };
+        #[cfg(feature = "router")]
+        let endpoint = TailscaleEndpoint::with_config(config.clone(), None);
+        #[cfg(not(feature = "router"))]
         let endpoint = TailscaleEndpoint::with_config(config);
 
         assert_eq!(endpoint.state(), TailscaleState::Stopped);
@@ -609,5 +1011,28 @@ mod tests {
 
         // Should fail to dial (stub)
         assert!(stub.dial(Network::Tcp, "100.64.0.2:80".parse().unwrap()).await.is_err());
+    }
+
+    #[test]
+    fn test_daemon_control_plane_creation() {
+        let config = TailscaleEndpointConfig {
+            tag: "test-daemon".to_string(),
+            ..Default::default()
+        };
+        
+        // Test default creation (finds socket path)
+        let daemon = DaemonControlPlane::new(config.clone());
+        assert!(!daemon.socket_path.as_os_str().is_empty());
+        
+        // Test explicit socket path
+        let custom_path = std::path::PathBuf::from("/tmp/test-tailscaled.sock");
+        let daemon2 = DaemonControlPlane::with_socket(custom_path.clone(), config);
+        assert_eq!(daemon2.socket_path, custom_path);
+        
+        // Auth status should be NotStarted before calling start()
+        assert_eq!(daemon2.auth_status(), AuthStatus::NotStarted);
+        
+        // IPs should be empty before connecting
+        assert!(daemon2.tailscale_ips().is_empty());
     }
 }

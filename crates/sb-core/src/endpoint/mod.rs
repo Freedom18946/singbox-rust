@@ -327,13 +327,13 @@ pub trait Endpoint: Send + Sync {
     }
 }
 
-/// Context for building endpoints.
-///
-/// Provides access to shared resources like DNS router for building endpoints.
 #[derive(Default)]
 pub struct EndpointContext {
-    // Placeholder for future router/bridge integration
-    // pub router: Arc<RouterHandle>,
+    /// DNS resolver for internal name resolution (prevents DNS leaks).
+    pub dns: Option<Arc<dyn crate::dns::Resolver>>,
+    /// Router handle for policy checks.
+    #[cfg(feature = "router")]
+    pub router: Option<Arc<crate::router::RouterHandle>>,
     // pub bridge: Arc<Bridge>,
 }
 

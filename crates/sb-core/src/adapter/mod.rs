@@ -123,6 +123,12 @@ pub struct InboundParam {
     /// AnyTLS padding scheme rows.
     pub anytls_padding: Option<Vec<String>>,
 
+    // Generic fields requiring specific mapping
+    pub uuid: Option<String>,
+    pub method: Option<String>,
+    pub security: Option<String>,
+    pub flow: Option<String>,
+
     // TLS configuration (for inbounds that need TLS)
     /// Path to TLS certificate file (PEM format)
     pub tls_cert_path: Option<String>,
@@ -150,6 +156,12 @@ pub struct InboundParam {
     pub brutal_up_mbps: Option<u32>,
     /// Hysteria2 Brutal download limit (Mbps)
     pub brutal_down_mbps: Option<u32>,
+    /// Hysteria2 Masquerade configuration (JSON-encoded)
+    pub masquerade: Option<String>,
+
+    // Tun-specific fields
+    /// Tun interface options (JSON-encoded)
+    pub tun_options: Option<String>,
 
     // TUIC-specific fields
     /// TUIC multi-user authentication (JSON-encoded for now)
@@ -179,6 +191,8 @@ pub struct InboundParam {
     pub users_vless: Option<String>,
     /// VMess multi-user authentication (JSON-encoded for now)
     pub users_vmess: Option<String>,
+    /// Shadowsocks multi-user authentication (JSON-encoded for now)
+    pub users_shadowsocks: Option<String>,
 }
 
 /// AnyTLS user parameters passed to the adapter layer.

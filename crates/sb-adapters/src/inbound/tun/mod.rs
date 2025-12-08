@@ -20,6 +20,7 @@ use tracing::{debug, info, trace, warn};
 use sb_core::outbound::RouteTarget;
 use sb_core::router::engine::{RouteCtx, Transport};
 use sb_core::router::RouterHandle;
+use sb_core::adapter::InboundService;
 
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
@@ -274,14 +275,8 @@ impl TunInbound {
         self.platform_hook.cleanup()
     }
 
-    /// Phase 1: skeleton；Phase 2.1: utun open + read drop；
-    /// Phase 2.2: 解析 IP / TCP / UDP，装配 ConnectParams（仍然不转发负载）
-    pub fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
-        rt.block_on(async { self.run().await })
-    }
-
     pub(crate) async fn run(&self) -> io::Result<()> {
+        let _span = tracing::info_span!("tun_run").entered();
         tracing::info!(
             "tun inbound starting: platform={}, name={}, mtu={}, auto_route={}, auto_redirect={}",
             self.cfg.platform,
@@ -845,6 +840,24 @@ impl TunInbound {
         // }
 
         Ok(())
+    }
+}
+
+
+impl InboundService for TunInbound {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        rt.block_on(async { self.run().await })
+    }
+}
+
+impl std::fmt::Debug for TunInbound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TunInbound")
+             .field("cfg", &self.cfg)
+             .finish()
     }
 }
 

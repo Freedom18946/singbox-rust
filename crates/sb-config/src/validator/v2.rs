@@ -678,7 +678,10 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 hysteria_down_mbps: None,
                 hysteria_recv_window_conn: None,
                 hysteria_recv_window: None,
+                masquerade: None,
                 multiplex: None,
+                security: i.get("security").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                tun: None,
             });
         }
     }

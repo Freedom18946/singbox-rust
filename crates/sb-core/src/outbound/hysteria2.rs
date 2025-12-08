@@ -1228,6 +1228,24 @@ pub mod inbound {
         pub congestion_control: Option<String>,
         pub salamander: Option<String>,
         pub obfs: Option<String>,
+        pub masquerade: Option<MasqueradeConfig>,
+    }
+
+    /// Hysteria2 Masquerade configuration
+    #[derive(Clone, Debug)]
+    pub enum MasqueradeConfig {
+        String {
+            content: String,
+            headers: Vec<(String, String)>,
+            status_code: u16,
+        },
+        File {
+            directory: String,
+        },
+        Proxy {
+            url: String,
+            rewrite_host: bool,
+        },
     }
 
     /// Hysteria2 user with password
@@ -1421,6 +1439,16 @@ pub mod inbound {
 
             // Verify authentication
             if auth_packet.is_empty() || auth_packet[0] != 0x01 {
+                // Try masquerade if configured
+                if let Some(ref masq) = self.config.masquerade {
+                    self.perform_masquerade(&mut send_stream, masq).await?;
+                    // After masquerade, we close the connection or stream implicitly by returning error
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Masquerade triggered (invalid auth packet)",
+                    ));
+                }
+
                 send_stream
                     .write_all(&[0x01])
                     .await
@@ -1464,6 +1492,15 @@ pub mod inbound {
                 debug!("Hysteria2: authentication successful");
                 Ok(())
             } else {
+                // Try masquerade if configured
+                if let Some(ref masq) = self.config.masquerade {
+                    self.perform_masquerade(&mut send_stream, masq).await?;
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Authentication failed: invalid password (masquerade triggered)",
+                    ));
+                }
+
                 // Send failure response
                 send_stream
                     .write_all(&[0x01])
@@ -1499,6 +1536,46 @@ pub mod inbound {
                 let key_bytes = obfs_key.as_bytes();
                 for (i, byte) in data.iter_mut().enumerate() {
                     *byte ^= key_bytes[i % key_bytes.len()];
+                }
+            }
+        }
+
+        async fn perform_masquerade(
+            &self,
+            send_stream: &mut SendStream,
+            config: &MasqueradeConfig,
+        ) -> io::Result<()> {
+            match config {
+                MasqueradeConfig::String {
+                    content,
+                    headers: _, // Headers ignored in simple string masquerade for now
+                    status_code,
+                } => {
+                    // Simple HTTP response simulation
+                    // Note: Real HTTP/3 requires standard framing (QPACK etc), doing raw text write
+                    // might strictly be HTTP/0.9ish style or invalid for H3, but fulfills logic stub for now.
+                    // Improving this to real HTTP/3 is future work.
+                    let response = format!(
+                        "HTTP/1.1 {} Masquerade\r\nContent-Length: {}\r\n\r\n{}",
+                        status_code,
+                        content.len(),
+                        content
+                    );
+                    send_stream
+                        .write_all(response.as_bytes())
+                        .await
+                        .map_err(|e| io::Error::other(format!("Masquerade write failed: {}", e)))?;
+                    
+                    // Gracefully finish stream
+                    let _ = send_stream.finish();
+                    Ok(())
+                }
+                _ => {
+                    // File and Proxy not yet implemented, fallback to 404 string
+                    let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found";
+                    send_stream.write_all(response.as_bytes()).await.ok();
+                    let _ = send_stream.finish();
+                    Ok(())
                 }
             }
         }

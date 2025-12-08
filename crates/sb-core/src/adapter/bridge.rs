@@ -251,6 +251,24 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         .as_ref()
         .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
 
+    // Serialize Shadowsocks users to JSON if present
+    let users_shadowsocks = ib
+        .users_shadowsocks
+        .as_ref()
+        .map(|users| serde_json::to_string(users).unwrap_or_else(|_| "[]".to_string()));
+
+    // Serialize Hysteria2 masquerade to JSON if present
+    let masquerade = ib
+        .masquerade
+        .as_ref()
+        .map(|m| serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()));
+
+    // Serialize Tun options to JSON if present
+    let tun_options = ib
+        .tun
+        .as_ref()
+        .map(|t| serde_json::to_string(t).unwrap_or_else(|_| "{}".to_string()));
+
     InboundParam {
         kind: ib.ty.ty_str().to_string(),
         listen: ib.listen.clone(),
@@ -263,6 +281,10 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         network: ib.network.clone(),
         users_anytls,
         password: ib.password.clone(),
+        uuid: ib.uuid.clone(),
+        method: ib.method.clone(),
+        security: ib.security.clone(),
+        flow: ib.flow.clone(),
         anytls_padding: ib.anytls_padding.clone(),
         tls_cert_path: ib.tls_cert_path.clone(),
         tls_key_path: ib.tls_key_path.clone(),
@@ -274,8 +296,10 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         congestion_control: ib.congestion_control.clone(),
         salamander: ib.salamander.clone(),
         obfs: ib.obfs.clone(),
+        masquerade,
         brutal_up_mbps: ib.brutal_up_mbps,
         brutal_down_mbps: ib.brutal_down_mbps,
+        tun_options,
         users_tuic,
         users_hysteria,
         hysteria_protocol: ib.hysteria_protocol.clone(),
@@ -288,6 +312,7 @@ fn to_inbound_param(ib: &InboundIR) -> InboundParam {
         users_trojan,
         users_vless,
         users_vmess,
+        users_shadowsocks,
     }
 }
 

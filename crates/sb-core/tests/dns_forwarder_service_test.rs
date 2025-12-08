@@ -5,7 +5,7 @@ use sb_core::service::{ServiceContext, StartStage};
 use tokio::time::{sleep, Duration};
 
 #[tokio::test]
-async fn test_resolved_service_lifecycle() {
+async fn test_dns_forwarder_service_lifecycle() {
     // Pick a random port to avoid conflicts
     let port = 50000 + (fastrand::u16(0..1000));
     let addr = format!("127.0.0.1:{}", port);
@@ -38,7 +38,7 @@ async fn test_resolved_service_lifecycle() {
     };
 
     let service =
-        sb_core::services::resolved::build_resolved_service(&ir, &ServiceContext::default());
+        sb_core::services::dns_forwarder::build_dns_forwarder_service(&ir, &ServiceContext::default());
     assert!(service.is_some());
     let service = service.unwrap();
 

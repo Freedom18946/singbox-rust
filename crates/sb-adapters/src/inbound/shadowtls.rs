@@ -28,6 +28,9 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
+use sb_core::adapter::InboundService;
+use std::io;
+use std::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct ShadowTlsInboundConfig {
@@ -224,6 +227,50 @@ async fn fallback_connect(
         }
         ProxyChoice::Socks5(addr) => {
             Ok(socks5_connect_through_socks5(addr, host, port, opts).await?)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ShadowTlsInboundAdapter {
+    cfg: ShadowTlsInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+impl ShadowTlsInboundAdapter {
+    pub fn new(cfg: ShadowTlsInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+impl InboundService for ShadowTlsInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock().unwrap();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            serve(cfg, rx)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().unwrap().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock().unwrap();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
         }
     }
 }

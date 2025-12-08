@@ -9,7 +9,7 @@
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -23,6 +23,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use once_cell::sync::OnceCell;
+use sb_core::adapter::InboundService;
 use sb_core::outbound::health as ob_health;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
@@ -31,6 +32,7 @@ use sb_core::outbound::{
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
+use sb_core::outbound::OutboundRegistry;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
@@ -1036,5 +1038,49 @@ impl SocksInbound {
             tracing::info!("socks: TCP (UDP_ASSOCIATE) enabled at {}", addr_for_log);
         }
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct SocksInboundAdapter {
+    cfg: SocksInboundConfig,
+    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+impl SocksInboundAdapter {
+    pub fn new(cfg: SocksInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+impl InboundService for SocksInboundAdapter {
+    fn serve(&self) -> io::Result<()> {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(io::Error::other)?;
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        {
+            let mut guard = self.stop_tx.lock().unwrap();
+            *guard = Some(tx);
+        }
+        let cfg = self.cfg.clone();
+        let res = rt.block_on(async {
+            serve_socks(cfg, rx, None)
+                .await
+                .map_err(io::Error::other)
+        });
+        let _ = self.stop_tx.lock().unwrap().take();
+        res
+    }
+
+    fn request_shutdown(&self) {
+        let mut guard = self.stop_tx.lock().unwrap();
+        if let Some(tx) = guard.take() {
+            let _ = tx.try_send(());
+        }
     }
 }

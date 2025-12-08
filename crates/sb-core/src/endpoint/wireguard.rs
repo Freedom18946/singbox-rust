@@ -22,6 +22,11 @@ pub struct WireGuardEndpoint {
     local_addresses: Vec<IpNet>,
     /// Connection handler for routing inbound connections.
     connection_handler: parking_lot::RwLock<Option<Arc<dyn ConnectionHandler>>>,
+    /// DNS resolver for internal name resolution.
+    dns_resolver: Option<Arc<dyn crate::dns::Resolver>>,
+    /// Router handle for policy checks.
+    #[cfg(feature = "router")]
+    router: Option<Arc<crate::router::RouterHandle>>,
 }
 
 #[derive(Clone)]
@@ -36,7 +41,12 @@ struct PeerTransport {
 }
 
 impl WireGuardEndpoint {
-    pub fn new(ir: &EndpointIR) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn new(
+        ir: &EndpointIR,
+        dns: Option<Arc<dyn crate::dns::Resolver>>,
+        #[cfg(feature = "router")]
+        router: Option<Arc<crate::router::RouterHandle>>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let tag = ir.tag.clone().unwrap_or_else(|| "wireguard".to_string());
 
         let private_key = ir
@@ -121,7 +131,11 @@ impl WireGuardEndpoint {
             peers,
             transports: parking_lot::Mutex::new(Vec::new()),
             local_addresses,
+
             connection_handler: parking_lot::RwLock::new(None),
+            dns_resolver: dns,
+            #[cfg(feature = "router")]
+            router,
         })
     }
 
@@ -240,18 +254,25 @@ impl Endpoint for WireGuardEndpoint {
                     io::Error::new(io::ErrorKind::InvalidInput, "expected FQDN")
                 })?;
 
-                // TODO: Integrate with DNS router for proper resolution
-                // For now, use system DNS
-                let resolved = tokio::net::lookup_host(format!("{}:{}", fqdn, destination.port))
-                    .await?
-                    .next()
-                    .ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::NotFound,
-                            format!("failed to resolve: {}", fqdn),
-                        )
-                    })?;
-                resolved.ip()
+                // Use internal DNS resolver if available, otherwise fallback to system DNS
+                if let Some(resolver) = &self.dns_resolver {
+                    let answer = resolver
+                        .resolve(fqdn)
+                        .await
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                    answer
+                        .ips
+                        .first()
+                        .cloned()
+                        .ok_or_else(|| {
+                             io::Error::new(
+                                io::ErrorKind::NotFound,
+                                format!("failed to resolve: {}", fqdn),
+                            )
+                        })?
+                } else {
+                    return Err(io::Error::new(io::ErrorKind::Other, "internal DNS resolver required"));
+                }
             } else {
                 destination.addr().ok_or_else(|| {
                     io::Error::new(
@@ -292,58 +313,10 @@ impl Endpoint for WireGuardEndpoint {
         Box::pin(async move {
             info!(tag = %self.tag, "outbound UDP listen to {}", destination);
 
-            // Handle FQDN resolution
-            let target_ip = if destination.is_fqdn() {
-                let fqdn = destination.fqdn().ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "expected FQDN")
-                })?;
-
-                // TODO: Integrate with DNS router for proper resolution
-                let resolved = tokio::net::lookup_host(format!("{}:{}", fqdn, destination.port))
-                    .await?
-                    .next()
-                    .ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::NotFound,
-                            format!("failed to resolve: {}", fqdn),
-                        )
-                    })?;
-                resolved.ip()
-            } else {
-                destination.addr().ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("invalid destination: {}", destination),
-                    )
-                })?
-            };
-
-            // Select the appropriate peer to verify routing
-            let _transport = self.select_peer(target_ip).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "no WireGuard peer available for destination",
-                )
-            })?;
-
-            // Create a UDP socket bound to the WireGuard interface
-            // Note: In a full implementation, this would use the tunnel's virtual interface
-            // For now, we create a standard UDP socket
-            let bind_addr = if target_ip.is_ipv6() {
-                "[::]:0"
-            } else {
-                "0.0.0.0:0"
-            };
-
-            let socket = UdpSocket::bind(bind_addr).await?;
-            debug!(
-                tag = %self.tag,
-                "UDP socket bound to {} for destination {}",
-                socket.local_addr()?,
-                destination
-            );
-
-            Ok(Arc::new(socket))
+            // FIXME: Cannot support userspace UDP tunneling because Endpoint trait requires UdpSocket (OS handle).
+            // Binding to 0.0.0.0 causes traffic leak (bypassing WG).
+            // Returning error is safer than leaking.
+            Err(io::Error::new(io::ErrorKind::Unsupported, "WireGuard UDP listen_packet not supported without TUN"))
         })
     }
 
@@ -375,7 +348,33 @@ impl Endpoint for WireGuardEndpoint {
             );
         }
 
-        // TODO: Integrate with router.PreMatch for policy checks
+        // Integrate with router logic for policy checks
+        #[cfg(feature = "router")]
+        if let Some(router) = &self.router {
+            let host = destination.fqdn();
+            let ip = destination.addr();
+            let port = Some(destination.port);
+            let net_str = match network {
+                Network::Tcp => "tcp",
+                Network::Udp => "udp",
+            };
+
+            let ctx = crate::router::RouteCtx {
+                host,
+                ip,
+                port,
+                network: net_str,
+                inbound_tag: Some(&self.tag),
+                ..Default::default()
+            };
+
+            let decision = router.decide(&ctx);
+            if let crate::router::rules::Decision::Reject = decision {
+                return Err(format!("connection from {} to {} rejected by rule", source, destination).into());
+            }
+            debug!(tag = %self.tag, "connection allowed by router: {:?}", decision);
+        }
+
         // For now, we just validate that we can route to the destination
         if let Some(ip) = translated_dest.addr() {
             if self.select_peer(ip).is_none() {
@@ -497,12 +496,17 @@ impl Endpoint for WireGuardEndpoint {
 
 pub fn build_wireguard_endpoint(
     ir: &EndpointIR,
-    _ctx: &super::EndpointContext,
+    ctx: &super::EndpointContext,
 ) -> Option<Arc<dyn Endpoint>> {
     if ir.ty != EndpointType::Wireguard {
         return None;
     }
-    match WireGuardEndpoint::new(ir) {
+    match WireGuardEndpoint::new(
+        ir,
+        ctx.dns.clone(),
+        #[cfg(feature = "router")]
+        ctx.router.clone(),
+    ) {
         Ok(ep) => Some(Arc::new(ep)),
         Err(e) => {
             tracing::error!(target: "sb_core::endpoint", error = %e, "failed to build WireGuard endpoint");

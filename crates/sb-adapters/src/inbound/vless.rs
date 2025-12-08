@@ -97,6 +97,41 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         "vless: inbound bound"
     );
 
+    // Initialize reality_acceptor if configured (outside loop for efficiency)
+    #[cfg(feature = "tls_reality")]
+    let reality_acceptor = if let Some(ref reality_cfg) = cfg.reality {
+        match RealityAcceptor::new(reality_cfg.clone()) {
+            Ok(acc) => Some(Arc::new(acc)),
+            Err(e) => {
+                return Err(anyhow!("vless: failed to create REALITY acceptor: {}", e));
+            }
+        }
+    } else {
+        None
+    };
+
+    // Warn about missing Vision support if configured
+    if let Some(flow) = &cfg.flow {
+        if flow.eq_ignore_ascii_case("xtls-rprx-vision") {
+            #[cfg(feature = "tls_reality")]
+            {
+                if cfg.reality.is_none() {
+                    warn!(
+                        "VLESS: Flow control '{}' requires REALITY/TLS but it is not configured. Connection serves as standard TCP.",
+                        flow
+                    );
+                }
+            }
+            #[cfg(not(feature = "tls_reality"))]
+            {
+                 warn!(
+                    "VLESS: Flow control '{}' requires REALITY feature which is disabled. Connection serves as standard TCP.",
+                    flow
+                );
+            }
+        }
+    }
+
     // Handle Multiplexing
     // 处理多路复用
     if let Some(ref mux_cfg) = cfg.multiplex {
@@ -176,21 +211,47 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 };
 
                 let cfg_clone = cfg.clone();
-
-                // TODO: Initialize reality_acceptor when REALITY TLS is properly configured
                 #[cfg(feature = "tls_reality")]
-                // let reality_acceptor_clone = reality_acceptor.clone();
-
+                let reality_acceptor_clone = reality_acceptor.clone();
 
                 tokio::spawn(async move {
                     #[cfg(feature = "tls_reality")]
                     {
-                        // TODO: Implement REALITY TLS support
-                        // For now, handle as plain connection
-                        if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                            sb_core::metrics::http::record_error_display(&e);
-                            sb_core::metrics::record_inbound_error_display("vless", &e);
-                            warn!(%peer, error=%e, "vless: session error");
+                        if let Some(acceptor) = reality_acceptor_clone {
+                             // Perform REALITY handshake
+                             match acceptor.accept(stream).await {
+                                 Ok(connection) => {
+                                     match connection {
+                                         sb_tls::RealityConnection::Proxy(tls_stream) => {
+                                             debug!(%peer, "vless: REALITY handshake success (proxy)");
+                                             let mut stream = tls_stream;
+                                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                                 sb_core::metrics::http::record_error_display(&e);
+                                                 sb_core::metrics::record_inbound_error_display("vless", &e);
+                                                 warn!(%peer, error=%e, "vless: session error");
+                                             }
+                                         }
+                                         sb_tls::RealityConnection::Fallback { client, target } => {
+                                             debug!(%peer, "vless: REALITY fallback triggered");
+                                             // Fallback is handled by bidirectional copy in handle()
+                                            let conn = sb_tls::RealityConnection::Fallback { client, target };
+                                            if let Err(e) = conn.handle().await {
+                                                 warn!(%peer, error=%e, "vless: fallback relay error");
+                                            }
+                                         }
+                                     }
+                                 }
+                                 Err(e) => {
+                                     warn!(%peer, error=%e, "vless: REALITY handshake failed");
+                                 }
+                             }
+                        } else {
+                             // Plain TCP
+                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
+                                sb_core::metrics::http::record_error_display(&e);
+                                sb_core::metrics::record_inbound_error_display("vless", &e);
+                                warn!(%peer, error=%e, "vless: session error");
+                            }
                         }
                     }
 
@@ -440,5 +501,41 @@ async fn parse_vless_address(
             Ok((ip.to_string(), port))
         }
         _ => Err(anyhow!("vless: unknown address type: {}", atyp)),
+    }
+}
+
+use sb_core::adapter::InboundService;
+use parking_lot::Mutex;
+
+#[derive(Debug)]
+pub struct VlessInboundAdapter {
+    config: VlessInboundConfig,
+    stop_tx: Mutex<Option<mpsc::Sender<()>>>,
+}
+
+impl VlessInboundAdapter {
+    pub fn new(config: VlessInboundConfig) -> Self {
+        Self {
+            config,
+            stop_tx: Mutex::new(None),
+        }
+    }
+}
+
+impl InboundService for VlessInboundAdapter {
+    fn serve(&self) -> std::io::Result<()> {
+        let (tx, rx) = mpsc::channel(1);
+        *self.stop_tx.lock() = Some(tx);
+        
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            serve(self.config.clone(), rx).await
+        }).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+
+    fn request_shutdown(&self) {
+        if let Some(tx) = self.stop_tx.lock().take() {
+            let _ = tx.try_send(());
+        }
     }
 }

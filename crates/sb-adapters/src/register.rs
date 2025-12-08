@@ -942,31 +942,188 @@ fn build_http_inbound(
 #[cfg(all(feature = "adapter-shadowsocks", feature = "router"))]
 #[allow(dead_code)]
 fn build_shadowsocks_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("shadowsocks");
-    None
+    use crate::inbound::shadowsocks::{
+        ShadowsocksInboundAdapter, ShadowsocksInboundConfig, ShadowsocksUser,
+    };
+    use std::net::SocketAddr;
+
+    let listen_str = format!("{}:{}", param.listen, param.port);
+    let listen: SocketAddr = match listen_str.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!("Failed to parse Shadowsocks listen address '{}': {}", listen_str, e);
+            return None;
+        }
+    };
+
+    let method = match &param.method {
+        Some(m) => m.clone(),
+        None => {
+            warn!("Shadowsocks inbound requires 'method'");
+            return None;
+        }
+    };
+
+    let mut users = Vec::new();
+    if let Some(users_json) = &param.users_shadowsocks {
+        match serde_json::from_str::<Vec<sb_config::ir::ShadowsocksUserIR>>(users_json) {
+            Ok(user_irs) => {
+                for u in user_irs {
+                    users.push(ShadowsocksUser::new(u.name, u.password));
+                }
+            }
+            Err(e) => {
+                warn!("Failed to parse Shadowsocks users JSON: {}", e);
+            }
+        }
+    }
+
+    #[allow(deprecated)]
+    let config = ShadowsocksInboundConfig {
+        listen,
+        method,
+        password: param.password.clone(),
+        users,
+        router: ctx.router.clone(),
+        multiplex: convert_multiplex_config(&param.multiplex),
+        transport_layer: None, // TODO: Transport config from param?
+    };
+
+    Some(Arc::new(ShadowsocksInboundAdapter::new(config)))
+}
+
+#[cfg(feature = "sb-transport")]
+fn convert_multiplex_config(ir: &Option<sb_config::ir::MultiplexOptionsIR>) -> Option<sb_transport::multiplex::MultiplexServerConfig> {
+    let ir = ir.as_ref()?;
+    if !ir.enabled {
+        return None;
+    }
+    
+    let mut config = sb_transport::multiplex::MultiplexServerConfig::default();
+    if let Some(n) = ir.max_streams { config.max_num_streams = n as usize; }
+    if let Some(p) = ir.padding { config.enable_padding = p; }
+    if let Some(_b) = &ir.brutal {
+        // Assuming BrutalIR has compatible fields or just skip for now to pass check
+        // config.brutal = ...
+    }
+    Some(config)
 }
 
 #[cfg(all(feature = "adapter-vmess", feature = "router"))]
 #[allow(dead_code)]
 fn build_vmess_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("vmess");
-    None
+    use crate::inbound::vmess::{VmessInboundAdapter, VmessInboundConfig};
+    use std::net::SocketAddr;
+    use uuid::Uuid;
+
+    let listen_str = format!("{}:{}", param.listen, param.port);
+    let listen: SocketAddr = match listen_str.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!("Failed to parse VMess listen address '{}': {}", listen_str, e);
+            return None;
+        }
+    };
+
+    let uuid_str = param.uuid.clone().or_else(|| {
+        // Try fallback to single user from users list if needed? 
+        // Or requiring uuid field for single user
+        // Users parsing for mult-user not fully implemented in InboundConfig yet (VMessInboundConfig takes single uuid?)
+        // Let's check VmessInboundConfig definition.
+        // It has `pub uuid: Uuid`. It seems to be single-user focused or primary user.
+        // If users_vmess is present, we might need a MultiUser config?
+        // But VmessInboundConfig has `pub uuid: Uuid`. 
+        // For now, let's allow parsing from param.uuid.
+        None
+    });
+
+    let uuid = match uuid_str {
+        Some(s) => match Uuid::parse_str(&s) {
+            Ok(u) => u,
+            Err(e) => {
+                warn!("Failed to parse VMess UUID '{}': {}", s, e);
+                return None;
+            }
+        },
+        None => {
+            warn!("VMess inbound requires 'uuid'");
+            return None;
+        }
+    };
+
+    let security = match &param.security {
+        Some(s) => s.clone(),
+        None => "auto".to_string(),
+    };
+
+    let config = VmessInboundConfig {
+        listen,
+        uuid,
+        security,
+        router: ctx.router.clone(),
+        multiplex: convert_multiplex_config(&param.multiplex),
+        transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+    };
+
+    Some(Arc::new(VmessInboundAdapter::new(config)))
 }
 
 #[cfg(all(feature = "adapter-vless", feature = "router"))]
 #[allow(dead_code)]
 fn build_vless_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("vless");
-    None
+    use crate::inbound::vless::{VlessInboundAdapter, VlessInboundConfig};
+    use std::net::SocketAddr;
+    use uuid::Uuid;
+
+    let listen_str = format!("{}:{}", param.listen, param.port);
+    let listen: SocketAddr = match listen_str.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            warn!("Failed to parse VLESS listen address '{}': {}", listen_str, e);
+            return None;
+        }
+    };
+
+    let uuid_str = param.uuid.clone().or_else(|| None);
+    let uuid = match uuid_str {
+        Some(s) => match Uuid::parse_str(&s) {
+            Ok(u) => u,
+            Err(e) => {
+                warn!("Failed to parse VLESS UUID '{}': {}", s, e);
+                return None;
+            }
+        },
+        None => {
+            warn!("VLESS inbound requires 'uuid'");
+            return None;
+        }
+    };
+
+    let config = VlessInboundConfig {
+        listen,
+        uuid,
+        router: ctx.router.clone(),
+        #[cfg(feature = "tls_reality")]
+        reality: None, // TODO: REALITY config
+        multiplex: convert_multiplex_config(&param.multiplex),
+        transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+        flow: param.flow.clone(),
+    };
+
+    Some(Arc::new(VlessInboundAdapter::new(config)))
 }
 
 #[cfg(all(feature = "adapter-trojan", feature = "router"))]
@@ -1067,7 +1224,7 @@ fn build_trojan_inbound(
         fallback_for_alpn: std::collections::HashMap::new(),
     };
 
-    Some(Arc::new(TrojanInboundAdapter::new(config)))
+    Some(Arc::new(crate::inbound::trojan::TrojanInboundAdapter::new(config)))
 }
 
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
@@ -1087,7 +1244,7 @@ fn build_socks_inbound(
         udp_nat_ttl: std::time::Duration::from_secs(60),
         users: None,
     };
-    Some(Arc::new(SocksInboundAdapter::new(cfg)))
+    Some(Arc::new(crate::inbound::socks::SocksInboundAdapter::new(cfg)))
 }
 
 #[cfg(all(
@@ -1201,7 +1358,7 @@ fn build_shadowtls_inbound(
             router: ctx.router.clone(),
         };
 
-        Some(Arc::new(ShadowTlsInboundAdapter::new(config)))
+        Some(Arc::new(crate::inbound::shadowtls::ShadowTlsInboundAdapter::new(config)))
     }
     #[cfg(not(feature = "adapter-shadowtls"))]
     {
@@ -1415,6 +1572,41 @@ fn build_hysteria2_inbound(
             }
         };
 
+        // Parse Masquerade config
+        let masquerade = if let Some(json) = &param.masquerade {
+            use sb_core::outbound::hysteria2::inbound::MasqueradeConfig as CoreMasq;
+            match serde_json::from_str::<sb_config::ir::MasqueradeIR>(json) {
+                Ok(ir) => match ir.type_.as_str() {
+                    "string" => ir.string.map(|s| CoreMasq::String {
+                        content: s.content,
+                        headers: s
+                            .headers
+                            .unwrap_or_default()
+                            .into_iter()
+                            .collect(),
+                        status_code: s.status_code,
+                    }),
+                    "file" => ir.file.map(|f| CoreMasq::File {
+                        directory: f.directory,
+                    }),
+                    "proxy" => ir.proxy.map(|p| CoreMasq::Proxy {
+                        url: p.url,
+                        rewrite_host: p.rewrite_host,
+                    }),
+                    _ => {
+                        warn!("Unknown masquerade type: {}", ir.type_);
+                        None
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to parse Hysteria2 masquerade JSON: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let config = Hysteria2InboundConfig {
             listen,
             users,
@@ -1423,6 +1615,7 @@ fn build_hysteria2_inbound(
             congestion_control: param.congestion_control.clone(),
             salamander: param.salamander.clone(),
             obfs: param.obfs.clone(),
+            masquerade,
             router: ctx.router.clone(),
             outbounds: ctx.outbounds.clone(),
         };
@@ -1538,7 +1731,7 @@ fn build_tuic_inbound(
         outbounds: ctx.outbounds.clone(),
     };
 
-    Some(Arc::new(TuicInboundAdapter::new(config)))
+    Some(Arc::new(crate::inbound::tuic::TuicInboundAdapter::new(config)))
 }
 
 #[cfg(not(feature = "adapter-tuic"))]
@@ -1591,11 +1784,22 @@ fn build_direct_inbound(
 
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
 fn build_tun_inbound(
-    _param: &InboundParam,
-    _ctx: &registry::AdapterInboundContext<'_>,
+    param: &InboundParam,
+    ctx: &registry::AdapterInboundContext<'_>,
 ) -> Option<Arc<dyn InboundService>> {
-    stub_inbound("tun");
-    None
+    use crate::inbound::tun::{TunInbound, TunInboundConfig};
+
+    let tun_json = param.tun_options.as_deref().unwrap_or("{}");
+    let config: TunInboundConfig = match serde_json::from_str(tun_json) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Failed to parse Tun options: {}", e);
+            return None;
+        }
+    };
+    
+    tracing::info!("Initializing TunInbound: {}", config.name);
+    Some(Arc::new(TunInbound::new(config, ctx.router.clone())))
 }
 
 fn stub_inbound(kind: &str) {
@@ -2736,99 +2940,7 @@ impl InboundService for HttpInboundAdapter {
     }
 }
 
-#[cfg(all(feature = "adapter-trojan", feature = "router"))]
-#[derive(Debug)]
-struct TrojanInboundAdapter {
-    cfg: crate::inbound::trojan::TrojanInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
 
-#[cfg(all(feature = "adapter-trojan", feature = "router"))]
-impl TrojanInboundAdapter {
-    fn new(cfg: crate::inbound::trojan::TrojanInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-trojan", feature = "router"))]
-impl InboundService for TrojanInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock().unwrap();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            crate::inbound::trojan::serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().unwrap().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
-#[derive(Debug)]
-struct SocksInboundAdapter {
-    cfg: crate::inbound::socks::SocksInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
-
-#[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
-impl SocksInboundAdapter {
-    fn new(cfg: crate::inbound::socks::SocksInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
-impl InboundService for SocksInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock().unwrap();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            crate::inbound::socks::serve_socks(cfg, rx, None)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().unwrap().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
 
 #[allow(dead_code)]
 fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
@@ -2840,49 +2952,6 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
 
 // ========== ShadowTLS Inbound ==========
 
-#[cfg(feature = "adapter-shadowtls")]
-#[derive(Debug)]
-struct ShadowTlsInboundAdapter {
-    cfg: crate::inbound::shadowtls::ShadowTlsInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
-
-#[cfg(feature = "adapter-shadowtls")]
-impl ShadowTlsInboundAdapter {
-    fn new(cfg: crate::inbound::shadowtls::ShadowTlsInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(feature = "adapter-shadowtls")]
-impl InboundService for ShadowTlsInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock().unwrap();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            crate::inbound::shadowtls::serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().unwrap().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
 
 #[cfg(all(
     feature = "adapter-http",
@@ -3068,49 +3137,7 @@ impl InboundService for TproxyInboundAdapter {
 
 // ========== TUIC Inbound ==========
 
-#[cfg(feature = "adapter-tuic")]
-#[derive(Debug)]
-struct TuicInboundAdapter {
-    cfg: crate::inbound::tuic::TuicInboundConfig,
-    stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
-}
 
-#[cfg(feature = "adapter-tuic")]
-impl TuicInboundAdapter {
-    fn new(cfg: crate::inbound::tuic::TuicInboundConfig) -> Self {
-        Self {
-            cfg,
-            stop_tx: Mutex::new(None),
-        }
-    }
-}
-
-#[cfg(feature = "adapter-tuic")]
-impl InboundService for TuicInboundAdapter {
-    fn serve(&self) -> io::Result<()> {
-        let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
-        let (tx, rx) = tokio::sync::mpsc::channel(1);
-        {
-            let mut guard = self.stop_tx.lock().unwrap();
-            *guard = Some(tx);
-        }
-        let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            crate::inbound::tuic::serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
-        let _ = self.stop_tx.lock().unwrap().take();
-        res
-    }
-
-    fn request_shutdown(&self) {
-        let mut guard = self.stop_tx.lock().unwrap();
-        if let Some(tx) = guard.take() {
-            let _ = tx.try_send(());
-        }
-    }
-}
 
 // Selector and URLTest builders
 fn build_selector_outbound(

@@ -20,6 +20,7 @@ use tokio::sync::Notify;
 #[cfg(feature = "adapter-hysteria2")]
 use sb_core::outbound::hysteria2::inbound::{
     Hysteria2Inbound as CoreInbound, Hysteria2ServerConfig, Hysteria2Stream, Hysteria2User,
+    MasqueradeConfig as CoreMasqueradeConfig,
 };
 
 /// Hysteria v2 inbound configuration
@@ -32,6 +33,8 @@ pub struct Hysteria2InboundConfig {
     pub congestion_control: Option<String>,
     pub salamander: Option<String>,
     pub obfs: Option<String>,
+    #[cfg(feature = "adapter-hysteria2")]
+    pub masquerade: Option<CoreMasqueradeConfig>,
     pub router: Arc<router::RouterHandle>,
     pub outbounds: Arc<OutboundRegistryHandle>,
 }
@@ -54,6 +57,8 @@ impl Default for Hysteria2InboundConfig {
             congestion_control: Some("bbr".to_string()),
             salamander: None,
             obfs: None,
+            #[cfg(feature = "adapter-hysteria2")]
+            masquerade: None,
             router: Arc::new(router::RouterHandle::from_env()),
             outbounds: Arc::new(OutboundRegistryHandle::default()),
         }
@@ -116,6 +121,7 @@ impl Hysteria2Inbound {
             congestion_control: cfg.congestion_control.clone(),
             salamander: cfg.salamander.clone(),
             obfs: cfg.obfs.clone(),
+            masquerade: cfg.masquerade.clone(),
         };
 
         let core = CoreInbound::new(core_config);

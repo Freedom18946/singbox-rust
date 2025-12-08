@@ -10,7 +10,7 @@ pub mod derp;
 pub mod ntp;
 
 #[cfg(feature = "service_resolved")]
-pub mod resolved;
+pub mod dns_forwarder;
 
 #[cfg(feature = "service_ssmapi")]
 pub mod ssmapi;
@@ -25,7 +25,7 @@ pub fn register_builtins() {
     #[cfg(feature = "service_resolved")]
     crate::service::register_service(
         sb_config::ir::ServiceType::Resolved,
-        resolved::build_resolved_service,
+        dns_forwarder::build_dns_forwarder_service,
     );
     #[cfg(feature = "service_derp")]
     crate::service::register_service(sb_config::ir::ServiceType::Derp, derp::build_derp_service);
