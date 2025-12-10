@@ -5,13 +5,13 @@ use bytes::{BufMut, BytesMut};
 pub trait SsrObfs: Send + Sync {
     /// Obfuscate data (client -> server).
     fn encode(&mut self, data: &[u8], out: &mut BytesMut);
-    
+
     /// De-obfuscate data (server -> client).
     fn decode(&mut self, data: &[u8], out: &mut BytesMut) -> Result<()>;
-    
+
     /// Get overhead size.
     fn overhead(&self) -> usize;
-    
+
     /// Get obfs name.
     fn name(&self) -> &'static str;
 }

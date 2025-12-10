@@ -72,9 +72,9 @@ fn test_socks_outbound_ir_conversion() {
 fn test_http_adapter_builder_with_ir() {
     use sb_config::ir::OutboundIR;
     use sb_config::ir::OutboundType;
-    use sb_core::adapter::OutboundParam;
     use sb_core::adapter::registry;
     use sb_core::adapter::Bridge;
+    use sb_core::adapter::OutboundParam;
     use sb_core::context::{Context, ContextRegistry};
     use std::sync::Arc;
 

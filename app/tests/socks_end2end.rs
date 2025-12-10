@@ -109,12 +109,12 @@ fn end_to_end_echo() {
             "tag": "direct"
         }]
     });
-    
+
     let ir: ConfigIR = to_ir_v1(&config);
     let eng = Engine::new(&ir);
     let br = build_bridge(&ir, eng.clone(), sb_core::context::Context::default());
     let sb = SwitchboardBuilder::from_config_ir(&ir).unwrap();
-    
+
     // Start Runtime (Full Stack)
     let rt = Runtime::new(eng, br, sb).start();
 

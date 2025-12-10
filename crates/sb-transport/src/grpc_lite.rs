@@ -80,9 +80,9 @@ impl GrpcLiteConfig {
 
     /// Get the gRPC path
     pub fn grpc_path(&self) -> String {
-        self.path.clone().unwrap_or_else(|| {
-            format!("/{}/{}", self.service_name, self.method_name)
-        })
+        self.path
+            .clone()
+            .unwrap_or_else(|| format!("/{}/{}", self.service_name, self.method_name))
     }
 }
 
@@ -221,7 +221,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for GrpcLiteStream<S> {
         // Read more data
         let mut tmp = [0u8; 4096];
         let mut read_buf = ReadBuf::new(&mut tmp);
-        
+
         match Pin::new(&mut this.inner).poll_read(cx, &mut read_buf) {
             Poll::Ready(Ok(())) => {
                 let n = read_buf.filled().len();
@@ -255,7 +255,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for GrpcLiteStream<S> {
     ) -> Poll<io::Result<usize>> {
         let frame = GrpcFrame::new(Bytes::copy_from_slice(buf));
         let encoded = frame.encode();
-        
+
         match Pin::new(&mut self.inner).poll_write(cx, &encoded) {
             Poll::Ready(Ok(n)) if n >= encoded.len() => Poll::Ready(Ok(buf.len())),
             Poll::Ready(Ok(_)) => Poll::Ready(Err(io::Error::new(
@@ -374,8 +374,7 @@ mod tests {
         let config = GrpcLiteConfig::new("TunService", "Tun");
         assert_eq!(config.grpc_path(), "/TunService/Tun");
 
-        let config = GrpcLiteConfig::new("service", "method")
-            .with_path("/custom/path");
+        let config = GrpcLiteConfig::new("service", "method").with_path("/custom/path");
         assert_eq!(config.grpc_path(), "/custom/path");
     }
 
@@ -383,13 +382,13 @@ mod tests {
     fn test_frame_encode_decode() {
         let frame = GrpcFrame::new(Bytes::from("hello gRPC"));
         let encoded = frame.encode();
-        
+
         assert_eq!(encoded.len(), GRPC_HEADER_SIZE + 10);
         assert_eq!(encoded[0], 0); // not compressed
-        
+
         let mut buf = BytesMut::from(&encoded[..]);
         let decoded = GrpcFrame::decode(&mut buf).unwrap().unwrap();
-        
+
         assert!(!decoded.compressed);
         assert_eq!(decoded.data, Bytes::from("hello gRPC"));
     }
@@ -398,12 +397,12 @@ mod tests {
     fn test_compressed_frame() {
         let frame = GrpcFrame::compressed(Bytes::from("compressed data"));
         let encoded = frame.encode();
-        
+
         assert_eq!(encoded[0], 1); // compressed
-        
+
         let mut buf = BytesMut::from(&encoded[..]);
         let decoded = GrpcFrame::decode(&mut buf).unwrap().unwrap();
-        
+
         assert!(decoded.compressed);
     }
 
@@ -412,12 +411,18 @@ mod tests {
         let config = GrpcLiteConfig::new("TestService", "TestMethod")
             .with_host("example.com")
             .with_user_agent("test-client/1.0");
-        
+
         let headers = build_grpc_headers(&config);
-        
-        assert!(headers.iter().any(|(k, v)| k == ":path" && v == "/TestService/TestMethod"));
-        assert!(headers.iter().any(|(k, v)| k == ":authority" && v == "example.com"));
-        assert!(headers.iter().any(|(k, v)| k == "content-type" && v == "application/grpc"));
+
+        assert!(headers
+            .iter()
+            .any(|(k, v)| k == ":path" && v == "/TestService/TestMethod"));
+        assert!(headers
+            .iter()
+            .any(|(k, v)| k == ":authority" && v == "example.com"));
+        assert!(headers
+            .iter()
+            .any(|(k, v)| k == "content-type" && v == "application/grpc"));
     }
 
     #[test]

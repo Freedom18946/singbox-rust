@@ -17,13 +17,13 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_rustls::rustls::crypto::ring::sign::any_supported_type;
 use tokio_rustls::rustls::{
     pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
     server::ResolvesServerCertUsingSni,
     sign::CertifiedKey,
     ServerConfig,
 };
-use tokio_rustls::rustls::crypto::ring::sign::any_supported_type;
 use tokio_rustls::TlsAcceptor;
 
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};

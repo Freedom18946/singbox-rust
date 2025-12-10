@@ -15,5 +15,3 @@ pub fn emit<T: Serialize>(fmt: Format, human: impl FnOnce() -> String, json: &T)
         ), // route 先复用JSON，check单独SARIF
     }
 }
-
-

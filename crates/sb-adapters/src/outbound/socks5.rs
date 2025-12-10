@@ -6,9 +6,9 @@
 //! It implements the SOCKS5 protocol as defined in RFC 1928.
 //! 它实现了 RFC 1928 中定义的 SOCKS5 协议。
 
+use crate::outbound::prelude::*;
 #[allow(unused_imports)]
 use anyhow::Context;
-use crate::outbound::prelude::*;
 
 #[cfg(feature = "socks-udp")]
 use crate::traits::OutboundDatagram;
@@ -206,7 +206,7 @@ impl OutboundConnector for Socks5Connector {
         #[cfg(feature = "adapter-socks")]
         {
             let retry_policy = opts.retry_policy.clone();
-            
+
             // We need to clone these for the closure
             let this = self.clone();
             let target = target.clone();
@@ -216,7 +216,7 @@ impl OutboundConnector for Socks5Connector {
                 let this = this.clone();
                 let target = target.clone();
                 let opts = opts.clone();
-                
+
                 async move {
                     let _span = crate::outbound::span_dial("socks5", &target);
 
@@ -238,17 +238,21 @@ impl OutboundConnector for Socks5Connector {
                     let dial_result = async {
                         // Parse proxy server address
                         // 解析代理服务器地址
-                        let proxy_addr: SocketAddr = this
-                            .config
-                            .server
-                            .parse()
-                            .map_err(|e| AdapterError::Other(
-                                format!("Invalid SOCKS5 proxy address {}: {}", this.config.server, e)
-                            ))?;
+                        let proxy_addr: SocketAddr = this.config.server.parse().map_err(|e| {
+                            AdapterError::Other(format!(
+                                "Invalid SOCKS5 proxy address {}: {}",
+                                this.config.server, e
+                            ))
+                        })?;
 
                         // Connect to proxy server with timeout
                         // 连接到代理服务器 (带超时)
-                        let mut stream = match tokio::time::timeout(opts.connect_timeout, TcpStream::connect(proxy_addr)).await {
+                        let mut stream = match tokio::time::timeout(
+                            opts.connect_timeout,
+                            TcpStream::connect(proxy_addr),
+                        )
+                        .await
+                        {
                             Ok(Ok(s)) => s,
                             Ok(Err(e)) => return Err(AdapterError::Io(e)),
                             Err(_) => return Err(AdapterError::Timeout(opts.connect_timeout)),
@@ -274,10 +278,9 @@ impl OutboundConnector for Socks5Connector {
 
                                 // Parse host for SNI
                                 // 解析主机名用于 SNI
-                                let host =
-                                    this.config.server.split(':').next().ok_or(
-                                        AdapterError::InvalidConfig("Invalid proxy server address"),
-                                    )?;
+                                let host = this.config.server.split(':').next().ok_or(
+                                    AdapterError::InvalidConfig("Invalid proxy server address"),
+                                )?;
 
                                 let server_name = ServerName::try_from(host)
                                     .map_err(|_| {
@@ -296,13 +299,18 @@ impl OutboundConnector for Socks5Connector {
                                     format!("TLS handshake timeout with SOCKS5 proxy {}", host)
                                 })
                                 .map_err(|e| AdapterError::Other(e.to_string()))?
-                                .with_context(|| format!("TLS handshake failed with SOCKS5 proxy {}", host))
+                                .with_context(|| {
+                                    format!("TLS handshake failed with SOCKS5 proxy {}", host)
+                                })
                                 .map_err(|e| AdapterError::Other(e.to_string()))?;
 
                                 // Perform SOCKS5 handshake over TLS
                                 // 通过 TLS 执行 SOCKS5 握手
-                                this.socks5_handshake_generic(&mut tls_stream, opts.connect_timeout)
-                                    .await?;
+                                this.socks5_handshake_generic(
+                                    &mut tls_stream,
+                                    opts.connect_timeout,
+                                )
+                                .await?;
 
                                 // Send CONNECT request over TLS
                                 // 通过 TLS 发送 CONNECT 请求
@@ -361,7 +369,8 @@ impl OutboundConnector for Socks5Connector {
                         }
                     }
                 }
-            }).await
+            })
+            .await
         }
     }
 }

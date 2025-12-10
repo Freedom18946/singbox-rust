@@ -44,8 +44,7 @@ impl WireGuardEndpoint {
     pub fn new(
         ir: &EndpointIR,
         dns: Option<Arc<dyn crate::dns::Resolver>>,
-        #[cfg(feature = "router")]
-        router: Option<Arc<crate::router::RouterHandle>>,
+        #[cfg(feature = "router")] router: Option<Arc<crate::router::RouterHandle>>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let tag = ir.tag.clone().unwrap_or_else(|| "wireguard".to_string());
 
@@ -68,12 +67,7 @@ impl WireGuardEndpoint {
         let local_addresses: Vec<IpNet> = ir
             .wireguard_address
             .as_ref()
-            .map(|addrs| {
-                addrs
-                    .iter()
-                    .filter_map(|s| s.parse().ok())
-                    .collect()
-            })
+            .map(|addrs| addrs.iter().filter_map(|s| s.parse().ok()).collect())
             .unwrap_or_default();
 
         let peers = peers_ir
@@ -250,9 +244,9 @@ impl Endpoint for WireGuardEndpoint {
 
             // Handle FQDN resolution
             let target_ip = if destination.is_fqdn() {
-                let fqdn = destination.fqdn().ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "expected FQDN")
-                })?;
+                let fqdn = destination
+                    .fqdn()
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "expected FQDN"))?;
 
                 // Use internal DNS resolver if available, otherwise fallback to system DNS
                 if let Some(resolver) = &self.dns_resolver {
@@ -260,18 +254,17 @@ impl Endpoint for WireGuardEndpoint {
                         .resolve(fqdn)
                         .await
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-                    answer
-                        .ips
-                        .first()
-                        .cloned()
-                        .ok_or_else(|| {
-                             io::Error::new(
-                                io::ErrorKind::NotFound,
-                                format!("failed to resolve: {}", fqdn),
-                            )
-                        })?
+                    answer.ips.first().cloned().ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::NotFound,
+                            format!("failed to resolve: {}", fqdn),
+                        )
+                    })?
                 } else {
-                    return Err(io::Error::new(io::ErrorKind::Other, "internal DNS resolver required"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "internal DNS resolver required",
+                    ));
                 }
             } else {
                 destination.addr().ok_or_else(|| {
@@ -284,10 +277,7 @@ impl Endpoint for WireGuardEndpoint {
 
             // Select the appropriate peer
             let transport = self.select_peer(target_ip).ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotConnected,
-                    "no WireGuard peer available",
-                )
+                io::Error::new(io::ErrorKind::NotConnected, "no WireGuard peer available")
             })?;
 
             // Dial through the WireGuard tunnel
@@ -316,7 +306,10 @@ impl Endpoint for WireGuardEndpoint {
             // FIXME: Cannot support userspace UDP tunneling because Endpoint trait requires UdpSocket (OS handle).
             // Binding to 0.0.0.0 causes traffic leak (bypassing WG).
             // Returning error is safer than leaking.
-            Err(io::Error::new(io::ErrorKind::Unsupported, "WireGuard UDP listen_packet not supported without TUN"))
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "WireGuard UDP listen_packet not supported without TUN",
+            ))
         })
     }
 
@@ -370,7 +363,11 @@ impl Endpoint for WireGuardEndpoint {
 
             let decision = router.decide(&ctx);
             if let crate::router::rules::Decision::Reject = decision {
-                return Err(format!("connection from {} to {} rejected by rule", source, destination).into());
+                return Err(format!(
+                    "connection from {} to {} rejected by rule",
+                    source, destination
+                )
+                .into());
             }
             debug!(tag = %self.tag, "connection allowed by router: {:?}", decision);
         }
@@ -483,7 +480,9 @@ impl Endpoint for WireGuardEndpoint {
             };
 
             if let Some(handler) = handler {
-                handler.route_packet_connection(socket, metadata, on_close).await;
+                handler
+                    .route_packet_connection(socket, metadata, on_close)
+                    .await;
             } else {
                 warn!(tag = %self.tag, "no connection handler registered, dropping UDP connection");
                 if let Some(close) = on_close {

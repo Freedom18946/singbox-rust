@@ -136,7 +136,7 @@ fn test_wireguard_endpoint_with_psk() {
 #[cfg(feature = "adapter-wireguard-endpoint")]
 #[test]
 fn test_wireguard_endpoint_lifecycle() {
-    use sb_core::endpoint::{EndpointContext};
+    use sb_core::endpoint::EndpointContext;
 
     // Register all endpoints
     sb_adapters::register_all();

@@ -290,7 +290,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for UotStream<S> {
         // Read more data from inner stream
         let mut tmp = [0u8; 4096];
         let mut read_buf = ReadBuf::new(&mut tmp);
-        
+
         match Pin::new(&mut this.inner).poll_read(cx, &mut read_buf) {
             Poll::Ready(Ok(())) => {
                 let n = read_buf.filled().len();
@@ -378,9 +378,12 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for UotStream<S> {
 pub trait UotSend {
     /// Send a UDP packet
     fn send_packet(&mut self, data: &[u8]) -> impl std::future::Future<Output = io::Result<()>>;
-    
+
     /// Send a UDP packet with address (v2)
-    fn send_packet_to(&mut self, packet: &UdpPacket) -> impl std::future::Future<Output = io::Result<()>>;
+    fn send_packet_to(
+        &mut self,
+        packet: &UdpPacket,
+    ) -> impl std::future::Future<Output = io::Result<()>>;
 }
 
 #[cfg(test)]
@@ -391,14 +394,14 @@ mod tests {
     fn test_encode_decode_v1() {
         let data = b"Hello, UDP over TCP!";
         let encoded = encode_packet_v1(data).unwrap();
-        
+
         assert_eq!(encoded.len(), 2 + data.len());
         assert_eq!(encoded[0], 0);
         assert_eq!(encoded[1], data.len() as u8);
-        
+
         let mut buf = BytesMut::from(&encoded[..]);
         let decoded = decode_packet_v1(&mut buf).unwrap().unwrap();
-        
+
         assert_eq!(&decoded[..], &data[..]);
     }
 
@@ -408,36 +411,33 @@ mod tests {
             "192.168.1.1:8080".parse().unwrap(),
             Bytes::from("test data"),
         );
-        
+
         let encoded = encode_packet_v2(&packet).unwrap();
-        
+
         // type(1) + ipv4(4) + port(2) + len(2) + data(9)
         assert_eq!(encoded.len(), 1 + 4 + 2 + 2 + 9);
         assert_eq!(encoded[0], AddressType::IPv4 as u8);
-        
+
         let mut buf = BytesMut::from(&encoded[..]);
         let decoded = decode_packet_v2(&mut buf).unwrap().unwrap();
-        
+
         assert_eq!(decoded.addr, packet.addr);
         assert_eq!(decoded.data, packet.data);
     }
 
     #[test]
     fn test_encode_decode_v2_ipv6() {
-        let packet = UdpPacket::new(
-            "[::1]:9000".parse().unwrap(),
-            Bytes::from("ipv6 test"),
-        );
-        
+        let packet = UdpPacket::new("[::1]:9000".parse().unwrap(), Bytes::from("ipv6 test"));
+
         let encoded = encode_packet_v2(&packet).unwrap();
-        
+
         // type(1) + ipv6(16) + port(2) + len(2) + data(9)
         assert_eq!(encoded.len(), 1 + 16 + 2 + 2 + 9);
         assert_eq!(encoded[0], AddressType::IPv6 as u8);
-        
+
         let mut buf = BytesMut::from(&encoded[..]);
         let decoded = decode_packet_v2(&mut buf).unwrap().unwrap();
-        
+
         assert_eq!(decoded.addr, packet.addr);
         assert_eq!(decoded.data, packet.data);
     }

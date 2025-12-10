@@ -69,7 +69,9 @@ impl ClashApiState {
     fn new(cfg: &ClashApiIR) -> Self {
         Self {
             mode: Arc::new(parking_lot::RwLock::new(
-                cfg.default_mode.clone().unwrap_or_else(|| "rule".to_string()),
+                cfg.default_mode
+                    .clone()
+                    .unwrap_or_else(|| "rule".to_string()),
             )),
             secret: cfg.secret.clone(),
             connections: None,
@@ -128,8 +130,6 @@ impl ClashApiServer {
             .and_then(|addr| addr.parse().ok())
     }
 
-
-
     /// Create the Axum router with all Clash API endpoints.
     #[cfg(feature = "service_clash_api")]
     fn create_router(&self) -> Router {
@@ -137,13 +137,22 @@ impl ClashApiServer {
             // Version
             .route("/version", get(handlers::get_version))
             // Configuration
-            .route("/configs", get(handlers::get_configs).patch(handlers::patch_configs))
+            .route(
+                "/configs",
+                get(handlers::get_configs).patch(handlers::patch_configs),
+            )
             // Proxies
             .route("/proxies", get(handlers::get_proxies))
-            .route("/proxies/:name", get(handlers::get_proxy).put(handlers::switch_proxy))
+            .route(
+                "/proxies/:name",
+                get(handlers::get_proxy).put(handlers::switch_proxy),
+            )
             .route("/proxies/:name/delay", get(handlers::get_proxy_delay))
             // Connections
-            .route("/connections", get(handlers::get_connections).delete(handlers::close_all_connections))
+            .route(
+                "/connections",
+                get(handlers::get_connections).delete(handlers::close_all_connections),
+            )
             .route("/connections/:id", delete(handlers::close_connection))
             // Rules
             .route("/rules", get(handlers::get_rules))
@@ -448,7 +457,7 @@ mod handlers {
     pub async fn get_version() -> Json<VersionResponse> {
         Json(VersionResponse {
             version: format!("singbox-rust {}", env!("CARGO_PKG_VERSION")),
-            meta: true,  // We support Meta extensions
+            meta: true, // We support Meta extensions
             premium: false,
         })
     }
@@ -496,23 +505,29 @@ mod handlers {
         let mut proxies = HashMap::new();
 
         // Built-in proxies
-        proxies.insert("DIRECT".to_string(), ProxyInfo {
-            name: "DIRECT".to_string(),
-            proxy_type: "Direct".to_string(),
-            now: None,
-            all: vec![],
-            history: None,
-            udp: true,
-        });
+        proxies.insert(
+            "DIRECT".to_string(),
+            ProxyInfo {
+                name: "DIRECT".to_string(),
+                proxy_type: "Direct".to_string(),
+                now: None,
+                all: vec![],
+                history: None,
+                udp: true,
+            },
+        );
 
-        proxies.insert("REJECT".to_string(), ProxyInfo {
-            name: "REJECT".to_string(),
-            proxy_type: "Reject".to_string(),
-            now: None,
-            all: vec![],
-            history: None,
-            udp: true,
-        });
+        proxies.insert(
+            "REJECT".to_string(),
+            ProxyInfo {
+                name: "REJECT".to_string(),
+                proxy_type: "Reject".to_string(),
+                now: None,
+                all: vec![],
+                history: None,
+                udp: true,
+            },
+        );
 
         // TODO: Populate from OutboundManager
         // For now, return placeholder data
@@ -562,7 +577,9 @@ mod handlers {
         Path(name): Path<String>,
         Query(params): Query<DelayQuery>,
     ) -> Result<Json<DelayResponse>, StatusCode> {
-        let url = params.url.unwrap_or_else(|| "https://www.gstatic.com/generate_204".to_string());
+        let url = params
+            .url
+            .unwrap_or_else(|| "https://www.gstatic.com/generate_204".to_string());
         let timeout = params.timeout.unwrap_or(5000);
 
         tracing::debug!(
@@ -580,36 +597,40 @@ mod handlers {
 
     pub async fn get_connections(State(state): State<ClashApiState>) -> Json<ConnectionsResponse> {
         let connections = if let Some(conn_mgr) = &state.connections {
-            conn_mgr.all().iter().map(|c| {
-                let parts: Vec<&str> = c.destination.split(':').collect();
-                let (host, port) = if parts.len() == 2 {
-                    (parts[0].to_string(), parts[1].to_string())
-                } else {
-                    (c.destination.clone(), "0".to_string())
-                };
+            conn_mgr
+                .all()
+                .iter()
+                .map(|c| {
+                    let parts: Vec<&str> = c.destination.split(':').collect();
+                    let (host, port) = if parts.len() == 2 {
+                        (parts[0].to_string(), parts[1].to_string())
+                    } else {
+                        (c.destination.clone(), "0".to_string())
+                    };
 
-                ConnectionInfo {
-                    id: c.id.to_string(),
-                    metadata: ConnectionMetadata {
-                        network: c.protocol.clone(),
-                        conn_type: "".to_string(),
-                        source_ip: c.source.split(':').next().unwrap_or("").to_string(),
-                        destination_ip: "".to_string(),
-                        source_port: c.source.split(':').last().unwrap_or("0").to_string(),
-                        destination_port: port,
-                        host,
-                        dns_mode: "".to_string(),
-                        process_path: "".to_string(),
-                        special_proxy: "".to_string(),
-                    },
-                    upload: 0,
-                    download: 0,
-                    start: "".to_string(),
-                    chains: vec![],
-                    rule: "".to_string(),
-                    rule_payload: "".to_string(),
-                }
-            }).collect()
+                    ConnectionInfo {
+                        id: c.id.to_string(),
+                        metadata: ConnectionMetadata {
+                            network: c.protocol.clone(),
+                            conn_type: "".to_string(),
+                            source_ip: c.source.split(':').next().unwrap_or("").to_string(),
+                            destination_ip: "".to_string(),
+                            source_port: c.source.split(':').last().unwrap_or("0").to_string(),
+                            destination_port: port,
+                            host,
+                            dns_mode: "".to_string(),
+                            process_path: "".to_string(),
+                            special_proxy: "".to_string(),
+                        },
+                        upload: 0,
+                        download: 0,
+                        start: "".to_string(),
+                        chains: vec![],
+                        rule: "".to_string(),
+                        rule_payload: "".to_string(),
+                    }
+                })
+                .collect()
         } else {
             vec![]
         };
@@ -639,11 +660,15 @@ mod handlers {
     }
 
     pub async fn get_proxy_providers() -> Json<ProvidersResponse> {
-        Json(ProvidersResponse { providers: HashMap::new() })
+        Json(ProvidersResponse {
+            providers: HashMap::new(),
+        })
     }
 
     pub async fn get_rule_providers() -> Json<ProvidersResponse> {
-        Json(ProvidersResponse { providers: HashMap::new() })
+        Json(ProvidersResponse {
+            providers: HashMap::new(),
+        })
     }
 
     pub async fn dns_query(Query(params): Query<DnsQueryParams>) -> Json<DnsQueryResponse> {
@@ -689,7 +714,10 @@ mod tests {
 
         let server = ClashApiServer::new(cfg);
         assert_eq!(server.get_mode(), "rule");
-        assert_eq!(server.listen_addr(), Some("127.0.0.1:9090".parse().unwrap()));
+        assert_eq!(
+            server.listen_addr(),
+            Some("127.0.0.1:9090".parse().unwrap())
+        );
     }
 
     #[test]

@@ -123,29 +123,29 @@ impl std::str::FromStr for UtlsFingerprint {
             "chrome106" => Ok(Self::Chrome106),
             "chromepsk" => Ok(Self::ChromePsk),
             "chromepq" => Ok(Self::ChromePq),
-            
+
             "firefox" | "firefox105" => Ok(Self::Firefox105),
             "firefox55" => Ok(Self::Firefox55),
             "firefox56" => Ok(Self::Firefox56),
             "firefox63" => Ok(Self::Firefox63),
             "firefox65" => Ok(Self::Firefox65),
             "firefox99" => Ok(Self::Firefox99),
-            
+
             "safari" => Ok(Self::Safari),
             "ios" | "ios14" | "safari_ios14" => Ok(Self::SafariIos14),
             "ios15" | "safari_ios15" => Ok(Self::SafariIos15),
             "ios16" | "safari_ios16" => Ok(Self::SafariIos16),
-            
+
             "edge" | "edge106" => Ok(Self::Edge106),
             "edge85" => Ok(Self::Edge85),
-            
+
             "random" => Ok(Self::Random),
             "randomchrome" | "random_chrome" => Ok(Self::RandomChrome),
             "randomfirefox" | "random_firefox" => Ok(Self::RandomFirefox),
-            
+
             "360" | "360browser" => Ok(Self::Browser360),
             "qq" | "qqbrowser" => Ok(Self::QQBrowser),
-            
+
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unknown uTLS fingerprint: {}", other),
@@ -170,29 +170,29 @@ impl std::fmt::Display for UtlsFingerprint {
             Self::Chrome110 => write!(f, "chrome110"),
             Self::ChromePsk => write!(f, "chrome_psk"),
             Self::ChromePq => write!(f, "chrome_pq"),
-            
+
             Self::Firefox55 => write!(f, "firefox55"),
             Self::Firefox56 => write!(f, "firefox56"),
             Self::Firefox63 => write!(f, "firefox63"),
             Self::Firefox65 => write!(f, "firefox65"),
             Self::Firefox99 => write!(f, "firefox99"),
             Self::Firefox105 => write!(f, "firefox105"),
-            
+
             Self::Safari => write!(f, "safari"),
             Self::SafariIos14 => write!(f, "safari_ios14"),
             Self::SafariIos15 => write!(f, "safari_ios15"),
             Self::SafariIos16 => write!(f, "safari_ios16"),
-            
+
             Self::Edge85 => write!(f, "edge85"),
             Self::Edge106 => write!(f, "edge106"),
-            
+
             Self::Random => write!(f, "random"),
             Self::RandomChrome => write!(f, "random_chrome"),
             Self::RandomFirefox => write!(f, "random_firefox"),
-            
+
             Self::Browser360 => write!(f, "360browser"),
             Self::QQBrowser => write!(f, "qqbrowser"),
-            
+
             Self::Custom(_) => write!(f, "custom"),
         }
     }
@@ -441,19 +441,19 @@ impl UtlsConfig {
     /// Get the custom fingerprint parameters for this config
     pub fn get_fingerprint_params(&self) -> CustomFingerprint {
         match &self.fingerprint {
-            UtlsFingerprint::Chrome110 | UtlsFingerprint::Chrome106 |
-            UtlsFingerprint::Chrome102 | UtlsFingerprint::Chrome100 |
-            UtlsFingerprint::ChromePsk | UtlsFingerprint::ChromePq => {
-                CustomFingerprint::chrome_110()
-            }
-            UtlsFingerprint::Firefox105 | UtlsFingerprint::Firefox99 |
-            UtlsFingerprint::Firefox65 | UtlsFingerprint::Firefox63 => {
-                CustomFingerprint::firefox_105()
-            }
-            UtlsFingerprint::SafariIos16 | UtlsFingerprint::SafariIos15 |
-            UtlsFingerprint::Safari => {
-                CustomFingerprint::safari_ios16()
-            }
+            UtlsFingerprint::Chrome110
+            | UtlsFingerprint::Chrome106
+            | UtlsFingerprint::Chrome102
+            | UtlsFingerprint::Chrome100
+            | UtlsFingerprint::ChromePsk
+            | UtlsFingerprint::ChromePq => CustomFingerprint::chrome_110(),
+            UtlsFingerprint::Firefox105
+            | UtlsFingerprint::Firefox99
+            | UtlsFingerprint::Firefox65
+            | UtlsFingerprint::Firefox63 => CustomFingerprint::firefox_105(),
+            UtlsFingerprint::SafariIos16
+            | UtlsFingerprint::SafariIos15
+            | UtlsFingerprint::Safari => CustomFingerprint::safari_ios16(),
             UtlsFingerprint::Custom(custom) => custom.clone(),
             _ => CustomFingerprint::chrome_110(), // Default to Chrome
         }
@@ -463,15 +463,38 @@ impl UtlsConfig {
 /// Get list of all available fingerprints
 pub fn available_fingerprints() -> Vec<&'static str> {
     vec![
-        "chrome", "chrome58", "chrome62", "chrome70", "chrome72", "chrome83",
-        "chrome87", "chrome96", "chrome100", "chrome102", "chrome106", "chrome110",
-        "chrome_psk", "chrome_pq",
-        "firefox", "firefox55", "firefox56", "firefox63", "firefox65",
-        "firefox99", "firefox105",
-        "safari", "safari_ios14", "safari_ios15", "safari_ios16",
-        "edge85", "edge106",
-        "random", "random_chrome", "random_firefox",
-        "360browser", "qqbrowser",
+        "chrome",
+        "chrome58",
+        "chrome62",
+        "chrome70",
+        "chrome72",
+        "chrome83",
+        "chrome87",
+        "chrome96",
+        "chrome100",
+        "chrome102",
+        "chrome106",
+        "chrome110",
+        "chrome_psk",
+        "chrome_pq",
+        "firefox",
+        "firefox55",
+        "firefox56",
+        "firefox63",
+        "firefox65",
+        "firefox99",
+        "firefox105",
+        "safari",
+        "safari_ios14",
+        "safari_ios15",
+        "safari_ios16",
+        "edge85",
+        "edge106",
+        "random",
+        "random_chrome",
+        "random_firefox",
+        "360browser",
+        "qqbrowser",
     ]
 }
 
@@ -482,10 +505,22 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     #[test]
     fn test_fingerprint_parse() {
-        assert_eq!("chrome".parse::<UtlsFingerprint>().unwrap(), UtlsFingerprint::Chrome110);
-        assert_eq!("firefox".parse::<UtlsFingerprint>().unwrap(), UtlsFingerprint::Firefox105);
-        assert_eq!("safari".parse::<UtlsFingerprint>().unwrap(), UtlsFingerprint::Safari);
-        assert_eq!("random".parse::<UtlsFingerprint>().unwrap(), UtlsFingerprint::Random);
+        assert_eq!(
+            "chrome".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Chrome110
+        );
+        assert_eq!(
+            "firefox".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Firefox105
+        );
+        assert_eq!(
+            "safari".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Safari
+        );
+        assert_eq!(
+            "random".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Random
+        );
         assert!("invalid".parse::<UtlsFingerprint>().is_err());
     }
 

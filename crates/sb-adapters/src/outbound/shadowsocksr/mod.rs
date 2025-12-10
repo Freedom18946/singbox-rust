@@ -32,18 +32,26 @@ impl ShadowsocksROutbound {
 
 #[async_trait]
 impl OutboundConnector for ShadowsocksROutbound {
-    async fn dial(&self, _target: crate::traits::Target, _opts: crate::traits::DialOpts) -> crate::error::Result<crate::traits::BoxedStream> {
+    async fn dial(
+        &self,
+        _target: crate::traits::Target,
+        _opts: crate::traits::DialOpts,
+    ) -> crate::error::Result<crate::traits::BoxedStream> {
         // Connect to the SSR server
-        let stream = tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
-            .await
-            .map_err(crate::error::AdapterError::Io)?;
-        
+        let stream =
+            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port))
+                .await
+                .map_err(crate::error::AdapterError::Io)?;
+
         let cipher = crypto::Cipher::create(&self.config.method, &self.config.password);
         let obfs = obfs::Obfs::create(&self.config.obfs, self.config.obfs_param.as_deref());
-        let protocol = protocol::Protocol::create(&self.config.protocol, self.config.protocol_param.as_deref());
+        let protocol = protocol::Protocol::create(
+            &self.config.protocol,
+            self.config.protocol_param.as_deref(),
+        );
 
         let ssr_stream = stream::ShadowsocksRStream::new(stream, cipher, obfs, protocol);
-        
+
         Ok(Box::new(ssr_stream))
     }
 }

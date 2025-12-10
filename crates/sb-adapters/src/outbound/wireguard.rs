@@ -74,11 +74,12 @@ impl WireGuardOutbound {
     /// Create a new WireGuard outbound with the given configuration.
     pub async fn new(config: WireGuardOutboundConfig) -> Result<Self> {
         // Resolve peer endpoint
-        let peer_endpoint: SocketAddr = tokio::net::lookup_host(format!("{}:{}", config.server, config.port))
-            .await
-            .map_err(|e| AdapterError::network(format!("DNS resolution failed: {}", e)))?
-            .next()
-            .ok_or_else(|| AdapterError::network("No address resolved"))?;
+        let peer_endpoint: SocketAddr =
+            tokio::net::lookup_host(format!("{}:{}", config.server, config.port))
+                .await
+                .map_err(|e| AdapterError::network(format!("DNS resolution failed: {}", e)))?
+                .next()
+                .ok_or_else(|| AdapterError::network("No address resolved"))?;
 
         // Build transport config
         let transport_config = WireGuardConfig {
@@ -95,8 +96,10 @@ impl WireGuardOutbound {
         // Initialize transport
         let transport = WireGuardTransport::new(transport_config)
             .await
-            .map_err(|e| AdapterError::other(format!("Failed to initialize WireGuard transport: {}", e)))?;
-        
+            .map_err(|e| {
+                AdapterError::other(format!("Failed to initialize WireGuard transport: {}", e))
+            })?;
+
         let transport_arc = Arc::new(transport);
 
         // Initiate handshake immediately (fire and forget)
@@ -107,9 +110,9 @@ impl WireGuardOutbound {
             }
         });
 
-        Ok(Self { 
-            _config: config, 
-            transport: transport_arc 
+        Ok(Self {
+            _config: config,
+            transport: transport_arc,
         })
     }
 
@@ -130,7 +133,7 @@ impl OutboundConnector for WireGuardOutbound {
 
         // Get a stream from the existing tunnel
         let stream = self.transport.get_stream();
-        
+
         // Wrap in Box to satisfy BoxedStream
         Ok(Box::new(stream))
     }
@@ -144,26 +147,31 @@ impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
         use sb_config::ir::OutboundType;
 
         if ir.ty != OutboundType::Wireguard {
-            return Err(AdapterError::InvalidConfig("Expected WireGuard outbound type"));
+            return Err(AdapterError::InvalidConfig(
+                "Expected WireGuard outbound type",
+            ));
         }
 
-        let server = ir
-            .server
-            .clone()
-            .ok_or(AdapterError::InvalidConfig("WireGuard requires server address"))?;
+        let server = ir.server.clone().ok_or(AdapterError::InvalidConfig(
+            "WireGuard requires server address",
+        ))?;
         let port = ir.port.unwrap_or(51820);
 
         let private_key = ir
             .wireguard_private_key
             .clone()
             .or_else(|| std::env::var("SB_WIREGUARD_PRIVATE_KEY").ok())
-            .ok_or(AdapterError::InvalidConfig("WireGuard requires private_key"))?;
+            .ok_or(AdapterError::InvalidConfig(
+                "WireGuard requires private_key",
+            ))?;
 
         let peer_public_key = ir
             .wireguard_peer_public_key
             .clone()
             .or_else(|| std::env::var("SB_WIREGUARD_PEER_PUBLIC_KEY").ok())
-            .ok_or(AdapterError::InvalidConfig("WireGuard requires peer_public_key"))?;
+            .ok_or(AdapterError::InvalidConfig(
+                "WireGuard requires peer_public_key",
+            ))?;
 
         let pre_shared_key = ir
             .wireguard_pre_shared_key
@@ -230,7 +238,9 @@ mod tests {
             server: Some("vpn.example.com".to_string()),
             port: Some(51820),
             wireguard_private_key: Some("YAnz5TF+lXXJte14tji3zlbzbm+JFHYa74LLQDzOjG0=".to_string()),
-            wireguard_peer_public_key: Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=".to_string()),
+            wireguard_peer_public_key: Some(
+                "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=".to_string(),
+            ),
             ..Default::default()
         };
 

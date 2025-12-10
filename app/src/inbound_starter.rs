@@ -66,10 +66,7 @@ fn parse_udp_bind_from_env() -> Option<SocketAddr> {
 
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 #[cfg(feature = "router")]
-#[allow(
-    clippy::cognitive_complexity,
-    clippy::too_many_lines
-)]
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub async fn start_inbounds_from_ir(
     inbounds: &[InboundIR],
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
@@ -346,10 +343,7 @@ fn start_direct_inbound(ib: &InboundIR) {
 
 #[cfg(feature = "adapters")]
 #[cfg(feature = "adapters")]
-fn start_trojan_inbound(
-    ib: &InboundIR,
-    #[cfg(feature = "router")] router: Arc<RouterHandle>,
-) {
+fn start_trojan_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
     let listen_str = if ib.listen.contains(':') {
         ib.listen.clone()
     } else {

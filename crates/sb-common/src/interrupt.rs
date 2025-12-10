@@ -202,9 +202,9 @@ mod tests {
         let mut signal = handler.subscribe();
 
         assert!(!handler.is_shutdown());
-        
+
         handler.shutdown();
-        
+
         assert!(handler.is_shutdown());
         signal.wait().await;
     }
@@ -212,12 +212,12 @@ mod tests {
     #[tokio::test]
     async fn test_task_monitor() {
         let monitor = TaskMonitor::new();
-        
+
         {
             let _guard = TaskGuard::new(&monitor);
             assert_eq!(monitor.active_count(), 1);
         }
-        
+
         assert_eq!(monitor.active_count(), 0);
         assert_eq!(monitor.completed_count(), 1);
     }
@@ -225,12 +225,12 @@ mod tests {
     #[tokio::test]
     async fn test_task_failure() {
         let monitor = TaskMonitor::new();
-        
+
         {
             let mut guard = TaskGuard::new(&monitor);
             guard.fail();
         }
-        
+
         assert_eq!(monitor.failed_count(), 1);
         assert_eq!(monitor.completed_count(), 0);
     }

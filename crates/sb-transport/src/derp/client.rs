@@ -56,10 +56,10 @@ impl DerpClient {
         self.handshake(&mut stream).await?;
 
         info!("DERP handshake successful with {}", self.server_addr);
-        
+
         let mut guard = self.stream.lock().await;
         *guard = Some(stream);
-        
+
         Ok(())
     }
 
@@ -68,15 +68,21 @@ impl DerpClient {
         // TODO: Proper URL parsing and DNS resolution
         // For now, assume it's "host:port"
         let addr_str = if self.server_addr.contains("://") {
-             self.server_addr.split("://").nth(1).unwrap_or(&self.server_addr)
+            self.server_addr
+                .split("://")
+                .nth(1)
+                .unwrap_or(&self.server_addr)
         } else {
             &self.server_addr
         };
-        
+
         // Use tokio lookup
         let mut addrs = tokio::net::lookup_host(addr_str).await?;
         addrs.next().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "Could not resolve DERP server address")
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "Could not resolve DERP server address",
+            )
         })
     }
 
@@ -109,9 +115,9 @@ impl DerpClient {
             .write_to_async(stream)
             .await
             .map_err(|e| io::Error::other(e.to_string()))?;
-        
+
         debug!("Sent ClientInfo with key: {:02x?}", self.public_key);
-        
+
         Ok(())
     }
 
@@ -123,12 +129,16 @@ impl DerpClient {
                 dst_key,
                 packet: packet.to_vec(),
             };
-            frame.write_to_async(stream).await.map_err(|e| {
-                io::Error::other(format!("Failed to send packet: {}", e))
-            })?;
+            frame
+                .write_to_async(stream)
+                .await
+                .map_err(|e| io::Error::other(format!("Failed to send packet: {}", e)))?;
             Ok(())
         } else {
-            Err(io::Error::new(io::ErrorKind::NotConnected, "DERP client not connected"))
+            Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "DERP client not connected",
+            ))
         }
     }
 
@@ -151,7 +161,9 @@ impl DerpClient {
                     DerpFrame::Ping { data } => {
                         trace!("Received Ping, sending Pong");
                         let pong = DerpFrame::Pong { data };
-                        pong.write_to_async(stream).await.map_err(io::Error::other)?;
+                        pong.write_to_async(stream)
+                            .await
+                            .map_err(io::Error::other)?;
                     }
                     DerpFrame::KeepAlive => {
                         trace!("Received KeepAlive");
@@ -168,10 +180,13 @@ impl DerpClient {
                 }
             }
         } else {
-            Err(io::Error::new(io::ErrorKind::NotConnected, "DERP client not connected"))
+            Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "DERP client not connected",
+            ))
         }
     }
-    
+
     /// Close the connection.
     pub async fn close(&self) {
         let mut guard = self.stream.lock().await;

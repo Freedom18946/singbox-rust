@@ -298,8 +298,6 @@ impl ConnectionCollector {
     }
 }
 
-
-
 /// Performance metrics collector
 pub struct PerformanceCollector {
     bridge: Arc<MetricsBridge>,

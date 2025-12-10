@@ -244,7 +244,10 @@ impl ResolvedTransport {
         for link in servers.values() {
             for domain in &link.domains {
                 // Skip routing-only "." if not accepting default resolvers
-                if domain.domain == "." && domain.routing_only && !self.config.accept_default_resolvers {
+                if domain.domain == "."
+                    && domain.routing_only
+                    && !self.config.accept_default_resolvers
+                {
                     continue;
                 }
                 // Check if query name matches domain suffix
@@ -312,9 +315,7 @@ impl ResolvedTransport {
         {
             use super::dot::DotTransport;
 
-            let sni = server_name
-                .clone()
-                .unwrap_or_else(|| addr.ip().to_string());
+            let sni = server_name.clone().unwrap_or_else(|| addr.ip().to_string());
 
             let dot = DotTransport::new(addr, sni)?;
             dot.query(packet).await
@@ -375,7 +376,7 @@ impl ResolvedTransport {
     }
 
     /// Exchange with parallel queries (for A/AAAA).
-    /// 
+    ///
     /// Note: Due to Rust lifetime constraints with async spawning,
     /// this currently uses sequential execution. A fully parallel
     /// implementation would require Arc<Self> or similar refactoring.
@@ -595,9 +596,9 @@ fn create_nxdomain_response(query: &[u8]) -> Vec<u8> {
     let mut response = query.to_vec();
 
     // Set QR bit (response) and RCODE = 3 (NXDOMAIN)
-    response[2] = (response[2] & 0x7F) | 0x80; // QR = 1  
+    response[2] = (response[2] & 0x7F) | 0x80; // QR = 1
     response[3] = (response[3] & 0xF0) | 0x03; // RCODE = 3
-    
+
     // Set answer/authority/additional counts to 0
     response[6] = 0;
     response[7] = 0;
@@ -619,12 +620,10 @@ mod tests {
             if_index: 1,
             if_name: "eth0".to_string(),
             servers: vec![],
-            domains: vec![
-                LinkDomain {
-                    domain: "example.com.".to_string(),
-                    routing_only: false,
-                },
-            ],
+            domains: vec![LinkDomain {
+                domain: "example.com.".to_string(),
+                routing_only: false,
+            }],
             default_route: false,
             ..Default::default()
         };
@@ -660,8 +659,7 @@ mod tests {
             0x00, 0x00, // NSCOUNT
             0x00, 0x00, // ARCOUNT
             // QNAME: example.com
-            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e',
-            0x03, b'c', b'o', b'm',
+            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm',
             0x00, // Root
             0x00, 0x01, // QTYPE = A
             0x00, 0x01, // QCLASS = IN
@@ -674,11 +672,9 @@ mod tests {
     #[test]
     fn test_extract_qtype() {
         let packet = [
-            0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x07, b'e', b'x', b'a', b'm', b'p', b'l', b'e',
-            0x03, b'c', b'o', b'm',
-            0x00,
-            0x00, 0x01, // QTYPE = A
+            0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, b'e',
+            b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00,
+            0x01, // QTYPE = A
             0x00, 0x01,
         ];
         assert_eq!(extract_qtype(&packet), 1);

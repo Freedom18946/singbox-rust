@@ -399,8 +399,8 @@ mod tests {
             dynamic_record_sizing_disabled: None,
         });
 
-        let dialer = QuicDialer::new(config)
-            .expect("Failed to create QUIC dialer with ECH disabled");
+        let dialer =
+            QuicDialer::new(config).expect("Failed to create QUIC dialer with ECH disabled");
         assert!(dialer.ech_connector.is_none());
     }
 
@@ -417,8 +417,8 @@ mod tests {
             dynamic_record_sizing_disabled: None,
         });
 
-        let dialer = QuicDialer::new(config)
-            .expect("Failed to create QUIC dialer with ECH enabled");
+        let dialer =
+            QuicDialer::new(config).expect("Failed to create QUIC dialer with ECH enabled");
 
         assert!(dialer.ech_connector.is_some());
     }

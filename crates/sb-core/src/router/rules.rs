@@ -163,7 +163,7 @@ impl AdGuardRuleMatcher {
     /// Check if this rule matches the given domain
     pub fn matches(&self, domain: &str) -> bool {
         let domain = domain.to_ascii_lowercase();
-        
+
         match self.pattern_type {
             AdGuardPatternType::DomainAndSubdomains => {
                 // Match exact domain or any subdomain
@@ -999,7 +999,9 @@ impl CompositeRule {
         }
         if !self.package_name.is_empty() {
             let matched = if let Some(pkg) = ctx.package_name {
-                self.package_name.iter().any(|p| p.eq_ignore_ascii_case(pkg))
+                self.package_name
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(pkg))
             } else {
                 false
             };
@@ -1029,7 +1031,9 @@ impl CompositeRule {
         }
         if !self.outbound_tag.is_empty() {
             let matched = if let Some(tag) = ctx.outbound_tag {
-                self.outbound_tag.iter().any(|t| t.eq_ignore_ascii_case(tag))
+                self.outbound_tag
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(tag))
             } else {
                 false
             };
@@ -1142,7 +1146,7 @@ impl CompositeRule {
                     .iter()
                     .filter(|r| r.is_exception())
                     .any(|r| r.matches(domain));
-                
+
                 if has_exception_match {
                     // Exception rule matched, treat as non-match for this rule set
                     false
@@ -1696,14 +1700,14 @@ mod tests {
     #[test]
     fn test_adguard_domain_and_subdomains() {
         let matcher = AdGuardRuleMatcher::parse("||example.org^").expect("parse");
-        
+
         // Should match exact domain
         assert!(matcher.matches("example.org"));
         // Should match subdomains
         assert!(matcher.matches("www.example.org"));
         assert!(matcher.matches("sub.www.example.org"));
         assert!(matcher.matches("deep.sub.www.example.org"));
-        
+
         // Should NOT match unrelated domains
         assert!(!matcher.matches("notexample.org"));
         assert!(!matcher.matches("example.org.com"));
@@ -1713,12 +1717,12 @@ mod tests {
     #[test]
     fn test_adguard_domain_start() {
         let matcher = AdGuardRuleMatcher::parse("|example^").expect("parse");
-        
+
         // Should match domains starting with pattern
         assert!(matcher.matches("example.org"));
         assert!(matcher.matches("example.com"));
         assert!(matcher.matches("example"));
-        
+
         // Should NOT match domains not starting with pattern
         assert!(!matcher.matches("www.example.org"));
         assert!(!matcher.matches("notexample.org"));
@@ -1727,13 +1731,13 @@ mod tests {
     #[test]
     fn test_adguard_contains() {
         let matcher = AdGuardRuleMatcher::parse("tracker").expect("parse");
-        
+
         // Should match if contains pattern
         assert!(matcher.matches("ads-tracker.example.com"));
         assert!(matcher.matches("tracker.example.com"));
         assert!(matcher.matches("example.tracker.com"));
         assert!(matcher.matches("tracker"));
-        
+
         // Should NOT match if doesn't contain pattern
         assert!(!matcher.matches("example.com"));
         assert!(!matcher.matches("track.example.com"));
@@ -1742,10 +1746,10 @@ mod tests {
     #[test]
     fn test_adguard_exception() {
         let matcher = AdGuardRuleMatcher::parse("@@||ads.example.org^").expect("parse");
-        
+
         // Should be marked as exception
         assert!(matcher.is_exception());
-        
+
         // Should still match domains
         assert!(matcher.matches("ads.example.org"));
         assert!(matcher.matches("www.ads.example.org"));
@@ -1754,7 +1758,7 @@ mod tests {
     #[test]
     fn test_adguard_case_insensitive() {
         let matcher = AdGuardRuleMatcher::parse("||Example.ORG^").expect("parse");
-        
+
         assert!(matcher.matches("example.org"));
         assert!(matcher.matches("EXAMPLE.ORG"));
         assert!(matcher.matches("www.Example.Org"));
@@ -1770,7 +1774,7 @@ mod tests {
     #[test]
     fn test_adguard_composite_rule_blocking() {
         let rule = AdGuardRuleMatcher::parse("||ads.example.org^").expect("parse");
-        
+
         let composite = CompositeRule {
             adguard: vec![rule],
             decision: Decision::Reject,
@@ -1797,7 +1801,7 @@ mod tests {
         // Block all of example.org, but allow safe.example.org
         let block_rule = AdGuardRuleMatcher::parse("||example.org^").expect("parse");
         let exception_rule = AdGuardRuleMatcher::parse("@@||safe.example.org^").expect("parse");
-        
+
         let composite = CompositeRule {
             adguard: vec![block_rule, exception_rule],
             decision: Decision::Reject,

@@ -530,8 +530,8 @@ fn parse_vmess_request(data: &[u8]) -> Result<(String, u16, u8)> {
     Ok((host, port, security_byte))
 }
 
-use sb_core::adapter::InboundService;
 use parking_lot::Mutex;
+use sb_core::adapter::InboundService;
 
 #[derive(Debug)]
 pub struct VmessInboundAdapter {
@@ -552,11 +552,10 @@ impl InboundService for VmessInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
-        
+
         let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            serve(self.config.clone(), rx).await
-        }).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        rt.block_on(async { serve(self.config.clone(), rx).await })
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     }
 
     fn request_shutdown(&self) {

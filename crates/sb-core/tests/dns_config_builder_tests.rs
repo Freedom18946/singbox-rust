@@ -1,4 +1,3 @@
-
 //! DNS config builder tests
 //!
 //! Tests for DNS configuration and URL parsing

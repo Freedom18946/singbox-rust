@@ -5,13 +5,13 @@ use bytes::{BufMut, BytesMut};
 pub trait SsrProtocol: Send + Sync {
     /// Pre-handshake (client -> server).
     fn client_pre_encrypt(&mut self, data: &[u8], out: &mut BytesMut);
-    
+
     /// Post-handshake (client -> server).
     fn client_post_decrypt(&mut self, data: &[u8], out: &mut BytesMut) -> Result<()>;
-    
+
     /// Get overhead size.
     fn overhead(&self) -> usize;
-    
+
     /// Get protocol name.
     fn name(&self) -> &'static str;
 }

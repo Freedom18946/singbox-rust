@@ -310,14 +310,19 @@ fn parse_ipv4_packet(packet: &[u8]) -> Option<ParsedPacket> {
     }
 
     let protocol = packet[9];
-    let src_ip = IpAddr::V4(Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]));
-    let dst_ip = IpAddr::V4(Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]));
+    let src_ip = IpAddr::V4(Ipv4Addr::new(
+        packet[12], packet[13], packet[14], packet[15],
+    ));
+    let dst_ip = IpAddr::V4(Ipv4Addr::new(
+        packet[16], packet[17], packet[18], packet[19],
+    ));
 
     let (src_port, dst_port, payload_offset) = match protocol {
         IPPROTO_TCP | IPPROTO_UDP if packet.len() >= header_len + 4 => {
             let sp = u16::from_be_bytes([packet[header_len], packet[header_len + 1]]);
             let dp = u16::from_be_bytes([packet[header_len + 2], packet[header_len + 3]]);
-            let transport_header_len = if protocol == IPPROTO_TCP && packet.len() >= header_len + 13 {
+            let transport_header_len = if protocol == IPPROTO_TCP && packet.len() >= header_len + 13
+            {
                 ((packet[header_len + 12] >> 4) as usize) * 4
             } else {
                 8 // UDP header is fixed 8 bytes
@@ -345,7 +350,7 @@ fn parse_ipv6_packet(packet: &[u8]) -> Option<ParsedPacket> {
     }
 
     let protocol = packet[6]; // Next Header (simplified - doesn't handle extension headers)
-    
+
     let mut src_bytes = [0u8; 16];
     let mut dst_bytes = [0u8; 16];
     src_bytes.copy_from_slice(&packet[8..24]);
@@ -360,7 +365,8 @@ fn parse_ipv6_packet(packet: &[u8]) -> Option<ParsedPacket> {
         IPPROTO_TCP | IPPROTO_UDP if packet.len() >= header_len + 4 => {
             let sp = u16::from_be_bytes([packet[header_len], packet[header_len + 1]]);
             let dp = u16::from_be_bytes([packet[header_len + 2], packet[header_len + 3]]);
-            let transport_header_len = if protocol == IPPROTO_TCP && packet.len() >= header_len + 13 {
+            let transport_header_len = if protocol == IPPROTO_TCP && packet.len() >= header_len + 13
+            {
                 ((packet[header_len + 12] >> 4) as usize) * 4
             } else {
                 8
@@ -458,9 +464,9 @@ impl TunInboundService {
         // TODO: Integrate with Engine for actual routing decisions
         // In full implementation, this would call:
         //   engine.decide(&Input { host: &dst_ip.to_string(), port: dst_port, ... })
-        
+
         let dst = parsed.dst_ip.to_string();
-        
+
         // Simple rule: loopback goes to "direct"
         if parsed.dst_ip.is_loopback() {
             return "direct".to_string();
@@ -785,4 +791,3 @@ mod tests {
         assert_eq!(config.session_timeout, 300);
     }
 }
-

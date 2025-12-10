@@ -24,7 +24,7 @@ pub fn install() {
     // 1. Basic check for crash logging feature flag (env var)
     let crash_enabled = std::env::var("SB_PANIC_LOG").ok().as_deref() == Some("1");
 
-    // 2. Capture the previous hook to chain it? 
+    // 2. Capture the previous hook to chain it?
     // Actually, for a service, we usually want to control the output format.
     // But chaining is safer to respect other libs.
     let next = std::panic::take_hook();
@@ -64,7 +64,7 @@ pub fn install() {
                 }
                 let _ = writeln!(body, "panic={info}");
                 let _ = writeln!(body, "backtrace={:?}", Backtrace::capture());
-                
+
                 match std::fs::write(&file, body) {
                     Ok(_) => {
                         let max_keep = std::env::var("SB_PANIC_LOG_MAX")
@@ -102,7 +102,7 @@ pub fn install() {
             }
         }
 
-        // D. Call next hook (e.g. default one that prints to stderr? 
+        // D. Call next hook (e.g. default one that prints to stderr?
         // Wait, default hook prints to stderr. If we print to stderr above, we might duplicate.
         // However, default hook output is "thread 'main' panicked at ..." which is nice.
         // Our 'eprintln!("[PANIC] ...")' is simpler.

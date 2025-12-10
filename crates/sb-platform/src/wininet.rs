@@ -35,7 +35,10 @@ pub struct ProxyConfig {
 impl ProxyConfig {
     /// Check if any proxy is configured.
     pub fn has_proxy(&self) -> bool {
-        self.enabled && (self.http_proxy.is_some() || self.https_proxy.is_some() || self.socks_proxy.is_some())
+        self.enabled
+            && (self.http_proxy.is_some()
+                || self.https_proxy.is_some()
+                || self.socks_proxy.is_some())
     }
 
     /// Check if a host should bypass the proxy.
@@ -143,9 +146,7 @@ pub fn detect_windows_proxy() -> Option<ProxyConfig> {
         .unwrap_or_default();
 
     // Get auto-config URL
-    let auto_config_url: Option<String> = internet_settings
-        .get_value("AutoConfigURL")
-        .ok();
+    let auto_config_url: Option<String> = internet_settings.get_value("AutoConfigURL").ok();
 
     // Parse proxy server (can be "host:port" or "http=host:port;https=host:port;...")
     let (http_proxy, https_proxy, socks_proxy) = parse_windows_proxy_server(&proxy_server);
@@ -215,7 +216,8 @@ pub fn set_system_proxy(config: &ProxyConfig) -> std::io::Result<()> {
     use winreg::RegKey;
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let (internet_settings, _) = hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
+    let (internet_settings, _) =
+        hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
 
     // Set proxy enable
     internet_settings.set_value("ProxyEnable", &(if config.enabled { 1u32 } else { 0u32 }))?;
@@ -223,7 +225,9 @@ pub fn set_system_proxy(config: &ProxyConfig) -> std::io::Result<()> {
     // Set proxy server
     if let Some(ref http) = config.http_proxy {
         // Strip protocol prefix
-        let server = http.trim_start_matches("http://").trim_start_matches("https://");
+        let server = http
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
         internet_settings.set_value("ProxyServer", &server)?;
     }
 
@@ -259,10 +263,7 @@ mod tests {
     #[test]
     fn test_should_bypass() {
         let config = ProxyConfig {
-            no_proxy: vec![
-                "example.com".to_string(),
-                ".internal.corp".to_string(),
-            ],
+            no_proxy: vec!["example.com".to_string(), ".internal.corp".to_string()],
             ..Default::default()
         };
 

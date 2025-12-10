@@ -215,9 +215,10 @@ impl WireGuardTransport {
                 self.inner.socket.send_to(packet, endpoint).await?;
                 Ok(())
             }
-            TunnResult::Err(e) => Err(io::Error::other(
-                format!("WireGuard encapsulate error: {:?}", e),
-            )),
+            TunnResult::Err(e) => Err(io::Error::other(format!(
+                "WireGuard encapsulate error: {:?}",
+                e
+            ))),
             _ => Ok(()),
         }
     }
@@ -265,9 +266,10 @@ impl WireGuardTransport {
                 debug!("WireGuard handshake initiated");
                 Ok(())
             }
-            TunnResult::Err(e) => Err(io::Error::other(
-                format!("WireGuard handshake error: {:?}", e),
-            )),
+            TunnResult::Err(e) => Err(io::Error::other(format!(
+                "WireGuard handshake error: {:?}",
+                e
+            ))),
             _ => Ok(()),
         }
     }
@@ -280,7 +282,7 @@ impl WireGuardTransport {
     }
 
     /// Create a new stream sharing the same tunnel state.
-    /// 
+    ///
     /// This creates a stream handling structure without triggering a new handshake.
     /// Useful for adapters that maintain the tunnel lifecycle separately.
     pub fn get_stream(&self) -> WireGuardStream {
@@ -289,7 +291,7 @@ impl WireGuardTransport {
 }
 
 /// WireGuard stream that provides AsyncRead/AsyncWrite over the tunnel.
-/// 
+///
 /// This uses a simple poll-based approach where reads/writes are performed
 /// using the transport's async methods wrapped in a future state.
 pub struct WireGuardStream {
@@ -389,9 +391,10 @@ impl AsyncWrite for WireGuardStream {
                         transport.socket.send_to(packet, endpoint).await?;
                         Ok(data_len)
                     }
-                    TunnResult::Err(e) => Err(io::Error::other(
-                        format!("WireGuard encapsulate error: {:?}", e),
-                    )),
+                    TunnResult::Err(e) => Err(io::Error::other(format!(
+                        "WireGuard encapsulate error: {:?}",
+                        e
+                    ))),
                     _ => Ok(0),
                 }
             });
@@ -399,7 +402,10 @@ impl AsyncWrite for WireGuardStream {
         }
 
         // Poll the pending write
-        let state = self.write_state.as_mut().expect("write_state should be Some");
+        let state = self
+            .write_state
+            .as_mut()
+            .expect("write_state should be Some");
         match Future::poll(state.as_mut(), cx) {
             Poll::Ready(Ok(n)) => {
                 self.write_state = None;
@@ -413,18 +419,12 @@ impl AsyncWrite for WireGuardStream {
         }
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // UDP is datagram-based, no buffering
         Poll::Ready(Ok(()))
     }
 
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // WireGuard doesn't have a shutdown concept
         Poll::Ready(Ok(()))
     }

@@ -54,9 +54,16 @@ fn selector_is_bound_to_members() {
     // List all registered outbounds
     eprintln!("Registered outbounds:");
     // We can't iterate publically, but we can search for members
-    if br.find_outbound("directA").is_some() { eprintln!("- directA found"); }
-    if br.find_outbound("directB").is_some() { eprintln!("- directB found"); }
-    
+    if br.find_outbound("directA").is_some() {
+        eprintln!("- directA found");
+    }
+    if br.find_outbound("directB").is_some() {
+        eprintln!("- directB found");
+    }
+
     // 选择器应已作为一个命名出站注册
-    assert!(br.find_outbound("S").is_some(), "Selector S not found in bridge!");
+    assert!(
+        br.find_outbound("S").is_some(),
+        "Selector S not found in bridge!"
+    );
 }

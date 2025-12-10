@@ -236,7 +236,11 @@ pub mod dbus_server {
     #[interface(name = "org.freedesktop.resolve1.Manager")]
     impl Resolve1Manager {
         /// Set DNS servers for a link (simple format).
-        async fn set_link_dns(&self, if_index: i32, addresses: Vec<(i32, Vec<u8>)>) -> ZbusResult<()> {
+        async fn set_link_dns(
+            &self,
+            if_index: i32,
+            addresses: Vec<(i32, Vec<u8>)>,
+        ) -> ZbusResult<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
 
@@ -260,7 +264,9 @@ pub mod dbus_server {
                 debug!(if_name = %link.if_name, "SetLinkDNS: (empty)");
             }
 
-            self.state.update_link(link).map_err(|e| zbus::Error::Failure(e))?;
+            self.state
+                .update_link(link)
+                .map_err(|e| zbus::Error::Failure(e))?;
             Ok(())
         }
 
@@ -305,12 +311,18 @@ pub mod dbus_server {
                 debug!(if_name = %link.if_name, "SetLinkDNSEx: (empty)");
             }
 
-            self.state.update_link(link).map_err(|e| zbus::Error::Failure(e))?;
+            self.state
+                .update_link(link)
+                .map_err(|e| zbus::Error::Failure(e))?;
             Ok(())
         }
 
         /// Set search/routing domains for a link.
-        async fn set_link_domains(&self, if_index: i32, domains: Vec<(String, bool)>) -> ZbusResult<()> {
+        async fn set_link_domains(
+            &self,
+            if_index: i32,
+            domains: Vec<(String, bool)>,
+        ) -> ZbusResult<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
 
@@ -340,12 +352,18 @@ pub mod dbus_server {
                 debug!(if_name = %link.if_name, "SetLinkDomains: (empty)");
             }
 
-            self.state.update_link(link).map_err(|e| zbus::Error::Failure(e))?;
+            self.state
+                .update_link(link)
+                .map_err(|e| zbus::Error::Failure(e))?;
             Ok(())
         }
 
         /// Set whether this link is a default route for DNS.
-        async fn set_link_default_route(&self, if_index: i32, default_route: bool) -> ZbusResult<()> {
+        async fn set_link_default_route(
+            &self,
+            if_index: i32,
+            default_route: bool,
+        ) -> ZbusResult<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
             link.default_route = default_route;
@@ -365,7 +383,9 @@ pub mod dbus_server {
                 if default_route { "yes" } else { "no" }
             );
 
-            self.state.update_link(link).map_err(|e| zbus::Error::Failure(e))?;
+            self.state
+                .update_link(link)
+                .map_err(|e| zbus::Error::Failure(e))?;
             Ok(())
         }
 
@@ -389,7 +409,9 @@ pub mod dbus_server {
                 if link.dns_over_tls { "yes" } else { "no" }
             );
 
-            self.state.update_link(link).map_err(|e| zbus::Error::Failure(e))?;
+            self.state
+                .update_link(link)
+                .map_err(|e| zbus::Error::Failure(e))?;
             Ok(())
         }
 
@@ -446,7 +468,8 @@ pub mod dbus_server {
         {
             use std::ffi::CStr;
             let mut buf = [0u8; libc::IF_NAMESIZE];
-            let result = unsafe { libc::if_indextoname(if_index as u32, buf.as_mut_ptr() as *mut i8) };
+            let result =
+                unsafe { libc::if_indextoname(if_index as u32, buf.as_mut_ptr() as *mut i8) };
             if !result.is_null() {
                 if let Ok(name) = unsafe { CStr::from_ptr(result) }.to_str() {
                     return name.to_string();
@@ -457,7 +480,9 @@ pub mod dbus_server {
     }
 
     /// Start the D-Bus server and export the resolve1 Manager.
-    pub async fn start_dbus_server(state: Arc<Resolve1ManagerState>) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_dbus_server(
+        state: Arc<Resolve1ManagerState>,
+    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
         let connection = Connection::system().await?;
 
         // Export the interface
@@ -468,9 +493,7 @@ pub mod dbus_server {
             .await?;
 
         // Request the well-known name
-        connection
-            .request_name("org.freedesktop.resolve1")
-            .await?;
+        connection.request_name("org.freedesktop.resolve1").await?;
 
         info!("D-Bus server started: org.freedesktop.resolve1");
         Ok(connection)
@@ -511,14 +534,13 @@ mod tests {
             family: 2,
             address: vec![192, 168, 1, 1],
         };
-        assert_eq!(
-            ipv4.to_ip_addr(),
-            Some(IpAddr::V4([192, 168, 1, 1].into()))
-        );
+        assert_eq!(ipv4.to_ip_addr(), Some(IpAddr::V4([192, 168, 1, 1].into())));
 
         let ipv6 = LinkDNS {
             family: 10,
-            address: vec![0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01],
+            address: vec![
+                0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+            ],
         };
         assert!(ipv6.to_ip_addr().is_some());
     }

@@ -1,8 +1,37 @@
 # Verification Record - Ground-Up Quality Assurance
 
-**Last Updated**: 2025-12-08 12:30:00 +0800
-**Verification Status**: 🟢 Compile + Test Pass — Parity Matrix v7 Verified; All P0 Blockers Resolved
-**Timestamp**: `Build: 2025-12-08T12:30:00+08:00 | Tests: 2025-12-08T12:30:00+08:00`
+**Last Updated**: 2025-12-09 20:46:18 +0800  
+**Verification Status**: ⚠️ Requires Re-Verification — Parity Matrix v2 found gaps; prior “complete” claims invalidated  
+**Timestamp**: `Audit: 2025-12-09T20:46:18+08:00 | Tests: not re-run (blocked by parity gaps)`
+
+## QA Session: 2025-12-09 20:30 - 20:46 +0800 (Parity Reality Check v2)
+
+### Scope
+Ground-up verification of all items previously marked “Completed/Verified” in Parity Matrix v7. Method: Source inspection + Test file existence/coverage + Config/runtime behaviour.
+
+### Findings (Three-Layer Verification)
+
+| Feature/Area | Source Check | Tests/Execution | Config & Behaviour | Status |
+| --- | --- | --- | --- | --- |
+| Tailscale endpoint/data plane | Diverges from Go tsnet+gVisor stack; host-socket daemon/stub only (`crates/sb-core/src/endpoint/tailscale.rs`) | No end-to-end netstack tests present; prior stub tests insufficient | No DNS hook/netstack routing parity; config options don’t map to Go (`protocol/tailscale/endpoint.go`) | ❌ Not Verified |
+| Tailscale outbound & MagicDNS | Modes decoupled from tsnet; Managed/WG paths not joining Tailnet (`crates/sb-adapters/src/outbound/tailscale.rs`) | No Tailnet e2e tests; only mode selection logic | MagicDNS is raw 100.100.100.100 UDP client, no control-plane state (`crates/sb-transport/src/tailscale_dns.rs`) | ❌ Not Verified |
+| DNS transports (DHCP/Resolved/Tailscale) | DHCP passive resolv.conf tail only; resolved/tailscale stubs (`crates/sb-core/src/dns/upstream.rs`, `crates/sb-adapters/src/service/resolved_impl.rs`) | No active DHCP probe tests; resolved/tailscale gated tests absent | Config lacks interface probing/INFORM/IPv6 parity with Go `dns/transport/dhcp` | ❌ Not Verified |
+| TLS uTLS wiring | Fingerprints defined but unused (`crates/sb-tls/src/utls.rs`) | No integration tests exercising uTLS handshakes | No config path to select fingerprints in TLS/Reality/ShadowTLS flows (Go `common/tls/utls_client.go`) | ❌ Not Verified |
+| DERP service | Partial HTTP/STUN; missing TLS/HTTP2/WS/verify-client/mesh parity (`crates/sb-core/src/services/derp`) | Existing protocol tests cover stub only; no DERP H2/WS | Config paths for mesh/verify-client not implemented vs Go `service/derp/service.go` | ❌ Not Verified |
+| SSMAPI service | Axum standalone; no managed inbound tracker/cache/TLS (`crates/sb-core/src/services/ssmapi`) | Only lightweight handler tests; no integration with inbounds | Config/server mapping diverges from Go `service/ssmapi/server.go` | ❌ Not Verified |
+| Resolved service | Linux-only minimal D-Bus; non-Linux stub (`crates/sb-adapters/src/service/resolved_impl.rs`) | No netmon callback tests; only minimal D-Bus coverage | Lacks per-link DNS/domain routing parity (`service/resolved/service.go`) | ❌ Not Verified |
+
+### Test Execution
+- No automated test run performed in this session. Rationale: source/config parity gaps render prior “pass” signals invalid; running existing tests would not validate missing netstack/DHCP/uTLS paths.
+
+### Actions Required
+1. Re-implement gaps per `GO_PARITY_MATRIX.md` (2025-12-09 v2).
+2. Add end-to-end/netstack tests for Tailscale endpoint/outbound/MagicDNS.
+3. Add DHCP active probe tests, resolved/tailscale DNS integration tests, and uTLS handshake tests (TLS/Reality/ShadowTLS).
+4. Expand DERP and SSMAPI tests to cover TLS/H2/WS/mesh and managed-inbound flows respectively.
+5. Re-run full workspace tests after implementations and record results.
+
+---
 
 ## QA Session: 2025-12-08 12:18 - 12:30 +0800 (Ground-Up Feature Verification v7)
 

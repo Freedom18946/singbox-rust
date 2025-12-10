@@ -17,10 +17,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing::{debug, info, trace, warn};
 
+use sb_core::adapter::InboundService;
 use sb_core::outbound::RouteTarget;
 use sb_core::router::engine::{RouteCtx, Transport};
 use sb_core::router::RouterHandle;
-use sb_core::adapter::InboundService;
 
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
@@ -300,7 +300,7 @@ impl TunInbound {
             // Lock and acquire the receiver
             let mut rx_guard = self.stack_rx.lock().await;
             // logic to drain rx
-            // However, we can't easily "take" it if it's wrapped in Arc<Mutex>. 
+            // However, we can't easily "take" it if it's wrapped in Arc<Mutex>.
             // We can only process it while holding the lock, which blocks everyone else.
             // Or if we can swap it out.
             // But for now, let's just comment it out or fix it to use the lock.
@@ -843,7 +843,6 @@ impl TunInbound {
     }
 }
 
-
 impl InboundService for TunInbound {
     fn serve(&self) -> io::Result<()> {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -856,15 +855,13 @@ impl InboundService for TunInbound {
 impl std::fmt::Debug for TunInbound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TunInbound")
-             .field("cfg", &self.cfg)
-             .finish()
+            .field("cfg", &self.cfg)
+            .finish()
     }
 }
 
 #[cfg(test)]
-impl TunInbound {
-
-}
+impl TunInbound {}
 
 // -------------------
 // MacOS TunWriter implementation
@@ -1496,7 +1493,7 @@ mod tests {
         let cfg = TunInboundConfig::default();
         let router = create_dummy_router();
         let inbound = TunInbound::new(cfg, router);
-        
+
         // Run for a short time to verify it starts without error
         let _ = tokio::time::timeout(std::time::Duration::from_millis(100), inbound.run()).await;
     }

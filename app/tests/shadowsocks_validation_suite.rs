@@ -80,7 +80,10 @@ async fn start_ss_server(method: &str, password: &str) -> (SocketAddr, mpsc::Sen
         listen: addr,
         method: method.to_string(),
         password: None,
-        users: vec![ShadowsocksUser::new("default".to_string(), password.to_string())],
+        users: vec![ShadowsocksUser::new(
+            "default".to_string(),
+            password.to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: None,
         transport_layer: None,

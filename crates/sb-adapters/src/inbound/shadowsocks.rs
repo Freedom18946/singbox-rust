@@ -850,8 +850,8 @@ where
     handle_cleartext_stream(_cfg, &mut clear_local, peer, rate_limiter).await
 }
 
-use sb_core::adapter::InboundService;
 use parking_lot::Mutex;
+use sb_core::adapter::InboundService;
 
 #[derive(Debug)]
 pub struct ShadowsocksInboundAdapter {
@@ -872,11 +872,10 @@ impl InboundService for ShadowsocksInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
-        
+
         let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            serve(self.config.clone(), rx).await
-        }).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        rt.block_on(async { serve(self.config.clone(), rx).await })
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     }
 
     fn request_shutdown(&self) {

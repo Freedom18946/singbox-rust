@@ -10,7 +10,7 @@
 //!
 //! // On Unix:
 //! let listener = PipeListener::bind("/tmp/singbox.sock")?;
-//! 
+//!
 //! // On Windows:
 //! let listener = PipeListener::bind(r"\\.\pipe\singbox")?;
 //! ```
@@ -49,7 +49,7 @@ impl PipeListener {
             let listener = tokio::net::UnixListener::bind(path)?;
             Ok(Self { inner: listener })
         }
-        
+
         #[cfg(windows)]
         {
             // Windows named pipes require different API
@@ -57,7 +57,7 @@ impl PipeListener {
                 path: path.as_ref().to_string_lossy().into_owned(),
             })
         }
-        
+
         #[cfg(not(any(unix, windows)))]
         {
             let _ = path;
@@ -75,7 +75,7 @@ impl PipeListener {
             let (stream, _) = self.inner.accept().await?;
             Ok(PipeStream { inner: stream })
         }
-        
+
         #[cfg(windows)]
         {
             // Create a new named pipe instance
@@ -90,7 +90,7 @@ impl PipeListener {
 
             Ok(PipeStream { inner: server })
         }
-        
+
         #[cfg(not(any(unix, windows)))]
         {
             Err(io::Error::new(
@@ -110,7 +110,12 @@ impl PipeListener {
 #[cfg(unix)]
 impl PipeStream {
     /// Split into read and write halves.
-    pub fn into_split(self) -> (tokio::net::unix::OwnedReadHalf, tokio::net::unix::OwnedWriteHalf) {
+    pub fn into_split(
+        self,
+    ) -> (
+        tokio::net::unix::OwnedReadHalf,
+        tokio::net::unix::OwnedWriteHalf,
+    ) {
         self.inner.into_split()
     }
 }
@@ -213,7 +218,7 @@ mod tests {
         let msg = IpcMessage::new(1, b"hello".to_vec());
         let bytes = msg.to_bytes();
         let parsed = IpcMessage::from_bytes(&bytes).unwrap();
-        
+
         assert_eq!(parsed.msg_type, 1);
         assert_eq!(parsed.payload, b"hello");
     }
@@ -223,7 +228,7 @@ mod tests {
     async fn test_pipe_listener() {
         let path = "/tmp/test_pipe_listener.sock";
         let listener = PipeListener::bind(path).unwrap();
-        
+
         // Spawn accept task
         let handle = tokio::spawn(async move {
             let _stream = listener.accept().await.unwrap();
@@ -231,9 +236,9 @@ mod tests {
 
         // Connect
         let _client = tokio::net::UnixStream::connect(path).await.unwrap();
-        
+
         handle.await.unwrap();
-        
+
         // Cleanup
         let _ = std::fs::remove_file(path);
     }

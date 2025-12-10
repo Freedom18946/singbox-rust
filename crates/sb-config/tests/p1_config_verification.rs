@@ -18,7 +18,7 @@ fn test_uot_config_parsing() {
         "udp_over_tcp": true,
         "udp_over_tcp_version": 2
     }"#;
-    
+
     let doc: serde_json::Value = serde_json::from_str(json).expect("parse JSON");
     assert_eq!(doc["udp_over_tcp"], true);
     assert_eq!(doc["udp_over_tcp_version"], 2);
@@ -33,7 +33,7 @@ fn test_utls_fingerprint_parsing() {
         "port": 443,
         "utls_fingerprint": "chrome"
     }"#;
-    
+
     let doc: serde_json::Value = serde_json::from_str(json).expect("parse JSON");
     assert_eq!(doc["utls_fingerprint"], "chrome");
 }
@@ -50,7 +50,7 @@ fn test_headless_rule_parsing() {
         ],
         "outbound": "proxy"
     }"#;
-    
+
     let rule: RuleIR = serde_json::from_str(json).expect("parse RuleIR");
     assert_eq!(rule.rule_type.as_deref(), Some("logical"));
     assert_eq!(rule.mode.as_deref(), Some("and"));
@@ -66,7 +66,7 @@ fn test_adguard_rule_config_parsing() {
         "not_adguard": ["||tracker.com^"],
         "outbound": "block"
     }"#;
-    
+
     let rule: RuleIR = serde_json::from_str(json).expect("parse RuleIR");
     assert_eq!(rule.adguard.len(), 2);
     assert_eq!(rule.adguard[0], "||ads.example.org^");
@@ -83,7 +83,7 @@ fn test_rule_with_invert() {
         "invert": true,
         "outbound": "direct"
     }"#;
-    
+
     let rule: RuleIR = serde_json::from_str(json).expect("parse RuleIR");
     assert!(rule.invert);
     assert_eq!(rule.domain_suffix.len(), 1);
@@ -124,15 +124,15 @@ fn test_full_p1_config() {
             ]
         }
     }"#;
-    
+
     let doc: serde_json::Value = serde_json::from_str(json).expect("parse JSON");
-    
+
     // Verify outbound
     let ob = &doc["outbounds"][0];
     assert_eq!(ob["udp_over_tcp"], true);
     assert_eq!(ob["udp_over_tcp_version"], 2);
     assert_eq!(ob["utls_fingerprint"], "chrome110");
-    
+
     // Verify rules
     let rules = doc["route"]["rules"].as_array().unwrap();
     assert_eq!(rules.len(), 2);

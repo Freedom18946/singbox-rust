@@ -1,5 +1,5 @@
-use crate::outbound::OutboundConnector;
 use crate::error::Result;
+use crate::outbound::OutboundConnector;
 use arti_client::config::CfgPath;
 use arti_client::{TorClient, TorClientConfig};
 use async_trait::async_trait;
@@ -67,8 +67,12 @@ impl TorOutbound {
         // 1) Data directory (persistent state)
         if let Some(dir) = &ir.tor_data_directory {
             debug!(dir = %dir, "Setting Tor data directory");
-            config_builder.storage().state_dir(CfgPath::new(dir.clone()));
-            config_builder.storage().cache_dir(CfgPath::new(dir.clone()));
+            config_builder
+                .storage()
+                .state_dir(CfgPath::new(dir.clone()));
+            config_builder
+                .storage()
+                .cache_dir(CfgPath::new(dir.clone()));
         }
 
         // 2) SOCKS5 upstream proxy
@@ -94,7 +98,9 @@ impl TorOutbound {
                             debug!(key = %key, value = %value, "Mapping circuit_idle_timeout");
                             // Note: Arti's circuit_timing().max_dirtiness() is similar but not exact
                             // The idle timeout controls how long unused circuits are kept
-                            let _ = config_builder.circuit_timing().max_dirtiness(Duration::from_secs(secs));
+                            let _ = config_builder
+                                .circuit_timing()
+                                .max_dirtiness(Duration::from_secs(secs));
                         } else {
                             warn!(key = %key, value = %value, "Invalid value for circuit_idle_timeout, expected integer seconds");
                         }
@@ -102,7 +108,9 @@ impl TorOutbound {
                     "stream_timeout" => {
                         if let Ok(secs) = value.parse::<u64>() {
                             debug!(key = %key, value = %value, "Mapping stream_timeout");
-                            config_builder.stream_timeouts().connect_timeout(Duration::from_secs(secs));
+                            config_builder
+                                .stream_timeouts()
+                                .connect_timeout(Duration::from_secs(secs));
                         } else {
                             warn!(key = %key, value = %value, "Invalid value for stream_timeout, expected integer seconds");
                         }
@@ -114,7 +122,9 @@ impl TorOutbound {
             }
         }
 
-        let config = config_builder.build().map_err(|e| crate::error::AdapterError::Other(format!("Invalid Tor config: {}", e)))?;
+        let config = config_builder
+            .build()
+            .map_err(|e| crate::error::AdapterError::Other(format!("Invalid Tor config: {}", e)))?;
 
         Ok(Self {
             client: Arc::new(OnceCell::new()),
@@ -123,10 +133,18 @@ impl TorOutbound {
     }
 
     async fn get_client(&self) -> Result<&TorClient<PreferredRuntime>> {
-        self.client.get_or_try_init(|| async {
-            TorClient::create_bootstrapped(self.config.clone()).await
-                .map_err(|e| crate::error::AdapterError::Other(format!("Failed to bootstrap Tor client: {}", e)))
-        }).await
+        self.client
+            .get_or_try_init(|| async {
+                TorClient::create_bootstrapped(self.config.clone())
+                    .await
+                    .map_err(|e| {
+                        crate::error::AdapterError::Other(format!(
+                            "Failed to bootstrap Tor client: {}",
+                            e
+                        ))
+                    })
+            })
+            .await
     }
 }
 
@@ -137,7 +155,11 @@ impl OutboundConnector for TorOutbound {
         Ok(())
     }
 
-    async fn dial(&self, target: crate::traits::Target, _opts: crate::traits::DialOpts) -> Result<crate::traits::BoxedStream> {
+    async fn dial(
+        &self,
+        target: crate::traits::Target,
+        _opts: crate::traits::DialOpts,
+    ) -> Result<crate::traits::BoxedStream> {
         let client = self.get_client().await?;
         let stream = client
             .connect((target.host.as_str(), target.port))

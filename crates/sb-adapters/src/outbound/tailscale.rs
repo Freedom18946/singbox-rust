@@ -16,6 +16,7 @@
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,6 +25,7 @@ use sb_core::adapter::OutboundConnector as CoreOutboundConnector;
 use sb_core::outbound::direct_connector::DirectConnector;
 use sb_core::services::tailscale::coordinator::Coordinator;
 use tokio::net::TcpStream;
+use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
@@ -71,6 +73,10 @@ pub struct TailscaleConfig {
     /// UDP timeout for idle sessions.
     pub udp_timeout: Option<String>,
 
+    /// Optional socket factory for MagicDNS (netstack injection).
+    #[cfg(feature = "sb-transport")]
+    pub magic_dns_socket_factory: Option<MagicDnsSocketFactory>,
+
     // WireGuard direct connection fields
     /// Private key for WireGuard (base64).
     pub private_key: Option<String>,
@@ -96,6 +102,13 @@ impl TailscaleConfig {
         } else {
             TailscaleMode::Direct
         }
+    }
+
+    /// Inject a socket factory for MagicDNS (useful for netstack-backed sockets).
+    #[cfg(feature = "sb-transport")]
+    pub fn with_magic_dns_socket_factory(mut self, factory: MagicDnsSocketFactory) -> Self {
+        self.magic_dns_socket_factory = Some(factory);
+        self
     }
 }
 
@@ -169,7 +182,7 @@ impl TailscaleConnector {
                 );
             }
             TailscaleMode::Managed => {
-                 info!(
+                info!(
                     target: "sb_adapters::tailscale",
                     tag = tag,
                     "Tailscale using Managed mode (Headless Auth)"
@@ -184,17 +197,25 @@ impl TailscaleConnector {
         };
 
         #[cfg(feature = "adapter-wireguard-outbound")]
-        let wireguard = Arc::new(Mutex::new(None::<Arc<crate::outbound::wireguard::WireGuardOutbound>>));
+        let wireguard = Arc::new(Mutex::new(
+            None::<Arc<crate::outbound::wireguard::WireGuardOutbound>>,
+        ));
 
         let coordinator = if mode == TailscaleMode::Managed {
-            let url = config.control_url.as_deref().unwrap_or("https://controlplane.tailscale.com");
-            let key = config.auth_key.as_deref().expect("Managed mode requires auth_key");
-            
+            let url = config
+                .control_url
+                .as_deref()
+                .unwrap_or("https://controlplane.tailscale.com");
+            let key = config
+                .auth_key
+                .as_deref()
+                .expect("Managed mode requires auth_key");
+
             let coord = Arc::new(Coordinator::new(url).with_auth_key(key));
             let c = coord.clone();
 
-             #[cfg(feature = "adapter-wireguard-outbound")]
-             let wg_clone = wireguard.clone();
+            #[cfg(feature = "adapter-wireguard-outbound")]
+            let wg_clone = wireguard.clone();
 
             tokio::spawn(async move {
                 // Subscribe to updates
@@ -203,16 +224,18 @@ impl TailscaleConnector {
                 // (Using select to run both? Or separate tasks?)
                 // Actually `c.start()` runs the loop.
                 // We should spawn `c.start()` separately or `join`.
-                 tokio::spawn(async move {
-                     if let Err(e) = c.start().await {
-                         error!("Tailscale coordinator failed: {}", e);
-                     }
-                 });
-                 
-                 // Watch loop
-                 loop {
-                     if rx.changed().await.is_err() { break; }
-                     {
+                tokio::spawn(async move {
+                    if let Err(e) = c.start().await {
+                        error!("Tailscale coordinator failed: {}", e);
+                    }
+                });
+
+                // Watch loop
+                loop {
+                    if rx.changed().await.is_err() {
+                        break;
+                    }
+                    {
                         let addr_opt = {
                             let map_ref = rx.borrow();
                             if let Some(map) = map_ref.as_ref() {
@@ -229,7 +252,7 @@ impl TailscaleConnector {
                                 None
                             }
                         };
-                        
+
                         if let Some(addr) = addr_opt {
                             #[cfg(feature = "adapter-wireguard-outbound")]
                             {
@@ -239,8 +262,8 @@ impl TailscaleConnector {
                                 }
                             }
                         }
-                     }
-                 }
+                    }
+                }
             });
             Some(coord)
         } else {
@@ -265,15 +288,31 @@ impl TailscaleConnector {
             return Ok(());
         }
 
-        let private_key = self.config.private_key.as_ref()
-            .ok_or(AdapterError::InvalidConfig("WireGuard mode requires private_key"))?;
-        let peer_public_key = self.config.peer_public_key.as_ref()
-            .ok_or(AdapterError::InvalidConfig("WireGuard mode requires peer_public_key"))?;
+        let private_key = self
+            .config
+            .private_key
+            .as_ref()
+            .ok_or(AdapterError::InvalidConfig(
+                "WireGuard mode requires private_key",
+            ))?;
+        let peer_public_key =
+            self.config
+                .peer_public_key
+                .as_ref()
+                .ok_or(AdapterError::InvalidConfig(
+                    "WireGuard mode requires peer_public_key",
+                ))?;
 
         // Parse peer endpoint
-        let endpoint = self.config.peer_endpoint.as_ref()
-            .ok_or(AdapterError::InvalidConfig("WireGuard mode requires peer_endpoint"))?;
-        let peer_addr: SocketAddr = endpoint.parse()
+        let endpoint = self
+            .config
+            .peer_endpoint
+            .as_ref()
+            .ok_or(AdapterError::InvalidConfig(
+                "WireGuard mode requires peer_endpoint",
+            ))?;
+        let peer_addr: SocketAddr = endpoint
+            .parse()
             .map_err(|_| AdapterError::InvalidConfig("Invalid peer_endpoint format"))?;
 
         let wg_config = crate::outbound::wireguard::WireGuardOutboundConfig {
@@ -308,7 +347,14 @@ impl TailscaleConnector {
         #[cfg(feature = "sb-transport")]
         {
             use sb_transport::tailscale_dns::TailscaleDnsTransport;
-            let dns = TailscaleDnsTransport::new();
+            let dns = if let Some(factory) = self.config.magic_dns_socket_factory.as_ref() {
+                TailscaleDnsTransport::new().with_socket_factory({
+                    let factory = factory.clone();
+                    move || (factory)()
+                })
+            } else {
+                TailscaleDnsTransport::new()
+            };
             dns.resolve(host).await
         }
         #[cfg(not(feature = "sb-transport"))]
@@ -384,13 +430,44 @@ impl TailscaleConnector {
 
         Ok(stream)
     }
+
+    /// Try connecting to the first reachable address.
+    async fn connect_first(addrs: &[IpAddr], port: u16) -> Option<io::Result<TcpStream>> {
+        for addr in addrs {
+            let sock_addr = SocketAddr::new(*addr, port);
+            match TcpStream::connect(sock_addr).await {
+                Ok(stream) => return Some(Ok(stream)),
+                Err(e) => {
+                    debug!("Failed to connect to {}: {}", sock_addr, e);
+                }
+            }
+        }
+        None
+    }
 }
+
+#[cfg(feature = "sb-transport")]
+pub type MagicDnsSocketFactory = Arc<
+    dyn Fn() -> Pin<Box<dyn std::future::Future<Output = io::Result<UdpSocket>> + Send>>
+        + Send
+        + Sync,
+>;
 
 #[async_trait::async_trait]
 impl CoreOutboundConnector for TailscaleConnector {
     async fn connect(&self, host: &str, port: u16) -> io::Result<TcpStream> {
         let tag = self.config.tag.as_deref().unwrap_or("tailscale");
         let dest = format!("{}:{}", host, port);
+
+        // Best-effort Tailnet resolution (MagicDNS) to support A/AAAA before mode selection.
+        let mut tailnet_addrs: Option<Vec<IpAddr>> = None;
+        if Self::is_tailnet_host(host) {
+            match self.resolve_via_magic_dns(host).await {
+                Ok(addrs) if !addrs.is_empty() => tailnet_addrs = Some(addrs),
+                Ok(_) => warn!("MagicDNS returned no addresses for {}", host),
+                Err(e) => warn!("MagicDNS resolution failed for {}: {}", host, e),
+            }
+        }
 
         match self.mode {
             TailscaleMode::WireGuard => {
@@ -410,6 +487,11 @@ impl CoreOutboundConnector for TailscaleConnector {
                     }
                 }
                 // Fallback when WireGuard not available
+                if let Some(addrs) = tailnet_addrs.as_ref() {
+                    if let Some(stream) = Self::connect_first(addrs, port).await {
+                        return stream;
+                    }
+                }
                 self.direct.connect(host, port).await
             }
 
@@ -422,55 +504,52 @@ impl CoreOutboundConnector for TailscaleConnector {
                         socks5 = %socks5_addr,
                         "Connecting via SOCKS5 proxy"
                     );
+                    if let Some(addrs) = tailnet_addrs.as_ref() {
+                        // Prefer IP literals if MagicDNS succeeded to avoid proxy-side DNS
+                        for addr in addrs {
+                            if let Ok(stream) = self
+                                .connect_via_socks5(socks5_addr, &addr.to_string(), port)
+                                .await
+                            {
+                                return Ok(stream);
+                            }
+                        }
+                    }
                     return self.connect_via_socks5(socks5_addr, host, port).await;
+                }
+                if let Some(addrs) = tailnet_addrs.as_ref() {
+                    if let Some(stream) = Self::connect_first(addrs, port).await {
+                        return stream;
+                    }
                 }
                 self.direct.connect(host, port).await
             }
 
             TailscaleMode::Direct => {
-                // For Tailnet hosts, resolve via MagicDNS
-                if Self::is_tailnet_host(host) {
-                    debug!(
-                        target: "sb_adapters::tailscale",
-                        tag = tag,
-                        dest = %dest,
-                        "Resolving via MagicDNS"
-                    );
-                    match self.resolve_via_magic_dns(host).await {
-                        Ok(addrs) if !addrs.is_empty() => {
-                            for addr in addrs {
-                                let sock_addr = SocketAddr::new(addr, port);
-                                match TcpStream::connect(sock_addr).await {
-                                    Ok(stream) => return Ok(stream),
-                                    Err(e) => {
-                                        debug!("Failed to connect to {}: {}", sock_addr, e);
-                                    }
-                                }
-                            }
-                        }
-                        Ok(_) => {
-                            warn!("MagicDNS returned no addresses for {}", host);
-                        }
-                        Err(e) => {
-                            warn!("MagicDNS resolution failed for {}: {}", host, e);
-                        }
-                    }
-                }
-
                 debug!(
                     target: "sb_adapters::tailscale",
                     tag = tag,
                     dest = %dest,
                     "Connecting directly"
                 );
+                if let Some(addrs) = tailnet_addrs.as_ref() {
+                    if let Some(stream) = Self::connect_first(addrs, port).await {
+                        return stream;
+                    }
+                }
                 self.direct.connect(host, port).await
             }
             TailscaleMode::Managed => {
-                 debug!(
+                debug!(
                     target: "sb_adapters::tailscale",
                     tag = tag,
-                    "Managed mode: routing pending, falling back to direct"
+                    "Managed mode: routing pending, preferring MagicDNS resolution"
                 );
+                if let Some(addrs) = tailnet_addrs.as_ref() {
+                    if let Some(stream) = Self::connect_first(addrs, port).await {
+                        return stream;
+                    }
+                }
                 self.direct.connect(host, port).await
             }
         }

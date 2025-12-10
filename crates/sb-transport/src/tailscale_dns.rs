@@ -6,6 +6,7 @@
 //! # Features
 //! - DNS-over-UDP to Tailscale's MagicDNS (100.100.100.100:53)
 //! - Automatic detection of Tailnet domains (.ts.net, .tailscale.net)
+//! - IPv4 and IPv6 (A/AAAA) resolution
 //! - Fallback to system DNS for non-Tailnet domains
 //!
 //! # Example
@@ -16,8 +17,10 @@
 //! let addrs = dns.resolve("my-device.ts.net").await?;
 //! ```
 
+use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::pin::Pin;
 use std::time::Duration;
 
 use tokio::net::UdpSocket;
@@ -36,6 +39,8 @@ pub struct TailscaleDnsTransport {
     dns_server: SocketAddr,
     /// Query timeout.
     timeout: Duration,
+    /// Socket factory (allows netstack injection).
+    socket_factory: SocketFactory,
 }
 
 impl Default for TailscaleDnsTransport {
@@ -43,6 +48,7 @@ impl Default for TailscaleDnsTransport {
         Self {
             dns_server: SocketAddr::new(IpAddr::V4(MAGIC_DNS_ADDR), MAGIC_DNS_PORT),
             timeout: Duration::from_secs(5),
+            socket_factory: default_socket_factory(),
         }
     }
 }
@@ -58,12 +64,26 @@ impl TailscaleDnsTransport {
         Self {
             dns_server: server,
             timeout: Duration::from_secs(5),
+            socket_factory: default_socket_factory(),
         }
     }
 
     /// Set query timeout.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Override socket factory (useful for netstack or tests).
+    pub fn with_socket_factory<F, Fut>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = io::Result<UdpSocket>> + Send + 'static,
+    {
+        self.socket_factory = Arc::new(move || {
+            let fut = factory();
+            Box::pin(fut) as Pin<Box<dyn Future<Output = io::Result<UdpSocket>> + Send>>
+        });
         self
     }
 
@@ -82,11 +102,37 @@ impl TailscaleDnsTransport {
     pub async fn resolve(&self, hostname: &str) -> io::Result<Vec<IpAddr>> {
         debug!("Resolving {} via MagicDNS at {}", hostname, self.dns_server);
 
+        let mut addresses = Vec::new();
+        let mut last_err: Option<io::Error> = None;
+
+        for qtype in [Self::QTYPE_A, Self::QTYPE_AAAA] {
+            match self.resolve_qtype(hostname, qtype).await {
+                Ok(mut ips) => addresses.append(&mut ips),
+                Err(err) => last_err = Some(err),
+            }
+        }
+
+        addresses.sort();
+        addresses.dedup();
+
+        if addresses.is_empty() {
+            Err(last_err.unwrap_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("No DNS records found for {}", hostname),
+                )
+            }))
+        } else {
+            Ok(addresses)
+        }
+    }
+
+    async fn resolve_qtype(&self, hostname: &str, qtype: u16) -> io::Result<Vec<IpAddr>> {
         // Build DNS query
-        let query = self.build_dns_query(hostname)?;
+        let query = self.build_dns_query(hostname, qtype)?;
 
         // Create UDP socket
-        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        let socket = (self.socket_factory)().await?;
 
         // Send query
         socket.send_to(&query, self.dns_server).await?;
@@ -104,11 +150,11 @@ impl TailscaleDnsTransport {
         };
 
         // Parse response
-        self.parse_dns_response(&buf[..len], hostname)
+        self.parse_dns_response(&buf[..len], hostname, qtype)
     }
 
     /// Build a DNS A query for the given hostname.
-    fn build_dns_query(&self, hostname: &str) -> io::Result<Vec<u8>> {
+    fn build_dns_query(&self, hostname: &str, qtype: u16) -> io::Result<Vec<u8>> {
         let mut packet = Vec::with_capacity(512);
 
         // Transaction ID (random)
@@ -140,8 +186,8 @@ impl TailscaleDnsTransport {
         }
         packet.push(0); // Root label
 
-        // QTYPE: A record (IPv4)
-        packet.extend_from_slice(&[0x00, 0x01]);
+        // QTYPE: A or AAAA
+        packet.extend_from_slice(&qtype.to_be_bytes());
         // QCLASS: IN (Internet)
         packet.extend_from_slice(&[0x00, 0x01]);
 
@@ -150,7 +196,12 @@ impl TailscaleDnsTransport {
     }
 
     /// Parse DNS response and extract IP addresses.
-    fn parse_dns_response(&self, data: &[u8], hostname: &str) -> io::Result<Vec<IpAddr>> {
+    fn parse_dns_response(
+        &self,
+        data: &[u8],
+        hostname: &str,
+        expected_qtype: u16,
+    ) -> io::Result<Vec<IpAddr>> {
         if data.len() < 12 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -224,6 +275,7 @@ impl TailscaleDnsTransport {
             }
 
             let rtype = u16::from_be_bytes([data[pos], data[pos + 1]]);
+            let rclass = u16::from_be_bytes([data[pos + 2], data[pos + 3]]);
             let rdlength = u16::from_be_bytes([data[pos + 8], data[pos + 9]]) as usize;
             pos += 10;
 
@@ -231,19 +283,30 @@ impl TailscaleDnsTransport {
                 break;
             }
 
-            // A record (IPv4)
-            if rtype == 1 && rdlength == 4 {
-                let ip = Ipv4Addr::new(data[pos], data[pos + 1], data[pos + 2], data[pos + 3]);
-                addresses.push(IpAddr::V4(ip));
-                debug!("Resolved {} -> {}", hostname, ip);
-            }
-            // AAAA record (IPv6)
-            else if rtype == 28 && rdlength == 16 {
-                let mut octets = [0u8; 16];
-                octets.copy_from_slice(&data[pos..pos + 16]);
-                let ip = std::net::Ipv6Addr::from(octets);
-                addresses.push(IpAddr::V6(ip));
-                debug!("Resolved {} -> {}", hostname, ip);
+            if rclass == 1 && rtype == expected_qtype {
+                match (rtype, rdlength) {
+                    (Self::QTYPE_A, 4) => {
+                        let ip =
+                            Ipv4Addr::new(data[pos], data[pos + 1], data[pos + 2], data[pos + 3]);
+                        addresses.push(IpAddr::V4(ip));
+                        debug!("Resolved {} -> {}", hostname, ip);
+                    }
+                    (Self::QTYPE_AAAA, 16) => {
+                        let mut octets = [0u8; 16];
+                        octets.copy_from_slice(&data[pos..pos + 16]);
+                        let ip = std::net::Ipv6Addr::from(octets);
+                        addresses.push(IpAddr::V6(ip));
+                        debug!("Resolved {} -> {}", hostname, ip);
+                    }
+                    _ => {
+                        trace!(
+                            "Skipping RR type {} rdlength {} for {}",
+                            rtype,
+                            rdlength,
+                            hostname
+                        );
+                    }
+                }
             }
 
             pos += rdlength;
@@ -259,6 +322,22 @@ impl TailscaleDnsTransport {
 
         Ok(addresses)
     }
+
+    const QTYPE_A: u16 = 1;
+    const QTYPE_AAAA: u16 = 28;
+}
+
+type SocketFactory =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = io::Result<UdpSocket>> + Send>> + Send + Sync>;
+
+fn default_socket_factory() -> SocketFactory {
+    Arc::new(|| {
+        Box::pin(async {
+            UdpSocket::bind("0.0.0.0:0")
+                .await
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("bind udp: {e}")))
+        })
+    })
 }
 
 /// DERP (Designated Encrypted Relay for Packets) client for Tailscale relay.
@@ -306,17 +385,13 @@ impl DerpClient {
     /// Send packet through DERP relay.
     pub async fn send(&self, _peer_key: &[u8; 32], _data: &[u8]) -> io::Result<()> {
         // TODO: Implement DERP send
-        Err(io::Error::other(
-            "DERP send not yet implemented",
-        ))
+        Err(io::Error::other("DERP send not yet implemented"))
     }
 
     /// Receive packet from DERP relay.
     pub async fn recv(&self) -> io::Result<(Vec<u8>, [u8; 32])> {
         // TODO: Implement DERP recv
-        Err(io::Error::other(
-            "DERP recv not yet implemented",
-        ))
+        Err(io::Error::other("DERP recv not yet implemented"))
     }
 }
 
@@ -387,12 +462,16 @@ mod tests {
     #[test]
     fn test_is_tailnet_domain() {
         assert!(TailscaleDnsTransport::is_tailnet_domain("my-device.ts.net"));
-        assert!(TailscaleDnsTransport::is_tailnet_domain("server.tailscale.net"));
+        assert!(TailscaleDnsTransport::is_tailnet_domain(
+            "server.tailscale.net"
+        ));
         assert!(TailscaleDnsTransport::is_tailnet_domain("My-Device.TS.NET"));
         assert!(TailscaleDnsTransport::is_tailnet_domain("test.ts.net."));
 
         assert!(!TailscaleDnsTransport::is_tailnet_domain("google.com"));
-        assert!(!TailscaleDnsTransport::is_tailnet_domain("ts.net.example.com"));
+        assert!(!TailscaleDnsTransport::is_tailnet_domain(
+            "ts.net.example.com"
+        ));
     }
 
     #[test]
@@ -407,7 +486,9 @@ mod tests {
     #[test]
     fn test_build_dns_query() {
         let dns = TailscaleDnsTransport::new();
-        let query = dns.build_dns_query("test.ts.net").unwrap();
+        let query = dns
+            .build_dns_query("test.ts.net", TailscaleDnsTransport::QTYPE_A)
+            .unwrap();
 
         // Should have header (12 bytes) + question
         assert!(query.len() > 12);
@@ -419,6 +500,78 @@ mod tests {
         // Check QDCOUNT = 1
         assert_eq!(query[4], 0x00);
         assert_eq!(query[5], 0x01);
+    }
+
+    #[test]
+    fn test_parse_dns_response_aaaa() {
+        // Build a minimal DNS response with one AAAA record
+        let hostname = "test.ts.net";
+        let dns = TailscaleDnsTransport::new();
+
+        // Header: ID=0, standard response, QD=1, AN=1
+        let mut resp = vec![
+            0x00, 0x00, // ID
+            0x81, 0x80, // Flags: standard response, recursion available
+            0x00, 0x01, // QDCOUNT
+            0x00, 0x01, // ANCOUNT
+            0x00, 0x00, // NSCOUNT
+            0x00, 0x00, // ARCOUNT
+        ];
+
+        // Question: test.ts.net, type AAAA, class IN
+        resp.extend_from_slice(&[
+            0x04, b't', b'e', b's', b't', // test
+            0x02, b't', b's', // ts
+            0x03, b'n', b'e', b't', // net
+            0x00, // root
+            0x00, 0x1c, // QTYPE AAAA
+            0x00, 0x01, // QCLASS IN
+        ]);
+
+        // Answer name pointer to offset 12 (0xc00c)
+        resp.extend_from_slice(&[0xc0, 0x0c]);
+        // TYPE AAAA, CLASS IN
+        resp.extend_from_slice(&[0x00, 0x1c, 0x00, 0x01]);
+        // TTL
+        resp.extend_from_slice(&[0x00, 0x00, 0x00, 0x3c]);
+        // RDLENGTH 16
+        resp.extend_from_slice(&[0x00, 0x10]);
+        // RDATA: 2001:db8::1
+        resp.extend_from_slice(&[
+            0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x01,
+        ]);
+
+        let addrs = dns
+            .parse_dns_response(&resp, hostname, TailscaleDnsTransport::QTYPE_AAAA)
+            .unwrap();
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(
+            addrs[0],
+            IpAddr::V6(std::net::Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_custom_socket_factory_called() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let called = Arc::new(AtomicBool::new(false));
+        let called_clone = called.clone();
+
+        let dns = TailscaleDnsTransport::new().with_socket_factory(move || {
+            let called = called_clone.clone();
+            async move {
+                called.store(true, Ordering::SeqCst);
+                UdpSocket::bind("0.0.0.0:0").await
+            }
+        });
+
+        // Expect timeout (no responder), but factory must be invoked.
+        let _ = dns
+            .resolve_qtype("example.ts.net", TailscaleDnsTransport::QTYPE_A)
+            .await;
+        assert!(called.load(Ordering::SeqCst));
     }
 
     #[test]

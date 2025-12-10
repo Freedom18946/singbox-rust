@@ -8,15 +8,13 @@
 //! - Routes via sb-core router/outbounds
 
 use anyhow::{anyhow, Result};
+use sb_core::adapter::InboundService;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
-use sb_core::adapter::InboundService;
-use std::io;
-use std::sync::Mutex;
 use sb_core::outbound::{registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -25,9 +23,11 @@ use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sha2::{Digest, Sha224};
 use std::collections::HashMap;
 use std::fs::File;
+use std::io;
 use std::io::BufReader;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::io::AsyncReadExt;
 use tokio::net::UdpSocket;
 use tokio::select;
@@ -976,11 +976,7 @@ impl InboundService for TrojanInboundAdapter {
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
+        let res = rt.block_on(async { serve(cfg, rx).await.map_err(io::Error::other) });
         let _ = self.stop_tx.lock().unwrap().take();
         res
     }

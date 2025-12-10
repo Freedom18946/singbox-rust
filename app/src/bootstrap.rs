@@ -5,9 +5,7 @@ use tracing::{error, info, warn};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
-use tokio::{
-    time::Duration,
-};
+use tokio::time::Duration;
 
 // TEMPORARY: Simplified placeholder router functionality
 // This is a minimal stub to allow compilation for subs security tests
@@ -43,8 +41,6 @@ fn map_header_entries(entries: &[sb_config::ir::HeaderEntry]) -> Vec<(String, St
         .map(|h| (h.key.clone(), h.value.clone()))
         .collect()
 }
-
-
 
 /// The Runtime struct holds the core components of the running proxy.
 /// Runtime 结构体持有运行中代理的核心组件。
@@ -787,8 +783,6 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         outbounds: oh,
     })
 }
-
-
 
 /// Start HTTP/SOCKS inbounds based on legacy inbounds list
 /// Delegates to `inbound_starter` module to reduce complexity

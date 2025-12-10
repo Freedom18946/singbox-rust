@@ -35,10 +35,10 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 #[cfg(feature = "tls_reality")]
+use sb_tls::reality::server::RealityConnection;
+#[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
-#[cfg(feature = "tls_reality")]
-use sb_tls::reality::server::RealityConnection;
 
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
@@ -126,7 +126,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
             }
             #[cfg(not(feature = "tls_reality"))]
             {
-                 warn!(
+                warn!(
                     "VLESS: Flow control '{}' requires REALITY feature which is disabled. Connection serves as standard TCP.",
                     flow
                 );
@@ -506,8 +506,8 @@ async fn parse_vless_address(
     }
 }
 
-use sb_core::adapter::InboundService;
 use parking_lot::Mutex;
+use sb_core::adapter::InboundService;
 
 #[derive(Debug)]
 pub struct VlessInboundAdapter {
@@ -528,11 +528,10 @@ impl InboundService for VlessInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
-        
+
         let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            serve(self.config.clone(), rx).await
-        }).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        rt.block_on(async { serve(self.config.clone(), rx).await })
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     }
 
     fn request_shutdown(&self) {

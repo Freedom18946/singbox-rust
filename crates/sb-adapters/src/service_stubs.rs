@@ -45,26 +45,26 @@ impl Service for StubService {
 ///
 /// Returns `Some` and logs a warning that Resolved is not implemented.
 pub fn build_resolved_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
-#[cfg(all(target_os = "linux", feature = "service_resolved"))]
-{
-    // Prefer the systemd-resolved D-Bus implementation when available.
-    crate::service::resolved_impl::build_resolved_service(ir, ctx)
-}
+    #[cfg(all(target_os = "linux", feature = "service_resolved"))]
+    {
+        // Prefer the systemd-resolved D-Bus implementation when available.
+        crate::service::resolved_impl::build_resolved_service(ir, ctx)
+    }
 
-#[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
-{
-    let _ = ctx;
-    let tag = ir.tag.as_deref().unwrap_or("resolved");
-    tracing::warn!(
-        service_type = "resolved",
-        tag = tag,
-        "Resolved service requires Linux + `service_resolved`; falling back to stub"
-    );
-    Some(Arc::new(StubService {
-        ty_str: "resolved",
-        tag: tag.to_string(),
-    }))
-}
+    #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
+    {
+        let _ = ctx;
+        let tag = ir.tag.as_deref().unwrap_or("resolved");
+        tracing::warn!(
+            service_type = "resolved",
+            tag = tag,
+            "Resolved service requires Linux + `service_resolved`; falling back to stub"
+        );
+        Some(Arc::new(StubService {
+            ty_str: "resolved",
+            tag: tag.to_string(),
+        }))
+    }
 }
 
 /// Build a SSM API service stub.
@@ -252,9 +252,9 @@ mod tests {
 
         #[cfg(feature = "service_ssmapi")]
         {
-             if let Err(e) = &result {
-                 assert!(!e.to_string().contains("not implemented"));
-             }
+            if let Err(e) = &result {
+                assert!(!e.to_string().contains("not implemented"));
+            }
         }
     }
 
@@ -309,9 +309,9 @@ mod tests {
 
         #[cfg(feature = "service_derp")]
         {
-             if let Err(e) = &result {
-                 assert!(!e.to_string().contains("not implemented"));
-             }
+            if let Err(e) = &result {
+                assert!(!e.to_string().contains("not implemented"));
+            }
         }
     }
 }

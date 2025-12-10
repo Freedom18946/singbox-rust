@@ -121,7 +121,7 @@ impl<S> SimpleObfsStream<S> {
     fn build_http_request(&self, payload: &[u8]) -> Bytes {
         let path = self.config.path.as_deref().unwrap_or("/");
         let content_len = payload.len();
-        
+
         let header = format!(
             "GET {} HTTP/1.1\r\n\
              Host: {}\r\n\
@@ -143,51 +143,51 @@ impl<S> SimpleObfsStream<S> {
     fn build_tls_client_hello(&self, payload: &[u8]) -> Bytes {
         let host_bytes = self.config.host.as_bytes();
         let host_len = host_bytes.len();
-        
+
         // Simplified TLS 1.2 ClientHello structure
         let mut buf = BytesMut::with_capacity(256 + payload.len());
-        
+
         // TLS record header
         buf.put_u8(0x16); // Handshake
         buf.put_u8(0x03);
         buf.put_u8(0x01); // TLS 1.0 for ClientHello
-        
+
         // Length placeholder (filled later)
         let len_pos = buf.len();
         buf.put_u16(0);
-        
+
         // Handshake header
         buf.put_u8(0x01); // ClientHello
-        
+
         // Handshake length placeholder
         let hs_len_pos = buf.len();
         buf.put_u8(0);
         buf.put_u16(0);
-        
+
         // Client version (TLS 1.2)
         buf.put_u8(0x03);
         buf.put_u8(0x03);
-        
+
         // Random (32 bytes)
         let random: [u8; 32] = rand::random();
         buf.put_slice(&random);
-        
+
         // Session ID (empty)
         buf.put_u8(0);
-        
+
         // Cipher suites
         buf.put_u16(4); // length
         buf.put_u16(0xc02f); // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
         buf.put_u16(0xc030); // TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-        
+
         // Compression methods
         buf.put_u8(1);
         buf.put_u8(0); // null
-        
+
         // Extensions
         let ext_start = buf.len();
         buf.put_u16(0); // extension length placeholder
-        
+
         // SNI extension
         buf.put_u16(0x0000); // type: server_name
         buf.put_u16((host_len + 5) as u16); // extension data length
@@ -195,7 +195,7 @@ impl<S> SimpleObfsStream<S> {
         buf.put_u8(0x00); // host name type
         buf.put_u16(host_len as u16);
         buf.put_slice(host_bytes);
-        
+
         // Application layer protocol (encrypted data goes here)
         if !payload.is_empty() {
             buf.put_u16(0x0010); // ALPN
@@ -203,23 +203,23 @@ impl<S> SimpleObfsStream<S> {
             buf.put_u16(payload.len() as u16);
             buf.put_slice(payload);
         }
-        
+
         // Fix extension length
         let ext_len = buf.len() - ext_start - 2;
         buf[ext_start] = ((ext_len >> 8) & 0xff) as u8;
         buf[ext_start + 1] = (ext_len & 0xff) as u8;
-        
+
         // Fix handshake length (3 bytes, big-endian)
         let hs_len = buf.len() - hs_len_pos - 3;
         buf[hs_len_pos] = ((hs_len >> 16) & 0xff) as u8;
         buf[hs_len_pos + 1] = ((hs_len >> 8) & 0xff) as u8;
         buf[hs_len_pos + 2] = (hs_len & 0xff) as u8;
-        
+
         // Fix record length
         let record_len = buf.len() - len_pos - 2;
         buf[len_pos] = ((record_len >> 8) & 0xff) as u8;
         buf[len_pos + 1] = (record_len & 0xff) as u8;
-        
+
         buf.freeze()
     }
 
@@ -240,7 +240,7 @@ impl<S> SimpleObfsStream<S> {
         if self.read_buffer.len() < 5 {
             return Ok(false);
         }
-        
+
         // Check for TLS record header
         if self.read_buffer[0] == 0x16 {
             let record_len = ((self.read_buffer[3] as usize) << 8) | (self.read_buffer[4] as usize);
@@ -255,7 +255,7 @@ impl<S> SimpleObfsStream<S> {
             self.state = ObfsState::Established;
             return Ok(true);
         }
-        
+
         Ok(false)
     }
 }
@@ -277,16 +277,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SimpleObfsStream<S> {
         let this = self.get_mut();
         let mut inner_buf = [0u8; 4096];
         let mut read_buf = ReadBuf::new(&mut inner_buf);
-        
+
         match Pin::new(&mut this.inner).poll_read(cx, &mut read_buf) {
             Poll::Ready(Ok(())) => {
                 let n = read_buf.filled().len();
                 if n == 0 {
                     return Poll::Ready(Ok(()));
                 }
-                
+
                 this.read_buffer.extend_from_slice(read_buf.filled());
-                
+
                 // Handle state machine
                 match this.state {
                     ObfsState::Init | ObfsState::WaitingResponse => {
@@ -294,12 +294,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for SimpleObfsStream<S> {
                             ObfsType::Http => this.parse_http_response()?,
                             ObfsType::Tls => this.parse_tls_response()?,
                         };
-                        
+
                         if parsed && !this.read_buffer.is_empty() {
                             let len = std::cmp::min(buf.remaining(), this.read_buffer.len());
                             buf.put_slice(&this.read_buffer.split_to(len));
                         }
-                        
+
                         Poll::Ready(Ok(()))
                     }
                     ObfsState::Established => {
@@ -322,7 +322,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for SimpleObfsStream<S> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        
+
         match this.state {
             ObfsState::Init => {
                 // Build obfuscation header with first write data
@@ -330,10 +330,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for SimpleObfsStream<S> {
                     ObfsType::Http => this.build_http_request(buf),
                     ObfsType::Tls => this.build_tls_client_hello(buf),
                 };
-                
+
                 this.write_buffer.extend_from_slice(&obfs_data);
                 this.state = ObfsState::WaitingResponse;
-                
+
                 // Write the obfuscated data
                 match Pin::new(&mut this.inner).poll_write(cx, &this.write_buffer) {
                     Poll::Ready(Ok(n)) => {
@@ -381,11 +381,11 @@ mod tests {
             host: "example.com".to_string(),
             path: Some("/api".to_string()),
         };
-        
+
         let stream = SimpleObfsStream::new(std::io::Cursor::<Vec<u8>>::new(vec![]), config);
         let data = stream.build_http_request(b"test payload");
         let request = String::from_utf8_lossy(&data);
-        
+
         assert!(request.contains("GET /api HTTP/1.1"));
         assert!(request.contains("Host: example.com"));
         assert!(request.contains("test payload"));
@@ -398,10 +398,10 @@ mod tests {
             host: "example.com".to_string(),
             path: None,
         };
-        
+
         let stream = SimpleObfsStream::new(std::io::Cursor::<Vec<u8>>::new(vec![]), config);
         let data = stream.build_tls_client_hello(b"test");
-        
+
         // Check TLS record header
         assert_eq!(data[0], 0x16); // Handshake
         assert_eq!(data[1], 0x03); // TLS 1.x

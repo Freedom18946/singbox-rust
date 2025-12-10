@@ -1565,7 +1565,7 @@ pub mod inbound {
                         .write_all(response.as_bytes())
                         .await
                         .map_err(|e| io::Error::other(format!("Masquerade write failed: {}", e)))?;
-                    
+
                     // Gracefully finish stream
                     let _ = send_stream.finish();
                     Ok(())

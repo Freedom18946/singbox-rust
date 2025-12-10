@@ -25,9 +25,9 @@ use futures::future::{select_ok, FutureExt};
 use std::net::SocketAddr;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::net::{lookup_host, TcpStream};
 #[cfg(target_os = "android")]
 use tokio::net::TcpSocket;
+use tokio::net::{lookup_host, TcpStream};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
@@ -431,11 +431,11 @@ impl TcpDialer {
             } else {
                 TcpSocket::new_v6()?
             };
-            
+
             if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
                 tracing::warn!("Failed to protect TCP socket: {}", e);
             }
-            
+
             socket.connect(addr).await
         }
         #[cfg(not(target_os = "android"))]

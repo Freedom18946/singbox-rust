@@ -63,7 +63,6 @@ pub fn build_tailscale_endpoint(
     ir: &EndpointIR,
     _ctx: &EndpointContext,
 ) -> Option<Arc<dyn Endpoint>> {
-
     // If the real adapter is compiled in, delegate to it.
     #[cfg(feature = "adapter-tailscale-endpoint")]
     {
@@ -85,8 +84,6 @@ pub fn build_tailscale_endpoint(
             tag: tag.to_string(),
         }))
     }
-
-
 }
 
 /// Register all endpoint stubs.
@@ -206,9 +203,9 @@ mod tests {
 
         #[cfg(feature = "adapter-tailscale-endpoint")]
         {
-             if let Err(e) = &result {
-                 assert!(!e.to_string().contains("not implemented"));
-             }
+            if let Err(e) = &result {
+                assert!(!e.to_string().contains("not implemented"));
+            }
         }
     }
 }

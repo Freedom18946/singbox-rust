@@ -8,12 +8,12 @@
 use sb_adapters::Result;
 use std::net::{IpAddr, SocketAddr};
 
+use sb_adapters::outbound::socks5::Socks5Connector;
+use sb_adapters::{DialOpts, Target};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
-use sb_adapters::{Target, DialOpts};
-use sb_adapters::outbound::socks5::Socks5Connector;
-use std::sync::Arc;
 
 /// Mock SOCKS5 server for testing UDP ASSOCIATE
 #[allow(dead_code)]
@@ -161,5 +161,3 @@ async fn test_socks5_udp_associate() -> Result<()> {
 
     run_test().await
 }
-
-

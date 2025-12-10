@@ -103,7 +103,11 @@ impl StatsManager {
             .iter()
             .filter(|(name, _)| pattern.is_empty() || name.contains(pattern))
             .map(|(name, counter)| {
-                let value = if reset { counter.reset() } else { counter.get() };
+                let value = if reset {
+                    counter.reset()
+                } else {
+                    counter.get()
+                };
                 (name.clone(), value)
             })
             .collect()
@@ -192,9 +196,18 @@ impl V2RayApiServer {
     #[cfg(feature = "service_v2ray_api")]
     fn create_router(&self) -> Router {
         Router::new()
-            .route("/v2ray.core.app.stats.command.StatsService/GetStats", get(handlers::get_stats))
-            .route("/v2ray.core.app.stats.command.StatsService/QueryStats", get(handlers::query_stats))
-            .route("/v2ray.core.app.stats.command.StatsService/GetSysStats", get(handlers::get_sys_stats))
+            .route(
+                "/v2ray.core.app.stats.command.StatsService/GetStats",
+                get(handlers::get_stats),
+            )
+            .route(
+                "/v2ray.core.app.stats.command.StatsService/QueryStats",
+                get(handlers::query_stats),
+            )
+            .route(
+                "/v2ray.core.app.stats.command.StatsService/GetSysStats",
+                get(handlers::get_sys_stats),
+            )
             // Simplified HTTP endpoints
             .route("/api/stats", get(handlers::api_stats))
             .route("/api/stats/query", get(handlers::api_query_stats))

@@ -102,17 +102,23 @@ pub enum DnsRcode {
 impl RejectAction {
     /// Create NXDOMAIN reject.
     pub fn nxdomain() -> Self {
-        Self { rcode: DnsRcode::NxDomain }
+        Self {
+            rcode: DnsRcode::NxDomain,
+        }
     }
 
     /// Create REFUSED reject.
     pub fn refused() -> Self {
-        Self { rcode: DnsRcode::Refused }
+        Self {
+            rcode: DnsRcode::Refused,
+        }
     }
 
     /// Create SERVFAIL reject.
     pub fn servfail() -> Self {
-        Self { rcode: DnsRcode::ServFail }
+        Self {
+            rcode: DnsRcode::ServFail,
+        }
     }
 }
 
@@ -192,11 +198,7 @@ impl PredefineAnswerAction {
 }
 
 /// Apply a DNS rule action to a query.
-pub fn apply_action(
-    action: &DnsRuleAction,
-    _domain: &str,
-    _record_type: u16,
-) -> ActionResult {
+pub fn apply_action(action: &DnsRuleAction, _domain: &str, _record_type: u16) -> ActionResult {
     match action {
         DnsRuleAction::Upstream(tag) => ActionResult::RouteUpstream(tag.clone()),
         DnsRuleAction::Rewrite(rewrite) => {
@@ -249,7 +251,7 @@ mod tests {
     fn test_rewrite_action() {
         let action = DnsRuleAction::Rewrite(RewriteAction::fixed_ip("127.0.0.1"));
         let result = apply_action(&action, "example.com", 1);
-        
+
         match result {
             ActionResult::FixedAnswer(addrs, ttl) => {
                 assert_eq!(addrs.len(), 1);
@@ -263,7 +265,7 @@ mod tests {
     fn test_reject_action() {
         let action = DnsRuleAction::Reject(RejectAction::nxdomain());
         let result = apply_action(&action, "blocked.com", 1);
-        
+
         match result {
             ActionResult::Reject(rcode) => {
                 assert_eq!(rcode, DnsRcode::NxDomain);
@@ -275,11 +277,10 @@ mod tests {
     #[test]
     fn test_predefine_answer() {
         let action = DnsRuleAction::PredefineAnswer(
-            PredefineAnswerAction::ipv4(std::net::Ipv4Addr::new(1, 2, 3, 4))
-                .with_ttl(600)
+            PredefineAnswerAction::ipv4(std::net::Ipv4Addr::new(1, 2, 3, 4)).with_ttl(600),
         );
         let result = apply_action(&action, "static.test", 1);
-        
+
         match result {
             ActionResult::FixedAnswer(addrs, ttl) => {
                 assert_eq!(addrs.len(), 1);

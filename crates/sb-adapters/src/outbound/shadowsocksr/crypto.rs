@@ -5,10 +5,10 @@ use bytes::{BufMut, BytesMut};
 pub trait SsrCipher: Send + Sync {
     /// Encrypt data.
     fn encrypt(&mut self, data: &[u8], out: &mut BytesMut);
-    
+
     /// Decrypt data.
     fn decrypt(&mut self, data: &[u8], out: &mut BytesMut) -> Result<()>;
-    
+
     /// Get cipher name.
     fn name(&self) -> &'static str;
 }

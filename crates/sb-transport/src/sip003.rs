@@ -24,7 +24,6 @@
 //! ## References
 //! - https://shadowsocks.org/guide/sip003.html
 
-
 use std::collections::HashMap;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
@@ -92,10 +91,22 @@ impl Sip003Config {
     /// Build environment variables for the plugin
     pub fn build_env(&self) -> Vec<(String, String)> {
         let mut env = vec![
-            ("SS_REMOTE_HOST".to_string(), self.remote_addr.ip().to_string()),
-            ("SS_REMOTE_PORT".to_string(), self.remote_addr.port().to_string()),
-            ("SS_LOCAL_HOST".to_string(), self.local_addr.ip().to_string()),
-            ("SS_LOCAL_PORT".to_string(), self.local_addr.port().to_string()),
+            (
+                "SS_REMOTE_HOST".to_string(),
+                self.remote_addr.ip().to_string(),
+            ),
+            (
+                "SS_REMOTE_PORT".to_string(),
+                self.remote_addr.port().to_string(),
+            ),
+            (
+                "SS_LOCAL_HOST".to_string(),
+                self.local_addr.ip().to_string(),
+            ),
+            (
+                "SS_LOCAL_PORT".to_string(),
+                self.local_addr.port().to_string(),
+            ),
         ];
 
         if let Some(ref opts) = self.plugin_opts {
@@ -136,7 +147,7 @@ impl Sip003Plugin {
 
         // Build command
         let mut cmd = Command::new(&config.plugin);
-        
+
         // Set environment variables
         for (key, value) in config.build_env() {
             cmd.env(&key, &value);
@@ -203,9 +214,9 @@ impl Sip003Plugin {
 
     /// Connect through the plugin
     pub async fn connect(&self) -> io::Result<TcpStream> {
-        let addr = self.actual_local_addr.ok_or_else(|| {
-            io::Error::new(ErrorKind::NotConnected, "Plugin not started")
-        })?;
+        let addr = self
+            .actual_local_addr
+            .ok_or_else(|| io::Error::new(ErrorKind::NotConnected, "Plugin not started"))?;
 
         TcpStream::connect(addr).await
     }
@@ -232,9 +243,9 @@ impl Sip003Stream {
     pub async fn connect(config: Sip003Config) -> io::Result<Self> {
         let mut plugin = Sip003Plugin::new(config);
         plugin.start().await?;
-        
+
         let stream = plugin.connect().await?;
-        
+
         Ok(Self {
             inner: stream,
             plugin: Arc::new(RwLock::new(plugin)),
@@ -281,7 +292,7 @@ pub mod plugins {
     pub mod v2ray {
         pub const MODE_WEBSOCKET: &str = "websocket";
         pub const MODE_QUIC: &str = "quic";
-        
+
         /// Build v2ray-plugin options
         pub fn build_opts(mode: &str, host: &str, path: &str, tls: bool) -> String {
             let mut opts = format!("mode={}", mode);
@@ -312,16 +323,8 @@ pub mod plugins {
     /// kcptun plugin options
     pub mod kcptun {
         /// Build kcptun options
-        pub fn build_opts(
-            crypt: &str,
-            key: &str,
-            mode: &str,
-            mtu: u16,
-        ) -> String {
-            format!(
-                "crypt={};key={};mode={};mtu={}",
-                crypt, key, mode, mtu
-            )
+        pub fn build_opts(crypt: &str, key: &str, mode: &str, mtu: u16) -> String {
+            format!("crypt={};key={};mode={};mtu={}", crypt, key, mode, mtu)
         }
     }
 }
@@ -348,11 +351,19 @@ mod tests {
             .with_opts("test=value");
 
         let env = config.build_env();
-        assert!(env.iter().any(|(k, v)| k == "SS_REMOTE_HOST" && v == "1.2.3.4"));
-        assert!(env.iter().any(|(k, v)| k == "SS_REMOTE_PORT" && v == "8080"));
-        assert!(env.iter().any(|(k, v)| k == "SS_LOCAL_HOST" && v == "127.0.0.1"));
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "SS_REMOTE_HOST" && v == "1.2.3.4"));
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "SS_REMOTE_PORT" && v == "8080"));
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "SS_LOCAL_HOST" && v == "127.0.0.1"));
         assert!(env.iter().any(|(k, v)| k == "SS_LOCAL_PORT" && v == "1080"));
-        assert!(env.iter().any(|(k, v)| k == "SS_PLUGIN_OPTIONS" && v == "test=value"));
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "SS_PLUGIN_OPTIONS" && v == "test=value"));
     }
 
     #[test]

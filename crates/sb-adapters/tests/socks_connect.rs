@@ -101,13 +101,16 @@ async fn test_socks5_with_auth_connect() {
         let mut header = [0u8; 2];
         stream.read_exact(&mut header).await.unwrap();
         assert_eq!(header[0], 0x05); // SOCKS version
-        
+
         let nmethods = header[1];
         let mut methods = vec![0u8; nmethods as usize];
         stream.read_exact(&mut methods).await.unwrap();
 
         // Should include 0x02 (Username/Password)
-        assert!(methods.contains(&0x02), "Methods should include Username/Password auth");
+        assert!(
+            methods.contains(&0x02),
+            "Methods should include Username/Password auth"
+        );
 
         // Respond: username/password auth required
         stream.write_all(&[0x05, 0x02]).await.unwrap();

@@ -27,14 +27,20 @@ pub struct DebugServer {
 
 impl DebugServer {
     /// Create and start a new debug server.
-    pub async fn start(options: &DebugOptions) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let listen = options.listen.as_ref()
+    pub async fn start(
+        options: &DebugOptions,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let listen = options
+            .listen
+            .as_ref()
             .ok_or("Debug server listen address not configured")?;
 
-        let addr: SocketAddr = listen.parse()
+        let addr: SocketAddr = listen
+            .parse()
             .map_err(|e| format!("Invalid debug listen address '{}': {}", listen, e))?;
 
-        let listener = TcpListener::bind(addr).await
+        let listener = TcpListener::bind(addr)
+            .await
             .map_err(|e| format!("Failed to bind debug server to {}: {}", addr, e))?;
 
         let actual_addr = listener.local_addr()?;
@@ -276,7 +282,7 @@ mod tests {
     async fn test_debug_server_start_stop() {
         let options = DebugOptions::with_listen("127.0.0.1:0");
         let server = DebugServer::start(&options).await.unwrap();
-        
+
         let addr = server.addr();
         assert!(addr.port() > 0);
 

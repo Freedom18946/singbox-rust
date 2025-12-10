@@ -148,7 +148,6 @@ pub(crate) fn labels_match(all: &BTreeMap<String, String>, sel: &BTreeMap<String
         .all(|(k, want)| all.get(k).is_some_and(|v| v == want))
 }
 
-
 async fn scrape(
     url: String,
     filter: Option<String>,
@@ -227,7 +226,6 @@ async fn scrape(
     }
     Ok(())
 }
-
 
 async fn hist(
     metrics: Vec<String>,
@@ -410,7 +408,6 @@ async fn hist(
     }
     Ok(())
 }
-
 
 async fn http_get_text(_url: &str) -> Result<String> {
     #[cfg(feature = "reqwest")]

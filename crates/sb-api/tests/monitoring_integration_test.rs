@@ -141,7 +141,11 @@ async fn test_connection_monitoring(
         }
     }
 
-    assert!(received_connection.is_some(), "Should receive connection update for ID {}", connection_id);
+    assert!(
+        received_connection.is_some(),
+        "Should receive connection update for ID {}",
+        connection_id
+    );
     let received_connection = received_connection.unwrap();
 
     assert_eq!(

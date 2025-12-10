@@ -23,8 +23,6 @@ pub struct ContextSource {
     pub network_monitor: Option<Arc<sb_platform::monitor::NetworkMonitor>>,
 }
 
-
-
 /// Owned routing context data for population.
 #[derive(Debug, Clone, Default)]
 pub struct ContextData {
@@ -122,7 +120,7 @@ impl ContextData {
     pub fn set_package_name(&mut self, package: impl Into<String>) {
         self.package_name = Some(package.into());
     }
-    
+
     /// Try to resolve package name from UID (Android stub).
     #[cfg(target_os = "android")]
     pub fn resolve_package_from_uid(&mut self, _uid: u32) {
@@ -188,7 +186,7 @@ mod tests {
     fn test_populate_process_info() {
         let mut data = ContextData::default();
         data.populate_process_info(0);
-        
+
         // Should have at least user_id and group_id
         assert!(data.user_id.is_some());
         assert!(data.group_id.is_some());

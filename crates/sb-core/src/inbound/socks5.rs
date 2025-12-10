@@ -254,11 +254,8 @@ pub(crate) async fn handle_conn(
                                 }
                             }
                         }
-                        let clash_mode_str = br_owned
-                            .context
-                            .clash_server
-                            .as_ref()
-                            .map(|s| s.get_mode());
+                        let clash_mode_str =
+                            br_owned.context.clash_server.as_ref().map(|s| s.get_mode());
                         let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
                             "rule" => "Rule",
                             "global" => "Global",
@@ -279,8 +276,12 @@ pub(crate) async fn handle_conn(
                             },
                             clash_mode: clash_mode_ref,
                             network_type: Some(br_owned.context.network_monitor.get_network_type()),
-                            network_is_expensive: Some(br_owned.context.network_monitor.is_expensive()),
-                            network_is_constrained: Some(br_owned.context.network_monitor.is_constrained()),
+                            network_is_expensive: Some(
+                                br_owned.context.network_monitor.is_expensive(),
+                            ),
+                            network_is_constrained: Some(
+                                br_owned.context.network_monitor.is_constrained(),
+                            ),
                             ..Default::default()
                         };
                         eng_owned.decide(&input, false)
@@ -556,11 +557,7 @@ pub(crate) async fn handle_conn(
                 }
             }
         }
-        let clash_mode_str = bridge
-            .context
-            .clash_server
-            .as_ref()
-            .map(|s| s.get_mode());
+        let clash_mode_str = bridge.context.clash_server.as_ref().map(|s| s.get_mode());
         let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
             "rule" => "Rule",
             "global" => "Global",

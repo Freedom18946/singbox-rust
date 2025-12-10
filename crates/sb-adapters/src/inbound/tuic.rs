@@ -10,16 +10,16 @@ use anyhow::{anyhow, Result};
 use quinn::{Endpoint, ServerConfig};
 // Use types re-exported by quinn to satisfy trait bounds
 use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use sb_core::adapter::InboundService;
 use sb_core::outbound::{
     Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
 };
 use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
 use sb_transport::IoStream;
+use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use sb_core::adapter::InboundService;
-use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -737,11 +737,7 @@ impl InboundService for TuicInboundAdapter {
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
+        let res = rt.block_on(async { serve(cfg, rx).await.map_err(io::Error::other) });
         let _ = self.stop_tx.lock().unwrap().take();
         res
     }

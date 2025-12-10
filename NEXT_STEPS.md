@@ -1,17 +1,28 @@
-# Next Steps (2025-12-08 Reality Check)
+# Next Steps (2025-12-09 Reality Check)
 
-Parity Status: **Not aligned** with Go `go_fork_source/sing-box-1.12.12` in key areas (Tailscale, DNS transports, uTLS). The previous v7 notes claiming 100% parity are invalid.
+Parity Status: **Not aligned** with Go `go_fork_source/sing-box-1.12.12` (see GO_PARITY_MATRIX.md). Actions below are ordered and must be verified (source + tests + config) with updates recorded in VERIFICATION_RECORD.md.
 
-## Immediate Actions
-1) **Tailscale parity**  
-   - Align `crates/sb-core/src/endpoint/tailscale.rs` and `crates/sb-adapters/src/outbound/tailscale.rs` with Go `protocol/tailscale/endpoint.go`. Implement tsnet-equivalent control plane (auth, state dir, hostname, routes), gVisor/netstack-style TCP/UDP handling, DNS hook, router/filter integration, and proper inbound metadata updates. Remove stub-only paths and ensure MagicDNS goes through the Tailnet stack.
+## Immediate Actions (priority order)
+1) **Tailscale stack parity**  
+   - Implement tsnet-equivalent control plane/netstack for endpoint/outbound: auth, state dir, hostname, routes, DNS hook, router/filter integration; TCP+UDP via netstack; bind MagicDNS to Tailnet context (replace raw 100.100.100.100 client).  
+   - Files: `crates/sb-core/src/endpoint/tailscale.rs`, `crates/sb-adapters/src/outbound/tailscale.rs`, `crates/sb-transport/src/tailscale_dns.rs`.
 
-2) **DNS transport completion**  
-   - Implement active DHCP discovery (`dns/transport/dhcp/*.go`) instead of passive `resolv.conf` watching in `crates/sb-core/src/dns/upstream.rs`.  
-   - Finish Tailscale/Resolved transports: integrate with control-plane state, IPv6, and avoid stub fallback in `crates/sb-adapters/src/service/resolved_impl.rs` and `crates/sb-transport/src/tailscale_dns.rs`.
+2) **DNS transports completion**  
+   - Add active DHCP probe/INFORM + interface discovery with tests; align resolved/tailscale transports with IPv6 and netmon callbacks; remove stub fallbacks.  
+   - Files: `crates/sb-core/src/dns/upstream.rs`, `crates/sb-core/src/dns/transport`, `crates/sb-adapters/src/service/resolved_impl.rs`.
 
-3) **uTLS wiring**  
-   - Connect `crates/sb-tls/src/utls.rs` into TLS client/server builders and outbound adapters (REALITY, ShadowTLS, TLS options) to match Go `common/tls/utls_client.go` and `reality_*`. Support fingerprint selection and ClientHello mutation.
+3) **DERP service parity**  
+   - Enforce TLS; serve DERP over HTTP/2 + websocket; add verify-client hooks, STUN/latency probes, mesh PSK/peer support using tailscale client libs; add integration tests.  
+   - Files: `crates/sb-core/src/services/derp/`.
 
-4) **Validation sweep**  
-   - Re-audit remaining protocol adapters, services (DERP/SSMAPI), router, and transports against Go sources. Replace inflated documentation/test claims with verified status and add targeted tests for each aligned module.
+4) **SSMAPI service parity**  
+   - Bind Axum server to managed Shadowsocks inbounds; add traffic/user trackers, cache load/save, optional TLS, per-server routing; add end-to-end tests.  
+   - Files: `crates/sb-core/src/services/ssmapi/`.
+
+5) **uTLS wiring**  
+   - Wire `crates/sb-tls/src/utls.rs` into TLS builders and Reality/ShadowTLS paths with fingerprint selection; add handshake tests.  
+   - Files: TLS builders in sb-tls and adapters.
+
+6) **Validation sweep & record**  
+   - After each implementation, add targeted tests/config fixtures, run relevant crate/workspace tests, and log timestamped results in `VERIFICATION_RECORD.md`.  
+   - Update `GO_PARITY_MATRIX.md` statuses only after source+tests+config pass.

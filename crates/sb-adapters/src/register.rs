@@ -618,7 +618,7 @@ fn build_shadowsocksr_outbound(
 
     impl std::fmt::Debug for ShadowsocksRConnectorWrapper {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-             f.debug_struct("ShadowsocksRConnectorWrapper")
+            f.debug_struct("ShadowsocksRConnectorWrapper")
                 .field("inner", &self.inner)
                 .finish()
         }
@@ -633,10 +633,8 @@ fn build_shadowsocksr_outbound(
         }
     }
 
-    let wrapper = ShadowsocksRConnectorWrapper {
-        inner: adapter_arc,
-    };
-    
+    let wrapper = ShadowsocksRConnectorWrapper { inner: adapter_arc };
+
     Some((Arc::new(wrapper), None))
 }
 
@@ -954,7 +952,10 @@ fn build_shadowsocks_inbound(
     let listen: SocketAddr = match listen_str.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            warn!("Failed to parse Shadowsocks listen address '{}': {}", listen_str, e);
+            warn!(
+                "Failed to parse Shadowsocks listen address '{}': {}",
+                listen_str, e
+            );
             return None;
         }
     };
@@ -996,15 +997,21 @@ fn build_shadowsocks_inbound(
 }
 
 #[cfg(feature = "sb-transport")]
-fn convert_multiplex_config(ir: &Option<sb_config::ir::MultiplexOptionsIR>) -> Option<sb_transport::multiplex::MultiplexServerConfig> {
+fn convert_multiplex_config(
+    ir: &Option<sb_config::ir::MultiplexOptionsIR>,
+) -> Option<sb_transport::multiplex::MultiplexServerConfig> {
     let ir = ir.as_ref()?;
     if !ir.enabled {
         return None;
     }
-    
+
     let mut config = sb_transport::multiplex::MultiplexServerConfig::default();
-    if let Some(n) = ir.max_streams { config.max_num_streams = n as usize; }
-    if let Some(p) = ir.padding { config.enable_padding = p; }
+    if let Some(n) = ir.max_streams {
+        config.max_num_streams = n as usize;
+    }
+    if let Some(p) = ir.padding {
+        config.enable_padding = p;
+    }
     if let Some(_b) = &ir.brutal {
         // Assuming BrutalIR has compatible fields or just skip for now to pass check
         // config.brutal = ...
@@ -1026,19 +1033,22 @@ fn build_vmess_inbound(
     let listen: SocketAddr = match listen_str.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            warn!("Failed to parse VMess listen address '{}': {}", listen_str, e);
+            warn!(
+                "Failed to parse VMess listen address '{}': {}",
+                listen_str, e
+            );
             return None;
         }
     };
 
     let uuid_str = param.uuid.clone().or_else(|| {
-        // Try fallback to single user from users list if needed? 
+        // Try fallback to single user from users list if needed?
         // Or requiring uuid field for single user
         // Users parsing for mult-user not fully implemented in InboundConfig yet (VMessInboundConfig takes single uuid?)
         // Let's check VmessInboundConfig definition.
         // It has `pub uuid: Uuid`. It seems to be single-user focused or primary user.
         // If users_vmess is present, we might need a MultiUser config?
-        // But VmessInboundConfig has `pub uuid: Uuid`. 
+        // But VmessInboundConfig has `pub uuid: Uuid`.
         // For now, let's allow parsing from param.uuid.
         None
     });
@@ -1090,7 +1100,10 @@ fn build_vless_inbound(
     let listen: SocketAddr = match listen_str.parse() {
         Ok(addr) => addr,
         Err(e) => {
-            warn!("Failed to parse VLESS listen address '{}': {}", listen_str, e);
+            warn!(
+                "Failed to parse VLESS listen address '{}': {}",
+                listen_str, e
+            );
             return None;
         }
     };
@@ -1224,7 +1237,9 @@ fn build_trojan_inbound(
         fallback_for_alpn: std::collections::HashMap::new(),
     };
 
-    Some(Arc::new(crate::inbound::trojan::TrojanInboundAdapter::new(config)))
+    Some(Arc::new(crate::inbound::trojan::TrojanInboundAdapter::new(
+        config,
+    )))
 }
 
 #[cfg(all(feature = "adapter-socks", feature = "socks", feature = "router"))]
@@ -1244,7 +1259,9 @@ fn build_socks_inbound(
         udp_nat_ttl: std::time::Duration::from_secs(60),
         users: None,
     };
-    Some(Arc::new(crate::inbound::socks::SocksInboundAdapter::new(cfg)))
+    Some(Arc::new(crate::inbound::socks::SocksInboundAdapter::new(
+        cfg,
+    )))
 }
 
 #[cfg(all(
@@ -1358,7 +1375,9 @@ fn build_shadowtls_inbound(
             router: ctx.router.clone(),
         };
 
-        Some(Arc::new(crate::inbound::shadowtls::ShadowTlsInboundAdapter::new(config)))
+        Some(Arc::new(
+            crate::inbound::shadowtls::ShadowTlsInboundAdapter::new(config),
+        ))
     }
     #[cfg(not(feature = "adapter-shadowtls"))]
     {
@@ -1579,11 +1598,7 @@ fn build_hysteria2_inbound(
                 Ok(ir) => match ir.type_.as_str() {
                     "string" => ir.string.map(|s| CoreMasq::String {
                         content: s.content,
-                        headers: s
-                            .headers
-                            .unwrap_or_default()
-                            .into_iter()
-                            .collect(),
+                        headers: s.headers.unwrap_or_default().into_iter().collect(),
                         status_code: s.status_code,
                     }),
                     "file" => ir.file.map(|f| CoreMasq::File {
@@ -1731,7 +1746,9 @@ fn build_tuic_inbound(
         outbounds: ctx.outbounds.clone(),
     };
 
-    Some(Arc::new(crate::inbound::tuic::TuicInboundAdapter::new(config)))
+    Some(Arc::new(crate::inbound::tuic::TuicInboundAdapter::new(
+        config,
+    )))
 }
 
 #[cfg(not(feature = "adapter-tuic"))]
@@ -1797,7 +1814,7 @@ fn build_tun_inbound(
             return None;
         }
     };
-    
+
     tracing::info!("Initializing TunInbound: {}", config.name);
     Some(Arc::new(TunInbound::new(config, ctx.router.clone())))
 }
@@ -2055,7 +2072,7 @@ fn build_tor_outbound(
     #[cfg(feature = "adapter-tor")]
     {
         use crate::outbound::tor::TorOutbound;
-        
+
         // Check for fields (tor_extra_args is Vec<String>)
         let proxy_addr = ir
             .tor_proxy_addr
@@ -2067,15 +2084,15 @@ fn build_tor_outbound(
             || ir.tor_data_directory.is_some()
             || ir.tor_options.is_some()
         {
-             // Log warning if executable path is set but we are using Arti
-             // For parity, we might want to support external Tor via SOCKS, but for now we prioritize Arti.
-             if ir.tor_executable_path.is_some() {
-                 warn!(
+            // Log warning if executable path is set but we are using Arti
+            // For parity, we might want to support external Tor via SOCKS, but for now we prioritize Arti.
+            if ir.tor_executable_path.is_some() {
+                warn!(
                     target: "sb_adapters::tor",
                     "tor exec path present but using embedded Arti; running external tor daemon at {} is not supported in this mode",
                     proxy_addr
                 );
-             }
+            }
         }
 
         // Create TorOutbound (Arti)
@@ -2085,38 +2102,40 @@ fn build_tor_outbound(
         match TorOutbound::new(ir, &ctx) {
             Ok(adapter) => {
                 let adapter_arc = Arc::new(adapter);
-                
+
                 // Wrapper
                 #[derive(Clone)]
                 struct TorConnectorWrapper {
                     inner: Arc<TorOutbound>,
                 }
-            
+
                 impl std::fmt::Debug for TorConnectorWrapper {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                         f.debug_struct("TorConnectorWrapper")
+                        f.debug_struct("TorConnectorWrapper")
                             .field("inner", &self.inner)
                             .finish()
                     }
                 }
-            
+
                 #[async_trait::async_trait]
                 impl OutboundConnector for TorConnectorWrapper {
-                    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-                        // Tor uses SOCKS-like or internal dialing, cannot return raw TcpStream easily without virtual network 
+                    async fn connect(
+                        &self,
+                        _host: &str,
+                        _port: u16,
+                    ) -> std::io::Result<tokio::net::TcpStream> {
+                        // Tor uses SOCKS-like or internal dialing, cannot return raw TcpStream easily without virtual network
                         // or just failing like other proxies.
-                         Err(std::io::Error::other(
+                        Err(std::io::Error::other(
                             "Tor adapter connector is not usable directly; use switchboard registry instead",
                         ))
                     }
                 }
-            
-                let wrapper = TorConnectorWrapper {
-                    inner: adapter_arc,
-                };
-                
+
+                let wrapper = TorConnectorWrapper { inner: adapter_arc };
+
                 Some((Arc::new(wrapper), None))
-            },
+            }
             Err(e) => {
                 warn!(target: "sb_adapters::tor", "Failed to create TorOutbound: {}", e);
                 None
@@ -2758,8 +2777,7 @@ fn stub_outbound(kind: &str) {
 #[cfg(all(test, feature = "adapter-dns"))]
 mod tests {
     use super::*;
-    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType, OutboundType, OutboundIR};
-
+    use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType, OutboundIR, OutboundType};
 
     #[test]
     fn build_dns_outbound_accepts_doh() {
@@ -2787,7 +2805,6 @@ mod tests {
             "DoH outbound should construct successfully"
         );
     }
-
 
     #[test]
     #[cfg(feature = "adapter-hysteria2")]
@@ -2940,8 +2957,6 @@ impl InboundService for HttpInboundAdapter {
     }
 }
 
-
-
 #[allow(dead_code)]
 fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
     listen
@@ -2951,7 +2966,6 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
 }
 
 // ========== ShadowTLS Inbound ==========
-
 
 #[cfg(all(
     feature = "adapter-http",
@@ -3137,8 +3151,6 @@ impl InboundService for TproxyInboundAdapter {
 
 // ========== TUIC Inbound ==========
 
-
-
 // Selector and URLTest builders
 fn build_selector_outbound(
     param: &OutboundParam,
@@ -3155,7 +3167,3 @@ fn build_urltest_outbound(
 ) -> OutboundBuilderResult {
     crate::outbound::urltest::build_urltest_outbound(param, ir, ctx)
 }
-
-
-
-

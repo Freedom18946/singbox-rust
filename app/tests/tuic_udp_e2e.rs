@@ -9,9 +9,9 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use sb_adapters::inbound::tuic::{serve as tuic_serve, TuicInboundConfig, TuicUser};
-use sb_core::UdpOutboundFactory;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router;
+use sb_core::UdpOutboundFactory;
 
 fn self_signed_cert() -> (String, String) {
     let mut params = rcgen::CertificateParams::new(vec!["localhost".into()]);

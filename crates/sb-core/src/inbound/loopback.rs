@@ -135,10 +135,7 @@ impl LoopbackDetector {
         // Try to get interface addresses (platform-specific)
         #[cfg(unix)]
         {
-            if let Ok(output) = std::process::Command::new("hostname")
-                .arg("-I")
-                .output()
-            {
+            if let Ok(output) = std::process::Command::new("hostname").arg("-I").output() {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for addr_str in stdout.split_whitespace() {
@@ -197,10 +194,7 @@ mod tests {
     #[test]
     fn test_wildcard_detection() {
         let detector = LoopbackDetector::new();
-        detector.register_inbound(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            8080,
-        ));
+        detector.register_inbound(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8080));
 
         // Any local IP on same port should be detected
         assert!(detector.is_loopback("127.0.0.1", 8080));
@@ -209,7 +203,7 @@ mod tests {
     #[test]
     fn test_is_local_ip() {
         let detector = LoopbackDetector::new();
-        
+
         assert!(detector.is_local_ip(IpAddr::V4(Ipv4Addr::LOCALHOST)));
         assert!(detector.is_local_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1))));
         assert!(!detector.is_local_ip(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));

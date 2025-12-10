@@ -54,9 +54,7 @@ pub fn clear_protect_handler() {
 ///
 /// Returns `false` if the RwLock is poisoned.
 pub fn has_protect_handler() -> bool {
-    PROTECT_HANDLER
-        .read()
-        .is_ok_and(|guard| guard.is_some())
+    PROTECT_HANDLER.read().is_ok_and(|guard| guard.is_some())
 }
 
 /// Protect a socket file descriptor.
@@ -221,7 +219,9 @@ mod tests {
     #[test]
     fn test_android_vpn_config_blacklist() {
         let mut config = AndroidVpnConfig::default();
-        config.disallowed_apps.push("com.android.chrome".to_string());
+        config
+            .disallowed_apps
+            .push("com.android.chrome".to_string());
         config.include_all = true;
 
         assert!(!config.should_route_app("com.android.chrome"));

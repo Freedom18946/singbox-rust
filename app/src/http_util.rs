@@ -26,7 +26,10 @@ use hyper::{Body, Response, StatusCode};
 use std::io::Write;
 
 #[allow(dead_code)]
-pub fn write_200_json(s: &mut std::net::TcpStream, body: &serde_json::Value) -> std::io::Result<()> {
+pub fn write_200_json(
+    s: &mut std::net::TcpStream,
+    body: &serde_json::Value,
+) -> std::io::Result<()> {
     let b = serde_json::to_vec(body).unwrap_or_default();
     write!(
         s,
@@ -37,7 +40,10 @@ pub fn write_200_json(s: &mut std::net::TcpStream, body: &serde_json::Value) -> 
 }
 
 #[allow(dead_code)]
-pub fn write_503_json(s: &mut std::net::TcpStream, body: &serde_json::Value) -> std::io::Result<()> {
+pub fn write_503_json(
+    s: &mut std::net::TcpStream,
+    body: &serde_json::Value,
+) -> std::io::Result<()> {
     let b = serde_json::to_vec(body).unwrap_or_default();
     write!(s, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", b.len())?;
     s.write_all(&b)

@@ -27,8 +27,8 @@ use tracing::{error, info};
 use crate::bootstrap;
 #[cfg(feature = "dev-cli")]
 use crate::env_dump;
-use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 use sb_config::ir::ConfigIR;
+use sb_core::outbound::{OutboundRegistry, OutboundRegistryHandle};
 // Temporarily disabled for minimal CLI
 //use sb_core::router::engine::Router as CoreRouter;
 //use sb_core::router::RouterHandle;
@@ -90,10 +90,16 @@ fn apply_debug_options(ir: &ConfigIR) {
                 }
             }
             if let Some(freq) = debug.gc_percent {
-                tracing::info!(gc_percent = freq, "debug option gc_percent recorded (Go parity, no-op)");
+                tracing::info!(
+                    gc_percent = freq,
+                    "debug option gc_percent recorded (Go parity, no-op)"
+                );
             }
             if let Some(limit) = debug.memory_limit {
-                tracing::info!(memory_limit = limit, "debug option memory_limit recorded (Go parity, no-op)");
+                tracing::info!(
+                    memory_limit = limit,
+                    "debug option memory_limit recorded (Go parity, no-op)"
+                );
             }
             if debug.panic_on_fault.is_some()
                 || debug.max_stack.is_some()

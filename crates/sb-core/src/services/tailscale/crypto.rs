@@ -30,7 +30,7 @@ impl TailscaleNoise {
     /// Initialize a new Noise handshake (Initiator side).
     pub fn new(local_private_key: &[u8], remote_public_key: &[u8]) -> Result<Self, CryptoError> {
         let builder = Builder::new(NOISE_PARAMS.parse().unwrap());
-        
+
         let state = builder
             .local_private_key(local_private_key)
             .remote_public_key(remote_public_key)
@@ -42,9 +42,12 @@ impl TailscaleNoise {
     }
 
     /// Initialize a new Noise handshake (Responder side - for simulation/testing).
-    pub fn new_responder(local_private_key: &[u8], remote_public_key: &[u8]) -> Result<Self, CryptoError> {
+    pub fn new_responder(
+        local_private_key: &[u8],
+        remote_public_key: &[u8],
+    ) -> Result<Self, CryptoError> {
         let builder = Builder::new(NOISE_PARAMS.parse().unwrap());
-        
+
         let state = builder
             .local_private_key(local_private_key)
             .remote_public_key(remote_public_key)
@@ -109,7 +112,7 @@ impl TailscaleNoise {
     pub fn is_handshake_complete(&self) -> bool {
         matches!(self.state, Some(NoiseState::Transport(_)))
     }
-    
+
     /// Encrypt a packet (transport phase).
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         // Reuse write_message which handles transport state
@@ -136,7 +139,7 @@ mod tests {
 
         // Client initiates
         let mut client = TailscaleNoise::new(&client_key.private, &server_key.public).unwrap();
-        
+
         // Server responds (mocking server logic for test)
         let builder_res = Builder::new(NOISE_PARAMS.parse().unwrap());
         let mut server_state = builder_res
@@ -147,20 +150,22 @@ mod tests {
 
         // 1. Client -> Server
         let msg1 = client.write_message(b"hello server").unwrap();
-        
+
         // Server reads
         let mut buf = vec![0u8; 65535];
         let len = server_state.read_message(&msg1, &mut buf).unwrap();
         assert_eq!(&buf[..len], b"hello server");
 
         // 2. Server -> Client
-        let len_resp = server_state.write_message(b"hello client", &mut buf).unwrap();
+        let len_resp = server_state
+            .write_message(b"hello client", &mut buf)
+            .unwrap();
         let msg2 = &buf[..len_resp];
-        
+
         // Client reads
         let resp = client.read_message(msg2).unwrap();
         assert_eq!(&resp, b"hello client");
-        
+
         assert!(client.is_handshake_complete());
     }
 }

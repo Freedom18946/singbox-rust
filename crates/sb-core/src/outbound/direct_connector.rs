@@ -221,7 +221,7 @@ impl AsyncOutboundConnector for DirectConnector {
 
         #[cfg(target_os = "android")]
         if let Err(e) = sb_platform::android_protect::protect_udp_socket(&socket) {
-             warn!("Failed to protect UDP socket: {}", e);
+            warn!("Failed to protect UDP socket: {}", e);
         }
 
         #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
@@ -270,7 +270,7 @@ impl DirectConnector {
 
         #[cfg(target_os = "android")]
         if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
-             warn!("Failed to protect TCP socket: {}", e);
+            warn!("Failed to protect TCP socket: {}", e);
         }
 
         #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
@@ -358,7 +358,7 @@ impl DirectConnector {
 
             #[cfg(target_os = "android")]
             if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
-                 warn!("Failed to protect TCP socket: {}", e);
+                warn!("Failed to protect TCP socket: {}", e);
             }
 
             #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]

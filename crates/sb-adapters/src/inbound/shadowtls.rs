@@ -10,6 +10,7 @@
 //! Sprint 19 Phase 1.1: Complete integration with sb-tls infrastructure from Sprint 5
 
 use anyhow::{anyhow, Result};
+use sb_core::adapter::InboundService;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
@@ -20,17 +21,16 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
-use sb_core::adapter::InboundService;
-use std::io;
-use std::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct ShadowTlsInboundConfig {
@@ -258,11 +258,7 @@ impl InboundService for ShadowTlsInboundAdapter {
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            serve(cfg, rx)
-                .await
-                .map_err(io::Error::other)
-        });
+        let res = rt.block_on(async { serve(cfg, rx).await.map_err(io::Error::other) });
         let _ = self.stop_tx.lock().unwrap().take();
         res
     }

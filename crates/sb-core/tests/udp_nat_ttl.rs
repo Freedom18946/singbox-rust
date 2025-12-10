@@ -149,4 +149,3 @@ async fn test_ttl_batch_eviction_limit() {
     assert_eq!(evicted_count, 7);
     assert_eq!(nat.session_count(), 0);
 }
-

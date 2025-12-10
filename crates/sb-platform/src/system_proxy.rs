@@ -506,16 +506,17 @@ impl SystemProxyManager {
         };
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let (settings, _) = hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
+        let (settings, _) =
+            hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
 
         settings.set_value("ProxyEnable", &1u32)?;
         settings.set_value("ProxyServer", &proxy_server)?;
-        
+
         // Add default bypass for localhost if not present?
         // Logic in Go adds "<local>" usually. Let's add it if missing or just set standard bypass.
         // For now, minimal change to match previous logic (Command just set server/enable).
         // Previous logic didn't set override.
-        // But `wininet.rs` detection reads it. 
+        // But `wininet.rs` detection reads it.
         // Let's set a sensible default for bypass if not existing?
         // Or just leave it? Go implementation usually sets it.
         // Let's stick to simple Enable for now, matching the `reg add` commands we replaced.
@@ -531,7 +532,8 @@ impl SystemProxyManager {
         use winreg::RegKey;
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let (settings, _) = hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
+        let (settings, _) =
+            hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
 
         settings.set_value("ProxyEnable", &0u32)?;
 
@@ -547,7 +549,7 @@ impl SystemProxyManager {
         use windows::Win32::Networking::WinInet::{
             InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
         };
-        
+
         // We use a separate function to isolate the unsafe block and dependency
         unsafe {
             let _ = InternetSetOptionW(None, INTERNET_OPTION_SETTINGS_CHANGED, None, 0);

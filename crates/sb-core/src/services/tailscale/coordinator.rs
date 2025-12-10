@@ -119,8 +119,11 @@ impl Coordinator {
 
     /// Start the coordination loop (login & poll).
     pub async fn start(&self) -> io::Result<()> {
-        info!("Starting Tailscale coordinator loop at {}", self.control_url);
-        
+        info!(
+            "Starting Tailscale coordinator loop at {}",
+            self.control_url
+        );
+
         // 1. Login / Register
         self.login().await?;
 
@@ -135,7 +138,7 @@ impl Coordinator {
     async fn login(&self) -> io::Result<()> {
         let url = format!("{}/machine/register", self.control_url);
         debug!("Registering machine at {}", url);
-        
+
         // Dummy Payload for now - mimicking standard interaction
         // In reality, this requires Noise handshake protocol if talking to real Headscale/Tailscale
         // But for "Parity", implementing full Noise/Tailscale crypto might be huge.
@@ -144,15 +147,18 @@ impl Coordinator {
         // NOTE: Real Tailscale uses a custom Noise-based HTTP transport.
         // If we want "Functionality Parity", we *must* implement that noise transport.
         // That is likely what `tailscale.go` does or uses `libtailscale`.
-        // 
+        //
         // Given the constraints and scope, we will implement the *structure* here.
         // The actual crypto shim is a heavy lift (requires x25519, chacha20, blake2s, etc).
-        // 
+        //
         // For this step, we'll verify we have the *components* in place:
         // Coordinator -> HTTP -> (Mocked) Response -> NetMap Update.
-        
+
         if self.auth_key.is_none() {
-             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "No auth key provided"));
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "No auth key provided",
+            ));
         }
 
         // Perform Crypto Handshake (Simulated Network)
@@ -165,7 +171,7 @@ impl Coordinator {
     /// Perform Noise handshake (Simulated loopback).
     async fn perform_handshake(&self) -> io::Result<()> {
         debug!("Initiating Noise handshake...");
-        
+
         // 1. Setup keys
         // We generate a fresh server keypair here to simulate the remote end
         // In production, `self.server_public_key` would be the actual target
@@ -177,40 +183,48 @@ impl Coordinator {
         // 2. Initialize Client (Initiator)
         // We use the generated server pub key instead of self.server_public_key for the simulation to work
         let mut client = TailscaleNoise::new(&client_priv, &server_pair.public)
-             .map_err(|e| io::Error::other(e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         // 3. Initialize Server (Responder - Simulation)
         let mut server = TailscaleNoise::new_responder(&server_pair.private, &[]) // IK doesn't need remote pub upfront
-             .map_err(|e| io::Error::other(e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         // 4. Exchange Messages
-        
+
         // -> ClientHello
-        let msg1 = client.write_message(b"ClientHello").map_err(|e| io::Error::other(e.to_string()))?;
+        let msg1 = client
+            .write_message(b"ClientHello")
+            .map_err(|e| io::Error::other(e.to_string()))?;
         debug!("Client -> Server: {} bytes", msg1.len());
-        
+
         // Server reads
-        let _ = server.read_message(&msg1).map_err(|e| io::Error::other(e.to_string()))?;
-        
+        let _ = server
+            .read_message(&msg1)
+            .map_err(|e| io::Error::other(e.to_string()))?;
+
         // <- ServerHello
-        let msg2 = server.write_message(b"ServerHello").map_err(|e| io::Error::other(e.to_string()))?;
+        let msg2 = server
+            .write_message(b"ServerHello")
+            .map_err(|e| io::Error::other(e.to_string()))?;
         debug!("Server -> Client: {} bytes", msg2.len());
 
         // Client reads
-        let _ = client.read_message(&msg2).map_err(|e| io::Error::other(e.to_string()))?;
+        let _ = client
+            .read_message(&msg2)
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         if client.is_handshake_complete() {
             debug!("Noise handshake verification successful!");
             Ok(())
         } else {
-             Err(io::Error::other("Handshake failed to complete"))
+            Err(io::Error::other("Handshake failed to complete"))
         }
     }
 
     /// Poll network map.
     async fn poll_map(&self) -> io::Result<()> {
         debug!("Polling network map");
-        
+
         // Simulate receiving a map
         let mock_map = NetworkMap {
             self_node: NodeInfo {
@@ -224,14 +238,14 @@ impl Coordinator {
         };
 
         let _ = self.netmap_tx.send(Some(mock_map));
-        
+
         info!("Network map updated");
         Ok(())
     }
 }
 
 fn generate_machine_key() -> String {
-    // 32 bytes hex = 64 chars. 
+    // 32 bytes hex = 64 chars.
     // We want 32 bytes valid private key if possible, but for temp pure random is fine?
     // snow requires 32 bytes.
     // fastrand u64 is 8 bytes.

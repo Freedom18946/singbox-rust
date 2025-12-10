@@ -111,7 +111,11 @@ impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::RouteConflict { cidr, existing } => {
-                write!(f, "Route {} conflicts with existing route {}", cidr, existing)
+                write!(
+                    f,
+                    "Route {} conflicts with existing route {}",
+                    cidr, existing
+                )
             }
             Self::InvalidMtu { value, reason } => {
                 write!(f, "Invalid MTU {}: {}", value, reason)
@@ -120,13 +124,25 @@ impl std::fmt::Display for ValidationError {
                 write!(f, "Permission denied for {}", operation)
             }
             Self::InvalidInterfaceName { name, max_len } => {
-                write!(f, "Interface name '{}' exceeds max length {}", name, max_len)
+                write!(
+                    f,
+                    "Interface name '{}' exceeds max length {}",
+                    name, max_len
+                )
             }
             Self::InvalidAddress { addr, reason } => {
                 write!(f, "Invalid address {}: {}", addr, reason)
             }
-            Self::ConfigConflict { field1, field2, reason } => {
-                write!(f, "Config conflict between {} and {}: {}", field1, field2, reason)
+            Self::ConfigConflict {
+                field1,
+                field2,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Config conflict between {} and {}: {}",
+                    field1, field2, reason
+                )
             }
             Self::Other(msg) => write!(f, "{}", msg),
         }
@@ -200,13 +216,13 @@ pub fn validate_auto_route(config: &TunValidationConfig) -> ValidationResult {
 fn validate_interface_name(name: &str, result: &mut ValidationResult) {
     #[cfg(target_os = "linux")]
     const MAX_IF_NAME_LEN: usize = 15; // IFNAMSIZ - 1
-    
+
     #[cfg(target_os = "macos")]
     const MAX_IF_NAME_LEN: usize = 15; // IFNAMSIZ - 1
-    
+
     #[cfg(target_os = "windows")]
     const MAX_IF_NAME_LEN: usize = 255;
-    
+
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     const MAX_IF_NAME_LEN: usize = 15;
 
@@ -310,7 +326,7 @@ fn validate_auto_route_config(config: &TunValidationConfig, result: &mut Validat
     // Check strict_route implications
     if config.strict_route {
         result.add_warning("strict_route enabled - all traffic will go through TUN");
-        
+
         if config.default_interface.is_none() {
             result.add_warning("strict_route without default_interface may cause routing issues");
         }
@@ -356,7 +372,11 @@ fn validate_routes(config: &TunValidationConfig, result: &mut ValidationResult) 
     }
 
     // Validate CIDR format
-    for route in config.include_routes.iter().chain(config.exclude_routes.iter()) {
+    for route in config
+        .include_routes
+        .iter()
+        .chain(config.exclude_routes.iter())
+    {
         if !is_valid_cidr(route) {
             result.add_error(ValidationError::Other(format!(
                 "Invalid CIDR notation: {}",
@@ -394,7 +414,7 @@ fn is_valid_cidr(cidr: &str) -> bool {
 #[cfg(target_os = "linux")]
 pub fn check_route_conflicts(routes: &[String]) -> Vec<ValidationError> {
     let mut conflicts = Vec::new();
-    
+
     // Read existing routes from /proc/net/route
     if let Ok(content) = std::fs::read_to_string("/proc/net/route") {
         for line in content.lines().skip(1) {
@@ -413,7 +433,7 @@ pub fn check_route_conflicts(routes: &[String]) -> Vec<ValidationError> {
             }
         }
     }
-    
+
     conflicts
 }
 

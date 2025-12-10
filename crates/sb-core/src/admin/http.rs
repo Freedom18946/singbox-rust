@@ -302,7 +302,7 @@ fn handle(
 ) -> std::io::Result<()> {
     let lim = limits();
     let peer_opt = cli.peer_addr().ok();
-    
+
     // Early concurrency check BEFORE reading any data
     let _conn_guard = if let Some(peer) = &peer_opt {
         match inc_concurrency(peer.ip(), &lim) {
@@ -343,9 +343,9 @@ fn handle(
             return Ok(());
         }
     };
-    
+
     let (method, path, _ver) = parse_path(&line);
-    
+
     let headers = match read_headers(&mut cli) {
         Ok(h) => h,
         Err(e) => {
@@ -356,7 +356,7 @@ fn handle(
             return Ok(());
         }
     };
-    
+
     // security gate for non-local access
     if let Some(peer) = peer_opt {
         if !is_loopback_or_private(&peer) && admin_token.is_none() {

@@ -25,6 +25,7 @@ use tracing::{debug, info, warn};
 use once_cell::sync::OnceCell;
 use sb_core::adapter::InboundService;
 use sb_core::outbound::health as ob_health;
+use sb_core::outbound::OutboundRegistry;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
@@ -32,7 +33,6 @@ use sb_core::outbound::{
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
-use sb_core::outbound::OutboundRegistry;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx as RulesRouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
@@ -1068,11 +1068,7 @@ impl InboundService for SocksInboundAdapter {
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
-        let res = rt.block_on(async {
-            serve_socks(cfg, rx, None)
-                .await
-                .map_err(io::Error::other)
-        });
+        let res = rt.block_on(async { serve_socks(cfg, rx, None).await.map_err(io::Error::other) });
         let _ = self.stop_tx.lock().unwrap().take();
         res
     }

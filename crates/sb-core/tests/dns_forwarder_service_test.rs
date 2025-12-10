@@ -37,8 +37,10 @@ async fn test_dns_forwarder_service_lifecycle() {
         derp_server_key_path: None,
     };
 
-    let service =
-        sb_core::services::dns_forwarder::build_dns_forwarder_service(&ir, &ServiceContext::default());
+    let service = sb_core::services::dns_forwarder::build_dns_forwarder_service(
+        &ir,
+        &ServiceContext::default(),
+    );
     assert!(service.is_some());
     let service = service.unwrap();
 

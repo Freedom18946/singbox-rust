@@ -10,8 +10,8 @@
 //!   cargo test --package app --test trojan_protocol_validation_test --features tls_reality -- --nocapture
 
 use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
-use std::io::ErrorKind;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -85,10 +85,7 @@ fn trojan_config(
 }
 
 fn password_str(cfg: &TrojanInboundConfig) -> &str {
-    cfg.users
-        .first()
-        .map(|u| u.password.as_str())
-        .unwrap_or("")
+    cfg.users.first().map(|u| u.password.as_str()).unwrap_or("")
 }
 
 /// Test helper: Start echo server for testing

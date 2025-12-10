@@ -159,19 +159,19 @@ impl TrojanConfig {
         let addr_bytes = self.target.encode();
 
         let mut buf = BytesMut::with_capacity(64 + addr_bytes.len());
-        
+
         // Password hash (56 bytes hex)
         buf.put_slice(hash.as_bytes());
-        
+
         // CRLF
         buf.put_slice(b"\r\n");
-        
+
         // Command
         buf.put_u8(self.command as u8);
-        
+
         // Address
         buf.put_slice(&addr_bytes);
-        
+
         // CRLF
         buf.put_slice(b"\r\n");
 
@@ -239,14 +239,14 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for TrojanStream<S> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-        
+
         if !this.header_sent {
             // Build and send header with first payload
             let header = this.config.build_header();
             let mut full_buf = BytesMut::with_capacity(header.len() + buf.len());
             full_buf.put_slice(&header);
             full_buf.put_slice(buf);
-            
+
             match Pin::new(&mut this.inner).poll_write(cx, &full_buf) {
                 Poll::Ready(Ok(n)) => {
                     if n >= header.len() {
@@ -302,17 +302,17 @@ impl TrojanUdpPacket {
     pub fn encode(&self) -> Bytes {
         let addr_bytes = self.addr.encode();
         let mut buf = BytesMut::with_capacity(addr_bytes.len() + 2 + 2 + self.data.len());
-        
+
         // Address
         buf.put_slice(&addr_bytes);
-        
+
         // Length + CRLF
         buf.put_u16(self.data.len() as u16);
         buf.put_slice(b"\r\n");
-        
+
         // Payload
         buf.put_slice(&self.data);
-        
+
         buf.freeze()
     }
 
@@ -372,12 +372,12 @@ impl TrojanUdpPacket {
         // Get payload length
         let len_offset = addr_len;
         let payload_len = ((buf[len_offset] as usize) << 8) | (buf[len_offset + 1] as usize);
-        
+
         // Check for CRLF
         if buf.len() < len_offset + 2 + 2 + payload_len {
             return Ok(None);
         }
-        
+
         // Skip to payload
         let payload_offset = len_offset + 4; // length(2) + crlf(2)
         let _ = buf.split_to(payload_offset);
@@ -393,31 +393,26 @@ mod tests {
 
     #[test]
     fn test_password_hash() {
-        let config = TrojanConfig::new(
-            "test_password",
-            TrojanAddr::from_domain("example.com", 443),
-        );
-        
+        let config =
+            TrojanConfig::new("test_password", TrojanAddr::from_domain("example.com", 443));
+
         let hash = config.hash_password();
         assert_eq!(hash.len(), 56); // SHA224 produces 28 bytes = 56 hex chars
     }
 
     #[test]
     fn test_header_build() {
-        let config = TrojanConfig::new(
-            "test",
-            TrojanAddr::V4("192.168.1.1:443".parse().unwrap()),
-        );
-        
+        let config = TrojanConfig::new("test", TrojanAddr::V4("192.168.1.1:443".parse().unwrap()));
+
         let header = config.build_header();
-        
+
         // 56 (hash) + 2 (crlf) + 1 (cmd) + 7 (addr) + 2 (crlf) = 68
         assert_eq!(header.len(), 68);
-        
+
         // Check CRLF positions
         assert_eq!(&header[56..58], b"\r\n");
         assert_eq!(&header[66..68], b"\r\n");
-        
+
         // Check command
         assert_eq!(header[58], TrojanCommand::Connect as u8);
     }
@@ -426,7 +421,7 @@ mod tests {
     fn test_addr_encode_ipv4() {
         let addr = TrojanAddr::V4("192.168.1.1:443".parse().unwrap());
         let encoded = addr.encode();
-        
+
         assert_eq!(encoded[0], TrojanAddrType::IPv4 as u8);
         assert_eq!(&encoded[1..5], &[192, 168, 1, 1]);
         assert_eq!(&encoded[5..7], &[0x01, 0xbb]); // 443 in big-endian
@@ -436,7 +431,7 @@ mod tests {
     fn test_addr_encode_domain() {
         let addr = TrojanAddr::from_domain("example.com", 80);
         let encoded = addr.encode();
-        
+
         assert_eq!(encoded[0], TrojanAddrType::Domain as u8);
         assert_eq!(encoded[1], 11); // "example.com".len()
         assert_eq!(&encoded[2..13], b"example.com");
@@ -448,10 +443,10 @@ mod tests {
             TrojanAddr::V4("1.2.3.4:8080".parse().unwrap()),
             Bytes::from("hello"),
         );
-        
+
         let encoded = packet.encode();
         let mut buf = BytesMut::from(&encoded[..]);
-        
+
         let decoded = TrojanUdpPacket::decode(&mut buf).unwrap().unwrap();
         assert_eq!(decoded.data, Bytes::from("hello"));
     }

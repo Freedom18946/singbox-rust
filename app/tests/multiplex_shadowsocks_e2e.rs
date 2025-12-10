@@ -72,7 +72,10 @@ async fn start_shadowsocks_server(multiplex_enabled: bool) -> (SocketAddr, mpsc:
         listen: addr,
         method: "aes-256-gcm".to_string(),
         password: None,
-        users: vec![ShadowsocksUser::new("test".to_string(), "test-password-123".to_string())],
+        users: vec![ShadowsocksUser::new(
+            "test".to_string(),
+            "test-password-123".to_string(),
+        )],
         router: Arc::new(RouterHandle::new_mock()),
         multiplex: multiplex_config,
         transport_layer: None,

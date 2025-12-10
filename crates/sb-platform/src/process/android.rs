@@ -33,9 +33,9 @@ impl AndroidProcessMatcher {
             // Try to get the existing JavaVM if we are loaded as a library
             let jvm = match jni::JavaVM::list() {
                 Ok(vms) => vms.into_iter().next(),
-                Err(_) => None, 
+                Err(_) => None,
             };
-            
+
             Ok(Self {
                 linux_impl: super::linux::LinuxProcessMatcher::new()?,
                 jvm,
@@ -50,7 +50,7 @@ impl AndroidProcessMatcher {
     pub async fn find_process_id(&self, conn: &ConnectionInfo) -> Result<u32, ProcessMatchError> {
         #[cfg(target_os = "android")]
         return self.linux_impl.find_process_id(conn).await;
-        
+
         #[cfg(not(target_os = "android"))]
         Err(ProcessMatchError::UnsupportedPlatform)
     }
@@ -64,13 +64,13 @@ impl AndroidProcessMatcher {
             } else {
                 None
             };
-            
+
             // 2. Fallback to Linux-style resolution if JNI failed or no JVM
             let linux_info = self.linux_impl.get_process_info(pid).await?;
-            
+
             // If we found a package name via JNI, use it; otherwise allow the "comm" name
             let final_name = package_name.unwrap_or(linux_info.name);
-            
+
             Ok(ProcessInfo::new(final_name, linux_info.path, pid))
         }
 
@@ -82,26 +82,26 @@ impl AndroidProcessMatcher {
     fn resolve_package_name_jni(&self, jvm: &JavaVM, pid: u32) -> anyhow::Result<String> {
         // Attach current thread to JVM
         let mut env = jvm.attach_current_thread()?;
-        
+
         // This is a simplified example. In a real Android app, we need:
         // 1. Access to the Application Context (usually passed during init or stored statically)
         // 2. Call Context.getPackageManager()
         // 3. Call PackageManager.getPackagesForUid(uid)
-        
-        // Since we don't have the Context here without external initialization, 
+
+        // Since we don't have the Context here without external initialization,
         // we might rely on the `ndk_context` crate or similar if integrated in the main app.
         // For this strict calibration, we implement the scaffolding via `ndk_context`.
-        
+
         // Note: For now, we assume we can't easily get Context without app cooperation.
         // We will try to find a system service if possible, or fail gracefully back to cmdline.
-        
+
         // Ideally:
         // let context = ndk_context::android_context().ok_or(anyhow::anyhow!("No context"))?;
         // ... calls to Java ...
-        
+
         // As a placeholder for Strict Refactor parity where we can't verify runtime JNI:
         // return Err(anyhow::anyhow!("JNI Context not available"));
-        
+
         Err(anyhow::anyhow!("JNI Context not yet wired"))
     }
 }
