@@ -115,6 +115,7 @@ fn start_fake_http_up_with_auth(
 
 #[test]
 fn upstream_http_basic_auth_sent() {
+    sb_adapters::register_all();
     let (echo_addr, _eh) = start_echo();
     let (http_up_addr, _hh) = start_fake_http_up_with_auth(echo_addr);
     // http inbound listen

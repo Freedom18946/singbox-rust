@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use sb_config::ir::{InboundIR, InboundType};
 #[cfg(feature = "router")]
 use sb_core::adapter::InboundService;
+#[cfg(feature = "router")]
 use sb_core::outbound::OutboundRegistryHandle;
 use std::net::SocketAddr;
 use std::sync::Arc;

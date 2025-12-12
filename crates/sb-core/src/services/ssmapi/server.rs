@@ -5,9 +5,26 @@ use crate::service::{Service, ServiceContext, StartStage};
 use axum::{routing::get, Router};
 use sb_config::ir::ServiceIR;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+
+/// Cache data structure for persistence.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CacheData {
+    users: HashMap<String, UserTrafficCache>,
+}
+
+/// Per-user traffic cache data.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct UserTrafficCache {
+    uplink_bytes: i64,
+    downlink_bytes: i64,
+    uplink_packets: i64,
+    downlink_packets: i64,
+}
 
 /// SSMAPI service for managing Shadowsocks users and traffic.
 pub struct SsmapiService {
@@ -16,6 +33,8 @@ pub struct SsmapiService {
     user_manager: Arc<UserManager>,
     traffic_manager: Arc<TrafficManager>,
     shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
+    /// Optional path for cache persistence.
+    cache_path: Option<PathBuf>,
 }
 
 impl SsmapiService {
@@ -57,13 +76,80 @@ impl SsmapiService {
             "SSMAPI service initialized"
         );
 
+        // Parse cache path
+        let cache_path = ir.ssmapi_cache_path.as_ref().map(PathBuf::from);
+
         Ok(Arc::new(Self {
             tag,
             listen_addr,
             user_manager,
             traffic_manager,
             shutdown_tx: parking_lot::Mutex::new(None),
+            cache_path,
         }))
+    }
+
+    /// Load cached traffic stats from disk.
+    fn load_cache(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let Some(path) = &self.cache_path else {
+            return Ok(());
+        };
+
+        if !path.exists() {
+            tracing::debug!(service = "ssmapi", path = %path.display(), "Cache file not found, skipping load");
+            return Ok(());
+        }
+
+        let file = std::fs::File::open(path)?;
+        let cache: CacheData = serde_json::from_reader(file)?;
+
+        // Restore traffic stats
+        for (username, stats) in cache.users {
+            self.traffic_manager
+                .record_uplink(&username, stats.uplink_bytes, stats.uplink_packets);
+            self.traffic_manager
+                .record_downlink(&username, stats.downlink_bytes, stats.downlink_packets);
+        }
+
+        tracing::info!(
+            service = "ssmapi",
+            path = %path.display(),
+            "Loaded cache successfully"
+        );
+        Ok(())
+    }
+
+    /// Save traffic stats to disk cache.
+    fn save_cache(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let Some(path) = &self.cache_path else {
+            return Ok(());
+        };
+
+        // Collect user traffic stats
+        let mut users = HashMap::new();
+        for mut user in self.user_manager.list() {
+            self.traffic_manager.read_user(&mut user, false);
+            users.insert(
+                user.user_name.clone(),
+                UserTrafficCache {
+                    uplink_bytes: user.uplink_bytes,
+                    downlink_bytes: user.downlink_bytes,
+                    uplink_packets: user.uplink_packets,
+                    downlink_packets: user.downlink_packets,
+                },
+            );
+        }
+
+        let cache = CacheData { users };
+        let file = std::fs::File::create(path)?;
+        serde_json::to_writer_pretty(file, &cache)?;
+
+        tracing::info!(
+            service = "ssmapi",
+            path = %path.display(),
+            "Saved cache successfully"
+        );
+        Ok(())
     }
 
     /// Create the Axum router with all API endpoints.
@@ -113,6 +199,11 @@ impl Service for SsmapiService {
                 Ok(())
             }
             StartStage::Start => {
+                // Load cached stats before starting server
+                if let Err(e) = self.load_cache() {
+                    tracing::error!(service = "ssmapi", error = %e, "Failed to load cache");
+                }
+
                 let router = self.create_router();
                 let listen_addr = self.listen_addr;
 
@@ -175,10 +266,15 @@ impl Service for SsmapiService {
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::info!(service = "ssmapi", tag = self.tag, "Closing SSMAPI service");
 
-        // Clear all traffic stats on shutdown
-        self.traffic_manager.clear_all();
+        // Save cache before closing
+        if let Err(e) = self.save_cache() {
+            tracing::error!(service = "ssmapi", error = %e, "Failed to save cache");
+        }
 
-        // Note: Shutdown signal is sent via shutdown_tx channel
+        // Note: We don't clear stats anymore since we save them
+        // self.traffic_manager.clear_all();
+
+        // Shutdown signal is sent via shutdown_tx channel
         if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }

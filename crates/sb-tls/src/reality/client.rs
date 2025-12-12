@@ -5,6 +5,8 @@ use super::config::RealityClientConfig;
 use super::tls_record::{ClientHello, ContentType, HandshakeType, TlsExtension};
 use super::{RealityError, RealityResult};
 use crate::TlsConnector;
+#[cfg(feature = "utls")]
+use crate::{UtlsConfig, UtlsFingerprint};
 use async_trait::async_trait;
 use rand::RngCore; // needed for thread_rng().fill_bytes
 use std::io;
@@ -121,14 +123,37 @@ impl RealityConnector {
             hex::encode(&auth_hash[..8])
         );
 
-        // Step 2: Create custom TLS config with REALITY certificate verifier
-        // The verifier will accept both temporary REALITY certs and real target certs
-        let mut config = rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(RealityVerifier {
-                expected_server_name: self.config.server_name.clone(),
-            }))
-            .with_no_client_auth();
+        // Step 2: Create custom TLS config with REALITY certificate verifier.
+        // If uTLS is enabled, order cipher suites/ALPN per fingerprint for Go parity.
+        let mut config: rustls::ClientConfig = {
+            #[cfg(feature = "utls")]
+            {
+                let fp = self
+                    .config
+                    .fingerprint
+                    .parse::<UtlsFingerprint>()
+                    .map_err(|e| RealityError::InvalidConfig(e.to_string()))?;
+                let utls_cfg = UtlsConfig::new(self.config.server_name.clone())
+                    .with_fingerprint(fp);
+
+                let mut roots = rustls::RootCertStore::empty();
+                roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                let mut c = (*utls_cfg.build_client_config_with_roots(roots)).clone();
+                c.dangerous().set_certificate_verifier(Arc::new(RealityVerifier {
+                    expected_server_name: self.config.server_name.clone(),
+                }));
+                c
+            }
+            #[cfg(not(feature = "utls"))]
+            {
+                rustls::ClientConfig::builder()
+                    .dangerous()
+                    .with_custom_certificate_verifier(Arc::new(RealityVerifier {
+                        expected_server_name: self.config.server_name.clone(),
+                    }))
+                    .with_no_client_auth()
+            }
+        };
 
         // Configure ALPN if specified
         if !self.config.alpn.is_empty() {

@@ -61,6 +61,8 @@ fn socks_client_echo(
 
 #[test]
 fn end2end_via_selector() {
+    // Ensure adapter registry is populated for inbounds/outbounds.
+    sb_adapters::register_all();
     let (echo_addr, _eh) = start_echo();
     // 准备 IR：SOCKS 入站 + directA/directB + selector S=[A,B]；规则默认导向 S
     let l = TcpListener::bind("127.0.0.1:0").unwrap();

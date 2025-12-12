@@ -8,6 +8,8 @@ use async_trait::async_trait;
 #[cfg(feature = "out_vless")]
 use std::io;
 #[cfg(feature = "out_vless")]
+use sb_tls::{UtlsConfig, UtlsFingerprint};
+#[cfg(feature = "out_vless")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "out_vless")]
 use tokio::net::TcpStream;
@@ -33,6 +35,8 @@ pub struct VlessConfig {
     pub h2_host: Option<String>,
     pub tls_sni: Option<String>,
     pub tls_alpn: Option<Vec<String>>,
+    /// Optional uTLS fingerprint name for outbound TLS layer.
+    pub utls_fingerprint: Option<String>,
     pub grpc_service: Option<String>,
     pub grpc_method: Option<String>,
     pub grpc_authority: Option<String>,
@@ -57,6 +61,7 @@ impl Default for VlessConfig {
             h2_host: None,
             tls_sni: None,
             tls_alpn: None,
+            utls_fingerprint: None,
             grpc_service: None,
             grpc_method: None,
             grpc_authority: None,
@@ -77,6 +82,10 @@ pub struct VlessOutbound {
 #[cfg(feature = "out_vless")]
 impl VlessOutbound {
     pub fn new(config: VlessConfig) -> anyhow::Result<Self> {
+        if let Some(fp) = config.utls_fingerprint.as_deref() {
+            fp.parse::<UtlsFingerprint>()
+                .map_err(|e| anyhow::anyhow!("invalid uTLS fingerprint: {e}"))?;
+        }
         // Validate encryption setting
         if let Some(ref enc) = config.encryption {
             if enc != "none" {
@@ -216,6 +225,21 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
         let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
 
         let chain_opt = self.config.transport.as_deref();
+        let tls_override = if let Some(fp_name) = self.config.utls_fingerprint.as_deref() {
+            let fp = fp_name
+                .parse::<UtlsFingerprint>()
+                .map_err(|e| crate::error::SbError::other(format!("invalid uTLS fingerprint: {e}")))?;
+            let sni = self
+                .config
+                .tls_sni
+                .as_deref()
+                .unwrap_or(self.config.server.as_str());
+            let utls_cfg = UtlsConfig::new(sni.to_string()).with_fingerprint(fp);
+            let roots = crate::tls::global::base_root_store();
+            Some(utls_cfg.build_client_config_with_roots(roots))
+        } else {
+            None
+        };
         let builder = crate::runtime::transport::map::apply_layers(
             TransportBuilder::tcp(),
             chain_opt,
@@ -231,7 +255,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
             self.config.grpc_method.as_deref(),
             self.config.grpc_authority.as_deref(),
             &self.config.grpc_metadata,
-            None,
+            tls_override,
             self.config.multiplex.as_ref(),
         );
 
@@ -456,6 +480,15 @@ mod tests {
         let req = outbound.encode_vless_request(&hp);
         assert_eq!(req[0], 0x01);
         assert!(req[17] > 0); // additional has content
+    }
+
+    #[test]
+    fn test_vless_rejects_unknown_utls_fingerprint() {
+        let cfg = VlessConfig {
+            utls_fingerprint: Some("invalid-fp".to_string()),
+            ..Default::default()
+        };
+        assert!(VlessOutbound::new(cfg).is_err());
     }
 }
 

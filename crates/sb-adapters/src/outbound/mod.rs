@@ -388,6 +388,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
                 .unwrap_or_else(|| "example.com".to_string()),
             alpn: ir.tls_alpn.as_ref().map(|v| v.join(",")),
             skip_cert_verify: false,
+            utls_fingerprint: ir.utls_fingerprint.clone(),
         };
         Ok(Self::new(cfg))
     }

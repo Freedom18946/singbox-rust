@@ -7,6 +7,8 @@ use rustls::pki_types::ServerName;
 #[cfg(feature = "out_trojan")]
 use rustls::ClientConfig;
 #[cfg(feature = "out_trojan")]
+use sb_tls::{UtlsConfig, UtlsFingerprint};
+#[cfg(feature = "out_trojan")]
 use std::sync::Arc;
 #[cfg(feature = "out_trojan")]
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -22,6 +24,8 @@ pub struct TrojanConfig {
     pub sni: String,
     pub alpn: Option<Vec<String>>,
     pub skip_cert_verify: bool,
+    /// Optional uTLS fingerprint name (Go parity: outbound.tls.utls.fingerprint)
+    pub utls_fingerprint: Option<String>,
     // Transport extras
     pub transport: Option<Vec<String>>,
     pub ws_path: Option<String>,
@@ -47,6 +51,7 @@ impl TrojanConfig {
             sni,
             alpn: None,
             skip_cert_verify: false,
+            utls_fingerprint: None,
             transport: None,
             ws_path: None,
             ws_host: None,
@@ -92,41 +97,58 @@ impl TrojanOutbound {
                 let _ = ring::default_provider().install_default();
             }
         }
-        // Create TLS configuration for Trojan
-        // Root store with system roots
-        let mut roots = rustls::RootCertStore::empty();
-        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-
         let insecure_env = std::env::var("SB_TROJAN_SKIP_CERT_VERIFY")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        if config.skip_cert_verify || insecure_env {
-            tracing::warn!("Trojan: insecure mode enabled, certificate verification disabled");
-            #[cfg(feature = "tls_rustls")]
-            {
-                let v = crate::tls::danger::NoVerify::new();
-                tls_config
-                    .dangerous()
-                    .set_certificate_verifier(std::sync::Arc::new(v));
-            }
-        }
+        let insecure = config.skip_cert_verify || insecure_env;
 
-        // Configure ALPN if specified
-        if let Ok(alpn_env) = std::env::var("SB_TROJAN_ALPN") {
-            if !alpn_env.is_empty() {
-                tls_config.alpn_protocols = vec![alpn_env.as_bytes().to_vec()];
-            }
-        } else if let Some(alpn) = &config.alpn {
-            if !alpn.is_empty() {
-                tls_config.alpn_protocols = alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
-            }
-        }
+        // Resolve ALPN list (env overrides config)
+        let alpn_list: Option<Vec<String>> = if let Ok(alpn_env) = std::env::var("SB_TROJAN_ALPN")
+        {
+            let v = alpn_env
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>();
+            if v.is_empty() { None } else { Some(v) }
+        } else {
+            config.alpn.clone()
+        };
 
-        let tls_config = std::sync::Arc::new(tls_config);
+        // Create TLS configuration for Trojan
+        let tls_config: Arc<ClientConfig> = if let Some(fp_name) = config.utls_fingerprint.as_deref()
+        {
+            let fp = fp_name
+                .parse::<UtlsFingerprint>()
+                .map_err(|e| std::io::Error::other(format!("invalid uTLS fingerprint: {e}")))?;
+            let mut utls_cfg = UtlsConfig::new(config.sni.clone())
+                .with_fingerprint(fp)
+                .with_insecure(insecure);
+            if let Some(alpn) = alpn_list.clone() {
+                utls_cfg = utls_cfg.with_alpn(alpn);
+            }
+            let roots = crate::tls::global::base_root_store();
+            utls_cfg.build_client_config_with_roots(roots)
+        } else {
+            let roots = crate::tls::global::base_root_store();
+            let mut cfg = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            if insecure {
+                tracing::warn!("Trojan: insecure mode enabled, certificate verification disabled");
+                #[cfg(feature = "tls_rustls")]
+                {
+                    let v = crate::tls::danger::NoVerify::new();
+                    cfg.dangerous()
+                        .set_certificate_verifier(std::sync::Arc::new(v));
+                }
+            }
+            if let Some(alpn) = alpn_list {
+                cfg.alpn_protocols = alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
+            }
+            Arc::new(cfg)
+        };
 
         Ok(Self { config, tls_config })
     }
@@ -169,7 +191,7 @@ impl crate::outbound::traits::OutboundConnectorIo for TrojanOutbound {
             self.config.grpc_method.as_deref(),
             self.config.grpc_authority.as_deref(),
             &self.config.grpc_metadata,
-            None,
+            Some(self.tls_config.clone()),
             self.config.multiplex.as_ref(),
         );
 
@@ -416,3 +438,33 @@ mod stub {
 
 #[cfg(not(feature = "out_trojan"))]
 pub use stub::{TrojanConfig, TrojanOutbound};
+
+#[cfg(test)]
+#[cfg(feature = "out_trojan")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trojan_rejects_unknown_utls_fingerprint() {
+        let mut cfg = TrojanConfig::new(
+            "example.com".to_string(),
+            443,
+            "password".to_string(),
+            "example.com".to_string(),
+        );
+        cfg.utls_fingerprint = Some("invalid-fp".to_string());
+        assert!(TrojanOutbound::new(cfg).is_err());
+    }
+
+    #[test]
+    fn trojan_accepts_chrome_utls_fingerprint() {
+        let mut cfg = TrojanConfig::new(
+            "example.com".to_string(),
+            443,
+            "password".to_string(),
+            "example.com".to_string(),
+        );
+        cfg.utls_fingerprint = Some("chrome".to_string());
+        assert!(TrojanOutbound::new(cfg).is_ok());
+    }
+}

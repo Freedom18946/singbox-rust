@@ -173,6 +173,7 @@ fn start_fake_http_up(
 
 #[test]
 fn outbound_scaffold_socks_and_http_connect() {
+    sb_adapters::register_all();
     let (echo_addr, _eh) = start_echo();
     let (socks_addr, _sh) = start_fake_socks_up(echo_addr);
     let (http_addr, _hh) = start_fake_http_up(echo_addr);

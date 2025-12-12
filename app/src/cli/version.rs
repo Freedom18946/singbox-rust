@@ -46,7 +46,7 @@ pub fn run(args: VersionArgs) -> Result<()> {
 }
 
 /// Collect enabled features from cargo feature flags
-fn collect_features() -> Vec<String> {
+pub fn collect_features() -> Vec<String> {
     let mut features = Vec::new();
 
     #[cfg(feature = "router")]

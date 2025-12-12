@@ -1,4 +1,4 @@
-use app::cli::{buildinfo, json as cli_json};
+use app::cli::buildinfo;
 use serde_json::json;
 
 fn main() {
@@ -23,8 +23,7 @@ fn main() {
             "build_ts": bi.build_ts
         }
     });
-    // 统一 helper 输出，后续 CLI 可共用
-    cli_json::ok(&obj);
+    println!("{}", serde_json::to_string(&obj).unwrap());
 }
 
 fn build_fingerprint() -> String {

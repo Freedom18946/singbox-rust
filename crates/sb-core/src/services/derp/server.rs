@@ -3,13 +3,21 @@
 use super::client_registry::ClientRegistry;
 use super::protocol::{DerpFrame, FrameType, PublicKey};
 use crate::service::{Service, ServiceContext, StartStage};
-use httparse::{Request, Status};
+use bytes::Bytes;
+use hyper::body::HttpBody as _;
+use hyper::header::{
+    CONNECTION, CONTENT_TYPE, LOCATION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY,
+    SEC_WEBSOCKET_PROTOCOL, UPGRADE,
+};
+use hyper::service::service_fn;
+use hyper::{Body, Method, Request as HyperRequest, Response as HyperResponse, StatusCode, Version};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig;
 use rustls_pemfile;
 use sb_config::ir::ServiceIR;
 use sb_metrics;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener as StdTcpListener, UdpSocket as StdUdpSocket};
@@ -24,6 +32,9 @@ use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+use tokio_tungstenite::tungstenite::protocol::Role;
+use tokio_tungstenite::WebSocketStream;
 
 /// DERP service implementation.
 ///
@@ -32,7 +43,7 @@ use tokio_rustls::TlsAcceptor;
 /// - HTTP server stub (returns 200 OK for root/health, 404 for others)
 /// - DERP protocol server (real frame-based client-to-client relay)
 /// - TCP mock relay (legacy, for backward compatibility)
-use futures::FutureExt;
+use futures::{FutureExt, SinkExt, StreamExt};
 
 trait AsyncReadWrite: AsyncRead + AsyncWrite {}
 impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}
@@ -75,12 +86,738 @@ impl RateLimiter {
     }
 }
 
+fn is_valid_mesh_psk(psk: &str) -> bool {
+    if psk.len() != 64 {
+        return false;
+    }
+    psk.as_bytes()
+        .iter()
+        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+const DERP_HOME_PAGE: &str = r#"
+<h1>DERP</h1>
+<p>
+  This is a <a href="https://tailscale.com/">Tailscale</a> DERP server.
+</p>
+
+<p>
+  It provides STUN, interactive connectivity establishment, and relaying of end-to-end encrypted traffic
+  for Tailscale clients.
+</p>
+
+<p>
+  Documentation:
+</p>
+
+<ul>
+
+<li><a href="https://tailscale.com/kb/1232/derp-servers">About DERP</a></li>
+<li><a href="https://pkg.go.dev/tailscale.com/derp">Protocol & Go docs</a></li>
+<li><a href="https://github.com/tailscale/tailscale/tree/main/cmd/derper#derp">How to run a DERP server</a></li>
+
+</body>
+</html>
+"#;
+
+fn add_browser_headers(headers: &mut hyper::HeaderMap) {
+    headers.insert(
+        hyper::header::STRICT_TRANSPORT_SECURITY,
+        hyper::header::HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+    );
+    headers.insert(
+        hyper::header::CONTENT_SECURITY_POLICY,
+        hyper::header::HeaderValue::from_static("default-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; block-all-mixed-content; object-src 'none'"),
+    );
+    headers.insert(
+        hyper::header::X_CONTENT_TYPE_OPTIONS,
+        hyper::header::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        hyper::header::X_FRAME_OPTIONS,
+        hyper::header::HeaderValue::from_static("DENY"),
+    );
+}
+
+fn query_param<'a>(query: Option<&'a str>, key: &str) -> Option<&'a str> {
+    let query = query?;
+    for pair in query.split('&') {
+        let mut it = pair.splitn(2, '=');
+        let k = it.next().unwrap_or("");
+        if k == key {
+            return Some(it.next().unwrap_or(""));
+        }
+    }
+    None
+}
+
+struct HyperBodyReader {
+    body: Body,
+    buf: Bytes,
+    pos: usize,
+}
+
+impl HyperBodyReader {
+    fn new(body: Body) -> Self {
+        Self {
+            body,
+            buf: Bytes::new(),
+            pos: 0,
+        }
+    }
+}
+
+impl AsyncRead for HyperBodyReader {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if self.pos < self.buf.len() {
+            let available = self.buf.len() - self.pos;
+            let to_read = std::cmp::min(available, buf.remaining());
+            buf.put_slice(&self.buf[self.pos..self.pos + to_read]);
+            self.pos += to_read;
+            if self.pos >= self.buf.len() {
+                self.buf = Bytes::new();
+                self.pos = 0;
+            }
+            return Poll::Ready(Ok(()));
+        }
+
+        match Pin::new(&mut self.body).poll_data(cx) {
+            Poll::Ready(Some(Ok(chunk))) => {
+                self.buf = chunk;
+                self.pos = 0;
+                self.poll_read(cx, buf)
+            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(io::Error::other(format!(
+                "http body read error: {e}"
+            )))),
+            Poll::Ready(None) => Poll::Ready(Ok(())), // EOF
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+struct HyperBodyWriter {
+    sender: Option<hyper::body::Sender>,
+}
+
+impl HyperBodyWriter {
+    fn new(sender: hyper::body::Sender) -> Self {
+        Self {
+            sender: Some(sender),
+        }
+    }
+}
+
+impl AsyncWrite for HyperBodyWriter {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let sender = match self.sender.as_mut() {
+            Some(s) => s,
+            None => {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "http response body closed",
+                )))
+            }
+        };
+
+        match sender.poll_ready(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Ok(())) => match sender.try_send_data(Bytes::copy_from_slice(buf)) {
+                Ok(()) => Poll::Ready(Ok(buf.len())),
+                Err(_bytes) => Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "http response body closed",
+                ))),
+            },
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                "http body send error: {e}"
+            )))),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.sender = None;
+        Poll::Ready(Ok(()))
+    }
+}
+
+struct HyperDuplex {
+    reader: HyperBodyReader,
+    writer: HyperBodyWriter,
+}
+
+impl HyperDuplex {
+    fn new(reader: HyperBodyReader, writer: HyperBodyWriter) -> Self {
+        Self { reader, writer }
+    }
+}
+
+impl AsyncRead for HyperDuplex {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for HyperDuplex {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
+struct DerpWebSocketStreamAdapter<S> {
+    inner: WebSocketStream<S>,
+    read_buffer: Vec<u8>,
+    read_pos: usize,
+    write_pending_len: Option<usize>,
+}
+
+impl<S> DerpWebSocketStreamAdapter<S> {
+    fn new(inner: WebSocketStream<S>) -> Self {
+        Self {
+            inner,
+            read_buffer: Vec::new(),
+            read_pos: 0,
+            write_pending_len: None,
+        }
+    }
+}
+
+impl<S> AsyncRead for DerpWebSocketStreamAdapter<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if self.read_pos < self.read_buffer.len() {
+            let available = self.read_buffer.len() - self.read_pos;
+            let to_read = std::cmp::min(available, buf.remaining());
+            buf.put_slice(&self.read_buffer[self.read_pos..self.read_pos + to_read]);
+            self.read_pos += to_read;
+            if self.read_pos >= self.read_buffer.len() {
+                self.read_buffer.clear();
+                self.read_pos = 0;
+            }
+            return Poll::Ready(Ok(()));
+        }
+
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(msg))) => match msg {
+                tokio_tungstenite::tungstenite::Message::Binary(data) => {
+                    self.read_buffer = data;
+                    self.read_pos = 0;
+                    self.poll_read(cx, buf)
+                }
+                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                    tracing::warn!(service = "derp", text = %text, "unexpected websocket text frame");
+                    self.poll_read(cx, buf)
+                }
+                tokio_tungstenite::tungstenite::Message::Close(_) => Poll::Ready(Ok(())),
+                tokio_tungstenite::tungstenite::Message::Ping(_) => self.poll_read(cx, buf),
+                tokio_tungstenite::tungstenite::Message::Pong(_) => self.poll_read(cx, buf),
+                tokio_tungstenite::tungstenite::Message::Frame(_) => self.poll_read(cx, buf),
+            },
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(io::Error::other(format!(
+                "websocket read error: {e}"
+            )))),
+            Poll::Ready(None) => Poll::Ready(Ok(())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<S> AsyncWrite for DerpWebSocketStreamAdapter<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        // If a previous write queued a frame, flush it fully before accepting more.
+        if let Some(len) = self.write_pending_len.take() {
+            match self.inner.poll_flush_unpin(cx) {
+                Poll::Ready(Ok(())) => return Poll::Ready(Ok(len)),
+                Poll::Ready(Err(e)) => {
+                    return Poll::Ready(Err(io::Error::other(format!(
+                        "websocket flush error: {e}"
+                    ))))
+                }
+                Poll::Pending => {
+                    self.write_pending_len = Some(len);
+                    return Poll::Pending;
+                }
+            }
+        }
+
+        let msg = tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec());
+        match self.inner.poll_ready_unpin(cx) {
+            Poll::Ready(Ok(())) => {
+                if let Err(e) = self.inner.start_send_unpin(msg) {
+                    return Poll::Ready(Err(io::Error::other(format!(
+                        "websocket write error: {e}"
+                    ))));
+                }
+                let len = buf.len();
+                match self.inner.poll_flush_unpin(cx) {
+                    Poll::Ready(Ok(())) => Poll::Ready(Ok(len)),
+                    Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                        "websocket flush error: {e}"
+                    )))),
+                    Poll::Pending => {
+                        self.write_pending_len = Some(len);
+                        Poll::Pending
+                    }
+                }
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                "websocket poll_ready error: {e}"
+            )))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.inner.poll_flush_unpin(cx) {
+            Poll::Ready(Ok(())) => {
+                self.write_pending_len = None;
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                "websocket flush error: {e}"
+            )))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.inner.poll_close_unpin(cx) {
+            Poll::Ready(Ok(())) => {
+                self.write_pending_len = None;
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(format!(
+                "websocket close error: {e}"
+            )))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct DerpHttpState {
+    tag: Arc<str>,
+    peer: SocketAddr,
+    client_registry: Arc<ClientRegistry>,
+    server_key: PublicKey,
+    mesh_psk: Option<String>,
+    home: Arc<str>,
+    verify_client_urls: Arc<[String]>,
+    verify_client_endpoints: Arc<[String]>,
+}
+
+impl DerpHttpState {
+    async fn handle(self, mut req: HyperRequest<Body>) -> Result<HyperResponse<Body>, Infallible> {
+        let path = req.uri().path();
+        let resp = match path {
+            "/derp" => self.handle_derp(&mut req),
+            "/derp/mesh" => self.handle_mesh(&mut req),
+            "/derp/probe" | "/derp/latency-check" => self.handle_probe(&req),
+            "/bootstrap-dns" => self.handle_bootstrap_dns(&req).await,
+            "/robots.txt" => self.handle_robots(),
+            "/generate_204" => self.handle_generate_204(&req),
+            _ => self.handle_home(),
+        };
+
+        let status_code = resp.status().as_u16().to_string();
+        sb_metrics::inc_derp_http(&self.tag, &status_code);
+        Ok(resp)
+    }
+
+    fn handle_generate_204(&self, req: &HyperRequest<Body>) -> HyperResponse<Body> {
+        const NO_CONTENT_CHALLENGE_HEADER: hyper::header::HeaderName =
+            hyper::header::HeaderName::from_static("x-tailscale-challenge");
+        const NO_CONTENT_RESPONSE_HEADER: hyper::header::HeaderName =
+            hyper::header::HeaderName::from_static("x-tailscale-response");
+
+        fn is_challenge_char(c: char) -> bool {
+            matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' | '_')
+        }
+
+        let mut resp = HyperResponse::new(Body::empty());
+        if let Some(challenge) = req
+            .headers()
+            .get(NO_CONTENT_CHALLENGE_HEADER)
+            .and_then(|v| v.to_str().ok())
+        {
+            let ok = challenge.len() <= 64 && challenge.chars().all(is_challenge_char);
+            if ok {
+                let val = format!("response {challenge}");
+                if let Ok(header_val) = hyper::header::HeaderValue::from_str(&val) {
+                    resp.headers_mut().insert(NO_CONTENT_RESPONSE_HEADER, header_val);
+                }
+            }
+        }
+        *resp.status_mut() = StatusCode::NO_CONTENT;
+        resp
+    }
+
+    fn handle_robots(&self) -> HyperResponse<Body> {
+        let mut resp = HyperResponse::new(Body::from("User-agent: *\nDisallow: /\n"));
+        resp.headers_mut().insert(
+            CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+        add_browser_headers(resp.headers_mut());
+        resp
+    }
+
+    fn handle_home(&self) -> HyperResponse<Body> {
+        let home = self.home.as_ref();
+        if home.is_empty() {
+            let mut resp = HyperResponse::new(Body::from(DERP_HOME_PAGE));
+            resp.headers_mut().insert(
+                CONTENT_TYPE,
+                hyper::header::HeaderValue::from_static("text/html; charset=utf-8"),
+            );
+            add_browser_headers(resp.headers_mut());
+            return resp;
+        }
+
+        if home == "blank" {
+            let mut resp = HyperResponse::new(Body::empty());
+            resp.headers_mut().insert(
+                CONTENT_TYPE,
+                hyper::header::HeaderValue::from_static("text/html; charset=utf-8"),
+            );
+            add_browser_headers(resp.headers_mut());
+            return resp;
+        }
+
+        // Validated in from_ir: must be http:// or https://
+        let mut resp = HyperResponse::new(Body::empty());
+        *resp.status_mut() = StatusCode::FOUND;
+        resp.headers_mut()
+            .insert(LOCATION, hyper::header::HeaderValue::from_str(home).unwrap());
+        add_browser_headers(resp.headers_mut());
+        resp
+    }
+
+    fn handle_probe(&self, req: &HyperRequest<Body>) -> HyperResponse<Body> {
+        match *req.method() {
+            Method::HEAD | Method::GET => {
+                let mut resp = HyperResponse::new(Body::empty());
+                resp.headers_mut().insert(
+                    hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                    hyper::header::HeaderValue::from_static("*"),
+                );
+                resp
+            }
+            _ => Self::text(StatusCode::METHOD_NOT_ALLOWED, "bogus probe method\n"),
+        }
+    }
+
+    async fn handle_bootstrap_dns(&self, req: &HyperRequest<Body>) -> HyperResponse<Body> {
+        let mut resp = HyperResponse::new(Body::empty());
+        resp.headers_mut().insert(
+            CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/json"),
+        );
+        resp.headers_mut().insert(
+            CONNECTION,
+            hyper::header::HeaderValue::from_static("close"),
+        );
+        add_browser_headers(resp.headers_mut());
+
+        let Some(domain) = query_param(req.uri().query(), "q") else {
+            *resp.body_mut() = Body::from("{}");
+            return resp;
+        };
+
+        let Some(resolver) = crate::dns::global::get() else {
+            *resp.body_mut() = Body::from("{}");
+            return resp;
+        };
+
+        match resolver.resolve(domain).await {
+            Ok(answer) => {
+                let addrs: Vec<String> = answer.ips.into_iter().map(|ip| ip.to_string()).collect();
+                let json = serde_json::json!({ domain: addrs });
+                *resp.body_mut() = Body::from(json.to_string());
+                resp
+            }
+            Err(e) => {
+                *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                tracing::warn!(service = "derp", error = %e, domain, "bootstrap-dns lookup failed");
+                resp
+            }
+        }
+    }
+
+    fn is_derp_websocket(req: &HyperRequest<Body>) -> bool {
+        let Some(upgrade) = req.headers().get(UPGRADE) else {
+            return false;
+        };
+        let upgrade = match upgrade.to_str() {
+            Ok(v) => v.to_ascii_lowercase(),
+            Err(_) => return false,
+        };
+        if upgrade != "websocket" {
+            return false;
+        }
+        let proto = req
+            .headers()
+            .get(SEC_WEBSOCKET_PROTOCOL)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        proto.contains("derp")
+    }
+
+    fn handle_derp(&self, req: &mut HyperRequest<Body>) -> HyperResponse<Body> {
+        let upgrade = req
+            .headers()
+            .get(UPGRADE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        let upgrade = upgrade.to_ascii_lowercase();
+
+        if upgrade != "websocket" && upgrade != "derp" {
+            if !upgrade.is_empty() {
+                tracing::debug!(service = "derp", peer = %self.peer, upgrade = %upgrade, "Weird DERP upgrade header");
+            }
+            return Self::text(
+                StatusCode::UPGRADE_REQUIRED,
+                "DERP requires connection upgrade\n",
+            );
+        }
+
+        if req.version() != Version::HTTP_11 {
+            return Self::text(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "HTTP does not support general TCP support\n",
+            );
+        }
+
+        if upgrade == "websocket" && Self::is_derp_websocket(req) {
+            return self.handle_derp_websocket(req);
+        }
+
+        self.handle_derp_upgrade(req, false)
+    }
+
+    fn handle_mesh(&self, req: &mut HyperRequest<Body>) -> HyperResponse<Body> {
+        let Some(expected) = self.mesh_psk.as_deref() else {
+            return Self::text(StatusCode::NOT_FOUND, "not found\n");
+        };
+        let provided = req
+            .headers()
+            .get("x-derp-mesh-psk")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim);
+        if provided != Some(expected) {
+            return Self::text(StatusCode::UNAUTHORIZED, "mesh psk required\n");
+        }
+        self.handle_derp_upgrade(req, true)
+    }
+
+    fn handle_derp_upgrade(&self, req: &mut HyperRequest<Body>, is_mesh_peer: bool) -> HyperResponse<Body> {
+        let on_upgrade = hyper::upgrade::on(req);
+
+        let tag = self.tag.clone();
+        let peer = self.peer;
+        let client_registry = self.client_registry.clone();
+        let server_key = self.server_key;
+        let verify_client_urls = self.verify_client_urls.clone();
+        let verify_client_endpoints = self.verify_client_endpoints.clone();
+
+        tokio::spawn(async move {
+            match on_upgrade.await {
+                Ok(upgraded) => {
+                    if let Err(e) = DerpService::handle_derp_client(
+                        upgraded,
+                        peer,
+                        tag,
+                        client_registry,
+                        server_key,
+                        is_mesh_peer,
+                        verify_client_urls,
+                        verify_client_endpoints,
+                    )
+                    .await
+                    {
+                        tracing::debug!(service = "derp", peer = %peer, error = %e, "derp upgraded connection ended");
+                    }
+                }
+                Err(e) => tracing::debug!(service = "derp", peer = %peer, error = %e, "derp upgrade failed"),
+            }
+        });
+
+        const DERP_VERSION_HEADER: hyper::header::HeaderName =
+            hyper::header::HeaderName::from_static("derp-version");
+        const DERP_PUBLIC_KEY_HEADER: hyper::header::HeaderName =
+            hyper::header::HeaderName::from_static("derp-public-key");
+
+        let mut resp = HyperResponse::new(Body::empty());
+        *resp.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+        resp.headers_mut()
+            .insert(UPGRADE, hyper::header::HeaderValue::from_static("DERP"));
+        resp.headers_mut()
+            .insert(CONNECTION, hyper::header::HeaderValue::from_static("Upgrade"));
+        resp.headers_mut().insert(
+            DERP_VERSION_HEADER,
+            hyper::header::HeaderValue::from_static("2"),
+        );
+        resp.headers_mut().insert(
+            DERP_PUBLIC_KEY_HEADER,
+            hyper::header::HeaderValue::from_str(&hex::encode(server_key)).unwrap(),
+        );
+        resp
+    }
+
+    fn handle_derp_websocket(&self, req: &mut HyperRequest<Body>) -> HyperResponse<Body> {
+        let Some(key) = req.headers().get(SEC_WEBSOCKET_KEY) else {
+            return Self::text(StatusCode::BAD_REQUEST, "missing sec-websocket-key\n");
+        };
+        let accept_key = derive_accept_key(key.as_bytes());
+
+        let on_upgrade = hyper::upgrade::on(req);
+
+        let tag = self.tag.clone();
+        let peer = self.peer;
+        let client_registry = self.client_registry.clone();
+        let server_key = self.server_key;
+        let verify_client_urls = self.verify_client_urls.clone();
+        let verify_client_endpoints = self.verify_client_endpoints.clone();
+
+        tokio::spawn(async move {
+            match on_upgrade.await {
+                Ok(upgraded) => {
+                    let ws_stream =
+                        WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await;
+                    let adapter = DerpWebSocketStreamAdapter::new(ws_stream);
+                    if let Err(e) = DerpService::handle_derp_client(
+                        adapter,
+                        peer,
+                        tag,
+                        client_registry,
+                        server_key,
+                        false,
+                        verify_client_urls,
+                        verify_client_endpoints,
+                    )
+                    .await
+                    {
+                        tracing::debug!(service = "derp", peer = %peer, error = %e, "derp websocket ended");
+                    }
+                }
+                Err(e) => tracing::debug!(service = "derp", peer = %peer, error = %e, "websocket upgrade failed"),
+            }
+        });
+
+        let mut resp = HyperResponse::new(Body::empty());
+        *resp.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
+        resp.headers_mut()
+            .insert(UPGRADE, hyper::header::HeaderValue::from_static("websocket"));
+        resp.headers_mut()
+            .insert(CONNECTION, hyper::header::HeaderValue::from_static("Upgrade"));
+        resp.headers_mut().insert(
+            SEC_WEBSOCKET_ACCEPT,
+            hyper::header::HeaderValue::from_str(&accept_key).unwrap(),
+        );
+        resp.headers_mut().insert(
+            SEC_WEBSOCKET_PROTOCOL,
+            hyper::header::HeaderValue::from_static("derp"),
+        );
+        resp
+    }
+
+    fn handle_derp_stream(&self, req: &mut HyperRequest<Body>, is_mesh_peer: bool) -> HyperResponse<Body> {
+        let (sender, body) = Body::channel();
+        let reader = HyperBodyReader::new(std::mem::take(req.body_mut()));
+        let writer = HyperBodyWriter::new(sender);
+        let io = HyperDuplex::new(reader, writer);
+
+        let tag = self.tag.clone();
+        let peer = self.peer;
+        let client_registry = self.client_registry.clone();
+        let server_key = self.server_key;
+        let verify_client_urls = self.verify_client_urls.clone();
+        let verify_client_endpoints = self.verify_client_endpoints.clone();
+
+        tokio::spawn(async move {
+            if let Err(e) = DerpService::handle_derp_client(
+                io,
+                peer,
+                tag,
+                client_registry,
+                server_key,
+                is_mesh_peer,
+                verify_client_urls,
+                verify_client_endpoints,
+            )
+            .await
+            {
+                tracing::debug!(service = "derp", peer = %peer, error = %e, "derp stream ended");
+            }
+        });
+
+        let mut resp = HyperResponse::new(body);
+        resp.headers_mut().insert(
+            CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("application/octet-stream"),
+        );
+        resp
+    }
+
+    fn text(status: StatusCode, body: &'static str) -> HyperResponse<Body> {
+        let mut resp = HyperResponse::new(Body::from(body));
+        *resp.status_mut() = status;
+        resp.headers_mut().insert(
+            CONTENT_TYPE,
+            hyper::header::HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+        resp
+    }
+}
+
 pub struct DerpService {
     tag: Arc<str>,
     listen_addr: SocketAddr,
     stun_addr: SocketAddr,
     stun_enabled: bool,
     mesh_psk: Option<String>,
+    home: String,
     server_key: PublicKey,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
     client_registry: Arc<ClientRegistry>,
@@ -93,6 +830,10 @@ pub struct DerpService {
     http_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
     mesh_with: Vec<String>,
     mesh_tasks: parking_lot::Mutex<Vec<JoinHandle<()>>>,
+    /// URLs for client verification (HTTP-based)
+    verify_client_urls: Vec<String>,
+    /// Tailscale endpoint tags for client verification
+    verify_client_endpoints: Vec<String>,
 }
 
 /// How long to keep a half-open relay connection while waiting for a peer.
@@ -134,6 +875,28 @@ impl DerpService {
         let stun_addr = SocketAddr::new(listen_ip, stun_port);
 
         let mesh_psk = load_mesh_psk(ir)?;
+        if let Some(psk) = mesh_psk.as_deref() {
+            if !is_valid_mesh_psk(psk) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "derp_mesh_psk must contain exactly 64 lowercase hex digits",
+                )
+                .into());
+            }
+        }
+
+        let home = ir.derp_home.clone().unwrap_or_default();
+        if !home.is_empty()
+            && home != "blank"
+            && !home.starts_with("http://")
+            && !home.starts_with("https://")
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("invalid derp_home value: {home}"),
+            )
+            .into());
+        }
 
         // Load or generate server key (persistent if path configured)
         let server_key = load_or_generate_server_key(ir.derp_server_key_path.as_deref())?;
@@ -145,12 +908,24 @@ impl DerpService {
         )?;
 
         let mesh_with = ir.derp_mesh_with.clone().unwrap_or_default();
+        let verify_client_urls = ir.derp_verify_client_url.clone().unwrap_or_default();
+        let verify_client_endpoints = ir.derp_verify_client_endpoint.clone().unwrap_or_default();
 
         if tls_acceptor.is_some() {
             tracing::info!(
                 service = "derp",
                 tag = tag.as_ref(),
                 "TLS enabled for DERP connections"
+            );
+        }
+
+        if !verify_client_urls.is_empty() || !verify_client_endpoints.is_empty() {
+            tracing::info!(
+                service = "derp",
+                tag = tag.as_ref(),
+                verify_urls = verify_client_urls.len(),
+                verify_endpoints = verify_client_endpoints.len(),
+                "Client verification enabled"
             );
         }
 
@@ -173,6 +948,7 @@ impl DerpService {
             stun_addr,
             stun_enabled,
             mesh_psk,
+            home,
             server_key,
             tls_acceptor,
             client_registry: Arc::new(ClientRegistry::new(tag.clone())),
@@ -184,6 +960,8 @@ impl DerpService {
             http_task: parking_lot::Mutex::new(None),
             mesh_with,
             mesh_tasks: parking_lot::Mutex::new(Vec::new()),
+            verify_client_urls,
+            verify_client_endpoints,
         }))
     }
 
@@ -228,17 +1006,20 @@ impl DerpService {
         Ok(())
     }
 
-    /// Minimal HTTP server stub (200 for "/"  or "/health", 404 otherwise).
+    /// HTTP server for DERP endpoints (HTTP/1.1 + HTTP/2).
     #[allow(clippy::too_many_arguments)]
     async fn run_http_server(
         listener: TcpListener,
         shutdown: Arc<Notify>,
         tag: Arc<str>,
+        home: Arc<str>,
         rate_limiter: Arc<RateLimiter>,
         client_registry: Arc<ClientRegistry>,
         server_key: PublicKey,
         pending_relays: Arc<parking_lot::Mutex<HashMap<String, RelayStream>>>,
         mesh_psk: Option<String>,
+        verify_client_urls: Arc<[String]>,
+        verify_client_endpoints: Arc<[String]>,
         tls_acceptor: Option<Arc<TlsAcceptor>>,
     ) -> io::Result<()> {
         let addr = listener.local_addr()?;
@@ -264,8 +1045,22 @@ impl DerpService {
                     let mesh_psk = mesh_psk.clone();
                     let tls_acceptor = tls_acceptor.clone();
                     let tag = tag.clone();
+                    let home = home.clone();
+                    let verify_client_urls = verify_client_urls.clone();
+                    let verify_client_endpoints = verify_client_endpoints.clone();
 
                     tokio::spawn(async move {
+                        let http_state = DerpHttpState {
+                            tag: tag.clone(),
+                            peer: peer_addr,
+                            client_registry: client_registry.clone(),
+                            server_key,
+                            mesh_psk: mesh_psk.clone(),
+                            home,
+                            verify_client_urls,
+                            verify_client_endpoints,
+                        };
+
                         let result = match tls_acceptor {
                             Some(acceptor) => {
                                 match acceptor.accept(stream).await {
@@ -274,11 +1069,8 @@ impl DerpService {
                                         Self::handle_http_connection(
                                             tls_stream,
                                             peer_addr,
-                                            tag,
-                                            client_registry,
-                                            server_key,
+                                            http_state,
                                             pending_relays,
-                                            mesh_psk,
                                         ).await
                                     }
                                     Err(e) => {
@@ -292,11 +1084,8 @@ impl DerpService {
                                 Self::handle_http_connection(
                                     stream,
                                     peer_addr,
-                                    tag,
-                                    client_registry,
-                                    server_key,
+                                    http_state,
                                     pending_relays,
-                                    mesh_psk,
                                 ).await
                             }
                         };
@@ -315,11 +1104,8 @@ impl DerpService {
     async fn handle_http_connection<S>(
         mut stream: S,
         peer: SocketAddr,
-        tag: Arc<str>,
-        client_registry: Arc<ClientRegistry>,
-        server_key: PublicKey,
+        http_state: DerpHttpState,
         pending_relays: Arc<parking_lot::Mutex<HashMap<String, RelayStream>>>,
-        mesh_psk: Option<String>,
     ) -> io::Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -336,10 +1122,12 @@ impl DerpService {
             return Self::handle_derp_client(
                 stream,
                 peer,
-                tag.clone(),
-                client_registry,
-                server_key,
+                http_state.tag.clone(),
+                http_state.client_registry.clone(),
+                http_state.server_key,
                 false, // is_mesh_peer
+                http_state.verify_client_urls.clone(),
+                http_state.verify_client_endpoints.clone(),
             )
             .await;
         }
@@ -349,21 +1137,80 @@ impl DerpService {
 
         // Check for HTTP
         if Self::looks_like_http(prefix) {
-            if let Some(upgraded_stream) =
-                Self::handle_http_request(stream, prefix, peer, tag.clone(), mesh_psk).await?
-            {
-                tracing::info!(service = "derp", peer = %peer, "Upgraded to DERP mesh connection");
-                return Self::handle_derp_client(
-                    upgraded_stream,
-                    peer,
-                    tag,
-                    client_registry,
-                    server_key,
-                    true, // is_mesh_peer
-                )
-                .await;
+            let mut http_buf = initial_data;
+
+            // Fast-start DERP clients (Go derphttp_client) send `Derp-Fast-Start: 1` and then
+            // immediately start speaking DERP frames after the HTTP request without waiting for
+            // the 101 Switching Protocols response. To preserve compatibility, we must not send
+            // any HTTP response bytes for this path.
+            if !http_buf.starts_with(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n") {
+                const MAX_HDR_BYTES: usize = 16 * 1024;
+                let mut header_end = http_buf
+                    .windows(4)
+                    .position(|w| w == b"\r\n\r\n")
+                    .map(|i| i + 4);
+
+                while header_end.is_none() && http_buf.len() < MAX_HDR_BYTES {
+                    let mut tmp = [0u8; 1024];
+                    let n = match timeout(Duration::from_millis(200), stream.read(&mut tmp)).await
+                    {
+                        Ok(result) => result?,
+                        Err(_) => 0,
+                    };
+                    if n == 0 {
+                        break;
+                    }
+                    http_buf.extend_from_slice(&tmp[..n]);
+                    header_end = http_buf
+                        .windows(4)
+                        .position(|w| w == b"\r\n\r\n")
+                        .map(|i| i + 4);
+                }
+
+                if let Some(end) = header_end {
+                    let head = String::from_utf8_lossy(&http_buf[..end]);
+                    let mut lines = head.split("\r\n");
+                    let first = lines.next().unwrap_or("");
+                    let mut parts = first.split_whitespace();
+                    let _method = parts.next().unwrap_or("");
+                    let path = parts.next().unwrap_or("");
+
+                    let mut upgrade: Option<String> = None;
+                    let mut fast_start = false;
+                    for line in lines {
+                        if line.is_empty() {
+                            break;
+                        }
+                        let mut it = line.splitn(2, ':');
+                        let key = it.next().unwrap_or("").trim().to_ascii_lowercase();
+                        let val = it.next().unwrap_or("").trim();
+                        match key.as_str() {
+                            "upgrade" => upgrade = Some(val.to_ascii_lowercase()),
+                            "derp-fast-start" => fast_start = val == "1",
+                            _ => {}
+                        }
+                    }
+
+                    if fast_start && path == "/derp" && upgrade.as_deref() == Some("derp") {
+                        let leftover = http_buf[end..].to_vec();
+                        let prefixed = PrefixedStream::new(stream, leftover);
+                        return Self::handle_derp_client(
+                            prefixed,
+                            peer,
+                            http_state.tag.clone(),
+                            http_state.client_registry.clone(),
+                            http_state.server_key,
+                            false, // is_mesh_peer
+                            http_state.verify_client_urls.clone(),
+                            http_state.verify_client_endpoints.clone(),
+                        )
+                        .await;
+                    }
+                }
             }
-            return Ok(());
+
+            let prefixed = PrefixedStream::new(stream, http_buf);
+            return Self::serve_http_connection(prefixed, http_state).await;
         }
 
         // Check for DERP protocol (starts with frame type byte)
@@ -373,10 +1220,12 @@ impl DerpService {
             return Self::handle_derp_client(
                 prefixed,
                 peer,
-                tag,
-                client_registry,
-                server_key,
+                http_state.tag.clone(),
+                http_state.client_registry.clone(),
+                http_state.server_key,
                 false, // is_mesh_peer
+                http_state.verify_client_urls.clone(),
+                http_state.verify_client_endpoints.clone(),
             )
             .await;
         }
@@ -390,7 +1239,7 @@ impl DerpService {
                     .write_all(b"ERR derp handshake (expected \"DERP <session>\\n\")\n")
                     .await;
                 let _ = stream.shutdown().await;
-                client_registry.metrics().connect_failed("bad_handshake");
+                http_state.client_registry.metrics().connect_failed("bad_handshake");
                 tracing::debug!(service = "derp", peer = %peer, "closing TCP connection due to bad handshake");
                 return Ok(());
             }
@@ -411,12 +1260,12 @@ impl DerpService {
 
         let mut prefixed_stream = PrefixedStream::new(stream, remaining_data);
 
-        if let Err(e) = Self::validate_token(&handshake, mesh_psk.as_deref()) {
+        if let Err(e) = Self::validate_token(&handshake, http_state.mesh_psk.as_deref()) {
             let _ = prefixed_stream
                 .write_all(b"ERR unauthorized (invalid DERP token)\n")
                 .await;
             let _ = prefixed_stream.shutdown().await;
-            client_registry.metrics().connect_failed("unauthorized");
+            http_state.client_registry.metrics().connect_failed("unauthorized");
             tracing::warn!(service = "derp", peer = %peer, error = %e, "Rejecting DERP mock relay connection");
             return Ok(());
         }
@@ -439,7 +1288,28 @@ impl DerpService {
             b"DELETE ",
             b"OPTIONS ",
         ];
+        if prefix.starts_with(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n") {
+            return true;
+        }
         HTTP_PREFIXES.iter().any(|p| prefix.starts_with(p))
+    }
+
+    async fn serve_http_connection<S>(stream: S, state: DerpHttpState) -> io::Result<()>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let service = service_fn(move |req| {
+            let state = state.clone();
+            async move { state.handle(req).await }
+        });
+
+        hyper::server::conn::Http::new()
+            .serve_connection(stream, service)
+            .with_upgrades()
+            .await
+            .map_err(|e| io::Error::other(format!("derp http serve_connection error: {e}")))?;
+
+        Ok(())
     }
 
     fn looks_like_derp_protocol(prefix: &[u8]) -> bool {
@@ -491,87 +1361,6 @@ impl DerpService {
         Some(RelayHandshake { session, token })
     }
 
-    async fn handle_http_request<S>(
-        mut stream: S,
-        prefix: &[u8],
-        peer: SocketAddr,
-        tag: Arc<str>,
-        mesh_psk: Option<String>,
-    ) -> io::Result<Option<S>>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    {
-        // Re-parse HTTP request from already-read prefix.
-        let buffer = prefix.to_vec();
-        let mut headers = [httparse::EMPTY_HEADER; 32];
-        let mut req = Request::new(&mut headers);
-        let status = req
-            .parse(&buffer)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        if status == Status::Partial {
-            let res = Self::write_response(
-                &mut stream,
-                "400 Bad Request",
-                "incomplete request\n",
-                false,
-            )
-            .await;
-            sb_metrics::inc_derp_http(&tag, "400");
-            res?;
-            return Ok(None);
-        }
-
-        let method = req.method.unwrap_or("");
-        let path = req.path.unwrap_or("/");
-
-        if let Some(expected) = mesh_psk.as_deref() {
-            let provided = req
-                .headers
-                .iter()
-                .find(|h| h.name.eq_ignore_ascii_case("x-derp-mesh-psk"))
-                .and_then(|h| std::str::from_utf8(h.value).ok())
-                .map(str::trim);
-            if provided != Some(expected) {
-                sb_metrics::inc_derp_http(&tag, "401");
-                tracing::warn!(service = "derp", peer = %peer, "HTTP request rejected (mesh PSK)");
-                Self::write_response(
-                    &mut stream,
-                    "401 Unauthorized",
-                    "mesh psk required\n",
-                    method.eq_ignore_ascii_case("HEAD"),
-                )
-                .await?;
-                return Ok(None);
-            }
-
-            // Check for mesh upgrade
-            if path == "/derp/mesh" {
-                Self::write_response(&mut stream, "101 Switching Protocols", "", false).await?;
-                return Ok(Some(stream));
-            }
-        }
-
-        let (status_line, body) = match (method, path) {
-            ("GET", "/") | ("GET", "/health") => ("200 OK", "OK\n"),
-            ("HEAD", "/") | ("HEAD", "/health") => ("200 OK", ""),
-            _ => ("404 Not Found", "not found\n"),
-        };
-
-        Self::write_response(
-            &mut stream,
-            status_line,
-            body,
-            method.eq_ignore_ascii_case("HEAD"),
-        )
-        .await?;
-        if let Some(code) = status_line.split_whitespace().next() {
-            sb_metrics::inc_derp_http(&tag, code);
-        }
-        tracing::debug!(service = "derp", peer = %peer, path, status = status_line);
-        Ok(None)
-    }
-
     fn validate_token(
         handshake: &RelayHandshake,
         mesh_psk: Option<&str>,
@@ -586,6 +1375,54 @@ impl DerpService {
         Ok(())
     }
 
+    /// Verify a client via configured HTTP URLs.
+    ///
+    /// Sends POST requests to all configured verify URLs with the client's
+    /// public key. Returns Ok(true) if any URL returns 200/204, Ok(false) if
+    /// no URLs configured, or Err if all URLs reject.
+    async fn verify_client_via_urls(
+        verify_urls: &[String],
+        client_key: &PublicKey,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        if verify_urls.is_empty() {
+            return Ok(false); // No verification required
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| io::Error::other(format!("Failed to create HTTP client: {}", e)))?;
+
+        let key_hex = format!("{:x?}", client_key);
+
+        for url in verify_urls {
+            let response = client
+                .post(url)
+                .header("Content-Type", "application/json")
+                .body(format!(r#"{{"publicKey":"{}"}}"#, key_hex))
+                .send()
+                .await;
+
+            match response {
+                Ok(resp) if resp.status().is_success() => {
+                    tracing::debug!(service = "derp", url = %url, key = ?client_key, "Client verified via URL");
+                    return Ok(true);
+                }
+                Ok(resp) => {
+                    tracing::debug!(service = "derp", url = %url, status = %resp.status(), "Verify URL rejected client");
+                }
+                Err(e) => {
+                    tracing::warn!(service = "derp", url = %url, error = %e, "Verify URL request failed");
+                }
+            }
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "All verify URLs rejected client",
+        ).into())
+    }
+
     /// Handle a DERP protocol client connection.
     async fn handle_derp_client<S>(
         stream: S,
@@ -594,6 +1431,8 @@ impl DerpService {
         client_registry: Arc<ClientRegistry>,
         server_key: PublicKey,
         is_mesh_peer: bool,
+        verify_client_urls: Arc<[String]>,
+        verify_client_endpoints: Arc<[String]>,
     ) -> io::Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -631,6 +1470,31 @@ impl DerpService {
         };
 
         tracing::info!(service = "derp", peer = %peer, client_key = ?client_key, "Client registered");
+
+        if !is_mesh_peer {
+            match Self::verify_client_via_urls(verify_client_urls.as_ref(), &client_key).await {
+                Ok(true) => {}
+                Ok(false) => {} // no verification configured
+                Err(e) => {
+                    client_registry.metrics().connect_failed("verify_url");
+                    tracing::warn!(service = "derp", peer = %peer, client_key = ?client_key, error = %e, "Client verification failed");
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "client verification failed",
+                    ));
+                }
+            }
+
+            if !verify_client_endpoints.is_empty() {
+                tracing::warn!(
+                    service = "derp",
+                    peer = %peer,
+                    client_key = ?client_key,
+                    endpoints = verify_client_endpoints.len(),
+                    "verify_client_endpoint is configured but not yet enforced"
+                );
+            }
+        }
 
         // Create channel for sending frames to this client
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -797,6 +1661,8 @@ impl DerpService {
                                             client_registry.clone(),
                                             server_key,
                                             true,
+                                            Arc::from(Vec::<String>::new().into_boxed_slice()),
+                                            Arc::from(Vec::<String>::new().into_boxed_slice()),
                                         )
                                         .await
                                         {
@@ -875,29 +1741,6 @@ impl DerpService {
                 tracing::debug!(service = "derp", session = %session, "Dropped idle DERP mock relay half-connection");
             }
         });
-        Ok(())
-    }
-
-    async fn write_response<S>(
-        stream: &mut S,
-        status: &str,
-        body: &str,
-        head_only: bool,
-    ) -> io::Result<()>
-    where
-        S: AsyncWrite + Unpin,
-    {
-        let body_bytes = body.as_bytes();
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n",
-            body_bytes.len()
-        );
-
-        stream.write_all(response.as_bytes()).await?;
-        if !head_only && !body_bytes.is_empty() {
-            stream.write_all(body_bytes).await?;
-        }
-        stream.shutdown().await?;
         Ok(())
     }
 
@@ -1088,6 +1931,11 @@ impl Service for DerpService {
                 let client_registry = self.client_registry.clone();
                 let server_key = self.server_key;
                 let tag = self.tag.clone();
+                let home: Arc<str> = Arc::from(self.home.clone().into_boxed_str());
+                let verify_client_urls: Arc<[String]> =
+                    Arc::from(self.verify_client_urls.clone().into_boxed_slice());
+                let verify_client_endpoints: Arc<[String]> =
+                    Arc::from(self.verify_client_endpoints.clone().into_boxed_slice());
 
                 // Pre-bind sockets so failures surface synchronously.
                 let std_http_listener = StdTcpListener::bind(listen_addr)?;
@@ -1102,21 +1950,27 @@ impl Service for DerpService {
                 let tls_acceptor = self.tls_acceptor.clone();
                 let rate_limiter = self.rate_limiter.clone();
                 let mesh_psk_http = mesh_psk.clone();
+                let verify_client_urls_http = verify_client_urls.clone();
+                let verify_client_endpoints_http = verify_client_endpoints.clone();
+                let home_http = home.clone();
                 let http_handle = tokio::spawn(async move {
                     if let Err(e) = Self::run_http_server(
                         http_listener,
                         http_shutdown,
                         tag,
+                        home_http,
                         rate_limiter,
                         client_registry,
                         server_key,
                         pending_relays,
                         mesh_psk_http,
+                        verify_client_urls_http,
+                        verify_client_endpoints_http,
                         tls_acceptor,
                     )
                     .await
                     {
-                        tracing::error!(service = "derp", error = %e, "HTTP stub server failed");
+                        tracing::error!(service = "derp", error = %e, "HTTP server failed");
                     }
                 });
                 *self.http_task.lock() = Some(http_handle);
@@ -1379,7 +2233,7 @@ fn create_tls_acceptor(
             let certs = load_tls_certs(cert)?;
             let private_key = load_tls_private_key(key)?;
 
-            let config = ServerConfig::builder()
+            let mut config = ServerConfig::builder()
                 .with_no_client_auth()
                 .with_single_cert(certs, private_key)
                 .map_err(|e| {
@@ -1388,6 +2242,9 @@ fn create_tls_acceptor(
                         format!("TLS configuration error: {}", e),
                     )
                 })?;
+
+            // Match Go behavior: advertise HTTP/2 + HTTP/1.1 via ALPN.
+            config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
             Ok(Some(Arc::new(TlsAcceptor::from(Arc::new(config)))))
         }
@@ -1442,6 +2299,14 @@ mod tests {
     use std::time::Duration;
     use tokio::time::sleep;
 
+    fn install_rustls_crypto_provider() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            // rustls 0.23 requires an explicit process-level provider when multiple backends are enabled.
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+
     #[test]
     fn test_stun_packet_parsing() {
         // Binding Request
@@ -1485,7 +2350,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_http_stub_serves_ok_and_404() {
+    async fn test_http_endpoints_plaintext() {
         let port = match alloc_port() {
             Ok(port) => port,
             Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
@@ -1547,20 +2412,99 @@ mod tests {
             ok_response.contains("200 OK"),
             "expected 200 OK response, got: {ok_response}"
         );
+        assert!(ok_response.contains("<h1>DERP</h1>"), "expected home page, got: {ok_response}");
+        let ok_lower = ok_response.to_ascii_lowercase();
         assert!(
-            ok_response.ends_with("OK\n") || ok_response.contains("\r\n\r\nOK\n"),
-            "expected OK body, got: {ok_response}"
+            ok_lower.contains("strict-transport-security:"),
+            "expected HSTS header, got: {ok_response}"
+        );
+        assert!(
+            ok_lower.contains("content-security-policy:"),
+            "expected CSP header, got: {ok_response}"
+        );
+        assert!(
+            ok_lower.contains("x-frame-options: deny"),
+            "expected X-Frame-Options header, got: {ok_response}"
+        );
+        assert!(
+            ok_lower.contains("x-content-type-options: nosniff"),
+            "expected X-Content-Type-Options header, got: {ok_response}"
         );
 
-        let not_found = send_http_request(
+        let unknown_path = send_http_request(
             port,
             "GET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         )
         .await;
         assert!(
-            not_found.contains("404 Not Found"),
-            "expected 404 response, got: {not_found}"
+            unknown_path.contains("200 OK"),
+            "expected 200 response, got: {unknown_path}"
         );
+        assert!(
+            unknown_path.contains("<h1>DERP</h1>"),
+            "expected home fallback, got: {unknown_path}"
+        );
+
+        let robots = send_http_request(
+            port,
+            "GET /robots.txt HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(robots.contains("200 OK"), "expected 200, got: {robots}");
+        assert!(
+            robots.contains("User-agent: *\nDisallow: /"),
+            "expected robots body, got: {robots}"
+        );
+        let robots_lower = robots.to_ascii_lowercase();
+        assert!(
+            robots_lower.contains("strict-transport-security:"),
+            "expected HSTS header on robots.txt, got: {robots}"
+        );
+
+        let no_content = send_http_request(
+            port,
+            "GET /generate_204 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(
+            no_content.contains("204"),
+            "expected 204 response, got: {no_content}"
+        );
+
+        struct StaticDns;
+        #[async_trait::async_trait]
+        impl crate::dns::Resolver for StaticDns {
+            async fn resolve(&self, _domain: &str) -> anyhow::Result<crate::dns::DnsAnswer> {
+                use crate::dns::cache::{Rcode, Source};
+                Ok(crate::dns::DnsAnswer::new(
+                    vec!["1.2.3.4".parse().unwrap()],
+                    Duration::from_secs(60),
+                    Source::Static,
+                    Rcode::NoError,
+                ))
+            }
+
+            fn name(&self) -> &str {
+                "static_dns"
+            }
+        }
+
+        crate::dns::global::set(Arc::new(StaticDns));
+        let bootstrap = send_http_request(
+            port,
+            "GET /bootstrap-dns?q=example.com HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(
+            bootstrap.contains("{\"example.com\":[\"1.2.3.4\"]}"),
+            "expected bootstrap-dns JSON, got: {bootstrap}"
+        );
+        let bootstrap_lower = bootstrap.to_ascii_lowercase();
+        assert!(
+            bootstrap_lower.contains("strict-transport-security:"),
+            "expected HSTS header on bootstrap-dns, got: {bootstrap}"
+        );
+        crate::dns::global::clear();
 
         service.close().unwrap();
     }
@@ -1579,6 +2523,8 @@ mod tests {
             }
             Err(e) => panic!("failed to allocate port: {e}"),
         };
+
+        install_rustls_crypto_provider();
 
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         let cert_pem = cert.cert.pem();
@@ -1661,6 +2607,10 @@ mod tests {
         assert!(
             response.contains("200 OK"),
             "expected 200 OK over TLS, got: {response}"
+        );
+        assert!(
+            response.contains("<h1>DERP</h1>"),
+            "expected home page over TLS, got: {response}"
         );
 
         service.close().unwrap();
@@ -1757,6 +2707,8 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let psk = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-auth".to_string()),
@@ -1775,7 +2727,7 @@ mod tests {
             derp_verify_client_url: None,
             derp_home: None,
             derp_mesh_with: None,
-            derp_mesh_psk: Some("s3cret".to_string()),
+            derp_mesh_psk: Some(psk.to_string()),
             derp_mesh_psk_file: None,
             derp_server_key_path: None,
             derp_stun_enabled: Some(false),
@@ -1818,10 +2770,12 @@ mod tests {
         // With token, relay should pair.
         let mut a = TcpStream::connect(addr).await.expect("connect a");
         let mut b = TcpStream::connect(addr).await.expect("connect b");
-        a.write_all(b"DERP session auth-ok token=s3cret\n")
+        let handshake_a = format!("DERP session auth-ok token={psk}\n");
+        a.write_all(handshake_a.as_bytes())
             .await
             .expect("handshake a");
-        b.write_all(b"DERP session auth-ok token=s3cret\n")
+        let handshake_b = format!("DERP session auth-ok token={psk}\n");
+        b.write_all(handshake_b.as_bytes())
             .await
             .expect("handshake b");
 
@@ -1851,6 +2805,674 @@ mod tests {
         StdTcpListener::bind("127.0.0.1:0")
             .and_then(|listener| listener.local_addr())
             .map(|addr| addr.port())
+    }
+
+    async fn connect_derp_upgrade(
+        port: u16,
+        client_key: PublicKey,
+        fast_start: bool,
+    ) -> PrefixedStream<TcpStream> {
+        let mut stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect");
+
+        let mut req =
+            String::from("GET /derp HTTP/1.1\r\nHost: localhost\r\nUpgrade: DERP\r\nConnection: Upgrade\r\n");
+        if fast_start {
+            req.push_str("Derp-Fast-Start: 1\r\n");
+        }
+        req.push_str("\r\n");
+
+        stream
+            .write_all(req.as_bytes())
+            .await
+            .expect("write request");
+        stream.flush().await.expect("flush request");
+
+        let mut prefix = Vec::new();
+        if !fast_start {
+            let mut tmp = [0u8; 1024];
+            loop {
+                let n = stream.read(&mut tmp).await.expect("read response");
+                assert!(n > 0, "connection closed before response");
+                prefix.extend_from_slice(&tmp[..n]);
+                if let Some(idx) = prefix.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let end = idx + 4;
+                    let head = String::from_utf8_lossy(&prefix[..end]);
+                    assert!(
+                        head.contains("101 Switching Protocols"),
+                        "expected 101 response, got: {head}"
+                    );
+                    prefix = prefix[end..].to_vec();
+                    break;
+                }
+                assert!(prefix.len() <= 16 * 1024, "response headers too large");
+            }
+        }
+
+        let mut derp = PrefixedStream::new(stream, prefix);
+        let server_key = DerpFrame::read_from_async(&mut derp)
+            .await
+            .expect("server key");
+        assert!(matches!(server_key, DerpFrame::ServerKey { .. }));
+
+        DerpFrame::ClientInfo { key: client_key }
+            .write_to_async(&mut derp)
+            .await
+            .expect("clientinfo");
+        derp.flush().await.expect("flush clientinfo");
+
+        derp
+    }
+
+    #[tokio::test]
+    async fn test_derp_over_websocket_ping_pong() {
+        use sb_transport::websocket::{WebSocketConfig, WebSocketDialer};
+        use sb_transport::Dialer;
+
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping derp ws test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-ws".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port),
+            derp_stun_enabled: Some(false),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_verify_client_url: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+
+        let ctx = ServiceContext::default();
+        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
+        service.start(StartStage::Start).expect("start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let ws_cfg = WebSocketConfig {
+            path: "/derp".to_string(),
+            headers: vec![("Sec-WebSocket-Protocol".to_string(), "derp".to_string())],
+            ..Default::default()
+        };
+        let dialer = WebSocketDialer::new(ws_cfg, Box::new(sb_transport::TcpDialer::default()));
+        let mut stream = dialer
+            .connect("127.0.0.1", port)
+            .await
+            .expect("ws connect");
+
+        let server_key = DerpFrame::read_from_async(&mut stream)
+            .await
+            .expect("server key");
+        assert!(matches!(server_key, DerpFrame::ServerKey { .. }));
+
+        DerpFrame::ClientInfo { key: [9u8; 32] }
+            .write_to_async(&mut stream)
+            .await
+            .expect("clientinfo");
+        stream.flush().await.expect("flush clientinfo");
+
+        let ping_data = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        DerpFrame::Ping { data: ping_data }
+            .write_to_async(&mut stream)
+            .await
+            .expect("ping");
+        stream.flush().await.expect("flush ping");
+
+        let pong = tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut stream))
+            .await
+            .expect("timeout")
+            .expect("read pong");
+        assert!(matches!(pong, DerpFrame::Pong { data } if data == ping_data));
+
+        service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_derp_over_http_upgrade_end_to_end() {
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping derp http upgrade test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-h1-upgrade".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port),
+            derp_stun_enabled: Some(false),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_verify_client_url: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+
+        let ctx = ServiceContext::default();
+        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
+        service.start(StartStage::Start).expect("start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut c1 = connect_derp_upgrade(port, [1u8; 32], false).await;
+        let mut c2 = connect_derp_upgrade(port, [2u8; 32], false).await;
+
+        // Client1 -> Client2
+        let packet = vec![0xAA, 0xBB, 0xCC, 0xDD];
+        DerpFrame::SendPacket {
+            dst_key: [2u8; 32],
+            packet: packet.clone(),
+        }
+        .write_to_async(&mut c1)
+        .await
+        .expect("send packet");
+        c1.flush().await.expect("flush send packet");
+
+        let recv =
+            tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut c2))
+                .await
+                .expect("timeout waiting for packet")
+                .expect("read frame");
+        match recv {
+            DerpFrame::RecvPacket { src_key, packet: got } => {
+                assert_eq!(src_key, [1u8; 32]);
+                assert_eq!(got, packet);
+            }
+            other => panic!("expected RecvPacket, got {:?}", other.frame_type()),
+        }
+
+        // Drive a simple ping/pong on the other direction too.
+        let ping_data = [9u8, 8, 7, 6, 5, 4, 3, 2];
+        DerpFrame::Ping { data: ping_data }
+            .write_to_async(&mut c2)
+            .await
+            .expect("send ping");
+        c2.flush().await.expect("flush ping");
+        let pong =
+            tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut c2))
+                .await
+                .expect("timeout")
+                .expect("read pong");
+        assert!(matches!(pong, DerpFrame::Pong { data } if data == ping_data));
+
+        service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_derp_http_fast_start_end_to_end() {
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping derp fast-start test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-fast-start".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port),
+            derp_stun_enabled: Some(false),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_verify_client_url: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+
+        let ctx = ServiceContext::default();
+        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
+        service.start(StartStage::Start).expect("start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut c = connect_derp_upgrade(port, [3u8; 32], true).await;
+
+        let ping_data = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        DerpFrame::Ping { data: ping_data }
+            .write_to_async(&mut c)
+            .await
+            .expect("send ping");
+        c.flush().await.expect("flush ping");
+
+        let pong = tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut c))
+            .await
+            .expect("timeout")
+            .expect("read pong");
+        assert!(matches!(pong, DerpFrame::Pong { data } if data == ping_data));
+
+        service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_derp_requires_http_upgrade() {
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping derp upgrade-required test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-upgrade-required".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port),
+            derp_stun_enabled: Some(false),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_verify_client_url: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+
+        let ctx = ServiceContext::default();
+        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
+        service.start(StartStage::Start).expect("start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let resp = send_http_request(
+            port,
+            "GET /derp HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(
+            resp.contains("426") || resp.contains("Upgrade Required"),
+            "expected 426 upgrade required, got: {resp}"
+        );
+        assert!(
+            resp.contains("DERP requires connection upgrade"),
+            "expected upgrade-required body, got: {resp}"
+        );
+
+        service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_derp_probe_handler() {
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping derp probe test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-probe".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port),
+            derp_stun_enabled: Some(false),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_verify_client_url: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+
+        let ctx = ServiceContext::default();
+        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
+        service.start(StartStage::Start).expect("start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let probe_get = send_http_request(
+            port,
+            "GET /derp/probe HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        let probe_get_lower = probe_get.to_ascii_lowercase();
+        assert!(
+            probe_get_lower.contains("200 ok"),
+            "expected 200 probe response, got: {probe_get}"
+        );
+        assert!(
+            probe_get_lower.contains("access-control-allow-origin: *"),
+            "expected CORS header on probe response, got: {probe_get}"
+        );
+        assert!(
+            !probe_get_lower.contains("strict-transport-security:"),
+            "probe should not include browser headers, got: {probe_get}"
+        );
+
+        let probe_post = send_http_request(
+            port,
+            "POST /derp/probe HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+        )
+        .await;
+        let probe_post_lower = probe_post.to_ascii_lowercase();
+        assert!(
+            probe_post_lower.contains("405"),
+            "expected 405 probe response, got: {probe_post}"
+        );
+        assert!(
+            probe_post.contains("bogus probe method"),
+            "expected probe body, got: {probe_post}"
+        );
+
+        service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_generate_204_challenge_response() {
+        let port = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping generate_204 challenge test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+
+        let ir = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-204".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port),
+            derp_stun_enabled: Some(false),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_verify_client_url: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+
+        let ctx = ServiceContext::default();
+        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
+        service.start(StartStage::Start).expect("start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let challenge = "abcDEF0123.-_";
+        let req = format!(
+            "GET /generate_204 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nX-Tailscale-Challenge: {challenge}\r\n\r\n"
+        );
+        let resp = send_http_request(port, &req).await;
+        assert!(resp.contains("204"), "expected 204 response, got: {resp}");
+        assert!(
+            resp.contains(&format!("response {challenge}")),
+            "expected challenge response header, got: {resp}"
+        );
+        let resp_lower = resp.to_ascii_lowercase();
+        assert!(
+            resp_lower.contains("x-tailscale-response:"),
+            "expected x-tailscale-response header, got: {resp}"
+        );
+        assert!(
+            !resp_lower.contains("strict-transport-security:"),
+            "generate_204 should not include browser headers, got: {resp}"
+        );
+
+        let bad_req = "GET /generate_204 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nX-Tailscale-Challenge: bad!\r\n\r\n";
+        let bad_resp = send_http_request(port, bad_req).await;
+        assert!(
+            !bad_resp.to_ascii_lowercase().contains("x-tailscale-response:"),
+            "expected no response header for invalid challenge, got: {bad_resp}"
+        );
+
+        service.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_verify_client_url_enforced() {
+        use hyper::service::{make_service_fn, service_fn};
+        use tokio::sync::oneshot;
+
+        // Start a local verify server: POST /ok => 204, POST /deny => 403.
+        let std_listener = match StdTcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping verify_client_url test: {e}");
+                return;
+            }
+            Err(e) => panic!("bind verify server: {e}"),
+        };
+        std_listener.set_nonblocking(true).expect("nonblocking");
+        let verify_addr = std_listener.local_addr().expect("verify addr");
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+
+        let make_svc = make_service_fn(|_conn| async {
+            Ok::<_, Infallible>(service_fn(|req: HyperRequest<Body>| async move {
+                let status = match (req.method(), req.uri().path()) {
+                    (&hyper::Method::POST, "/ok") => StatusCode::NO_CONTENT,
+                    (&hyper::Method::POST, "/deny") => StatusCode::FORBIDDEN,
+                    _ => StatusCode::NOT_FOUND,
+                };
+                Ok::<_, Infallible>({
+                    let mut resp = HyperResponse::new(Body::empty());
+                    *resp.status_mut() = status;
+                    resp
+                })
+            }))
+        });
+
+        let server = hyper::Server::from_tcp(std_listener)
+            .unwrap()
+            .serve(make_svc)
+            .with_graceful_shutdown(async move {
+                let _ = shutdown_rx.await;
+            });
+        let verify_handle = tokio::spawn(async move {
+            let _ = server.await;
+        });
+
+        // Start DERP service with verify_client_url=/ok (should accept).
+        let port_ok = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping verify_client_url test: {e}");
+                let _ = shutdown_tx.send(());
+                verify_handle.abort();
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+        let ir_ok = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-verify-ok".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port_ok),
+            derp_stun_enabled: Some(false),
+            derp_verify_client_url: Some(vec![format!("http://{}/ok", verify_addr)]),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+        let ctx = ServiceContext::default();
+        let derp_ok = DerpService::from_ir(&ir_ok, &ctx).expect("derp ok service");
+        derp_ok.start(StartStage::Start).expect("start derp ok");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut ok_stream = TcpStream::connect(("127.0.0.1", port_ok)).await.expect("connect");
+        let _ = DerpFrame::read_from_async(&mut ok_stream)
+            .await
+            .expect("server key");
+        DerpFrame::ClientInfo { key: [7u8; 32] }
+            .write_to_async(&mut ok_stream)
+            .await
+            .expect("client info");
+        DerpFrame::Ping { data: [1, 1, 2, 3, 5, 8, 13, 21] }
+            .write_to_async(&mut ok_stream)
+            .await
+            .expect("ping");
+        let pong = tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut ok_stream))
+            .await
+            .expect("timeout")
+            .expect("pong");
+        assert!(matches!(pong, DerpFrame::Pong { .. }));
+        derp_ok.close().unwrap();
+
+        // Start DERP service with verify_client_url=/deny (should reject).
+        let port_deny = match alloc_port() {
+            Ok(port) => port,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping verify_client_url deny test: {e}");
+                derp_ok.close().ok();
+                let _ = shutdown_tx.send(());
+                verify_handle.abort();
+                return;
+            }
+            Err(e) => panic!("failed to allocate port: {e}"),
+        };
+        let ir_deny = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-verify-deny".to_string()),
+            derp_listen: Some("127.0.0.1".to_string()),
+            derp_listen_port: Some(port_deny),
+            derp_stun_enabled: Some(false),
+            derp_verify_client_url: Some(vec![format!("http://{}/deny", verify_addr)]),
+            derp_config_path: None,
+            derp_verify_client_endpoint: None,
+            derp_home: None,
+            derp_mesh_with: None,
+            derp_mesh_psk: None,
+            derp_mesh_psk_file: None,
+            derp_server_key_path: None,
+            derp_stun_listen_port: None,
+            derp_tls_cert_path: None,
+            derp_tls_key_path: None,
+            resolved_listen: None,
+            resolved_listen_port: None,
+            ssmapi_listen: None,
+            ssmapi_listen_port: None,
+            ssmapi_servers: None,
+            ssmapi_cache_path: None,
+            ssmapi_tls_cert_path: None,
+            ssmapi_tls_key_path: None,
+        };
+        let derp_deny = DerpService::from_ir(&ir_deny, &ctx).expect("derp deny service");
+        derp_deny.start(StartStage::Start).expect("start derp deny");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let mut deny_stream = TcpStream::connect(("127.0.0.1", port_deny)).await.expect("connect");
+        let _ = DerpFrame::read_from_async(&mut deny_stream)
+            .await
+            .expect("server key");
+        DerpFrame::ClientInfo { key: [8u8; 32] }
+            .write_to_async(&mut deny_stream)
+            .await
+            .expect("client info");
+
+        // The server should close after verification fails; expect read error/EOF quickly.
+        let denied = tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut deny_stream)).await;
+        assert!(denied.is_err() || denied.unwrap().is_err(), "expected deny to close connection");
+        derp_deny.close().unwrap();
+
+        // Shutdown verify server.
+        let _ = shutdown_tx.send(());
+        verify_handle.abort();
     }
 
     #[tokio::test]
@@ -1999,6 +3621,8 @@ mod tests {
             }
             Err(e) => panic!("failed to allocate port: {e}"),
         };
+
+        install_rustls_crypto_provider();
 
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         let cert_pem = cert.cert.pem();

@@ -20,6 +20,8 @@ pub struct ShadowTlsAdapterConfig {
     pub alpn: Option<String>,
     /// Skip certificate verification (INSECURE; for testing only)
     pub skip_cert_verify: bool,
+    /// Optional uTLS fingerprint name for outbound TLS layer.
+    pub utls_fingerprint: Option<String>,
 }
 
 impl Default for ShadowTlsAdapterConfig {
@@ -30,6 +32,7 @@ impl Default for ShadowTlsAdapterConfig {
             sni: "example.com".to_string(),
             alpn: Some("http/1.1".to_string()),
             skip_cert_verify: false,
+            utls_fingerprint: None,
         }
     }
 }
@@ -90,6 +93,7 @@ impl OutboundConnector for ShadowTlsConnector {
                         .collect()
                 }),
                 skip_cert_verify: self.cfg.skip_cert_verify,
+                utls_fingerprint: self.cfg.utls_fingerprint.clone(),
             };
 
             let core = sb_core::outbound::shadowtls::ShadowTlsOutbound::new(core_cfg)

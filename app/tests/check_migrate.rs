@@ -12,10 +12,9 @@ fn check_migrate_and_write_normalized_produces_v2() {
     let cfg = dir.path().join("v1.json");
     fs::write(&cfg, v1).unwrap();
     let out = dir.path().join("out.json");
-    Command::cargo_bin("singbox-rust")
+    Command::cargo_bin("check")
         .unwrap()
         .args([
-            "check",
             "--migrate",
             "--write-normalized",
             "--config",

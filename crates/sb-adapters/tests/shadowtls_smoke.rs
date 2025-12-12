@@ -14,6 +14,7 @@ async fn shadowtls_dial_closed_port_returns_error() {
         sni: "example.com".to_string(),
         alpn: Some("http/1.1".into()),
         skip_cert_verify: true,
+        utls_fingerprint: None,
     };
     let conn = ShadowTlsConnector::new(cfg);
     let target = Target::tcp("example.com", 443);

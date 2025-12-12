@@ -39,8 +39,15 @@ fn socks_udp_associate(socks: SocketAddr) -> (TcpStream, SocketAddr) {
     assert_eq!(resp[1], 0x00); // success
                                // Parse bound address
     assert_eq!(resp[3], 0x01); // IPv4
-    let ip = Ipv4Addr::new(resp[4], resp[5], resp[6], resp[7]);
+    let mut ip = Ipv4Addr::new(resp[4], resp[5], resp[6], resp[7]);
     let port = u16::from_be_bytes([resp[8], resp[9]]);
+    // Some implementations reply with 0.0.0.0 for UDP relay bind;
+    // RFC1928 allows this to mean "use the same address as the TCP connection".
+    if ip.is_unspecified() {
+        if let IpAddr::V4(v4) = socks.ip() {
+            ip = v4;
+        }
+    }
     (tcp, SocketAddr::from((IpAddr::V4(ip), port)))
 }
 

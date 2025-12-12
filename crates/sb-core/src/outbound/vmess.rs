@@ -21,6 +21,8 @@ use sha2::Sha256;
 #[cfg(feature = "out_vmess")]
 use std::io;
 #[cfg(feature = "out_vmess")]
+use sb_tls::{UtlsConfig, UtlsFingerprint};
+#[cfg(feature = "out_vmess")]
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "out_vmess")]
 use tokio::net::TcpStream;
@@ -46,6 +48,8 @@ pub struct VmessConfig {
     pub h2_host: Option<String>,
     pub tls_sni: Option<String>,
     pub tls_alpn: Option<Vec<String>>,
+    /// Optional uTLS fingerprint name for outbound TLS layer.
+    pub utls_fingerprint: Option<String>,
     pub grpc_service: Option<String>,
     pub grpc_method: Option<String>,
     pub grpc_authority: Option<String>,
@@ -70,6 +74,7 @@ impl Default for VmessConfig {
             h2_host: None,
             tls_sni: None,
             tls_alpn: None,
+            utls_fingerprint: None,
             grpc_service: None,
             grpc_method: None,
             grpc_authority: None,
@@ -90,6 +95,10 @@ pub struct VmessOutbound {
 #[cfg(feature = "out_vmess")]
 impl VmessOutbound {
     pub fn new(config: VmessConfig) -> anyhow::Result<Self> {
+        if let Some(fp) = config.utls_fingerprint.as_deref() {
+            fp.parse::<UtlsFingerprint>()
+                .map_err(|e| anyhow::anyhow!("invalid uTLS fingerprint: {e}"))?;
+        }
         // Validate security cipher
         match config.security.as_str() {
             "aes-128-gcm" | "chacha20-poly1305" => {}
@@ -386,7 +395,12 @@ fn vmess_encrypt_aead(
                 .map_err(|e| io::Error::other(format!("AES encryption error: {}", e)))
         }
         "chacha20-poly1305" => {
-            let k = chacha20poly1305::Key::from_slice(key);
+            // sing-box uses "chacha20-poly1305" in VMess security; our KDF currently yields 16 bytes.
+            // Expand to 32 bytes for the IETF construction.
+            let mut key32 = [0u8; 32];
+            key32[..16].copy_from_slice(key);
+            key32[16..].copy_from_slice(key);
+            let k = chacha20poly1305::Key::from_slice(&key32);
             let cipher = ChaCha20Poly1305::new(k);
             let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
             cipher
@@ -419,7 +433,10 @@ fn vmess_decrypt_aead(
                 .map_err(|e| io::Error::other(format!("AES decryption error: {}", e)))
         }
         "chacha20-poly1305" => {
-            let k = chacha20poly1305::Key::from_slice(key);
+            let mut key32 = [0u8; 32];
+            key32[..16].copy_from_slice(key);
+            key32[16..].copy_from_slice(key);
+            let k = chacha20poly1305::Key::from_slice(&key32);
             let cipher = ChaCha20Poly1305::new(k);
             let nonce = chacha20poly1305::Nonce::from_slice(&nonce_bytes);
             cipher
@@ -648,6 +665,21 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
 
         let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
         let chain_opt = self.config.transport.as_deref();
+        let tls_override = if let Some(fp_name) = self.config.utls_fingerprint.as_deref() {
+            let fp = fp_name
+                .parse::<UtlsFingerprint>()
+                .map_err(|e| crate::error::SbError::other(format!("invalid uTLS fingerprint: {e}")))?;
+            let sni = self
+                .config
+                .tls_sni
+                .as_deref()
+                .unwrap_or(self.config.server.as_str());
+            let utls_cfg = UtlsConfig::new(sni.to_string()).with_fingerprint(fp);
+            let roots = crate::tls::global::base_root_store();
+            Some(utls_cfg.build_client_config_with_roots(roots))
+        } else {
+            None
+        };
         let builder = crate::runtime::transport::map::apply_layers(
             TransportBuilder::tcp(),
             chain_opt,
@@ -663,7 +695,7 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
             self.config.grpc_method.as_deref(),
             self.config.grpc_authority.as_deref(),
             &self.config.grpc_metadata,
-            None,
+            tls_override,
             self.config.multiplex.as_ref(),
         );
 
@@ -723,6 +755,15 @@ mod tests {
         let ct = vmess_encrypt_aead("chacha20-poly1305", &key, nonce0 + 1, plain).unwrap();
         let pt = vmess_decrypt_aead("chacha20-poly1305", &key, nonce0 + 1, &ct).unwrap();
         assert_eq!(pt, plain);
+    }
+
+    #[test]
+    fn test_vmess_rejects_unknown_utls_fingerprint() {
+        let cfg = VmessConfig {
+            utls_fingerprint: Some("invalid-fp".to_string()),
+            ..Default::default()
+        };
+        assert!(VmessOutbound::new(cfg).is_err());
     }
 }
 

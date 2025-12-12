@@ -1066,6 +1066,7 @@ fn shadowtls_from_ir(
             })
         }),
         skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
+        utls_fingerprint: ir.utls_fingerprint.clone(),
     }))
 }
 

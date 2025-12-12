@@ -160,6 +160,25 @@ impl Default for TrafficManager {
     }
 }
 
+/// Implement TrafficTracker trait for integration with Shadowsocks adapters.
+impl super::TrafficTracker for TrafficManager {
+    fn record_uplink(&self, username: &str, bytes: i64, packets: i64) {
+        TrafficManager::record_uplink(self, username, bytes, packets);
+    }
+
+    fn record_downlink(&self, username: &str, bytes: i64, packets: i64) {
+        TrafficManager::record_downlink(self, username, bytes, packets);
+    }
+
+    fn increment_tcp_sessions(&self, username: &str, delta: i64) {
+        TrafficManager::increment_tcp_sessions(self, username, delta);
+    }
+
+    fn increment_udp_sessions(&self, username: &str, delta: i64) {
+        TrafficManager::increment_udp_sessions(self, username, delta);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -682,6 +682,9 @@ fn build_trojan_outbound(
         cfg = cfg.with_skip_cert_verify(skip);
     }
 
+    // Optional uTLS fingerprint
+    cfg.utls_fingerprint = ir.utls_fingerprint.clone();
+
     // Multiplex options
     cfg.multiplex = ir.multiplex.clone().or(param.multiplex.clone());
 
@@ -762,6 +765,7 @@ fn build_vmess_outbound(
         h2_host: ir.h2_host.clone(),
         tls_sni: ir.tls_sni.clone(),
         tls_alpn: ir.tls_alpn.clone(),
+        utls_fingerprint: ir.utls_fingerprint.clone(),
         grpc_service: ir.grpc_service.clone(),
         grpc_method: ir.grpc_method.clone(),
         grpc_authority: ir.grpc_authority.clone(),
@@ -854,6 +858,7 @@ fn build_vless_outbound(
         h2_host: ir.h2_host.clone(),
         tls_sni: ir.tls_sni.clone(),
         tls_alpn: ir.tls_alpn.clone(),
+        utls_fingerprint: ir.utls_fingerprint.clone(),
         grpc_service: ir.grpc_service.clone(),
         grpc_method: ir.grpc_method.clone(),
         grpc_authority: ir.grpc_authority.clone(),
@@ -2436,6 +2441,7 @@ fn build_shadowtls_outbound(
         sni,
         alpn,
         skip_cert_verify,
+        utls_fingerprint: ir.utls_fingerprint.clone(),
     };
 
     // Create connector

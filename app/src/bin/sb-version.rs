@@ -1,35 +1,20 @@
-use app::cli::{buildinfo, json as cli_json};
+use app::cli::{buildinfo, version::collect_features};
 use serde_json::json;
 
 fn main() {
-    // Emit the same JSON payload as the `version` binary for RC tooling compatibility
-    let mut feats = vec![];
-    if cfg!(feature = "schema-v2") {
-        feats.push("schema-v2");
-    }
-    if cfg!(feature = "tls-rustls") {
-        feats.push("tls-rustls");
-    }
+    // RC tooling expects a flat version info object without ok/data envelope.
     let bi = buildinfo::current();
+    let features = collect_features();
     let obj = json!({
-        "name": env!("CARGO_PKG_NAME"),
-        "version": env!("CARGO_PKG_VERSION"),
-        "features": feats,
-        "fingerprint": build_fingerprint(),
-        "license": "Apache-2.0",
-        "license_notice": "Licensed under the Apache License, Version 2.0. See LICENSES/THIRD-PARTY.md for third-party licenses.",
-        "build_info": {
-            "git_sha": bi.git_sha,
-            "build_ts": bi.build_ts
+        "version": bi.version,
+        "commit": bi.git_sha,
+        "build_time": env!("SB_BUILD_TIME_EPOCH"),
+        "features": features,
+        "platform": {
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+            "target": env!("TARGET"),
         }
     });
-    cli_json::ok(&obj);
-}
-
-fn build_fingerprint() -> String {
-    format!(
-        "{}-{}",
-        env!("CARGO_PKG_VERSION"),
-        option_env!("BUILD_TS").unwrap_or("dev")
-    )
+    println!("{}", serde_json::to_string(&obj).unwrap());
 }

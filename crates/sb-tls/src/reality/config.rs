@@ -1,6 +1,8 @@
 //! REALITY configuration
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "utls")]
+use crate::UtlsFingerprint;
 
 /// REALITY client configuration
 /// REALITY 客户端配置
@@ -65,6 +67,14 @@ impl RealityClientConfig {
             }
             if short_id.len() > 16 || short_id.len() % 2 != 0 {
                 return Err("short_id must be 0-16 hex chars (length multiple of 2)".to_string());
+            }
+        }
+
+        // Validate uTLS fingerprint name (Go parity)
+        #[cfg(feature = "utls")]
+        {
+            if self.fingerprint.parse::<UtlsFingerprint>().is_err() {
+                return Err(format!("unknown uTLS fingerprint: {}", self.fingerprint));
             }
         }
 
@@ -315,6 +325,24 @@ mod tests {
 
         let result = config.validate();
         assert!(result.is_err());
+    }
+
+    #[cfg(feature = "utls")]
+    #[test]
+    fn test_client_config_invalid_fingerprint() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            short_id: None,
+            fingerprint: "invalid-fp".to_string(),
+            alpn: vec![],
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown uTLS fingerprint"));
     }
 
     #[test]

@@ -195,6 +195,56 @@ pub struct InboundParam {
     pub users_shadowsocks: Option<String>,
 }
 
+impl Default for InboundParam {
+    fn default() -> Self {
+        Self {
+            kind: String::new(),
+            listen: "127.0.0.1".to_string(),
+            port: 0,
+            basic_auth: None,
+            sniff: false,
+            udp: false,
+            override_host: None,
+            override_port: None,
+            network: None,
+            users_anytls: None,
+            password: None,
+            anytls_padding: None,
+            uuid: None,
+            method: None,
+            security: None,
+            flow: None,
+            tls_cert_path: None,
+            tls_key_path: None,
+            tls_cert_pem: None,
+            tls_key_pem: None,
+            tls_server_name: None,
+            tls_alpn: None,
+            users_hysteria2: None,
+            congestion_control: None,
+            salamander: None,
+            obfs: None,
+            brutal_up_mbps: None,
+            brutal_down_mbps: None,
+            masquerade: None,
+            tun_options: None,
+            users_tuic: None,
+            users_hysteria: None,
+            hysteria_protocol: None,
+            hysteria_obfs: None,
+            hysteria_up_mbps: None,
+            hysteria_down_mbps: None,
+            hysteria_recv_window_conn: None,
+            hysteria_recv_window: None,
+            multiplex: None,
+            users_trojan: None,
+            users_vless: None,
+            users_vmess: None,
+            users_shadowsocks: None,
+        }
+    }
+}
+
 /// AnyTLS user parameters passed to the adapter layer.
 #[derive(Clone, Debug)]
 pub struct AnyTlsUserParam {

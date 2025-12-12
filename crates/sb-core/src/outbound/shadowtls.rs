@@ -15,6 +15,8 @@ use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 #[cfg(feature = "out_shadowtls")]
 use tokio_rustls::{rustls, TlsConnector};
+#[cfg(feature = "out_shadowtls")]
+use sb_tls::{UtlsConfig, UtlsFingerprint};
 
 #[cfg(feature = "out_shadowtls")]
 use super::types::{HostPort, OutboundTcp};
@@ -27,6 +29,8 @@ pub struct ShadowTlsConfig {
     pub sni: String,
     pub alpn: Option<Vec<String>>,
     pub skip_cert_verify: bool,
+    /// Optional uTLS fingerprint name for outbound TLS layer.
+    pub utls_fingerprint: Option<String>,
 }
 
 #[cfg(feature = "out_shadowtls")]
@@ -44,32 +48,50 @@ impl ShadowTlsOutbound {
             use tokio_rustls::rustls::crypto::ring;
             let _ = ring::default_provider().install_default();
         }
-        // System roots
-        let mut roots = rustls::RootCertStore::empty();
-        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-
         // Allow insecure verification when explicitly enabled
         let insecure_env = std::env::var("SB_STL_ALLOW_INSECURE")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        if config.skip_cert_verify || insecure_env {
-            tracing::warn!("ShadowTLS: insecure mode enabled, certificate verification disabled");
-            let v = crate::tls::danger::NoVerify::new();
-            tls_config.dangerous().set_certificate_verifier(Arc::new(v));
-        }
+        let insecure = config.skip_cert_verify || insecure_env;
 
-        if let Some(alpn_list) = &config.alpn {
-            tls_config.alpn_protocols = alpn_list
-                .iter()
-                .map(|proto| proto.as_bytes().to_vec())
-                .collect();
-        }
+        let tls_config: Arc<rustls::ClientConfig> = if let Some(fp_name) =
+            config.utls_fingerprint.as_deref()
+        {
+            let fp = fp_name
+                .parse::<UtlsFingerprint>()
+                .map_err(|e| anyhow::anyhow!("invalid uTLS fingerprint: {e}"))?;
+            let mut utls_cfg = UtlsConfig::new(config.sni.clone())
+                .with_fingerprint(fp)
+                .with_insecure(insecure);
+            if let Some(alpn) = config.alpn.clone() {
+                utls_cfg = utls_cfg.with_alpn(alpn);
+            }
+            let roots = crate::tls::global::base_root_store();
+            utls_cfg.build_client_config_with_roots(roots)
+        } else {
+            let roots = crate::tls::global::base_root_store();
+            let mut tls_config = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
 
-        let tls_config = Arc::new(tls_config);
+            if insecure {
+                tracing::warn!(
+                    "ShadowTLS: insecure mode enabled, certificate verification disabled"
+                );
+                let v = crate::tls::danger::NoVerify::new();
+                tls_config.dangerous().set_certificate_verifier(Arc::new(v));
+            }
+
+            if let Some(alpn_list) = &config.alpn {
+                tls_config.alpn_protocols = alpn_list
+                    .iter()
+                    .map(|proto| proto.as_bytes().to_vec())
+                    .collect();
+            }
+
+            Arc::new(tls_config)
+        };
         Ok(Self { config, tls_config })
     }
 }
@@ -163,6 +185,38 @@ impl OutboundTcp for ShadowTlsOutbound {
 
     fn protocol_name(&self) -> &'static str {
         "shadowtls"
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "out_shadowtls")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shadowtls_rejects_unknown_utls_fingerprint() {
+        let cfg = ShadowTlsConfig {
+            server: "example.com".to_string(),
+            port: 443,
+            sni: "example.com".to_string(),
+            alpn: None,
+            skip_cert_verify: false,
+            utls_fingerprint: Some("invalid-fp".to_string()),
+        };
+        assert!(ShadowTlsOutbound::new(cfg).is_err());
+    }
+
+    #[test]
+    fn shadowtls_accepts_chrome_utls_fingerprint() {
+        let cfg = ShadowTlsConfig {
+            server: "example.com".to_string(),
+            port: 443,
+            sni: "example.com".to_string(),
+            alpn: None,
+            skip_cert_verify: false,
+            utls_fingerprint: Some("chrome".to_string()),
+        };
+        assert!(ShadowTlsOutbound::new(cfg).is_ok());
     }
 }
 

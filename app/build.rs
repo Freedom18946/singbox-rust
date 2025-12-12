@@ -43,4 +43,6 @@ fn main() {
     let ts_rfc3339 = chrono::Utc::now().to_rfc3339();
     println!("cargo:rustc-env=BUILD_TS={}", ts_rfc3339);
     println!("cargo:rustc-env=GIT_SHA={}", git);
+    let target = std::env::var("TARGET").unwrap_or_default();
+    println!("cargo:rustc-env=TARGET={}", target);
 }

@@ -110,7 +110,15 @@ impl std::str::FromStr for UtlsFingerprint {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "chrome" | "chrome110" => Ok(Self::Chrome110),
+            "" => Ok(Self::Chrome110),
+            // Go sing-box accepts multiple chrome alias names that map to Chrome Auto.
+            "chrome"
+            | "chrome110"
+            | "chrome_psk"
+            | "chrome_psk_shuffle"
+            | "chrome_padding_psk_shuffle"
+            | "chrome_pq"
+            | "chrome_pq_psk" => Ok(Self::Chrome110),
             "chrome58" => Ok(Self::Chrome58),
             "chrome62" => Ok(Self::Chrome62),
             "chrome70" => Ok(Self::Chrome70),
@@ -140,11 +148,13 @@ impl std::str::FromStr for UtlsFingerprint {
             "edge85" => Ok(Self::Edge85),
 
             "random" => Ok(Self::Random),
+            "randomized" => Ok(Self::Random),
             "randomchrome" | "random_chrome" => Ok(Self::RandomChrome),
             "randomfirefox" | "random_firefox" => Ok(Self::RandomFirefox),
 
             "360" | "360browser" => Ok(Self::Browser360),
             "qq" | "qqbrowser" => Ok(Self::QQBrowser),
+            "android" | "android11" | "android_11" => Ok(Self::Chrome110),
 
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -458,6 +468,172 @@ impl UtlsConfig {
             _ => CustomFingerprint::chrome_110(), // Default to Chrome
         }
     }
+
+    /// Build a rustls ClientConfig with fingerprint-specific cipher suites and ALPN.
+    ///
+    /// This is the key integration point that wires uTLS fingerprints into actual
+    /// TLS handshakes. The resulting ClientConfig can be used with sb-transport's
+    /// TlsDialer to perform fingerprinted TLS connections.
+    ///
+    /// # Returns
+    /// A configured `Arc<rustls::ClientConfig>` with:
+    /// - Cipher suites ordered according to the fingerprint
+    /// - ALPN protocols from fingerprint or config override
+    /// - webpki root certificates for production use
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use sb_tls::utls::{UtlsConfig, UtlsFingerprint};
+    ///
+    /// let config = UtlsConfig::new("example.com")
+    ///     .with_fingerprint(UtlsFingerprint::Firefox105);
+    /// let tls_config = config.build_client_config();
+    /// // Use tls_config with TlsDialer
+    /// ```
+    pub fn build_client_config(&self) -> std::sync::Arc<rustls::ClientConfig> {
+        use rustls::RootCertStore;
+
+        let mut roots = RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        self.build_client_config_with_roots(roots)
+    }
+
+    /// Build a rustls ClientConfig using a caller-provided trust store.
+    ///
+    /// This is used by sb-core/sb-transport to preserve global CA overrides even
+    /// when uTLS fingerprinting is enabled.
+    pub fn build_client_config_with_roots(
+        &self,
+        roots: rustls::RootCertStore,
+    ) -> std::sync::Arc<rustls::ClientConfig> {
+        use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+        use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
+        use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
+        use std::sync::Arc;
+
+        let fp = self.get_fingerprint_params();
+
+        // Build CipherSuite list from fingerprint
+        let cipher_suites = map_fingerprint_cipher_suites(&fp.cipher_suites);
+
+        // Create a custom CryptoProvider with fingerprint-specific cipher suites
+        let provider = rustls::crypto::CryptoProvider {
+            cipher_suites,
+            ..rustls::crypto::ring::default_provider()
+        };
+
+        // Build config with custom cipher suites via CryptoProvider
+        let mut config = ClientConfig::builder_with_provider(Arc::new(provider))
+            .with_safe_default_protocol_versions()
+            .expect("TLS protocol versions should be valid")
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
+        // Apply ALPN from config override or fingerprint default
+        let alpn = self.alpn.clone().unwrap_or(fp.alpn);
+        config.alpn_protocols = alpn.into_iter().map(|s| s.into_bytes()).collect();
+
+        if self.insecure_skip_verify {
+            #[derive(Debug)]
+            struct NoVerifier;
+
+            impl ServerCertVerifier for NoVerifier {
+                fn verify_server_cert(
+                    &self,
+                    _end_entity: &CertificateDer<'_>,
+                    _intermediates: &[CertificateDer<'_>],
+                    _server_name: &ServerName<'_>,
+                    _ocsp_response: &[u8],
+                    _now: UnixTime,
+                ) -> Result<ServerCertVerified, rustls::Error> {
+                    Ok(ServerCertVerified::assertion())
+                }
+
+                fn verify_tls12_signature(
+                    &self,
+                    _message: &[u8],
+                    _cert: &CertificateDer<'_>,
+                    _dss: &DigitallySignedStruct,
+                ) -> Result<HandshakeSignatureValid, rustls::Error> {
+                    Ok(HandshakeSignatureValid::assertion())
+                }
+
+                fn verify_tls13_signature(
+                    &self,
+                    _message: &[u8],
+                    _cert: &CertificateDer<'_>,
+                    _dss: &DigitallySignedStruct,
+                ) -> Result<HandshakeSignatureValid, rustls::Error> {
+                    Ok(HandshakeSignatureValid::assertion())
+                }
+
+                fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+                    vec![
+                        SignatureScheme::RSA_PKCS1_SHA256,
+                        SignatureScheme::RSA_PKCS1_SHA384,
+                        SignatureScheme::RSA_PKCS1_SHA512,
+                        SignatureScheme::ECDSA_NISTP256_SHA256,
+                        SignatureScheme::ECDSA_NISTP384_SHA384,
+                        SignatureScheme::ECDSA_NISTP521_SHA512,
+                        SignatureScheme::RSA_PSS_SHA256,
+                        SignatureScheme::RSA_PSS_SHA384,
+                        SignatureScheme::RSA_PSS_SHA512,
+                        SignatureScheme::ED25519,
+                    ]
+                }
+            }
+
+            config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(NoVerifier));
+        }
+
+        Arc::new(config)
+    }
+}
+
+/// Map fingerprint cipher suite IDs to rustls SupportedCipherSuite
+///
+/// This maps TLS cipher suite identifiers (as used in uTLS fingerprints)
+/// to rustls supported cipher suites. Suites not supported by rustls
+/// are silently skipped.
+fn map_fingerprint_cipher_suites(ids: &[u16]) -> Vec<rustls::SupportedCipherSuite> {
+    use rustls::crypto::ring::cipher_suite;
+
+    let mut suites = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        let suite = match id {
+            // TLS 1.3 suites
+            0x1301 => Some(cipher_suite::TLS13_AES_128_GCM_SHA256),
+            0x1302 => Some(cipher_suite::TLS13_AES_256_GCM_SHA384),
+            0x1303 => Some(cipher_suite::TLS13_CHACHA20_POLY1305_SHA256),
+            // TLS 1.2 ECDHE suites
+            0xc02b => Some(cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256),
+            0xc02f => Some(cipher_suite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256),
+            0xc02c => Some(cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384),
+            0xc030 => Some(cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384),
+            // Note: CHACHA20 and legacy suites may not be directly available
+            // in all rustls configurations
+            _ => None,
+        };
+
+        if let Some(s) = suite {
+            suites.push(s);
+        }
+    }
+
+    // Ensure we have at least some suites (fallback to defaults if empty)
+    if suites.is_empty() {
+        vec![
+            cipher_suite::TLS13_AES_256_GCM_SHA384,
+            cipher_suite::TLS13_AES_128_GCM_SHA256,
+            cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+        ]
+    } else {
+        suites
+    }
 }
 
 /// Get list of all available fingerprints
@@ -491,8 +667,12 @@ pub fn available_fingerprints() -> Vec<&'static str> {
         "edge85",
         "edge106",
         "random",
+        "randomized",
         "random_chrome",
         "random_firefox",
+        "ios",
+        "android",
+        "edge",
         "360browser",
         "qqbrowser",
     ]
@@ -520,6 +700,22 @@ mod tests {
         assert_eq!(
             "random".parse::<UtlsFingerprint>().unwrap(),
             UtlsFingerprint::Random
+        );
+        assert_eq!(
+            "chrome_psk".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Chrome110
+        );
+        assert_eq!(
+            "randomized".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Random
+        );
+        assert_eq!(
+            "android".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::Chrome110
+        );
+        assert_eq!(
+            "ios".parse::<UtlsFingerprint>().unwrap(),
+            UtlsFingerprint::SafariIos14
         );
         assert!("invalid".parse::<UtlsFingerprint>().is_err());
     }
@@ -556,5 +752,32 @@ mod tests {
         assert!(fps.contains(&"chrome"));
         assert!(fps.contains(&"firefox"));
         assert!(fps.contains(&"safari"));
+    }
+
+    #[test]
+    fn test_build_client_config() {
+        // Test that build_client_config produces a valid rustls ClientConfig
+        let config = UtlsConfig::new("example.com")
+            .with_fingerprint(UtlsFingerprint::Chrome110)
+            .with_alpn(vec!["h2".to_string(), "http/1.1".to_string()]);
+
+        let tls_config = config.build_client_config();
+
+        // Verify ALPN protocols are set
+        assert!(!tls_config.alpn_protocols.is_empty());
+        assert_eq!(tls_config.alpn_protocols[0], b"h2");
+        assert_eq!(tls_config.alpn_protocols[1], b"http/1.1");
+    }
+
+    #[test]
+    fn test_build_client_config_firefox() {
+        // Test Firefox fingerprint
+        let config = UtlsConfig::new("firefox.test")
+            .with_fingerprint(UtlsFingerprint::Firefox105);
+
+        let tls_config = config.build_client_config();
+
+        // Firefox default ALPN from fingerprint
+        assert!(!tls_config.alpn_protocols.is_empty());
     }
 }

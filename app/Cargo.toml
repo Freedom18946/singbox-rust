@@ -28,7 +28,7 @@ net_e2e = []
 # Dev/auxiliary CLI feature gates
 bench-cli = ["hdrhistogram", "metrics"]
 manpage = []
-dev-cli = ["notify", "ignore"]
+dev-cli = ["notify", "ignore", "toml"]
 prefetch = []
 admin_envelope = ["sb-admin-contract"]
 auth = ["admin_envelope"]
@@ -155,6 +155,7 @@ adapter-shadowtls = ["sb-adapters/adapter-shadowtls"]
 adapter-anytls = ["sb-adapters/adapter-anytls"]
 adapter-wireguard = ["sb-adapters/adapter-wireguard"]
 adapter-tun = ["sb-adapters/adapter-tun"]
+adapter-tor = ["sb-adapters", "sb-adapters/adapter-tor"]
 
 ## 二进制的特性门控：避免最小构建时拉起未完成/不稳定模块
 [[bin]]
@@ -406,6 +407,26 @@ path = "../tests/reality_tls_e2e.rs"
 [[test]]
 name = "hysteria_v1_e2e"
 path = "../tests/hysteria_v1_e2e.rs"
+
+[[test]]
+name = "report_health"
+path = "tests/report_health.rs"
+required-features = ["dev-cli"]
+
+[[test]]
+name = "route_explain_trace"
+path = "tests/route_explain_trace.rs"
+required-features = ["explain"]
+
+[[test]]
+name = "subs_merge_diff"
+path = "tests/subs_merge_diff.rs"
+required-features = ["router"]
+
+[[test]]
+name = "tor_outbound_test"
+path = "tests/tor_outbound_test.rs"
+required-features = ["adapter-tor"]
 
 [[test]]
 name = "multiplex_vless_e2e"
