@@ -35,10 +35,10 @@ async fn derp_service_bridge_mock_relay_e2e() -> Result<()> {
         "services": [{
             "type": "derp",
             "tag": "derp-bridge",
-            "derp_listen": "127.0.0.1",
-            "derp_listen_port": port,
-            "derp_stun_enabled": false,
-            "derp_mesh_psk": "bridge-secret"
+            "listen": "127.0.0.1",
+            "listen_port": port,
+            "stun": { "enabled": false },
+            "mesh_psk": "bridge-secret"
         }],
         "inbounds": [],
         "outbounds": [{

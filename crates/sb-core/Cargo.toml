@@ -32,7 +32,7 @@ parking_lot = "0.12"
 rand = "0.8"
 regex = "1.10"
 ring = "0.17"
-rustls = "0.23"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
 rustls-pemfile = "2.0"
 sb-config = { path = "../sb-config" }
 sb-metrics = { path = "../sb-metrics" }
@@ -50,7 +50,7 @@ snow = "0.9"
 socket2 = "0.6"  # 新增：用于 socket 配置
 thiserror = "1.0"
 tokio = { version = "1.47", features = ["full"] }
-tokio-rustls = "0.26"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio-tungstenite = { version = "0.24", optional = true }
 tower = "0.4"
@@ -202,4 +202,28 @@ service_resolved   = []
 
 [[bin]]
 name = "rule-hot-reload"
+required-features = ["router"]
+
+[[example]]
+name = "geosite_demo"
+required-features = ["router"]
+
+[[example]]
+name = "router_eval"
+required-features = ["router"]
+
+[[example]]
+name = "router_rules_probe"
+required-features = ["router"]
+
+[[example]]
+name = "process_routing_demo"
+required-features = ["router"]
+
+[[example]]
+name = "router_udp_balancer_probe"
+required-features = ["router"]
+
+[[example]]
+name = "rule_hot_reload_demo"
 required-features = ["router"]

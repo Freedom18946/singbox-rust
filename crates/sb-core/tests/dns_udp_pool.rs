@@ -1,9 +1,37 @@
 #![cfg(feature = "dns_udp")]
 use std::net::SocketAddr;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use sb_core::dns::ResolverHandle;
 use tokio::net::UdpSocket;
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
+struct EnvVarGuard {
+    key: &'static str,
+    prev: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let prev = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, prev }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.prev.as_ref() {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
 
 async fn start_stub(addr: SocketAddr, delay_ms: u64, v4: Option<[u8; 4]>, v6: Option<[u8; 16]>) {
     let sock = UdpSocket::bind(addr).await.unwrap();
@@ -74,6 +102,7 @@ async fn start_stub(addr: SocketAddr, delay_ms: u64, v4: Option<[u8; 4]>, v6: Op
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pool_race_picks_faster() {
+    let _serial = serial_guard();
     // two stubs: one slow A 1.2.3.4, one fast AAAA 2001:db8::1
     let up1: SocketAddr = "127.0.0.1:20531".parse().unwrap();
     let up2: SocketAddr = "127.0.0.1:20532".parse().unwrap();
@@ -86,11 +115,12 @@ async fn pool_race_picks_faster() {
     )
     .await;
 
-    std::env::set_var("SB_DNS_ENABLE", "1");
-    std::env::set_var("SB_DNS_POOL", format!("udp:{},udp:{}", up1, up2));
-    std::env::set_var("SB_DNS_POOL_STRATEGY", "race");
-    std::env::set_var("SB_DNS_HE_ORDER", "A_FIRST");
-    std::env::set_var("SB_DNS_RACE_WINDOW_MS", "0");
+    let _en = EnvVarGuard::set("SB_DNS_ENABLE", "1");
+    let pool = format!("udp:{},udp:{}", up1, up2);
+    let _pool = EnvVarGuard::set("SB_DNS_POOL", &pool);
+    let _strategy = EnvVarGuard::set("SB_DNS_POOL_STRATEGY", "race");
+    let _he = EnvVarGuard::set("SB_DNS_HE_ORDER", "A_FIRST");
+    let _race_win = EnvVarGuard::set("SB_DNS_RACE_WINDOW_MS", "0");
 
     let h = ResolverHandle::from_env_or_default();
     let ans = h.resolve("example.com").await.unwrap();
@@ -99,13 +129,15 @@ async fn pool_race_picks_faster() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pool_sequential_fallback() {
+    let _serial = serial_guard();
     let up1: SocketAddr = "127.0.0.1:20541".parse().unwrap();
     let up2: SocketAddr = "127.0.0.1:20542".parse().unwrap();
     // up1: no response (not started), up2: responds A
     start_stub(up2, 5, Some([5, 6, 7, 8]), None).await;
-    std::env::set_var("SB_DNS_ENABLE", "1");
-    std::env::set_var("SB_DNS_POOL", format!("udp:{},udp:{}", up1, up2));
-    std::env::set_var("SB_DNS_POOL_STRATEGY", "sequential");
+    let _en = EnvVarGuard::set("SB_DNS_ENABLE", "1");
+    let pool = format!("udp:{},udp:{}", up1, up2);
+    let _pool = EnvVarGuard::set("SB_DNS_POOL", &pool);
+    let _strategy = EnvVarGuard::set("SB_DNS_POOL_STRATEGY", "sequential");
     let h = ResolverHandle::from_env_or_default();
     let ans = h.resolve("example.org").await.unwrap();
     assert!(!ans.ips.is_empty());

@@ -1,4 +1,4 @@
-use crate::ir::{ConfigIR, Credentials, HeaderEntry};
+use crate::ir::{ConfigIR, Credentials, DerpStunOptionsIR, HeaderEntry, InboundTlsOptionsIR};
 use sb_types::IssueCode;
 use serde_json::{json, Value};
 
@@ -24,6 +24,7 @@ fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
                     Value::Object(obj) => obj
                         .get("value")
                         .or_else(|| obj.get("address"))
+                        .or_else(|| obj.get("url"))
                         .and_then(|v| v.as_str())
                         .map(|s| s.trim().to_string())
                         .filter(|s| !s.is_empty()),
@@ -47,6 +48,7 @@ fn extract_string_list(value: Option<&Value>) -> Option<Vec<String>> {
         Value::Object(obj) => obj
             .get("value")
             .or_else(|| obj.get("address"))
+            .or_else(|| obj.get("url"))
             .and_then(|v| v.as_str())
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -103,6 +105,148 @@ fn parse_u32_field(value: Option<&Value>) -> Option<u32> {
                 target.parse::<u32>().ok()
             }
         }
+        _ => None,
+    }
+}
+
+fn parse_u16_field(value: Option<&Value>) -> Option<u16> {
+    match value {
+        Some(Value::Number(num)) => num.as_u64().and_then(|v| u16::try_from(v).ok()),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                trimmed.parse::<u16>().ok()
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_fwmark_field(value: Option<&Value>) -> Option<u32> {
+    match value {
+        Some(Value::Number(num)) => num.as_u64().and_then(|v| u32::try_from(v).ok()),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let hex = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X"));
+            if let Some(hex) = hex {
+                u32::from_str_radix(hex.trim(), 16).ok()
+            } else {
+                trimmed.parse::<u32>().ok()
+            }
+        }
+        _ => None,
+    }
+}
+
+fn parse_inbound_tls_options(value: Option<&Value>) -> Option<InboundTlsOptionsIR> {
+    let obj = value.and_then(|v| v.as_object())?;
+
+    Some(InboundTlsOptionsIR {
+        enabled: obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+        server_name: obj
+            .get("server_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        insecure: obj.get("insecure").and_then(|v| v.as_bool()),
+        alpn: extract_string_list(obj.get("alpn")),
+        min_version: obj
+            .get("min_version")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        max_version: obj
+            .get("max_version")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        cipher_suites: extract_string_list(obj.get("cipher_suites")),
+        certificate: extract_string_list(obj.get("certificate")),
+        certificate_path: obj
+            .get("certificate_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        key: extract_string_list(obj.get("key")),
+        key_path: obj
+            .get("key_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+    })
+}
+
+fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Vec<String>> {
+    let value = value?;
+    let mut out: Vec<String> = Vec::new();
+    match value {
+        Value::String(s) => {
+            let s = s.trim();
+            if !s.is_empty() {
+                out.push(s.to_string());
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                match item {
+                    Value::String(s) => {
+                        let s = s.trim();
+                        if !s.is_empty() {
+                            out.push(s.to_string());
+                        }
+                    }
+                    Value::Object(obj) => {
+                        let server = obj.get("server").and_then(|v| v.as_str()).map(str::trim);
+                        let port = parse_u16_field(obj.get("server_port"));
+                        if let (Some(server), Some(port)) = (server, port) {
+                            if !server.is_empty() {
+                                out.push(format!("{server}:{port}"));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
+
+fn parse_derp_stun_options(value: Option<&Value>) -> Option<DerpStunOptionsIR> {
+    let value = value?;
+    match value {
+        Value::Number(num) => {
+            let port = num.as_u64().and_then(|v| u16::try_from(v).ok())?;
+            Some(DerpStunOptionsIR {
+                enabled: true,
+                listen: None,
+                listen_port: Some(port),
+                ..Default::default()
+            })
+        }
+        Value::Bool(enabled) => Some(DerpStunOptionsIR {
+            enabled: *enabled,
+            ..Default::default()
+        }),
+        Value::Object(obj) => Some(DerpStunOptionsIR {
+            enabled: obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            listen: obj
+                .get("listen")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            listen_port: parse_u16_field(obj.get("listen_port")),
+            bind_interface: obj
+                .get("bind_interface")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            routing_mark: parse_fwmark_field(obj.get("routing_mark")),
+            reuse_addr: obj.get("reuse_addr").and_then(|v| v.as_bool()),
+            netns: obj
+                .get("netns")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        }),
         _ => None,
     }
 }
@@ -2072,7 +2216,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
             let ty_str = s.get("type").and_then(|v| v.as_str()).unwrap_or("");
             let ty = match ty_str {
                 "resolved" => crate::ir::ServiceType::Resolved,
-                "ssmapi" => crate::ir::ServiceType::Ssmapi,
+                "ssm-api" | "ssmapi" => crate::ir::ServiceType::Ssmapi,
                 "derp" => crate::ir::ServiceType::Derp,
                 _ => continue,
             };
@@ -2083,70 +2227,173 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 ..Default::default()
             };
 
-            service_ir.resolved_listen = s
-                .get("resolved_listen")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.resolved_listen_port = s
-                .get("resolved_listen_port")
-                .and_then(|v| v.as_u64())
-                .map(|x| x as u16);
+            let legacy_listen_key = match ty {
+                crate::ir::ServiceType::Resolved => "resolved_listen",
+                crate::ir::ServiceType::Ssmapi => "ssmapi_listen",
+                crate::ir::ServiceType::Derp => "derp_listen",
+            };
+            let legacy_listen_port_key = match ty {
+                crate::ir::ServiceType::Resolved => "resolved_listen_port",
+                crate::ir::ServiceType::Ssmapi => "ssmapi_listen_port",
+                crate::ir::ServiceType::Derp => "derp_listen_port",
+            };
 
-            service_ir.ssmapi_listen = s
-                .get("ssmapi_listen")
+            service_ir.listen = s
+                .get("listen")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    s.get(legacy_listen_key)
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                });
+            service_ir.listen_port = parse_u16_field(s.get("listen_port")).or_else(|| {
+                parse_u16_field(s.get(legacy_listen_port_key))
+                    .or_else(|| s.get(legacy_listen_port_key).and_then(|v| v.as_u64()).map(|x| x as u16))
+            });
+            service_ir.bind_interface = s
+                .get("bind_interface")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            service_ir.ssmapi_listen_port = s
-                .get("ssmapi_listen_port")
-                .and_then(|v| v.as_u64())
-                .map(|x| x as u16);
+            service_ir.routing_mark = parse_fwmark_field(s.get("routing_mark"));
+            service_ir.reuse_addr = s.get("reuse_addr").and_then(|v| v.as_bool());
+            service_ir.netns = s
+                .get("netns")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.tcp_fast_open = s.get("tcp_fast_open").and_then(|v| v.as_bool());
+            service_ir.tcp_multi_path = s.get("tcp_multi_path").and_then(|v| v.as_bool());
+            service_ir.udp_fragment = s.get("udp_fragment").and_then(|v| v.as_bool());
+            service_ir.udp_timeout = s
+                .get("udp_timeout")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.detour = s
+                .get("detour")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.sniff = s.get("sniff").and_then(|v| v.as_bool());
+            service_ir.sniff_override_destination =
+                s.get("sniff_override_destination").and_then(|v| v.as_bool());
+            service_ir.sniff_timeout = s
+                .get("sniff_timeout")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.domain_strategy = s
+                .get("domain_strategy")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            service_ir.udp_disable_domain_unmapping =
+                s.get("udp_disable_domain_unmapping").and_then(|v| v.as_bool());
 
-            service_ir.derp_listen = s
-                .get("derp_listen")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_listen_port = s
-                .get("derp_listen_port")
-                .and_then(|v| v.as_u64())
-                .map(|x| x as u16);
-            service_ir.derp_config_path = s
-                .get("derp_config_path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_verify_client_endpoint =
-                extract_string_list(s.get("derp_verify_client_endpoint"));
-            service_ir.derp_verify_client_url =
-                extract_string_list(s.get("derp_verify_client_url"));
-            service_ir.derp_home = s
-                .get("derp_home")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_mesh_with = extract_string_list(s.get("derp_mesh_with"));
-            service_ir.derp_mesh_psk = s
-                .get("derp_mesh_psk")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_mesh_psk_file = s
-                .get("derp_mesh_psk_file")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_server_key_path = s
-                .get("derp_server_key_path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_stun_enabled = s.get("derp_stun_enabled").and_then(|v| v.as_bool());
-            service_ir.derp_stun_listen_port = s
-                .get("derp_stun_listen_port")
-                .and_then(|v| v.as_u64())
-                .map(|x| x as u16);
-            service_ir.derp_tls_cert_path = s
-                .get("derp_tls_cert_path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            service_ir.derp_tls_key_path = s
-                .get("derp_tls_key_path")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+            service_ir.tls = parse_inbound_tls_options(s.get("tls"));
+
+            // Legacy TLS path fields (Rust-only schema) → Go-style `tls`.
+            match ty {
+                crate::ir::ServiceType::Ssmapi => {
+                    let legacy_cert = s
+                        .get("ssmapi_tls_cert_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let legacy_key = s
+                        .get("ssmapi_tls_key_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    if (legacy_cert.is_some() || legacy_key.is_some()) && service_ir.tls.is_none() {
+                        service_ir.tls = Some(InboundTlsOptionsIR {
+                            enabled: true,
+                            certificate_path: legacy_cert,
+                            key_path: legacy_key,
+                            ..Default::default()
+                        });
+                    }
+                    if let Some(cache) = s
+                        .get("cache_path")
+                        .or_else(|| s.get("ssmapi_cache_path"))
+                        .and_then(|v| v.as_str())
+                    {
+                        service_ir.cache_path = Some(cache.to_string());
+                    }
+                    if let Some(servers) = s.get("servers").and_then(|v| v.as_object()) {
+                        let mut map = std::collections::HashMap::new();
+                        for (k, v) in servers {
+                            if let Some(tag) = v.as_str() {
+                                map.insert(k.to_string(), tag.to_string());
+                            }
+                        }
+                        if !map.is_empty() {
+                            service_ir.servers = Some(map);
+                        }
+                    }
+                }
+                crate::ir::ServiceType::Derp => {
+                    let legacy_cert = s
+                        .get("derp_tls_cert_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let legacy_key = s
+                        .get("derp_tls_key_path")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    if (legacy_cert.is_some() || legacy_key.is_some()) && service_ir.tls.is_none() {
+                        service_ir.tls = Some(InboundTlsOptionsIR {
+                            enabled: true,
+                            certificate_path: legacy_cert,
+                            key_path: legacy_key,
+                            ..Default::default()
+                        });
+                    }
+
+                    service_ir.config_path = s
+                        .get("config_path")
+                        .or_else(|| s.get("derp_config_path"))
+                        .or_else(|| s.get("derp_server_key_path"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    service_ir.verify_client_endpoint = extract_string_list(
+                        s.get("verify_client_endpoint")
+                            .or_else(|| s.get("derp_verify_client_endpoint")),
+                    );
+                    service_ir.verify_client_url = extract_string_list(
+                        s.get("verify_client_url")
+                            .or_else(|| s.get("derp_verify_client_url")),
+                    );
+                    service_ir.home = s
+                        .get("home")
+                        .or_else(|| s.get("derp_home"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    service_ir.mesh_psk = s
+                        .get("mesh_psk")
+                        .or_else(|| s.get("derp_mesh_psk"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    service_ir.mesh_psk_file = s
+                        .get("mesh_psk_file")
+                        .or_else(|| s.get("derp_mesh_psk_file"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    service_ir.mesh_with = parse_derp_mesh_with(
+                        s.get("mesh_with").or_else(|| s.get("derp_mesh_with")),
+                    );
+                    service_ir.stun = parse_derp_stun_options(s.get("stun")).or_else(|| {
+                        let enabled = s.get("derp_stun_enabled").and_then(|v| v.as_bool());
+                        let port = parse_u16_field(s.get("derp_stun_listen_port"));
+                        if enabled.is_none() && port.is_none() {
+                            return None;
+                        }
+                        Some(DerpStunOptionsIR {
+                            enabled: enabled.unwrap_or(true),
+                            listen: None,
+                            listen_port: port,
+                            ..Default::default()
+                        })
+                    });
+                }
+                crate::ir::ServiceType::Resolved => {
+                    // Resolved service has only Listen Fields; defaults applied at runtime.
+                }
+            }
 
             ir.services.push(service_ir);
         }

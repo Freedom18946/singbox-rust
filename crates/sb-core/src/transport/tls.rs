@@ -38,6 +38,8 @@ impl TlsClient {
     ) -> anyhow::Result<tokio_rustls::client::TlsStream<TcpStream>> {
         use tokio_rustls::TlsConnector;
 
+        crate::tls::ensure_rustls_crypto_provider();
+
         let mut cfg = ClientConfig::builder()
             .with_root_certificates(default_root_store())
             .with_no_client_auth();
@@ -70,6 +72,8 @@ impl TlsClient {
     }
 
     pub fn handshake(&self, server_name: &str, addr: &str) -> TlsResult {
+        crate::tls::ensure_rustls_crypto_provider();
+
         let DialResult { stream, error, .. } = self.dialer.dial(addr);
         if let Some(e) = error {
             return TlsResult {

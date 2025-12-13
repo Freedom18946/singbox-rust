@@ -47,6 +47,8 @@ impl TlsOpts {
 /// Create a unified TLS client configuration
 #[cfg(feature = "tls_rustls")]
 pub fn mk_client(opts: &TlsOpts) -> Result<Arc<ClientConfig>, crate::error::SbError> {
+    crate::tls::ensure_rustls_crypto_provider();
+
     // Initialize root certificate store
     let mut roots = RootCertStore::empty();
 

@@ -303,20 +303,6 @@ fn handle(
     let lim = limits();
     let peer_opt = cli.peer_addr().ok();
 
-    // Early concurrency check BEFORE reading any data
-    let _conn_guard = if let Some(peer) = &peer_opt {
-        match inc_concurrency(peer.ip(), &lim) {
-            Ok(g) => Some(g),
-            Err(()) => {
-                let body = json_err("too_many_connections", "per-ip concurrency exceeded");
-                let _ = write_json(&mut cli, 429, &body);
-                return Ok(());
-            }
-        }
-    } else {
-        None
-    };
-
     // Check rate limit early
     if let Some(peer) = &peer_opt {
         if !rate_check(peer.ip(), &lim) {
@@ -761,8 +747,20 @@ pub fn spawn_admin(
     let h = thread::spawn(move || {
         for c in l.incoming() {
             match c {
-                Ok(s) => {
+                Ok(mut s) => {
                     let _ = s.set_nodelay(true);
+                    let lim = limits();
+                    let conn_guard = match s.peer_addr().ok() {
+                        Some(peer) => match inc_concurrency(peer.ip(), &lim) {
+                            Ok(g) => Some(g),
+                            Err(()) => {
+                                let body = json_err("too_many_connections", "per-ip concurrency exceeded");
+                                let _ = write_json(&mut s, 429, &body);
+                                continue;
+                            }
+                        },
+                        None => None,
+                    };
                     #[cfg(feature = "router")]
                     let eng = Engine::new(engine.cfg);
                     #[cfg(not(feature = "router"))]
@@ -772,6 +770,7 @@ pub fn spawn_admin(
                     let sup = supervisor.clone();
                     let rth = rt_handle.clone();
                     thread::spawn(move || {
+                        let _guard = conn_guard;
                         let _ = handle(s, &eng, &brc, tok.as_deref(), sup.as_ref(), rth.as_ref());
                     });
                 }

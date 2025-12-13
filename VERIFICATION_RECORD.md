@@ -1,8 +1,227 @@
 # Verification Record - Ground-Up Quality Assurance
 
-**Last Updated**: 2025-12-13 01:28:59 +0800  
-**Verification Status**: 🔄 In Progress — P0 accepted; DERP HTTP handler aligned to `derphttp`/`tsweb`; remaining DERP wire-protocol + mesh + verify_client_endpoint parity  
-**Timestamp**: `Audit: 2025-12-13T01:28:59+08:00 | Focus: DERP derphttp.Handler + Probe/204 + Fast-Start | Tests: sb-core (service_derp) | Blockers: none`
+**Last Updated**: 2025-12-14 00:08:00 +0800  
+**Verification Status**: 🔄 In Progress — P1-3 DERP Mesh + P1-4 SSMAPI API parity accepted; remaining: SSMAPI managed inbound binding + cache format  
+**Timestamp**: `Audit: 2025-12-14T00:08:00+08:00 | Focus: P1-4 SSMAPI list_users API parity | Tests: sb-core(service_ssmapi) 9 passed | Blockers: none`
+
+## QA Session: 2025-12-14 00:06 - 00:08 +0800 (P1-4 SSMAPI API Response Parity)
+
+### Scope
+1) Fix `GET /server/v1/users` response format to return `Vec<UserObject>` instead of `Vec<String>`  
+2) Ensure password is stripped from list response (Go parity)
+
+### Evidence
+- **Go reference**: `go_fork_source/sing-box-1.12.12/service/ssmapi/server.go` (user list endpoint returns full user objects)
+- **Rust implementation changes**:
+  - `crates/sb-core/src/services/ssmapi/api.rs` L43-47: `ListUsersResponse.users` type changed to `Vec<UserObject>`
+  - `crates/sb-core/src/services/ssmapi/api.rs` L109-116: `list_users` now returns users with stats, password stripped
+
+### Tests
+- `cargo test -p sb-core --features "service_ssmapi" --lib ssmapi` ✅ PASS (9 tests)
+
+### Conclusion
+`GET /server/v1/users` API response format now matches Go (`{"users": [UserObject...]}`). Remaining SSMAPI gaps: per-endpoint cache model, `UpdateUsers` binding.
+
+
+
+## QA Session: 2025-12-13 23:37 - 23:49 +0800 (P1-3 DERP Mesh Alignment Acceptance)
+
+### Scope
+1) Verify DERP mesh implementation aligns to Go mesh model (`meshKey` in ClientInfo)  
+2) Confirm `/derp/mesh` deprecated but retained for backward compatibility  
+3) Mark `verify_client_endpoint` as de-scoped (requires Tailscale LocalClient daemon)  
+4) Update GO_PARITY_MATRIX.md and NEXT_STEPS.md documentation
+
+### Evidence
+- **Go reference**: `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`SetMeshKey`, ClientInfo `meshKey`, `derphttp.NewClient(...).MeshKey`)
+- **Rust implementation**:
+  - `crates/sb-core/src/services/derp/server.rs` L1654-1665 (meshKey in ClientInfo validation)
+  - `crates/sb-core/src/services/derp/server.rs` L2027 (`run_mesh_client` sends meshKey)
+  - `crates/sb-transport/src/derp/protocol.rs` (`ClientInfoPayload.mesh_key` field and JSON serialization)
+  - `/derp/mesh` endpoint marked DEPRECATED (L646-651) but retained for backward compatibility
+
+### Tests
+- `cargo test -p sb-core --features "service_derp" --lib` ✅ PASS (275 tests, including `test_mesh_forwarding`)
+
+### Documentation Updates
+- **GO_PARITY_MATRIX.md**: Updated DERP service status, Service Matrix, Detailed Gap Analysis, Priority Remediation Order
+- **NEXT_STEPS.md**: Updated P1-3 status to completed, P1-3 detailed section updated with de-scope note
+
+### Config & Runtime Effect
+- Mesh peer authentication via `meshKey` in encrypted ClientInfo is operational (validated by `test_mesh_forwarding`)
+- `verify_client_endpoint` is parsed but not enforced (warn-only), marked as de-scoped due to external Tailscale daemon dependency
+- `/derp/mesh` + `x-derp-mesh-psk` header mechanism retained for backward compatibility with existing deployments
+
+### Conclusion
+P1-3 DERP Mesh alignment is accepted. Core mesh behavior (`meshKey` in ClientInfo) matches Go model. `verify_client_endpoint` is de-scoped pending Tailscale LocalClient integration. Next priority: P1-4 SSMAPI managed inbound binding + API/cache contract parity.
+
+
+
+## QA Session: 2025-12-13 21:41 - 22:03 +0800 (DERP wire-protocol parity acceptance: NaCl box ClientInfo/ServerInfo + DERP key config JSON)
+
+### Scope
+1) Align DERP v2 handshake to sagernet/tailscale (`ClientInfo` NaCl box + `ServerInfo` NaCl box; `ProtocolVersion=2`)  
+2) Align DERP server key `config_path` format to Go (`{"PrivateKey":"privkey:<64hex>"}`)  
+3) Update DERP E2E tests (TLS/WS/H1 upgrade + mesh forwarding) to perform real encrypted handshake and validate `ServerInfo`
+
+### Evidence
+- **Go reference**:
+  - `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`readDERPConfig` / `writeNewDERPConfig`)
+  - `github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/derp/derp.go` (frame IDs + `ProtocolVersion=2`)
+  - `github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/derp/derp_server.go` (`recvClientKey`, `sendServerInfo`)
+  - `github.com/sagernet/tailscale@v1.80.3-sing-box-1.12-mod.2/types/key/node.go` (`NodePrivate.SealTo` / `OpenFrom`, `privkey:` encoding)
+- **Rust implementation**:
+  - `crates/sb-transport/src/derp/protocol.rs` (NaCl box helpers + ClientInfoPayload/ServerInfoPayload + key encoding)
+  - `crates/sb-core/src/services/derp/server.rs` (DERP v2 handshake enforcement + encrypted ServerInfo + config JSON key load/save)
+  - `crates/sb-core/src/services/derp/mesh_test.rs` (mesh forwarding E2E updated for encrypted ClientInfo)
+
+### Tests
+- `cargo test -p sb-core --features "service_derp" --lib` ✅ PASS
+- `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"` ✅ PASS
+- `cargo test -p sb-adapters --features "service_derp"` ✅ PASS
+- `cargo test -p app` ✅ PASS
+
+### Config & Runtime Effect
+- Clients must now send DERP v2 encrypted `ClientInfo` (nonce + NaCl box); plaintext/short client info is rejected (validated by updated DERP end-to-end tests which previously failed with `short client info`).
+- `services[].config_path` now persists the DERP node private key in Go-compatible JSON (`{"PrivateKey":"privkey:<hex>"}`) with unix perms `0644` (validated by persistent key storage tests in `services::derp::server::tests::*`).
+- Mesh forwarding remains functional after the wire-protocol update (validated by `services::derp::mesh_test::tests::test_mesh_forwarding`).
+
+### Conclusion
+DERP wire-protocol parity (DERP v2 + NaCl box ClientInfo/ServerInfo + Go-compatible key config JSON) is accepted. Remaining DERP work is Go mesh semantics and `verify_client_endpoint`.
+
+## QA Session: 2025-12-13 20:05 - 21:01 +0800 (DERP TLS-required + `config_path` required acceptance)
+
+### Scope
+1) Enforce DERP service build-time requirements to match Go (TLS required + `config_path` required)  
+2) Migrate DERP mesh peer dialing to TLS and keep mesh forwarding test stable  
+3) Ensure `service_derp` feature builds keep service stub tests valid (provide minimal TLS + `config_path` in fixtures)
+
+### Evidence
+- **Go reference**:
+  - `go_fork_source/sing-box-1.12.12/service/derp/service.go` (rejects missing TLS; rejects missing `config_path`)
+  - `go_fork_source/sing-box-1.12.12/docs/configuration/service/derp.md` (required config fields)
+- **Rust implementation**:
+  - `crates/sb-core/src/services/derp/server.rs` (enforce TLS + `config_path`; mesh client uses TLS)
+  - `crates/sb-core/src/services/derp/mesh_test.rs` (TLS client handshake; both DERP servers configured with TLS + `config_path`)
+  - `crates/sb-adapters/src/service_stubs.rs` (DERP stub registration test updated for TLS + `config_path`)
+
+### Tests
+- `cargo test -p sb-config` ✅ PASS
+- `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"` ✅ PASS
+- `cargo test -p sb-adapters --features "service_derp"` ✅ PASS
+- `cargo test -p app` ✅ PASS
+
+### Config & Runtime Effect
+- Missing `services[].config_path` now fails DERP service build with `missing config_path` (validated by `services::derp::server::tests::test_derp_requires_tls_and_config_path`).
+- Missing `services[].tls` (or `tls.enabled=false`) now fails DERP service build with `TLS is required for DERP server` (same test).
+- DERP mesh now dials peers over TLS and forwarding still works end-to-end (validated by `services::derp::mesh_test::tests::test_mesh_forwarding`).
+
+### Conclusion
+DERP TLS-required + `config_path` required parity is accepted end-to-end. Remaining DERP gaps are wire protocol compatibility and Go mesh semantics (and then `verify_client_endpoint`).
+
+## QA Session: 2025-12-13 19:45 - 20:04 +0800 (Service schema/type parity acceptance; DERP mesh forwarding stabilized)
+
+### Scope
+1) Align Rust service config schema/type IDs to Go (Listen Fields + shared `tls`; `type="ssm-api"`)  
+2) Ensure service builders consume new IR fields (`dns_forwarder`, `derp`, `ssm-api`)  
+3) Ground-up verification: source parity + tests + config/effect; fix regressions (DERP mesh forwarding hang)
+
+### Evidence
+- **Go reference**:
+  - `go_fork_source/sing-box-1.12.12/constant/proxy.go` (`TypeSSMAPI = "ssm-api"`)
+  - `go_fork_source/sing-box-1.12.12/option/service.go`, `go_fork_source/sing-box-1.12.12/option/ssmapi.go`, `go_fork_source/sing-box-1.12.12/option/tailscale.go`
+  - `go_fork_source/sing-box-1.12.12/docs/configuration/shared/listen.md`
+  - `go_fork_source/sing-box-1.12.12/docs/configuration/service/derp.md`, `go_fork_source/sing-box-1.12.12/docs/configuration/service/resolved.md`, `go_fork_source/sing-box-1.12.12/docs/configuration/service/ssm-api.md`
+- **Rust implementation**:
+  - `crates/sb-config/src/ir/mod.rs` (Service Listen Fields + shared `tls`; `ServiceType::Ssmapi` → `"ssm-api"`)
+  - `crates/sb-config/src/validator/v2.rs` (services parsing + legacy mapping; accepts `ssm-api` and legacy `ssmapi`)
+  - `crates/sb-config/src/validator/v2_schema.json` (top-level `services`)
+  - `crates/sb-core/src/services/dns_forwarder.rs` (listen/listen_port)
+  - `crates/sb-core/src/services/derp/server.rs` + `crates/sb-core/src/services/derp/client_registry.rs` (mesh peer presence propagation → forwarding works)
+  - `crates/sb-core/src/services/ssmapi/server.rs` (per-endpoint mount `{endpoint}/server/v1/...`; TLS parity; `servers` required)
+  - `crates/sb-core/src/services/derp/mesh_test.rs` (timeouts to prevent hangs)
+
+### Tests
+- `cargo test -p sb-config` ✅ PASS
+- `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"` ✅ PASS
+- `cargo test -p sb-adapters` ✅ PASS
+- `cargo test -p app` ✅ PASS
+
+### Config & Runtime Effect
+- `services[].listen` / `listen_port` now drive actual bind addresses for `dns_forwarder`/`derp`/`ssm-api` (validated by service instantiation + integration tests).
+- `services[].tls.enabled` + `certificate_path` + `key_path` control HTTPS/TLS enablement for DERP/SSMAPI (validated by DERP/SSMAPI TLS tests).
+- `ssm-api.servers` keys control per-endpoint API mount prefix `{endpoint}/server/v1/...` (validated by SSMAPI service tests).
+- DERP mesh peer presence propagation enables cross-node forwarding (validated by `services::derp::mesh_test::tests::test_mesh_forwarding`).
+
+### Conclusion
+Service schema/type parity is accepted end-to-end. Remaining gaps continue on DERP TLS-required + wire protocol + Go mesh semantics + `verify_client_endpoint`, and SSMAPI managed inbound binding + API/cache contract parity.
+
+## QA Session: 2025-12-13 16:05 - 18:35 +0800 (TLS CryptoProvider hardening; ring-only provider graph; runtime API stabilized)
+
+### Scope
+1) Eliminate rustls 0.23 dual-provider panic risks by standardizing CryptoProvider init in `sb-core` and converging the workspace to ring-only provider features  
+2) Stabilize `sb-core` runtime import path for `Supervisor` and keep doctests in sync  
+3) Re-run regression suites for core crates and app after dependency/feature graph changes
+
+### Evidence
+- **Rust root cause**: rustls 0.23 panics when multiple providers are enabled and no process-level provider is installed before config builders run.
+- **Rust implementation (source-level hardening)**:
+  - `crates/sb-core/src/tls/mod.rs` (single source of truth: `ensure_rustls_crypto_provider()`)
+  - `crates/sb-core/src/tls/global.rs` (ensure provider before building global client config)
+  - `crates/sb-core/src/runtime/mod.rs` (re-export `Supervisor`/`SupervisorHandle` for stable imports)
+  - Sweep call sites to ensure provider is installed before any `ClientConfig::builder()` / `ServerConfig::builder()` (e.g. `crates/sb-core/src/transport/tls.rs`, `crates/sb-core/src/runtime/transport.rs`, `crates/sb-core/src/dns/*`, `crates/sb-core/src/outbound/*`, `crates/sb-core/src/services/derp/server.rs`)
+- **Workspace provider convergence (ring-only)**:
+  - `crates/sb-core/Cargo.toml`, `crates/sb-tls/Cargo.toml`, `app/Cargo.toml`, `crates/sb-adapters/Cargo.toml` (set rustls/tokio-rustls to `default-features = false` + explicit `ring`)
+  - `Cargo.toml` + `vendor/anytls-rs/Cargo.toml` (patch `anytls-rs` to ring-only rustls/tokio-rustls; remove remaining aws-lc provider source)
+- **Test gating repair (unrelated but required for full green)**:
+  - `crates/sb-adapters/src/inbound/shadowsocks.rs` (guard `services::ssmapi` integration behind `service_ssmapi`)
+  - `app/Cargo.toml` (gate report-related integration tests behind `dev-cli`, matching `report` bin gate)
+
+### Tests
+- `cargo tree -e features 2>/dev/null | rg 'aws-lc|aws_lc'` → (no output) ✅
+- `cargo test -p sb-core --features router` ✅ PASS
+- `cargo test -p sb-tls` ✅ PASS
+- `cargo test -p sb-transport` ✅ PASS
+- `cargo test -p sb-adapters` ✅ PASS
+- `cargo test -p app` ✅ PASS
+
+### Config & Runtime Effect
+- With ring-only provider graph, rustls no longer depends on runtime “best-effort” provider selection to avoid panics (provider is unambiguous at compile-time).
+- `sb_core::runtime::Supervisor` becomes a stable public import path, and `sb-core` crate doctests compile under `cargo test -p sb-core --doc`.
+- Report-related tests are now correctly feature-gated to match `report` binary gating (`dev-cli`).
+
+### Conclusion
+TLS CryptoProvider hardening is accepted end-to-end: source call sites are protected, the workspace provider graph is converged to ring-only (no aws-lc), and all core + app test suites are green.
+
+## QA Session: 2025-12-13 15:35 - 15:54 +0800 (sb-core router suite unblocked; rustls CryptoProvider fixed)
+
+### Scope
+1) Remove `rustls` CryptoProvider panic during `Supervisor::start` (affects any run that builds global TLS config)  
+2) Re-run full `sb-core` router suite (unit/integration/doc tests) for acceptance  
+3) Re-run core crates test suites for regression check (`sb-config`, `sb-tls`, `sb-transport`, `sb-adapters`)
+
+### Evidence
+- **Rust root cause**: rustls 0.23 panics if multiple providers are enabled and no process provider is installed before `ClientConfig::builder()`.
+- **Rust implementation**:
+  - `crates/sb-core/src/tls/mod.rs` (one-time provider install)
+  - `crates/sb-core/src/tls/global.rs` (ensure provider before building configs)
+  - `crates/sb-core/src/runtime/supervisor.rs` (calls `tls::global::apply_from_ir`)
+  - `crates/sb-core/src/lib.rs` (doctest snippet fixed to match public API)
+
+### Tests
+- `cargo test -p sb-core --features router --test shutdown_lifecycle -- --nocapture` ✅ PASS (2 tests)
+- `cargo test -p sb-core --features router` ✅ PASS
+- `cargo test -p sb-config` ✅ PASS
+- `cargo test -p sb-tls` ✅ PASS
+- `cargo test -p sb-transport` ✅ PASS
+- `cargo test -p sb-adapters` ✅ PASS
+
+### Config & Runtime Effect
+- `sb_config::ir::ConfigIR::default()` can start and shut down the runtime without TLS-provider panic (verified by `shutdown_lifecycle`).
+- Top-level `certificate` IR (global trust augmentation) now safely rebuilds rustls client config even when both `ring` and `aws-lc-rs` are present in the dependency graph.
+
+### Conclusion
+`sb-core` router-feature full suite is now fully green; previous `CryptoProvider`/timeout blockers are cleared and re-accepted via source + tests + config/effect.
 
 ## QA Session: 2025-12-13 00:45 - 01:29 +0800 (DERP derphttp/tsweb Handler Fidelity)
 

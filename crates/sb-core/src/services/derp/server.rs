@@ -1,7 +1,11 @@
 //! DERP service implementation.
 
 use super::client_registry::ClientRegistry;
-use super::protocol::{ClientInfoPayload, DerpFrame, FrameType, PublicKey};
+use super::protocol::{
+    clamp_private_key, decode_node_private_key, derive_public_key, encode_node_private_key,
+    open_from, seal_to, ClientInfoPayload, DerpFrame, FrameType, PrivateKey, PublicKey,
+    ServerInfoPayload, NONCE_LEN, PROTOCOL_VERSION,
+};
 use crate::service::{Service, ServiceContext, StartStage};
 use bytes::Bytes;
 use hyper::body::HttpBody as _;
@@ -12,10 +16,11 @@ use hyper::header::{
 use hyper::service::service_fn;
 use hyper::{Body, Method, Request as HyperRequest, Response as HyperResponse, StatusCode, Version};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::ServerConfig;
+use rustls::{ClientConfig, RootCertStore, ServerConfig};
 use rustls_pemfile;
 use sb_config::ir::ServiceIR;
 use sb_metrics;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs;
@@ -440,10 +445,9 @@ struct DerpHttpState {
     tag: Arc<str>,
     peer: SocketAddr,
     client_registry: Arc<ClientRegistry>,
-    server_key: PublicKey,
+    server_private_key: PrivateKey,
+    server_public_key: PublicKey,
     mesh_psk: Option<String>,
-    /// Parsed mesh key (32 bytes) for Go-compatible mesh detection via ClientInfo.
-    mesh_key: Option<[u8; 32]>,
     home: Arc<str>,
     verify_client_urls: Arc<[String]>,
     verify_client_endpoints: Arc<[String]>,
@@ -667,10 +671,11 @@ impl DerpHttpState {
         let tag = self.tag.clone();
         let peer = self.peer;
         let client_registry = self.client_registry.clone();
-        let server_key = self.server_key;
+        let server_private_key = self.server_private_key;
+        let server_public_key = self.server_public_key;
         let verify_client_urls = self.verify_client_urls.clone();
         let verify_client_endpoints = self.verify_client_endpoints.clone();
-        let mesh_key = self.mesh_key;
+        let mesh_psk = self.mesh_psk.clone();
 
         tokio::spawn(async move {
             match on_upgrade.await {
@@ -680,11 +685,12 @@ impl DerpHttpState {
                         peer,
                         tag,
                         client_registry,
-                        server_key,
+                        server_private_key,
+                        server_public_key,
                         is_mesh_peer,
                         verify_client_urls,
                         verify_client_endpoints,
-                        mesh_key,
+                        mesh_psk,
                     )
                     .await
                     {
@@ -712,7 +718,7 @@ impl DerpHttpState {
         );
         resp.headers_mut().insert(
             DERP_PUBLIC_KEY_HEADER,
-            hyper::header::HeaderValue::from_str(&hex::encode(server_key)).unwrap(),
+            hyper::header::HeaderValue::from_str(&hex::encode(server_public_key)).unwrap(),
         );
         resp
     }
@@ -728,10 +734,11 @@ impl DerpHttpState {
         let tag = self.tag.clone();
         let peer = self.peer;
         let client_registry = self.client_registry.clone();
-        let server_key = self.server_key;
+        let server_private_key = self.server_private_key;
+        let server_public_key = self.server_public_key;
         let verify_client_urls = self.verify_client_urls.clone();
         let verify_client_endpoints = self.verify_client_endpoints.clone();
-        let mesh_key = self.mesh_key;
+        let mesh_psk = self.mesh_psk.clone();
 
         tokio::spawn(async move {
             match on_upgrade.await {
@@ -744,11 +751,12 @@ impl DerpHttpState {
                         peer,
                         tag,
                         client_registry,
-                        server_key,
+                        server_private_key,
+                        server_public_key,
                         false,
                         verify_client_urls,
                         verify_client_endpoints,
-                        mesh_key,
+                        mesh_psk,
                     )
                     .await
                     {
@@ -785,10 +793,11 @@ impl DerpHttpState {
         let tag = self.tag.clone();
         let peer = self.peer;
         let client_registry = self.client_registry.clone();
-        let server_key = self.server_key;
+        let server_private_key = self.server_private_key;
+        let server_public_key = self.server_public_key;
         let verify_client_urls = self.verify_client_urls.clone();
         let verify_client_endpoints = self.verify_client_endpoints.clone();
-        let mesh_key = self.mesh_key;
+        let mesh_psk = self.mesh_psk.clone();
 
         tokio::spawn(async move {
             if let Err(e) = DerpService::handle_derp_client(
@@ -796,11 +805,12 @@ impl DerpHttpState {
                 peer,
                 tag,
                 client_registry,
-                server_key,
+                server_private_key,
+                server_public_key,
                 is_mesh_peer,
                 verify_client_urls,
                 verify_client_endpoints,
-                mesh_key,
+                mesh_psk,
             )
             .await
             {
@@ -834,7 +844,8 @@ pub struct DerpService {
     stun_enabled: bool,
     mesh_psk: Option<String>,
     home: String,
-    server_key: PublicKey,
+    server_private_key: PrivateKey,
+    server_public_key: PublicKey,
     tls_acceptor: Option<Arc<TlsAcceptor>>,
     client_registry: Arc<ClientRegistry>,
     rate_limiter: Arc<RateLimiter>,
@@ -850,6 +861,8 @@ pub struct DerpService {
     verify_client_urls: Vec<String>,
     /// Tailscale endpoint tags for client verification
     verify_client_endpoints: Vec<String>,
+    /// TLS client config for mesh peer connections.
+    mesh_tls_config: Arc<ClientConfig>,
 }
 
 /// How long to keep a half-open relay connection while waiting for a peer.
@@ -877,31 +890,40 @@ impl DerpService {
 
         // Parse listen address
         let listen_ip = ir
-            .derp_listen
+            .listen
             .as_deref()
             .unwrap_or("127.0.0.1")
             .parse()
             .map_err(|e| format!("invalid listen address: {}", e))?;
-        let listen_port = ir.derp_listen_port.unwrap_or(3478);
+        let listen_port = ir.listen_port.unwrap_or(3478);
         let listen_addr = SocketAddr::new(listen_ip, listen_port);
 
         // STUN port usually matches the DERP port for Tailscale.
-        let stun_port = ir.derp_stun_listen_port.unwrap_or(listen_port);
-        let stun_enabled = ir.derp_stun_enabled.unwrap_or(true);
-        let stun_addr = SocketAddr::new(listen_ip, stun_port);
+        let (stun_enabled, stun_addr) = if let Some(stun) = &ir.stun {
+            let stun_ip = stun
+                .listen
+                .as_deref()
+                .unwrap_or_else(|| ir.listen.as_deref().unwrap_or("127.0.0.1"))
+                .parse()
+                .map_err(|e| format!("invalid stun listen address: {}", e))?;
+            let stun_port = stun.listen_port.unwrap_or(listen_port);
+            (stun.enabled, SocketAddr::new(stun_ip, stun_port))
+        } else {
+            (true, SocketAddr::new(listen_ip, listen_port))
+        };
 
         let mesh_psk = load_mesh_psk(ir)?;
         if let Some(psk) = mesh_psk.as_deref() {
             if !is_valid_mesh_psk(psk) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "derp_mesh_psk must contain exactly 64 lowercase hex digits",
+                    "mesh_psk must contain exactly 64 lowercase hex digits",
                 )
                 .into());
             }
         }
 
-        let home = ir.derp_home.clone().unwrap_or_default();
+        let home = ir.home.clone().unwrap_or_default();
         if !home.is_empty()
             && home != "blank"
             && !home.starts_with("http://")
@@ -909,23 +931,43 @@ impl DerpService {
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("invalid derp_home value: {home}"),
+                format!("invalid home value: {home}"),
             )
             .into());
         }
 
-        // Load or generate server key (persistent if path configured)
-        let server_key = load_or_generate_server_key(ir.derp_server_key_path.as_deref())?;
+        let config_path = ir
+            .config_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing config_path"))?;
 
-        // Create TLS acceptor if configured
-        let tls_acceptor = create_tls_acceptor(
-            ir.derp_tls_cert_path.as_deref(),
-            ir.derp_tls_key_path.as_deref(),
-        )?;
+        // Load or generate server private key (persistent; Go-compatible `derper.key` JSON)
+        let server_private_key = load_or_generate_server_private_key(Some(config_path))?;
+        let server_public_key = derive_public_key(&server_private_key);
 
-        let mesh_with = ir.derp_mesh_with.clone().unwrap_or_default();
-        let verify_client_urls = ir.derp_verify_client_url.clone().unwrap_or_default();
-        let verify_client_endpoints = ir.derp_verify_client_endpoint.clone().unwrap_or_default();
+        let tls = ir
+            .tls
+            .as_ref()
+            .filter(|t| t.enabled)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "TLS is required for DERP server"))?;
+        let cert_path = tls
+            .certificate_path
+            .as_deref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing tls.certificate_path"))?;
+        let key_path = tls
+            .key_path
+            .as_deref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing tls.key_path"))?;
+
+        // Create TLS acceptor (required by Go parity)
+        let tls_acceptor = create_tls_acceptor(Some(cert_path), Some(key_path))?;
+        let mesh_tls_config = create_mesh_tls_client_config(cert_path)?;
+
+        let mesh_with = ir.mesh_with.clone().unwrap_or_default();
+        let verify_client_urls = ir.verify_client_url.clone().unwrap_or_default();
+        let verify_client_endpoints = ir.verify_client_endpoint.clone().unwrap_or_default();
 
         if tls_acceptor.is_some() {
             tracing::info!(
@@ -949,12 +991,12 @@ impl DerpService {
             service = "derp",
             tag = tag.as_ref(),
             listen = %listen_addr,
-            stun_port = stun_port,
+            stun_port = stun_addr.port(),
             stun_enabled,
             tls_enabled = tls_acceptor.is_some(),
             mesh_psk = mesh_psk.as_deref().map(|_| "<redacted>"),
             mesh_peers = mesh_with.len(),
-            server_key = ?server_key,
+            server_public_key = ?server_public_key,
             "DERP service initialized (HTTP + STUN + DERP protocol + legacy mock relay)"
         );
 
@@ -965,7 +1007,8 @@ impl DerpService {
             stun_enabled,
             mesh_psk,
             home,
-            server_key,
+            server_private_key,
+            server_public_key,
             tls_acceptor,
             client_registry: Arc::new(ClientRegistry::new(tag.clone())),
             rate_limiter: Arc::new(RateLimiter::new(Duration::from_secs(10), 120)),
@@ -978,6 +1021,7 @@ impl DerpService {
             mesh_tasks: parking_lot::Mutex::new(Vec::new()),
             verify_client_urls,
             verify_client_endpoints,
+            mesh_tls_config,
         }))
     }
 
@@ -1031,7 +1075,8 @@ impl DerpService {
         home: Arc<str>,
         rate_limiter: Arc<RateLimiter>,
         client_registry: Arc<ClientRegistry>,
-        server_key: PublicKey,
+        server_private_key: PrivateKey,
+        server_public_key: PublicKey,
         pending_relays: Arc<parking_lot::Mutex<HashMap<String, RelayStream>>>,
         mesh_psk: Option<String>,
         verify_client_urls: Arc<[String]>,
@@ -1066,39 +1111,13 @@ impl DerpService {
                     let verify_client_endpoints = verify_client_endpoints.clone();
 
                     tokio::spawn(async move {
-                        // Parse mesh_psk hex string to mesh_key bytes
-                        let mesh_key: Option<[u8; 32]> = mesh_psk.as_ref().and_then(|psk| {
-                            if psk.len() != 64 {
-                                return None;
-                            }
-                            let mut key = [0u8; 32];
-                            for (i, chunk) in psk.as_bytes().chunks(2).enumerate() {
-                                if chunk.len() != 2 || i >= 32 {
-                                    return None;
-                                }
-                                let high = match chunk[0] {
-                                    b'0'..=b'9' => chunk[0] - b'0',
-                                    b'a'..=b'f' => chunk[0] - b'a' + 10,
-                                    b'A'..=b'F' => chunk[0] - b'A' + 10,
-                                    _ => return None,
-                                };
-                                let low = match chunk[1] {
-                                    b'0'..=b'9' => chunk[1] - b'0',
-                                    b'a'..=b'f' => chunk[1] - b'a' + 10,
-                                    b'A'..=b'F' => chunk[1] - b'A' + 10,
-                                    _ => return None,
-                                };
-                                key[i] = (high << 4) | low;
-                            }
-                            Some(key)
-                        });
                         let http_state = DerpHttpState {
                             tag: tag.clone(),
                             peer: peer_addr,
                             client_registry: client_registry.clone(),
-                            server_key,
+                            server_private_key,
+                            server_public_key,
                             mesh_psk: mesh_psk.clone(),
-                            mesh_key,
                             home,
                             verify_client_urls,
                             verify_client_endpoints,
@@ -1167,11 +1186,12 @@ impl DerpService {
                 peer,
                 http_state.tag.clone(),
                 http_state.client_registry.clone(),
-                http_state.server_key,
+                http_state.server_private_key,
+                http_state.server_public_key,
                 false, // is_mesh_peer
                 http_state.verify_client_urls.clone(),
                 http_state.verify_client_endpoints.clone(),
-                http_state.mesh_key,
+                http_state.mesh_psk.clone(),
             )
             .await;
         }
@@ -1243,11 +1263,12 @@ impl DerpService {
                             peer,
                             http_state.tag.clone(),
                             http_state.client_registry.clone(),
-                            http_state.server_key,
+                            http_state.server_private_key,
+                            http_state.server_public_key,
                             false, // is_mesh_peer
                             http_state.verify_client_urls.clone(),
                             http_state.verify_client_endpoints.clone(),
-                            http_state.mesh_key,
+                            http_state.mesh_psk.clone(),
                         )
                         .await;
                     }
@@ -1267,11 +1288,12 @@ impl DerpService {
                 peer,
                 http_state.tag.clone(),
                 http_state.client_registry.clone(),
-                http_state.server_key,
+                http_state.server_private_key,
+                http_state.server_public_key,
                 false, // is_mesh_peer
                 http_state.verify_client_urls.clone(),
                 http_state.verify_client_endpoints.clone(),
-                http_state.mesh_key,
+                http_state.mesh_psk.clone(),
             )
             .await;
         }
@@ -1577,17 +1599,18 @@ impl DerpService {
         }
     }
 
-    async fn handle_derp_client<S>(
-        stream: S,
-        peer: SocketAddr,
-        tag: Arc<str>,
-        client_registry: Arc<ClientRegistry>,
-        server_key: PublicKey,
-        is_mesh_peer: bool,
-        verify_client_urls: Arc<[String]>,
-        verify_client_endpoints: Arc<[String]>,
-        server_mesh_key: Option<[u8; 32]>,
-    ) -> io::Result<()>
+	    async fn handle_derp_client<S>(
+	        stream: S,
+	        peer: SocketAddr,
+	        tag: Arc<str>,
+	        client_registry: Arc<ClientRegistry>,
+	        server_private_key: PrivateKey,
+	        server_public_key: PublicKey,
+	        is_mesh_peer: bool,
+	        verify_client_urls: Arc<[String]>,
+	        verify_client_endpoints: Arc<[String]>,
+	        server_mesh_key: Option<String>,
+	    ) -> io::Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
@@ -1595,39 +1618,53 @@ impl DerpService {
 
         let (mut read_half, mut write_half) = tokio::io::split(stream);
 
-        // Send ServerKey frame
-        let server_key_frame = DerpFrame::ServerKey { key: server_key };
-        server_key_frame
-            .write_to_async(&mut write_half)
-            .await
-            .map_err(|e| io::Error::other(format!("Failed to send ServerKey: {}", e)))?;
+	        // Send ServerKey frame (public key, Go-compatible)
+	        let server_key_frame = DerpFrame::ServerKey {
+	            key: server_public_key,
+	        };
+	        server_key_frame
+	            .write_to_async(&mut write_half)
+	            .await
+	            .map_err(|e| io::Error::other(format!("Failed to send ServerKey: {}", e)))?;
 
-        // Read ClientInfo frame (or ServerKey if mesh peer)
-        let (client_key, is_mesh_peer) = match DerpFrame::read_from_async(&mut read_half).await {
-            Ok(DerpFrame::ClientInfo { key, encrypted_info }) => {
-                // Check if client provided a mesh key that matches server's mesh key
-                let mut detected_mesh_peer = is_mesh_peer;
-                if !detected_mesh_peer && !encrypted_info.is_empty() {
-                    if let Some(ref server_mk) = server_mesh_key {
-                        // Try to parse ClientInfoPayload from encrypted_info
-                        // Note: Currently no encryption, just JSON in encrypted_info field
-                        if let Ok(payload) = ClientInfoPayload::from_json(&encrypted_info) {
-                            if let Some(client_mk) = payload.mesh_key {
-                                if client_mk == *server_mk {
-                                    tracing::info!(
-                                        service = "derp",
-                                        peer = %peer,
-                                        "Client authenticated as mesh peer via mesh_key"
-                                    );
-                                    detected_mesh_peer = true;
-                                }
+        // Read ClientInfo frame (or legacy ServerKey if mesh peer).
+        let (client_key, client_info, is_mesh_peer) =
+            match DerpFrame::read_from_async(&mut read_half).await {
+                Ok(DerpFrame::ClientInfo { key, encrypted_info }) => {
+                    // Go server rejects overly large client info early to avoid JSON resource exhaustion.
+                    // Ref: `derp_server.go recvClientKey` (fl > 256<<10).
+                    if encrypted_info.len().saturating_add(32) > 256 << 10 {
+                        client_registry.metrics().connect_failed("handshake");
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "long client info"));
+                    }
+                    if encrypted_info.len() < NONCE_LEN {
+                        client_registry.metrics().connect_failed("handshake");
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "short client info"));
+                    }
+
+                    let msg = open_from(&server_private_key, &key, &encrypted_info).map_err(|e| {
+                        io::Error::new(io::ErrorKind::InvalidData, format!("msgbox: {e}"))
+                    })?;
+                    let payload = ClientInfoPayload::from_json(&msg).map_err(|e| {
+                        io::Error::new(io::ErrorKind::InvalidData, format!("msg: {e}"))
+                    })?;
+
+                    let mut detected_mesh_peer = is_mesh_peer;
+                    if !detected_mesh_peer {
+                        if let Some(server_mk) = server_mesh_key.as_deref() {
+                            if payload.mesh_key.as_deref() == Some(server_mk) {
+                                tracing::info!(
+                                    service = "derp",
+                                    peer = %peer,
+                                    "Client authenticated as mesh peer via meshKey"
+                                );
+                                detected_mesh_peer = true;
                             }
                         }
                     }
+                    (key, Some(payload), detected_mesh_peer)
                 }
-                (key, detected_mesh_peer)
-            }
-            Ok(DerpFrame::ServerKey { key }) if is_mesh_peer => (key, true),
+                Ok(DerpFrame::ServerKey { key }) if is_mesh_peer => (key, None, true),
             Ok(other) => {
                 tracing::warn!(service = "derp", peer = %peer, frame = ?other.frame_type(), "Expected ClientInfo");
                 client_registry.metrics().connect_failed("handshake");
@@ -1645,7 +1682,13 @@ impl DerpService {
             }
         };
 
-        tracing::info!(service = "derp", peer = %peer, client_key = ?client_key, "Client registered");
+        tracing::info!(
+            service = "derp",
+            peer = %peer,
+            client_key = ?client_key,
+            is_mesh_peer,
+            "Client registered"
+        );
 
         if !is_mesh_peer {
             match Self::verify_client_via_urls(verify_client_urls.as_ref(), &client_key).await {
@@ -1691,8 +1734,24 @@ impl DerpService {
             return Err(io::Error::other(e));
         }
 
-        // Broadcast peer presence to other clients
-        client_registry.broadcast_peer_present(&client_key);
+        if client_info.is_some() {
+            let info = ServerInfoPayload::new(PROTOCOL_VERSION as u32);
+            let msgbox = seal_to(&server_private_key, &client_key, &info.to_json())
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("send server info: {e}")))?;
+            DerpFrame::ServerInfo { encrypted_info: msgbox }
+                .write_to_async(&mut write_half)
+                .await
+                .map_err(|e| io::Error::other(format!("Failed to send ServerInfo: {e}")))?;
+        }
+
+        // Go derp server only sends peer presence updates to mesh watchers (WatchConns).
+        if !is_mesh_peer {
+            client_registry.broadcast_peer_present_to_mesh_watchers(
+                &client_key,
+                Some(peer),
+                sb_transport::derp::protocol::peer_present_flags::IS_REGULAR,
+            );
+        }
 
         // Spawn task to write outgoing frames
         let client_key_for_writer = client_key;
@@ -1737,14 +1796,35 @@ impl DerpService {
                         tracing::warn!(service = "derp", client = ?client_key, "Received ForwardPacket from non-mesh peer");
                     }
                 }
-                DerpFrame::PeerPresent { key, .. } => {
-                    if is_mesh_peer {
-                        client_registry.register_remote_client(key, client_key);
-                    }
+                DerpFrame::PeerPresent { key: _key, .. } => {
+                    // PeerPresent is sent *to* mesh peers (WatchConns). Ignore incoming.
                 }
-                DerpFrame::PeerGone { key, .. } => {
+                DerpFrame::PeerGone { key: _key, .. } => {
+                    // PeerGone is sent *to* mesh peers (WatchConns). Ignore incoming.
+                }
+                DerpFrame::WatchConns => {
                     if is_mesh_peer {
-                        client_registry.unregister_remote_client(&key);
+                        if let Err(e) = client_registry.register_mesh_watcher(client_key) {
+                            tracing::warn!(
+                                service = "derp",
+                                peer = %peer,
+                                key = ?client_key,
+                                error = %e,
+                                "Failed to register mesh watcher"
+                            );
+                            continue;
+                        }
+                        if let Err(e) = client_registry.send_existing_clients_to_mesh_watcher(&client_key) {
+                            tracing::warn!(
+                                service = "derp",
+                                peer = %peer,
+                                key = ?client_key,
+                                error = %e,
+                                "Failed to send existing clients to mesh watcher"
+                            );
+                        }
+                    } else {
+                        tracing::warn!(service = "derp", peer = %peer, client = ?client_key, "Received WatchConns from non-mesh peer");
                     }
                 }
                 DerpFrame::KeepAlive => {
@@ -1769,7 +1849,10 @@ impl DerpService {
             client_registry.unregister_mesh_peer(&client_key);
         } else {
             client_registry.unregister_client(&client_key);
-            client_registry.broadcast_peer_gone(&client_key);
+            client_registry.broadcast_peer_gone_to_mesh_watchers(
+                &client_key,
+                sb_transport::derp::protocol::PeerGoneReason::Disconnected,
+            );
         }
 
         // Cancel write task
@@ -1779,116 +1862,346 @@ impl DerpService {
         Ok(())
     }
 
-    async fn run_mesh_client(
-        peer_addr_str: String,
-        psk: String,
-        tag: Arc<str>,
-        client_registry: Arc<ClientRegistry>,
-        server_key: PublicKey,
-        shutdown: Arc<Notify>,
-    ) {
-        loop {
-            if shutdown.notified().now_or_never().is_some() {
-                break;
-            }
+		    async fn run_mesh_client(
+		        peer_addr_str: String,
+		        psk: String,
+		        _tag: Arc<str>,
+		        client_registry: Arc<ClientRegistry>,
+		        server_private_key: PrivateKey,
+		        server_public_key: PublicKey,
+		        shutdown: Arc<Notify>,
+		        mesh_tls_config: Arc<ClientConfig>,
+		    ) {
+	        use rustls::pki_types::ServerName;
+	        use tokio_rustls::TlsConnector;
 
-            tracing::info!(service = "derp", peer = %peer_addr_str, "Connecting to mesh peer");
+	        fn mesh_sni_host(peer_addr: &str) -> &str {
+	            if let Some(rest) = peer_addr.strip_prefix('[') {
+	                if let Some(end) = rest.find(']') {
+	                    return &rest[..end];
+	                }
+	            }
+	            peer_addr
+	                .rsplit_once(':')
+	                .map(|(host, _)| host)
+	                .unwrap_or(peer_addr)
+	        }
 
-            match TcpStream::connect(&peer_addr_str).await {
-                Ok(mut stream) => {
-                    // Send HTTP upgrade request
-                    let req = format!(
-                        "GET /derp/mesh HTTP/1.1\r\n\
-                         Host: {}\r\n\
-                         Connection: Upgrade\r\n\
-                         Upgrade: derp\r\n\
-                         x-derp-mesh-psk: {}\r\n\
-                         \r\n",
-                        peer_addr_str, psk
-                    );
+	        let connector = TlsConnector::from(mesh_tls_config);
 
-                    if let Err(e) = stream.write_all(req.as_bytes()).await {
-                        tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Failed to send mesh handshake");
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue;
-                    }
+	        loop {
+	            if shutdown.notified().now_or_never().is_some() {
+	                break;
+	            }
 
-                    // Read response
-                    let mut buf = vec![0u8; 1024];
-                    let mut filled = 0;
-                    let mut handshake_done = false;
+	            tracing::info!(service = "derp", peer = %peer_addr_str, "Connecting to mesh peer");
 
-                    loop {
-                        match stream.read(&mut buf[filled..]).await {
-                            Ok(n) if n > 0 => {
-                                filled += n;
-                                let response = String::from_utf8_lossy(&buf[..filled]);
-                                if let Some(idx) = response.find("\r\n\r\n") {
-                                    if response.contains("101 Switching Protocols") {
-                                        tracing::info!(service = "derp", peer = %peer_addr_str, "Mesh handshake successful");
+	            match TcpStream::connect(&peer_addr_str).await {
+	                Ok(stream) => {
+	                    let server_name =
+	                        match ServerName::try_from(mesh_sni_host(&peer_addr_str).to_string()) {
+	                        Ok(sn) => sn,
+	                        Err(e) => {
+	                            tracing::error!(
+	                                service = "derp",
+	                                peer = %peer_addr_str,
+	                                error = %e,
+	                                "Invalid mesh peer SNI/host"
+	                            );
+	                            tokio::time::sleep(Duration::from_secs(5)).await;
+	                            continue;
+	                        }
+	                    };
 
-                                        let peer_addr = stream
-                                            .peer_addr()
-                                            .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
+	                    let mut stream = match connector.connect(server_name, stream).await {
+	                        Ok(s) => s,
+	                        Err(e) => {
+	                            tracing::error!(
+	                                service = "derp",
+	                                peer = %peer_addr_str,
+	                                error = %e,
+	                                "Failed to establish TLS to mesh peer"
+	                            );
+	                            tokio::time::sleep(Duration::from_secs(5)).await;
+	                            continue;
+	                        }
+	                    };
 
-                                        let prefix = buf[idx + 4..filled].to_vec();
-                                        let prefixed_stream = PrefixedStream::new(stream, prefix);
+	                    // Send HTTP upgrade request (Go mesh model uses /derp; mesh auth happens in ClientInfo.meshKey).
+	                    let req = format!(
+	                        "GET /derp HTTP/1.1\r\n\
+	                         Host: {}\r\n\
+	                         Connection: Upgrade\r\n\
+	                         Upgrade: derp\r\n\
+	                         \r\n",
+	                        peer_addr_str
+	                    );
 
-                                        if let Err(e) = Self::handle_derp_client(
-                                            prefixed_stream,
-                                            peer_addr,
-                                            tag.clone(),
-                                            client_registry.clone(),
-                                            server_key,
-                                            true,
-                                            Arc::from(Vec::<String>::new().into_boxed_slice()),
-                                            Arc::from(Vec::<String>::new().into_boxed_slice()),
-                                            None, // mesh_key not needed - already is_mesh_peer=true
-                                        )
-                                        .await
-                                        {
-                                            tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh client error");
-                                            tokio::time::sleep(Duration::from_secs(1)).await;
-                                        }
-                                        handshake_done = true;
-                                        break;
-                                    } else {
-                                        tracing::warn!(service = "derp", peer = %peer_addr_str, response = %response, "Mesh handshake failed - expected 101");
-                                        handshake_done = true;
-                                        break;
-                                    }
-                                }
-                                if filled == buf.len() {
-                                    tracing::error!(service = "derp", peer = %peer_addr_str, "Mesh handshake buffer overflow");
-                                    break;
-                                }
-                            }
-                            Ok(_) => {
-                                tracing::warn!(service = "derp", peer = %peer_addr_str, "Mesh handshake closed");
-                                break;
-                            }
-                            Err(e) => {
-                                tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh handshake read error");
-                                break;
-                            }
-                        }
-                    }
+	                    if let Err(e) = stream.write_all(req.as_bytes()).await {
+	                        tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Failed to send mesh handshake");
+	                        tokio::time::sleep(Duration::from_secs(5)).await;
+	                        continue;
+	                    }
 
-                    if !handshake_done {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Failed to connect to mesh peer");
-                }
-            }
+	                    // Read response
+	                    let mut buf = vec![0u8; 1024];
+	                    let mut filled = 0;
+	                    let mut handshake_done = false;
+	                    let mut prefix: Vec<u8> = Vec::new();
 
-            tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
-                _ = shutdown.notified() => { break; }
-            }
-        }
-    }
+	                    loop {
+	                        match stream.read(&mut buf[filled..]).await {
+	                            Ok(n) if n > 0 => {
+	                                filled += n;
+	                                let response = String::from_utf8_lossy(&buf[..filled]);
+	                                if let Some(idx) = response.find("\r\n\r\n") {
+	                                    if response.contains("101 Switching Protocols") {
+	                                        tracing::info!(service = "derp", peer = %peer_addr_str, "Mesh handshake successful");
+	                                        prefix = buf[idx + 4..filled].to_vec();
+	                                        handshake_done = true;
+	                                        break;
+	                                    } else {
+	                                        tracing::warn!(service = "derp", peer = %peer_addr_str, response = %response, "Mesh handshake failed - expected 101");
+	                                        handshake_done = true;
+	                                        break;
+	                                    }
+	                                }
+	                                if filled == buf.len() {
+	                                    tracing::error!(service = "derp", peer = %peer_addr_str, "Mesh handshake buffer overflow");
+	                                    break;
+	                                }
+	                            }
+	                            Ok(_) => {
+	                                tracing::warn!(service = "derp", peer = %peer_addr_str, "Mesh handshake closed");
+	                                break;
+	                            }
+	                            Err(e) => {
+	                                tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh handshake read error");
+	                                break;
+	                            }
+	                        }
+	                    }
+
+	                    if handshake_done {
+	                        let mut derp = PrefixedStream::new(stream, prefix);
+
+	                        // DERP v2 client handshake: read ServerKey, send ClientInfo with meshKey.
+	                        let server_key_frame = match DerpFrame::read_from_async(&mut derp).await {
+	                            Ok(f) => f,
+	                            Err(e) => {
+	                                tracing::error!(
+	                                    service = "derp",
+	                                    peer = %peer_addr_str,
+	                                    error = %e,
+	                                    "Failed to read ServerKey from mesh peer"
+	                                );
+	                                tokio::time::sleep(Duration::from_secs(5)).await;
+	                                continue;
+	                            }
+	                        };
+	                        let peer_public_key = match server_key_frame {
+	                            DerpFrame::ServerKey { key } => key,
+	                            other => {
+	                                tracing::warn!(
+	                                    service = "derp",
+	                                    peer = %peer_addr_str,
+	                                    frame = ?other.frame_type(),
+	                                    "Expected ServerKey from mesh peer"
+	                                );
+	                                tokio::time::sleep(Duration::from_secs(5)).await;
+	                                continue;
+	                            }
+	                        };
+
+	                        if peer_public_key == server_public_key {
+	                            tracing::warn!(
+	                                service = "derp",
+	                                peer = %peer_addr_str,
+	                                "Detected self-connect mesh peer (same public key); ignoring"
+	                            );
+	                            tokio::time::sleep(Duration::from_secs(30)).await;
+	                            continue;
+	                        }
+
+	                        let payload = ClientInfoPayload::new(PROTOCOL_VERSION as u32)
+	                            .with_mesh_key(psk.clone())
+	                            .with_can_ack_pings(true);
+	                        let msgbox =
+	                            match seal_to(&server_private_key, &peer_public_key, &payload.to_json()) {
+	                                Ok(m) => m,
+	                                Err(e) => {
+	                                    tracing::error!(
+	                                        service = "derp",
+	                                        peer = %peer_addr_str,
+	                                        error = %e,
+	                                        "Failed to seal mesh ClientInfo"
+	                                    );
+	                                    tokio::time::sleep(Duration::from_secs(5)).await;
+	                                    continue;
+	                                }
+	                            };
+
+	                        if let Err(e) = (DerpFrame::ClientInfo {
+	                            key: server_public_key,
+	                            encrypted_info: msgbox,
+	                        })
+	                        .write_to_async(&mut derp)
+	                        .await
+	                        {
+	                            tracing::error!(
+	                                service = "derp",
+	                                peer = %peer_addr_str,
+	                                error = %e,
+	                                "Failed to send mesh ClientInfo"
+	                            );
+	                            tokio::time::sleep(Duration::from_secs(5)).await;
+	                            continue;
+	                        }
+	                        if let Err(e) = derp.flush().await {
+	                            tracing::error!(
+	                                service = "derp",
+	                                peer = %peer_addr_str,
+	                                error = %e,
+	                                "Failed to flush mesh ClientInfo"
+	                            );
+	                            tokio::time::sleep(Duration::from_secs(5)).await;
+	                            continue;
+	                        }
+
+	                        // Read ServerInfo (encrypted) and sanity-check version.
+	                        match DerpFrame::read_from_async(&mut derp).await {
+	                            Ok(DerpFrame::ServerInfo { encrypted_info }) => {
+	                                if let Ok(clear) =
+	                                    open_from(&server_private_key, &peer_public_key, &encrypted_info)
+	                                {
+	                                    let clear = String::from_utf8_lossy(&clear);
+	                                    if !clear.contains(&format!("\"version\":{}", PROTOCOL_VERSION)) {
+	                                        tracing::warn!(
+	                                            service = "derp",
+	                                            peer = %peer_addr_str,
+	                                            payload = %clear,
+	                                            "Unexpected ServerInfo payload from mesh peer"
+	                                        );
+	                                    }
+	                                }
+	                            }
+	                            Ok(other) => {
+	                                tracing::warn!(
+	                                    service = "derp",
+	                                    peer = %peer_addr_str,
+	                                    frame = ?other.frame_type(),
+	                                    "Expected ServerInfo after ClientInfo"
+	                                );
+	                            }
+	                            Err(e) => {
+	                                tracing::warn!(
+	                                    service = "derp",
+	                                    peer = %peer_addr_str,
+	                                    error = %e,
+	                                    "Failed to read ServerInfo from mesh peer"
+	                                );
+	                            }
+	                        }
+
+	                        // Subscribe to peer presence updates (Go `WatchConns`).
+	                        if let Err(e) = DerpFrame::WatchConns.write_to_async(&mut derp).await {
+	                            tracing::error!(
+	                                service = "derp",
+	                                peer = %peer_addr_str,
+	                                error = %e,
+	                                "Failed to send WatchConns to mesh peer"
+	                            );
+	                            tokio::time::sleep(Duration::from_secs(5)).await;
+	                            continue;
+	                        }
+	                        let _ = derp.flush().await;
+
+		                        // Create channel for sending frames to this mesh peer.
+		                        let (tx, mut rx) = mpsc::unbounded_channel();
+		                        let tx_for_read = tx.clone();
+		                        if let Err(e) = client_registry.register_mesh_forwarder(peer_public_key, tx) {
+		                            tracing::error!(
+		                                service = "derp",
+		                                peer = %peer_addr_str,
+		                                key = ?peer_public_key,
+		                                error = %e,
+		                                "Failed to register outbound mesh peer"
+		                            );
+		                            tokio::time::sleep(Duration::from_secs(5)).await;
+		                            continue;
+		                        }
+
+	                        let (mut read_half, mut write_half) = tokio::io::split(derp);
+	                        let write_task = tokio::spawn(async move {
+	                            while let Some(frame) = rx.recv().await {
+	                                if let Err(e) = frame.write_to_async(&mut write_half).await {
+	                                    tracing::debug!(
+	                                        service = "derp",
+	                                        peer = ?peer_public_key,
+	                                        error = %e,
+	                                        "Failed to write frame to mesh peer"
+	                                    );
+	                                    break;
+	                                }
+	                            }
+		                        });
+
+		                        let peer_key_for_read = peer_public_key;
+
+		                        // Read loop: process peer presence updates and forwarded packets.
+	                        loop {
+	                            tokio::select! {
+	                                _ = shutdown.notified() => {
+	                                    break;
+	                                }
+	                                frame = DerpFrame::read_from_async(&mut read_half) => {
+	                                    let frame = match frame {
+	                                        Ok(f) => f,
+	                                        Err(e) => {
+	                                            tracing::debug!(service = "derp", peer = %peer_addr_str, error = %e, "Mesh peer connection closed");
+	                                            break;
+	                                        }
+	                                    };
+
+	                                    match frame {
+	                                        DerpFrame::PeerPresent { key, .. } => {
+	                                            client_registry.register_remote_client(key, peer_key_for_read);
+	                                        }
+	                                        DerpFrame::PeerGone { key, .. } => {
+	                                            client_registry.unregister_remote_client(&key);
+	                                        }
+	                                        DerpFrame::ForwardPacket { src_key, dst_key, packet } => {
+	                                            if let Err(e) = client_registry.handle_forward_packet(&src_key, &dst_key, packet) {
+	                                                tracing::debug!(service = "derp", peer = %peer_addr_str, error = %e, "Failed to handle forwarded packet from mesh peer");
+	                                            }
+		                                        }
+		                                        DerpFrame::Ping { data } => {
+		                                            let _ = tx_for_read.send(DerpFrame::Pong { data });
+		                                        }
+	                                        DerpFrame::KeepAlive => {}
+	                                        _ => {}
+	                                    }
+	                                }
+	                            }
+	                        }
+
+	                        client_registry.unregister_mesh_forwarder(&peer_key_for_read);
+	                        write_task.abort();
+	                    } else {
+	                        tokio::time::sleep(Duration::from_secs(1)).await;
+	                    }
+	                }
+	                Err(e) => {
+	                    tracing::error!(service = "derp", peer = %peer_addr_str, error = %e, "Failed to connect to mesh peer");
+	                }
+	            }
+
+	            tokio::select! {
+	                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+	                _ = shutdown.notified() => { break; }
+	            }
+	        }
+	    }
 
     async fn handle_relay_session(
         session: String,
@@ -2106,12 +2419,13 @@ impl Service for DerpService {
                     return Ok(());
                 }
 
-                let listen_addr = self.listen_addr;
-                let shutdown = self.shutdown_notify.clone();
-                let mesh_psk = self.mesh_psk.clone();
-                let client_registry = self.client_registry.clone();
-                let server_key = self.server_key;
-                let tag = self.tag.clone();
+	                let listen_addr = self.listen_addr;
+	                let shutdown = self.shutdown_notify.clone();
+	                let mesh_psk = self.mesh_psk.clone();
+	                let client_registry = self.client_registry.clone();
+	                let server_private_key = self.server_private_key;
+	                let server_public_key = self.server_public_key;
+	                let tag = self.tag.clone();
                 let home: Arc<str> = Arc::from(self.home.clone().into_boxed_str());
                 let verify_client_urls: Arc<[String]> =
                     Arc::from(self.verify_client_urls.clone().into_boxed_slice());
@@ -2134,19 +2448,20 @@ impl Service for DerpService {
                 let verify_client_urls_http = verify_client_urls.clone();
                 let verify_client_endpoints_http = verify_client_endpoints.clone();
                 let home_http = home.clone();
-                let http_handle = tokio::spawn(async move {
-                    if let Err(e) = Self::run_http_server(
-                        http_listener,
-                        http_shutdown,
-                        tag,
-                        home_http,
-                        rate_limiter,
-                        client_registry,
-                        server_key,
-                        pending_relays,
-                        mesh_psk_http,
-                        verify_client_urls_http,
-                        verify_client_endpoints_http,
+	                let http_handle = tokio::spawn(async move {
+	                    if let Err(e) = Self::run_http_server(
+	                        http_listener,
+	                        http_shutdown,
+	                        tag,
+	                        home_http,
+	                        rate_limiter,
+	                        client_registry,
+	                        server_private_key,
+	                        server_public_key,
+	                        pending_relays,
+	                        mesh_psk_http,
+	                        verify_client_urls_http,
+	                        verify_client_endpoints_http,
                         tls_acceptor,
                     )
                     .await
@@ -2197,21 +2512,25 @@ impl Service for DerpService {
                     let mut tasks = self.mesh_tasks.lock();
                     for peer in &self.mesh_with {
                         let peer_addr = peer.clone();
-                        let psk = psk.clone();
-                        let tag = self.tag.clone();
-                        let client_registry = self.client_registry.clone();
-                        let server_key = self.server_key;
-                        let shutdown = shutdown.clone();
+	                        let psk = psk.clone();
+	                        let tag = self.tag.clone();
+	                        let client_registry = self.client_registry.clone();
+	                        let server_private_key = self.server_private_key;
+	                        let server_public_key = self.server_public_key;
+	                        let shutdown = shutdown.clone();
+	                        let mesh_tls_config = self.mesh_tls_config.clone();
 
                         let task = tokio::spawn(async move {
-                            Self::run_mesh_client(
-                                peer_addr,
-                                psk,
-                                tag,
-                                client_registry,
-                                server_key,
-                                shutdown,
-                            )
+	                            Self::run_mesh_client(
+	                                peer_addr,
+	                                psk,
+	                                tag,
+	                                client_registry,
+	                                server_private_key,
+	                                server_public_key,
+	                                shutdown,
+	                                mesh_tls_config,
+	                            )
                             .await;
                         });
                         tasks.push(task);
@@ -2258,91 +2577,88 @@ impl Service for DerpService {
     }
 }
 
-/// Load or generate DERP server key.
+/// DERP config file persisted at `config_path` (Go `derpConfig`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DerpConfigFile {
+    #[serde(rename = "PrivateKey")]
+    private_key: String,
+}
+
+/// Load or generate DERP server private key.
 ///
-/// If `key_path` is provided and file exists, load key from file.
-/// If file doesn't exist, generate new key and save it.
-/// If no path provided, generate ephemeral key (logs warning).
-fn load_or_generate_server_key(key_path: Option<&str>) -> io::Result<PublicKey> {
+/// Go reference: `go_fork_source/sing-box-1.12.12/service/derp/service.go` (`readDERPConfig`).
+fn load_or_generate_server_private_key(key_path: Option<&str>) -> io::Result<PrivateKey> {
     if let Some(path) = key_path {
-        // Try to load existing key
-        match load_key_from_file(path) {
+        match load_private_key_from_config(path) {
             Ok(key) => {
-                tracing::info!(service = "derp", path = path, "Loaded server key from file");
+                tracing::info!(service = "derp", path = path, "Loaded DERP private key from config");
                 Ok(key)
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                // File doesn't exist, generate and save new key
                 tracing::info!(
                     service = "derp",
                     path = path,
-                    "Generating new server key (file not found)"
+                    "Generating new DERP config (file not found)"
                 );
-                let key = generate_secure_server_key()?;
-                save_key_to_file(path, &key)?;
-                tracing::info!(
-                    service = "derp",
-                    path = path,
-                    "Saved new server key to file"
-                );
+                let key = generate_secure_server_private_key()?;
+                save_private_key_to_config(path, &key)?;
+                tracing::info!(service = "derp", path = path, "Saved new DERP config");
                 Ok(key)
             }
-            Err(e) => {
-                // Other error (permissions, corruption, etc.)
-                Err(io::Error::other(format!(
-                    "Failed to load server key from {}: {}",
-                    path, e
-                )))
-            }
+            Err(e) => Err(io::Error::other(format!(
+                "Failed to load DERP config from {path}: {e}",
+            ))),
         }
     } else {
-        // No path provided, generate ephemeral key
         tracing::warn!(
             service = "derp",
-            "No derp_server_key_path configured - generating ephemeral key (will change on restart)"
+            "No config_path configured - generating ephemeral DERP key (will change on restart)"
         );
-        generate_secure_server_key()
+        generate_secure_server_private_key()
     }
 }
 
-/// Generate cryptographically secure server key using ring.
-fn generate_secure_server_key() -> io::Result<PublicKey> {
+fn generate_secure_server_private_key() -> io::Result<PrivateKey> {
     use ring::rand::{SecureRandom, SystemRandom};
 
     let rng = SystemRandom::new();
     let mut key = [0u8; 32];
     rng.fill(&mut key)
-        .map_err(|e| io::Error::other(format!("RNG error: {}", e)))?;
+        .map_err(|e| io::Error::other(format!("RNG error: {e}")))?;
+    clamp_private_key(&mut key);
     Ok(key)
 }
 
-/// Load server key from file (32 bytes raw binary).
-fn load_key_from_file(path: &str) -> io::Result<PublicKey> {
-    let mut file = fs::File::open(path)?;
-    let mut key = [0u8; 32];
-    file.read_exact(&mut key)?;
-    Ok(key)
+fn load_private_key_from_config(path: &str) -> io::Result<PrivateKey> {
+    let bytes = fs::read(path)?;
+    let cfg: DerpConfigFile = serde_json::from_slice(&bytes).map_err(|e| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("invalid derp config json: {e}"))
+    })?;
+    decode_node_private_key(&cfg.private_key).map_err(|e| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("invalid private key: {e}"))
+    })
 }
 
-/// Save server key to file with secure permissions (0600 on Unix).
-fn save_key_to_file(path: &str, key: &PublicKey) -> io::Result<()> {
+fn save_private_key_to_config(path: &str, key: &PrivateKey) -> io::Result<()> {
     use std::path::Path;
 
-    // Create parent directories if needed
     if let Some(parent) = Path::new(path).parent() {
         fs::create_dir_all(parent)?;
     }
 
-    // Write key to file
-    let mut file = fs::File::create(path)?;
-    file.write_all(key)?;
+    let cfg = DerpConfigFile {
+        private_key: encode_node_private_key(key),
+    };
+    let bytes = serde_json::to_vec(&cfg).map_err(|e| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("failed to serialize derp config: {e}"))
+    })?;
+    fs::write(path, bytes)?;
 
-    // Set secure permissions (owner read/write only) on Unix
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = file.metadata()?.permissions();
-        perms.set_mode(0o600);
+        let mut perms = fs::metadata(path)?.permissions();
+        perms.set_mode(0o644);
         fs::set_permissions(path, perms)?;
     }
 
@@ -2411,6 +2727,8 @@ fn create_tls_acceptor(
 ) -> io::Result<Option<Arc<TlsAcceptor>>> {
     match (cert_path, key_path) {
         (Some(cert), Some(key)) => {
+            crate::tls::ensure_rustls_crypto_provider();
+
             let certs = load_tls_certs(cert)?;
             let private_key = load_tls_private_key(key)?;
 
@@ -2437,19 +2755,44 @@ fn create_tls_acceptor(
     }
 }
 
+fn create_mesh_tls_client_config(cert_path: &str) -> io::Result<Arc<ClientConfig>> {
+    crate::tls::ensure_rustls_crypto_provider();
+
+    let mut roots = RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    for cert in load_tls_certs(cert_path)? {
+        roots.add(cert).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Failed to add mesh TLS root certificate: {e}"),
+            )
+        })?;
+    }
+
+    let mut config = ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    // Match Go behavior: advertise HTTP/2 + HTTP/1.1 via ALPN.
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    Ok(Arc::new(config))
+}
+
 fn load_mesh_psk(
     ir: &ServiceIR,
 ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(psk) = &ir.derp_mesh_psk {
+    if let Some(psk) = &ir.mesh_psk {
         return Ok(Some(psk.trim().to_string()));
     }
 
-    if let Some(psk_path) = &ir.derp_mesh_psk_file {
+    if let Some(psk_path) = &ir.mesh_psk_file {
         let content = fs::read_to_string(psk_path)?;
         let trimmed = content.trim();
         if trimmed.is_empty() {
             return Err(
-                io::Error::new(io::ErrorKind::InvalidData, "derp_mesh_psk_file is empty").into(),
+                io::Error::new(io::ErrorKind::InvalidData, "mesh_psk_file is empty").into(),
             );
         }
         return Ok(Some(trimmed.to_string()));
@@ -2476,16 +2819,75 @@ pub fn build_derp_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dy
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_config::ir::ServiceType;
+    use sb_config::ir::{DerpStunOptionsIR, InboundTlsOptionsIR, ServiceType};
     use std::time::Duration;
     use tokio::time::sleep;
 
     fn install_rustls_crypto_provider() {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| {
-            // rustls 0.23 requires an explicit process-level provider when multiple backends are enabled.
-            let _ = rustls::crypto::ring::default_provider().install_default();
-        });
+        crate::tls::ensure_rustls_crypto_provider();
+    }
+
+    struct TestTls {
+        cert_file: tempfile::NamedTempFile,
+        key_file: tempfile::NamedTempFile,
+        client_config: Arc<ClientConfig>,
+        connector: tokio_rustls::TlsConnector,
+    }
+
+    impl TestTls {
+        fn new() -> Self {
+            install_rustls_crypto_provider();
+
+            let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+            let cert_pem = cert.cert.pem();
+            let key_pem = cert.key_pair.serialize_pem();
+            let cert_file = tempfile::NamedTempFile::new().unwrap();
+            let key_file = tempfile::NamedTempFile::new().unwrap();
+            fs::write(cert_file.path(), cert_pem).unwrap();
+            fs::write(key_file.path(), key_pem).unwrap();
+
+            let mut roots = RootCertStore::empty();
+            let cert_der = rustls::pki_types::CertificateDer::from(cert.cert.der().to_vec());
+            roots.add(cert_der).expect("add root");
+            let client_config = Arc::new(
+                ClientConfig::builder()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth(),
+            );
+            let connector = tokio_rustls::TlsConnector::from(client_config.clone());
+
+            Self {
+                cert_file,
+                key_file,
+                client_config,
+                connector,
+            }
+        }
+
+        fn tls_ir(&self) -> InboundTlsOptionsIR {
+            InboundTlsOptionsIR {
+                enabled: true,
+                certificate_path: Some(self.cert_file.path().to_string_lossy().to_string()),
+                key_path: Some(self.key_file.path().to_string_lossy().to_string()),
+                ..Default::default()
+            }
+        }
+
+        async fn connect(
+            &self,
+            port: u16,
+        ) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+            use rustls::pki_types::ServerName;
+
+            let server_name = ServerName::try_from("localhost").unwrap();
+            let tcp = TcpStream::connect(("127.0.0.1", port))
+                .await
+                .expect("connect tls");
+            self.connector
+                .connect(server_name, tcp)
+                .await
+                .expect("tls handshake")
+        }
     }
 
     #[test]
@@ -2530,164 +2932,58 @@ mod tests {
         assert!(found, "XOR-MAPPED-ADDRESS not found");
     }
 
-    #[tokio::test]
-    async fn test_http_endpoints_plaintext() {
-        let port = match alloc_port() {
-            Ok(port) => port,
-            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-                eprintln!("skipping http stub test: {e}");
-                return;
-            }
-            Err(e) => panic!("failed to allocate port: {e}"),
-        };
-        let ir = ServiceIR {
-            ty: ServiceType::Derp,
-            tag: Some("derp-http".to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_enabled: Some(false), // isolate HTTP for the test
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-        };
-
+    #[test]
+    fn test_derp_requires_tls_and_config_path() {
         let ctx = ServiceContext::default();
-        let service = build_derp_service(&ir, &ctx).expect("service should build");
 
-        service.start(StartStage::Initialize).unwrap();
-        if let Err(e) = service.start(StartStage::Start) {
-            if let Some(io_err) = e.downcast_ref::<io::Error>() {
-                if io_err.kind() == io::ErrorKind::PermissionDenied {
-                    eprintln!("skipping http stub test during start: {io_err}");
-                    return;
-                }
-            }
-            panic!("start failed: {e}");
-        }
-
-        // Allow server to bind before connecting.
-        sleep(Duration::from_millis(50)).await;
-
-        let ok_response = send_http_request(
-            port,
-            "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
-        .await;
+        // Missing config_path should error.
+        let ir_missing_config = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-missing-config".to_string()),
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(0),
+            tls: Some(InboundTlsOptionsIR {
+                enabled: true,
+                certificate_path: Some("cert.pem".to_string()),
+                key_path: Some("key.pem".to_string()),
+                ..Default::default()
+            }),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = DerpService::from_ir(&ir_missing_config, &ctx)
+            .err()
+            .expect("expected missing config_path error");
         assert!(
-            ok_response.contains("200 OK"),
-            "expected 200 OK response, got: {ok_response}"
-        );
-        assert!(ok_response.contains("<h1>DERP</h1>"), "expected home page, got: {ok_response}");
-        let ok_lower = ok_response.to_ascii_lowercase();
-        assert!(
-            ok_lower.contains("strict-transport-security:"),
-            "expected HSTS header, got: {ok_response}"
-        );
-        assert!(
-            ok_lower.contains("content-security-policy:"),
-            "expected CSP header, got: {ok_response}"
-        );
-        assert!(
-            ok_lower.contains("x-frame-options: deny"),
-            "expected X-Frame-Options header, got: {ok_response}"
-        );
-        assert!(
-            ok_lower.contains("x-content-type-options: nosniff"),
-            "expected X-Content-Type-Options header, got: {ok_response}"
+            err.to_string().contains("missing config_path"),
+            "unexpected error: {err}"
         );
 
-        let unknown_path = send_http_request(
-            port,
-            "GET /missing HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
-        .await;
+        // Missing TLS should error.
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+        let ir_missing_tls = ServiceIR {
+            ty: ServiceType::Derp,
+            tag: Some("derp-missing-tls".to_string()),
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(0),
+            config_path: Some(config_path),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let err = DerpService::from_ir(&ir_missing_tls, &ctx)
+            .err()
+            .expect("expected TLS required error");
         assert!(
-            unknown_path.contains("200 OK"),
-            "expected 200 response, got: {unknown_path}"
+            err.to_string().contains("TLS is required for DERP server"),
+            "unexpected error: {err}"
         );
-        assert!(
-            unknown_path.contains("<h1>DERP</h1>"),
-            "expected home fallback, got: {unknown_path}"
-        );
-
-        let robots = send_http_request(
-            port,
-            "GET /robots.txt HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
-        .await;
-        assert!(robots.contains("200 OK"), "expected 200, got: {robots}");
-        assert!(
-            robots.contains("User-agent: *\nDisallow: /"),
-            "expected robots body, got: {robots}"
-        );
-        let robots_lower = robots.to_ascii_lowercase();
-        assert!(
-            robots_lower.contains("strict-transport-security:"),
-            "expected HSTS header on robots.txt, got: {robots}"
-        );
-
-        let no_content = send_http_request(
-            port,
-            "GET /generate_204 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
-        .await;
-        assert!(
-            no_content.contains("204"),
-            "expected 204 response, got: {no_content}"
-        );
-
-        struct StaticDns;
-        #[async_trait::async_trait]
-        impl crate::dns::Resolver for StaticDns {
-            async fn resolve(&self, _domain: &str) -> anyhow::Result<crate::dns::DnsAnswer> {
-                use crate::dns::cache::{Rcode, Source};
-                Ok(crate::dns::DnsAnswer::new(
-                    vec!["1.2.3.4".parse().unwrap()],
-                    Duration::from_secs(60),
-                    Source::Static,
-                    Rcode::NoError,
-                ))
-            }
-
-            fn name(&self) -> &str {
-                "static_dns"
-            }
-        }
-
-        crate::dns::global::set(Arc::new(StaticDns));
-        let bootstrap = send_http_request(
-            port,
-            "GET /bootstrap-dns?q=example.com HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        )
-        .await;
-        assert!(
-            bootstrap.contains("{\"example.com\":[\"1.2.3.4\"]}"),
-            "expected bootstrap-dns JSON, got: {bootstrap}"
-        );
-        let bootstrap_lower = bootstrap.to_ascii_lowercase();
-        assert!(
-            bootstrap_lower.contains("strict-transport-security:"),
-            "expected HSTS header on bootstrap-dns, got: {bootstrap}"
-        );
-        crate::dns::global::clear();
-
-        service.close().unwrap();
     }
 
     #[tokio::test]
@@ -2715,31 +3011,26 @@ mod tests {
         fs::write(cert_file.path(), cert_pem).unwrap();
         fs::write(key_file.path(), key_pem).unwrap();
 
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-http-tls".to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_enabled: Some(false), // isolate HTTP for the test
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: Some(cert_file.path().to_string_lossy().to_string()),
-            derp_tls_key_path: Some(key_file.path().to_string_lossy().to_string()),
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false, // isolate HTTP for the test
+                ..Default::default()
+            }),
+            tls: Some(InboundTlsOptionsIR {
+                enabled: true,
+                certificate_path: Some(cert_file.path().to_string_lossy().to_string()),
+                key_path: Some(key_file.path().to_string_lossy().to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -2807,31 +3098,22 @@ mod tests {
             }
             Err(e) => panic!("failed to allocate port: {e}"),
         };
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-relay".to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_enabled: Some(false),
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -2850,9 +3132,8 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let addr = ("127.0.0.1", port);
-        let mut c1 = TcpStream::connect(addr).await.expect("connect c1");
-        let mut c2 = TcpStream::connect(addr).await.expect("connect c2");
+        let mut c1 = tls.connect(port).await;
+        let mut c2 = tls.connect(port).await;
 
         c1.write_all(b"DERP session test\n")
             .await
@@ -2890,31 +3171,23 @@ mod tests {
 
         let psk = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-auth".to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: Some(psk.to_string()),
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_enabled: Some(false),
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            mesh_psk: Some(psk.to_string()),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -2932,10 +3205,9 @@ mod tests {
         }
 
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let addr = ("127.0.0.1", port);
 
         // Missing token should be rejected.
-        let mut unauth = TcpStream::connect(addr).await.expect("connect unauth");
+        let mut unauth = tls.connect(port).await;
         unauth
             .write_all(b"DERP session auth-test\n")
             .await
@@ -2949,8 +3221,8 @@ mod tests {
         );
 
         // With token, relay should pair.
-        let mut a = TcpStream::connect(addr).await.expect("connect a");
-        let mut b = TcpStream::connect(addr).await.expect("connect b");
+        let mut a = tls.connect(port).await;
+        let mut b = tls.connect(port).await;
         let handshake_a = format!("DERP session auth-ok token={psk}\n");
         a.write_all(handshake_a.as_bytes())
             .await
@@ -2969,10 +3241,8 @@ mod tests {
         service.close().unwrap();
     }
 
-    async fn send_http_request(port: u16, request: &str) -> String {
-        let mut stream = TcpStream::connect(("127.0.0.1", port))
-            .await
-            .expect("connect to stub");
+    async fn send_https_request(tls: &TestTls, port: u16, request: &str) -> String {
+        let mut stream = tls.connect(port).await;
         stream
             .write_all(request.as_bytes())
             .await
@@ -2988,14 +3258,78 @@ mod tests {
             .map(|addr| addr.port())
     }
 
-    async fn connect_derp_upgrade(
-        port: u16,
-        client_key: PublicKey,
-        fast_start: bool,
-    ) -> PrefixedStream<TcpStream> {
-        let mut stream = TcpStream::connect(("127.0.0.1", port))
+    type TestTlsStream = tokio_rustls::client::TlsStream<tokio::net::TcpStream>;
+
+    fn test_client_keypair(seed: u8) -> (PrivateKey, PublicKey) {
+        let mut private = [seed; 32];
+        clamp_private_key(&mut private);
+        let public = derive_public_key(&private);
+        (private, public)
+    }
+
+    async fn derp_handshake_v2<S>(
+        stream: &mut S,
+        client_private_key: PrivateKey,
+        mesh_key: Option<String>,
+        expect_server_info: bool,
+    ) -> PublicKey
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        let client_public_key = derive_public_key(&client_private_key);
+
+        let server_key_frame = DerpFrame::read_from_async(stream)
             .await
-            .expect("connect");
+            .expect("server key");
+        let server_public_key = match server_key_frame {
+            DerpFrame::ServerKey { key } => key,
+            other => panic!("expected ServerKey, got {:?}", other.frame_type()),
+        };
+
+        let mut info =
+            ClientInfoPayload::new(PROTOCOL_VERSION as u32).with_can_ack_pings(true);
+        if let Some(mesh_key) = mesh_key {
+            info = info.with_mesh_key(mesh_key);
+        }
+        let msgbox = seal_to(&client_private_key, &server_public_key, &info.to_json())
+            .expect("seal clientinfo");
+        DerpFrame::ClientInfo {
+            key: client_public_key,
+            encrypted_info: msgbox,
+        }
+        .write_to_async(stream)
+        .await
+        .expect("clientinfo");
+        stream.flush().await.expect("flush clientinfo");
+
+        if expect_server_info {
+            let server_info_frame = DerpFrame::read_from_async(stream)
+                .await
+                .expect("server info");
+            match server_info_frame {
+                DerpFrame::ServerInfo { encrypted_info } => {
+                    let clear = open_from(&client_private_key, &server_public_key, &encrypted_info)
+                        .expect("open server info");
+                    let clear = String::from_utf8_lossy(&clear);
+                    assert!(
+                        clear.contains(&format!("\"version\":{}", PROTOCOL_VERSION)),
+                        "unexpected ServerInfo payload: {clear}"
+                    );
+                }
+                other => panic!("expected ServerInfo, got {:?}", other.frame_type()),
+            }
+        }
+
+        client_public_key
+    }
+
+    async fn connect_derp_upgrade(
+        tls: &TestTls,
+        port: u16,
+        client_private_key: PrivateKey,
+        fast_start: bool,
+    ) -> (PrefixedStream<TestTlsStream>, PublicKey) {
+        let mut stream = tls.connect(port).await;
 
         let mut req =
             String::from("GET /derp HTTP/1.1\r\nHost: localhost\r\nUpgrade: DERP\r\nConnection: Upgrade\r\n");
@@ -3032,22 +3366,14 @@ mod tests {
         }
 
         let mut derp = PrefixedStream::new(stream, prefix);
-        let server_key = DerpFrame::read_from_async(&mut derp)
-            .await
-            .expect("server key");
-        assert!(matches!(server_key, DerpFrame::ServerKey { .. }));
-
-        DerpFrame::ClientInfo { key: client_key, encrypted_info: vec![] }
-            .write_to_async(&mut derp)
-            .await
-            .expect("clientinfo");
-        derp.flush().await.expect("flush clientinfo");
-
-        derp
+        let client_public_key =
+            derp_handshake_v2(&mut derp, client_private_key, None, true).await;
+        (derp, client_public_key)
     }
 
     #[tokio::test]
     async fn test_derp_over_websocket_ping_pong() {
+        use sb_transport::tls::TlsDialer;
         use sb_transport::websocket::{WebSocketConfig, WebSocketDialer};
         use sb_transport::Dialer;
 
@@ -3060,31 +3386,22 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-ws".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3097,22 +3414,20 @@ mod tests {
             headers: vec![("Sec-WebSocket-Protocol".to_string(), "derp".to_string())],
             ..Default::default()
         };
-        let dialer = WebSocketDialer::new(ws_cfg, Box::new(sb_transport::TcpDialer::default()));
+        let tls_dialer = TlsDialer {
+            inner: sb_transport::TcpDialer::default(),
+            config: tls.client_config.clone(),
+            sni_override: Some("localhost".to_string()),
+            alpn: Some(vec![b"http/1.1".to_vec()]),
+        };
+        let dialer = WebSocketDialer::new(ws_cfg, Box::new(tls_dialer));
         let mut stream = dialer
             .connect("127.0.0.1", port)
             .await
             .expect("ws connect");
 
-        let server_key = DerpFrame::read_from_async(&mut stream)
-            .await
-            .expect("server key");
-        assert!(matches!(server_key, DerpFrame::ServerKey { .. }));
-
-        DerpFrame::ClientInfo { key: [9u8; 32], encrypted_info: vec![] }
-            .write_to_async(&mut stream)
-            .await
-            .expect("clientinfo");
-        stream.flush().await.expect("flush clientinfo");
+        let (client_private_key, _) = test_client_keypair(9);
+        derp_handshake_v2(&mut stream, client_private_key, None, true).await;
 
         let ping_data = [1u8, 2, 3, 4, 5, 6, 7, 8];
         DerpFrame::Ping { data: ping_data }
@@ -3141,31 +3456,22 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-h1-upgrade".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3173,13 +3479,19 @@ mod tests {
         service.start(StartStage::Start).expect("start");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let mut c1 = connect_derp_upgrade(port, [1u8; 32], false).await;
-        let mut c2 = connect_derp_upgrade(port, [2u8; 32], false).await;
+        let (client1_private_key, client1_key) = test_client_keypair(1);
+        let (client2_private_key, client2_key) = test_client_keypair(2);
+        let (mut c1, client1_key2) =
+            connect_derp_upgrade(&tls, port, client1_private_key, false).await;
+        let (mut c2, client2_key2) =
+            connect_derp_upgrade(&tls, port, client2_private_key, false).await;
+        assert_eq!(client1_key2, client1_key);
+        assert_eq!(client2_key2, client2_key);
 
         // Client1 -> Client2
         let packet = vec![0xAA, 0xBB, 0xCC, 0xDD];
         DerpFrame::SendPacket {
-            dst_key: [2u8; 32],
+            dst_key: client2_key,
             packet: packet.clone(),
         }
         .write_to_async(&mut c1)
@@ -3194,7 +3506,7 @@ mod tests {
                 .expect("read frame");
         match recv {
             DerpFrame::RecvPacket { src_key, packet: got } => {
-                assert_eq!(src_key, [1u8; 32]);
+                assert_eq!(src_key, client1_key);
                 assert_eq!(got, packet);
             }
             other => panic!("expected RecvPacket, got {:?}", other.frame_type()),
@@ -3228,31 +3540,22 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-fast-start".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3260,7 +3563,8 @@ mod tests {
         service.start(StartStage::Start).expect("start");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let mut c = connect_derp_upgrade(port, [3u8; 32], true).await;
+        let (client_private_key, _) = test_client_keypair(3);
+        let (mut c, _) = connect_derp_upgrade(&tls, port, client_private_key, true).await;
 
         let ping_data = [1u8, 2, 3, 4, 5, 6, 7, 8];
         DerpFrame::Ping { data: ping_data }
@@ -3289,31 +3593,22 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-upgrade-required".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3321,7 +3616,8 @@ mod tests {
         service.start(StartStage::Start).expect("start");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let resp = send_http_request(
+        let resp = send_https_request(
+            &tls,
             port,
             "GET /derp HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         )
@@ -3349,31 +3645,22 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-probe".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3381,7 +3668,8 @@ mod tests {
         service.start(StartStage::Start).expect("start");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let probe_get = send_http_request(
+        let probe_get = send_https_request(
+            &tls,
             port,
             "GET /derp/probe HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         )
@@ -3400,7 +3688,8 @@ mod tests {
             "probe should not include browser headers, got: {probe_get}"
         );
 
-        let probe_post = send_http_request(
+        let probe_post = send_https_request(
+            &tls,
             port,
             "POST /derp/probe HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
         )
@@ -3429,31 +3718,22 @@ mod tests {
             Err(e) => panic!("failed to allocate port: {e}"),
         };
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-204".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            tls: Some(tls.tls_ir()),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3465,7 +3745,7 @@ mod tests {
         let req = format!(
             "GET /generate_204 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nX-Tailscale-Challenge: {challenge}\r\n\r\n"
         );
-        let resp = send_http_request(port, &req).await;
+        let resp = send_https_request(&tls, port, &req).await;
         assert!(resp.contains("204"), "expected 204 response, got: {resp}");
         assert!(
             resp.contains(&format!("response {challenge}")),
@@ -3482,7 +3762,7 @@ mod tests {
         );
 
         let bad_req = "GET /generate_204 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nX-Tailscale-Challenge: bad!\r\n\r\n";
-        let bad_resp = send_http_request(port, bad_req).await;
+        let bad_resp = send_https_request(&tls, port, bad_req).await;
         assert!(
             !bad_resp.to_ascii_lowercase().contains("x-tailscale-response:"),
             "expected no response header for invalid challenge, got: {bad_resp}"
@@ -3534,6 +3814,9 @@ mod tests {
             let _ = server.await;
         });
 
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+
         // Start DERP service with verify_client_url=/ok (should accept).
         let port_ok = match alloc_port() {
             Ok(port) => port,
@@ -3545,45 +3828,33 @@ mod tests {
             }
             Err(e) => panic!("failed to allocate port: {e}"),
         };
+        let config_path_ok = tempdir
+            .path()
+            .join("derp-ok.key")
+            .to_string_lossy()
+            .to_string();
         let ir_ok = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-verify-ok".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port_ok),
-            derp_stun_enabled: Some(false),
-            derp_verify_client_url: Some(vec![format!("http://{}/ok", verify_addr)]),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port_ok),
+            config_path: Some(config_path_ok),
+            tls: Some(tls.tls_ir()),
+            verify_client_url: Some(vec![format!("http://{}/ok", verify_addr)]),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
         let ctx = ServiceContext::default();
         let derp_ok = DerpService::from_ir(&ir_ok, &ctx).expect("derp ok service");
         derp_ok.start(StartStage::Start).expect("start derp ok");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let mut ok_stream = TcpStream::connect(("127.0.0.1", port_ok)).await.expect("connect");
-        let _ = DerpFrame::read_from_async(&mut ok_stream)
-            .await
-            .expect("server key");
-        DerpFrame::ClientInfo { key: [7u8; 32], encrypted_info: vec![] }
-            .write_to_async(&mut ok_stream)
-            .await
-            .expect("client info");
+        let mut ok_stream = tls.connect(port_ok).await;
+        let (client_private_key, _) = test_client_keypair(7);
+        derp_handshake_v2(&mut ok_stream, client_private_key, None, true).await;
         DerpFrame::Ping { data: [1, 1, 2, 3, 5, 8, 13, 21] }
             .write_to_async(&mut ok_stream)
             .await
@@ -3607,44 +3878,32 @@ mod tests {
             }
             Err(e) => panic!("failed to allocate port: {e}"),
         };
+        let config_path_deny = tempdir
+            .path()
+            .join("derp-deny.key")
+            .to_string_lossy()
+            .to_string();
         let ir_deny = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-verify-deny".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port_deny),
-            derp_stun_enabled: Some(false),
-            derp_verify_client_url: Some(vec![format!("http://{}/deny", verify_addr)]),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port_deny),
+            config_path: Some(config_path_deny),
+            tls: Some(tls.tls_ir()),
+            verify_client_url: Some(vec![format!("http://{}/deny", verify_addr)]),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
         let derp_deny = DerpService::from_ir(&ir_deny, &ctx).expect("derp deny service");
         derp_deny.start(StartStage::Start).expect("start derp deny");
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let mut deny_stream = TcpStream::connect(("127.0.0.1", port_deny)).await.expect("connect");
-        let _ = DerpFrame::read_from_async(&mut deny_stream)
-            .await
-            .expect("server key");
-        DerpFrame::ClientInfo { key: [8u8; 32], encrypted_info: vec![] }
-            .write_to_async(&mut deny_stream)
-            .await
-            .expect("client info");
+        let mut deny_stream = tls.connect(port_deny).await;
+        let (client_private_key, _) = test_client_keypair(8);
+        derp_handshake_v2(&mut deny_stream, client_private_key, None, false).await;
 
         // The server should close after verification fails; expect read error/EOF quickly.
         let denied = tokio::time::timeout(Duration::from_secs(2), DerpFrame::read_from_async(&mut deny_stream)).await;
@@ -3654,136 +3913,6 @@ mod tests {
         // Shutdown verify server.
         let _ = shutdown_tx.send(());
         verify_handle.abort();
-    }
-
-    #[tokio::test]
-    async fn test_derp_protocol_end_to_end() {
-        use super::super::protocol::DerpFrame;
-        use sb_config::ir::ServiceType;
-        use tokio::net::TcpStream;
-
-        let port = match alloc_port() {
-            Ok(port) => port,
-            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
-                eprintln!("skipping derp test: {e}");
-                return;
-            }
-            Err(e) => panic!("failed to allocate port: {e}"),
-        };
-
-        // Create server
-        let ir = ServiceIR {
-            ty: ServiceType::Derp,
-            tag: Some("test-derp".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-        };
-
-        let ctx = ServiceContext::default();
-        let service = DerpService::from_ir(&ir, &ctx).expect("Failed to create service");
-
-        // Start service (not async)
-        service
-            .start(StartStage::Start)
-            .expect("Failed to start service");
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        let addr = service.listen_addr;
-
-        // Create two clients
-        let client1_key = [1u8; 32];
-        let client2_key = [2u8; 32];
-
-        // Client 1 connects
-        let mut stream1 = TcpStream::connect(addr)
-            .await
-            .expect("Failed to connect client 1");
-
-        // Read ServerKey from server
-        let server_key_frame = DerpFrame::read_from_async(&mut stream1)
-            .await
-            .expect("Failed to read ServerKey");
-        assert!(matches!(server_key_frame, DerpFrame::ServerKey { .. }));
-
-        // Send ClientInfo
-        let client_info1 = DerpFrame::ClientInfo { key: client1_key, encrypted_info: vec![] };
-        client_info1
-            .write_to_async(&mut stream1)
-            .await
-            .expect("Failed to send ClientInfo");
-
-        // Client 2 connects
-        let mut stream2 = TcpStream::connect(addr)
-            .await
-            .expect("Failed to connect client 2");
-
-        // Read ServerKey
-        let _ = DerpFrame::read_from_async(&mut stream2)
-            .await
-            .expect("Failed to read ServerKey for client 2");
-
-        // Send ClientInfo
-        let client_info2 = DerpFrame::ClientInfo { key: client2_key, encrypted_info: vec![] };
-        client_info2
-            .write_to_async(&mut stream2)
-            .await
-            .expect("Failed to send ClientInfo for client 2");
-
-        // Give server time to register clients
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Client 1 sends packet to Client 2
-        let test_packet = vec![0xAA, 0xBB, 0xCC, 0xDD];
-        let send_frame = DerpFrame::SendPacket {
-            dst_key: client2_key,
-            packet: test_packet.clone(),
-        };
-        send_frame
-            .write_to_async(&mut stream1)
-            .await
-            .expect("Failed to send packet from client 1");
-
-        // Client 2 should receive the packet
-        tokio::time::timeout(Duration::from_secs(2), async {
-            let recv_frame = DerpFrame::read_from_async(&mut stream2)
-                .await
-                .expect("Failed to read packet on client 2");
-
-            match recv_frame {
-                DerpFrame::RecvPacket { src_key, packet } => {
-                    assert_eq!(src_key, client1_key, "Wrong source key");
-                    assert_eq!(packet, test_packet, "Packet content mismatch");
-                }
-                other => panic!("Expected RecvPacket, got {:?}", other.frame_type()),
-            }
-        })
-        .await
-        .expect("Timeout waiting for packet");
-
-        // Shutdown
-        service.close().expect("Failed to close service");
-        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
     #[tokio::test]
@@ -3813,31 +3942,26 @@ mod tests {
         fs::write(cert_file.path(), cert_pem).unwrap();
         fs::write(key_file.path(), key_pem).unwrap();
 
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("test-derp-tls".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port),
-            derp_stun_enabled: Some(false),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: Some(cert_file.path().to_string_lossy().to_string()),
-            derp_tls_key_path: Some(key_file.path().to_string_lossy().to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port),
+            config_path: Some(config_path),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            tls: Some(InboundTlsOptionsIR {
+                enabled: true,
+                certificate_path: Some(cert_file.path().to_string_lossy().to_string()),
+                key_path: Some(key_file.path().to_string_lossy().to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -3884,29 +4008,10 @@ mod tests {
             .await
             .expect("tls handshake client2");
 
-        let client1_key = [1u8; 32];
-        let client2_key = [2u8; 32];
-
-        // Read ServerKey frames
-        let _ = DerpFrame::read_from_async(&mut stream1)
-            .await
-            .expect("server key for client1");
-        let _ = DerpFrame::read_from_async(&mut stream2)
-            .await
-            .expect("server key for client2");
-
-        // Send ClientInfo
-        let client_info1 = DerpFrame::ClientInfo { key: client1_key, encrypted_info: vec![] };
-        client_info1
-            .write_to_async(&mut stream1)
-            .await
-            .expect("send client1 info");
-
-        let client_info2 = DerpFrame::ClientInfo { key: client2_key, encrypted_info: vec![] };
-        client_info2
-            .write_to_async(&mut stream2)
-            .await
-            .expect("send client2 info");
+        let (client1_private_key, client1_key) = test_client_keypair(1);
+        let (client2_private_key, client2_key) = test_client_keypair(2);
+        derp_handshake_v2(&mut stream1, client1_private_key, None, true).await;
+        derp_handshake_v2(&mut stream2, client2_private_key, None, true).await;
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -3931,9 +4036,9 @@ mod tests {
                     src_key,
                     packet: recv,
                 } => {
-                    assert_eq!(src_key, client1_key, "wrong source key");
-                    assert_eq!(recv, packet, "packet content mismatch");
-                }
+                        assert_eq!(src_key, client1_key, "wrong source key");
+                        assert_eq!(recv, packet, "packet content mismatch");
+                    }
                 other => panic!("expected RecvPacket, got {:?}", other.frame_type()),
             }
         })
@@ -3949,8 +4054,8 @@ mod tests {
 
     #[test]
     fn test_generate_secure_key_uniqueness() {
-        let key1 = generate_secure_server_key().unwrap();
-        let key2 = generate_secure_server_key().unwrap();
+        let key1 = generate_secure_server_private_key().unwrap();
+        let key2 = generate_secure_server_private_key().unwrap();
         // Keys should be different (cryptographically secure)
         assert_ne!(key1, key2);
         assert_eq!(key1.len(), 32);
@@ -3959,14 +4064,15 @@ mod tests {
 
     #[test]
     fn test_key_save_load_roundtrip() {
-        use tempfile::NamedTempFile;
+        use tempfile::tempdir;
 
-        let temp_file = NamedTempFile::new().unwrap();
-        let path = temp_file.path().to_str().unwrap();
+        let temp_dir = tempdir().unwrap();
+        let key_path = temp_dir.path().join("derp.key");
+        let path = key_path.to_str().unwrap();
 
-        let original_key = generate_secure_server_key().unwrap();
-        save_key_to_file(path, &original_key).unwrap();
-        let loaded_key = load_key_from_file(path).unwrap();
+        let original_key = generate_secure_server_private_key().unwrap();
+        save_private_key_to_config(path, &original_key).unwrap();
+        let loaded_key = load_private_key_from_config(path).unwrap();
 
         assert_eq!(original_key, loaded_key);
     }
@@ -3983,24 +4089,24 @@ mod tests {
         assert!(!key_path.exists());
 
         // First call should generate and save key
-        let key1 = load_or_generate_server_key(Some(path_str)).unwrap();
+        let key1 = load_or_generate_server_private_key(Some(path_str)).unwrap();
 
         // File should now exist
         assert!(key_path.exists());
 
         // Second call should load same key
-        let key2 = load_or_generate_server_key(Some(path_str)).unwrap();
+        let key2 = load_or_generate_server_private_key(Some(path_str)).unwrap();
         assert_eq!(key1, key2);
     }
 
     #[test]
     fn test_ephemeral_key_without_path() {
         // Should generate ephemeral key without error
-        let key = load_or_generate_server_key(None).unwrap();
+        let key = load_or_generate_server_private_key(None).unwrap();
         assert_eq!(key.len(), 32);
 
         // Each call should generate different key
-        let key2 = load_or_generate_server_key(None).unwrap();
+        let key2 = load_or_generate_server_private_key(None).unwrap();
         assert_ne!(key, key2);
     }
 
@@ -4008,18 +4114,19 @@ mod tests {
     #[test]
     fn test_key_file_permissions() {
         use std::os::unix::fs::PermissionsExt;
-        use tempfile::NamedTempFile;
+        use tempfile::tempdir;
 
-        let temp_file = NamedTempFile::new().unwrap();
-        let path = temp_file.path().to_str().unwrap();
+        let temp_dir = tempdir().unwrap();
+        let key_path = temp_dir.path().join("derp.key");
+        let path = key_path.to_str().unwrap();
 
-        let key = generate_secure_server_key().unwrap();
-        save_key_to_file(path, &key).unwrap();
+        let key = generate_secure_server_private_key().unwrap();
+        save_private_key_to_config(path, &key).unwrap();
 
         let metadata = fs::metadata(path).unwrap();
         let mode = metadata.permissions().mode();
-        // Should be owner read/write only (0600)
-        assert_eq!(mode & 0o777, 0o600);
+        // Go writes `0644` (writeNewDERPConfig).
+        assert_eq!(mode & 0o777, 0o644);
     }
 
     #[test]
@@ -4030,8 +4137,8 @@ mod tests {
         let key_path = temp_dir.path().join("subdir/deep/derp_server.key");
         let path_str = key_path.to_str().unwrap();
 
-        let key = generate_secure_server_key().unwrap();
-        save_key_to_file(path_str, &key).unwrap();
+        let key = generate_secure_server_private_key().unwrap();
+        save_private_key_to_config(path_str, &key).unwrap();
 
         // Parent directories and file should exist
         assert!(key_path.exists());
@@ -4040,18 +4147,15 @@ mod tests {
 
     #[test]
     fn test_load_key_with_wrong_size_fails() {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
+        use tempfile::tempdir;
 
-        let mut temp_file = NamedTempFile::new().unwrap();
-        let path = temp_file.path().to_string_lossy().to_string();
+        let temp_dir = tempdir().unwrap();
+        let key_path = temp_dir.path().join("derp.key");
+        let path = key_path.to_str().unwrap();
 
-        // Write only 16 bytes (should be 32)
-        temp_file.write_all(&[0u8; 16]).unwrap();
-        temp_file.flush().unwrap();
-
-        // Should fail because file is too small
-        let result = load_key_from_file(&path);
+        // Invalid JSON / invalid private key should fail.
+        fs::write(path, br#"{"PrivateKey":"privkey:deadbeef"}"#).unwrap();
+        let result = load_private_key_from_config(path);
         assert!(result.is_err());
     }
 }

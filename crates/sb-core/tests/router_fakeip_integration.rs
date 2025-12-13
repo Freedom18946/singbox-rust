@@ -10,6 +10,14 @@
 
 use sb_core::dns::fakeip;
 use sb_core::router::RouterHandle;
+use std::sync::{Mutex, OnceLock};
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 /// Clean up test environment variables
 fn cleanup_env() {
@@ -22,6 +30,7 @@ fn cleanup_env() {
 
 #[tokio::test]
 async fn test_fakeip_routing_domain_exact_match() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -50,6 +59,7 @@ async fn test_fakeip_routing_domain_exact_match() {
 
 #[tokio::test]
 async fn test_fakeip_routing_domain_suffix_match() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -78,6 +88,7 @@ async fn test_fakeip_routing_domain_suffix_match() {
 
 #[tokio::test]
 async fn test_fakeip_routing_fallback_to_ip_rules() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -106,6 +117,7 @@ async fn test_fakeip_routing_fallback_to_ip_rules() {
 
 #[tokio::test]
 async fn test_fakeip_routing_domain_priority() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -137,6 +149,7 @@ async fn test_fakeip_routing_domain_priority() {
 
 #[tokio::test]
 async fn test_fakeip_routing_disabled() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // FakeIP disabled
@@ -167,6 +180,7 @@ async fn test_fakeip_routing_disabled() {
 
 #[tokio::test]
 async fn test_fakeip_routing_ipv6() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP for IPv6
@@ -195,6 +209,7 @@ async fn test_fakeip_routing_ipv6() {
 
 #[tokio::test]
 async fn test_fakeip_routing_real_ip_no_false_positive() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -222,6 +237,7 @@ async fn test_fakeip_routing_real_ip_no_false_positive() {
 
 #[tokio::test]
 async fn test_fakeip_routing_multiple_domains_same_rule() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -254,6 +270,7 @@ async fn test_fakeip_routing_multiple_domains_same_rule() {
 
 #[tokio::test]
 async fn test_fakeip_routing_no_domain_rules_default() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP
@@ -281,6 +298,7 @@ async fn test_fakeip_routing_no_domain_rules_default() {
 
 #[tokio::test]
 async fn test_fakeip_routing_case_insensitive() {
+    let _serial = serial_guard();
     cleanup_env();
 
     // Set up FakeIP

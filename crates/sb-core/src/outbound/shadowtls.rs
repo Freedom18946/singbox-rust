@@ -42,12 +42,8 @@ pub struct ShadowTlsOutbound {
 #[cfg(feature = "out_shadowtls")]
 impl ShadowTlsOutbound {
     pub fn new(config: ShadowTlsConfig) -> anyhow::Result<Self> {
-        // Ensure a CryptoProvider is installed for rustls 0.23
-        #[allow(unused_must_use)]
-        {
-            use tokio_rustls::rustls::crypto::ring;
-            let _ = ring::default_provider().install_default();
-        }
+        crate::tls::ensure_rustls_crypto_provider();
+
         // Allow insecure verification when explicitly enabled
         let insecure_env = std::env::var("SB_STL_ALLOW_INSECURE")
             .ok()

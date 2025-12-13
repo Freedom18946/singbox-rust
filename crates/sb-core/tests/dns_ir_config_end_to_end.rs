@@ -1,5 +1,7 @@
 //! End-to-end tests for IR-driven DNS resolver
 
+#![cfg(feature = "router")]
+
 use std::io::Write as _;
 
 use tempfile::NamedTempFile;

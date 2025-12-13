@@ -15,6 +15,8 @@ pub mod supervisor;
 pub mod switchboard;
 pub mod transport;
 
+pub use supervisor::{Supervisor, SupervisorHandle};
+
 #[cfg(feature = "router")]
 pub struct Runtime<'a> {
     pub engine: Engine<'a>,

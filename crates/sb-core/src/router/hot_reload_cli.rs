@@ -74,10 +74,14 @@ pub async fn start_hot_reload_cli(
 
     // Monitor events if verbose mode is enabled
     if config.verbose {
-        let event_rx = manager.event_receiver();
+        let mut event_rx = manager.event_receiver();
         tokio::spawn(async move {
-            let mut rx = event_rx.write().await;
-            while let Some(event) = rx.recv().await {
+            loop {
+                let event = match event_rx.recv().await {
+                    Ok(event) => event,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                };
                 match event {
                     crate::router::HotReloadEvent::FileChanged { path } => {
                         info!("Rule file changed: {}", path.display());

@@ -1647,11 +1647,97 @@ pub enum ServiceType {
     #[default]
     Resolved,
     /// Shadowsocks Manager API service
-    #[serde(rename = "ssmapi")]
+    #[serde(rename = "ssm-api")]
     Ssmapi,
     /// Tailscale DERP relay service
     #[serde(rename = "derp")]
     Derp,
+}
+
+/// Inbound TLS options (Go parity: `option.InboundTLSOptions`).
+/// 入站 TLS 选项（对齐 Go `option.InboundTLSOptions`）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct InboundTlsOptionsIR {
+    /// Enable TLS (Go: `enabled`).
+    /// 启用 TLS（Go: `enabled`）。
+    #[serde(default)]
+    pub enabled: bool,
+    /// Server name (SNI) used for verification (client-side).
+    /// 用于校验的服务器名 (SNI)（客户端）。
+    #[serde(default)]
+    pub server_name: Option<String>,
+    /// Accept any certificate (client-side).
+    /// 接受任意证书（客户端）。
+    #[serde(default)]
+    pub insecure: Option<bool>,
+    /// ALPN protocol list.
+    /// ALPN 协议列表。
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    /// Minimum TLS version (e.g. "1.2").
+    /// 最小 TLS 版本（例如 "1.2"）。
+    #[serde(default)]
+    pub min_version: Option<String>,
+    /// Maximum TLS version (e.g. "1.3").
+    /// 最大 TLS 版本（例如 "1.3"）。
+    #[serde(default)]
+    pub max_version: Option<String>,
+    /// TLS 1.0–1.2 cipher suites list.
+    /// TLS 1.0–1.2 密码套件列表。
+    #[serde(default)]
+    pub cipher_suites: Option<Vec<String>>,
+    /// Inline server certificate line array (PEM).
+    /// 内联服务端证书行数组（PEM）。
+    #[serde(default)]
+    pub certificate: Option<Vec<String>>,
+    /// Server certificate path (PEM).
+    /// 服务端证书路径（PEM）。
+    #[serde(default)]
+    pub certificate_path: Option<String>,
+    /// Inline server private key line array (PEM).
+    /// 内联服务端私钥行数组（PEM）。
+    #[serde(default)]
+    pub key: Option<Vec<String>>,
+    /// Server private key path (PEM).
+    /// 服务端私钥路径（PEM）。
+    #[serde(default)]
+    pub key_path: Option<String>,
+    // ACME/ECH/Reality fields are intentionally omitted for now; they will be
+    // added when the corresponding runtime integrations land.
+}
+
+/// DERP STUN listen options (Go parity: `option.DERPSTUNListenOptions`).
+/// DERP STUN 监听选项（对齐 Go `option.DERPSTUNListenOptions`）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct DerpStunOptionsIR {
+    /// Enable STUN server.
+    /// 启用 STUN 服务。
+    #[serde(default)]
+    pub enabled: bool,
+    /// Listen address.
+    /// 监听地址。
+    #[serde(default)]
+    pub listen: Option<String>,
+    /// Listen port.
+    /// 监听端口。
+    #[serde(default)]
+    pub listen_port: Option<u16>,
+    /// Bind interface (Linux).
+    /// 绑定网卡（Linux）。
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    /// Routing mark (Linux).
+    /// 路由标记（Linux）。
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    /// Reuse address.
+    /// 复用地址。
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    /// Network namespace name/path (Linux).
+    /// 网络命名空间名称/路径（Linux）。
+    #[serde(default)]
+    pub netns: Option<String>,
 }
 
 /// Service configuration IR.
@@ -1664,77 +1750,91 @@ pub struct ServiceIR {
     #[serde(default)]
     pub tag: Option<String>,
 
-    // Resolved service fields
-    /// Resolved: Listen address (default: "127.0.0.53")
+    // Shared Listen Fields (Go parity: `option.ListenOptions`)
+    // 公共监听字段（对齐 Go `option.ListenOptions`）
+    /// Listen address.
     #[serde(default)]
-    pub resolved_listen: Option<String>,
-    /// Resolved: Listen port (default: 53)
+    pub listen: Option<String>,
+    /// Listen port.
     #[serde(default)]
-    pub resolved_listen_port: Option<u16>,
+    pub listen_port: Option<u16>,
+    /// Bind interface.
+    #[serde(default)]
+    pub bind_interface: Option<String>,
+    /// Routing mark.
+    #[serde(default)]
+    pub routing_mark: Option<u32>,
+    /// Reuse address.
+    #[serde(default)]
+    pub reuse_addr: Option<bool>,
+    /// Network namespace (Linux).
+    #[serde(default)]
+    pub netns: Option<String>,
+    /// TCP fast open.
+    #[serde(default)]
+    pub tcp_fast_open: Option<bool>,
+    /// TCP multipath.
+    #[serde(default)]
+    pub tcp_multi_path: Option<bool>,
+    /// UDP fragmentation.
+    #[serde(default)]
+    pub udp_fragment: Option<bool>,
+    /// UDP timeout (duration string, e.g. "5m").
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
+    /// Detour to another inbound tag (deprecated in Go; kept for parity).
+    #[serde(default)]
+    pub detour: Option<String>,
 
-    // SSMAPI service fields
-    /// SSMAPI: Listen address
+    // Deprecated inbound fields (Go parity; will be removed upstream)
     #[serde(default)]
-    pub ssmapi_listen: Option<String>,
-    /// SSMAPI: Listen port
+    pub sniff: Option<bool>,
     #[serde(default)]
-    pub ssmapi_listen_port: Option<u16>,
-    /// SSMAPI: Server configurations (tag -> method:password)
+    pub sniff_override_destination: Option<bool>,
     #[serde(default)]
-    pub ssmapi_servers: Option<std::collections::HashMap<String, String>>,
-    /// SSMAPI: Cache file path
+    pub sniff_timeout: Option<String>,
     #[serde(default)]
-    pub ssmapi_cache_path: Option<String>,
-    /// SSMAPI: TLS certificate path
+    pub domain_strategy: Option<String>,
     #[serde(default)]
-    pub ssmapi_tls_cert_path: Option<String>,
-    /// SSMAPI: TLS key path
+    pub udp_disable_domain_unmapping: Option<bool>,
+
+    // Shared TLS container (Go parity: `InboundTLSOptionsContainer`)
     #[serde(default)]
-    pub ssmapi_tls_key_path: Option<String>,
+    pub tls: Option<InboundTlsOptionsIR>,
+
+    // SSM API service fields (Go: `ssm-api`)
+    /// Endpoint → managed Shadowsocks inbound tag mapping (Go: `servers`).
+    #[serde(default)]
+    pub servers: Option<std::collections::HashMap<String, String>>,
+    /// Cache file path (Go: `cache_path`).
+    #[serde(default)]
+    pub cache_path: Option<String>,
 
     // DERP service fields
-    /// DERP: Listen address
+    /// DERP key/config file path (Go: `config_path`).
     #[serde(default)]
-    pub derp_listen: Option<String>,
-    /// DERP: Listen port
+    pub config_path: Option<String>,
+    /// Client verification endpoints (Go: `verify_client_endpoint`).
     #[serde(default)]
-    pub derp_listen_port: Option<u16>,
-    /// DERP: Configuration file path
+    pub verify_client_endpoint: Option<Vec<String>>,
+    /// Client verification URLs (Go: `verify_client_url`).
     #[serde(default)]
-    pub derp_config_path: Option<String>,
-    /// DERP: Client verification endpoints
+    pub verify_client_url: Option<Vec<String>>,
+    /// Home page mode/url (Go: `home`).
     #[serde(default)]
-    pub derp_verify_client_endpoint: Option<Vec<String>>,
-    /// DERP: Client verification URLs
+    pub home: Option<String>,
+    /// Mesh peer list (Go: `mesh_with`).
     #[serde(default)]
-    pub derp_verify_client_url: Option<Vec<String>>,
-    /// DERP: Home DERP region name
+    pub mesh_with: Option<Vec<String>>,
+    /// Mesh pre-shared key (Go: `mesh_psk`).
     #[serde(default)]
-    pub derp_home: Option<String>,
-    /// DERP: Mesh peer addresses
+    pub mesh_psk: Option<String>,
+    /// Mesh PSK file (Go: `mesh_psk_file`).
     #[serde(default)]
-    pub derp_mesh_with: Option<Vec<String>>,
-    /// DERP: Mesh pre-shared key
+    pub mesh_psk_file: Option<String>,
+    /// STUN server listen options (Go: `stun`).
     #[serde(default)]
-    pub derp_mesh_psk: Option<String>,
-    /// DERP: Mesh PSK file path
-    #[serde(default)]
-    pub derp_mesh_psk_file: Option<String>,
-    /// DERP: Server key file path (generated if doesn't exist)
-    #[serde(default)]
-    pub derp_server_key_path: Option<String>,
-    /// DERP: Enable STUN
-    #[serde(default)]
-    pub derp_stun_enabled: Option<bool>,
-    /// DERP: STUN listen port
-    #[serde(default)]
-    pub derp_stun_listen_port: Option<u16>,
-    /// DERP: TLS certificate path
-    #[serde(default)]
-    pub derp_tls_cert_path: Option<String>,
-    /// DERP: TLS key path
-    #[serde(default)]
-    pub derp_tls_key_path: Option<String>,
+    pub stun: Option<DerpStunOptionsIR>,
 }
 
 /// Complete configuration intermediate representation.
@@ -2140,14 +2240,14 @@ mod tests {
         let data = json!({
             "type": "resolved",
             "tag": "resolved-svc",
-            "resolved_listen": "127.0.0.53",
-            "resolved_listen_port": 53
+            "listen": "127.0.0.53",
+            "listen_port": 53
         });
         let ir: ServiceIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.ty, ServiceType::Resolved);
         assert_eq!(ir.tag, Some("resolved-svc".to_string()));
-        assert_eq!(ir.resolved_listen, Some("127.0.0.53".to_string()));
-        assert_eq!(ir.resolved_listen_port, Some(53));
+        assert_eq!(ir.listen, Some("127.0.0.53".to_string()));
+        assert_eq!(ir.listen_port, Some(53));
 
         let serialized = serde_json::to_value(&ir).unwrap();
         assert_eq!(serialized.get("type").unwrap(), "resolved");
@@ -2156,19 +2256,26 @@ mod tests {
     #[test]
     fn ssmapi_service_serialization() {
         let data = json!({
-            "type": "ssmapi",
+            "type": "ssm-api",
             "tag": "ssm",
-            "ssmapi_listen": "127.0.0.1",
-            "ssmapi_listen_port": 6001
+            "listen": "127.0.0.1",
+            "listen_port": 6001,
+            "servers": {
+                "/": "ss-in"
+            }
         });
         let ir: ServiceIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.ty, ServiceType::Ssmapi);
         assert_eq!(ir.tag, Some("ssm".to_string()));
-        assert_eq!(ir.ssmapi_listen, Some("127.0.0.1".to_string()));
-        assert_eq!(ir.ssmapi_listen_port, Some(6001));
+        assert_eq!(ir.listen, Some("127.0.0.1".to_string()));
+        assert_eq!(ir.listen_port, Some(6001));
+        assert_eq!(
+            ir.servers.as_ref().and_then(|m| m.get("/")).map(String::as_str),
+            Some("ss-in")
+        );
 
         let serialized = serde_json::to_value(&ir).unwrap();
-        assert_eq!(serialized.get("type").unwrap(), "ssmapi");
+        assert_eq!(serialized.get("type").unwrap(), "ssm-api");
     }
 
     #[test]
@@ -2176,16 +2283,20 @@ mod tests {
         let data = json!({
             "type": "derp",
             "tag": "derp-relay",
-            "derp_listen": "0.0.0.0",
-            "derp_listen_port": 3478,
-            "derp_stun_enabled": true
+            "listen": "0.0.0.0",
+            "listen_port": 3478,
+            "config_path": "derper.key",
+            "stun": {
+                "enabled": true
+            }
         });
         let ir: ServiceIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.ty, ServiceType::Derp);
         assert_eq!(ir.tag, Some("derp-relay".to_string()));
-        assert_eq!(ir.derp_listen, Some("0.0.0.0".to_string()));
-        assert_eq!(ir.derp_listen_port, Some(3478));
-        assert_eq!(ir.derp_stun_enabled, Some(true));
+        assert_eq!(ir.listen, Some("0.0.0.0".to_string()));
+        assert_eq!(ir.listen_port, Some(3478));
+        assert_eq!(ir.config_path, Some("derper.key".to_string()));
+        assert_eq!(ir.stun.as_ref().map(|s| s.enabled), Some(true));
 
         let serialized = serde_json::to_value(&ir).unwrap();
         assert_eq!(serialized.get("type").unwrap(), "derp");

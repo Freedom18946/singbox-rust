@@ -25,7 +25,7 @@ pub struct DerpClient {
     /// Client's public key.
     public_key: PublicKey,
     /// Optional mesh key for mesh peer authentication.
-    mesh_key: Option<[u8; 32]>,
+    mesh_key: Option<String>,
 }
 
 impl DerpClient {
@@ -48,8 +48,8 @@ impl DerpClient {
 
     /// Set mesh key for mesh peer authentication.
     /// When set, client will send mesh_key in ClientInfo to authenticate as a mesh peer.
-    pub fn with_mesh_key(mut self, key: [u8; 32]) -> Self {
-        self.mesh_key = Some(key);
+    pub fn with_mesh_key(mut self, key: impl Into<String>) -> Self {
+        self.mesh_key = Some(key.into());
         self
     }
 
@@ -119,10 +119,12 @@ impl DerpClient {
         }
 
         // 2. Send ClientInfo with optional mesh_key in encrypted_info
-        let encrypted_info = if let Some(mesh_key) = self.mesh_key {
-            // Encode ClientInfoPayload with mesh_key as JSON
-            let payload = ClientInfoPayload::new("singbox-rust")
-                .with_mesh_key(mesh_key);
+        let encrypted_info = if let Some(mesh_key) = self.mesh_key.as_deref() {
+            // NOTE: This is not a NaCl box yet; DERP wire protocol parity work will
+            // switch this to crypto_box encryption.
+            let payload = ClientInfoPayload::new(crate::derp::protocol::PROTOCOL_VERSION as u32)
+                .with_mesh_key(mesh_key)
+                .with_can_ack_pings(true);
             payload.to_json()
         } else {
             vec![]

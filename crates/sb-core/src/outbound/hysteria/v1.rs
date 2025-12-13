@@ -345,6 +345,8 @@ impl HysteriaV1Inbound {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "No private key found"))?;
 
         // Build TLS config
+        crate::tls::ensure_rustls_crypto_provider();
+
         let mut tls_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(cert_chain, key)

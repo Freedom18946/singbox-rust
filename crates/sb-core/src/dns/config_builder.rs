@@ -624,29 +624,7 @@ fn build_resolved_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dy
 mod tests {
     use super::*;
     use crate::dns::DnsAnswer;
-
-    struct EnvGuard {
-        key: &'static str,
-        prev: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let prev = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, prev }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            if let Some(prev) = &self.prev {
-                std::env::set_var(self.key, prev);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
+    use crate::testutil::EnvVarGuard;
 
     #[test]
     fn resolver_builds_with_mixed_upstreams() {
@@ -728,12 +706,12 @@ mod tests {
 
     #[test]
     fn hydrate_dns_ir_reads_env_values() {
-        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
-        let _timeout = EnvGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
-        let _fake = EnvGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
-        let _fake_v4 = EnvGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
-        let _fake_v4_mask = EnvGuard::set("SB_FAKEIP_V4_MASK", "15");
-        let _client = EnvGuard::set("SB_DNS_CLIENT_SUBNET", "1.2.3.0/24");
+        let _ttl = EnvVarGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let _timeout = EnvVarGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
+        let _fake = EnvVarGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
+        let _fake_v4 = EnvVarGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
+        let _fake_v4_mask = EnvVarGuard::set("SB_FAKEIP_V4_MASK", "15");
+        let _client = EnvVarGuard::set("SB_DNS_CLIENT_SUBNET", "1.2.3.0/24");
 
         let hydrated = hydrate_dns_ir_from_env(&sb_config::ir::DnsIR::default());
         assert_eq!(hydrated.timeout_ms, Some(2500));
@@ -746,7 +724,7 @@ mod tests {
 
     #[test]
     fn hydrate_dns_ir_does_not_override_ir_values() {
-        let _ttl = EnvGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let _ttl = EnvVarGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
         let ir = sb_config::ir::DnsIR {
             ttl_default_s: Some(120),
             ..Default::default()

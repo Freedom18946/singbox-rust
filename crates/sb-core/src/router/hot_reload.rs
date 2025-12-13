@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{mpsc, watch, RwLock};
+use sha2::{Digest, Sha256};
+use tokio::sync::{broadcast, watch, RwLock};
 use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "geoip_hot")]
@@ -75,8 +76,7 @@ struct FileMetadata {
 pub struct HotReloadManager {
     config: HotReloadConfig,
     router_handle: Arc<RouterHandle>,
-    event_tx: mpsc::UnboundedSender<HotReloadEvent>,
-    event_rx: Arc<RwLock<mpsc::UnboundedReceiver<HotReloadEvent>>>,
+    event_tx: broadcast::Sender<HotReloadEvent>,
     file_metadata: Arc<RwLock<HashMap<PathBuf, FileMetadata>>>,
     #[cfg(feature = "geoip_hot")]
     _watcher: Option<RecommendedWatcher>,
@@ -87,14 +87,13 @@ pub struct HotReloadManager {
 impl HotReloadManager {
     /// Create a new hot reload manager
     pub fn new(config: HotReloadConfig, router_handle: Arc<RouterHandle>) -> Self {
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, _event_rx) = broadcast::channel(128);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         Self {
             config,
             router_handle,
             event_tx,
-            event_rx: Arc::new(RwLock::new(event_rx)),
             file_metadata: Arc::new(RwLock::new(HashMap::new())),
             #[cfg(feature = "geoip_hot")]
             _watcher: None,
@@ -254,9 +253,7 @@ impl HotReloadManager {
                                 Ok(new_metadata) => {
                                     if let Ok(modified) = new_metadata.modified() {
                                         if modified > old_meta.modified || new_metadata.len() != old_meta.size {
-                                            let _ = event_tx.send(HotReloadEvent::FileChanged {
-                                                path: path.clone()
-                                            });
+                                            let _ = event_tx.send(HotReloadEvent::FileChanged { path: path.clone() });
                                         }
                                     }
                                 }
@@ -281,31 +278,32 @@ impl HotReloadManager {
 
     /// Start event processor
     async fn start_event_processor(&self) {
-        let event_rx = self.event_rx.clone();
+        let event_tx = self.event_tx.clone();
         let router_handle = self.router_handle.clone();
         let file_metadata = self.file_metadata.clone();
         let config = self.config.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
 
         tokio::spawn(async move {
-            let mut rx = event_rx.write().await;
+            let mut rx = event_tx.subscribe();
 
             loop {
                 tokio::select! {
-                    event = rx.recv() => {
-                        match event {
-                            Some(HotReloadEvent::FileChanged { path }) => {
-                                Self::handle_file_changed(&path, &router_handle, &file_metadata, &config).await;
-                            }
-                            Some(event) => {
-                                debug!("Hot reload event: {:?}", event);
-                            }
-                            None => {
-                                debug!("Event channel closed");
-                                break;
-                            }
+                    event = rx.recv() => match event {
+                        Ok(HotReloadEvent::FileChanged { path }) => {
+                            Self::handle_file_changed(&path, &router_handle, &file_metadata, &config, &event_tx).await;
                         }
-                    }
+                        Ok(event) => {
+                            debug!("Hot reload event: {:?}", event);
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            debug!("Event channel closed");
+                            break;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            debug!("Hot reload event receiver lagged, dropped {} events", n);
+                        }
+                    },
                     _ = shutdown_rx.changed() => {
                         if *shutdown_rx.borrow() {
                             debug!("Event processor shutting down");
@@ -325,6 +323,7 @@ impl HotReloadManager {
         router_handle: &Arc<RouterHandle>,
         file_metadata: &Arc<RwLock<HashMap<PathBuf, FileMetadata>>>,
         config: &HotReloadConfig,
+        event_tx: &broadcast::Sender<HotReloadEvent>,
     ) {
         info!("Rule set file changed: {}", path.display());
 
@@ -360,16 +359,30 @@ impl HotReloadManager {
             }
         };
 
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let checksum: [u8; 32] = hasher.finalize().into();
+
         // Validate new rule set
         match Self::validate_rule_set(&content, config.max_rules).await {
             Ok(new_index) => {
                 info!("Rule set validation succeeded for: {}", path.display());
+                let _ = event_tx.send(HotReloadEvent::ValidationSucceeded {
+                    path: path.to_path_buf(),
+                    checksum,
+                });
 
                 // Apply new rule set
                 if let Err(e) = Self::apply_rule_set(router_handle, new_index).await {
                     error!("Failed to apply rule set from {}: {}", path.display(), e);
                     return;
                 }
+
+                let generation = router_handle.current_generation().await;
+                let _ = event_tx.send(HotReloadEvent::Applied {
+                    path: path.to_path_buf(),
+                    generation,
+                });
 
                 // Update metadata
                 let mut metadata = file_metadata.write().await;
@@ -379,6 +392,10 @@ impl HotReloadManager {
             }
             Err(e) => {
                 error!("Rule set validation failed for {}: {}", path.display(), e);
+                let _ = event_tx.send(HotReloadEvent::ValidationFailed {
+                    path: path.to_path_buf(),
+                    error: e.to_string(),
+                });
             }
         }
     }
@@ -447,8 +464,8 @@ impl HotReloadManager {
     }
 
     /// Get event receiver for monitoring
-    pub fn event_receiver(&self) -> Arc<RwLock<mpsc::UnboundedReceiver<HotReloadEvent>>> {
-        self.event_rx.clone()
+    pub fn event_receiver(&self) -> broadcast::Receiver<HotReloadEvent> {
+        self.event_tx.subscribe()
     }
 }
 

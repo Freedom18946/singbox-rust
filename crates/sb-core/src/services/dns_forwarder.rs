@@ -23,11 +23,11 @@ pub struct DnsForwarderService {
 impl DnsForwarderService {
     pub fn new(ir: &ServiceIR) -> Self {
         let host = ir
-            .resolved_listen
+            .listen
             .as_deref()
             .unwrap_or("127.0.0.53")
             .to_string();
-        let port = ir.resolved_listen_port.unwrap_or(53);
+        let port = ir.listen_port.unwrap_or(53);
         let addr_str = format!("{}:{}", host, port);
         let listen_addr = addr_str.parse().unwrap_or_else(|_| {
             tracing::warn!(
@@ -271,8 +271,8 @@ mod tests {
         let ir_json = serde_json::json!({
             "type": "resolved",
             "tag": "resolved-test",
-            "resolved_listen": "127.0.0.1",
-            "resolved_listen_port": port
+            "listen": "127.0.0.1",
+            "listen_port": port
         });
         let ir: ServiceIR = serde_json::from_value(ir_json).unwrap();
         let service = Arc::new(DnsForwarderService::new(&ir));

@@ -43,7 +43,7 @@ pub struct UpdateUserRequest {
 /// List users response.
 #[derive(Serialize)]
 pub struct ListUsersResponse {
-    users: Vec<String>,
+    users: Vec<super::user::UserObject>,
 }
 
 /// Stats query parameters.
@@ -108,12 +108,10 @@ pub async fn get_server_info() -> Json<ServerInfo> {
 
 /// GET /server/v1/users - List all users.
 pub async fn list_users(State(state): State<ApiState>) -> Json<ListUsersResponse> {
-    let users = state
-        .user_manager
-        .list()
-        .into_iter()
-        .map(|u| u.user_name)
-        .collect();
+    let mut users = state.user_manager.list();
+    state.traffic_manager.read_users(&mut users, false);
+    // Remove passwords from response (Go parity: users contain stats but no password)
+    let users: Vec<_> = users.into_iter().map(|u| u.without_password()).collect();
     Json(ListUsersResponse { users })
 }
 
@@ -252,7 +250,8 @@ mod tests {
         // List users
         let list_resp = list_users(State(state.clone())).await;
         assert_eq!(list_resp.0.users.len(), 1);
-        assert_eq!(list_resp.0.users[0], "alice");
+        assert_eq!(list_resp.0.users[0].user_name, "alice");
+        assert!(list_resp.0.users[0].password.is_none()); // Password stripped in list
 
         // Get user
         let user_resp = get_user(State(state.clone()), Path("alice".to_string())).await;

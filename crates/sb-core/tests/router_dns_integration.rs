@@ -3,10 +3,16 @@
 
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use sb_core::dns::{DnsAnswer, Resolver};
 use sb_core::router::{DnsResolve, DnsResolverBridge, RouterHandle};
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
 
 /// Mock DNS resolver for testing
 struct MockDnsResolver {
@@ -58,13 +64,11 @@ impl Resolver for MockDnsResolver {
 
 #[tokio::test]
 async fn test_dns_integration_domain_resolution() {
+    let _serial = serial_guard();
     // Set up environment for DNS-enabled routing
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var("SB_ROUTER_DNS_TIMEOUT_MS", "1000");
-    std::env::set_var(
-        "SB_ROUTER_OVERRIDE",
-        "exact:example.com=proxy,cidr4:1.2.3.0/24=direct",
-    );
+    std::env::set_var("SB_ROUTER_OVERRIDE", "cidr4:1.2.3.0/24=direct");
 
     // Create mock DNS resolver
     let mut mock_resolver = MockDnsResolver::new();
@@ -90,6 +94,7 @@ async fn test_dns_integration_domain_resolution() {
 
 #[tokio::test]
 async fn test_dns_integration_exact_match_priority() {
+    let _serial = serial_guard();
     // Set up environment
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var(
@@ -113,6 +118,7 @@ async fn test_dns_integration_exact_match_priority() {
 
 #[tokio::test]
 async fn test_dns_integration_timeout_handling() {
+    let _serial = serial_guard();
     // Set up environment with short timeout
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var("SB_ROUTER_DNS_TIMEOUT_MS", "10"); // Very short timeout
@@ -135,6 +141,7 @@ async fn test_dns_integration_timeout_handling() {
 
 #[tokio::test]
 async fn test_dns_integration_error_handling() {
+    let _serial = serial_guard();
     // Set up environment
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var("SB_ROUTER_OVERRIDE", "cidr4:1.2.3.0/24=proxy");
@@ -154,6 +161,7 @@ async fn test_dns_integration_error_handling() {
 
 #[tokio::test]
 async fn test_dns_integration_ipv6_support() {
+    let _serial = serial_guard();
     // Set up environment
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var("SB_ROUTER_OVERRIDE", "cidr6:2001:db8::/32=proxy");
@@ -177,6 +185,7 @@ async fn test_dns_integration_ipv6_support() {
 
 #[tokio::test]
 async fn test_dns_integration_multiple_ips() {
+    let _serial = serial_guard();
     // Set up environment
     std::env::set_var("SB_ROUTER_DNS", "1");
     std::env::set_var(
@@ -204,6 +213,7 @@ async fn test_dns_integration_multiple_ips() {
 
 #[tokio::test]
 async fn test_dns_integration_disabled() {
+    let _serial = serial_guard();
     // Ensure DNS is disabled
     std::env::remove_var("SB_ROUTER_DNS");
     std::env::set_var("SB_ROUTER_OVERRIDE", "exact:test.com=proxy");
@@ -223,6 +233,7 @@ async fn test_dns_integration_disabled() {
 
 #[test]
 fn test_router_has_dns_resolver() {
+    let _serial = serial_guard();
     let router_without_dns = RouterHandle::from_env();
     assert!(!router_without_dns.has_dns_resolver());
 
@@ -233,6 +244,7 @@ fn test_router_has_dns_resolver() {
 
 #[tokio::test]
 async fn test_dns_bridge_integration() {
+    let _serial = serial_guard();
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response("bridge.test.com", vec!["192.168.1.1".parse().unwrap()], 300);
 

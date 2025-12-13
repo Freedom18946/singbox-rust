@@ -105,3 +105,4 @@ codegen-units = 1     # single codegen unit for better inlining
 # Override crates.io tun2socks with a local build-time stub to keep
 # all-features builds working on stable toolchains and offline.
 tun2socks = { path = "vendor/tun2socks" }
+anytls-rs = { path = "vendor/anytls-rs" }

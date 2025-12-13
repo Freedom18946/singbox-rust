@@ -2,18 +2,25 @@
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.12` for functional, type, API, comment, and directory parity.
 
+## Status Legend
+
+- ✅ **Aligned**: behavior/types/API/config match Go reference.
+- ◐ **Partial**: implemented but missing/ diverging details; not yet interchangeable.
+- ❌ **Not aligned**: stubbed, materially divergent, or Go feature is absent/disabled but Rust exposes it.
+
 ## Executive Summary
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| **Protocol Coverage** | ✅ High | 23/23 Go protocols have Rust equivalents (see Protocol Matrix below) |
+| **Protocol Coverage** | ✅ High | All 23 Go `protocol/*` modules have Rust counterparts (see Protocol Matrix below) |
 | **Tailscale endpoint/data plane** | ❌ Not aligned | Go uses tsnet+gVisor netstack; Rust uses stub/daemon with host sockets |
-| **Tailscale outbound & MagicDNS** | ❌ Not aligned | Go routes via tsnet + DNS hooks; Rust modes are ad-hoc with raw MagicDNS |
+| **Tailscale outbound (Go has no outbound)** | ❌ Not aligned | Go exposes Tailscale as an **endpoint**; Rust also exposes a `tailscale` **outbound** (divergence; should be gated/de-scoped) |
 | **DNS transports (DHCP/Resolved/Tailscale)** | ◐ Partial | DHCP passive only; tailscale transport not feature-equivalent |
-| **TLS uTLS wiring** | ✅ Aligned | Wired into standard/REALITY/ShadowTLS client paths |
-| **Resolved service** | ✅ Aligned | D-Bus + per-link routing + NetworkMonitor with Linux netlink |
-| **DERP service** | ✅ Aligned | HTTP + DERP protocol v2; mesh_key in ClientInfo; verify_client_endpoint; TLS |
-| **SSMAPI service** | ✅ Aligned | REST API + stats + cache + TLS + HTTP/2 + per-server routing |
+| **TLS uTLS fidelity** | ◐ Partial | Wired, but rustls cannot reproduce Go/uTLS extension ordering and full ClientHello shape |
+| **ECH (Go: go1.24+)** | ◐ Partial | Rust has config/parser/HPKE scaffolding but no rustls ECH handshake integration |
+| **Resolved service** | ◐ Partial | D-Bus skeleton exists (Linux+feature gated) but query path/monitor parity is incomplete |
+| **DERP service** | ◐ Partial | HTTP endpoints + TLS-required + `config_path` JSON key + NaCl box wire protocol + Go mesh model (`meshKey` in ClientInfo) aligned; remaining: `verify_client_endpoint` (de-scoped, requires Tailscale LocalClient) |
+| **SSMAPI service** | ◐ Partial | Config type/schema + per-endpoint routing aligned; managed inbound binding + API/cache contract still diverge |
 | **Transport layer** | ✅ High | WebSocket, gRPC, HTTP/2, QUIC, simple-obfs, sip003 all implemented |
 | **Router/Rules** | ✅ High | Rule matching, geoip, geosite, process detection aligned |
 
@@ -28,10 +35,10 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | `constant/` | `crates/sb-types/` + per‑crate `types.rs`/enum modules | ✅ | Constants/enums mirrored where used |
 | `dns/` | `crates/sb-core/src/dns/` | ✅ | Core resolver aligned; DHCP/Resolved/Tailscale transports partial |
 | `log/` | `crates/sb-core/src/log/`, `crates/sb-metrics/` | ✅ | Logging levels/fields aligned |
-| `option/` | `crates/sb-config/` (schema + IR) | ✅ | Options/IR parity maintained |
+| `option/` | `crates/sb-config/` (schema + IR) | ◐ | Core coverage high; service schema/type IDs now aligned (see Gap #0) |
 | `protocol/` | `crates/sb-adapters/`, `crates/sb-proto/`, `crates/sb-transport/` | ✅ | Protocol implementations aligned |
 | `route/` | `crates/sb-core/src/router/`, `crates/sb-core/src/routing/` | ✅ | Rule engine aligned |
-| `service/` | `crates/sb-core/src/services/`, `crates/sb-adapters/src/service/` | ◐ | DERP/Resolved/SSMAPI still partial |
+| `service/` | `crates/sb-core/src/services/`, `crates/sb-adapters/src/service/` | ◐ | DERP/Resolved partial; SSMAPI partial (see Service Matrix) |
 | `transport/` | `crates/sb-transport/`, `crates/sb-tls/` | ✅ | Transport APIs aligned; uTLS wired (see TLS/Crypto matrix) |
 | `cmd/`, `box.go` | `app/`, `crates/sb-core/src/bin/` | ✅ | CLI/subcommand parity aligned |
 | `experimental/` | N/A | ❌ | Go-only experimental features not ported |
@@ -75,12 +82,12 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | hysteria2 | `crates/sb-adapters/src/outbound/hysteria2.rs` | ✅ | Full implementation |
 | selector | `crates/sb-adapters/src/outbound/selector.rs` | ✅ | Group selector |
 | shadowsocks | `crates/sb-adapters/src/outbound/shadowsocks.rs` | ✅ | Full ciphers |
-| shadowsocksr | `crates/sb-adapters/src/outbound/shadowsocksr/` | ✅ | SSR with obfs/protocol |
+| shadowsocksr | `crates/sb-adapters/src/outbound/shadowsocksr/` | ❌ | Go keeps options for compatibility but registry rejects (removed); Rust currently implements (divergence) |
 | shadowtls | `crates/sb-adapters/src/outbound/shadowtls.rs` | ✅ | uTLS wired via `utls_fingerprint` |
 | socks4 | `crates/sb-adapters/src/outbound/socks4.rs` | ✅ | SOCKS4 client |
 | socks5 | `crates/sb-adapters/src/outbound/socks5.rs` | ✅ | SOCKS5 client |
 | ssh | `crates/sb-adapters/src/outbound/ssh.rs` | ✅ | SSH client |
-| tailscale | `crates/sb-adapters/src/outbound/tailscale.rs` | ❌ | Missing tsnet integration |
+| tailscale | `crates/sb-adapters/src/outbound/tailscale.rs` | ❌ | Go does not provide a tailscale outbound (endpoint-only); Rust outbound is a divergence |
 | tor | `crates/sb-adapters/src/outbound/tor.rs` | ✅ | Tor proxy |
 | trojan | `crates/sb-adapters/src/outbound/trojan.rs` | ✅ | Full implementation |
 | tuic | `crates/sb-adapters/src/outbound/tuic.rs` | ✅ | Full implementation |
@@ -102,9 +109,9 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 | Go Service | Rust Implementation | Status | Gap Details |
 | --- | --- | --- | --- |
-| derp | `crates/sb-core/src/services/derp/` | ✅ | HTTP + DERP protocol v2 aligned; mesh_key in ClientInfo; verify_client_endpoint implemented; /derp/mesh deprecated |
-| resolved | `crates/sb-adapters/src/service/resolved_impl.rs` | ✅ | D-Bus + per-link transport aligned; NetworkMonitor with Linux netlink implemented |
-| ssmapi | `crates/sb-core/src/services/ssmapi/` | ✅ | REST API + trackers + cache aligned; TLS + HTTP/2; per-server routing prefixes; ManagedSSMServer trait |
+| derp | `crates/sb-core/src/services/derp/` | ◐ | TLS-required + `config_path` key JSON + tailscale DERP v2 (NaCl box ClientInfo/ServerInfo) + Go mesh model (`meshKey` in ClientInfo) aligned; `verify_client_endpoint` de-scoped (requires Tailscale LocalClient daemon) |
+| resolved | `crates/sb-adapters/src/service/resolved_impl.rs`, `crates/sb-adapters/src/service/resolve1.rs` | ◐ | Linux+feature gated; DNS routing/monitor parity incomplete vs Go `adapter.DNSRouter` + netmon |
+| ssmapi | `crates/sb-core/src/services/ssmapi/` | ◐ | Config type/schema + per-endpoint routing aligned; managed inbound binding + API response/caching + UpdateUsers parity still missing |
 
 ---
 
@@ -130,9 +137,9 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | Go Component | Rust Implementation | Status | Gap Details |
 | --- | --- | --- | --- |
 | std_client/server | `crates/sb-transport/src/tls.rs` | ✅ | Standard TLS |
-| utls_client | `crates/sb-tls/src/utls.rs` | ✅ | Fingerprint mapping + ClientConfig builder; wired into client call sites |
+| utls_client | `crates/sb-tls/src/utls.rs` | ◐ | Cipher suite/ALPN ordering only; rustls cannot match Go/uTLS extension ordering & full ClientHello |
 | reality_client/server | `crates/sb-tls/` | ✅ | Client uses uTLS-ordered config while preserving REALITY verifier |
-| ech | N/A | ❌ | ECH not implemented |
+| ech | `crates/sb-tls/src/ech/` | ◐ | Parser/HPKE + CLI keygen exist; rustls lacks ECH handshake integration (Go: enabled on go1.24+) |
 | acme | `crates/sb-tls/src/acme.rs` | ✅ | ACME certificate management |
 
 ---
@@ -155,6 +162,21 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 ---
 
 ## Detailed Gap Analysis
+
+### 0) Service Config Schema / Type IDs (✅ Aligned)
+
+**Go Reference** (docs + options):
+- Services use shared **Listen Fields**: `listen`, `listen_port`, etc. (e.g. `docs/configuration/shared/listen/`)
+- `ssm-api` service type is **`"ssm-api"`** (Go constant `TypeSSMAPI = "ssm-api"`), and its `servers` is **endpoint→inbound tag** mapping
+- DERP/Resolved/SSMAPI structures: `docs/configuration/service/derp.md`, `docs/configuration/service/resolved.md`, `docs/configuration/service/ssm-api.md`
+
+**Rust Now**:
+- Service IR uses shared Listen Fields + shared `tls` object in `crates/sb-config/src/ir/mod.rs`
+- `ServiceType::Ssmapi` serializes as `"ssm-api"`; v2 validator also accepts legacy `"ssmapi"` as a compatibility alias (`crates/sb-config/src/validator/v2.rs`)
+- v2 validator maps legacy Rust-only service fields (`*_listen`, `*_tls_*`, etc.) into Go-shaped fields for backward compatibility
+- v2 schema accepts top-level `services` (`crates/sb-config/src/validator/v2_schema.json`)
+
+**Impact**: Go service configs are now parseable and type-compatible; remaining gaps are service-runtime specific (DERP/SSMAPI/Resolved).
 
 ### 1) Tailscale Endpoint (Critical Gap)
 
@@ -184,6 +206,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 **Go Implementation** (`service/derp/service.go`):
 - Mandatory TLS with HTTP/2 support
+- `config_path` required (persistent server key)
 - DERP HTTP handler with WebSocket upgrade (`addWebSocketSupport`)
 - STUN listener on UDP port 3478
 - Mesh PSK key support (`SetMeshKey`)
@@ -196,7 +219,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 **Rust Implementation** (`crates/sb-core/src/services/derp/`):
 - STUN UDP listener implemented (configurable)
-- TLS acceptor supported (currently optional; Go requires TLS)
+- TLS acceptor is required (Go parity); missing `tls` or `config_path` errors during service build
 - HTTP server refactored to `hyper` (HTTP/1.1 + HTTP/2 + upgrade support)
 - `/derp` supports:
   - Upgrade-only DERP handler (requires `Upgrade: derp|websocket`; matches `derphttp.Handler`)
@@ -208,32 +231,35 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - Home/utility endpoints implemented: `/` (default HTML / blank / redirect), `/robots.txt` (browser headers via `tsweb.AddBrowserHeaders`)
 - `verify_client_url` enforced during DERP handshake (ClientInfo read → verify → register)
 - `verify_client_endpoint` parsed but not enforced (warn-only)
-- **DERP wire protocol is not yet tailscale-compatible**: current Rust frames (`sb_transport::derp::protocol`) do not match sagernet/tailscale DERP (`ProtocolVersion=2`, naclbox ClientInfo/ServerInfo, different frame IDs, ping/pong types, etc.)
-- Mesh wiring is still Rust-specific: `/derp/mesh` + `x-derp-mesh-psk` header; Go mesh key is carried in encrypted ClientInfo (`meshKey`) and `derphttp.NewClient(...).MeshKey`
+- DERP wire protocol is now tailscale-compatible: `sb_transport::derp::protocol` matches sagernet/tailscale DERP v2 (`ProtocolVersion=2`, frame IDs, ping/pong) and implements NaCl box ClientInfo/ServerInfo handshake; server key persistence uses Go-compatible JSON (`{"PrivateKey":"privkey:<64hex>"}`)
+- Mesh wiring is now Go-compatible: `meshKey` in ClientInfo is validated during handshake; server promotes client to mesh peer when keys match. `/derp/mesh` endpoint is deprecated but retained for backward compatibility.
+- `verify_client_endpoint` is parsed but de-scoped (warn-only); full enforcement requires Tailscale LocalClient (Unix socket) integration.
 
-**Impact**: DERP HTTP endpoints are now aligned to Go `derphttp`/`tsweb` behavior and test-verified, but standard Tailscale DERP clients still cannot interoperate until the DERP wire protocol (and mesh/verify_client_endpoint) is made compatible.
+**Impact**: DERP HTTP endpoints, wire protocol, and mesh semantics are aligned to Go (`derphttp`/`tsweb` + DERP v2 + `SetMeshKey`). `verify_client_endpoint` is de-scoped due to external Tailscale daemon dependency.
 
-### 3) SSMAPI Service (Critical Gap)
+### 3) SSMAPI Service (Partial)
 
 **Go Implementation** (`service/ssmapi/server.go`):
 - Binds to managed Shadowsocks inbounds via `InboundManager`
 - `TrafficManager` for bandwidth tracking
 - `UserManager` for user management on managed SSM servers
 - Per-server routing via chi router
-- Optional TLS support
-- Cache persistence (`CachePath`, `loadCache`, `saveCache`)
+- Optional TLS support + HTTP/2 enablement
+- Cache persistence per endpoint (`CachePath`, `loadCache`, `saveCache`) including users + traffic
 - HTTP/2 enabled when TLS active
 
-**Rust Implementation** (`crates/sb-core/src/services/ssmapi/`):
-- Axum REST API with endpoint set matching Go
-- `UserManager` + `TrafficManager` implemented with Go‑compatible fields
-- Cache load/save on start/close (`ssmapi_cache_path`) implemented
-- Traits `TrafficTracker` and `ManagedSSMServer` added for future inbound binding
-- **Missing** InboundManager binding / per‑server routing prefixes and optional TLS
+**Rust Implementation** (`crates/sb-core/src/services/ssmapi/` + `crates/sb-config/src/ir/mod.rs`):
+- HTTP server exists and some endpoints are implemented
+- Config-level parity:
+  - `type="ssm-api"` + Listen Fields + `tls` object supported
+  - `servers` endpoint→inbound tag is parsed and used for `{endpoint}/server/v1/...` routing
+- **API parity**: Go `GET /server/v1/users` returns `{"users":[UserObject...]}`; Rust now matches ✅
+- **Cache model mismatch**: Go caches per-endpoint traffic + users; Rust cache is global and incomplete
+- **Missing** `ManagedSSMServer.UpdateUsers` parity: Rust `UserManager` does not push user set to managed SS inbound
 
-**Impact**: API semantics and stats parity are high, but service cannot yet auto‑manage multiple inbounds or serve over TLS.
+**Impact**: Config and routing are aligned, but service is not drop-in compatible until managed inbound binding + API response + cache format match Go.
 
-### 4) uTLS Integration (Implemented)
+### 4) uTLS Integration (Partial)
 
 **Go Implementation** (`common/tls/utls_client.go`):
 - Full `UTLSClientConfig` with fingerprint selection
@@ -254,9 +280,21 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
   - REALITY client (keeps `RealityVerifier`, uses uTLS-ordered config)
   - ShadowTLS outbound (uTLS-enabled ClientConfig)
 
-**Impact**: uTLS fingerprint selection is now functional, but fidelity is limited (cipher-suite/ALPN ordering only; not full uTLS extension-order parity yet).
+**Impact**: Fingerprint selection is wired, but cannot match Go/uTLS on-wire fingerprints without a different TLS stack (or deeper rustls customization).
 
-### 5) Resolved Service (Partial Gap)
+### 5) ECH (Partial / Build-Gated in Go)
+
+**Go Implementation** (`common/tls/ech.go`, `common/tls/ech_stub.go`):
+- Enabled only on `go1.24` builds; otherwise returns “ECH requires go1.24 …”
+- When enabled, integrates with stdlib `crypto/tls` ECH hooks
+
+**Rust Implementation** (`crates/sb-tls/src/ech/`):
+- ECHConfigList parsing + HPKE primitives + CLI keygen exist
+- **Missing** runtime TLS handshake integration (rustls 0.23 has no native ECH)
+
+**Impact**: Config-level and crypto scaffolding exist, but runtime ECH parity is blocked by TLS library support.
+
+### 6) Resolved Service (Partial Gap)
 
 **Go Implementation** (`service/resolved/service.go`):
 - Full D-Bus server at `org.freedesktop.resolve1`
@@ -272,10 +310,11 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - Resolved DNS transport mirrors Go `TransportLink` routing + ndots/search semantics
 - DNS stub listener implemented
 - **Missing** NetworkMonitor callback registration and Linux netlink change tracking
+- **Behavior gap**: Go forwards queries via `adapter.DNSRouter`; Rust service currently uses a system resolver for query handling
 
 **Impact**: Feature parity is high on static networks; dynamic link updates still lag Go.
 
-### 6) DNS DHCP Transport (Partial Gap)
+### 7) DNS DHCP Transport (Partial Gap)
 
 **Go Implementation** (`dns/transport/dhcp/`):
 - Active DHCP INFORM probe
@@ -296,36 +335,37 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | Category | Aligned | Partial | Not Aligned |
 | --- | --- | --- | --- |
 | Inbound Protocols | 19 | 0 | 0 |
-| Outbound Protocols | 21 | 0 | 1 |
+| Outbound Protocols | 20 | 0 | 2 |
 | Endpoints | 1 | 0 | 1 |
 | Services | 0 | 3 | 0 |
 | Transports | 10 | 0 | 0 |
 | DNS Transports | 8 | 2 | 0 |
-| TLS/Crypto | 4 | 0 | 1 |
-| **Total** | **63** | **5** | **3** |
+| TLS/Crypto | 3 | 2 | 0 |
+| **Total** | **61** | **7** | **3** |
 
 ---
 
 ## Priority Remediation Order
 
 1. **DERP Service Alignment**
-   - Implement tailscale DERP wire protocol parity (v2 frames + naclbox handshake)
-   - Migrate mesh to Go semantics (remove `/derp/mesh`; use `meshKey` in ClientInfo)
-   - Implement `verify_client_endpoint` enforcement (Tailscale LocalClient integration)
+   - ✅ Enforce TLS-required + `config_path` required behavior
+   - ✅ Implement tailscale DERP wire protocol parity (v2 frames + NaCl box handshake)
+   - ✅ Migrate mesh to Go semantics (`meshKey` in ClientInfo; `/derp/mesh` retained for backward compat)
+   - ⊘ De-scoped: `verify_client_endpoint` requires Tailscale LocalClient daemon integration
 
-2. **SSMAPI Service Finalization**
-   - Bind to managed Shadowsocks inbounds (per‑server routing prefixes)
-   - Add optional TLS + HTTP/2 enablement
+2. **SSMAPI Service Alignment**
+   - Implement Go `servers` endpoint→inbound binding, per-endpoint state/cache, and API response parity
+   - Decide fate of Rust-only `tailscale` outbound and implemented `shadowsocksr` outbound (Go rejects)
 
 3. **Resolved Service Completion**
-   - Register NetworkMonitor callbacks
-   - Add Linux netlink interface change tracking
+   - Route DNS via configured router (Go `adapter.DNSRouter` equivalent)
+   - Register NetworkMonitor callbacks + Linux netlink change tracking
 
-4. **Tailscale Stack Parity** (Major undertaking)
-   - Evaluate tsnet FFI integration
-   - Implement netstack TCP/UDP data plane
-   - Add DNS hook integration
+4. **TLS Fidelity**
+   - Decide approach for full uTLS fingerprint parity and ECH runtime parity (blocked by rustls limitations)
 
-5. **DHCP Transport Enhancement**
-   - Add active DHCP INFORM probe
-   - Implement interface discovery
+5. **Tailscale Stack Parity** (Major undertaking)
+   - Evaluate tsnet/FFI integration for netstack TCP/UDP and DNS hooks
+
+6. **DHCP Transport Enhancement**
+   - Add active DHCP INFORM probe + interface discovery

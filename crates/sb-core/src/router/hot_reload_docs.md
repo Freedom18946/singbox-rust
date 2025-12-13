@@ -49,11 +49,15 @@ manager.stop().await;
 
 ```rust
 // Get event receiver for monitoring
-let event_rx = manager.event_receiver();
+let mut event_rx = manager.event_receiver();
 
 tokio::spawn(async move {
-    let mut rx = event_rx.write().await;
-    while let Some(event) = rx.recv().await {
+    loop {
+        let event = match event_rx.recv().await {
+            Ok(event) => event,
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+        };
         match event {
             HotReloadEvent::FileChanged { path } => {
                 println!("File changed: {}", path.display());

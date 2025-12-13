@@ -226,6 +226,18 @@ impl GeoIpProvider for MmdbProvider {
                 .and_then(|a| a.autonomous_system_organization.clone()),
         };
 
+        // If we couldn't populate any fields (no DBs loaded or no record), treat as a miss.
+        let has_any_field = geo_info.country_code.is_some()
+            || geo_info.country_name.is_some()
+            || geo_info.city.is_some()
+            || geo_info.region.is_some()
+            || geo_info.continent_code.is_some()
+            || geo_info.asn.is_some()
+            || geo_info.organization.is_some();
+        if !has_any_field {
+            return None;
+        }
+
         // Cache the result
         if let Ok(mut cache) = self.cache.lock() {
             cache.put(ip, geo_info.clone());
@@ -408,7 +420,16 @@ mod tests {
             let result = provider.lookup(ip);
             // Result may be None if no databases are available
             if let Some(info) = result {
-                assert!(info.country_code.is_some() || info.country_name.is_some());
+                assert!(
+                    info.country_code.is_some()
+                        || info.country_name.is_some()
+                        || info.city.is_some()
+                        || info.region.is_some()
+                        || info.continent_code.is_some()
+                        || info.asn.is_some()
+                        || info.organization.is_some(),
+                    "GeoInfo should contain at least one populated field"
+                );
             }
         }
     }

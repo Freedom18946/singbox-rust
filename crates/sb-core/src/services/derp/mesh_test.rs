@@ -2,43 +2,134 @@
 mod tests {
     use crate::service::{ServiceContext, StartStage};
     use crate::services::derp::build_derp_service;
-    use crate::services::derp::protocol::{DerpFrame, FrameType};
-    use sb_config::ir::{ServiceIR, ServiceType};
+    use crate::services::derp::protocol::{
+        clamp_private_key, derive_public_key, open_from, seal_to, ClientInfoPayload, DerpFrame,
+        FrameType, PrivateKey, PublicKey, PROTOCOL_VERSION,
+    };
+    use sb_config::ir::{DerpStunOptionsIR, InboundTlsOptionsIR, ServiceIR, ServiceType};
     use std::net::SocketAddr;
+    use std::sync::Arc;
 
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
-    use tokio::time::sleep;
+    use tokio::time::{sleep, timeout};
 
     fn alloc_port() -> u16 {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.local_addr().unwrap().port()
     }
 
-    async fn connect_and_handshake(addr: SocketAddr, key: [u8; 32]) -> (TcpStream, [u8; 32]) {
-        let mut stream = TcpStream::connect(addr).await.expect("connect");
+    struct TestTls {
+        cert_file: tempfile::NamedTempFile,
+        key_file: tempfile::NamedTempFile,
+        connector: tokio_rustls::TlsConnector,
+    }
 
-        // Read ServerKey
-        let mut buf = [0u8; 1024];
-        let mut server_key = [0u8; 32];
+    impl TestTls {
+        fn new() -> Self {
+            crate::tls::ensure_rustls_crypto_provider();
 
-        // We need to read frame by frame.
-        // v2 ServerKey frame: type(1) + len(4) + magic(8) + key(32) = 45 bytes
-        stream
-            .read_exact(&mut buf[0..45])
+            let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+            let cert_pem = cert.cert.pem();
+            let key_pem = cert.key_pair.serialize_pem();
+
+            let cert_file = tempfile::NamedTempFile::new().unwrap();
+            let key_file = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(cert_file.path(), cert_pem).unwrap();
+            std::fs::write(key_file.path(), key_pem).unwrap();
+
+            let mut roots = rustls::RootCertStore::empty();
+            let cert_der =
+                rustls::pki_types::CertificateDer::from(cert.cert.der().to_vec());
+            roots.add(cert_der).expect("add root");
+
+            let client_config = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            let connector = tokio_rustls::TlsConnector::from(Arc::new(client_config));
+
+            Self {
+                cert_file,
+                key_file,
+                connector,
+            }
+        }
+
+        fn tls_ir(&self) -> InboundTlsOptionsIR {
+            InboundTlsOptionsIR {
+                enabled: true,
+                certificate_path: Some(self.cert_file.path().to_string_lossy().to_string()),
+                key_path: Some(self.key_file.path().to_string_lossy().to_string()),
+                ..Default::default()
+            }
+        }
+
+        async fn connect(&self, addr: SocketAddr) -> tokio_rustls::client::TlsStream<TcpStream> {
+            use rustls::pki_types::ServerName;
+
+            let stream = TcpStream::connect(addr).await.expect("connect");
+            let server_name = ServerName::try_from("localhost").expect("server name");
+            self.connector
+                .connect(server_name, stream)
+                .await
+                .expect("tls connect")
+        }
+    }
+
+    fn test_client_keypair(seed: u8) -> (PrivateKey, PublicKey) {
+        let mut private = [seed; 32];
+        clamp_private_key(&mut private);
+        let public = derive_public_key(&private);
+        (private, public)
+    }
+
+    async fn connect_and_handshake(
+        tls: &TestTls,
+        addr: SocketAddr,
+        client_private_key: PrivateKey,
+    ) -> (tokio_rustls::client::TlsStream<TcpStream>, PublicKey) {
+        let mut stream = tls.connect(addr).await;
+
+        let server_key_frame = DerpFrame::read_from_async(&mut stream)
             .await
-            .expect("read server key");
-        assert_eq!(buf[0], FrameType::ServerKey as u8);
-        // Skip length (4) + magic (8), then read key
-        server_key.copy_from_slice(&buf[13..45]);
+            .expect("server key");
+        let server_public_key = match server_key_frame {
+            DerpFrame::ServerKey { key } => key,
+            other => panic!("expected ServerKey, got {:?}", other.frame_type()),
+        };
 
-        // Send ClientInfo with encrypted_info for v2
-        let frame = DerpFrame::ClientInfo { key, encrypted_info: vec![] };
-        let bytes = frame.to_bytes().unwrap();
-        stream.write_all(&bytes).await.expect("write client info");
+        let client_public_key = derive_public_key(&client_private_key);
+        let info = ClientInfoPayload::new(PROTOCOL_VERSION as u32).with_can_ack_pings(true);
+        let msgbox = seal_to(&client_private_key, &server_public_key, &info.to_json())
+            .expect("seal client info");
+        DerpFrame::ClientInfo {
+            key: client_public_key,
+            encrypted_info: msgbox,
+        }
+        .write_to_async(&mut stream)
+        .await
+        .expect("write client info");
+        stream.flush().await.expect("flush client info");
 
-        (stream, server_key)
+        let server_info_frame = DerpFrame::read_from_async(&mut stream)
+            .await
+            .expect("server info");
+        match server_info_frame {
+            DerpFrame::ServerInfo { encrypted_info } => {
+                let clear =
+                    open_from(&client_private_key, &server_public_key, &encrypted_info)
+                        .expect("open server info");
+                let clear = String::from_utf8_lossy(&clear);
+                assert!(
+                    clear.contains(&format!("\"version\":{}", PROTOCOL_VERSION)),
+                    "unexpected ServerInfo payload: {clear}"
+                );
+            }
+            other => panic!("expected ServerInfo, got {:?}", other.frame_type()),
+        }
+
+        (stream, client_public_key)
     }
 
     #[tokio::test]
@@ -52,60 +143,51 @@ mod tests {
         // PSK must be 64 lowercase hex chars (32 bytes)
         let psk = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
 
-        // Server A
+        let tls = TestTls::new();
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path_a = tempdir
+            .path()
+            .join("derp-a.key")
+            .to_string_lossy()
+            .to_string();
+        let config_path_b = tempdir
+            .path()
+            .join("derp-b.key")
+            .to_string_lossy()
+            .to_string();
+
+        // Server A (meshes with B)
         let ir_a = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-a".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port_a),
-            derp_mesh_psk: Some(psk.clone()),
-            derp_stun_enabled: Some(false),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port_a),
+            config_path: Some(config_path_a),
+            tls: Some(tls.tls_ir()),
+            mesh_psk: Some(psk.clone()),
+            mesh_with: Some(vec![format!("localhost:{}", port_b)]),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         // Server B (meshes with A)
         let ir_b = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-b".to_string()),
-            derp_listen: Some("127.0.0.1".to_string()),
-            derp_listen_port: Some(port_b),
-            derp_mesh_psk: Some(psk.clone()),
-            derp_mesh_with: Some(vec![format!("127.0.0.1:{}", port_a)]),
-            derp_stun_enabled: Some(false),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_psk_file: None,
-            derp_server_key_path: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(port_b),
+            config_path: Some(config_path_b),
+            tls: Some(tls.tls_ir()),
+            mesh_psk: Some(psk.clone()),
+            mesh_with: Some(vec![format!("localhost:{}", port_a)]),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -119,26 +201,30 @@ mod tests {
         service_b.start(StartStage::Start).unwrap();
 
         // Wait for servers to start and mesh to connect
-        sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_secs(3)).await;
 
         // Client 1 connects to A
-        let client1_key = [1u8; 32];
-        let (mut c1, _) = connect_and_handshake(
+        let (client1_private_key, client1_key) = test_client_keypair(1);
+        let (mut c1, client1_key2) = connect_and_handshake(
+            &tls,
             format!("127.0.0.1:{}", port_a).parse().unwrap(),
-            client1_key,
+            client1_private_key,
         )
         .await;
+        assert_eq!(client1_key2, client1_key);
 
         // Client 2 connects to B
-        let client2_key = [2u8; 32];
-        let (mut c2, _) = connect_and_handshake(
+        let (client2_private_key, client2_key) = test_client_keypair(2);
+        let (mut c2, client2_key2) = connect_and_handshake(
+            &tls,
             format!("127.0.0.1:{}", port_b).parse().unwrap(),
-            client2_key,
+            client2_private_key,
         )
         .await;
+        assert_eq!(client2_key2, client2_key);
 
         // Wait for peer presence propagation
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_secs(2)).await;
 
         // C1 sends packet to C2
         let packet_content = b"hello mesh".to_vec();
@@ -151,26 +237,17 @@ mod tests {
             .expect("c1 send");
 
         // C2 should receive RecvPacket from C1
-        let mut buf = [0u8; 1024];
-        // Read frame header
-        c2.read_exact(&mut buf[0..5]).await.expect("c2 read header");
-        let frame_type = buf[0];
-        let frame_len = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]) as usize;
-
-        assert_eq!(frame_type, FrameType::RecvPacket as u8);
-
-        // Read frame body
-        c2.read_exact(&mut buf[0..frame_len])
+        let recv = timeout(Duration::from_secs(5), DerpFrame::read_from_async(&mut c2))
             .await
-            .expect("c2 read body");
-
-        // Verify content
-        // RecvPacket: src_key(32) + packet
-        let src_key = &buf[0..32];
-        let packet = &buf[32..frame_len];
-
-        assert_eq!(src_key, client1_key);
-        assert_eq!(packet, packet_content.as_slice());
+            .expect("timeout waiting for RecvPacket")
+            .expect("read RecvPacket");
+        match recv {
+            DerpFrame::RecvPacket { src_key, packet } => {
+                assert_eq!(src_key, client1_key);
+                assert_eq!(packet, packet_content);
+            }
+            other => panic!("expected RecvPacket, got {:?}", other.frame_type()),
+        }
 
         service_a.close().unwrap();
         service_b.close().unwrap();

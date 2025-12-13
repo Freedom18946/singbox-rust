@@ -38,13 +38,11 @@ async fn test_hot_reload_complete_functionality() {
     manager.start().await.unwrap();
 
     // Test event monitoring
-    let event_rx = manager.event_receiver();
+    let mut event_rx = manager.event_receiver();
 
     // Spawn event collector
     let events_collector = {
-        let event_rx = event_rx.clone();
         tokio::spawn(async move {
-            let mut rx = event_rx.write().await;
             let mut collected = Vec::new();
 
             // Collect events for a short time
@@ -53,13 +51,11 @@ async fn test_hot_reload_complete_functionality() {
 
             while start.elapsed() < timeout {
                 tokio::select! {
-                    event = rx.recv() => {
-                        if let Some(event) = event {
-                            collected.push(event);
-                        } else {
-                            break;
-                        }
-                    }
+                    event = event_rx.recv() => match event {
+                        Ok(event) => collected.push(event),
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    },
                     _ = sleep(Duration::from_millis(50)) => {
                         // Continue collecting
                     }

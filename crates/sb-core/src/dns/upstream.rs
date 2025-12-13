@@ -1333,6 +1333,8 @@ impl DotUpstream {
         use tokio::net::TcpStream;
         use tokio_rustls::TlsConnector;
 
+        crate::tls::ensure_rustls_crypto_provider();
+
         // Create TLS configuration using global roots + per-upstream extras
         let mut roots = crate::tls::global::base_root_store();
         for p in &self.extra_ca_paths {

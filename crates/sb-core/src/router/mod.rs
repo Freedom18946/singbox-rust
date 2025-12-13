@@ -192,7 +192,7 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     sync::{Arc, RwLock},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 use tokio::fs as tfs;
 use tokio::time::sleep;
@@ -529,9 +529,9 @@ pub fn router_build_index_from_str(
     let mut transport_udp: Option<&'static str> = Default::default();
     let mut cidr4 = Vec::new();
     let mut cidr6 = Vec::new();
-    // Pre-create empty buckets to avoid index-out-of-bounds on lookups with no CIDR rules.
-    let buckets4 = vec![Vec::new(); 33]; // 0..=32
-    let buckets6 = vec![Vec::new(); 129]; // 0..=128
+    // Pre-create empty buckets (mask length indexed) for fast longest-prefix matching.
+    let mut buckets4 = vec![Vec::new(); 33]; // 0..=32
+    let mut buckets6 = vec![Vec::new(); 129]; // 0..=128
     let mut geoip = Vec::new();
     let mut geosite = Vec::new();
     let mut wifi_ssid = Vec::new();
@@ -571,10 +571,37 @@ pub fn router_build_index_from_str(
     let mut lines = expanded.lines();
 
     for raw_line in lines.by_ref() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
+        let mut start = 0usize;
+        let mut seen_equal = false;
+        let mut segments: Vec<&str> = Vec::new();
+        for (i, ch) in raw_line.char_indices() {
+            match ch {
+                '=' => seen_equal = true,
+                ',' | ';' => {
+                    let seg = raw_line[start..i].trim();
+                    if seen_equal || seg.starts_with("default:") {
+                        segments.push(seg);
+                        start = i + 1;
+                        seen_equal = false;
+                    }
+                }
+                _ => {}
+            }
         }
+        segments.push(raw_line[start..].trim());
+        for raw_rule in segments {
+            let line = raw_rule.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            // Strip inline comments ("# ...") and re-trim.
+            let line = match line.split_once('#') {
+                Some((before, _)) => before.trim(),
+                None => line,
+            };
+            if line.is_empty() {
+                continue;
+            }
         // R5: let 变量定义
         if let Some(rest) = line.strip_prefix("let:") {
             let (name, val) = match rest.split_once('=') {
@@ -649,14 +676,15 @@ pub fn router_build_index_from_str(
                         .increment(1);
                     return Err(BuildError::Invalid(InvalidReason::InvalidChar));
                 }
-                if !seen_exact.insert(pat.to_string()) {
+                let host_norm = normalize_host(pat);
+                if !seen_exact.insert(host_norm.clone()) {
                     #[cfg(feature = "metrics")]
                     metrics::counter!("router_rules_invalid_total", "reason"=>"dup_exact")
                         .increment(1);
                     return Err(BuildError::Invalid(InvalidReason::DupExact));
                 }
                 let dec = decision_intern::intern_decision(decision.trim());
-                exact.insert(pat.to_string(), dec);
+                exact.insert(host_norm, dec);
                 count += 1;
             }
             #[cfg(feature = "router_keyword")]
@@ -691,7 +719,7 @@ pub fn router_build_index_from_str(
                         .increment(1);
                     return Err(BuildError::Invalid(InvalidReason::InvalidChar));
                 }
-                let key = pat.trim_start_matches('.').to_string();
+                let key = normalize_host(pat.trim_start_matches('.'));
                 if !seen_suffix.insert(key.clone()) {
                     #[cfg(feature = "metrics")]
                     metrics::counter!("router_rules_invalid_total", "reason"=>"dup_suffix")
@@ -721,7 +749,10 @@ pub fn router_build_index_from_str(
                 if mask > 32 {
                     return Err(BuildError::Invalid(InvalidReason::InvalidCidr));
                 }
-                cidr4.push((Ipv4Net { net: ip, mask }, intern_dec(decision)));
+                let net = Ipv4Net { net: ip, mask };
+                let dec = intern_dec(decision);
+                cidr4.push((net, dec));
+                buckets4[mask as usize].push((net, dec));
                 count += 1;
             }
             "cidr6" => {
@@ -741,7 +772,10 @@ pub fn router_build_index_from_str(
                 if mask > 128 {
                     return Err(BuildError::Invalid(InvalidReason::InvalidCidr));
                 }
-                cidr6.push((Ipv6Net { net: ip, mask }, intern_dec(decision)));
+                let net = Ipv6Net { net: ip, mask };
+                let dec = intern_dec(decision);
+                cidr6.push((net, dec));
+                buckets6[mask as usize].push((net, dec));
                 count += 1;
             }
             "geoip" => {
@@ -953,6 +987,7 @@ pub fn router_build_index_from_str(
         count += 1;
         if count > max {
             break;
+        }
         }
     }
 
@@ -1902,37 +1937,20 @@ pub async fn spawn_rules_hot_reload(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(8192);
-    let mut last_mtime: Option<SystemTime> = None;
     let h = tokio::spawn(async move {
         loop {
-            let mut should_check = true;
-            // 观测 mtime
-            match tokio::fs::metadata(&path).await {
-                Ok(meta) => {
-                    if let Ok(m) = meta.modified() {
-                        if Some(m) == last_mtime {
-                            should_check = false;
-                        }
-                        last_mtime = Some(m);
-                    }
-                }
-                Err(_) => { /* 文件可能暂时不存在，继续轮询 */ }
-            }
-            if should_check {
-                let mut visited = HashSet::new();
-                match read_rules_with_includes(&path, 0, &mut visited).await {
-                    Ok(text) => {
-                        // 与当前 checksum 比较，避免无谓切换
-                        let cur_sum = { shared.read().unwrap_or_else(|e| e.into_inner()).checksum };
-                        let mut hasher = Blake3::new();
-                        hasher.update(text.as_bytes());
-                        let new_sum = *hasher.finalize().as_bytes();
-                        if new_sum == cur_sum {
-                            #[cfg(feature = "metrics")]
-                            metrics::counter!("router_rules_reload_total", "result"=>"noop")
-                                .increment(1);
-                            continue;
-                        }
+            let mut visited = HashSet::new();
+            match read_rules_with_includes(&path, 0, &mut visited).await {
+                Ok(text) => {
+                    // 与当前 checksum 比较，避免无谓切换（同时覆盖 include 文件变化）
+                    let cur_sum = { shared.read().unwrap_or_else(|e| e.into_inner()).checksum };
+                    let mut hasher = Blake3::new();
+                    hasher.update(text.as_bytes());
+                    let new_sum = *hasher.finalize().as_bytes();
+                    if new_sum == cur_sum {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_reload_total", "result"=>"noop").increment(1);
+                    } else {
                         #[cfg(feature = "metrics")]
                         let build_start = Instant::now();
                         match router_build_index_from_str(&text, max_rules) {
@@ -1946,10 +1964,8 @@ pub async fn spawn_rules_hot_reload(
                                 idx_cloned.gen = prev_gen.saturating_add(1);
                                 #[cfg(feature = "metrics")]
                                 {
-                                    metrics::gauge!("router_rules_generation")
-                                        .set(idx_cloned.gen as f64);
-                                    metrics::histogram!("router_rules_reload_ms_bucket")
-                                        .record(elapsed);
+                                    metrics::gauge!("router_rules_generation").set(idx_cloned.gen as f64);
+                                    metrics::histogram!("router_rules_reload_ms_bucket").record(elapsed);
                                     // reload 后再次写规模（便于观察变化）
                                     metrics::gauge!("router_rules_size", "kind"=>"exact")
                                         .set(idx_cloned.exact.len() as f64);
@@ -1958,10 +1974,8 @@ pub async fn spawn_rules_hot_reload(
                                     metrics::gauge!("router_rules_size", "kind"=>"port")
                                         .set(idx_cloned.port_rules.len() as f64);
                                     let tcnt = (idx_cloned.transport_tcp.is_some() as i32
-                                        + idx_cloned.transport_udp.is_some() as i32)
-                                        as f64;
-                                    metrics::gauge!("router_rules_size", "kind"=>"transport")
-                                        .set(tcnt);
+                                        + idx_cloned.transport_udp.is_some() as i32) as f64;
+                                    metrics::gauge!("router_rules_size", "kind"=>"transport").set(tcnt);
                                     metrics::gauge!("router_rules_size", "kind"=>"cidr4")
                                         .set(idx_cloned.cidr4.len() as f64);
                                     metrics::gauge!("router_rules_size", "kind"=>"cidr6")
@@ -1999,15 +2013,13 @@ pub async fn spawn_rules_hot_reload(
                             }
                         }
                     }
-                    Err(_) => {
-                        #[cfg(feature = "metrics")]
-                        metrics::counter!("router_rules_invalid_total", "reason"=>"io")
-                            .increment(1);
-                        #[cfg(feature = "metrics")]
-                        metrics::counter!("router_rules_reload_total", "result"=>"error")
-                            .increment(1);
-                        // 不切换
-                    }
+                }
+                Err(_) => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("router_rules_invalid_total", "reason"=>"io").increment(1);
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("router_rules_reload_total", "result"=>"error").increment(1);
+                    // 不切换
                 }
             }
             sleep(Duration::from_millis(interval_ms)).await;
@@ -2125,8 +2137,80 @@ static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> = Lazy::new(|| {
     Arc::new(RwLock::new(idx))
 });
 
+static SHARED_INDEX_ENV_CACHE: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
+
+fn refresh_shared_index_from_env_if_needed() {
+    let max_rules: usize = std::env::var("SB_ROUTER_RULES_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8192);
+    let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
+    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
+
+    let key = format!("max_rules={max_rules}\nfile={file}\ninline={inline}");
+    {
+        let mut w = SHARED_INDEX_ENV_CACHE
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        if w.as_deref() == Some(&key) {
+            return;
+        }
+        *w = Some(key);
+    }
+
+    let initial_text = if inline.is_empty() {
+        if file.is_empty() {
+            String::new()
+        } else {
+            std::fs::read_to_string(&file).unwrap_or_default()
+        }
+    } else {
+        inline
+    };
+
+    let idx = router_build_index_from_str(&initial_text, max_rules).unwrap_or_else(|_| {
+        Arc::new(RouterIndex {
+            exact: Default::default(),
+            suffix: vec![],
+            suffix_map: HashMap::new(),
+            port_rules: HashMap::new(),
+            port_ranges: vec![],
+            transport_tcp: None,
+            transport_udp: None,
+            cidr4: vec![],
+            cidr6: vec![],
+            cidr4_buckets: vec![Vec::new(); 33],
+            cidr6_buckets: vec![Vec::new(); 129],
+            geoip_rules: vec![],
+            geosite_rules: vec![],
+            wifi_ssid_rules: Default::default(),
+            wifi_bssid_rules: Default::default(),
+            rule_set_rules: Default::default(),
+            process_rules: Default::default(),
+            process_path_rules: Default::default(),
+            protocol_rules: Default::default(),
+            network_rules: Default::default(),
+            source_rules: vec![],
+            dest_rules: vec![],
+            user_agent_rules: vec![],
+            #[cfg(feature = "router_keyword")]
+            keyword_rules: vec![],
+            #[cfg(feature = "router_keyword")]
+            keyword_idx: None,
+            default: "direct",
+            gen: 0,
+            checksum: [0; 32],
+            rules: vec![],
+        })
+    });
+
+    let mut w = SHARED_INDEX.write().unwrap_or_else(|e| e.into_inner());
+    *w = idx;
+}
+
 /// 提供共享快照（在 Tokio runtime 内自动启动热重载）
 pub fn shared_index() -> Arc<RwLock<Arc<RouterIndex>>> {
+    refresh_shared_index_from_env_if_needed();
     // 若在 async 上下文，后台拉起热重载（只尝试一次）
     if tokio::runtime::Handle::try_current().is_ok() {
         static STARTED: Lazy<std::sync::Once> = Lazy::new(std::sync::Once::new);
@@ -2145,6 +2229,8 @@ pub fn shared_index() -> Arc<RwLock<Arc<RouterIndex>>> {
 struct RuntimeOverride {
     exact: HashMap<String, &'static str>,
     suffix: Vec<(String, &'static str)>,
+    cidr4_buckets: Vec<Vec<(Ipv4Net, &'static str)>>, // 0..=32
+    cidr6_buckets: Vec<Vec<(Ipv6Net, &'static str)>>, // 0..=128
     port: HashMap<u16, &'static str>,
     port_ranges: Vec<(u16, u16, &'static str)>,
     transport_tcp: Option<&'static str>,
@@ -2152,21 +2238,22 @@ struct RuntimeOverride {
     default: Option<&'static str>,
 }
 
-static RUNTIME_OVERRIDE: Lazy<Option<RuntimeOverride>> = Lazy::new(|| {
-    let raw = match std::env::var("SB_ROUTER_OVERRIDE") {
-        Ok(s) if !s.trim().is_empty() => s,
-        _ => return None,
-    };
+static RUNTIME_OVERRIDE_CACHE: Lazy<RwLock<Option<(String, Arc<RuntimeOverride>)>>> =
+    Lazy::new(|| RwLock::new(None));
+
+fn parse_runtime_override(raw: &str) -> RuntimeOverride {
     let mut exact = HashMap::new();
     let mut suffix = Vec::new();
+    let mut cidr4_buckets: Vec<Vec<(Ipv4Net, &'static str)>> = vec![Vec::new(); 33];
+    let mut cidr6_buckets: Vec<Vec<(Ipv6Net, &'static str)>> = vec![Vec::new(); 129];
     let mut port = HashMap::new();
     let mut port_ranges = Vec::new();
     let mut transport_tcp = None;
     let mut transport_udp = None;
     let mut default = None;
+
     // 支持逗号或分号分隔
-    let parts = raw.split([',', ';']);
-    for seg in parts {
+    for seg in raw.split([',', ';']) {
         let s = seg.trim();
         if s.is_empty() {
             continue;
@@ -2175,67 +2262,113 @@ static RUNTIME_OVERRIDE: Lazy<Option<RuntimeOverride>> = Lazy::new(|| {
             Some((a, b)) => (a.trim(), b.trim()),
             None => continue,
         };
+        let v = intern_dec(v);
+
         // k 形如 kind:pattern 或 default
         if k.eq_ignore_ascii_case("default") {
-            default = Some(intern_dec(v));
+            default = Some(v);
             continue;
         }
-        if let Some((kind, pat)) = k.split_once(':') {
-            match kind.to_ascii_lowercase().as_str() {
-                "exact" => {
-                    exact.insert(normalize_host(pat), intern_dec(v));
-                }
-                "suffix" => {
-                    let patt = pat.trim_start_matches('.');
-                    suffix.push((patt.to_ascii_lowercase().to_string(), intern_dec(v)));
-                }
-                "port" => {
-                    if let Ok(p) = pat.parse::<u16>() {
-                        port.insert(p, intern_dec(v));
-                    }
-                }
-                "portrange" => {
-                    let mut it = pat.splitn(2, '-');
-                    if let (Some(a), Some(b)) = (it.next(), it.next()) {
-                        if let (Ok(s), Ok(e)) = (a.parse::<u16>(), b.parse::<u16>()) {
-                            if e >= s {
-                                port_ranges.push((s, e, intern_dec(v)));
-                            }
-                        }
-                    }
-                }
-                "portset" => {
-                    for t in pat.split(',') {
-                        if let Ok(p) = t.trim().parse::<u16>() {
-                            port.insert(p, intern_dec(v));
-                        }
-                    }
-                }
-                "transport" => match pat.to_ascii_lowercase().as_str() {
-                    "tcp" => transport_tcp = Some(intern_dec(v)),
-                    "udp" => transport_udp = Some(intern_dec(v)),
-                    _ => {}
-                },
-                _ => {}
+        let Some((kind, pat)) = k.split_once(':') else {
+            continue;
+        };
+        let kind = kind.to_ascii_lowercase();
+        match kind.as_str() {
+            "exact" => {
+                exact.insert(normalize_host(pat), v);
             }
+            "suffix" => {
+                let patt = pat.trim_start_matches('.');
+                suffix.push((patt.to_ascii_lowercase().to_string(), v));
+            }
+            "cidr4" => {
+                let mut it = pat.split('/');
+                if let (Some(ip), Some(mask)) = (it.next(), it.next()) {
+                    if let (Ok(net), Ok(mask)) = (ip.trim().parse::<Ipv4Addr>(), mask.trim().parse::<u8>()) {
+                        if mask <= 32 {
+                            cidr4_buckets[mask as usize].push((Ipv4Net { net, mask }, v));
+                        }
+                    }
+                }
+            }
+            "cidr6" => {
+                let mut it = pat.split('/');
+                if let (Some(ip), Some(mask)) = (it.next(), it.next()) {
+                    if let (Ok(net), Ok(mask)) = (ip.trim().parse::<Ipv6Addr>(), mask.trim().parse::<u8>()) {
+                        if mask <= 128 {
+                            cidr6_buckets[mask as usize].push((Ipv6Net { net, mask }, v));
+                        }
+                    }
+                }
+            }
+            "port" => {
+                if let Ok(p) = pat.parse::<u16>() {
+                    port.insert(p, v);
+                }
+            }
+            "portrange" => {
+                let mut it = pat.splitn(2, '-');
+                if let (Some(a), Some(b)) = (it.next(), it.next()) {
+                    if let (Ok(s), Ok(e)) = (a.parse::<u16>(), b.parse::<u16>()) {
+                        if e >= s {
+                            port_ranges.push((s, e, v));
+                        }
+                    }
+                }
+            }
+            "portset" => {
+                for t in pat.split(',') {
+                    if let Ok(p) = t.trim().parse::<u16>() {
+                        port.insert(p, v);
+                    }
+                }
+            }
+            "transport" => match pat.to_ascii_lowercase().as_str() {
+                "tcp" => transport_tcp = Some(v),
+                "udp" => transport_udp = Some(v),
+                _ => {}
+            },
+            _ => {}
         }
     }
-    Some(RuntimeOverride {
+
+    RuntimeOverride {
         exact,
         suffix,
+        cidr4_buckets,
+        cidr6_buckets,
         port,
         port_ranges,
         transport_tcp,
         transport_udp,
         default,
-    })
-});
+    }
+}
+
+fn runtime_override() -> Option<Arc<RuntimeOverride>> {
+    let raw = match std::env::var("SB_ROUTER_OVERRIDE") {
+        Ok(s) if !s.trim().is_empty() => s,
+        _ => return None,
+    };
+    if let Ok(g) = RUNTIME_OVERRIDE_CACHE.read() {
+        if let Some((cached, ov)) = &*g {
+            if cached == &raw {
+                return Some(Arc::clone(ov));
+            }
+        }
+    }
+    let parsed = Arc::new(parse_runtime_override(&raw));
+    if let Ok(mut g) = RUNTIME_OVERRIDE_CACHE.write() {
+        *g = Some((raw, Arc::clone(&parsed)));
+    }
+    Some(parsed)
+}
 
 pub fn runtime_override_http(
     host_norm: &str,
     port: Option<u16>,
 ) -> Option<(&'static str, &'static str)> {
-    let ov = RUNTIME_OVERRIDE.as_ref()?;
+    let ov = runtime_override()?;
     if let Some(d) = ov.exact.get(host_norm) {
         return Some((*d, "override"));
     }
@@ -2243,6 +2376,29 @@ pub fn runtime_override_http(
     for (s, d) in &ov.suffix {
         if host_norm.ends_with(s) {
             return Some((*d, "override"));
+        }
+    }
+    // CIDR 覆盖：仅当 host 为字面量 IP 时生效
+    if let Ok(ip) = host_norm.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(v4) => {
+                for m in (0..=32).rev() {
+                    for (n, d) in &ov.cidr4_buckets[m] {
+                        if ip_in_v4net(v4, *n) {
+                            return Some((*d, "override_cidr"));
+                        }
+                    }
+                }
+            }
+            IpAddr::V6(v6) => {
+                for m in (0..=128).rev() {
+                    for (n, d) in &ov.cidr6_buckets[m] {
+                        if ip_in_v6net(v6, *n) {
+                            return Some((*d, "override_cidr"));
+                        }
+                    }
+                }
+            }
         }
     }
     if let Some(p) = port {
@@ -2265,7 +2421,7 @@ pub fn runtime_override_http(
 }
 
 pub fn runtime_override_udp(host_norm: &str) -> Option<(&'static str, &'static str)> {
-    let ov = RUNTIME_OVERRIDE.as_ref()?;
+    let ov = runtime_override()?;
     if let Some(d) = ov.exact.get(host_norm) {
         return Some((*d, "override"));
     }
@@ -2275,11 +2431,59 @@ pub fn runtime_override_udp(host_norm: &str) -> Option<(&'static str, &'static s
             return Some((*d, "override"));
         }
     }
+    // CIDR 覆盖：仅当 host 为字面量 IP 时生效
+    if let Ok(ip) = host_norm.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(v4) => {
+                for m in (0..=32).rev() {
+                    for (n, d) in &ov.cidr4_buckets[m] {
+                        if ip_in_v4net(v4, *n) {
+                            return Some((*d, "override_cidr"));
+                        }
+                    }
+                }
+            }
+            IpAddr::V6(v6) => {
+                for m in (0..=128).rev() {
+                    for (n, d) in &ov.cidr6_buckets[m] {
+                        if ip_in_v6net(v6, *n) {
+                            return Some((*d, "override_cidr"));
+                        }
+                    }
+                }
+            }
+        }
+    }
     if let Some(d) = ov.transport_udp {
         return Some((d, "override"));
     }
     if let Some(d) = ov.default {
         return Some((d, "override_default"));
+    }
+    None
+}
+
+pub(crate) fn runtime_override_ip(ip: IpAddr) -> Option<&'static str> {
+    let ov = runtime_override()?;
+    match ip {
+        IpAddr::V4(v4) => {
+            for m in (0..=32).rev() {
+                for (n, d) in &ov.cidr4_buckets[m] {
+                    if ip_in_v4net(v4, *n) {
+                        return Some(*d);
+                    }
+                }
+            }
+        }
+        IpAddr::V6(v6) => {
+            for m in (0..=128).rev() {
+                for (n, d) in &ov.cidr6_buckets[m] {
+                    if ip_in_v6net(v6, *n) {
+                        return Some(*d);
+                    }
+                }
+            }
+        }
     }
     None
 }
@@ -2492,7 +2696,12 @@ pub fn router_index_decide_keyword_static(
 
 // ===== Test helper functions =====
 pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) -> &'static str {
-    let idx = router_build_index_from_str(rules, 8192).unwrap_or_else(|_| {
+    let normalized = if rules.contains(',') || rules.contains(';') {
+        std::borrow::Cow::Owned(rules.replace([',', ';'], "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(rules)
+    };
+    let idx = router_build_index_from_str(normalized.as_ref(), 8192).unwrap_or_else(|_| {
         Arc::new(RouterIndex {
             exact: Default::default(),
             suffix: vec![],
@@ -2573,7 +2782,12 @@ pub fn decide_udp_with_rules_and_ips_v46(
     _ipv4s: &[std::net::Ipv4Addr],
     ipv6s: &[std::net::Ipv6Addr],
 ) -> &'static str {
-    let idx = router_build_index_from_str(rules, 8192).unwrap_or_else(|_| {
+    let normalized = if rules.contains(',') || rules.contains(';') {
+        std::borrow::Cow::Owned(rules.replace([',', ';'], "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(rules)
+    };
+    let idx = router_build_index_from_str(normalized.as_ref(), 8192).unwrap_or_else(|_| {
         Arc::new(RouterIndex {
             exact: Default::default(),
             suffix: vec![],
@@ -2639,7 +2853,12 @@ pub fn decide_udp_with_rules_and_ips(
     rules: &str,
     ipv4s: &[std::net::Ipv4Addr],
 ) -> &'static str {
-    let idx = router_build_index_from_str(rules, 8192).unwrap_or_else(|_| {
+    let normalized = if rules.contains(',') || rules.contains(';') {
+        std::borrow::Cow::Owned(rules.replace([',', ';'], "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(rules)
+    };
+    let idx = router_build_index_from_str(normalized.as_ref(), 8192).unwrap_or_else(|_| {
         Arc::new(RouterIndex {
             exact: Default::default(),
             suffix: vec![],

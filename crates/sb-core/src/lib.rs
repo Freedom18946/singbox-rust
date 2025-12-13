@@ -25,13 +25,18 @@
 //! use sb_core::runtime::Supervisor;
 //! use sb_config::Config;
 //!
-//! # tokio_test::block_on(async {
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
 //! // Load config
-//! let config = Config::from_file("config.json").unwrap();
+//! let config = Config::load("config.json").unwrap();
 //!
 //! // Start runtime supervisor
-//! let supervisor = Supervisor::new(config).await.unwrap();
-//! supervisor.run().await.unwrap();
+//! let supervisor = Supervisor::start(config.ir().clone()).await.unwrap();
+//!
+//! // Shutdown gracefully
+//! supervisor
+//!     .shutdown_graceful(std::time::Duration::from_secs(1))
+//!     .await
+//!     .unwrap();
 //! # });
 //! ```
 
@@ -106,3 +111,6 @@ pub mod observe {
 pub mod tls;
 
 pub use adapter::*; // 兼容 re-export
+
+#[cfg(test)]
+mod testutil;

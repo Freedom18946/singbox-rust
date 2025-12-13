@@ -2,7 +2,7 @@
 
 use super::protocol::{DerpFrame, PeerGoneReason, PublicKey};
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tracing;
 
 /// Handle for communicating with a connected DERP client.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientHandle {
     pub public_key: PublicKey,
     pub addr: SocketAddr,
@@ -42,6 +42,10 @@ pub struct ClientRegistry {
     remote_clients: Arc<RwLock<HashMap<PublicKey, PublicKey>>>,
     /// Map of mesh peer key -> sender channel
     mesh_peers: Arc<RwLock<HashMap<PublicKey, mpsc::UnboundedSender<DerpFrame>>>>,
+    /// Map of remote DERP server public key -> sender channel (outbound mesh forwarders).
+    mesh_forwarders: Arc<RwLock<HashMap<PublicKey, mpsc::UnboundedSender<DerpFrame>>>>,
+    /// Set of mesh peer keys subscribed via `WatchConns` (Go derp server watchers model).
+    mesh_watchers: Arc<RwLock<HashSet<PublicKey>>>,
     metrics: Arc<DerpMetrics>,
 }
 
@@ -110,6 +114,8 @@ impl ClientRegistry {
             clients: Arc::new(RwLock::new(HashMap::new())),
             remote_clients: Arc::new(RwLock::new(HashMap::new())),
             mesh_peers: Arc::new(RwLock::new(HashMap::new())),
+            mesh_forwarders: Arc::new(RwLock::new(HashMap::new())),
+            mesh_watchers: Arc::new(RwLock::new(HashSet::new())),
             metrics: Arc::new(DerpMetrics::new(tag)),
         }
     }
@@ -234,11 +240,34 @@ impl ClientRegistry {
         let mut peers = self.mesh_peers.write();
         peers.remove(peer_key);
 
-        // Also remove all remote clients associated with this peer
+        self.mesh_watchers.write().remove(peer_key);
+
+        tracing::info!(service = "derp", peer = ?peer_key, "Mesh peer unregistered");
+    }
+
+    /// Register an outbound mesh forwarder (client to another DERP server).
+    pub fn register_mesh_forwarder(
+        &self,
+        peer_key: PublicKey,
+        tx: mpsc::UnboundedSender<DerpFrame>,
+    ) -> Result<(), String> {
+        let mut peers = self.mesh_forwarders.write();
+        if peers.contains_key(&peer_key) {
+            return Err(format!("mesh forwarder {:?} already registered", peer_key));
+        }
+        peers.insert(peer_key, tx);
+        tracing::info!(service = "derp", peer = ?peer_key, "Mesh forwarder registered");
+        Ok(())
+    }
+
+    /// Unregister an outbound mesh forwarder and drop all remote client mappings routed via it.
+    pub fn unregister_mesh_forwarder(&self, peer_key: &PublicKey) {
+        self.mesh_forwarders.write().remove(peer_key);
+
         let mut remote = self.remote_clients.write();
         remote.retain(|_, p| p != peer_key);
 
-        tracing::info!(service = "derp", peer = ?peer_key, "Mesh peer unregistered");
+        tracing::info!(service = "derp", peer = ?peer_key, "Mesh forwarder unregistered");
     }
 
     /// Register a remote client (connected via a mesh peer).
@@ -306,7 +335,7 @@ impl ClientRegistry {
 
         // Check if destination is remote (via mesh)
         if let Some(peer_key) = self.remote_clients.read().get(dst_key) {
-            let peers = self.mesh_peers.read();
+            let peers = self.mesh_forwarders.read();
             if let Some(tx) = peers.get(peer_key) {
                 let frame = DerpFrame::ForwardPacket {
                     src_key: *src_key,
@@ -378,6 +407,50 @@ impl ClientRegistry {
         );
     }
 
+    /// Broadcast peer presence to all connected mesh peers.
+    pub fn broadcast_peer_present_to_mesh_peers(&self, public_key: &PublicKey) {
+        let frame = DerpFrame::PeerPresent { key: *public_key, endpoint: None, flags: 0 };
+        self.broadcast_to_mesh_peers(frame);
+    }
+
+    /// Register a mesh peer as a watcher (after it sends `WatchConns`).
+    pub fn register_mesh_watcher(&self, peer_key: PublicKey) -> Result<(), String> {
+        if !self.mesh_peers.read().contains_key(&peer_key) {
+            return Err(format!("mesh peer {:?} not registered", peer_key));
+        }
+        self.mesh_watchers.write().insert(peer_key);
+        Ok(())
+    }
+
+    /// Unregister a mesh watcher.
+    pub fn unregister_mesh_watcher(&self, peer_key: &PublicKey) {
+        self.mesh_watchers.write().remove(peer_key);
+    }
+
+    /// Broadcast peer presence to subscribed mesh watchers only (Go `WatchConns` model).
+    pub fn broadcast_peer_present_to_mesh_watchers(
+        &self,
+        public_key: &PublicKey,
+        endpoint: Option<SocketAddr>,
+        flags: u8,
+    ) {
+        let frame = DerpFrame::PeerPresent {
+            key: *public_key,
+            endpoint,
+            flags,
+        };
+        self.broadcast_to_mesh_watchers(frame);
+    }
+
+    /// Broadcast peer departure to subscribed mesh watchers only (Go `WatchConns` model).
+    pub fn broadcast_peer_gone_to_mesh_watchers(&self, public_key: &PublicKey, reason: PeerGoneReason) {
+        let frame = DerpFrame::PeerGone {
+            key: *public_key,
+            reason,
+        };
+        self.broadcast_to_mesh_watchers(frame);
+    }
+
     /// Broadcast peer departure to all other clients.
     pub fn broadcast_peer_gone(&self, public_key: &PublicKey) {
         let frame = DerpFrame::PeerGone { key: *public_key, reason: PeerGoneReason::Disconnected };
@@ -401,6 +474,80 @@ impl ClientRegistry {
             service = "derp",
             peer = ?public_key,
             "Broadcast peer gone"
+        );
+    }
+
+    /// Broadcast peer departure to all connected mesh peers.
+    pub fn broadcast_peer_gone_to_mesh_peers(&self, public_key: &PublicKey) {
+        let frame = DerpFrame::PeerGone { key: *public_key, reason: PeerGoneReason::Disconnected };
+        self.broadcast_to_mesh_peers(frame);
+    }
+
+    /// Send all currently connected local clients as PeerPresent frames to a specific mesh watcher.
+    pub fn send_existing_clients_to_mesh_watcher(&self, peer_key: &PublicKey) -> Result<(), String> {
+        use super::protocol::peer_present_flags;
+
+        if !self.mesh_watchers.read().contains(peer_key) {
+            return Ok(());
+        }
+
+        let tx = self
+            .mesh_peers
+            .read()
+            .get(peer_key)
+            .cloned()
+            .ok_or_else(|| format!("mesh peer {:?} not registered", peer_key))?;
+
+        let clients: Vec<ClientHandle> = self.clients.read().values().cloned().collect();
+        for client in clients {
+            tx.send(DerpFrame::PeerPresent {
+                key: client.public_key,
+                endpoint: Some(client.addr),
+                flags: peer_present_flags::IS_REGULAR,
+            })
+                .map_err(|e| format!("failed to send PeerPresent to mesh peer: {}", e))?;
+        }
+        Ok(())
+    }
+
+    fn broadcast_to_mesh_watchers(&self, frame: DerpFrame) {
+        let watchers: Vec<PublicKey> = self.mesh_watchers.read().iter().copied().collect();
+        let peers = self.mesh_peers.read();
+
+        for peer_key in watchers {
+            if let Some(tx) = peers.get(&peer_key) {
+                if let Err(e) = tx.send(frame.clone()) {
+                    tracing::warn!(
+                        service = "derp",
+                        peer = ?peer_key,
+                        error = %e,
+                        "Failed to broadcast frame to mesh watcher"
+                    );
+                }
+            }
+        }
+    }
+
+    fn broadcast_to_mesh_peers(&self, frame: DerpFrame) {
+        let peers = self.mesh_peers.read();
+        let count = peers.len();
+
+        for (peer_key, tx) in peers.iter() {
+            if let Err(e) = tx.send(frame.clone()) {
+                tracing::warn!(
+                    service = "derp",
+                    peer = ?peer_key,
+                    error = %e,
+                    "Failed to broadcast frame to mesh peer"
+                );
+            }
+        }
+
+        tracing::debug!(
+            service = "derp",
+            recipients = count,
+            frame_type = ?frame.frame_type(),
+            "Broadcast frame to mesh peers"
         );
     }
 

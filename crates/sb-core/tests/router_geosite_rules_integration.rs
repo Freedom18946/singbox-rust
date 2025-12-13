@@ -59,6 +59,7 @@ fn test_geosite_rules_with_router_handle() {
         geoip_rules: vec![],
         geosite_rules: vec![
             ("google".to_string(), "proxy"),
+            ("ads".to_string(), "reject"),
             ("social".to_string(), "direct"),
         ],
         wifi_ssid_rules: vec![],

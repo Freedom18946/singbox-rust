@@ -91,6 +91,8 @@ impl OutboundTcp for NaiveH2Outbound {
             })?;
 
         // 2. TLS handshake with HTTP/2 ALPN
+        crate::tls::ensure_rustls_crypto_provider();
+
         let mut client_config = rustls::ClientConfig::builder()
             .with_root_certificates(rustls::RootCertStore::empty())
             .with_no_client_auth();

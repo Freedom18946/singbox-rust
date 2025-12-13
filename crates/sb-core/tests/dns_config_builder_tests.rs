@@ -2,6 +2,8 @@
 //!
 //! Tests for DNS configuration and URL parsing
 
+#![cfg(feature = "router")]
+
 use anyhow::Result;
 use sb_config::ir::DnsServerIR;
 

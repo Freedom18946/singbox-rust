@@ -365,13 +365,19 @@ mod tests_timeouts {
 
     #[tokio::test]
     async fn write_timeout_triggers_when_peer_not_reading() {
-        let (mut a, mut b) = duplex(1);
-        // 先向 a 写入数据，使得 a->b 方向有数据可写
-        a.write_all(b"hello").await.unwrap();
-        // 立即进入拷贝，b 的读取方向没有任何数据，且我们不给 b 读，导致 a->b 写阻塞
+        // Use two independent duplex streams:
+        // - (a1, a2): provide readable data to a1 by writing via a2
+        // - (b1, b2): make b1's writes block by never reading from b2 (small buffer)
+        let (mut a1, mut a2) = duplex(8);
+        let (mut b1, _b2) = duplex(1);
+
+        // Preload data so `a1` has bytes to read immediately.
+        a2.write_all(b"hello").await.unwrap();
+
+        // Start copy between a1 and b1; b1's peer never reads, so a1->b1 writes should time out.
         let r = copy_bidirectional_streaming_ctl(
-            &mut a,
-            &mut b,
+            &mut a1,
+            &mut b1,
             "test",
             Duration::from_millis(50),
             None,
@@ -410,23 +416,40 @@ mod tests_timeouts {
 
     #[tokio::test]
     async fn peer_half_close_propagates_shutdown() {
-        let (mut a, mut b) = duplex(8);
+        use tokio::io::AsyncReadExt;
 
-        // 简化测试：直接在主线程执行，不需要克隆流
+        // Two independent streams:
+        // - (a1, a2): observe shutdown propagation on `a2` reads
+        // - (b1, b2): trigger EOF on `b1` reads by half-closing `b2` writes
+        let (mut a1, mut a2) = duplex(8);
+        let (mut b1, mut b2) = duplex(8);
+
+        let copy_task = tokio::spawn(async move {
+            copy_bidirectional_streaming_ctl(&mut a1, &mut b1, "test", Duration::from_millis(50), None, None, None)
+                .await
+        });
+
+        // Let the copier start polling.
         tokio::time::sleep(Duration::from_millis(10)).await;
-        let _ = AsyncWriteExt::shutdown(&mut b).await;
 
-        let r = copy_bidirectional_streaming_ctl(
-            &mut a,
-            &mut b,
-            "test",
-            Duration::from_millis(50),
-            Some(Duration::from_millis(100)),
-            Some(Duration::from_millis(100)),
-            None,
-        )
-        .await;
-        // 应当正常结束（非错误），或最少不崩溃
+        // Half-close one side and ensure EOF propagates to the opposite peer.
+        let _ = AsyncWriteExt::shutdown(&mut b2).await;
+        let mut one = [0u8; 1];
+        let n = tokio::time::timeout(Duration::from_millis(200), a2.read(&mut one))
+            .await
+            .expect("EOF should propagate to a2")
+            .expect("read should succeed");
+        assert_eq!(n, 0, "expected EOF after peer half-close propagation");
+
+        // Close the remaining direction so the copier can finish cleanly.
+        let _ = AsyncWriteExt::shutdown(&mut a2).await;
+
+        let r = tokio::time::timeout(Duration::from_millis(200), copy_task)
+            .await
+            .expect("copier should finish after both halves close")
+            .expect("join should succeed");
+
+        // Should end cleanly (no error).
         assert!(r.is_ok());
     }
 }

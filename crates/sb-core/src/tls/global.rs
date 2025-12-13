@@ -50,6 +50,8 @@ fn effective() -> Arc<ClientConfig> {
 
 /// Default TLS client configuration using webpki roots.
 fn default_config() -> Arc<ClientConfig> {
+    super::ensure_rustls_crypto_provider();
+
     let mut roots = RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     Arc::new(
@@ -61,6 +63,8 @@ fn default_config() -> Arc<ClientConfig> {
 
 /// Build client config from optional IR certificate settings.
 fn build_config(cert: Option<&sb_config::ir::CertificateIR>) -> Arc<ClientConfig> {
+    super::ensure_rustls_crypto_provider();
+
     let mut roots = base_root_store();
 
     if let Some(c) = cert {

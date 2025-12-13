@@ -11,8 +11,8 @@ fn test_service_instantiation() -> Result<()> {
         "services": [{
             "type": "resolved",
             "tag": "resolved-dns",
-            "resolved_listen": "127.0.0.53",
-            "resolved_listen_port": 53
+            "listen": "127.0.0.53",
+            "listen_port": 53
         }],
         "inbounds": [],
         "outbounds": [{

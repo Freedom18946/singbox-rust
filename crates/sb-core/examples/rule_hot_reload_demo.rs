@@ -51,36 +51,33 @@ default=direct
     let mut manager = HotReloadManager::new(config, router_handle.clone());
 
     // Start monitoring events
-    let event_rx = manager.event_receiver();
-    let event_monitor = {
-        let rx = event_rx.clone();
-        tokio::spawn(async move {
-            let mut rx = rx.write().await;
-            while let Some(event) = rx.recv().await {
-                match event {
-                    HotReloadEvent::FileChanged { path } => {
-                        info!("📁 File changed: {}", path.display());
-                    }
-                    HotReloadEvent::ValidationSucceeded { path, .. } => {
-                        info!("✅ Validation succeeded: {}", path.display());
-                    }
-                    HotReloadEvent::ValidationFailed { path, error } => {
-                        warn!("❌ Validation failed for {}: {}", path.display(), error);
-                    }
-                    HotReloadEvent::Applied { path, generation } => {
-                        info!(
-                            "🔄 Rule set applied: {} (gen: {})",
-                            path.display(),
-                            generation
-                        );
-                    }
-                    HotReloadEvent::RolledBack { path, reason } => {
-                        warn!("↩️  Rolled back {}: {}", path.display(), reason);
-                    }
+    let mut event_rx = manager.event_receiver();
+    let event_monitor = tokio::spawn(async move {
+        loop {
+            let event = match event_rx.recv().await {
+                Ok(event) => event,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            };
+            match event {
+                HotReloadEvent::FileChanged { path } => {
+                    info!("📁 File changed: {}", path.display());
+                }
+                HotReloadEvent::ValidationSucceeded { path, .. } => {
+                    info!("✅ Validation succeeded: {}", path.display());
+                }
+                HotReloadEvent::ValidationFailed { path, error } => {
+                    warn!("❌ Validation failed for {}: {}", path.display(), error);
+                }
+                HotReloadEvent::Applied { path, generation } => {
+                    info!("🔄 Rule set applied: {} (gen: {})", path.display(), generation);
+                }
+                HotReloadEvent::RolledBack { path, reason } => {
+                    warn!("↩️  Rolled back {}: {}", path.display(), reason);
                 }
             }
-        })
-    };
+        }
+    });
 
     // Start hot reload manager
     manager.start().await?;

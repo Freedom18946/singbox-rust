@@ -1,6 +1,6 @@
 # Next Steps (2025-12-13 Execution Plan)
 
-Parity Status: **~89% Aligned** with Go `go_fork_source/sing-box-1.12.12` (63 aligned / 71 total; 5 partial, 3 not aligned). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
+Parity Status: **~86% Aligned** with Go `go_fork_source/sing-box-1.12.12` (61 aligned / 71 total; 7 partial, 3 not aligned). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
 
 ## Working Method (Strict)
 
@@ -19,7 +19,8 @@ After each acceptance:
 P0 快速收益 (1-2天)    → P1 核心对齐 (1周)    → P2 平台完善 (2周)    → P3 评估
 ├─ 0. 验收阻塞清理     ├─ 3. DERP H2/WS端点  ├─ 5. Resolved动态    ├─ 7. Tailscale评估
 ├─ 1. 测试漂移修复     ├─ 4. SSMAPI收尾      ├─ 6. DHCP INFORM
-└─ 2. uTLS接入握手
+├─ 2. uTLS接入握手
+└─ 2b. TLS CryptoProvider收敛
 ```
 
 ---
@@ -28,28 +29,46 @@ P0 快速收益 (1-2天)    → P1 核心对齐 (1周)    → P2 平台完善 (2
 
 All items below must satisfy the **three-layer acceptance** (Source + Tests + Config/Effect) and be recorded in `VERIFICATION_RECORD.md`.
 
-1. **DERP: Wire protocol parity (blocker)**
-   - Align Rust DERP framing to sagernet/tailscale `derp` (`ProtocolVersion=2`, naclbox ClientInfo/ServerInfo, frame IDs, ping/pong, etc.)
-   - Target files: Go `github.com/sagernet/tailscale/derp/*` vs Rust `crates/sb-transport/src/derp/protocol.rs` + `crates/sb-core/src/services/derp/*`
+0. **验收硬化：TLS CryptoProvider + sb-core 公共 API/文档稳定性** ✅ 已完成 (2025-12-13)
+   - Sweep all `sb-core` rustls config builder call sites and ensure `ensure_rustls_crypto_provider()` is executed before any `ClientConfig::builder()` / `ServerConfig::builder()`.
+   - Consolidate scattered `install_default()` into a single source of truth (avoid per-module “best-effort” installs).
+   - Converge workspace rustls provider features (prefer ring-only): eliminate dual-provider graphs (ring + aws-lc-rs) where possible via `default-features = false` + explicit provider feature selection.
+   - Stabilize `sb-core` runtime public API import paths (e.g. `sb_core::runtime::Supervisor`) and keep crate doctests aligned to avoid future doc/test regressions.
+   - Acceptance: `cargo test -p sb-core --features router` and core crates suites stay green; `shutdown_lifecycle` remains non-panicking.
 
-2. **DERP: Mesh parity migration**
-   - Remove Rust-only `/derp/mesh` + `x-derp-mesh-psk` divergence
-   - Align to Go mesh model: `SetMeshKey` + meshKey in encrypted ClientInfo + `derphttp.NewClient(...).MeshKey`
-   - Add/enable mesh E2E tests (currently `mesh_test.rs` is ignored)
+1. **Service schema/type parity (blocker)** ✅ 已完成 (2025-12-13)
+   - Service Listen Fields + shared `tls` object aligned to Go
+   - `ssm-api` type string + `servers` endpoint→inbound map supported (legacy alias `ssmapi` accepted temporarily)
+   - Acceptance: `cargo test -p sb-config`, `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"`, `cargo test -p sb-adapters`, `cargo test -p app`
 
-3. **DERP: `verify_client_endpoint` enforcement**
-   - Match Go `SetVerifyClientLocalClient(endpoints)` behavior (requires Tailscale endpoint integration)
-   - Add tests proving handshake rejects unauthorized clients when configured
+2. **DERP: TLS-required + wire protocol parity (blocker)** ✅ 已完成 (2025-12-13)
+   - ✅ Enforce TLS-required + `config_path` required behavior (Go rejects DERP without TLS; config_path required)
+   - ✅ Align DERP framing to sagernet/tailscale `derp` (`ProtocolVersion=2`, NaCl box ClientInfo/ServerInfo, frame IDs/ping/pong; `config_path` key JSON `{"PrivateKey":"privkey:<hex>"}`)
+   - Target files: Go `github.com/sagernet/tailscale/derp/*`, `go_fork_source/sing-box-1.12.12/service/derp/service.go` vs Rust `crates/sb-transport/src/derp/protocol.rs` + `crates/sb-core/src/services/derp/*`
+   - Acceptance: `cargo test -p sb-core --features "service_derp" --lib`, `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"`, `cargo test -p sb-adapters --features "service_derp"`, `cargo test -p app`
 
-4. **SSMAPI: Inbound binding + TLS**
-   - Bind service to managed Shadowsocks inbounds (per-server routing prefixes)
-   - Add optional TLS (and HTTP/2 when TLS is enabled)
+3. **DERP: Mesh + `verify_client_endpoint` parity** ✅ 已完成 (2025-12-13)
+   - ✅ Mesh 对齐 Go 模型：`meshKey` in ClientInfo 验证已实现（server.rs L1654-1665）
+   - ✅ `/derp/mesh` endpoint 保留作向后兼容，已标记 DEPRECATED
+   - ⊘ De-scoped: `verify_client_endpoint` 需要 Tailscale LocalClient daemon，当前为 warn-only
 
-5. **Resolved: netmon + netlink callbacks**
-   - Register NetworkMonitor callbacks
-   - Implement Linux netlink change tracking (scoped + tested)
+4. **SSMAPI: `ssm-api` parity (config + runtime)** 🔄 进行中
+   - ✅ `type="ssm-api"` + `servers` parsing + `{endpoint}/server/v1/...` routing + TLS options are implemented
+   - ✅ API response contract aligned: `GET /server/v1/users` returns `{"users":[UserObject...]}`
+   - Remaining: Go `servers` mapping enforcement + per-endpoint cache format + `UpdateUsers` binding
 
-6. **DHCP INFORM**
+5. **Protocol divergence cleanup**
+   - Decide fate of Rust `tailscale` outbound (Go is endpoint-only)
+   - Decide fate of Rust `shadowsocksr` outbound (Go registry rejects; removed upstream)
+
+6. **Resolved: DNSRouter + netmon/netlink**
+   - Route DNS via configured router (Go `adapter.DNSRouter` equivalent), not system resolver
+   - Register NetworkMonitor callbacks + implement Linux netlink change tracking (scoped + tested)
+
+7. **TLS fidelity (uTLS + ECH)**
+   - Decide approach for full uTLS ClientHello parity and ECH runtime parity (blocked by rustls limitations)
+
+8. **DHCP INFORM**
    - Add active DHCP INFORM probe + interface discovery
 
 ## P0: 快速收益 (1-2天)
@@ -88,11 +107,12 @@ All items below must satisfy the **three-layer acceptance** (Source + Tests + Co
 ---
 
 ### 2. uTLS 指纹接入 TLS 握手
-**状态**: ✅ 已完成 (2025-12-12) | **工作量**: 1天 | **影响**: uTLS 指纹已接入标准/REALITY/ShadowTLS
+**状态**: ◐ 部分完成 (2025-12-12) | **工作量**: 1天 | **影响**: uTLS 指纹已接入，但与 Go/uTLS 的 on-wire ClientHello 仍不一致（extension order/shape 等）
 
 **现状**:
 - `utls_fingerprint` 已在标准 TLS（v2ray transport mapper）、REALITY client、ShadowTLS outbound 中实际生效
 - Go `uTLSClientHelloID` 的 alias 名称已补齐（`chrome_psk*`, `chrome_pq*`, `ios`, `android`, `randomized` 等）
+- 仍缺：完整 uTLS 指纹一致性（rustls 限制导致无法完全复刻 Go/uTLS 扩展顺序与 ClientHello 形状）
 
 **任务**:
 - [x] 在标准 TLS builder 路径中根据 `utls_fingerprint` 调用 `UtlsConfig`
@@ -104,10 +124,28 @@ All items below must satisfy the **three-layer acceptance** (Source + Tests + Co
 
 ---
 
+### 2b. TLS CryptoProvider 收敛（全路径无 panic）
+**状态**: ✅ 已完成 (2025-12-13) | **工作量**: 0.5-1天 | **影响**: 避免 rustls 0.23 在双 provider 依赖图下的运行时 panic；为后续 service/schema 对齐提供稳定测试基线
+
+**现状**:
+- 已修复：`sb-core` 在构建全局 TLS client config 时会触发的 CryptoProvider panic（`shutdown_lifecycle` 现已全绿）。
+- 仍存在：`sb-core`/workspace 内部仍有多处散落的 `install_default()`；且依赖图可能仍同时启用 `ring` 与 `aws-lc-rs`（长期应收敛为单 provider）。
+
+**任务**:
+- [x] 在 `sb-core` TLS 全局配置构建前确保 provider 已安装（`tls::ensure_rustls_crypto_provider()`）。
+- [x] 修复 `sb-core` crate-level doctest 代码片段，保证 `cargo test -p sb-core --doc` 可编译通过。
+- [x] 为外部调用方提供稳定导入路径（在 `sb-core` 的 `runtime` 模块 re-export `Supervisor`），并同步更新文档片段与 doctest。
+- [x] 扫描 `sb-core` 内所有 rustls builder 入口（`ClientConfig::builder()` / `ServerConfig::builder()`），统一在入口处调用 `ensure_rustls_crypto_provider()`。
+- [x] 替换/移除散落的 `install_default()`（改为调用统一的 `ensure_rustls_crypto_provider()`），避免“局部修补”导致未来回归。
+- [x] 收敛 workspace 依赖特性：rustls/tokio-rustls 统一 ring-only，并对 `anytls-rs` 进行本地 patch 以移除 aws-lc provider 源。
+- [x] 验收回归：`cargo test -p sb-core --features router` + `cargo test -p sb-tls` + `cargo test -p sb-transport` + `cargo test -p sb-adapters` + `cargo test -p app`。
+
+**文件**: `crates/sb-core/src/tls/mod.rs`, `crates/sb-core/src/tls/global.rs`, `crates/sb-core/src/*`（所有 rustls builder 调用点）, `crates/*/Cargo.toml`
+
 ## P1: 核心功能对齐 (1周)
 
 ### 3. DERP 服务对齐（H2/WS/端点）
-**状态**: 🔄 进行中 | **工作量**: 3-5天 | **影响**: 支持完整 Tailscale 中继
+**状态**: ✅ 已完成 (2025-12-13) | **工作量**: 3-5天 | **影响**: 支持完整 Tailscale 中继
 
 **Go 参考**: `go_fork_source/sing-box-1.12.12/service/derp/service.go`
 
@@ -116,41 +154,40 @@ All items below must satisfy the **three-layer acceptance** (Source + Tests + Co
 - [x] `from_ir` 读取配置
 - [x] `verify_client_via_urls()` HTTP 验证函数
 - [x] 现有: STUN, TLS acceptor, HTTP 路由 + Upgrade/WS + endpoints（已对齐 `derphttp`/`tsweb`）
-
-**待完成（推荐推进顺序）**:
-- [ ] **DERP wire protocol**：对齐 sagernet/tailscale `derp`（`ProtocolVersion=2`、naclbox ClientInfo/ServerInfo、frame IDs、ping/pong、meshKey 等），替换/升级当前 Rust-only framing
-- [x] 用 hyper 替换当前 HTTP stub（支持 HTTP/1.1 + HTTP/2；保留现有 DERP 原始帧探测作为兼容路径）
-- [x] `/derp`：实现 HTTP Upgrade DERP handler（`Upgrade: derp|websocket`；支持 `Derp-Fast-Start: 1`）；对齐 `derphttp.Handler(server)`
-- [x] `/derp`：实现 WebSocket upgrade（仅当 `Upgrade: websocket` 且 `Sec-WebSocket-Protocol` 包含 `derp`；对齐 `addWebSocketSupport`）
+- [x] **DERP wire protocol**：对齐 sagernet/tailscale `derp`（`ProtocolVersion=2`、NaCl box ClientInfo/ServerInfo、frame IDs、ping/pong、meshKey 等）
+- [x] 用 hyper 替换当前 HTTP stub（支持 HTTP/1.1 + HTTP/2）
+- [x] `/derp`：实现 HTTP Upgrade DERP handler（`Upgrade: derp|websocket`；支持 `Derp-Fast-Start: 1`）
+- [x] `/derp`：实现 WebSocket upgrade（仅当 `Upgrade: websocket` 且 `Sec-WebSocket-Protocol` 包含 `derp`）
 - [x] 握手期 verify_client：`verify_client_url`（已在 ClientInfo 后、注册前强制拒绝）
-- [ ] 握手期 verify_client：`verify_client_endpoint`（需要 Tailscale LocalClient / 等价能力）
-- [x] 端点对齐：`/derp/probe`, `/derp/latency-check`（已对齐 Go `derphttp.ProbeHandler`）
-- [x] 端点对齐：`/bootstrap-dns`（对齐 `handleBootstrapDNS`；使用全局 DNS resolver）
-- [x] 端点对齐：`/` home（default/blank/redirect）、`/robots.txt`（`tsweb.AddBrowserHeaders`）、`/generate_204`（`derphttp.ServeNoContent` challenge/response）
-- [ ] Mesh 行为对齐：移除 `/derp/mesh` + `x-derp-mesh-psk`，迁移到 Go mesh 机制（`SetMeshKey` + ClientInfo `meshKey` + `derphttp.NewClient(...).MeshKey`）
+- [x] 端点对齐：`/derp/probe`, `/derp/latency-check`, `/bootstrap-dns`, `/`, `/robots.txt`, `/generate_204`
+- [x] **Mesh 行为对齐**：`meshKey` in ClientInfo 验证已实现；`/derp/mesh` 保留作向后兼容
 
-**验收标准（P1-3 关闭条件）**:
-- Rust DERP 服务可被标准 DERP client（包含 WS 与非 WS 路径）成功握手并收发 DERP frame
-- `verify_client_url` 配置开启时：验证失败会在握手期拒绝连接（可测）
-- `/generate_204` 返回 204（含 `X-Tailscale-Challenge/Response`）；`/robots.txt` 文本一致且含 browser headers；`/bootstrap-dns?q=` 返回 JSON 映射；`/derp/probe` 行为与 Go 一致
+**已 De-scope**:
+- ⊘ `verify_client_endpoint`：需要 Tailscale LocalClient daemon (Unix socket) 集成，当前为 warn-only
+
+**验收标准（已满足）**:
+- Rust DERP 服务可被标准 DERP client（包含 WS 与非 WS 路径）成功握手并收发 DERP frame ✅
+- `verify_client_url` 配置开启时：验证失败会在握手期拒绝连接 ✅
+- mesh peer 通过 `meshKey` in ClientInfo 认证 ✅
 
 **文件**: `crates/sb-core/src/services/derp/server.rs`
 
 ---
 
 ### 4. SSMAPI 服务收尾（Inbound 绑定 + TLS）
-**状态**: ◐ 部分完成 | **工作量**: 0.5-1天 | **影响**: 支持多用户 SS 动态管理
+**状态**: ❌ 未对齐 | **工作量**: 1-2天（不含测试） | **影响**: 当前实现无法作为 Go `ssm-api` 的 drop-in 替代
 
 **已实现**:
-- [x] `TrafficManager` / `UserManager` 与 Go 字段对齐
-- [x] `TrafficTracker` / `ManagedSSMServer` traits
-- [x] `load_cache()`/`save_cache()` 持久化
-- [x] Axum REST 路由对齐
+- [x] HTTP server 基础骨架 + 部分 API handlers
+- [x] `TrafficTracker` / `ManagedSSMServer` traits（用于后续绑定）
+- [x] TLS server 能力（axum-server）
 
-**待完成**:
-- [ ] 绑定到 `InboundManager`，按 server 前缀路由（Go: chi `entry.Key`）
-- [ ] 让 Shadowsocks inbounds 实现并注册 `ManagedSSMServer`
-- [ ] 可选 TLS + 自动启用 HTTP/2（Go 行为）
+**关键缺口（按 Go 参考定义）**:
+- [ ] **type/配置**：Go `type="ssm-api"` + Listen Fields + `servers`(endpoint→inbound tag)，Rust 当前 schema/type 不兼容
+- [ ] **绑定**：按 `servers` 绑定 managed Shadowsocks inbound，并将用户变更推送到 `ManagedSSMServer.UpdateUsers`
+- [ ] **路由**：路径必须是 `{endpoint}/server/v1/...`（Go chi `entry.Key` + `APIServer.Route`），而不是 Rust-only 全局 `/server/v1`
+- [ ] **API 合约**：`GET /server/v1/users` 返回 `{"users":[UserObject...]}`；并对齐错误返回/状态码细节
+- [ ] **缓存**：对齐 Go cache JSON（按 endpoint 保存 users + traffic 计数）
 
 **文件**: `crates/sb-core/src/services/ssmapi/`, `crates/sb-adapters/src/inbound/shadowsocks.rs`
 
@@ -159,7 +196,7 @@ All items below must satisfy the **three-layer acceptance** (Source + Tests + Co
 ## P2: 平台完善 (2周)
 
 ### 5. Resolved 服务完善
-**状态**: ✅ 大部分完成 | **工作量**: 0.5天 | **影响**: Linux systemd-resolved 集成
+**状态**: ◐ 部分完成 | **工作量**: 1-2天（Linux 相关） | **影响**: Linux systemd-resolved 集成仍非 drop-in
 
 **已完成**:
 - [x] ResolvedService (615 行) - D-Bus server, DNS stub listener
@@ -168,7 +205,8 @@ All items below must satisfy the **three-layer acceptance** (Source + Tests + Co
 - [x] LinkServers / LinkDomain 结构
 - [x] Domain matching 和 search domains
 
-**待完成** (平台特定):
+**待完成** (平台特定/行为对齐):
+- [ ] **行为**：查询转发应走配置的 DNSRouter（Go `adapter.DNSRouter`），而不是系统 resolver
 - [ ] NetworkMonitor 回调注册 (当前 stub 33 行)
 - [ ] Linux netlink 网络变化监听
 

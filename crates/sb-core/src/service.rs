@@ -35,8 +35,8 @@ pub enum StartStage {
 /// background functionality with lifecycle management.
 /// 服务（如 Resolved/DERP/SSM）实现此 trait 以提供具有生命周期管理的后台功能。
 pub trait Service: Send + Sync {
-    /// Return the service type (e.g., "resolved", "derp", "ssmapi").
-    /// 返回服务类型（例如 "resolved", "derp", "ssmapi"）。
+    /// Return the service type (e.g., "resolved", "derp", "ssm-api").
+    /// 返回服务类型（例如 "resolved", "derp", "ssm-api"）。
     fn service_type(&self) -> &str;
 
     /// Return the service tag/identifier.

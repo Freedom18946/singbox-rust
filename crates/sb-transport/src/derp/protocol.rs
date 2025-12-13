@@ -8,117 +8,280 @@
 
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use crypto_box::aead::rand_core::RngCore;
+use crypto_box::aead::{Aead, OsRng};
+use crypto_box::{PublicKey as CryptoBoxPublicKey, SalsaBox, SecretKey as CryptoBoxSecretKey};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// Client info payload (JSON encoded inside encrypted_info).
-/// This is the decrypted content of the ClientInfo encrypted blob.
+/// ClientInfo payload (JSON) carried inside the NaCl box of `DerpFrame::ClientInfo`.
+///
+/// Go reference: `github.com/sagernet/tailscale/derp` (`clientInfo`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClientInfoPayload {
-    /// Client version string (e.g., "singbox-rust 0.1.0").
-    pub version: String,
-    /// Mesh key for mesh peer authorization.
-    /// Only set if client is requesting to join mesh network.
-    /// Must match server's configured mesh key to be treated as mesh peer.
-    pub mesh_key: Option<[u8; 32]>,
+    /// Mesh key for mesh peer authorization (`mesh_psk`), if present.
+    ///
+    /// In Go this is a 64-hex-digit string; see sing-box `checkMeshKey`.
+    pub mesh_key: Option<String>,
+    /// DERP protocol version (Go `ProtocolVersion`).
+    pub version: u32,
+    /// Whether the client can ack pings.
+    pub can_ack_pings: bool,
+    /// Whether this client is a prober.
+    pub is_prober: bool,
 }
 
 impl ClientInfoPayload {
     /// Create a new client info payload.
-    pub fn new(version: impl Into<String>) -> Self {
+    pub fn new(version: u32) -> Self {
         Self {
-            version: version.into(),
+            version,
             mesh_key: None,
+            can_ack_pings: false,
+            is_prober: false,
         }
     }
 
     /// Set mesh key for mesh peer authentication.
-    pub fn with_mesh_key(mut self, key: [u8; 32]) -> Self {
-        self.mesh_key = Some(key);
+    pub fn with_mesh_key(mut self, key: impl Into<String>) -> Self {
+        self.mesh_key = Some(key.into());
+        self
+    }
+
+    /// Set whether this client can ack pings.
+    pub fn with_can_ack_pings(mut self, can_ack_pings: bool) -> Self {
+        self.can_ack_pings = can_ack_pings;
+        self
+    }
+
+    /// Set whether this client is a prober.
+    pub fn with_is_prober(mut self, is_prober: bool) -> Self {
+        self.is_prober = is_prober;
         self
     }
 
     /// Encode payload to JSON bytes (plaintext, for use before encryption).
     pub fn to_json(&self) -> Vec<u8> {
-        // Simple JSON encoding without serde dependency
-        let mesh_key_str = self.mesh_key.map(|k| {
-            // Inline hex encoding
-            const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
-            let mut s = String::with_capacity(64);
-            for byte in k {
-                s.push(HEX_CHARS[(byte >> 4) as usize] as char);
-                s.push(HEX_CHARS[(byte & 0xf) as usize] as char);
-            }
-            s
-        });
-        let json = if let Some(mk) = mesh_key_str {
-            format!(r#"{{"version":"{}","meshKey":"{}"}}"#, self.version, mk)
-        } else {
-            format!(r#"{{"version":"{}"}}"#, self.version)
-        };
-        json.into_bytes()
+        // Minimal JSON encoding (sufficient for Go tailscale DERP interop).
+        let mut parts = Vec::new();
+
+        if let Some(mk) = self.mesh_key.as_deref().filter(|s| !s.is_empty()) {
+            parts.push(format!(r#""meshKey":"{}""#, mk));
+        }
+        if self.version != 0 {
+            parts.push(format!(r#""version":{}"#, self.version));
+        }
+        parts.push(format!(
+            r#""CanAckPings":{}"#,
+            if self.can_ack_pings { "true" } else { "false" }
+        ));
+        if self.is_prober {
+            parts.push(r#""IsProber":true"#.to_string());
+        }
+
+        format!("{{{}}}", parts.join(",")).into_bytes()
     }
 
     /// Decode payload from JSON bytes.
     pub fn from_json(data: &[u8]) -> Result<Self, ProtocolError> {
         let s = std::str::from_utf8(data)
             .map_err(|_| ProtocolError::InvalidClientInfo("invalid UTF-8".to_string()))?;
-        
-        // Simple JSON parsing without serde dependency
-        let mut version = String::new();
-        let mut mesh_key = None;
 
-        // Parse version field
-        if let Some(start) = s.find("\"version\":") {
-            let rest = &s[start + 10..];
-            if let Some(val_start) = rest.find('"') {
-                let val_rest = &rest[val_start + 1..];
-                if let Some(val_end) = val_rest.find('"') {
-                    version = val_rest[..val_end].to_string();
-                }
+        fn find_json_string(s: &str, key: &str) -> Option<String> {
+            let needle = format!("\"{key}\":");
+            let start = s.find(&needle)?;
+            let rest = &s[start + needle.len()..];
+            let rest = rest.trim_start();
+            let rest = rest.strip_prefix('"')?;
+            let end = rest.find('"')?;
+            Some(rest[..end].to_string())
+        }
+
+        fn find_json_u32(s: &str, key: &str) -> Option<u32> {
+            let needle = format!("\"{key}\":");
+            let start = s.find(&needle)?;
+            let rest = &s[start + needle.len()..];
+            let rest = rest.trim_start();
+            let digits: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            if digits.is_empty() {
+                return None;
+            }
+            digits.parse().ok()
+        }
+
+        fn find_json_bool(s: &str, key: &str) -> Option<bool> {
+            let needle = format!("\"{key}\":");
+            let start = s.find(&needle)?;
+            let rest = &s[start + needle.len()..];
+            let rest = rest.trim_start();
+            if rest.starts_with("true") {
+                Some(true)
+            } else if rest.starts_with("false") {
+                Some(false)
+            } else {
+                None
             }
         }
 
-        // Parse meshKey field
-        if let Some(start) = s.find("\"meshKey\":") {
-            let rest = &s[start + 10..];
-            if let Some(val_start) = rest.find('"') {
-                let val_rest = &rest[val_start + 1..];
-                if let Some(val_end) = val_rest.find('"') {
-                    let hex_str = &val_rest[..val_end];
-                    if hex_str.len() == 64 {
-                        // Inline hex decoding
-                        let mut key = [0u8; 32];
-                        let mut valid = true;
-                        for (i, chunk) in hex_str.as_bytes().chunks(2).enumerate() {
-                            if chunk.len() != 2 {
-                                valid = false;
-                                break;
-                            }
-                            let high = match chunk[0] {
-                                b'0'..=b'9' => chunk[0] - b'0',
-                                b'a'..=b'f' => chunk[0] - b'a' + 10,
-                                b'A'..=b'F' => chunk[0] - b'A' + 10,
-                                _ => { valid = false; break; }
-                            };
-                            let low = match chunk[1] {
-                                b'0'..=b'9' => chunk[1] - b'0',
-                                b'a'..=b'f' => chunk[1] - b'a' + 10,
-                                b'A'..=b'F' => chunk[1] - b'A' + 10,
-                                _ => { valid = false; break; }
-                            };
-                            key[i] = (high << 4) | low;
-                        }
-                        if valid {
-                            mesh_key = Some(key);
-                        }
-                    }
-                }
-            }
-        }
+        let mesh_key = find_json_string(s, "meshKey");
+        let version = find_json_u32(s, "version").unwrap_or(0);
+        let can_ack_pings = find_json_bool(s, "CanAckPings")
+            .or_else(|| find_json_bool(s, "canAckPings"))
+            .unwrap_or(false);
+        let is_prober = find_json_bool(s, "IsProber")
+            .or_else(|| find_json_bool(s, "isProber"))
+            .unwrap_or(false);
 
-        Ok(Self { version, mesh_key })
+        Ok(Self {
+            mesh_key,
+            version,
+            can_ack_pings,
+            is_prober,
+        })
     }
+}
+
+/// ServerInfo payload (JSON) carried inside the NaCl box of `DerpFrame::ServerInfo`.
+///
+/// Go reference: `github.com/sagernet/tailscale/derp` (`serverInfo`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ServerInfoPayload {
+    pub version: u32,
+    pub token_bucket_bytes_per_second: u32,
+    pub token_bucket_bytes_burst: u32,
+}
+
+impl ServerInfoPayload {
+    pub fn new(version: u32) -> Self {
+        Self {
+            version,
+            token_bucket_bytes_per_second: 0,
+            token_bucket_bytes_burst: 0,
+        }
+    }
+
+    pub fn to_json(&self) -> Vec<u8> {
+        let mut parts = Vec::new();
+        if self.version != 0 {
+            parts.push(format!(r#""version":{}"#, self.version));
+        }
+        if self.token_bucket_bytes_per_second != 0 {
+            parts.push(format!(
+                r#""TokenBucketBytesPerSecond":{}"#,
+                self.token_bucket_bytes_per_second
+            ));
+        }
+        if self.token_bucket_bytes_burst != 0 {
+            parts.push(format!(
+                r#""TokenBucketBytesBurst":{}"#,
+                self.token_bucket_bytes_burst
+            ));
+        }
+        format!("{{{}}}", parts.join(",")).into_bytes()
+    }
+}
+
+/// DERP NaCl box private key (Curve25519 scalar, clamped; 32 bytes).
+pub type PrivateKey = [u8; KEY_LEN];
+
+/// Go key prefix for node private keys persisted in the DERP config JSON.
+pub const NODE_PRIVATE_HEX_PREFIX: &str = "privkey:";
+
+pub fn encode_node_private_key(priv_key: &PrivateKey) -> String {
+    let mut out = String::with_capacity(NODE_PRIVATE_HEX_PREFIX.len() + 64);
+    out.push_str(NODE_PRIVATE_HEX_PREFIX);
+    for b in priv_key {
+        out.push_str(&format!("{:02x}", b));
+    }
+    out
+}
+
+pub fn decode_node_private_key(s: &str) -> Result<PrivateKey, ProtocolError> {
+    let s = s.trim();
+    let hex = s
+        .strip_prefix(NODE_PRIVATE_HEX_PREFIX)
+        .ok_or_else(|| ProtocolError::InvalidClientInfo("invalid privkey prefix".to_string()))?;
+    if hex.len() != 64 {
+        return Err(ProtocolError::InvalidClientInfo(
+            "invalid privkey length".to_string(),
+        ));
+    }
+    let mut out = [0u8; KEY_LEN];
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let hi = decode_hex_nibble(chunk[0])?;
+        let lo = decode_hex_nibble(chunk[1])?;
+        out[i] = (hi << 4) | lo;
+    }
+    Ok(out)
+}
+
+fn decode_hex_nibble(b: u8) -> Result<u8, ProtocolError> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => Err(ProtocolError::InvalidClientInfo(
+            "invalid hex digit".to_string(),
+        )),
+    }
+}
+
+pub fn clamp_private_key(key: &mut PrivateKey) {
+    // Go `clamp25519Private`: https://pkg.go.dev/golang.org/x/crypto/curve25519
+    key[0] &= 248;
+    key[31] &= 127;
+    key[31] |= 64;
+}
+
+pub fn derive_public_key(private_key: &PrivateKey) -> PublicKey {
+    // crypto_box uses X25519; the public key derivation is scalar base multiplication.
+    let secret = CryptoBoxSecretKey::from(*private_key);
+    let public = secret.public_key();
+    *public.as_bytes()
+}
+
+pub fn seal_to(
+    sender_private: &PrivateKey,
+    recipient_public: &PublicKey,
+    cleartext: &[u8],
+) -> Result<Vec<u8>, ProtocolError> {
+    let sender = CryptoBoxSecretKey::from(*sender_private);
+    let recipient = CryptoBoxPublicKey::from(*recipient_public);
+    let box_ = SalsaBox::new(&recipient, &sender);
+    let mut nonce_bytes = [0u8; NONCE_LEN];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    let nonce = crypto_box::Nonce::clone_from_slice(&nonce_bytes);
+    let ciphertext = box_
+        .encrypt(&nonce, cleartext)
+        .map_err(|e| ProtocolError::Crypto(e.to_string()))?;
+
+    let mut out = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+    out.extend_from_slice(nonce.as_slice());
+    out.extend_from_slice(&ciphertext);
+    Ok(out)
+}
+
+pub fn open_from(
+    recipient_private: &PrivateKey,
+    sender_public: &PublicKey,
+    msgbox: &[u8],
+) -> Result<Vec<u8>, ProtocolError> {
+    if msgbox.len() < NONCE_LEN {
+        return Err(ProtocolError::Crypto("short nacl box".to_string()));
+    }
+
+    let recipient = CryptoBoxSecretKey::from(*recipient_private);
+    let sender = CryptoBoxPublicKey::from(*sender_public);
+    let box_ = SalsaBox::new(&sender, &recipient);
+
+    let nonce = crypto_box::Nonce::clone_from_slice(&msgbox[..NONCE_LEN]);
+    let ciphertext = &msgbox[NONCE_LEN..];
+    box_
+        .decrypt(&nonce, ciphertext)
+        .map_err(|e| ProtocolError::Crypto(e.to_string()))
 }
 
 /// DERP protocol version.
@@ -322,6 +485,9 @@ pub enum ProtocolError {
 
     #[error("Invalid client info: {0}")]
     InvalidClientInfo(String),
+
+    #[error("Crypto error: {0}")]
+    Crypto(String),
 }
 
 impl DerpFrame {
@@ -417,10 +583,15 @@ impl DerpFrame {
             }
             DerpFrame::PeerPresent { key, endpoint, flags } => {
                 // 32B key + optional 18B (16B IP + 2B port) + optional 1B flags
+                //
+                // Go DERP uses `netip.Addr.As16()` which yields an IPv4-mapped IPv6 address for v4
+                // (`::ffff:a.b.c.d`). Keep encoding compatible.
                 let (ip_bytes, port_bytes): (Option<[u8; 16]>, Option<[u8; 2]>) = match endpoint {
                     Some(SocketAddr::V4(addr)) => {
                         let mut ip = [0u8; 16];
-                        ip[..4].copy_from_slice(&addr.ip().octets());
+                        ip[10] = 0xff;
+                        ip[11] = 0xff;
+                        ip[12..16].copy_from_slice(&addr.ip().octets());
                         (Some(ip), Some(addr.port().to_be_bytes()))
                     }
                     Some(SocketAddr::V6(addr)) => {
@@ -651,10 +822,12 @@ impl DerpFrame {
                     reader.read_exact(&mut port_bytes)?;
                     let port = u16::from_be_bytes(port_bytes);
 
-                    // Determine if IPv4 (first 12 bytes are 0) or IPv6
-                    let addr = if ip_bytes[4..16].iter().all(|&b| b == 0) {
-                        // IPv4: first 4 bytes
-                        let ipv4 = Ipv4Addr::new(ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+                    // Determine if IPv4-mapped (`::ffff:a.b.c.d`) or IPv6.
+                    let addr = if ip_bytes[..10].iter().all(|&b| b == 0)
+                        && ip_bytes[10] == 0xff
+                        && ip_bytes[11] == 0xff
+                    {
+                        let ipv4 = Ipv4Addr::new(ip_bytes[12], ip_bytes[13], ip_bytes[14], ip_bytes[15]);
                         SocketAddr::new(IpAddr::V4(ipv4), port)
                     } else {
                         let ipv6 = Ipv6Addr::from(ip_bytes);
@@ -1035,25 +1208,59 @@ mod tests {
     #[test]
     fn test_client_info_payload_json() {
         // Without mesh key
-        let payload = ClientInfoPayload::new("singbox-rust 0.1.0");
+        let payload = ClientInfoPayload::new(PROTOCOL_VERSION as u32).with_can_ack_pings(true);
         let json = payload.to_json();
         let decoded = ClientInfoPayload::from_json(&json).unwrap();
-        assert_eq!(decoded.version, "singbox-rust 0.1.0");
+        assert_eq!(decoded.version, PROTOCOL_VERSION as u32);
         assert!(decoded.mesh_key.is_none());
+        assert!(decoded.can_ack_pings);
+        assert!(!decoded.is_prober);
 
         // With mesh key
-        let mesh_key = [0xab_u8; 32];
-        let payload_mesh = ClientInfoPayload::new("singbox-rust 0.1.0")
-            .with_mesh_key(mesh_key);
+        let mesh_key =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let payload_mesh = ClientInfoPayload::new(PROTOCOL_VERSION as u32)
+            .with_mesh_key(mesh_key)
+            .with_can_ack_pings(true)
+            .with_is_prober(true);
         let json_mesh = payload_mesh.to_json();
         let decoded_mesh = ClientInfoPayload::from_json(&json_mesh).unwrap();
-        assert_eq!(decoded_mesh.version, "singbox-rust 0.1.0");
-        assert_eq!(decoded_mesh.mesh_key, Some(mesh_key));
+        assert_eq!(decoded_mesh.version, PROTOCOL_VERSION as u32);
+        assert_eq!(decoded_mesh.mesh_key.as_deref(), Some(mesh_key));
+        assert!(decoded_mesh.can_ack_pings);
+        assert!(decoded_mesh.is_prober);
 
         // Verify JSON format
         let json_str = String::from_utf8(json_mesh).unwrap();
         assert!(json_str.contains("\"version\":"));
         assert!(json_str.contains("\"meshKey\":"));
-        assert!(json_str.contains("abababab")); // hex encoded 0xab
+        assert!(json_str.contains("\"CanAckPings\":"));
+        assert!(json_str.contains("\"IsProber\":true"));
+    }
+
+    #[test]
+    fn test_naclbox_seal_open_roundtrip() {
+        let mut alice_priv = [7u8; 32];
+        clamp_private_key(&mut alice_priv);
+        let alice_pub = derive_public_key(&alice_priv);
+
+        let mut bob_priv = [9u8; 32];
+        clamp_private_key(&mut bob_priv);
+        let bob_pub = derive_public_key(&bob_priv);
+
+        let msg = b"hello derp naclbox";
+        let boxed = seal_to(&alice_priv, &bob_pub, msg).unwrap();
+        let opened = open_from(&bob_priv, &alice_pub, &boxed).unwrap();
+        assert_eq!(opened, msg);
+    }
+
+    #[test]
+    fn test_node_private_key_roundtrip() {
+        let mut priv_key = [0x42u8; 32];
+        clamp_private_key(&mut priv_key);
+        let s = encode_node_private_key(&priv_key);
+        let decoded = decode_node_private_key(&s).unwrap();
+        assert_eq!(decoded, priv_key);
+        assert!(s.starts_with(NODE_PRIVATE_HEX_PREFIX));
     }
 }

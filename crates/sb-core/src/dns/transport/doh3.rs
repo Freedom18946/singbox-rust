@@ -39,6 +39,8 @@ impl Doh3Transport {
         extra_ca_pem: Vec<String>,
         skip_verify: bool,
     ) -> Result<Self> {
+        crate::tls::ensure_rustls_crypto_provider();
+
         let timeout = Duration::from_millis(
             std::env::var("SB_DNS_DOH3_TIMEOUT_MS")
                 .ok()

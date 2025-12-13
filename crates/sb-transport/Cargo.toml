@@ -48,6 +48,7 @@ tokio-util = { version = "0.7", features = ["compat", "io", "futures-io"] }
 tracing = { workspace = true }
 rand = "0.8"
 base64 = "0.22"
+crypto_box = "0.9"
 sb-metrics = { path = "../sb-metrics" }
 sb-tls = { path = "../sb-tls", optional = true }
 once_cell = { workspace = true }

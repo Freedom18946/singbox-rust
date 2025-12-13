@@ -8,7 +8,8 @@
     "inbounds":{"type":"array","items":{"$ref":"#/defs/inbound"}},
     "outbounds":{"type":"array","items":{"$ref":"#/defs/outbound"}},
     "route":{"$ref":"#/defs/route"},
-    "dns":{"$ref":"#/defs/dns"}
+    "dns":{"$ref":"#/defs/dns"},
+    "services":{"type":"array","items":{"type":"object"}}
   },
   "defs":{
     "inbound":{"type":"object","additionalProperties": false,"properties":{

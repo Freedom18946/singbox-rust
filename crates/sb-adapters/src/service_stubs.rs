@@ -80,16 +80,16 @@ pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<
     #[cfg(not(feature = "service_ssmapi"))]
     {
         let _ = ctx;
-        let tag = ir.tag.as_deref().unwrap_or("ssmapi");
+        let tag = ir.tag.as_deref().unwrap_or("ssm-api");
         tracing::warn!(
-            service_type = "ssmapi",
+            service_type = "ssm-api",
             tag = tag,
             "Shadowsocks Manager API service requires the `service_ssmapi` feature; rebuild with `--features service_ssmapi`"
         );
 
         // Return stub that will error when start() is called
         Some(Arc::new(StubService {
-            ty_str: "ssmapi",
+            ty_str: "ssm-api",
             tag: tag.to_string(),
         }))
     }
@@ -134,7 +134,8 @@ pub fn register_service_stubs() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_config::ir::ServiceType;
+    use sb_config::ir::{DerpStunOptionsIR, InboundTlsOptionsIR, ServiceType};
+    use std::collections::HashMap;
 
     #[test]
     #[ignore] // TODO: cross-platform behavior complex, covered in resolved_impl.rs
@@ -146,28 +147,9 @@ mod tests {
         let ir = ServiceIR {
             ty: ServiceType::Resolved,
             tag: Some("resolved-dns".to_string()),
-            resolved_listen: Some("127.0.0.53".to_string()),
-            resolved_listen_port: Some(53),
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: None,
-            derp_listen_port: None,
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_stun_enabled: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            derp_server_key_path: None,
+            listen: Some("127.0.0.53".to_string()),
+            listen_port: Some(53),
+            ..Default::default()
         };
 
         let service = registry.build(&ir, &ctx);
@@ -210,35 +192,17 @@ mod tests {
         let ir = ServiceIR {
             ty: ServiceType::Ssmapi,
             tag: Some("ssm".to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: Some("127.0.0.1".to_string()),
-            ssmapi_listen_port: Some(6001),
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: None,
-            derp_listen_port: None,
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_stun_enabled: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            derp_server_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(6001),
+            servers: Some(HashMap::from([("/".to_string(), "ss-in".to_string())])),
+            ..Default::default()
         };
 
         let service = registry.build(&ir, &ctx);
         assert!(service.is_some());
 
         let service = service.unwrap();
-        assert_eq!(service.service_type(), "ssmapi");
+        assert_eq!(service.service_type(), "ssm-api");
         assert_eq!(service.tag(), "ssm");
 
         // Starting should fail with helpful error if stub, or succeed if real
@@ -263,32 +227,35 @@ mod tests {
         let registry = sb_core::service::ServiceRegistry::new();
         assert!(registry.register(ServiceType::Derp, build_derp_service));
 
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let cert_pem = cert.cert.pem();
+        let key_pem = cert.key_pair.serialize_pem();
+        let cert_file = tempfile::NamedTempFile::new().unwrap();
+        let key_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(cert_file.path(), cert_pem).unwrap();
+        std::fs::write(key_file.path(), key_pem).unwrap();
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+
         let ctx = ServiceContext::default();
         let ir = ServiceIR {
             ty: ServiceType::Derp,
             tag: Some("derp-relay".to_string()),
-            resolved_listen: None,
-            resolved_listen_port: None,
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: Some("0.0.0.0".to_string()),
-            derp_listen_port: Some(3478),
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_stun_enabled: Some(true),
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            derp_server_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(0),
+            config_path: Some(config_path),
+            tls: Some(InboundTlsOptionsIR {
+                enabled: true,
+                certificate_path: Some(cert_file.path().to_string_lossy().to_string()),
+                key_path: Some(key_file.path().to_string_lossy().to_string()),
+                ..Default::default()
+            }),
+            stun: Some(DerpStunOptionsIR {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
         };
 
         let service = registry.build(&ir, &ctx);

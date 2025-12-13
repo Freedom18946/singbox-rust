@@ -88,15 +88,8 @@ pub struct TrojanOutbound {
 #[cfg(feature = "out_trojan")]
 impl TrojanOutbound {
     pub fn new(config: TrojanConfig) -> std::io::Result<Self> {
-        // Ensure a CryptoProvider is installed for rustls 0.23
-        #[allow(unused_must_use)]
-        {
-            #[cfg(feature = "tls_rustls")]
-            {
-                use rustls::crypto::ring;
-                let _ = ring::default_provider().install_default();
-            }
-        }
+        crate::tls::ensure_rustls_crypto_provider();
+
         let insecure_env = std::env::var("SB_TROJAN_SKIP_CERT_VERIFY")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))

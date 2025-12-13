@@ -166,7 +166,7 @@ async fn test_hot_reload_event_monitoring() {
     let router_handle = Arc::new(RouterHandle::new_mock());
     let mut manager = HotReloadManager::new(config, router_handle.clone());
 
-    let event_rx = manager.event_receiver();
+    let mut event_rx = manager.event_receiver();
 
     manager.start().await.unwrap();
 
@@ -181,27 +181,26 @@ async fn test_hot_reload_event_monitoring() {
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout && events_received < 1 {
-        if let Ok(mut rx) = event_rx.try_write() {
-            if let Ok(Some(event)) =
-                tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            {
-                match event {
-                    HotReloadEvent::FileChanged { .. } => {
-                        events_received += 1;
-                        debug!("Received FileChanged event");
-                    }
-                    HotReloadEvent::Applied { .. } => {
-                        events_received += 1;
-                        debug!("Received Applied event");
-                    }
-                    HotReloadEvent::ValidationSucceeded { .. } => {
-                        debug!("Received ValidationSucceeded event");
-                    }
-                    _ => {
-                        debug!("Received other event: {:?}", event);
-                    }
+        match tokio::time::timeout(Duration::from_millis(200), event_rx.recv()).await {
+            Ok(Ok(event)) => match event {
+                HotReloadEvent::FileChanged { .. } => {
+                    events_received += 1;
+                    debug!("Received FileChanged event");
                 }
-            }
+                HotReloadEvent::Applied { .. } => {
+                    events_received += 1;
+                    debug!("Received Applied event");
+                }
+                HotReloadEvent::ValidationSucceeded { .. } => {
+                    debug!("Received ValidationSucceeded event");
+                }
+                _ => {
+                    debug!("Received other event: {:?}", event);
+                }
+            },
+            Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {}
+            Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => break,
+            Err(_) => {}
         }
         sleep(Duration::from_millis(100)).await;
     }

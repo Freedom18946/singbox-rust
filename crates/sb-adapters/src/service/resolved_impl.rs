@@ -41,11 +41,11 @@ mod dbus_impl {
         pub fn new(ir: &ServiceIR) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
             let tag = ir.tag.as_deref().unwrap_or("resolved").to_string();
             let listen_addr = ir
-                .resolved_listen
+                .listen
                 .as_deref()
                 .unwrap_or("127.0.0.53")
                 .to_string();
-            let listen_port = ir.resolved_listen_port.unwrap_or(53);
+            let listen_port = ir.listen_port.unwrap_or(53);
 
             // Create default DNS resolver
             // Uses system resolver as fallback; can be enhanced to use configured upstreams
@@ -525,28 +525,9 @@ mod tests {
         let ir = ServiceIR {
             ty: ServiceType::Resolved,
             tag: Some("test-resolved".to_string()),
-            resolved_listen: Some("127.0.0.1".to_string()),
-            resolved_listen_port: Some(5353),
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: None,
-            derp_listen_port: None,
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_stun_enabled: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            derp_server_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(5353),
+            ..Default::default()
         };
 
         let ctx = ServiceContext::default();
@@ -566,28 +547,9 @@ mod tests {
         let ir = ServiceIR {
             ty: ServiceType::Resolved,
             tag: Some("lifecycle-test".to_string()),
-            resolved_listen: Some("127.0.0.1".to_string()),
-            resolved_listen_port: Some(5353),
-            ssmapi_listen: None,
-            ssmapi_listen_port: None,
-            ssmapi_servers: None,
-            ssmapi_cache_path: None,
-            ssmapi_tls_cert_path: None,
-            ssmapi_tls_key_path: None,
-            derp_listen: None,
-            derp_listen_port: None,
-            derp_config_path: None,
-            derp_verify_client_endpoint: None,
-            derp_verify_client_url: None,
-            derp_home: None,
-            derp_mesh_with: None,
-            derp_mesh_psk: None,
-            derp_mesh_psk_file: None,
-            derp_stun_enabled: None,
-            derp_stun_listen_port: None,
-            derp_tls_cert_path: None,
-            derp_tls_key_path: None,
-            derp_server_key_path: None,
+            listen: Some("127.0.0.1".to_string()),
+            listen_port: Some(5353),
+            ..Default::default()
         };
 
         // Note: This test will fail if systemd-resolved is not available

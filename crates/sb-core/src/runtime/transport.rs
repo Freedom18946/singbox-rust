@@ -385,6 +385,8 @@ pub mod map {
         use rustls::{ClientConfig, RootCertStore};
         use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
+        crate::tls::ensure_rustls_crypto_provider();
+
         let want_skip = ob.skip_cert_verify.unwrap_or(false);
         let has_ca = !ob.tls_ca_paths.is_empty() || !ob.tls_ca_pem.is_empty();
         let has_client = ob.tls_client_cert_path.is_some()

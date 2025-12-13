@@ -5,6 +5,7 @@
 
 pub use crate::service::StartStage;
 use sb_config::ir::{EndpointIR, EndpointType};
+use std::any::Any;
 use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -200,7 +201,7 @@ impl ConnectionHandler for NoOpConnectionHandler {
 ///
 /// Endpoints (like WireGuard/Tailscale) implement this trait to provide
 /// VPN functionality with lifecycle management.
-pub trait Endpoint: Send + Sync {
+pub trait Endpoint: Send + Sync + Any {
     /// Return the endpoint type (e.g., "wireguard", "tailscale").
     fn endpoint_type(&self) -> &str;
 

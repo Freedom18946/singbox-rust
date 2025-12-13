@@ -1,6 +1,5 @@
 #![cfg(feature = "router")]
-use sb_core::router::decide_http;
-use sb_core::router::{router_index_from_env_with_reload, shared_index};
+use sb_core::router::{router_index_decide_exact_suffix, router_index_from_env_with_reload};
 use std::fs;
 use std::io::Write;
 use tempfile::tempdir;
@@ -27,19 +26,22 @@ async fn include_is_expanded_in_hot_reload() {
     // 给后台热载器一点时间
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-    // decide_http 使用共享索引
-    let decision = decide_http("a.included");
-    assert_eq!(decision.target, "proxy");
+    let idx = shared.read().unwrap().clone();
+    assert_eq!(
+        router_index_decide_exact_suffix(&idx, "a.included").unwrap(),
+        "proxy"
+    );
 
     // 修改 inc.rules，使其变为 direct
     fs::write(&inc_path, b"suffix:.included=direct\n").unwrap();
     // 等待热重载
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    let decision = decide_http("a.included");
-    assert_eq!(decision.target, "direct");
+    let idx = shared.read().unwrap().clone();
+    assert_eq!(
+        router_index_decide_exact_suffix(&idx, "a.included").unwrap(),
+        "direct"
+    );
 
-    // 防止临时目录提前清理
     drop(shared);
-    let _ = shared_index();
 }

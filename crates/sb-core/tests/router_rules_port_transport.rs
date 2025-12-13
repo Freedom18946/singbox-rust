@@ -1,8 +1,17 @@
 #![cfg(feature = "router")]
 use sb_core::router::{decide_http, RouterHandle};
+use std::sync::{Mutex, OnceLock};
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 #[test]
 fn http_port_rule_applies_when_host_not_matched() {
+    let _serial = serial_guard();
     let rules = r#"
     port:443=proxy
     default=direct
@@ -15,6 +24,7 @@ fn http_port_rule_applies_when_host_not_matched() {
 
 #[test]
 fn http_transport_tcp_as_fallback() {
+    let _serial = serial_guard();
     let rules = r#"
     transport:tcp=reject
     default=direct
@@ -26,6 +36,7 @@ fn http_transport_tcp_as_fallback() {
 
 #[tokio::test]
 async fn udp_transport_udp_as_fallback() {
+    let _serial = serial_guard();
     let rules = r#"
     transport:udp=proxy
     default=direct

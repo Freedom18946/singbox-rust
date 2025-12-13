@@ -7,11 +7,39 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
 use sb_core::admin::http::spawn_admin;
 use sb_core::runtime::Runtime;
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+}
+
+struct EnvVarGuard {
+    key: &'static str,
+    prev: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let prev = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, prev }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.prev.as_ref() {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
 
 fn connect(addr: &str) -> TcpStream {
     let mut tries = 0;
@@ -48,7 +76,8 @@ fn start_admin() -> String {
 
 #[test]
 fn large_header_is_rejected() {
-    std::env::set_var("SB_ADMIN_MAX_HEADER_BYTES", "1024");
+    let _serial = serial_guard();
+    let _env = EnvVarGuard::set("SB_ADMIN_MAX_HEADER_BYTES", "1024");
     let addr = start_admin();
     let mut s = connect(&addr);
     // build a request with huge header block
@@ -68,7 +97,8 @@ fn large_header_is_rejected() {
 
 #[test]
 fn large_body_is_rejected() {
-    std::env::set_var("SB_ADMIN_MAX_BODY_BYTES", "1024");
+    let _serial = serial_guard();
+    let _env = EnvVarGuard::set("SB_ADMIN_MAX_BODY_BYTES", "1024");
     let addr = start_admin();
     let mut s = connect(&addr);
     let body = "x".repeat(2048);
@@ -89,26 +119,42 @@ fn large_body_is_rejected() {
 
 #[test]
 fn first_byte_timeout_closes_conn() {
-    std::env::set_var("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", "100");
+    let _serial = serial_guard();
+    let _env = EnvVarGuard::set("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", "100");
     let addr = start_admin();
     let mut s = connect(&addr);
     // wait beyond timeout without sending any byte
     thread::sleep(Duration::from_millis(150));
-    // now attempt to write a request; server likely closed
-    let req = format!("GET /healthz HTTP/1.1\r\nHost: {}\r\n\r\n", addr);
-    let wr = s.write_all(req.as_bytes());
-    if wr.is_ok() {
-        // try read; expect close/no response
-        let mut buf = [0u8; 64];
-        let r = s.read(&mut buf);
-        assert!(r.is_err() || matches!(r, Ok(0)));
+
+    // Server should either close the connection, or send a 408 JSON error then close.
+    let _ = s.set_read_timeout(Some(Duration::from_millis(400)));
+    let mut first = [0u8; 512];
+    match s.read(&mut first) {
+        Ok(0) => {
+            // Closed without a response (platform-specific timeout behavior)
+        }
+        Ok(n) => {
+            let mut buf = first[..n].to_vec();
+            let _ = s.read_to_end(&mut buf);
+            let text = String::from_utf8_lossy(&buf);
+            assert!(text.contains(" 408 "));
+            assert!(text.contains("\"error\""));
+            assert!(text.contains("\"detail\""));
+        }
+        Err(e) if matches!(e.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock) => {
+            panic!("connection still open without response after first-byte timeout");
+        }
+        Err(_) => {
+            // Connection reset/closed by peer is acceptable.
+        }
     }
 }
 
 #[test]
 fn per_ip_concurrency_is_limited() {
-    std::env::set_var("SB_ADMIN_MAX_CONN_PER_IP", "1");
-    std::env::set_var("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", "300");
+    let _serial = serial_guard();
+    let _env1 = EnvVarGuard::set("SB_ADMIN_MAX_CONN_PER_IP", "1");
+    let _env2 = EnvVarGuard::set("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", "300");
     let addr = start_admin();
 
     // Hold first connection without sending CRLF to keep it open

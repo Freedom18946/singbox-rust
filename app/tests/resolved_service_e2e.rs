@@ -14,28 +14,9 @@ fn test_resolved_service_creation() {
     let ir = ServiceIR {
         ty: ServiceType::Resolved,
         tag: Some("test-resolved".to_string()),
-        resolved_listen: Some("127.0.0.1".to_string()),
-        resolved_listen_port: Some(5353), // Use non-privileged port for testing
-        ssmapi_listen: None,
-        ssmapi_listen_port: None,
-        ssmapi_servers: None,
-        ssmapi_cache_path: None,
-        ssmapi_tls_cert_path: None,
-        ssmapi_tls_key_path: None,
-        derp_listen: None,
-        derp_listen_port: None,
-        derp_config_path: None,
-        derp_verify_client_endpoint: None,
-        derp_verify_client_url: None,
-        derp_home: None,
-        derp_mesh_with: None,
-        derp_mesh_psk: None,
-        derp_mesh_psk_file: None,
-        derp_stun_enabled: None,
-        derp_stun_listen_port: None,
-        derp_tls_cert_path: None,
-        derp_tls_key_path: None,
-        derp_server_key_path: None,
+        listen: Some("127.0.0.1".to_string()),
+        listen_port: Some(5353), // Use non-privileged port for testing
+        ..Default::default()
     };
 
     let ctx = ServiceContext::default();
@@ -55,28 +36,9 @@ async fn test_resolved_service_lifecycle() {
     let ir = ServiceIR {
         ty: ServiceType::Resolved,
         tag: Some("lifecycle-test".to_string()),
-        resolved_listen: Some("127.0.0.1".to_string()),
-        resolved_listen_port: Some(5354), // Different port to avoid conflicts
-        ssmapi_listen: None,
-        ssmapi_listen_port: None,
-        ssmapi_servers: None,
-        ssmapi_cache_path: None,
-        ssmapi_tls_cert_path: None,
-        ssmapi_tls_key_path: None,
-        derp_listen: None,
-        derp_listen_port: None,
-        derp_config_path: None,
-        derp_verify_client_endpoint: None,
-        derp_verify_client_url: None,
-        derp_home: None,
-        derp_mesh_with: None,
-        derp_mesh_psk: None,
-        derp_mesh_psk_file: None,
-        derp_stun_enabled: None,
-        derp_stun_listen_port: None,
-        derp_tls_cert_path: None,
-        derp_tls_key_path: None,
-        derp_server_key_path: None,
+        listen: Some("127.0.0.1".to_string()),
+        listen_port: Some(5354), // Different port to avoid conflicts
+        ..Default::default()
     };
 
     let ctx = ServiceContext::default();
@@ -126,28 +88,9 @@ async fn test_resolved_dns_query() {
     let ir = ServiceIR {
         ty: ServiceType::Resolved,
         tag: Some("dns-test".to_string()),
-        resolved_listen: Some("127.0.0.1".to_string()),
-        resolved_listen_port: Some(test_port),
-        ssmapi_listen: None,
-        ssmapi_listen_port: None,
-        ssmapi_servers: None,
-        ssmapi_cache_path: None,
-        ssmapi_tls_cert_path: None,
-        ssmapi_tls_key_path: None,
-        derp_listen: None,
-        derp_listen_port: None,
-        derp_config_path: None,
-        derp_verify_client_endpoint: None,
-        derp_verify_client_url: None,
-        derp_home: None,
-        derp_mesh_with: None,
-        derp_mesh_psk: None,
-        derp_mesh_psk_file: None,
-        derp_stun_enabled: None,
-        derp_stun_listen_port: None,
-        derp_tls_cert_path: None,
-        derp_tls_key_path: None,
-        derp_server_key_path: None,
+        listen: Some("127.0.0.1".to_string()),
+        listen_port: Some(test_port),
+        ..Default::default()
     };
 
     let ctx = ServiceContext::default();
@@ -232,28 +175,9 @@ fn test_resolved_service_stub_on_unsupported_platform() {
     let ir = ServiceIR {
         ty: ServiceType::Resolved,
         tag: Some("stub-test".to_string()),
-        resolved_listen: Some("127.0.0.1".to_string()),
-        resolved_listen_port: Some(5353),
-        ssmapi_listen: None,
-        ssmapi_listen_port: None,
-        ssmapi_servers: None,
-        ssmapi_cache_path: None,
-        ssmapi_tls_cert_path: None,
-        ssmapi_tls_key_path: None,
-        derp_listen: None,
-        derp_listen_port: None,
-        derp_config_path: None,
-        derp_verify_client_endpoint: None,
-        derp_verify_client_url: None,
-        derp_home: None,
-        derp_mesh_with: None,
-        derp_mesh_psk: None,
-        derp_mesh_psk_file: None,
-        derp_stun_enabled: None,
-        derp_stun_listen_port: None,
-        derp_tls_cert_path: None,
-        derp_tls_key_path: None,
-        derp_server_key_path: None,
+        listen: Some("127.0.0.1".to_string()),
+        listen_port: Some(5353),
+        ..Default::default()
     };
 
     let ctx = ServiceContext::default();

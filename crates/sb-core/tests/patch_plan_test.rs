@@ -1,3 +1,5 @@
+#![cfg(feature = "rules_tool")]
+
 use sb_core::router::patch_plan::{apply_plan, build_plan};
 
 #[test]

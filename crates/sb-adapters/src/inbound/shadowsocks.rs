@@ -852,6 +852,8 @@ where
 
 use parking_lot::Mutex;
 use sb_core::adapter::InboundService;
+
+#[cfg(feature = "service_ssmapi")]
 use sb_core::services::ssmapi::{ManagedSSMServer, TrafficTracker};
 
 #[derive(Debug)]
@@ -859,6 +861,7 @@ pub struct ShadowsocksInboundAdapter {
     config: ShadowsocksInboundConfig,
     stop_tx: Mutex<Option<mpsc::Sender<()>>>,
     tag: String,
+    #[cfg(feature = "service_ssmapi")]
     tracker: parking_lot::RwLock<Option<Arc<dyn TrafficTracker>>>,
 }
 
@@ -872,11 +875,13 @@ impl ShadowsocksInboundAdapter {
             config,
             stop_tx: Mutex::new(None),
             tag,
+            #[cfg(feature = "service_ssmapi")]
             tracker: parking_lot::RwLock::new(None),
         }
     }
 }
 
+#[cfg(feature = "service_ssmapi")]
 impl ManagedSSMServer for ShadowsocksInboundAdapter {
     fn set_tracker(&self, tracker: Arc<dyn TrafficTracker>) {
         *self.tracker.write() = Some(tracker);

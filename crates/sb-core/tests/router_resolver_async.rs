@@ -2,10 +2,18 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tokio::time::sleep;
 
 use sb_core::router::{DnsResolve, DnsResult, RouterHandle};
+
+fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 struct FakeResolverOk;
 impl DnsResolve for FakeResolverOk {
@@ -41,6 +49,7 @@ impl DnsResolve for FakeResolverTimeout {
 
 #[tokio::test]
 async fn resolver_route_hits_cidr_then_returns_decision() {
+    let _serial = serial_guard();
     // 规则：11.0.0.0/8 → proxy，默认 direct
     let rules = r#"
     cidr4:11.0.0.0/8=proxy
@@ -55,6 +64,7 @@ async fn resolver_route_hits_cidr_then_returns_decision() {
 
 #[tokio::test]
 async fn resolver_timeout_or_error_falls_back_to_default() {
+    let _serial = serial_guard();
     let rules = r#"
     suffix:example.com=proxy
     default=direct

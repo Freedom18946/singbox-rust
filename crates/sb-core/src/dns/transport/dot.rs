@@ -50,6 +50,8 @@ impl DotTransport {
 
         #[cfg(any(feature = "tls", feature = "tls_rustls"))]
         let tls_config = {
+            crate::tls::ensure_rustls_crypto_provider();
+
             let mut roots = crate::tls::global::base_root_store();
             for p in extra_ca_paths {
                 if let Ok(bytes) = std::fs::read(p) {
@@ -207,8 +209,7 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
     fn ensure_crypto_provider() {
-        // Install ring as the default CryptoProvider if not already installed
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        crate::tls::ensure_rustls_crypto_provider();
     }
 
     #[test]

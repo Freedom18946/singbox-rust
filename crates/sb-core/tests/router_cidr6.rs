@@ -3,7 +3,7 @@ use sb_core::router::decide_udp_with_rules_and_ips_v46;
 
 #[test]
 fn cidr6_basic_match_and_miss() {
-    let rules = "cidr6:2001:db8::/32=proxy,default=direct";
+    let rules = "cidr6:2001:db8::/32=proxy\ndefault:direct\n";
     let hit = "2001:db8::1".parse().unwrap();
     let miss = "2001:dead:beef::1".parse().unwrap();
     assert_eq!(
@@ -18,7 +18,7 @@ fn cidr6_basic_match_and_miss() {
 
 #[test]
 fn cidr6_priority_vs_exact_suffix() {
-    let rules = "exact:foo.test=reject,suffix:.test=proxy,cidr6:2001:db8::/32=proxy,default=direct";
+    let rules = "exact:foo.test=reject\nsuffix:.test=proxy\ncidr6:2001:db8::/32=proxy\ndefault:direct\n";
     let v6 = "2001:db8::2".parse().unwrap();
     // exact wins
     assert_eq!(
