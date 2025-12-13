@@ -89,6 +89,7 @@ thrussh = { version = "0.35", optional = true }
 thrussh-keys = { version = "=0.22.1", optional = true }
 loom = { version = "0.7", optional = true }
 axum = { version = "0.7", optional = true }
+axum-server = { version = "0.6", features = ["tls-rustls"], optional = true }
 
 [dev-dependencies]
 # Test dependencies
@@ -190,7 +191,7 @@ failpoints         = ["dep:fail"]
 resolv_conf        = ["dep:notify"]
 v2ray_transport    = []
 service_ntp        = []
-service_ssmapi     = ["dep:axum"]
+service_ssmapi     = ["dep:axum", "dep:axum-server"]
 service_clash_api  = ["dep:axum"]
 service_v2ray_api  = ["dep:axum"]
 service_derp       = ["dep:tokio-tungstenite"]

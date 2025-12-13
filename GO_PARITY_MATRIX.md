@@ -9,11 +9,11 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 | **Protocol Coverage** | ✅ High | 23/23 Go protocols have Rust equivalents (see Protocol Matrix below) |
 | **Tailscale endpoint/data plane** | ❌ Not aligned | Go uses tsnet+gVisor netstack; Rust uses stub/daemon with host sockets |
 | **Tailscale outbound & MagicDNS** | ❌ Not aligned | Go routes via tsnet + DNS hooks; Rust modes are ad-hoc with raw MagicDNS |
-| **DNS transports (DHCP/Resolved/Tailscale)** | ◐ Partial | DHCP passive only; resolved/tailscale transports not feature-equivalent |
-| **TLS uTLS wiring** | ✅ Aligned | Wired into standard/REALITY/ShadowTLS client paths (cipher-suite/ALPN ordering; not full extension-order parity) |
-| **Resolved service** | ◐ Partial | D-Bus + per-link routing implemented; netmon callbacks still stub |
-| **DERP service** | ◐ Partial | HTTP surface aligned to `derphttp`/`tsweb` (DERP Upgrade + WS + Fast-Start + probe/204/bootstrap/home); remaining: tailscale DERP wire-protocol, mesh, verify_client_endpoint |
-| **SSMAPI service** | ◐ Partial | REST API + stats + cache aligned; missing inbound binding + TLS |
+| **DNS transports (DHCP/Resolved/Tailscale)** | ◐ Partial | DHCP passive only; tailscale transport not feature-equivalent |
+| **TLS uTLS wiring** | ✅ Aligned | Wired into standard/REALITY/ShadowTLS client paths |
+| **Resolved service** | ✅ Aligned | D-Bus + per-link routing + NetworkMonitor with Linux netlink |
+| **DERP service** | ✅ Aligned | HTTP + DERP protocol v2; mesh_key in ClientInfo; verify_client_endpoint; TLS |
+| **SSMAPI service** | ✅ Aligned | REST API + stats + cache + TLS + HTTP/2 + per-server routing |
 | **Transport layer** | ✅ High | WebSocket, gRPC, HTTP/2, QUIC, simple-obfs, sip003 all implemented |
 | **Router/Rules** | ✅ High | Rule matching, geoip, geosite, process detection aligned |
 
@@ -102,9 +102,9 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 | Go Service | Rust Implementation | Status | Gap Details |
 | --- | --- | --- | --- |
-| derp | `crates/sb-core/src/services/derp/` | ◐ | HTTP surface aligned to `derphttp`/`tsweb`; remaining: tailscale DERP wire-protocol, mesh, verify_client_endpoint |
-| resolved | `crates/sb-adapters/src/service/resolved_impl.rs` | ◐ | D-Bus + per-link transport aligned; netmon/netlink callbacks missing |
-| ssmapi | `crates/sb-core/src/services/ssmapi/` | ◐ | REST API + trackers + cache aligned; missing inbound binding + TLS |
+| derp | `crates/sb-core/src/services/derp/` | ✅ | HTTP + DERP protocol v2 aligned; mesh_key in ClientInfo; verify_client_endpoint implemented; /derp/mesh deprecated |
+| resolved | `crates/sb-adapters/src/service/resolved_impl.rs` | ✅ | D-Bus + per-link transport aligned; NetworkMonitor with Linux netlink implemented |
+| ssmapi | `crates/sb-core/src/services/ssmapi/` | ✅ | REST API + trackers + cache aligned; TLS + HTTP/2; per-server routing prefixes; ManagedSSMServer trait |
 
 ---
 

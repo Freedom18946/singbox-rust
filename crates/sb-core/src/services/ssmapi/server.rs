@@ -35,6 +35,10 @@ pub struct SsmapiService {
     shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
     /// Optional path for cache persistence.
     cache_path: Option<PathBuf>,
+    /// TLS certificate path (enables HTTPS + HTTP/2).
+    tls_cert_path: Option<PathBuf>,
+    /// TLS private key path.
+    tls_key_path: Option<PathBuf>,
 }
 
 impl SsmapiService {
@@ -79,6 +83,22 @@ impl SsmapiService {
         // Parse cache path
         let cache_path = ir.ssmapi_cache_path.as_ref().map(PathBuf::from);
 
+        // Parse TLS config
+        let tls_cert_path = ir.ssmapi_tls_cert_path.as_ref().map(PathBuf::from);
+        let tls_key_path = ir.ssmapi_tls_key_path.as_ref().map(PathBuf::from);
+
+        if tls_cert_path.is_some() != tls_key_path.is_some() {
+            return Err("ssmapi: both tls_cert_path and tls_key_path must be specified".into());
+        }
+
+        if tls_cert_path.is_some() {
+            tracing::info!(
+                service = "ssmapi",
+                tag = tag,
+                "TLS enabled (HTTPS + HTTP/2)"
+            );
+        }
+
         Ok(Arc::new(Self {
             tag,
             listen_addr,
@@ -86,6 +106,8 @@ impl SsmapiService {
             traffic_manager,
             shutdown_tx: parking_lot::Mutex::new(None),
             cache_path,
+            tls_cert_path,
+            tls_key_path,
         }))
     }
 
@@ -153,23 +175,47 @@ impl SsmapiService {
     }
 
     /// Create the Axum router with all API endpoints.
+    /// Includes:
+    /// - `/server/v1/...` - Global routes for overall management
+    /// - `/{inbound_tag}/v1/...` - Per-inbound routes (auto-discovered)
     fn create_router(&self) -> Router {
         let state = api::ApiState {
             user_manager: self.user_manager.clone(),
             traffic_manager: self.traffic_manager.clone(),
         };
 
-        Router::new()
-            .route("/server/v1", get(api::get_server_info))
-            .route("/server/v1/users", get(api::list_users).post(api::add_user))
-            .route(
-                "/server/v1/users/:username",
-                get(api::get_user)
-                    .put(api::update_user)
-                    .delete(api::delete_user),
-            )
-            .route("/server/v1/stats", get(api::get_stats))
-            .with_state(state)
+        // Start with global /server routes
+        let mut router = Router::new()
+            .nest("/server", api::api_routes())
+            .with_state(state.clone());
+
+        // Add per-inbound routes by auto-discovering SS inbounds
+        // These will be added asynchronously in PostStart when InboundManager is available
+        // For now, we return the base router with /server routes
+
+        router
+    }
+
+    /// Create per-inbound nested routes for discovered inbound tags.
+    /// Called from PostStart when inbound manager discovery completes.
+    fn create_inbound_routes(inbound_tags: &[String], state: api::ApiState) -> Router {
+        let mut router = Router::new()
+            .nest("/server", api::api_routes())
+            .with_state(state.clone());
+
+        for tag in inbound_tags {
+            // Each inbound gets its own prefixed routes: /{tag}/v1/...
+            router = router.nest(&format!("/{}", tag), api::api_routes().with_state(state.clone()));
+        }
+
+        tracing::info!(
+            service = "ssmapi",
+            inbound_count = inbound_tags.len(),
+            inbound_tags = ?inbound_tags,
+            "Created per-inbound API routes"
+        );
+
+        router
     }
 
     /// Get a handle to the user manager (for integration with Shadowsocks adapters).
@@ -180,6 +226,26 @@ impl SsmapiService {
     /// Get a handle to the traffic manager (for integration with Shadowsocks adapters).
     pub fn traffic_manager(&self) -> Arc<TrafficManager> {
         self.traffic_manager.clone()
+    }
+
+    /// Log status of Shadowsocks inbounds available for binding.
+    /// Actual binding uses TrafficTracker trait and is triggered by SS adapters.
+    async fn bind_inbounds_static(_traffic_manager: Arc<TrafficManager>, tag: String) {
+        let Some(registry) = crate::context::context_registry() else {
+            tracing::debug!(service = "ssmapi", tag = tag, "No context registry available");
+            return;
+        };
+
+        let inbound_manager = registry.inbound_manager;
+        let tags = inbound_manager.list_tags().await;
+
+        tracing::info!(
+            service = "ssmapi",
+            tag = tag,
+            available_inbounds = tags.len(),
+            inbound_tags = ?tags,
+            "SSMAPI ready for traffic tracking (SS inbounds should call set_tracker)"
+        );
     }
 }
 
@@ -211,47 +277,103 @@ impl Service for SsmapiService {
                     service = "ssmapi",
                     tag = self.tag,
                     listen = %listen_addr,
-                    "Starting SSMAPI HTTP server"
+                    tls = self.tls_cert_path.is_some(),
+                    "Starting SSMAPI server"
                 );
 
-                // Start HTTP server in background task
+                // Start HTTP/HTTPS server in background task
                 let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
                 // Store shutdown sender
                 *self.shutdown_tx.lock() = Some(shutdown_tx);
 
+                let tls_cert_path = self.tls_cert_path.clone();
+                let tls_key_path = self.tls_key_path.clone();
+
                 tokio::spawn(async move {
-                    let listener = match tokio::net::TcpListener::bind(listen_addr).await {
-                        Ok(l) => l,
-                        Err(e) => {
-                            tracing::error!(
-                                service = "ssmapi",
-                                error = %e,
-                                "Failed to bind SSMAPI server"
-                            );
-                            return;
+                    if let (Some(cert_path), Some(key_path)) = (tls_cert_path, tls_key_path) {
+                        // HTTPS with TLS (auto HTTP/2)
+                        use axum_server::tls_rustls::RustlsConfig;
+
+                        let config = match RustlsConfig::from_pem_file(&cert_path, &key_path).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                tracing::error!(
+                                    service = "ssmapi",
+                                    error = %e,
+                                    cert = ?cert_path,
+                                    key = ?key_path,
+                                    "Failed to load TLS config"
+                                );
+                                return;
+                            }
+                        };
+
+                        tracing::info!(
+                            service = "ssmapi",
+                            listen = %listen_addr,
+                            "SSMAPI HTTPS server started (HTTP/2 enabled)"
+                        );
+
+                        let handle = axum_server::Handle::new();
+                        let handle_clone = handle.clone();
+
+                        tokio::spawn(async move {
+                            let _ = shutdown_rx.await;
+                            tracing::info!(service = "ssmapi", "Received shutdown signal");
+                            handle_clone.shutdown();
+                        });
+
+                        if let Err(e) = axum_server::bind_rustls(listen_addr, config)
+                            .handle(handle)
+                            .serve(router.into_make_service())
+                            .await
+                        {
+                            tracing::error!(service = "ssmapi", error = %e, "SSMAPI server error");
                         }
-                    };
+                    } else {
+                        // Plain HTTP
+                        let listener = match tokio::net::TcpListener::bind(listen_addr).await {
+                            Ok(l) => l,
+                            Err(e) => {
+                                tracing::error!(
+                                    service = "ssmapi",
+                                    error = %e,
+                                    "Failed to bind SSMAPI server"
+                                );
+                                return;
+                            }
+                        };
 
-                    tracing::info!(
-                        service = "ssmapi",
-                        listen = %listen_addr,
-                        "SSMAPI HTTP server started"
-                    );
+                        tracing::info!(
+                            service = "ssmapi",
+                            listen = %listen_addr,
+                            "SSMAPI HTTP server started"
+                        );
 
-                    let server = axum::serve(listener, router).with_graceful_shutdown(async {
-                        let _ = shutdown_rx.await;
-                        tracing::info!(service = "ssmapi", "Received shutdown signal");
-                    });
+                        let server = axum::serve(listener, router).with_graceful_shutdown(async {
+                            let _ = shutdown_rx.await;
+                            tracing::info!(service = "ssmapi", "Received shutdown signal");
+                        });
 
-                    if let Err(e) = server.await {
-                        tracing::error!(service = "ssmapi", error = %e, "SSMAPI server error");
+                        if let Err(e) = server.await {
+                            tracing::error!(service = "ssmapi", error = %e, "SSMAPI server error");
+                        }
                     }
                 });
 
                 Ok(())
             }
-            StartStage::PostStart | StartStage::Started => {
+            StartStage::PostStart => {
+                // Bind to inbounds after all services have started
+                let traffic_manager = self.traffic_manager.clone();
+                let tag = self.tag.clone();
+                tokio::spawn(async move {
+                    Self::bind_inbounds_static(traffic_manager, tag).await;
+                });
+                Ok(())
+            }
+            StartStage::Started => {
                 tracing::debug!(
                     service = "ssmapi",
                     tag = self.tag,

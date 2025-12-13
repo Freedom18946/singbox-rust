@@ -83,6 +83,21 @@ impl IntoResponse for ErrorResponse {
     }
 }
 
+/// Create v1 API routes that can be nested under different prefixes.
+/// Used for per-inbound routing like `/{server_tag}/v1/...`.
+pub fn api_routes() -> axum::Router<ApiState> {
+    use axum::routing::{get, post};
+
+    axum::Router::new()
+        .route("/v1", get(get_server_info))
+        .route("/v1/users", get(list_users).post(add_user))
+        .route(
+            "/v1/users/:username",
+            get(get_user).put(update_user).delete(delete_user),
+        )
+        .route("/v1/stats", get(get_stats))
+}
+
 /// GET /server/v1 - Server info.
 pub async fn get_server_info() -> Json<ServerInfo> {
     Json(ServerInfo {

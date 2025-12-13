@@ -24,16 +24,17 @@ mod tests {
         let mut server_key = [0u8; 32];
 
         // We need to read frame by frame.
-        // ServerKey frame: type(1) + len(4) + key(32) = 37 bytes
+        // v2 ServerKey frame: type(1) + len(4) + magic(8) + key(32) = 45 bytes
         stream
-            .read_exact(&mut buf[0..37])
+            .read_exact(&mut buf[0..45])
             .await
             .expect("read server key");
         assert_eq!(buf[0], FrameType::ServerKey as u8);
-        server_key.copy_from_slice(&buf[5..37]);
+        // Skip length (4) + magic (8), then read key
+        server_key.copy_from_slice(&buf[13..45]);
 
-        // Send ClientInfo
-        let frame = DerpFrame::ClientInfo { key };
+        // Send ClientInfo with encrypted_info for v2
+        let frame = DerpFrame::ClientInfo { key, encrypted_info: vec![] };
         let bytes = frame.to_bytes().unwrap();
         stream.write_all(&bytes).await.expect("write client info");
 
@@ -41,7 +42,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // TODO: fix broken pipe issue in mesh handshake
     async fn test_mesh_forwarding() {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -49,7 +49,8 @@ mod tests {
 
         let port_a = alloc_port();
         let port_b = alloc_port();
-        let psk = "mesh_secret".to_string();
+        // PSK must be 64 lowercase hex chars (32 bytes)
+        let psk = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
 
         // Server A
         let ir_a = ServiceIR {

@@ -31,6 +31,12 @@ windows = { version = "0.58", features = [
     "Win32_Networking_WinInet",
 ], optional = true }
 
+# Linux netlink for network monitoring
+[target.'cfg(target_os = "linux")'.dependencies]
+rtnetlink = { version = "0.14", optional = true }
+netlink-packet-route = { version = "0.19", optional = true }
+futures = { version = "0.3", optional = true }
+
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 
@@ -38,7 +44,7 @@ jni = "0.21"
 futures = "0.3"
 
 [features]
-linux = []
+linux = ["dep:rtnetlink", "dep:netlink-packet-route", "dep:futures"]
 macos = []
 windows-sys = []
 tun = []

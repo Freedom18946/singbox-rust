@@ -1,6 +1,6 @@
 //! Client registry for managing DERP connections.
 
-use super::protocol::{DerpFrame, PublicKey};
+use super::protocol::{DerpFrame, PeerGoneReason, PublicKey};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -354,7 +354,7 @@ impl ClientRegistry {
 
     /// Broadcast peer presence to all other clients.
     pub fn broadcast_peer_present(&self, public_key: &PublicKey) {
-        let frame = DerpFrame::PeerPresent { key: *public_key };
+        let frame = DerpFrame::PeerPresent { key: *public_key, endpoint: None, flags: 0 };
         let clients = self.clients.read();
 
         for client in clients.values() {
@@ -380,7 +380,7 @@ impl ClientRegistry {
 
     /// Broadcast peer departure to all other clients.
     pub fn broadcast_peer_gone(&self, public_key: &PublicKey) {
-        let frame = DerpFrame::PeerGone { key: *public_key };
+        let frame = DerpFrame::PeerGone { key: *public_key, reason: PeerGoneReason::Disconnected };
         let clients = self.clients.read();
 
         for client in clients.values() {
@@ -595,20 +595,20 @@ mod tests {
 
         // Both existing clients should receive PeerPresent
         let frame1 = rx_ex1.recv().await.unwrap();
-        assert!(matches!(frame1, DerpFrame::PeerPresent { key } if key == new_peer));
+        assert!(matches!(frame1, DerpFrame::PeerPresent { key, .. } if key == new_peer));
 
         let frame2 = rx_ex2.recv().await.unwrap();
-        assert!(matches!(frame2, DerpFrame::PeerPresent { key } if key == new_peer));
+        assert!(matches!(frame2, DerpFrame::PeerPresent { key, .. } if key == new_peer));
 
         // Unregister and broadcast gone
         registry.unregister_client(&new_peer);
         registry.broadcast_peer_gone(&new_peer);
 
         let gone1 = rx_ex1.recv().await.unwrap();
-        assert!(matches!(gone1, DerpFrame::PeerGone { key } if key == new_peer));
+        assert!(matches!(gone1, DerpFrame::PeerGone { key, .. } if key == new_peer));
 
         let gone2 = rx_ex2.recv().await.unwrap();
-        assert!(matches!(gone2, DerpFrame::PeerGone { key } if key == new_peer));
+        assert!(matches!(gone2, DerpFrame::PeerGone { key, .. } if key == new_peer));
     }
 
     #[test]

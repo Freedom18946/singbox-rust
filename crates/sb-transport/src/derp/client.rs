@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{debug, info, trace};
 
-use crate::derp::protocol::{DerpFrame, PublicKey};
+use crate::derp::protocol::{ClientInfoPayload, DerpFrame, PublicKey};
 
 /// Client for DERP (Designated Encrypted Relay for Packets).
 ///
@@ -24,6 +24,8 @@ pub struct DerpClient {
     stream: Arc<Mutex<Option<TcpStream>>>,
     /// Client's public key.
     public_key: PublicKey,
+    /// Optional mesh key for mesh peer authentication.
+    mesh_key: Option<[u8; 32]>,
 }
 
 impl DerpClient {
@@ -34,12 +36,20 @@ impl DerpClient {
             timeout: Duration::from_secs(10),
             stream: Arc::new(Mutex::new(None)),
             public_key,
+            mesh_key: None,
         }
     }
 
     /// Set connection timeout.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Set mesh key for mesh peer authentication.
+    /// When set, client will send mesh_key in ClientInfo to authenticate as a mesh peer.
+    pub fn with_mesh_key(mut self, key: [u8; 32]) -> Self {
+        self.mesh_key = Some(key);
         self
     }
 
@@ -87,6 +97,7 @@ impl DerpClient {
     }
 
     /// Perform DERP handshake.
+    /// Perform DERP handshake.
     async fn handshake(&self, stream: &mut TcpStream) -> io::Result<()> {
         // 1. Read ServerKey
         let frame = timeout(self.timeout, DerpFrame::read_from_async(stream))
@@ -107,16 +118,30 @@ impl DerpClient {
             }
         }
 
-        // 2. Send ClientInfo
+        // 2. Send ClientInfo with optional mesh_key in encrypted_info
+        let encrypted_info = if let Some(mesh_key) = self.mesh_key {
+            // Encode ClientInfoPayload with mesh_key as JSON
+            let payload = ClientInfoPayload::new("singbox-rust")
+                .with_mesh_key(mesh_key);
+            payload.to_json()
+        } else {
+            vec![]
+        };
+
         let client_info = DerpFrame::ClientInfo {
             key: self.public_key,
+            encrypted_info,
         };
         client_info
             .write_to_async(stream)
             .await
             .map_err(|e| io::Error::other(e.to_string()))?;
 
-        debug!("Sent ClientInfo with key: {:02x?}", self.public_key);
+        if self.mesh_key.is_some() {
+            debug!("Sent ClientInfo with mesh_key for mesh peer authentication");
+        } else {
+            debug!("Sent ClientInfo with key: {:02x?}", self.public_key);
+        }
 
         Ok(())
     }
@@ -168,10 +193,10 @@ impl DerpClient {
                     DerpFrame::KeepAlive => {
                         trace!("Received KeepAlive");
                     }
-                    DerpFrame::PeerGone { key } => {
+                    DerpFrame::PeerGone { key, .. } => {
                         debug!("Peer gone: {:02x?}", key);
                     }
-                    DerpFrame::PeerPresent { key } => {
+                    DerpFrame::PeerPresent { key, .. } => {
                         debug!("Peer present: {:02x?}", key);
                     }
                     _ => {

@@ -1,7 +1,7 @@
 //! DERP service implementation.
 
 use super::client_registry::ClientRegistry;
-use super::protocol::{DerpFrame, FrameType, PublicKey};
+use super::protocol::{ClientInfoPayload, DerpFrame, FrameType, PublicKey};
 use crate::service::{Service, ServiceContext, StartStage};
 use bytes::Bytes;
 use hyper::body::HttpBody as _;
@@ -442,6 +442,8 @@ struct DerpHttpState {
     client_registry: Arc<ClientRegistry>,
     server_key: PublicKey,
     mesh_psk: Option<String>,
+    /// Parsed mesh key (32 bytes) for Go-compatible mesh detection via ClientInfo.
+    mesh_key: Option<[u8; 32]>,
     home: Arc<str>,
     verify_client_urls: Arc<[String]>,
     verify_client_endpoints: Arc<[String]>,
@@ -637,6 +639,14 @@ impl DerpHttpState {
     }
 
     fn handle_mesh(&self, req: &mut HyperRequest<Body>) -> HyperResponse<Body> {
+        // DEPRECATED: /derp/mesh + x-derp-mesh-psk is deprecated.
+        // Use mesh_key in ClientInfo payload instead (Go-compatible SetMeshKey model).
+        tracing::warn!(
+            service = "derp",
+            peer = %self.peer,
+            "DEPRECATED: /derp/mesh endpoint is deprecated. Use mesh_key in ClientInfo instead."
+        );
+
         let Some(expected) = self.mesh_psk.as_deref() else {
             return Self::text(StatusCode::NOT_FOUND, "not found\n");
         };
@@ -660,6 +670,7 @@ impl DerpHttpState {
         let server_key = self.server_key;
         let verify_client_urls = self.verify_client_urls.clone();
         let verify_client_endpoints = self.verify_client_endpoints.clone();
+        let mesh_key = self.mesh_key;
 
         tokio::spawn(async move {
             match on_upgrade.await {
@@ -673,6 +684,7 @@ impl DerpHttpState {
                         is_mesh_peer,
                         verify_client_urls,
                         verify_client_endpoints,
+                        mesh_key,
                     )
                     .await
                     {
@@ -719,6 +731,7 @@ impl DerpHttpState {
         let server_key = self.server_key;
         let verify_client_urls = self.verify_client_urls.clone();
         let verify_client_endpoints = self.verify_client_endpoints.clone();
+        let mesh_key = self.mesh_key;
 
         tokio::spawn(async move {
             match on_upgrade.await {
@@ -735,6 +748,7 @@ impl DerpHttpState {
                         false,
                         verify_client_urls,
                         verify_client_endpoints,
+                        mesh_key,
                     )
                     .await
                     {
@@ -774,6 +788,7 @@ impl DerpHttpState {
         let server_key = self.server_key;
         let verify_client_urls = self.verify_client_urls.clone();
         let verify_client_endpoints = self.verify_client_endpoints.clone();
+        let mesh_key = self.mesh_key;
 
         tokio::spawn(async move {
             if let Err(e) = DerpService::handle_derp_client(
@@ -785,6 +800,7 @@ impl DerpHttpState {
                 is_mesh_peer,
                 verify_client_urls,
                 verify_client_endpoints,
+                mesh_key,
             )
             .await
             {
@@ -1050,12 +1066,39 @@ impl DerpService {
                     let verify_client_endpoints = verify_client_endpoints.clone();
 
                     tokio::spawn(async move {
+                        // Parse mesh_psk hex string to mesh_key bytes
+                        let mesh_key: Option<[u8; 32]> = mesh_psk.as_ref().and_then(|psk| {
+                            if psk.len() != 64 {
+                                return None;
+                            }
+                            let mut key = [0u8; 32];
+                            for (i, chunk) in psk.as_bytes().chunks(2).enumerate() {
+                                if chunk.len() != 2 || i >= 32 {
+                                    return None;
+                                }
+                                let high = match chunk[0] {
+                                    b'0'..=b'9' => chunk[0] - b'0',
+                                    b'a'..=b'f' => chunk[0] - b'a' + 10,
+                                    b'A'..=b'F' => chunk[0] - b'A' + 10,
+                                    _ => return None,
+                                };
+                                let low = match chunk[1] {
+                                    b'0'..=b'9' => chunk[1] - b'0',
+                                    b'a'..=b'f' => chunk[1] - b'a' + 10,
+                                    b'A'..=b'F' => chunk[1] - b'A' + 10,
+                                    _ => return None,
+                                };
+                                key[i] = (high << 4) | low;
+                            }
+                            Some(key)
+                        });
                         let http_state = DerpHttpState {
                             tag: tag.clone(),
                             peer: peer_addr,
                             client_registry: client_registry.clone(),
                             server_key,
                             mesh_psk: mesh_psk.clone(),
+                            mesh_key,
                             home,
                             verify_client_urls,
                             verify_client_endpoints,
@@ -1128,6 +1171,7 @@ impl DerpService {
                 false, // is_mesh_peer
                 http_state.verify_client_urls.clone(),
                 http_state.verify_client_endpoints.clone(),
+                http_state.mesh_key,
             )
             .await;
         }
@@ -1203,6 +1247,7 @@ impl DerpService {
                             false, // is_mesh_peer
                             http_state.verify_client_urls.clone(),
                             http_state.verify_client_endpoints.clone(),
+                            http_state.mesh_key,
                         )
                         .await;
                     }
@@ -1226,6 +1271,7 @@ impl DerpService {
                 false, // is_mesh_peer
                 http_state.verify_client_urls.clone(),
                 http_state.verify_client_endpoints.clone(),
+                http_state.mesh_key,
             )
             .await;
         }
@@ -1423,7 +1469,114 @@ impl DerpService {
         ).into())
     }
 
-    /// Handle a DERP protocol client connection.
+    /// Verify a DERP client via Tailscale LocalClient endpoints (socket paths).
+    /// Uses WhoIsNodeKey API to check if client is a registered Tailscale node.
+    /// Returns Ok(true) if verified, Ok(false) if no endpoints configured, Err if all reject.
+    async fn verify_client_via_endpoints(
+        verify_endpoints: &[String],
+        client_key: &PublicKey,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        if verify_endpoints.is_empty() {
+            return Ok(false); // No verification required
+        }
+
+        // Format the client key as hex for the whois query
+        let key_hex = client_key.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+
+        for endpoint in verify_endpoints {
+            match Self::check_whois_endpoint(endpoint, &key_hex).await {
+                Ok(true) => {
+                    tracing::debug!(
+                        service = "derp",
+                        endpoint = %endpoint,
+                        key = %key_hex,
+                        "Client verified via Tailscale LocalClient"
+                    );
+                    return Ok(true);
+                }
+                Ok(false) => {
+                    tracing::debug!(
+                        service = "derp",
+                        endpoint = %endpoint,
+                        "Client key not found at endpoint"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        service = "derp",
+                        endpoint = %endpoint,
+                        error = %e,
+                        "Failed to query Tailscale endpoint"
+                    );
+                }
+            }
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Client not found in any configured Tailscale endpoints",
+        ).into())
+    }
+
+    /// Check a single Tailscale LocalClient endpoint for the client key.
+    /// Connects via Unix socket or HTTP and calls WhoIsNodeKey API.
+    async fn check_whois_endpoint(
+        endpoint: &str,
+        key_hex: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        // Tailscale LocalAPI path: /localapi/v0/whois?addr=<nodekey_hex>
+        let query = format!("/localapi/v0/whois?addr={}", key_hex);
+
+        if endpoint.starts_with('/') || endpoint.starts_with("unix:") {
+            // Unix socket path
+            #[cfg(unix)]
+            {
+                use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+                use tokio::net::UnixStream;
+
+                let socket_path = endpoint.strip_prefix("unix:").unwrap_or(endpoint);
+                let mut stream = UnixStream::connect(socket_path).await?;
+
+                // Send HTTP request over Unix socket
+                let request = format!(
+                    "GET {} HTTP/1.1\r\nHost: local-tailscaled.sock\r\nConnection: close\r\n\r\n",
+                    query
+                );
+                stream.write_all(request.as_bytes()).await?;
+                stream.shutdown().await?;
+
+                // Read response
+                let mut reader = BufReader::new(stream);
+                let mut status_line = String::new();
+                reader.read_line(&mut status_line).await?;
+
+                // Check if status is 200 OK
+                if status_line.contains("200") {
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
+            #[cfg(not(unix))]
+            {
+                return Err("Unix sockets not supported on this platform".into());
+            }
+        } else {
+            // HTTP endpoint (e.g., http://localhost:8080)
+            let url = format!("{}{}", endpoint.trim_end_matches('/'), query);
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()?;
+
+            let resp = client.get(&url).send().await?;
+            if resp.status().is_success() {
+                return Ok(true);
+            }
+            Ok(false)
+        }
+    }
+
     async fn handle_derp_client<S>(
         stream: S,
         peer: SocketAddr,
@@ -1433,6 +1586,7 @@ impl DerpService {
         is_mesh_peer: bool,
         verify_client_urls: Arc<[String]>,
         verify_client_endpoints: Arc<[String]>,
+        server_mesh_key: Option<[u8; 32]>,
     ) -> io::Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -1449,9 +1603,31 @@ impl DerpService {
             .map_err(|e| io::Error::other(format!("Failed to send ServerKey: {}", e)))?;
 
         // Read ClientInfo frame (or ServerKey if mesh peer)
-        let client_key = match DerpFrame::read_from_async(&mut read_half).await {
-            Ok(DerpFrame::ClientInfo { key }) => key,
-            Ok(DerpFrame::ServerKey { key }) if is_mesh_peer => key,
+        let (client_key, is_mesh_peer) = match DerpFrame::read_from_async(&mut read_half).await {
+            Ok(DerpFrame::ClientInfo { key, encrypted_info }) => {
+                // Check if client provided a mesh key that matches server's mesh key
+                let mut detected_mesh_peer = is_mesh_peer;
+                if !detected_mesh_peer && !encrypted_info.is_empty() {
+                    if let Some(ref server_mk) = server_mesh_key {
+                        // Try to parse ClientInfoPayload from encrypted_info
+                        // Note: Currently no encryption, just JSON in encrypted_info field
+                        if let Ok(payload) = ClientInfoPayload::from_json(&encrypted_info) {
+                            if let Some(client_mk) = payload.mesh_key {
+                                if client_mk == *server_mk {
+                                    tracing::info!(
+                                        service = "derp",
+                                        peer = %peer,
+                                        "Client authenticated as mesh peer via mesh_key"
+                                    );
+                                    detected_mesh_peer = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                (key, detected_mesh_peer)
+            }
+            Ok(DerpFrame::ServerKey { key }) if is_mesh_peer => (key, true),
             Ok(other) => {
                 tracing::warn!(service = "derp", peer = %peer, frame = ?other.frame_type(), "Expected ClientInfo");
                 client_registry.metrics().connect_failed("handshake");
@@ -1485,14 +1661,18 @@ impl DerpService {
                 }
             }
 
-            if !verify_client_endpoints.is_empty() {
-                tracing::warn!(
-                    service = "derp",
-                    peer = %peer,
-                    client_key = ?client_key,
-                    endpoints = verify_client_endpoints.len(),
-                    "verify_client_endpoint is configured but not yet enforced"
-                );
+            // Verify via Tailscale LocalClient endpoints (if configured)
+            match Self::verify_client_via_endpoints(verify_client_endpoints.as_ref(), &client_key).await {
+                Ok(true) => {}
+                Ok(false) => {} // no endpoint verification configured
+                Err(e) => {
+                    client_registry.metrics().connect_failed("verify_endpoint");
+                    tracing::warn!(service = "derp", peer = %peer, client_key = ?client_key, error = %e, "Client endpoint verification failed");
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "client endpoint verification failed",
+                    ));
+                }
             }
         }
 
@@ -1557,12 +1737,12 @@ impl DerpService {
                         tracing::warn!(service = "derp", client = ?client_key, "Received ForwardPacket from non-mesh peer");
                     }
                 }
-                DerpFrame::PeerPresent { key } => {
+                DerpFrame::PeerPresent { key, .. } => {
                     if is_mesh_peer {
                         client_registry.register_remote_client(key, client_key);
                     }
                 }
-                DerpFrame::PeerGone { key } => {
+                DerpFrame::PeerGone { key, .. } => {
                     if is_mesh_peer {
                         client_registry.unregister_remote_client(&key);
                     }
@@ -1663,6 +1843,7 @@ impl DerpService {
                                             true,
                                             Arc::from(Vec::<String>::new().into_boxed_slice()),
                                             Arc::from(Vec::<String>::new().into_boxed_slice()),
+                                            None, // mesh_key not needed - already is_mesh_peer=true
                                         )
                                         .await
                                         {
@@ -2856,7 +3037,7 @@ mod tests {
             .expect("server key");
         assert!(matches!(server_key, DerpFrame::ServerKey { .. }));
 
-        DerpFrame::ClientInfo { key: client_key }
+        DerpFrame::ClientInfo { key: client_key, encrypted_info: vec![] }
             .write_to_async(&mut derp)
             .await
             .expect("clientinfo");
@@ -2927,7 +3108,7 @@ mod tests {
             .expect("server key");
         assert!(matches!(server_key, DerpFrame::ServerKey { .. }));
 
-        DerpFrame::ClientInfo { key: [9u8; 32] }
+        DerpFrame::ClientInfo { key: [9u8; 32], encrypted_info: vec![] }
             .write_to_async(&mut stream)
             .await
             .expect("clientinfo");
@@ -3399,7 +3580,7 @@ mod tests {
         let _ = DerpFrame::read_from_async(&mut ok_stream)
             .await
             .expect("server key");
-        DerpFrame::ClientInfo { key: [7u8; 32] }
+        DerpFrame::ClientInfo { key: [7u8; 32], encrypted_info: vec![] }
             .write_to_async(&mut ok_stream)
             .await
             .expect("client info");
@@ -3460,7 +3641,7 @@ mod tests {
         let _ = DerpFrame::read_from_async(&mut deny_stream)
             .await
             .expect("server key");
-        DerpFrame::ClientInfo { key: [8u8; 32] }
+        DerpFrame::ClientInfo { key: [8u8; 32], encrypted_info: vec![] }
             .write_to_async(&mut deny_stream)
             .await
             .expect("client info");
@@ -3546,7 +3727,7 @@ mod tests {
         assert!(matches!(server_key_frame, DerpFrame::ServerKey { .. }));
 
         // Send ClientInfo
-        let client_info1 = DerpFrame::ClientInfo { key: client1_key };
+        let client_info1 = DerpFrame::ClientInfo { key: client1_key, encrypted_info: vec![] };
         client_info1
             .write_to_async(&mut stream1)
             .await
@@ -3563,7 +3744,7 @@ mod tests {
             .expect("Failed to read ServerKey for client 2");
 
         // Send ClientInfo
-        let client_info2 = DerpFrame::ClientInfo { key: client2_key };
+        let client_info2 = DerpFrame::ClientInfo { key: client2_key, encrypted_info: vec![] };
         client_info2
             .write_to_async(&mut stream2)
             .await
@@ -3715,13 +3896,13 @@ mod tests {
             .expect("server key for client2");
 
         // Send ClientInfo
-        let client_info1 = DerpFrame::ClientInfo { key: client1_key };
+        let client_info1 = DerpFrame::ClientInfo { key: client1_key, encrypted_info: vec![] };
         client_info1
             .write_to_async(&mut stream1)
             .await
             .expect("send client1 info");
 
-        let client_info2 = DerpFrame::ClientInfo { key: client2_key };
+        let client_info2 = DerpFrame::ClientInfo { key: client2_key, encrypted_info: vec![] };
         client_info2
             .write_to_async(&mut stream2)
             .await
