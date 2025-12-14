@@ -856,13 +856,25 @@ use sb_core::adapter::InboundService;
 #[cfg(feature = "service_ssmapi")]
 use sb_core::services::ssmapi::{ManagedSSMServer, TrafficTracker};
 
-#[derive(Debug)]
 pub struct ShadowsocksInboundAdapter {
     config: ShadowsocksInboundConfig,
     stop_tx: Mutex<Option<mpsc::Sender<()>>>,
     tag: String,
     #[cfg(feature = "service_ssmapi")]
     tracker: parking_lot::RwLock<Option<Arc<dyn TrafficTracker>>>,
+    /// Dynamic user map for SSMAPI integration: username -> password
+    /// Updated via ManagedSSMServer::update_users()
+    #[cfg(feature = "service_ssmapi")]
+    users_map: parking_lot::RwLock<HashMap<String, String>>,
+}
+
+impl std::fmt::Debug for ShadowsocksInboundAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShadowsocksInboundAdapter")
+            .field("config", &self.config)
+            .field("tag", &self.tag)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ShadowsocksInboundAdapter {
@@ -871,12 +883,24 @@ impl ShadowsocksInboundAdapter {
     }
 
     pub fn with_tag(config: ShadowsocksInboundConfig, tag: String) -> Self {
+        // Initialize users_map from config
+        #[cfg(feature = "service_ssmapi")]
+        let users_map = {
+            let mut map = HashMap::new();
+            for user in &config.users {
+                map.insert(user.name.clone(), user.password.clone());
+            }
+            parking_lot::RwLock::new(map)
+        };
+
         Self {
             config,
             stop_tx: Mutex::new(None),
             tag,
             #[cfg(feature = "service_ssmapi")]
             tracker: parking_lot::RwLock::new(None),
+            #[cfg(feature = "service_ssmapi")]
+            users_map,
         }
     }
 }
@@ -893,6 +917,26 @@ impl ManagedSSMServer for ShadowsocksInboundAdapter {
 
     fn inbound_type(&self) -> &str {
         "shadowsocks"
+    }
+
+    fn update_users(&self, users: Vec<String>, passwords: Vec<String>) -> Result<(), String> {
+        if users.len() != passwords.len() {
+            return Err("users and passwords must have the same length".to_string());
+        }
+
+        let mut map = self.users_map.write();
+        map.clear();
+        for (username, password) in users.into_iter().zip(passwords.into_iter()) {
+            map.insert(username, password);
+        }
+
+        tracing::debug!(
+            tag = self.tag,
+            user_count = map.len(),
+            "SS inbound: updated users via SSMAPI"
+        );
+
+        Ok(())
     }
 }
 

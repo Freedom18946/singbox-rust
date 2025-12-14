@@ -104,6 +104,15 @@ wintun = { version = "0.5", optional = true }
 [features]
 # 只在需要时显式启用对应入站；避免测试/构建环境分裂
 default = []
+
+# ========== Go Parity Divergence Feature Gates ==========
+# These features are OFF BY DEFAULT because Go sing-box has removed/doesn't have them.
+# Enable explicitly if you need backward compatibility with legacy protocols.
+
+# ShadowsocksR protocol (Go removed upstream; registry rejects)
+legacy_shadowsocksr = ["adapter-shadowsocks"]
+# Tailscale outbound (Go has Tailscale endpoint only, no outbound)
+legacy_tailscale_outbound = ["adapter-tailscale"]
 http = []
 socks = []
 mixed = ["http", "socks"]

@@ -45,6 +45,8 @@ pub trait TrafficTracker: Send + Sync + 'static {
 ///
 /// Inbound adapters that implement this trait can be automatically
 /// bound to SSMAPI for traffic tracking and user management.
+///
+/// Go reference: `adapter.ManagedSSMServer` interface in sing-box.
 pub trait ManagedSSMServer: Send + Sync {
     /// Set the traffic tracker for this inbound.
     fn set_tracker(&self, tracker: Arc<dyn TrafficTracker>);
@@ -54,4 +56,21 @@ pub trait ManagedSSMServer: Send + Sync {
 
     /// Get the inbound type (e.g., "shadowsocks").
     fn inbound_type(&self) -> &str;
+
+    /// Update the user list on the managed SS server.
+    ///
+    /// Called by SSMAPI when users are added/updated/deleted.
+    /// The inbound should replace its current user list with the provided one.
+    ///
+    /// Go reference: `ManagedSSMServer.UpdateUsers(users, uPSKs []string) error`
+    ///
+    /// # Arguments
+    /// * `users` - List of usernames
+    /// * `passwords` - List of passwords (uPSKs), same order as users
+    ///
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(String)` with error message on failure
+    fn update_users(&self, users: Vec<String>, passwords: Vec<String>) -> Result<(), String>;
 }
+

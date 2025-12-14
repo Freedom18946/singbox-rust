@@ -149,6 +149,20 @@ impl TrafficManager {
         let mut global = self.global_traffic.write();
         *global = GlobalTraffic::default();
     }
+
+    /// Update the user list, keeping only traffic for users in the provided list.
+    ///
+    /// Go reference: `func (s *TrafficManager) UpdateUsers(users []string)`
+    ///
+    /// This prunes traffic stats to only include the provided users,
+    /// preserving existing stats for users that remain in the list.
+    pub fn update_users(&self, users: &[String]) {
+        let mut user_stats = self.user_traffic.write();
+        let user_set: std::collections::HashSet<_> = users.iter().collect();
+        
+        // Remove users not in the new list
+        user_stats.retain(|username, _| user_set.contains(username));
+    }
 }
 
 impl Default for TrafficManager {

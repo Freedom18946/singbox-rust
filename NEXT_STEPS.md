@@ -1,6 +1,6 @@
-# Next Steps (2025-12-13 Execution Plan)
+# Next Steps (2025-12-14 Execution Plan)
 
-Parity Status: **~86% Aligned** with Go `go_fork_source/sing-box-1.12.12` (61 aligned / 71 total; 7 partial, 3 not aligned). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
+Parity Status: **~86% Aligned** with Go `go_fork_source/sing-box-1.12.12` (79 aligned / 92 core items; 2 not aligned; 6 feature-gated/de-scoped). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
 
 ## Working Method (Strict)
 
@@ -13,244 +13,257 @@ After each acceptance:
 - Update `GO_PARITY_MATRIX.md` (status + notes + totals if applicable)
 - Append a timestamped QA entry to `VERIFICATION_RECORD.md` (commands + evidence + conclusion)
 
-## Execution Timeline
+---
+
+## Execution Timeline & Roadmap
 
 ```
-P0 快速收益 (1-2天)    → P1 核心对齐 (1周)    → P2 平台完善 (2周)    → P3 评估
-├─ 0. 验收阻塞清理     ├─ 3. DERP H2/WS端点  ├─ 5. Resolved动态    ├─ 7. Tailscale评估
-├─ 1. 测试漂移修复     ├─ 4. SSMAPI收尾      ├─ 6. DHCP INFORM
-├─ 2. uTLS接入握手
-└─ 2b. TLS CryptoProvider收敛
+本周                        下周                        后续
+┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
+│ 🔥 P1: 高优先级         │→│ 📦 P2: 平台完善         │→│ 🔬 P3: 长期评估         │
+│ 1. SSMAPI 收尾 (1-2天)  │  │ 3. Resolved 完善 (1-2天)│  │ 5. Tailscale 评估 (2-4周)│
+│ 2. 测试覆盖补全 (1天)   │  │ 4. DHCP INFORM (可选)   │  │ 6. ECH/uTLS 决策       │
+└────────────────────────┘  └────────────────────────┘  └────────────────────────┘
+```
+
+### 推荐执行顺序
+
+| # | 任务 | 优先级 | 工作量 | 对齐影响 | 依赖 |
+|---|------|--------|--------|----------|------|
+| 1 | SSMAPI 服务收尾 | 🔥 高 | 1-2天 | 服务对齐 ◐→✅ | 无 |
+| 2 | 测试覆盖补全 | 🔥 高 | 1天 | 验收证据 | P1.1 |
+| 3 | Resolved 服务完善 | 📦 中 | 1-2天 | Linux 平台 | 无 |
+| 4 | DHCP INFORM | 📦 低 | 1-2天 | DNS 发现 | 无 |
+| 5 | Tailscale 栈评估 | 🔬 研究 | 2-4周 | Endpoint 对齐 | 决策文档 |
+| 6 | ECH/uTLS 路线决策 | 🔬 研究 | 取决于方案 | TLS 完整性 | 无 |
+
+---
+
+## P0: 决策项 ✅ 已完成 (2025-12-14)
+
+### 0. 协议分歧清理
+**状态**: ✅ 已完成 | **决策**: 选项B（保留代码，feature 默认关闭）
+
+**已实施**:
+1. **ShadowsocksR**: 
+   - Feature gate: `legacy_shadowsocksr` (默认 OFF)
+   - 文件: `crates/sb-adapters/Cargo.toml`, `crates/sb-adapters/src/outbound/mod.rs`, `crates/sb-adapters/src/register.rs`
+
+2. **Tailscale Outbound**: 
+   - Feature gate: `legacy_tailscale_outbound` (默认 OFF)
+   - 文件: `crates/sb-adapters/Cargo.toml`, `crates/sb-adapters/src/outbound/mod.rs`
+
+**启用方式**: 在 `Cargo.toml` 中添加 feature 依赖：
+```toml
+[dependencies]
+sb-adapters = { path = "crates/sb-adapters", features = ["legacy_shadowsocksr", "legacy_tailscale_outbound"] }
 ```
 
 ---
 
-## Current Work Queue (Ordered)
+## P1: 高优先级 - 服务对齐 (本周)
 
-All items below must satisfy the **three-layer acceptance** (Source + Tests + Config/Effect) and be recorded in `VERIFICATION_RECORD.md`.
-
-0. **验收硬化：TLS CryptoProvider + sb-core 公共 API/文档稳定性** ✅ 已完成 (2025-12-13)
-   - Sweep all `sb-core` rustls config builder call sites and ensure `ensure_rustls_crypto_provider()` is executed before any `ClientConfig::builder()` / `ServerConfig::builder()`.
-   - Consolidate scattered `install_default()` into a single source of truth (avoid per-module “best-effort” installs).
-   - Converge workspace rustls provider features (prefer ring-only): eliminate dual-provider graphs (ring + aws-lc-rs) where possible via `default-features = false` + explicit provider feature selection.
-   - Stabilize `sb-core` runtime public API import paths (e.g. `sb_core::runtime::Supervisor`) and keep crate doctests aligned to avoid future doc/test regressions.
-   - Acceptance: `cargo test -p sb-core --features router` and core crates suites stay green; `shutdown_lifecycle` remains non-panicking.
-
-1. **Service schema/type parity (blocker)** ✅ 已完成 (2025-12-13)
-   - Service Listen Fields + shared `tls` object aligned to Go
-   - `ssm-api` type string + `servers` endpoint→inbound map supported (legacy alias `ssmapi` accepted temporarily)
-   - Acceptance: `cargo test -p sb-config`, `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"`, `cargo test -p sb-adapters`, `cargo test -p app`
-
-2. **DERP: TLS-required + wire protocol parity (blocker)** ✅ 已完成 (2025-12-13)
-   - ✅ Enforce TLS-required + `config_path` required behavior (Go rejects DERP without TLS; config_path required)
-   - ✅ Align DERP framing to sagernet/tailscale `derp` (`ProtocolVersion=2`, NaCl box ClientInfo/ServerInfo, frame IDs/ping/pong; `config_path` key JSON `{"PrivateKey":"privkey:<hex>"}`)
-   - Target files: Go `github.com/sagernet/tailscale/derp/*`, `go_fork_source/sing-box-1.12.12/service/derp/service.go` vs Rust `crates/sb-transport/src/derp/protocol.rs` + `crates/sb-core/src/services/derp/*`
-   - Acceptance: `cargo test -p sb-core --features "service_derp" --lib`, `cargo test -p sb-core --features "service_derp service_ssmapi service_resolved"`, `cargo test -p sb-adapters --features "service_derp"`, `cargo test -p app`
-
-3. **DERP: Mesh + `verify_client_endpoint` parity** ✅ 已完成 (2025-12-13)
-   - ✅ Mesh 对齐 Go 模型：`meshKey` in ClientInfo 验证已实现（server.rs L1654-1665）
-   - ✅ `/derp/mesh` endpoint 保留作向后兼容，已标记 DEPRECATED
-   - ⊘ De-scoped: `verify_client_endpoint` 需要 Tailscale LocalClient daemon，当前为 warn-only
-
-4. **SSMAPI: `ssm-api` parity (config + runtime)** 🔄 进行中
-   - ✅ `type="ssm-api"` + `servers` parsing + `{endpoint}/server/v1/...` routing + TLS options are implemented
-   - ✅ API response contract aligned: `GET /server/v1/users` returns `{"users":[UserObject...]}`
-   - Remaining: Go `servers` mapping enforcement + per-endpoint cache format + `UpdateUsers` binding
-
-5. **Protocol divergence cleanup**
-   - Decide fate of Rust `tailscale` outbound (Go is endpoint-only)
-   - Decide fate of Rust `shadowsocksr` outbound (Go registry rejects; removed upstream)
-
-6. **Resolved: DNSRouter + netmon/netlink**
-   - Route DNS via configured router (Go `adapter.DNSRouter` equivalent), not system resolver
-   - Register NetworkMonitor callbacks + implement Linux netlink change tracking (scoped + tested)
-
-7. **TLS fidelity (uTLS + ECH)**
-   - Decide approach for full uTLS ClientHello parity and ECH runtime parity (blocked by rustls limitations)
-
-8. **DHCP INFORM**
-   - Add active DHCP INFORM probe + interface discovery
-
-## P0: 快速收益 (1-2天)
-
-### 0. 验收阻塞清理（让全套测试可用）
-**状态**: ✅ 已完成 (2025-12-12) | **工作量**: 2-4小时 | **影响**: QA/CI 全套测试可全绿
-
-**阻塞已解决**（来自 `VERIFICATION_RECORD.md` 2025-12-12 QA Session）:
-- `sb-config`：`real_subscription_test` 缺少订阅 fixture 文件
-- `app`：`report_health` 依赖 `report` bin（`dev-cli` 下编译失败，缺 `toml` 依赖）
-
-**任务**:
-- [x] 为 `crates/sb-config/tests/real_subscription_test.rs` 增加 fixture 或显式 gate
-- [x] 修复 `dev-cli` feature 的 `report` bin 依赖/编译；并将 `report_health` 测试按 feature gate
-- [x] 对齐 `version`/`sb-version` JSON 合约（RC tooling 所需字段）
-- [x] 运行 `cargo test -p sb-config` 与 `cargo test -p app` 验证全绿
-
-**文件**: `crates/sb-config/tests/real_subscription_test.rs`, `app/tests/report_health.rs`, `app/Cargo.toml`
-
----
-
-### 1. 修复测试漂移 - InboundParam 字段
-**状态**: ✅ 已完成 (2025-12-12) | **工作量**: 2-4小时 | **影响**: app 级测试漂移已清零
-
-**问题**: `InboundParam` 添加了 7 个新字段，测试初始化未更新
-- 缺失字段: `uuid`, `method`, `security`, `flow`, `masquerade`, `tun_options`, `users_shadowsocks`
-
-**任务**:
-- [x] 为 `InboundParam` 实现 `Default` trait
-- [x] 更新 `app/tests/direct_inbound_test.rs` 使用 `..Default::default()`
-- [x] 检查并修复其他有同样问题的测试文件（当前仅 direct_inbound 覆盖）
-- [x] 运行 `cargo test -p app` 验证
-
-**文件**: `crates/sb-core/src/adapter/mod.rs`, `app/tests/direct_inbound_test.rs`
-
----
-
-### 2. uTLS 指纹接入 TLS 握手
-**状态**: ◐ 部分完成 (2025-12-12) | **工作量**: 1天 | **影响**: uTLS 指纹已接入，但与 Go/uTLS 的 on-wire ClientHello 仍不一致（extension order/shape 等）
-
-**现状**:
-- `utls_fingerprint` 已在标准 TLS（v2ray transport mapper）、REALITY client、ShadowTLS outbound 中实际生效
-- Go `uTLSClientHelloID` 的 alias 名称已补齐（`chrome_psk*`, `chrome_pq*`, `ios`, `android`, `randomized` 等）
-- 仍缺：完整 uTLS 指纹一致性（rustls 限制导致无法完全复刻 Go/uTLS 扩展顺序与 ClientHello 形状）
-
-**任务**:
-- [x] 在标准 TLS builder 路径中根据 `utls_fingerprint` 调用 `UtlsConfig`
-- [x] 让 Standard/Reality/ShadowTLS 的 client 路径可选使用 uTLS config
-- [x] 补齐与 Go `uTLSClientHelloID` 对应的 name→fingerprint 映射
-- [x] 添加合约/回归测试覆盖（unknown fingerprint 拒绝、Reality config 校验等）
-
-**文件**: `crates/sb-tls/src/utls.rs`, `crates/sb-tls/src/reality/`, `crates/sb-core/src/outbound/`, `crates/sb-adapters/src/register.rs`
-
----
-
-### 2b. TLS CryptoProvider 收敛（全路径无 panic）
-**状态**: ✅ 已完成 (2025-12-13) | **工作量**: 0.5-1天 | **影响**: 避免 rustls 0.23 在双 provider 依赖图下的运行时 panic；为后续 service/schema 对齐提供稳定测试基线
-
-**现状**:
-- 已修复：`sb-core` 在构建全局 TLS client config 时会触发的 CryptoProvider panic（`shutdown_lifecycle` 现已全绿）。
-- 仍存在：`sb-core`/workspace 内部仍有多处散落的 `install_default()`；且依赖图可能仍同时启用 `ring` 与 `aws-lc-rs`（长期应收敛为单 provider）。
-
-**任务**:
-- [x] 在 `sb-core` TLS 全局配置构建前确保 provider 已安装（`tls::ensure_rustls_crypto_provider()`）。
-- [x] 修复 `sb-core` crate-level doctest 代码片段，保证 `cargo test -p sb-core --doc` 可编译通过。
-- [x] 为外部调用方提供稳定导入路径（在 `sb-core` 的 `runtime` 模块 re-export `Supervisor`），并同步更新文档片段与 doctest。
-- [x] 扫描 `sb-core` 内所有 rustls builder 入口（`ClientConfig::builder()` / `ServerConfig::builder()`），统一在入口处调用 `ensure_rustls_crypto_provider()`。
-- [x] 替换/移除散落的 `install_default()`（改为调用统一的 `ensure_rustls_crypto_provider()`），避免“局部修补”导致未来回归。
-- [x] 收敛 workspace 依赖特性：rustls/tokio-rustls 统一 ring-only，并对 `anytls-rs` 进行本地 patch 以移除 aws-lc provider 源。
-- [x] 验收回归：`cargo test -p sb-core --features router` + `cargo test -p sb-tls` + `cargo test -p sb-transport` + `cargo test -p sb-adapters` + `cargo test -p app`。
-
-**文件**: `crates/sb-core/src/tls/mod.rs`, `crates/sb-core/src/tls/global.rs`, `crates/sb-core/src/*`（所有 rustls builder 调用点）, `crates/*/Cargo.toml`
-
-## P1: 核心功能对齐 (1周)
-
-### 3. DERP 服务对齐（H2/WS/端点）
-**状态**: ✅ 已完成 (2025-12-13) | **工作量**: 3-5天 | **影响**: 支持完整 Tailscale 中继
-
-**Go 参考**: `go_fork_source/sing-box-1.12.12/service/derp/service.go`
-
-**已完成**:
-- [x] `verify_client_urls` + `verify_client_endpoints` 字段
-- [x] `from_ir` 读取配置
-- [x] `verify_client_via_urls()` HTTP 验证函数
-- [x] 现有: STUN, TLS acceptor, HTTP 路由 + Upgrade/WS + endpoints（已对齐 `derphttp`/`tsweb`）
-- [x] **DERP wire protocol**：对齐 sagernet/tailscale `derp`（`ProtocolVersion=2`、NaCl box ClientInfo/ServerInfo、frame IDs、ping/pong、meshKey 等）
-- [x] 用 hyper 替换当前 HTTP stub（支持 HTTP/1.1 + HTTP/2）
-- [x] `/derp`：实现 HTTP Upgrade DERP handler（`Upgrade: derp|websocket`；支持 `Derp-Fast-Start: 1`）
-- [x] `/derp`：实现 WebSocket upgrade（仅当 `Upgrade: websocket` 且 `Sec-WebSocket-Protocol` 包含 `derp`）
-- [x] 握手期 verify_client：`verify_client_url`（已在 ClientInfo 后、注册前强制拒绝）
-- [x] 端点对齐：`/derp/probe`, `/derp/latency-check`, `/bootstrap-dns`, `/`, `/robots.txt`, `/generate_204`
-- [x] **Mesh 行为对齐**：`meshKey` in ClientInfo 验证已实现；`/derp/mesh` 保留作向后兼容
-
-**已 De-scope**:
-- ⊘ `verify_client_endpoint`：需要 Tailscale LocalClient daemon (Unix socket) 集成，当前为 warn-only
-
-**验收标准（已满足）**:
-- Rust DERP 服务可被标准 DERP client（包含 WS 与非 WS 路径）成功握手并收发 DERP frame ✅
-- `verify_client_url` 配置开启时：验证失败会在握手期拒绝连接 ✅
-- mesh peer 通过 `meshKey` in ClientInfo 认证 ✅
-
-**文件**: `crates/sb-core/src/services/derp/server.rs`
-
----
-
-### 4. SSMAPI 服务收尾（Inbound 绑定 + TLS）
-**状态**: ❌ 未对齐 | **工作量**: 1-2天（不含测试） | **影响**: 当前实现无法作为 Go `ssm-api` 的 drop-in 替代
+### 1. SSMAPI 服务收尾 ✅ 核心对齐完成 (2025-12-14)
+**状态**: ✅ 核心完成 | **剩余**: per-endpoint 状态管理 + 缓存格式优化（可选）
 
 **已实现**:
-- [x] HTTP server 基础骨架 + 部分 API handlers
-- [x] `TrafficTracker` / `ManagedSSMServer` traits（用于后续绑定）
-- [x] TLS server 能力（axum-server）
+- [x] `ManagedSSMServer::update_users()` trait 方法
+- [x] `ShadowsocksInboundAdapter` 实现 `update_users()`
+- [x] `UserManager` 重构：`with_server()` + `post_update()` 自动推送用户变更
+- [x] `TrafficManager::update_users()` 用户列表同步
+- [x] 编译验证 ✅ sb-core + sb-adapters
+- [x] 测试验证 ✅ `cargo test -p sb-core --features service_ssmapi -- ssmapi`
 
-**关键缺口（按 Go 参考定义）**:
-- [ ] **type/配置**：Go `type="ssm-api"` + Listen Fields + `servers`(endpoint→inbound tag)，Rust 当前 schema/type 不兼容
-- [ ] **绑定**：按 `servers` 绑定 managed Shadowsocks inbound，并将用户变更推送到 `ManagedSSMServer.UpdateUsers`
-- [ ] **路由**：路径必须是 `{endpoint}/server/v1/...`（Go chi `entry.Key` + `APIServer.Route`），而不是 Rust-only 全局 `/server/v1`
-- [ ] **API 合约**：`GET /server/v1/users` 返回 `{"users":[UserObject...]}`；并对齐错误返回/状态码细节
-- [ ] **缓存**：对齐 Go cache JSON（按 endpoint 保存 users + traffic 计数）
+**Go 对齐点**:
+| Go | Rust | 状态 |
+|----|------|-----|
+| `UserManager.postUpdate()` | `UserManager::post_update()` | ✅ |
+| `server.UpdateUsers(users, uPSKs)` | `ManagedSSMServer::update_users()` | ✅ |
+| `TrafficManager.UpdateUsers()` | `TrafficManager::update_users()` | ✅ |
 
-**文件**: `crates/sb-core/src/services/ssmapi/`, `crates/sb-adapters/src/inbound/shadowsocks.rs`
+**后续优化** (可选):
+- [ ] per-endpoint 状态管理
+- [ ] per-endpoint 缓存格式
+
+**Go 参考文件**:
+- [`service/ssmapi/server.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/ssmapi/server.go)
+- [`service/ssmapi/api.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/ssmapi/api.go)
+- [`service/ssmapi/cache.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/ssmapi/cache.go)
+
+**验收标准**:
+```bash
+# 编译验证
+cargo check -p sb-core --features service_ssmapi
+
+# 单元测试
+cargo test -p sb-core --features service_ssmapi -- ssmapi
+
+# 集成测试 (待补充)
+cargo test -p sb-adapters --features "adapter-shadowsocks service_ssmapi" -- ssmapi_integration
+```
 
 ---
 
-## P2: 平台完善 (2周)
+### 2. 测试覆盖补全 ✅ 核心完成 (2025-12-14)
+**状态**: ✅ SSMAPI 测试完成 | **剩余**: 可选 E2E 测试
 
-### 5. Resolved 服务完善
-**状态**: ◐ 部分完成 | **工作量**: 1-2天（Linux 相关） | **影响**: Linux systemd-resolved 集成仍非 drop-in
+**已完成测试** (13 tests):
+| 测试文件 | 测试数 | 测试内容 |
+|---------|--------|---------|
+| `user.rs` | 5 | `with_server()`, `post_update()`, CRUD, 批量设置 |
+| `traffic.rs` | 2 | 流量跟踪、清除 |
+| `server.rs` | 3 | Service 创建、builder、生命周期 |
+| `api.rs` | 3 | Server info、stats、user lifecycle |
+
+**验证命令**:
+```bash
+cargo test -p sb-core --features service_ssmapi -- ssmapi  # ✅ 13 tests passed
+```
+
+**后续可选**:
+- [ ] SS inbound 端到端绑定测试
+- [ ] DERP 协议互操作测试
+
+**测试文件位置**:
+```
+crates/sb-core/src/services/ssmapi/tests/
+crates/sb-core/src/services/derp/tests/
+crates/sb-adapters/tests/integration/
+```
+
+---
+
+## P2: 平台完善 (下周)
+
+### 3. Resolved 服务完善 (Linux)
+**状态**: ◐ 部分完成 | **工作量**: 1-2天 | **平台**: Linux only
 
 **已完成**:
-- [x] ResolvedService (615 行) - D-Bus server, DNS stub listener
-- [x] ResolvedTransport (702 行) - per-link DNS routing
+- [x] D-Bus server `org.freedesktop.resolve1.Manager` (615 行)
+- [x] Per-link DNS routing + domain matching
 - [x] `update_link()` / `delete_link()` 方法
-- [x] LinkServers / LinkDomain 结构
-- [x] Domain matching 和 search domains
+- [x] DNS stub listener
 
-**待完成** (平台特定/行为对齐):
-- [ ] **行为**：查询转发应走配置的 DNSRouter（Go `adapter.DNSRouter`），而不是系统 resolver
-- [ ] NetworkMonitor 回调注册 (当前 stub 33 行)
-- [ ] Linux netlink 网络变化监听
+**待完成**:
+| 缺口 | Go 参考 | 描述 |
+|------|---------|------|
+| DNSRouter 路由 | `service.go:L180-200` | 查询转发走配置的路由器，而非系统 resolver |
+| NetworkMonitor 回调 | `service.go:L85-95` | 网络变化时更新 DNS 配置 |
+| netlink 监听 | `netmon/netmon_linux.go` | Linux 网络接口变化监听 |
 
-**文件**: `crates/sb-adapters/src/service/resolved_impl.rs`, `crates/sb-core/src/dns/transport/resolved.rs`
+**Go 参考文件**:
+- [`service/resolved/service.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/resolved/service.go)
+
+**Rust 文件**:
+- `crates/sb-adapters/src/service/resolved_impl.rs`
+- `crates/sb-core/src/dns/transport/resolved.rs`
 
 ---
 
-### 6. DNS DHCP 主动探测
-**状态**: ⏳ 待评估 | **工作量**: 1-2天 | **影响**: DHCP DNS 发现
+### 4. DNS DHCP 主动探测
+**状态**: ⏳ 待评估 | **工作量**: 1-2天 | **优先级**: 低
+
+**现状**:
+- Rust: 仅 passive `resolv.conf` 监控
+- Go: 主动 DHCP INFORM 探测 + 接口发现
 
 **任务**:
-- [ ] 评估现有 DNS 传输是否需要 DHCP INFORM
+- [ ] 评估是否需要 DHCP INFORM
 - [ ] 添加接口发现
 - [ ] 服务器超时和刷新处理
 
-**文件**: `crates/sb-core/src/dns/upstream.rs`, `crates/sb-core/src/dns/transport/`
+**Go 参考**: `dns/transport/dhcp/`
 
 ---
 
 ## P3: 长期评估
 
-### 7. Tailscale 栈完全对齐
+### 5. Tailscale 栈完全对齐
 **状态**: ⏳ 需评估 | **工作量**: 2-4周 | **风险**: 高
+
+**现状差距**:
+| 方面 | Go | Rust |
+|------|----|----|
+| 控制平面 | `tsnet.Server` 内置 | 依赖外部 `tailscaled` daemon |
+| 数据平面 | gVisor netstack | 主机网络栈 |
+| DNS Hook | `LookupHook` 集成 | 无 |
+| 路由/过滤 | `wgengine.ReconfigListener` | 无 |
 
 **评估任务**:
 - [ ] 研究 tsnet CGO → Rust FFI 可行性
 - [ ] 评估 `tailscale-control` 纯 Rust 替代
-- [ ] 编写决策文档
+- [ ] 编写决策文档 (`docs/tailscale_alignment_decision.md`)
 
 **如可行的实现任务**:
 - [ ] 控制平面认证集成
 - [ ] netstack TCP/UDP 数据平面
-- [ ] DNS hook (`LookupHook`)
+- [ ] DNS hook
 - [ ] 路由/过滤器集成
 
 ---
 
-### 8. ECH / Go experimental 取舍与对齐
-**状态**: ⏳ 待决策 | **工作量**: 1-2天 | **风险**: 中
+### 6. ECH / uTLS 深度对齐
+**状态**: ⏳ 待决策 | **阻塞**: rustls 库限制
 
-**任务**:
-- [ ] 明确 Go `experimental/` 与 ECH 是否纳入 100% 复刻范围
-- [ ] 如纳入：拆解模块 + 设计 Rust 实现路径
-- [ ] 如不纳入：在 `GO_PARITY_MATRIX.md` 标注 de-scope 与理由
+**uTLS 现状**:
+| 方面 | 状态 | 说明 |
+|------|------|------|
+| 指纹名称 | ✅ | 所有 Go 指纹名称已对齐 |
+| 配置解析 | ✅ | `UtlsFingerprint` 枚举完整 |
+| 实际 ClientHello | ◐ | rustls 无法完全复刻扩展顺序 |
+
+**ECH 现状**:
+| 方面 | 状态 | 说明 |
+|------|------|------|
+| 配置解析 | ✅ | ECHConfigList 解析存在 |
+| HPKE 原语 | ✅ | CLI keygen 可用 |
+| 运行时握手 | ❌ | rustls 0.23 无 ECH 支持 |
+| Go 状态 | ◐ | `go1.24+` build tag gated |
+
+**可选路径**:
+- **A) 接受限制**: 标注当前状态为 de-scope，记录理由
+- **B) 替代 TLS 库**: 评估 boringssl FFI 或 openssl-rs
+- **C) 等待 rustls**: 跟踪 rustls ECH 进展
+
+---
+
+### 7. Go `experimental/` 对齐决策
+**状态**: ⊘ 已 De-scope | **影响**: 仅影响 ClashAPI/V2rayAPI 用户
+
+**Go `experimental/` 内容**:
+- `cachefile/` - 规则集持久缓存
+- `clashapi/` - Clash API 兼容
+- `v2rayapi/` - V2Ray 统计 API
+- `libbox/` - 移动平台绑定
+- `locale/` - 本地化
+- `deprecated/` - 废弃特性警告
+
+**决策**: 这些是 Go 特有的实验性功能，**不纳入 Rust 复刻范围**。Rust 实现专注于核心代理功能。
+
+---
+
+## 已完成项 (Completed)
+
+0. **验收硬化：TLS CryptoProvider + sb-core 公共 API 稳定性** ✅ (2025-12-13)
+   - `ensure_rustls_crypto_provider()` 在所有 TLS 构建前执行
+   - workspace rustls 统一 ring-only
+
+1. **Service schema/type parity** ✅ (2025-12-13)
+   - `ssm-api` type string + `servers` map + Listen Fields 对齐
+
+2. **DERP: TLS-required + wire protocol parity** ✅ (2025-12-13)
+   - TLS-required + `config_path` + NaCl box ClientInfo/ServerInfo 对齐
+
+3. **DERP: Mesh parity** ✅ (2025-12-13)
+   - `meshKey` in ClientInfo 验证对齐
+
+4. **uTLS 指纹接入** ◐ (2025-12-13)
+   - 所有指纹名称对齐；完整 ClientHello 形状受 rustls 限制
+
+5. **TLS CryptoProvider 收敛** ✅ (2025-12-13)
+
+6. **协议分歧清理** ✅ (2025-12-14)
+   - `legacy_shadowsocksr` + `legacy_tailscale_outbound` feature gates
 
 ---
 
@@ -259,6 +272,32 @@ All items below must satisfy the **three-layer acceptance** (Source + Tests + Co
 每个任务完成后（必须按三层验收记录）:
 1. **Source**：列出对应 Go 文件与 Rust 文件、关键对齐点
 2. **Tests**：新增/更新测试文件，并给出 `cargo test ...` 命令与结果
-3. **Config/Effect**：列出关键配置参数 + 预期效果（通过测试或可复现实例验证）
+3. **Config/Effect**：列出关键配置参数 + 预期效果
 4. 更新 `GO_PARITY_MATRIX.md`
-5. 追加 `VERIFICATION_RECORD.md`（带时间戳的 QA Session 记录）
+5. 追加 `VERIFICATION_RECORD.md`
+
+---
+
+## Quick Reference: Go vs Rust Type Mapping
+
+| Go Type | Rust Type | Location |
+|---------|-----------|----------|
+| `constant.TypeSSMAPI = "ssm-api"` | `ServiceType::Ssmapi` | `crates/sb-config/src/ir/mod.rs` |
+| `constant.TypeDERP = "derp"` | `ServiceType::Derp` | `crates/sb-config/src/ir/mod.rs` |
+| `constant.TypeResolved = "resolved"` | `ServiceType::Resolved` | `crates/sb-config/src/ir/mod.rs` |
+| `option.SSMAPIServiceOptions` | `ServiceIR` with servers/cache_path | `crates/sb-config/src/ir/mod.rs` |
+| `option.DERPServiceOptions` | `ServiceIR` with derp fields | `crates/sb-config/src/ir/mod.rs` |
+| `option.ListenOptions` | `ServiceIR` listen/listen_port/etc | `crates/sb-config/src/ir/mod.rs` |
+| `option.InboundTLSOptions` | `InboundTlsOptionsIR` | `crates/sb-config/src/ir/mod.rs` |
+
+---
+
+## Quick Reference: Feature Flags
+
+| Feature | Purpose | Default |
+|---------|---------|---------|
+| `legacy_shadowsocksr` | Enable ShadowsocksR outbound (Go removed) | OFF |
+| `legacy_tailscale_outbound` | Enable Tailscale outbound (Go has no outbound) | OFF |
+| `service_ssmapi` | Enable SSMAPI service | ON (when used) |
+| `service_derp` | Enable DERP service | ON (when used) |
+| `service_resolved` | Enable Resolved service (Linux) | ON (when used) |

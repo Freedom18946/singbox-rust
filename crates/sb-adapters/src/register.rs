@@ -598,7 +598,7 @@ fn build_shadowsocks_outbound(
     None
 }
 
-#[cfg(all(feature = "adapter-shadowsocks", feature = "out_ss"))]
+#[cfg(feature = "legacy_shadowsocksr")]
 fn build_shadowsocksr_outbound(
     _param: &OutboundParam,
     ir: &OutboundIR,
@@ -638,7 +638,7 @@ fn build_shadowsocksr_outbound(
     Some((Arc::new(wrapper), None))
 }
 
-#[cfg(not(all(feature = "adapter-shadowsocks", feature = "out_ss")))]
+#[cfg(not(feature = "legacy_shadowsocksr"))]
 #[allow(dead_code)]
 fn build_shadowsocksr_outbound(
     _param: &OutboundParam,

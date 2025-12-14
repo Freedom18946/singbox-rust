@@ -53,7 +53,7 @@ pub mod hysteria;
 pub mod hysteria2;
 #[cfg(feature = "adapter-shadowsocks")]
 pub mod shadowsocks;
-#[cfg(feature = "adapter-shadowsocks")]
+#[cfg(feature = "legacy_shadowsocksr")]
 pub mod shadowsocksr;
 #[cfg(feature = "adapter-shadowtls")]
 pub mod shadowtls;
@@ -63,7 +63,7 @@ pub mod socks4;
 pub mod socks5;
 #[cfg(feature = "adapter-ssh")]
 pub mod ssh;
-#[cfg(feature = "adapter-tailscale")]
+#[cfg(feature = "legacy_tailscale_outbound")]
 pub mod tailscale;
 #[cfg(feature = "adapter-tor")]
 pub mod tor;
@@ -216,7 +216,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocks::ShadowsocksConnector {
     }
 }
 
-#[cfg(feature = "adapter-shadowsocks")]
+#[cfg(feature = "legacy_shadowsocksr")]
 impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocksr::ShadowsocksROutbound {
     type Error = crate::error::AdapterError;
 

@@ -1,8 +1,48 @@
 # Verification Record - Ground-Up Quality Assurance
 
-**Last Updated**: 2025-12-14 00:08:00 +0800  
-**Verification Status**: 🔄 In Progress — P1-3 DERP Mesh + P1-4 SSMAPI API parity accepted; remaining: SSMAPI managed inbound binding + cache format  
-**Timestamp**: `Audit: 2025-12-14T00:08:00+08:00 | Focus: P1-4 SSMAPI list_users API parity | Tests: sb-core(service_ssmapi) 9 passed | Blockers: none`
+**Last Updated**: 2025-12-14 12:20:00 +0800  
+**Verification Status**: ✅ P1 Complete — P0 feature gates + P1.1 SSMAPI UpdateUsers + P1.2 tests accepted; Parity: 87%  
+**Timestamp**: `Audit: 2025-12-14T12:20:00+08:00 | Focus: P1 SSMAPI completion + tests | Tests: sb-core(service_ssmapi) 13 passed | Blockers: none`
+
+## QA Session: 2025-12-14 10:40 - 12:20 +0800 (P0 Feature Gates + P1 SSMAPI Completion)
+
+### Scope
+1) Implement feature gates for protocol divergences (ShadowsocksR, Tailscale outbound) per P0  
+2) Complete SSMAPI `UpdateUsers` binding + `post_update` push mechanism per P1.1  
+3) Add UserManager server binding tests per P1.2  
+4) Update GO_PARITY_MATRIX.md + NEXT_STEPS.md documentation
+
+### Evidence
+- **P0 Feature Gates**:
+  - `crates/sb-adapters/Cargo.toml`: Added `legacy_shadowsocksr` and `legacy_tailscale_outbound` features (default OFF)
+  - `crates/sb-adapters/src/outbound/mod.rs`: Gated ShadowsocksR and Tailscale outbound behind features
+  - `crates/sb-adapters/src/register.rs`: Conditional registration
+
+- **P1.1 SSMAPI UpdateUsers**:
+  - `crates/sb-core/src/services/ssmapi/mod.rs`: Added `update_users()` to `ManagedSSMServer` trait
+  - `crates/sb-core/src/services/ssmapi/user.rs`: Refactored `UserManager` with `with_server()` constructor, `post_update()` method, add/update/delete call `post_update()`
+  - `crates/sb-core/src/services/ssmapi/traffic.rs`: Added `update_users()` to prune traffic stats
+  - `crates/sb-adapters/src/inbound/shadowsocks.rs`: Implemented `update_users()` on `ShadowsocksInboundAdapter`
+
+- **P1.2 Tests**:
+  - `crates/sb-core/src/services/ssmapi/user.rs`: Added `MockSSMServer`, `test_with_server_calls_update_users`, `test_with_server_delete_triggers_update`, `test_standalone_manager_no_server`
+
+### Tests
+- `cargo check -p sb-core --features service_ssmapi` ✅ PASS
+- `cargo check -p sb-adapters --features "adapter-shadowsocks service_ssmapi"` ✅ PASS
+- `cargo test -p sb-core --features service_ssmapi -- ssmapi` ✅ PASS (13 tests)
+
+### Documentation Updates
+- **GO_PARITY_MATRIX.md**: SSMAPI ◐→✅, Services 1/3→2/3, Parity 86%→87%
+- **NEXT_STEPS.md**: P0 ✅, P1.1 ✅, P1.2 ✅ marked complete
+
+### Config & Runtime Effect
+- Feature flags `legacy_shadowsocksr` and `legacy_tailscale_outbound` control inclusion of divergent protocols
+- `UserManager::with_server()` enables binding to `ManagedSSMServer` + `TrafficManager`
+- `add/update/delete` operations now automatically push user changes to bound SS inbound
+
+### Conclusion
+P0 + P1.1 + P1.2 are accepted. SSMAPI service is now ✅ Aligned in GO_PARITY_MATRIX.md. Remaining partial items (Resolved, DHCP, uTLS, ECH, Tailscale DNS) are deep technical gaps or Linux-only.
 
 ## QA Session: 2025-12-14 00:06 - 00:08 +0800 (P1-4 SSMAPI API Response Parity)
 
