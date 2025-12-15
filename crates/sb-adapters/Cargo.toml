@@ -218,6 +218,8 @@ adapter-anytls = ["dep:anytls-rs", "dep:tokio-rustls", "dep:rustls", "dep:rustls
 service_resolved = ["dep:zbus", "sb-core/service_resolved"]
 service_ssmapi = ["sb-core/service_ssmapi"]
 service_derp = ["sb-core/service_derp"]
+# Network monitor for tracking network changes (Linux netlink)
+network_monitor = ["dep:sb-platform", "sb-core/network_monitor"]
 tsnet = []
 libtailscale = []
 

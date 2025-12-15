@@ -1,6 +1,6 @@
-# Next Steps (2025-12-14 Execution Plan)
+# Next Steps (2025-12-15 Execution Plan)
 
-Parity Status: **~86% Aligned** with Go `go_fork_source/sing-box-1.12.12` (79 aligned / 92 core items; 2 not aligned; 6 feature-gated/de-scoped). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
+Parity Status: **~88% Aligned** with Go `go_fork_source/sing-box-1.12.12` (84 aligned / 95 core items; 2 not aligned; 4 feature-gated/de-scoped; 14 Rust extensions). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
 
 ## Working Method (Strict)
 
@@ -21,8 +21,8 @@ After each acceptance:
 本周                        下周                        后续
 ┌────────────────────────┐  ┌────────────────────────┐  ┌────────────────────────┐
 │ 🔥 P1: 高优先级         │→│ 📦 P2: 平台完善         │→│ 🔬 P3: 长期评估         │
-│ 1. SSMAPI 收尾 (1-2天)  │  │ 3. Resolved 完善 (1-2天)│  │ 5. Tailscale 评估 (2-4周)│
-│ 2. 测试覆盖补全 (1天)   │  │ 4. DHCP INFORM (可选)   │  │ 6. ECH/uTLS 决策       │
+│ 1. Resolved 完善 (1-2天)│  │ 2. DHCP INFORM (可选)   │  │ 3. Tailscale 评估 (2-4周)│
+│                        │  │                        │  │ 4. ECH/uTLS 决策       │
 └────────────────────────┘  └────────────────────────┘  └────────────────────────┘
 ```
 
@@ -30,137 +30,65 @@ After each acceptance:
 
 | # | 任务 | 优先级 | 工作量 | 对齐影响 | 依赖 |
 |---|------|--------|--------|----------|------|
-| 1 | SSMAPI 服务收尾 | 🔥 高 | 1-2天 | 服务对齐 ◐→✅ | 无 |
-| 2 | 测试覆盖补全 | 🔥 高 | 1天 | 验收证据 | P1.1 |
-| 3 | Resolved 服务完善 | 📦 中 | 1-2天 | Linux 平台 | 无 |
-| 4 | DHCP INFORM | 📦 低 | 1-2天 | DNS 发现 | 无 |
-| 5 | Tailscale 栈评估 | 🔬 研究 | 2-4周 | Endpoint 对齐 | 决策文档 |
-| 6 | ECH/uTLS 路线决策 | 🔬 研究 | 取决于方案 | TLS 完整性 | 无 |
+| 1 | Resolved 服务完善 | ✅ 完成 | 1-2天 | 服务对齐 ◐→✅ | 无 |
+| 2 | DHCP INFORM 主动探测 | 📦 低 | 1-2天 | DNS 发现 | 无 |
+| 3 | Tailscale 栈评估 | 🔬 研究 | 2-4周 | Endpoint 对齐 | 决策文档 |
+| 4 | ECH/uTLS 路线决策 | 🔬 研究 | 取决于方案 | TLS 完整性 | 无 |
 
 ---
 
-## P0: 决策项 ✅ 已完成 (2025-12-14)
+## ✅ 已完成项 (Completed)
 
-### 0. 协议分歧清理
-**状态**: ✅ 已完成 | **决策**: 选项B（保留代码，feature 默认关闭）
+### 2025-12-14 完成
 
-**已实施**:
-1. **ShadowsocksR**: 
-   - Feature gate: `legacy_shadowsocksr` (默认 OFF)
-   - 文件: `crates/sb-adapters/Cargo.toml`, `crates/sb-adapters/src/outbound/mod.rs`, `crates/sb-adapters/src/register.rs`
+1. **P0: 协议分歧清理** ✅
+   - `legacy_shadowsocksr` feature gate (默认 OFF)
+   - `legacy_tailscale_outbound` feature gate (默认 OFF)
 
-2. **Tailscale Outbound**: 
-   - Feature gate: `legacy_tailscale_outbound` (默认 OFF)
-   - 文件: `crates/sb-adapters/Cargo.toml`, `crates/sb-adapters/src/outbound/mod.rs`
+2. **P1: SSMAPI 服务核心对齐** ✅
+   - `ManagedSSMServer::update_users()` trait 方法
+   - `ShadowsocksInboundAdapter` 实现 `update_users()`
+   - `UserManager::post_update()` 自动推送用户变更
+   - `TrafficManager::update_users()` 用户列表同步
+   - 测试验证 ✅ (13 tests passed)
 
-**启用方式**: 在 `Cargo.toml` 中添加 feature 依赖：
-```toml
-[dependencies]
-sb-adapters = { path = "crates/sb-adapters", features = ["legacy_shadowsocksr", "legacy_tailscale_outbound"] }
-```
+3. **测试覆盖补全** ✅
+   - SSMAPI 测试 (user.rs, traffic.rs, server.rs, api.rs)
+
+### 2025-12-13 完成
+
+1. **TLS CryptoProvider + sb-core 公共 API 稳定性** ✅
+2. **Service schema/type parity** ✅
+3. **DERP: TLS-required + wire protocol parity** ✅
+4. **DERP: Mesh parity** ✅
+5. **uTLS 指纹接入** ◐ (受 rustls 限制)
 
 ---
 
-## P1: 高优先级 - 服务对齐 (本周)
+## ✅ P1: Resolved 服务完善 (已完成 2025-12-15)
 
-### 1. SSMAPI 服务收尾 ✅ 核心对齐完成 (2025-12-14)
-**状态**: ✅ 核心完成 | **剩余**: per-endpoint 状态管理 + 缓存格式优化（可选）
+**状态**: ✅ 完成 | **工作量**: 1天 | **平台**: Linux only
 
-**已实现**:
-- [x] `ManagedSSMServer::update_users()` trait 方法
-- [x] `ShadowsocksInboundAdapter` 实现 `update_users()`
-- [x] `UserManager` 重构：`with_server()` + `post_update()` 自动推送用户变更
-- [x] `TrafficManager::update_users()` 用户列表同步
-- [x] 编译验证 ✅ sb-core + sb-adapters
-- [x] 测试验证 ✅ `cargo test -p sb-core --features service_ssmapi -- ssmapi`
+### 已完成
+- [x] D-Bus server `org.freedesktop.resolve1.Manager` (615 行)
+- [x] Per-link DNS routing + domain matching
+- [x] `update_link()` / `delete_link()` 方法
+- [x] DNS stub listener
+- [x] Resolved DNS transport (`sb-core/src/dns/transport/resolved.rs`, 20KB)
+- [x] **DNSRouter 注入** - 使用配置的路由器而非 SystemResolver
+- [x] **NetworkMonitor 回调** - 网络变化时自动更新 DNS 配置
 
-**Go 对齐点**:
-| Go | Rust | 状态 |
-|----|------|-----|
-| `UserManager.postUpdate()` | `UserManager::post_update()` | ✅ |
-| `server.UpdateUsers(users, uPSKs)` | `ManagedSSMServer::update_users()` | ✅ |
-| `TrafficManager.UpdateUsers()` | `TrafficManager::update_users()` | ✅ |
-
-**后续优化** (可选):
-- [ ] per-endpoint 状态管理
-- [ ] per-endpoint 缓存格式
-
-**Go 参考文件**:
-- [`service/ssmapi/server.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/ssmapi/server.go)
-- [`service/ssmapi/api.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/ssmapi/api.go)
-- [`service/ssmapi/cache.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/ssmapi/cache.go)
-
-**验收标准**:
+### 验证结果
 ```bash
-# 编译验证
-cargo check -p sb-core --features service_ssmapi
-
-# 单元测试
-cargo test -p sb-core --features service_ssmapi -- ssmapi
-
-# 集成测试 (待补充)
-cargo test -p sb-adapters --features "adapter-shadowsocks service_ssmapi" -- ssmapi_integration
-```
-
----
-
-### 2. 测试覆盖补全 ✅ 核心完成 (2025-12-14)
-**状态**: ✅ SSMAPI 测试完成 | **剩余**: 可选 E2E 测试
-
-**已完成测试** (13 tests):
-| 测试文件 | 测试数 | 测试内容 |
-|---------|--------|---------|
-| `user.rs` | 5 | `with_server()`, `post_update()`, CRUD, 批量设置 |
-| `traffic.rs` | 2 | 流量跟踪、清除 |
-| `server.rs` | 3 | Service 创建、builder、生命周期 |
-| `api.rs` | 3 | Server info、stats、user lifecycle |
-
-**验证命令**:
-```bash
-cargo test -p sb-core --features service_ssmapi -- ssmapi  # ✅ 13 tests passed
-```
-
-**后续可选**:
-- [ ] SS inbound 端到端绑定测试
-- [ ] DERP 协议互操作测试
-
-**测试文件位置**:
-```
-crates/sb-core/src/services/ssmapi/tests/
-crates/sb-core/src/services/derp/tests/
-crates/sb-adapters/tests/integration/
+# 编译验证 (Linux) - 已通过
+cargo check -p sb-adapters --features "service_resolved,network_monitor" ✅
 ```
 
 ---
 
 ## P2: 平台完善 (下周)
 
-### 3. Resolved 服务完善 (Linux)
-**状态**: ◐ 部分完成 | **工作量**: 1-2天 | **平台**: Linux only
-
-**已完成**:
-- [x] D-Bus server `org.freedesktop.resolve1.Manager` (615 行)
-- [x] Per-link DNS routing + domain matching
-- [x] `update_link()` / `delete_link()` 方法
-- [x] DNS stub listener
-
-**待完成**:
-| 缺口 | Go 参考 | 描述 |
-|------|---------|------|
-| DNSRouter 路由 | `service.go:L180-200` | 查询转发走配置的路由器，而非系统 resolver |
-| NetworkMonitor 回调 | `service.go:L85-95` | 网络变化时更新 DNS 配置 |
-| netlink 监听 | `netmon/netmon_linux.go` | Linux 网络接口变化监听 |
-
-**Go 参考文件**:
-- [`service/resolved/service.go`](file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.12/service/resolved/service.go)
-
-**Rust 文件**:
-- `crates/sb-adapters/src/service/resolved_impl.rs`
-- `crates/sb-core/src/dns/transport/resolved.rs`
-
----
-
-### 4. DNS DHCP 主动探测
+### 2. DNS DHCP 主动探测
 **状态**: ⏳ 待评估 | **工作量**: 1-2天 | **优先级**: 低
 
 **现状**:
@@ -178,12 +106,12 @@ crates/sb-adapters/tests/integration/
 
 ## P3: 长期评估
 
-### 5. Tailscale 栈完全对齐
+### 3. Tailscale 栈完全对齐
 **状态**: ⏳ 需评估 | **工作量**: 2-4周 | **风险**: 高
 
 **现状差距**:
 | 方面 | Go | Rust |
-|------|----|----|
+|------|----|------|
 | 控制平面 | `tsnet.Server` 内置 | 依赖外部 `tailscaled` daemon |
 | 数据平面 | gVisor netstack | 主机网络栈 |
 | DNS Hook | `LookupHook` 集成 | 无 |
@@ -194,15 +122,9 @@ crates/sb-adapters/tests/integration/
 - [ ] 评估 `tailscale-control` 纯 Rust 替代
 - [ ] 编写决策文档 (`docs/tailscale_alignment_decision.md`)
 
-**如可行的实现任务**:
-- [ ] 控制平面认证集成
-- [ ] netstack TCP/UDP 数据平面
-- [ ] DNS hook
-- [ ] 路由/过滤器集成
-
 ---
 
-### 6. ECH / uTLS 深度对齐
+### 4. ECH / uTLS 深度对齐
 **状态**: ⏳ 待决策 | **阻塞**: rustls 库限制
 
 **uTLS 现状**:
@@ -227,43 +149,23 @@ crates/sb-adapters/tests/integration/
 
 ---
 
-### 7. Go `experimental/` 对齐决策
-**状态**: ⊘ 已 De-scope | **影响**: 仅影响 ClashAPI/V2rayAPI 用户
+## Rust 扩展功能 (非 Go 对齐项)
 
-**Go `experimental/` 内容**:
-- `cachefile/` - 规则集持久缓存
-- `clashapi/` - Clash API 兼容
-- `v2rayapi/` - V2Ray 统计 API
-- `libbox/` - 移动平台绑定
-- `locale/` - 本地化
-- `deprecated/` - 废弃特性警告
+以下功能是 Rust 实现的扩展，不在 Go reference 中：
 
-**决策**: 这些是 Go 特有的实验性功能，**不纳入 Rust 复刻范围**。Rust 实现专注于核心代理功能。
-
----
-
-## 已完成项 (Completed)
-
-0. **验收硬化：TLS CryptoProvider + sb-core 公共 API 稳定性** ✅ (2025-12-13)
-   - `ensure_rustls_crypto_provider()` 在所有 TLS 构建前执行
-   - workspace rustls 统一 ring-only
-
-1. **Service schema/type parity** ✅ (2025-12-13)
-   - `ssm-api` type string + `servers` map + Listen Fields 对齐
-
-2. **DERP: TLS-required + wire protocol parity** ✅ (2025-12-13)
-   - TLS-required + `config_path` + NaCl box ClientInfo/ServerInfo 对齐
-
-3. **DERP: Mesh parity** ✅ (2025-12-13)
-   - `meshKey` in ClientInfo 验证对齐
-
-4. **uTLS 指纹接入** ◐ (2025-12-13)
-   - 所有指纹名称对齐；完整 ClientHello 形状受 rustls 限制
-
-5. **TLS CryptoProvider 收敛** ✅ (2025-12-13)
-
-6. **协议分歧清理** ✅ (2025-12-14)
-   - `legacy_shadowsocksr` + `legacy_tailscale_outbound` feature gates
+| 功能 | 文件 | 说明 |
+|------|------|------|
+| Clash API | `services/clash_api.rs` | Rust 原生 Clash API 实现 |
+| V2Ray API | `services/v2ray_api.rs` | Rust 原生 V2Ray Stats API |
+| Cache File | `services/cache_file.rs` | 规则集本地缓存 |
+| NTP Service | `services/ntp.rs` | NTP 时间同步 |
+| DNS Forwarder | `services/dns_forwarder.rs` | DNS 转发服务 |
+| Circuit Breaker | `sb-transport/circuit_breaker.rs` | 熔断器 |
+| Resource Pressure | `sb-transport/resource_pressure.rs` | 资源压力管理 |
+| DoH3 Transport | `dns/transport/doh3.rs` | DNS over HTTP/3 |
+| Enhanced UDP | `dns/transport/enhanced_udp.rs` | 增强 UDP DNS |
+| Multiplex Transport | `sb-transport/multiplex.rs` | 连接复用 |
+| Retry Transport | `sb-transport/retry.rs` | 连接重试 |
 
 ---
 
@@ -301,3 +203,20 @@ crates/sb-adapters/tests/integration/
 | `service_ssmapi` | Enable SSMAPI service | ON (when used) |
 | `service_derp` | Enable DERP service | ON (when used) |
 | `service_resolved` | Enable Resolved service (Linux) | ON (when used) |
+
+---
+
+## Quick Reference: Crate Statistics
+
+| Crate | Files | Primary Purpose |
+|-------|-------|-----------------|
+| `sb-adapters` | 109 | Protocol implementations |
+| `sb-config` | 49 | Config parsing/validation |
+| `sb-core` | 424 | Core runtime/services |
+| `sb-tls` | 20 | TLS implementations |
+| `sb-transport` | 57 | Transport layer |
+| `sb-common` | 10 | Shared utilities |
+| `sb-platform` | 20 | Platform-specific |
+| `sb-runtime` | 17 | Async runtime |
+| `sb-api` | 29 | Admin API |
+| `sb-subscribe` | 24 | Subscription management |

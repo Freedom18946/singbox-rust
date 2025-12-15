@@ -78,6 +78,9 @@ pub mod process;
 pub mod system_proxy;
 pub mod tun;
 
+// Re-export commonly used types at crate root for ergonomic usage
+pub use monitor::{NetworkEvent, NetworkMonitor};
+
 /// Android VPN protect hooks for socket protection.
 pub mod android_protect;
 

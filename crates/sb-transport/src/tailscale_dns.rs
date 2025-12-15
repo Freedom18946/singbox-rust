@@ -21,6 +21,7 @@ use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::net::UdpSocket;
@@ -32,8 +33,23 @@ pub const MAGIC_DNS_ADDR: Ipv4Addr = Ipv4Addr::new(100, 100, 100, 100);
 /// Tailscale MagicDNS port.
 pub const MAGIC_DNS_PORT: u16 = 53;
 
+/// Factory for creating tsnet-bound UDP sockets.
+///
+/// Implement this trait to provide sockets that route through the
+/// Tailscale network stack (tsnet/netstack) instead of the host network.
+pub trait TsnetSocketFactory: Send + Sync {
+    /// Create a UDP socket connected to the given address through tsnet.
+    fn dial_udp(
+        &self,
+        addr: SocketAddr,
+    ) -> Pin<Box<dyn Future<Output = io::Result<UdpSocket>> + Send + '_>>;
+
+    /// Check if tsnet is connected and ready.
+    fn is_connected(&self) -> bool;
+}
+
 /// Tailscale DNS transport for MagicDNS resolution.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TailscaleDnsTransport {
     /// MagicDNS server address.
     dns_server: SocketAddr,
@@ -41,6 +57,9 @@ pub struct TailscaleDnsTransport {
     timeout: Duration,
     /// Socket factory (allows netstack injection).
     socket_factory: SocketFactory,
+    /// Optional tsnet context for bound sockets.
+    /// When provided and connected, DNS queries will route through tsnet.
+    tsnet_context: Option<Arc<dyn TsnetSocketFactory>>,
 }
 
 impl Default for TailscaleDnsTransport {
@@ -49,7 +68,18 @@ impl Default for TailscaleDnsTransport {
             dns_server: SocketAddr::new(IpAddr::V4(MAGIC_DNS_ADDR), MAGIC_DNS_PORT),
             timeout: Duration::from_secs(5),
             socket_factory: default_socket_factory(),
+            tsnet_context: None,
         }
+    }
+}
+
+impl std::fmt::Debug for TailscaleDnsTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TailscaleDnsTransport")
+            .field("dns_server", &self.dns_server)
+            .field("timeout", &self.timeout)
+            .field("tsnet_connected", &self.tsnet_context.as_ref().map(|c| c.is_connected()))
+            .finish()
     }
 }
 
@@ -65,6 +95,7 @@ impl TailscaleDnsTransport {
             dns_server: server,
             timeout: Duration::from_secs(5),
             socket_factory: default_socket_factory(),
+            tsnet_context: None,
         }
     }
 
@@ -85,6 +116,22 @@ impl TailscaleDnsTransport {
             Box::pin(fut) as Pin<Box<dyn Future<Output = io::Result<UdpSocket>> + Send>>
         });
         self
+    }
+
+    /// Set tsnet context for bound sockets.
+    ///
+    /// When set and connected, DNS queries will route through the
+    /// Tailscale network stack instead of the host network.
+    pub fn with_tsnet_context(mut self, ctx: Arc<dyn TsnetSocketFactory>) -> Self {
+        self.tsnet_context = Some(ctx);
+        self
+    }
+
+    /// Check if tsnet context is available and connected.
+    pub fn is_tsnet_connected(&self) -> bool {
+        self.tsnet_context
+            .as_ref()
+            .is_some_and(|ctx| ctx.is_connected())
     }
 
     /// Check if a hostname should use MagicDNS.
@@ -131,8 +178,18 @@ impl TailscaleDnsTransport {
         // Build DNS query
         let query = self.build_dns_query(hostname, qtype)?;
 
-        // Create UDP socket
-        let socket = (self.socket_factory)().await?;
+        // Create UDP socket - prefer tsnet if available and connected
+        let socket = if let Some(ctx) = &self.tsnet_context {
+            if ctx.is_connected() {
+                debug!("Using tsnet socket for MagicDNS query to {}", hostname);
+                ctx.dial_udp(self.dns_server).await?
+            } else {
+                debug!("tsnet not connected, using host socket for {}", hostname);
+                (self.socket_factory)().await?
+            }
+        } else {
+            (self.socket_factory)().await?
+        };
 
         // Send query
         socket.send_to(&query, self.dns_server).await?;

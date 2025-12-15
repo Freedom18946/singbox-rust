@@ -64,8 +64,42 @@ pub trait Service: Send + Sync {
 /// 构建服务的上下文。
 #[derive(Default)]
 pub struct ServiceContext {
-    // Placeholder for future integration
-    // pub logger: Arc<Logger>,
+    /// Optional DNS resolver for services that need routing.
+    /// 可选的 DNS 解析器，用于需要路由的服务。
+    pub dns_resolver: Option<Arc<dyn crate::dns::DnsResolver>>,
+    /// Optional network monitor for tracking network changes.
+    /// 可选的网络监视器，用于跟踪网络变化。
+    #[cfg(feature = "network_monitor")]
+    pub network_monitor: Option<Arc<sb_platform::NetworkMonitor>>,
+}
+
+impl ServiceContext {
+    /// Create a new empty context.
+    /// 创建一个新的空上下文。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a context with a DNS resolver.
+    /// 创建一个带有 DNS 解析器的上下文。
+    #[must_use]
+    pub fn with_dns_resolver(resolver: Arc<dyn crate::dns::DnsResolver>) -> Self {
+        Self {
+            dns_resolver: Some(resolver),
+            #[cfg(feature = "network_monitor")]
+            network_monitor: None,
+        }
+    }
+
+    /// Set the network monitor.
+    /// 设置网络监视器。
+    #[cfg(feature = "network_monitor")]
+    #[must_use]
+    pub fn with_network_monitor(mut self, monitor: Arc<sb_platform::NetworkMonitor>) -> Self {
+        self.network_monitor = Some(monitor);
+        self
+    }
 }
 
 /// Builder function signature for creating services.

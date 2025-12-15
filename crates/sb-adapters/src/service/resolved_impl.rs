@@ -35,10 +35,16 @@ mod dbus_impl {
         resolve1_state: Arc<crate::service::resolve1::Resolve1ManagerState>,
         /// D-Bus server connection (for cleanup)
         dbus_server_connection: parking_lot::Mutex<Option<zbus::Connection>>,
+        /// Network monitor for tracking network changes
+        #[cfg(feature = "network_monitor")]
+        network_monitor: Option<Arc<sb_platform::NetworkMonitor>>,
+        /// Network monitor task handle
+        #[cfg(feature = "network_monitor")]
+        network_monitor_task: parking_lot::Mutex<Option<JoinHandle<()>>>,
     }
 
     impl ResolvedService {
-        pub fn new(ir: &ServiceIR) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        pub fn new(ir: &ServiceIR, ctx: &ServiceContext) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
             let tag = ir.tag.as_deref().unwrap_or("resolved").to_string();
             let listen_addr = ir
                 .listen
@@ -47,11 +53,13 @@ mod dbus_impl {
                 .to_string();
             let listen_port = ir.listen_port.unwrap_or(53);
 
-            // Create default DNS resolver
-            // Uses system resolver as fallback; can be enhanced to use configured upstreams
-            let resolver = Arc::new(sb_core::dns::system::SystemResolver::new(
-                std::time::Duration::from_secs(60),
-            )) as Arc<dyn DnsResolver>;
+            // Use injected DNS resolver from context, or fallback to system resolver
+            // 使用上下文中注入的 DNS 解析器，或回退到系统解析器
+            let resolver = ctx.dns_resolver.clone().unwrap_or_else(|| {
+                Arc::new(sb_core::dns::system::SystemResolver::new(
+                    std::time::Duration::from_secs(60),
+                )) as Arc<dyn DnsResolver>
+            });
 
             // Create resolve1 manager state
             let resolve1_state = Arc::new(crate::service::resolve1::Resolve1ManagerState::new());
@@ -66,6 +74,10 @@ mod dbus_impl {
                 resolver,
                 resolve1_state,
                 dbus_server_connection: parking_lot::Mutex::new(None),
+                #[cfg(feature = "network_monitor")]
+                network_monitor: ctx.network_monitor.clone(),
+                #[cfg(feature = "network_monitor")]
+                network_monitor_task: parking_lot::Mutex::new(None),
             })
         }
 
@@ -387,6 +399,86 @@ mod dbus_impl {
                         "D-Bus server started: org.freedesktop.resolve1.Manager"
                     );
 
+                    // Register network monitor callback if available
+                    #[cfg(feature = "network_monitor")]
+                    if let Some(monitor) = &self.network_monitor {
+                        let resolve1_state = self.resolve1_state.clone();
+                        let tag = self.tag.clone();
+                        monitor.register_callback(Box::new(move |event| {
+                            use sb_platform::NetworkEvent;
+                            match event {
+                                NetworkEvent::LinkUp { interface } => {
+                                    tracing::info!(
+                                        target: "sb_adapters::service",
+                                        service = "resolved",
+                                        tag = %tag,
+                                        interface = %interface,
+                                        "Network interface up, refreshing DNS configuration"
+                                    );
+                                }
+                                NetworkEvent::LinkDown { interface } => {
+                                    tracing::info!(
+                                        target: "sb_adapters::service",
+                                        service = "resolved",
+                                        tag = %tag,
+                                        interface = %interface,
+                                        "Network interface down, updating DNS configuration"
+                                    );
+                                }
+                                NetworkEvent::AddressAdded { interface, address } => {
+                                    tracing::debug!(
+                                        target: "sb_adapters::service",
+                                        service = "resolved",
+                                        tag = %tag,
+                                        interface = %interface,
+                                        address = %address,
+                                        "Address added to interface"
+                                    );
+                                }
+                                NetworkEvent::AddressRemoved { interface, address } => {
+                                    tracing::debug!(
+                                        target: "sb_adapters::service",
+                                        service = "resolved",
+                                        tag = %tag,
+                                        interface = %interface,
+                                        address = %address,
+                                        "Address removed from interface"
+                                    );
+                                }
+                                NetworkEvent::RouteChanged | NetworkEvent::Changed => {
+                                    tracing::debug!(
+                                        target: "sb_adapters::service",
+                                        service = "resolved",
+                                        tag = %tag,
+                                        "Network route changed"
+                                    );
+                                }
+                            }
+                        }));
+
+                        // Start the network monitor
+                        match monitor.start() {
+                            Ok(handle) => {
+                                *self.network_monitor_task.lock() = Some(handle);
+                                tracing::info!(
+                                    target: "sb_adapters::service",
+                                    service = "resolved",
+                                    tag = %self.tag,
+                                    "Network monitor started"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "sb_adapters::service",
+                                    service = "resolved",
+                                    tag = %self.tag,
+                                    error = %e,
+                                    "Failed to start network monitor (continuing without it)"
+                                );
+                            }
+                        }
+                    }
+
                     Ok(())
                 }
                 StartStage::Start => {
@@ -466,6 +558,23 @@ mod dbus_impl {
                 );
             }
 
+            // Stop network monitor
+            #[cfg(feature = "network_monitor")]
+            {
+                if let Some(handle) = self.network_monitor_task.lock().take() {
+                    handle.abort();
+                }
+                if let Some(monitor) = &self.network_monitor {
+                    monitor.stop();
+                    tracing::debug!(
+                        target: "sb_adapters::service",
+                        service = "resolved",
+                        tag = %self.tag,
+                        "Network monitor stopped"
+                    );
+                }
+            }
+
             *self.connection.lock() = None;
             Ok(())
         }
@@ -479,7 +588,7 @@ mod dbus_impl {
 pub fn build_resolved_service(ir: &ServiceIR, _ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
     #[cfg(all(target_os = "linux", feature = "service_resolved"))]
     {
-        match dbus_impl::ResolvedService::new(ir) {
+        match dbus_impl::ResolvedService::new(ir, _ctx) {
             Ok(service) => {
                 tracing::info!(
                     target: "sb_adapters::service",
@@ -554,7 +663,8 @@ mod tests {
 
         // Note: This test will fail if systemd-resolved is not available
         // In CI or non-systemd environments, it should gracefully skip
-        match dbus_impl::ResolvedService::new(&ir) {
+        let ctx = ServiceContext::default();
+        match dbus_impl::ResolvedService::new(&ir, &ctx) {
             Ok(service) => {
                 // Test lifecycle stages
                 let init_result = service.start(StartStage::Initialize);

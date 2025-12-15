@@ -196,6 +196,8 @@ service_clash_api  = ["dep:axum"]
 service_v2ray_api  = ["dep:axum"]
 service_derp       = ["dep:tokio-tungstenite"]
 service_resolved   = []
+# Network monitor for tracking network changes (Linux netlink)
+network_monitor    = []
 
 # 你也可以在后续提交中，将这些特性与依赖绑定，例如：
 # subs_http = ["sb-subscribe?/http"]  # 示例：当 sb-subscribe 提供 http 子特性时
