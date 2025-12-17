@@ -18,7 +18,8 @@ fn cidr6_basic_match_and_miss() {
 
 #[test]
 fn cidr6_priority_vs_exact_suffix() {
-    let rules = "exact:foo.test=reject\nsuffix:.test=proxy\ncidr6:2001:db8::/32=proxy\ndefault:direct\n";
+    let rules =
+        "exact:foo.test=reject\nsuffix:.test=proxy\ncidr6:2001:db8::/32=proxy\ndefault:direct\n";
     let v6 = "2001:db8::2".parse().unwrap();
     // exact wins
     assert_eq!(

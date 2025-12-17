@@ -38,7 +38,7 @@ impl TcpDialer {
                     }
                 }
             }
-            Err(last_err.unwrap_or_else(|| std::io::Error::from(std::io::ErrorKind::Other)))
+            Err(last_err.unwrap_or_else(|| std::io::Error::other("no address resolved")))
         })();
         let elapsed = start.elapsed().as_millis();
         match r {

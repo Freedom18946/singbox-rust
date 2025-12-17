@@ -6,6 +6,8 @@
 #[cfg(feature = "out_shadowtls")]
 use async_trait::async_trait;
 #[cfg(feature = "out_shadowtls")]
+use sb_tls::{UtlsConfig, UtlsFingerprint};
+#[cfg(feature = "out_shadowtls")]
 use std::io;
 #[cfg(feature = "out_shadowtls")]
 use std::sync::Arc;
@@ -15,8 +17,6 @@ use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 #[cfg(feature = "out_shadowtls")]
 use tokio_rustls::{rustls, TlsConnector};
-#[cfg(feature = "out_shadowtls")]
-use sb_tls::{UtlsConfig, UtlsFingerprint};
 
 #[cfg(feature = "out_shadowtls")]
 use super::types::{HostPort, OutboundTcp};
@@ -51,43 +51,42 @@ impl ShadowTlsOutbound {
             .unwrap_or(false);
         let insecure = config.skip_cert_verify || insecure_env;
 
-        let tls_config: Arc<rustls::ClientConfig> = if let Some(fp_name) =
-            config.utls_fingerprint.as_deref()
-        {
-            let fp = fp_name
-                .parse::<UtlsFingerprint>()
-                .map_err(|e| anyhow::anyhow!("invalid uTLS fingerprint: {e}"))?;
-            let mut utls_cfg = UtlsConfig::new(config.sni.clone())
-                .with_fingerprint(fp)
-                .with_insecure(insecure);
-            if let Some(alpn) = config.alpn.clone() {
-                utls_cfg = utls_cfg.with_alpn(alpn);
-            }
-            let roots = crate::tls::global::base_root_store();
-            utls_cfg.build_client_config_with_roots(roots)
-        } else {
-            let roots = crate::tls::global::base_root_store();
-            let mut tls_config = rustls::ClientConfig::builder()
-                .with_root_certificates(roots)
-                .with_no_client_auth();
+        let tls_config: Arc<rustls::ClientConfig> =
+            if let Some(fp_name) = config.utls_fingerprint.as_deref() {
+                let fp = fp_name
+                    .parse::<UtlsFingerprint>()
+                    .map_err(|e| anyhow::anyhow!("invalid uTLS fingerprint: {e}"))?;
+                let mut utls_cfg = UtlsConfig::new(config.sni.clone())
+                    .with_fingerprint(fp)
+                    .with_insecure(insecure);
+                if let Some(alpn) = config.alpn.clone() {
+                    utls_cfg = utls_cfg.with_alpn(alpn);
+                }
+                let roots = crate::tls::global::base_root_store();
+                utls_cfg.build_client_config_with_roots(roots)
+            } else {
+                let roots = crate::tls::global::base_root_store();
+                let mut tls_config = rustls::ClientConfig::builder()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth();
 
-            if insecure {
-                tracing::warn!(
-                    "ShadowTLS: insecure mode enabled, certificate verification disabled"
-                );
-                let v = crate::tls::danger::NoVerify::new();
-                tls_config.dangerous().set_certificate_verifier(Arc::new(v));
-            }
+                if insecure {
+                    tracing::warn!(
+                        "ShadowTLS: insecure mode enabled, certificate verification disabled"
+                    );
+                    let v = crate::tls::danger::NoVerify::new();
+                    tls_config.dangerous().set_certificate_verifier(Arc::new(v));
+                }
 
-            if let Some(alpn_list) = &config.alpn {
-                tls_config.alpn_protocols = alpn_list
-                    .iter()
-                    .map(|proto| proto.as_bytes().to_vec())
-                    .collect();
-            }
+                if let Some(alpn_list) = &config.alpn {
+                    tls_config.alpn_protocols = alpn_list
+                        .iter()
+                        .map(|proto| proto.as_bytes().to_vec())
+                        .collect();
+                }
 
-            Arc::new(tls_config)
-        };
+                Arc::new(tls_config)
+            };
         Ok(Self { config, tls_config })
     }
 }

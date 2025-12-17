@@ -199,7 +199,7 @@ async fn test_vmess_tls_with_alpn() {
         let mut stream = connector
             .dial(target, DialOpts::default())
             .await
-            .expect(&format!("Failed to dial with ALPN: {alpn:?}"));
+            .unwrap_or_else(|_| panic!("Failed to dial with ALPN: {alpn:?}"));
 
         let test_data = format!("ALPN: {:?}", alpn);
         stream.write_all(test_data.as_bytes()).await.unwrap();
@@ -262,9 +262,9 @@ async fn test_vmess_tls_versions() {
         let mut stream = connector
             .dial(target, DialOpts::default())
             .await
-            .expect(&format!(
-                "Failed to dial with TLS versions: {min_ver:?}-{max_ver:?}"
-            ));
+            .unwrap_or_else(|_| {
+                panic!("Failed to dial with TLS versions: {min_ver:?}-{max_ver:?}")
+            });
 
         let test_data = format!("TLS: {:?}-{:?}", min_ver, max_ver);
         stream.write_all(test_data.as_bytes()).await.unwrap();
@@ -520,7 +520,7 @@ async fn test_vmess_tls_data_integrity() {
         .expect("Failed to dial with TLS");
 
     // Test with large payload (16KB)
-    let test_data = vec![0xAB as u8; 16384];
+    let test_data = vec![0xAB_u8; 16384];
     stream.write_all(&test_data).await.unwrap();
 
     let mut response = vec![0u8; test_data.len()];

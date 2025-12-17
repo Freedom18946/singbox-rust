@@ -236,7 +236,11 @@ mod tests {
         std::fs::write(key_file.path(), key_pem).unwrap();
 
         let tempdir = tempfile::tempdir().unwrap();
-        let config_path = tempdir.path().join("derp.key").to_string_lossy().to_string();
+        let config_path = tempdir
+            .path()
+            .join("derp.key")
+            .to_string_lossy()
+            .to_string();
 
         let ctx = ServiceContext::default();
         let ir = ServiceIR {

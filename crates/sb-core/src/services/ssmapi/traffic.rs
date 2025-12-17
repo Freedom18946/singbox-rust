@@ -159,7 +159,7 @@ impl TrafficManager {
     pub fn update_users(&self, users: &[String]) {
         let mut user_stats = self.user_traffic.write();
         let user_set: std::collections::HashSet<_> = users.iter().collect();
-        
+
         // Remove users not in the new list
         user_stats.retain(|username, _| user_set.contains(username));
     }

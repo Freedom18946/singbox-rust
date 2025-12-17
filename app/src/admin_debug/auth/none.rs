@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn test_none_provider_default() {
-        let provider = NoneProvider::default();
+        let provider = NoneProvider;
         let headers = HashMap::new();
         assert!(provider.check(&headers, "/test").is_ok());
     }

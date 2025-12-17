@@ -281,6 +281,7 @@ fn sign_ex(config: SignConfig) -> Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 #[derive(Default, Clone)]
 struct ReplayStats {
     ok2xx: u64,
@@ -295,6 +296,7 @@ struct ReplayStats {
     per_sec: BTreeMap<u64, u64>,
 }
 
+#[allow(dead_code)]
 struct ReplayConfig {
     url: String,
     key_id: String,

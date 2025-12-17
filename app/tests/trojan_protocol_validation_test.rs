@@ -29,7 +29,7 @@ fn generate_test_certificate() -> (String, String) {
 
     // Generate self-signed certificate using openssl
     let output = Command::new("openssl")
-        .args(&[
+        .args([
             "req",
             "-x509",
             "-newkey",
@@ -218,7 +218,7 @@ async fn test_tls_version_enforcement() {
     );
 
     // Config should be created successfully
-    assert!(config.cert_path.len() > 0);
+    assert!(!config.cert_path.is_empty());
     println!("✓ TLS configuration created (expects TLS 1.2+)");
 }
 
@@ -435,7 +435,7 @@ async fn test_strong_cipher_suite_requirement() {
 
     // rustls by default uses strong cipher suites
     // Config should be accepted
-    assert!(config.cert_path.len() > 0);
+    assert!(!config.cert_path.is_empty());
     println!("✓ Strong cipher suite requirement validated");
 }
 
@@ -458,7 +458,7 @@ async fn test_alpn_negotiation() {
     );
 
     // ALPN should be handled by TLS layer
-    assert!(config.cert_path.len() > 0);
+    assert!(!config.cert_path.is_empty());
     println!("✓ ALPN negotiation configuration validated");
 }
 

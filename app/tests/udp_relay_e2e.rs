@@ -277,7 +277,7 @@ async fn test_shadowsocks_udp_large_packet() {
     }
 
     // Test with large packet (1400 bytes, typical UDP MTU)
-    let test_data = vec![0xAB as u8; 1400];
+    let test_data = vec![0xAB_u8; 1400];
     let sent = udp_socket
         .send_to(&test_data)
         .await

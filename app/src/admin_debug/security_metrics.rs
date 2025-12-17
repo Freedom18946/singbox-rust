@@ -555,175 +555,6 @@ pub fn reset_caches() {
     }
 }
 
-#[cfg(test)]
-#[cfg(feature = "admin_tests")]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_host_to_hash_cardinality() {
-        // Test that host_to_hash produces values in expected range
-        let hosts = [
-            "test1.com",
-            "test2.com",
-            "example.org",
-            "api.service.local",
-            "cdn.provider.net",
-        ];
-
-        for host in &hosts {
-            let hash = host_to_hash(host);
-            assert!(
-                hash < 1024,
-                "Host hash {} for '{}' should be < 1024",
-                hash,
-                host
-            );
-        }
-
-        // Test that different hosts produce different hashes (mostly)
-        let hash1 = host_to_hash("different1.com");
-        let hash2 = host_to_hash("different2.com");
-        // Note: With only 2 samples we can't guarantee they're different due to hash collisions
-        // But we can verify they're in valid range
-        assert!(hash1 < 1024);
-        assert!(hash2 < 1024);
-    }
-
-    #[test]
-    fn test_host_to_hash_consistency() {
-        let host = "consistent-test.example.com";
-        let hash1 = host_to_hash(host);
-        let hash2 = host_to_hash(host);
-        let hash3 = host_to_hash(host);
-
-        assert_eq!(hash1, hash2, "Same host should produce same hash");
-        assert_eq!(hash2, hash3, "Hash should be deterministic");
-    }
-
-    #[test]
-    fn test_error_sampling_logic() {
-        // Reset error counts
-        let _kinds_map = ERROR_KINDS_BY_HASH.get_or_init(|| Mutex::new(HashMap::new()));
-
-        // Test sampling with known host hashes
-        let test_cases = [
-            ("sampled-host-0.com", true), // This should be sampled (need to find a host that gives hash & 0xF == 0)
-            ("not-sampled-host.com", false), // This might not be sampled
-        ];
-
-        // Since we can't predict exact hashes, let's test the sampling mechanism indirectly
-        for i in 0..100 {
-            let test_host = format!("test-host-{}.com", i);
-            let host_hash = host_to_hash(&test_host);
-            let should_sample = (host_hash & 0xF) == 0;
-
-            // Call record_error_sampled
-            record_error_sampled(SecurityErrorKind::Timeout, &test_host);
-
-            // Verify that sampling occurred if expected
-            if should_sample {
-                // Should be recorded in ERROR_KINDS_BY_HASH
-                let map = ERROR_KINDS_BY_HASH.get().unwrap();
-                if let Ok(m) = map.lock() {
-                    let key = (SecurityErrorKind::Timeout, host_hash);
-                    assert!(
-                        m.contains_key(&key),
-                        "Sampled error should be recorded for host {}",
-                        test_host
-                    );
-                }
-                break; // Found at least one sampled case
-            }
-        }
-    }
-
-    #[test]
-    fn test_error_kind_tracking() {
-        // Test that error kinds are properly tracked
-        let host = "error-kind-test.com";
-
-        set_last_error_with_host(SecurityErrorKind::Upstream4xx, host, "Test 4xx error");
-        set_last_error_with_host(SecurityErrorKind::Upstream5xx, host, "Test 5xx error");
-        set_last_error_with_host(SecurityErrorKind::Timeout, host, "Test timeout");
-
-        // Verify ERROR_KINDS tracking
-        let kinds_map = ERROR_KINDS.get().unwrap();
-        if let Ok(m) = kinds_map.lock() {
-            assert!(m.get(&SecurityErrorKind::Upstream4xx).unwrap_or(&0) > &0);
-            assert!(m.get(&SecurityErrorKind::Upstream5xx).unwrap_or(&0) > &0);
-            assert!(m.get(&SecurityErrorKind::Timeout).unwrap_or(&0) > &0);
-        }
-    }
-
-    #[test]
-    fn test_latency_histogram_buckets() {
-        // Test that latency buckets are as expected
-        let expected_buckets = [50, 100, 200, 500, 1000, 2000, u64::MAX];
-        assert_eq!(
-            LAT_BUCKETS, &expected_buckets,
-            "Latency buckets should match expected fine-grained values"
-        );
-
-        // Test latency recording
-        record_latency_ms(75); // Should go in 100ms bucket
-        record_latency_ms(150); // Should go in 200ms bucket
-        record_latency_ms(1500); // Should go in 2000ms bucket
-        record_latency_ms(3000); // Should go in +Inf bucket
-
-        // Verify counts are updated
-        assert!(LAT_COUNT.load(Ordering::Relaxed) >= 4);
-        assert!(LAT_SUM_MS.load(Ordering::Relaxed) >= 75 + 150 + 1500 + 3000);
-    }
-
-    #[test]
-    fn test_sampling_rate_approximation() {
-        // Test that sampling rate is approximately 1/16 (6.25%)
-        let mut sampled_count = 0;
-        let total_count = 1000;
-
-        for i in 0..total_count {
-            let test_host = format!("sampling-test-{}.example.com", i);
-            let host_hash = host_to_hash(&test_host);
-            if (host_hash & 0xF) == 0 {
-                sampled_count += 1;
-            }
-        }
-
-        let sampling_rate = sampled_count as f64 / total_count as f64;
-
-        // Should be approximately 1/16 = 0.0625, allow some variance
-        assert!(
-            sampling_rate >= 0.04 && sampling_rate <= 0.10,
-            "Sampling rate should be ~6.25%, got {:.1}% ({}/{})",
-            sampling_rate * 100.0,
-            sampled_count,
-            total_count
-        );
-    }
-
-    #[test]
-    fn test_comprehensive_metrics_snapshot() {
-        // Test that snapshot includes all expected low-cardinality fields
-        let snapshot = snapshot();
-
-        // Should have error kinds tracking
-        // May be empty in test; existence is enough
-        assert!(snapshot.error_kinds.is_empty() || !snapshot.error_kinds.is_empty());
-        assert!(
-            snapshot.error_kinds_by_hash.is_empty() || !snapshot.error_kinds_by_hash.is_empty()
-        );
-
-        // Should have latency data
-        assert!(snapshot.latency_buckets.len() == LAT_BUCKETS.len());
-
-        // Basic metrics should be present
-        // Basic counters available
-        let _ = snapshot.total_requests;
-        let _ = snapshot.total_fails;
-    }
-}
-
 fn get_current_concurrency() -> u64 {
     #[cfg(any(
         feature = "subs_http",
@@ -876,5 +707,174 @@ pub fn snapshot() -> SecuritySnapshot {
                     .map(|&b| (f64::from(b) / 1000.0, 0))
                     .collect()
             }),
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "admin_tests")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_host_to_hash_cardinality() {
+        // Test that host_to_hash produces values in expected range
+        let hosts = [
+            "test1.com",
+            "test2.com",
+            "example.org",
+            "api.service.local",
+            "cdn.provider.net",
+        ];
+
+        for host in &hosts {
+            let hash = host_to_hash(host);
+            assert!(
+                hash < 1024,
+                "Host hash {} for '{}' should be < 1024",
+                hash,
+                host
+            );
+        }
+
+        // Test that different hosts produce different hashes (mostly)
+        let hash1 = host_to_hash("different1.com");
+        let hash2 = host_to_hash("different2.com");
+        // Note: With only 2 samples we can't guarantee they're different due to hash collisions
+        // But we can verify they're in valid range
+        assert!(hash1 < 1024);
+        assert!(hash2 < 1024);
+    }
+
+    #[test]
+    fn test_host_to_hash_consistency() {
+        let host = "consistent-test.example.com";
+        let hash1 = host_to_hash(host);
+        let hash2 = host_to_hash(host);
+        let hash3 = host_to_hash(host);
+
+        assert_eq!(hash1, hash2, "Same host should produce same hash");
+        assert_eq!(hash2, hash3, "Hash should be deterministic");
+    }
+
+    #[test]
+    fn test_error_sampling_logic() {
+        // Reset error counts
+        let _kinds_map = ERROR_KINDS_BY_HASH.get_or_init(|| Mutex::new(HashMap::new()));
+
+        // Test sampling with known host hashes
+        let test_cases = [
+            ("sampled-host-0.com", true), // This should be sampled (need to find a host that gives hash & 0xF == 0)
+            ("not-sampled-host.com", false), // This might not be sampled
+        ];
+
+        // Since we can't predict exact hashes, let's test the sampling mechanism indirectly
+        for i in 0..100 {
+            let test_host = format!("test-host-{}.com", i);
+            let host_hash = host_to_hash(&test_host);
+            let should_sample = (host_hash & 0xF) == 0;
+
+            // Call record_error_sampled
+            record_error_sampled(SecurityErrorKind::Timeout, &test_host);
+
+            // Verify that sampling occurred if expected
+            if should_sample {
+                // Should be recorded in ERROR_KINDS_BY_HASH
+                let map = ERROR_KINDS_BY_HASH.get().unwrap();
+                if let Ok(m) = map.lock() {
+                    let key = (SecurityErrorKind::Timeout, host_hash);
+                    assert!(
+                        m.contains_key(&key),
+                        "Sampled error should be recorded for host {}",
+                        test_host
+                    );
+                }
+                break; // Found at least one sampled case
+            }
+        }
+    }
+
+    #[test]
+    fn test_error_kind_tracking() {
+        // Test that error kinds are properly tracked
+        let host = "error-kind-test.com";
+
+        set_last_error_with_host(SecurityErrorKind::Upstream4xx, host, "Test 4xx error");
+        set_last_error_with_host(SecurityErrorKind::Upstream5xx, host, "Test 5xx error");
+        set_last_error_with_host(SecurityErrorKind::Timeout, host, "Test timeout");
+
+        // Verify ERROR_KINDS tracking
+        let kinds_map = ERROR_KINDS.get().unwrap();
+        if let Ok(m) = kinds_map.lock() {
+            assert!(m.get(&SecurityErrorKind::Upstream4xx).unwrap_or(&0) > &0);
+            assert!(m.get(&SecurityErrorKind::Upstream5xx).unwrap_or(&0) > &0);
+            assert!(m.get(&SecurityErrorKind::Timeout).unwrap_or(&0) > &0);
+        }
+    }
+
+    #[test]
+    fn test_latency_histogram_buckets() {
+        // Test that latency buckets are as expected
+        let expected_buckets = [50, 100, 200, 500, 1000, 2000, u64::MAX];
+        assert_eq!(
+            LAT_BUCKETS, &expected_buckets,
+            "Latency buckets should match expected fine-grained values"
+        );
+
+        // Test latency recording
+        record_latency_ms(75); // Should go in 100ms bucket
+        record_latency_ms(150); // Should go in 200ms bucket
+        record_latency_ms(1500); // Should go in 2000ms bucket
+        record_latency_ms(3000); // Should go in +Inf bucket
+
+        // Verify counts are updated
+        assert!(LAT_COUNT.load(Ordering::Relaxed) >= 4);
+        assert!(LAT_SUM_MS.load(Ordering::Relaxed) >= 75 + 150 + 1500 + 3000);
+    }
+
+    #[test]
+    fn test_sampling_rate_approximation() {
+        // Test that sampling rate is approximately 1/16 (6.25%)
+        let mut sampled_count = 0;
+        let total_count = 1000;
+
+        for i in 0..total_count {
+            let test_host = format!("sampling-test-{}.example.com", i);
+            let host_hash = host_to_hash(&test_host);
+            if (host_hash & 0xF) == 0 {
+                sampled_count += 1;
+            }
+        }
+
+        let sampling_rate = sampled_count as f64 / total_count as f64;
+
+        // Should be approximately 1/16 = 0.0625, allow some variance
+        assert!(
+            (0.04..=0.10).contains(&sampling_rate),
+            "Sampling rate should be ~6.25%, got {:.1}% ({}/{})",
+            sampling_rate * 100.0,
+            sampled_count,
+            total_count
+        );
+    }
+
+    #[test]
+    fn test_comprehensive_metrics_snapshot() {
+        // Test that snapshot includes all expected low-cardinality fields
+        let snapshot = snapshot();
+
+        // Should have error kinds tracking
+        // May be empty in test; existence is enough
+        assert!(snapshot.error_kinds.is_empty() || !snapshot.error_kinds.is_empty());
+        assert!(
+            snapshot.error_kinds_by_hash.is_empty() || !snapshot.error_kinds_by_hash.is_empty()
+        );
+
+        // Should have latency data
+        assert!(snapshot.latency_buckets.len() == LAT_BUCKETS.len());
+
+        // Basic metrics should be present
+        // Basic counters available
+        let _ = snapshot.total_requests;
+        let _ = snapshot.total_fails;
     }
 }

@@ -499,7 +499,7 @@ impl HttpProxyConnector {
 
     /// Send HTTP CONNECT request on a generic stream (works with both TCP and TLS)
     /// 在通用流上发送 HTTP CONNECT 请求（适用于 TCP 和 TLS）
-    #[allow(dead_code)]
+    #[cfg(feature = "http-tls")]
     async fn http_connect_generic(
         &self,
         stream: &mut BoxedStream,

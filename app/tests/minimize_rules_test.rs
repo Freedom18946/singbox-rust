@@ -155,7 +155,7 @@ outbound:
         rules.len() < 4,
         "Some rules should be removed during minimization"
     );
-    assert!(rules.len() > 0, "At least some rules should remain");
+    assert!(!rules.is_empty(), "At least some rules should remain");
 
     // Verify that unique rules are preserved
     let has_different_domain = rules

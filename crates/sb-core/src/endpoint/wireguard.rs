@@ -253,7 +253,7 @@ impl Endpoint for WireGuardEndpoint {
                     let answer = resolver
                         .resolve(fqdn)
                         .await
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                        .map_err(|e| io::Error::other(e.to_string()))?;
                     answer.ips.first().cloned().ok_or_else(|| {
                         io::Error::new(
                             io::ErrorKind::NotFound,
@@ -261,10 +261,7 @@ impl Endpoint for WireGuardEndpoint {
                         )
                     })?
                 } else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "internal DNS resolver required",
-                    ));
+                    return Err(io::Error::other("internal DNS resolver required"));
                 }
             } else {
                 destination.addr().ok_or_else(|| {

@@ -49,7 +49,7 @@ fn route_explain_tcp_contract() {
 
     // Check chain structure
     let chain = actual.get("chain").unwrap().as_array().unwrap();
-    assert!(chain.len() >= 1);
+    assert!(!chain.is_empty());
     assert!(chain[0].as_str().unwrap().contains("domain"));
 }
 
@@ -89,7 +89,7 @@ fn route_explain_udp_contract() {
 
     // Check chain structure
     let chain = actual.get("chain").unwrap().as_array().unwrap();
-    assert!(chain.len() >= 1);
+    assert!(!chain.is_empty());
 }
 
 #[cfg(feature = "router")]

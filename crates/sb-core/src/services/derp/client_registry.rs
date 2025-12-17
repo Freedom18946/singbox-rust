@@ -383,7 +383,11 @@ impl ClientRegistry {
 
     /// Broadcast peer presence to all other clients.
     pub fn broadcast_peer_present(&self, public_key: &PublicKey) {
-        let frame = DerpFrame::PeerPresent { key: *public_key, endpoint: None, flags: 0 };
+        let frame = DerpFrame::PeerPresent {
+            key: *public_key,
+            endpoint: None,
+            flags: 0,
+        };
         let clients = self.clients.read();
 
         for client in clients.values() {
@@ -409,7 +413,11 @@ impl ClientRegistry {
 
     /// Broadcast peer presence to all connected mesh peers.
     pub fn broadcast_peer_present_to_mesh_peers(&self, public_key: &PublicKey) {
-        let frame = DerpFrame::PeerPresent { key: *public_key, endpoint: None, flags: 0 };
+        let frame = DerpFrame::PeerPresent {
+            key: *public_key,
+            endpoint: None,
+            flags: 0,
+        };
         self.broadcast_to_mesh_peers(frame);
     }
 
@@ -443,7 +451,11 @@ impl ClientRegistry {
     }
 
     /// Broadcast peer departure to subscribed mesh watchers only (Go `WatchConns` model).
-    pub fn broadcast_peer_gone_to_mesh_watchers(&self, public_key: &PublicKey, reason: PeerGoneReason) {
+    pub fn broadcast_peer_gone_to_mesh_watchers(
+        &self,
+        public_key: &PublicKey,
+        reason: PeerGoneReason,
+    ) {
         let frame = DerpFrame::PeerGone {
             key: *public_key,
             reason,
@@ -453,7 +465,10 @@ impl ClientRegistry {
 
     /// Broadcast peer departure to all other clients.
     pub fn broadcast_peer_gone(&self, public_key: &PublicKey) {
-        let frame = DerpFrame::PeerGone { key: *public_key, reason: PeerGoneReason::Disconnected };
+        let frame = DerpFrame::PeerGone {
+            key: *public_key,
+            reason: PeerGoneReason::Disconnected,
+        };
         let clients = self.clients.read();
 
         for client in clients.values() {
@@ -479,12 +494,18 @@ impl ClientRegistry {
 
     /// Broadcast peer departure to all connected mesh peers.
     pub fn broadcast_peer_gone_to_mesh_peers(&self, public_key: &PublicKey) {
-        let frame = DerpFrame::PeerGone { key: *public_key, reason: PeerGoneReason::Disconnected };
+        let frame = DerpFrame::PeerGone {
+            key: *public_key,
+            reason: PeerGoneReason::Disconnected,
+        };
         self.broadcast_to_mesh_peers(frame);
     }
 
     /// Send all currently connected local clients as PeerPresent frames to a specific mesh watcher.
-    pub fn send_existing_clients_to_mesh_watcher(&self, peer_key: &PublicKey) -> Result<(), String> {
+    pub fn send_existing_clients_to_mesh_watcher(
+        &self,
+        peer_key: &PublicKey,
+    ) -> Result<(), String> {
         use super::protocol::peer_present_flags;
 
         if !self.mesh_watchers.read().contains(peer_key) {
@@ -505,7 +526,7 @@ impl ClientRegistry {
                 endpoint: Some(client.addr),
                 flags: peer_present_flags::IS_REGULAR,
             })
-                .map_err(|e| format!("failed to send PeerPresent to mesh peer: {}", e))?;
+            .map_err(|e| format!("failed to send PeerPresent to mesh peer: {}", e))?;
         }
         Ok(())
     }

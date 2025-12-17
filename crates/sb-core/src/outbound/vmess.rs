@@ -17,11 +17,11 @@ use digest::Digest;
 #[cfg(feature = "out_vmess")]
 use hmac::{Hmac, Mac};
 #[cfg(feature = "out_vmess")]
+use sb_tls::{UtlsConfig, UtlsFingerprint};
+#[cfg(feature = "out_vmess")]
 use sha2::Sha256;
 #[cfg(feature = "out_vmess")]
 use std::io;
-#[cfg(feature = "out_vmess")]
-use sb_tls::{UtlsConfig, UtlsFingerprint};
 #[cfg(feature = "out_vmess")]
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "out_vmess")]
@@ -666,9 +666,9 @@ impl crate::outbound::traits::OutboundConnectorIo for VmessOutbound {
         let alpn_csv = self.config.tls_alpn.as_ref().map(|v| v.join(","));
         let chain_opt = self.config.transport.as_deref();
         let tls_override = if let Some(fp_name) = self.config.utls_fingerprint.as_deref() {
-            let fp = fp_name
-                .parse::<UtlsFingerprint>()
-                .map_err(|e| crate::error::SbError::other(format!("invalid uTLS fingerprint: {e}")))?;
+            let fp = fp_name.parse::<UtlsFingerprint>().map_err(|e| {
+                crate::error::SbError::other(format!("invalid uTLS fingerprint: {e}"))
+            })?;
             let sni = self
                 .config
                 .tls_sni

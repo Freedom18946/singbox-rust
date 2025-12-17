@@ -1002,6 +1002,14 @@ fn build_shadowsocks_inbound(
 }
 
 #[cfg(feature = "sb-transport")]
+#[cfg_attr(
+    not(any(
+        all(feature = "adapter-shadowsocks", feature = "router"),
+        all(feature = "adapter-vmess", feature = "router"),
+        all(feature = "adapter-vless", feature = "router")
+    )),
+    allow(dead_code)
+)]
 fn convert_multiplex_config(
     ir: &Option<sb_config::ir::MultiplexOptionsIR>,
 ) -> Option<sb_transport::multiplex::MultiplexServerConfig> {
@@ -1113,7 +1121,7 @@ fn build_vless_inbound(
         }
     };
 
-    let uuid_str = param.uuid.clone().or_else(|| None);
+    let uuid_str = param.uuid.clone();
     let uuid = match uuid_str {
         Some(s) => match Uuid::parse_str(&s) {
             Ok(u) => u,
@@ -1824,6 +1832,7 @@ fn build_tun_inbound(
     Some(Arc::new(TunInbound::new(config, ctx.router.clone())))
 }
 
+#[allow(dead_code)]
 fn stub_inbound(kind: &str) {
     warn!(target: "crate::register", inbound=%kind, "adapter inbound not implemented yet; falling back to scaffold");
 }

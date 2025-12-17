@@ -46,4 +46,3 @@ impl Drop for EnvVarGuard {
         }
     }
 }
-

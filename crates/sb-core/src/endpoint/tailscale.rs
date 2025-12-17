@@ -589,12 +589,14 @@ impl TailscaleEndpoint {
         self.last_error.read().clone()
     }
 
+    #[allow(dead_code)] // Used in test and for future error recording
     fn record_error(&self, msg: impl Into<String>) {
         *self.last_error.write() = Some(msg.into());
     }
 
     /// Check if destination is a Tailscale IP (100.x.y.z or fd7a:115c:a1e0::/96).
-    fn is_tailscale_ip(ip: &IpAddr) -> bool {
+    #[allow(dead_code)] // Used in tests
+    pub(crate) fn is_tailscale_ip(ip: &IpAddr) -> bool {
         match ip {
             IpAddr::V4(v4) => {
                 // 100.64.0.0/10 is Tailscale's CGNAT range
@@ -785,7 +787,7 @@ impl Endpoint for TailscaleEndpoint {
                 SocksaddrHost::Fqdn(fqdn) => self
                     .resolve_fqdn(fqdn)
                     .await
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?,
+                    .map_err(|e| std::io::Error::other(e.to_string()))?,
             };
 
             let addr = SocketAddr::new(ip, destination.port);
@@ -807,7 +809,7 @@ impl Endpoint for TailscaleEndpoint {
 
             cp.dial(network, addr)
                 .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                .map_err(|e| std::io::Error::other(e.to_string()))
         })
     }
 
@@ -834,7 +836,7 @@ impl Endpoint for TailscaleEndpoint {
 
             cp.listen(Network::Udp, destination.port)
                 .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                .map_err(|e| std::io::Error::other(e.to_string()))
         })
     }
 
@@ -847,6 +849,7 @@ impl Endpoint for TailscaleEndpoint {
         debug!(tag = %self.config.tag, "Connection handler registered");
     }
 
+    #[allow(unused_variables)] // network/source only used when router feature is enabled
     fn prepare_connection(
         &self,
         network: Network,

@@ -3,6 +3,7 @@
 //! This module validates that the SSH outbound adapter is properly registered
 //! and can be instantiated with valid credentials.
 
+#[cfg(feature = "adapters")]
 use sb_config::ir::{Credentials, OutboundIR, OutboundType};
 
 #[test]

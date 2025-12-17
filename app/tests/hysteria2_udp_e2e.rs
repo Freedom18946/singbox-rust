@@ -52,6 +52,7 @@ async fn hysteria2_udp_roundtrip() {
         congestion_control: Some("bbr".into()),
         salamander: None,
         obfs: None,
+        masquerade: None,
     };
     let inbound = Hysteria2Inbound::new(server_cfg);
     inbound.start().await.expect("start hysteria2 inbound");

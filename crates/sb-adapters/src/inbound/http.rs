@@ -662,7 +662,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 async fn read_request_head<S>(cli: &mut S) -> Result<(String, String, String, Vec<u8>)>
 where
     S: tokio::io::AsyncRead + Unpin,
@@ -687,12 +686,10 @@ where
     }
 }
 
-#[allow(dead_code)]
 fn find_header_end(buf: &[u8]) -> Option<usize> {
     buf.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4)
 }
 
-#[allow(dead_code)]
 fn parse_request_line(line: &[u8]) -> Result<(String, String, String)> {
     let line =
         std::str::from_utf8(trim_cr(line)).map_err(|_| anyhow!("bad utf8 in request line"))?;
@@ -709,7 +706,6 @@ fn parse_request_line(line: &[u8]) -> Result<(String, String, String)> {
     Ok((method, target, version))
 }
 
-#[allow(dead_code)]
 fn trim_cr(s: &[u8]) -> &[u8] {
     if let Some(&b'\r') = s.last() {
         &s[..s.len() - 1]

@@ -425,8 +425,16 @@ mod tests_timeouts {
         let (mut b1, mut b2) = duplex(8);
 
         let copy_task = tokio::spawn(async move {
-            copy_bidirectional_streaming_ctl(&mut a1, &mut b1, "test", Duration::from_millis(50), None, None, None)
-                .await
+            copy_bidirectional_streaming_ctl(
+                &mut a1,
+                &mut b1,
+                "test",
+                Duration::from_millis(50),
+                None,
+                None,
+                None,
+            )
+            .await
         });
 
         // Let the copier start polling.

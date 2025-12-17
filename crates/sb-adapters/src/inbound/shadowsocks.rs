@@ -947,7 +947,7 @@ impl InboundService for ShadowsocksInboundAdapter {
 
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async { serve(self.config.clone(), rx).await })
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     fn request_shutdown(&self) {

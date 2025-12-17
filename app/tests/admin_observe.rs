@@ -44,7 +44,7 @@ mod observe_tests {
 
         // Test GeoIP endpoint
         match client
-            .get(&format!("{}/router/geoip?ip=1.1.1.1", base_url))
+            .get(format!("{}/router/geoip?ip=1.1.1.1", base_url))
             .send()
             .await
         {
@@ -65,7 +65,7 @@ mod observe_tests {
             base64::engine::general_purpose::STANDARD.encode("DOMAIN-SUFFIX,example.com,direct");
 
         match client
-            .get(&format!(
+            .get(format!(
                 "{}/router/rules/normalize?inline={}",
                 base_url, normalize_payload
             ))
@@ -121,7 +121,7 @@ mod observe_tests {
                             .ok()?;
 
                         if let Ok(response) = client
-                            .get(&format!("{}/router/geoip?ip=127.0.0.1", base_url))
+                            .get(format!("{}/router/geoip?ip=127.0.0.1", base_url))
                             .send()
                             .await
                         {
@@ -176,7 +176,7 @@ mod observe_tests {
 
         // Test that endpoints requiring missing features return 501 Not Implemented
         let response = client
-            .get(&format!("{}/subs/clash?url=test", base_url))
+            .get(format!("{}/subs/clash?url=test", base_url))
             .send()
             .await;
 

@@ -44,13 +44,12 @@ mod dbus_impl {
     }
 
     impl ResolvedService {
-        pub fn new(ir: &ServiceIR, ctx: &ServiceContext) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        pub fn new(
+            ir: &ServiceIR,
+            ctx: &ServiceContext,
+        ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
             let tag = ir.tag.as_deref().unwrap_or("resolved").to_string();
-            let listen_addr = ir
-                .listen
-                .as_deref()
-                .unwrap_or("127.0.0.53")
-                .to_string();
+            let listen_addr = ir.listen.as_deref().unwrap_or("127.0.0.53").to_string();
             let listen_port = ir.listen_port.unwrap_or(53);
 
             // Use injected DNS resolver from context, or fallback to system resolver

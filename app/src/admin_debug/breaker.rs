@@ -400,7 +400,7 @@ mod tests {
 
         pub fn advance(&self, duration: Duration) {
             let mut time = self.current_time.write().unwrap();
-            *time = *time + duration;
+            *time += duration;
         }
 
         pub fn set_time(&self, new_time: Instant) {

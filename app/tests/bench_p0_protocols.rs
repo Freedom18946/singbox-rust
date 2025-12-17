@@ -98,8 +98,8 @@ where
     }
 
     let elapsed = start.elapsed().as_secs_f64();
-    let mbps = (total_bytes as f64 * 8.0) / (elapsed * 1_000_000.0);
-    mbps
+
+    (total_bytes as f64 * 8.0) / (elapsed * 1_000_000.0)
 }
 
 /// Measure latency distribution
@@ -179,17 +179,17 @@ async fn bench_direct_tcp() {
 
     // Throughput test
     let throughput = measure_throughput(
-        || connect_fn(),
+        &connect_fn,
         1024 * 1024, // 1MB
         10,
     )
     .await;
 
     // Latency test
-    let (p50, p95, p99) = measure_latency(|| connect_fn(), 1000).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 1000).await;
 
     // Connection time
-    let conn_time = measure_connection_time(|| connect_fn(), 100).await;
+    let conn_time = measure_connection_time(connect_fn, 100).await;
 
     let result = BenchmarkResult {
         protocol: "Direct TCP".to_string(),

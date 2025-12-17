@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::warn;
 
 /// Per-link DNS configuration.
 ///
@@ -144,6 +144,7 @@ impl Resolve1ManagerState {
     }
 
     /// Get or create a link.
+    #[allow(dead_code)]
     fn get_or_create_link(&self, if_index: i32, if_name: &str) -> TransportLink {
         let mut links = self.links.write();
         links
@@ -157,6 +158,7 @@ impl Resolve1ManagerState {
     }
 
     /// Update a link and call the update callback.
+    #[allow(dead_code)]
     fn update_link(&self, link: TransportLink) -> Result<(), String> {
         let if_index = link.if_index;
         {
@@ -170,6 +172,7 @@ impl Resolve1ManagerState {
     }
 
     /// Delete a link and call the delete callback.
+    #[allow(dead_code)]
     fn delete_link(&self, if_index: i32) {
         let link = {
             let mut links = self.links.write();

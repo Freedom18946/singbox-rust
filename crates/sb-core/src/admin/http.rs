@@ -754,7 +754,8 @@ pub fn spawn_admin(
                         Some(peer) => match inc_concurrency(peer.ip(), &lim) {
                             Ok(g) => Some(g),
                             Err(()) => {
-                                let body = json_err("too_many_connections", "per-ip concurrency exceeded");
+                                let body =
+                                    json_err("too_many_connections", "per-ip concurrency exceeded");
                                 let _ = write_json(&mut s, 429, &body);
                                 continue;
                             }

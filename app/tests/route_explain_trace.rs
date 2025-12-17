@@ -5,7 +5,16 @@ use serde_json::Value;
 fn explain_with_trace_opt_in() {
     let out = Command::cargo_bin("route-explain")
         .unwrap()
-        .args(["--host", "example.com", "--port", "443", "--proto", "tcp", "--format", "json"])
+        .args([
+            "--host",
+            "example.com",
+            "--port",
+            "443",
+            "--proto",
+            "tcp",
+            "--format",
+            "json",
+        ])
         .assert()
         .success()
         .get_output()

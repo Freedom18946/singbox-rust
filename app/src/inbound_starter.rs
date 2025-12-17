@@ -174,7 +174,6 @@ pub async fn start_inbounds_from_ir(
 }
 
 #[cfg(feature = "adapters")]
-#[cfg(feature = "adapters")]
 fn start_http_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
@@ -207,7 +206,6 @@ fn start_http_inbound(
     }
 }
 
-#[cfg(feature = "adapters")]
 #[cfg(feature = "adapters")]
 fn start_socks_inbound(
     ib: &InboundIR,
@@ -251,7 +249,6 @@ fn start_socks_inbound(
 }
 
 #[cfg(feature = "adapters")]
-#[cfg(feature = "adapters")]
 fn start_mixed_inbound(
     ib: &InboundIR,
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
@@ -287,7 +284,6 @@ fn start_mixed_inbound(
 }
 
 #[cfg(all(feature = "tun", feature = "adapters"))]
-#[cfg(all(feature = "tun", feature = "adapters"))]
 fn start_tun_inbound(_ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
     let cfg = TunInboundConfig::default();
     let inbound = TunInbound::new(cfg, {
@@ -308,7 +304,6 @@ fn start_tun_inbound(_ib: &InboundIR, #[cfg(feature = "router")] router: Arc<Rou
     info!("tun inbound spawned (phase1 skeleton)");
 }
 
-#[cfg(feature = "router")]
 #[cfg(feature = "router")]
 fn start_direct_inbound(ib: &InboundIR) {
     let dst_host = if let Some(h) = &ib.override_host {
@@ -342,7 +337,6 @@ fn start_direct_inbound(ib: &InboundIR) {
     }
 }
 
-#[cfg(feature = "adapters")]
 #[cfg(feature = "adapters")]
 fn start_trojan_inbound(ib: &InboundIR, #[cfg(feature = "router")] router: Arc<RouterHandle>) {
     let listen_str = if ib.listen.contains(':') {

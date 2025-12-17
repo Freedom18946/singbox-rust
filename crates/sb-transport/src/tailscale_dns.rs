@@ -78,7 +78,10 @@ impl std::fmt::Debug for TailscaleDnsTransport {
         f.debug_struct("TailscaleDnsTransport")
             .field("dns_server", &self.dns_server)
             .field("timeout", &self.timeout)
-            .field("tsnet_connected", &self.tsnet_context.as_ref().map(|c| c.is_connected()))
+            .field(
+                "tsnet_connected",
+                &self.tsnet_context.as_ref().map(|c| c.is_connected()),
+            )
             .finish()
     }
 }

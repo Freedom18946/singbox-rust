@@ -33,7 +33,7 @@ pub fn install() {
 
     std::panic::set_hook(Box::new(move |info| {
         // A. Standard Output (Stderr) - Mimic default behavior or better
-        eprintln!("[PANIC] {}", info);
+        eprintln!("[PANIC] {info}");
 
         // B. Tracing
         tracing::error!("panic: {}", info);
@@ -42,7 +42,7 @@ pub fn install() {
         if crash_enabled {
             let dir = Path::new("target/crash");
             if let Err(e) = std::fs::create_dir_all(dir) {
-                eprintln!("Failed to create crash directory: {}", e);
+                eprintln!("Failed to create crash directory: {e}");
                 // Don't return, call next hook
             } else {
                 let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
@@ -66,7 +66,7 @@ pub fn install() {
                 let _ = writeln!(body, "backtrace={:?}", Backtrace::capture());
 
                 match std::fs::write(&file, body) {
-                    Ok(_) => {
+                    Ok(()) => {
                         let max_keep = std::env::var("SB_PANIC_LOG_MAX")
                             .ok()
                             .and_then(|v| v.parse::<usize>().ok())
@@ -96,7 +96,7 @@ pub fn install() {
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to write crash log to {}: {}", file, e);
+                        eprintln!("Failed to write crash log to {file}: {e}");
                     }
                 }
             }

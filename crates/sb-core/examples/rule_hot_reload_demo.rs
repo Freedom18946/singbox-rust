@@ -70,7 +70,11 @@ default=direct
                     warn!("❌ Validation failed for {}: {}", path.display(), error);
                 }
                 HotReloadEvent::Applied { path, generation } => {
-                    info!("🔄 Rule set applied: {} (gen: {})", path.display(), generation);
+                    info!(
+                        "🔄 Rule set applied: {} (gen: {})",
+                        path.display(),
+                        generation
+                    );
                 }
                 HotReloadEvent::RolledBack { path, reason } => {
                     warn!("↩️  Rolled back {}: {}", path.display(), reason);

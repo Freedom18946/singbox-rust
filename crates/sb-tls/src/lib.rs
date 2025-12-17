@@ -112,7 +112,7 @@ pub use reality::{RealityAcceptor, RealityClientConfig, RealityConnector, Realit
 pub use ech::{EchClientConfig, EchConnector, EchKeypair, EchServerConfig};
 
 #[cfg(feature = "utls")]
-pub use utls::{available_fingerprints, CustomFingerprint, UtlsConfig, UtlsFingerprint};
+pub use utls::{CustomFingerprint, UtlsConfig, UtlsFingerprint, available_fingerprints};
 
 /// TLS error types
 /// TLS 错误类型

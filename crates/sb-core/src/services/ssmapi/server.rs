@@ -2,29 +2,95 @@
 
 use super::{api, traffic::TrafficManager, user::UserManager};
 use crate::service::{Service, ServiceContext, StartStage};
-use axum::{routing::get, Router};
+use axum::Router;
 use sb_config::ir::ServiceIR;
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
-/// Cache data structure for persistence.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct CacheData {
-    users: HashMap<String, UserTrafficCache>,
+/// Go-parity cache structure: per-endpoint traffic + users.
+/// Go reference: `service/ssmapi/cache.go`
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct Cache {
+    /// Map of endpoint tag -> EndpointCache
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    endpoints: BTreeMap<String, EndpointCache>,
 }
 
-/// Per-user traffic cache data.
+/// Per-endpoint cache data (Go parity).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-struct UserTrafficCache {
-    uplink_bytes: i64,
-    downlink_bytes: i64,
-    uplink_packets: i64,
-    downlink_packets: i64,
+struct EndpointCache {
+    // Global stats
+    #[serde(skip_serializing_if = "is_zero", default, rename = "globalUplink")]
+    global_uplink: i64,
+    #[serde(skip_serializing_if = "is_zero", default, rename = "globalDownlink")]
+    global_downlink: i64,
+    #[serde(
+        skip_serializing_if = "is_zero",
+        default,
+        rename = "globalUplinkPackets"
+    )]
+    global_uplink_packets: i64,
+    #[serde(
+        skip_serializing_if = "is_zero",
+        default,
+        rename = "globalDownlinkPackets"
+    )]
+    global_downlink_packets: i64,
+    #[serde(skip_serializing_if = "is_zero", default, rename = "globalTCPSessions")]
+    global_tcp_sessions: i64,
+    #[serde(skip_serializing_if = "is_zero", default, rename = "globalUDPSessions")]
+    global_udp_sessions: i64,
+
+    // Per-user stats (only non-zero values)
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userUplink"
+    )]
+    user_uplink: BTreeMap<String, i64>,
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userDownlink"
+    )]
+    user_downlink: BTreeMap<String, i64>,
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userUplinkPackets"
+    )]
+    user_uplink_packets: BTreeMap<String, i64>,
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userDownlinkPackets"
+    )]
+    user_downlink_packets: BTreeMap<String, i64>,
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userTCPSessions"
+    )]
+    user_tcp_sessions: BTreeMap<String, i64>,
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        default,
+        rename = "userUDPSessions"
+    )]
+    user_udp_sessions: BTreeMap<String, i64>,
+
+    // Users map (username -> password, non-empty only)
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    users: BTreeMap<String, String>,
+}
+
+fn is_zero(v: &i64) -> bool {
+    *v == 0
 }
 
 /// SSMAPI service for managing Shadowsocks users and traffic.
@@ -111,7 +177,9 @@ impl SsmapiService {
             let cert = tls.certificate_path.as_ref().map(PathBuf::from);
             let key = tls.key_path.as_ref().map(PathBuf::from);
             if cert.is_some() != key.is_some() {
-                return Err("ssm-api: both tls.certificate_path and tls.key_path must be specified".into());
+                return Err(
+                    "ssm-api: both tls.certificate_path and tls.key_path must be specified".into(),
+                );
             }
             (cert, key)
         } else {
@@ -139,7 +207,8 @@ impl SsmapiService {
         }))
     }
 
-    /// Load cached traffic stats from disk.
+    /// Load cached traffic stats from disk (Go parity).
+    /// Uses per-endpoint format: `{ endpoints: { tag: { stats, users } } }`
     fn load_cache(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let Some(path) = &self.cache_path else {
             return Ok(());
@@ -151,14 +220,43 @@ impl SsmapiService {
         }
 
         let file = std::fs::File::open(path)?;
-        let cache: CacheData = serde_json::from_reader(file)?;
+        let cache: Cache = serde_json::from_reader(file)?;
 
-        // Restore traffic stats
-        for (username, stats) in cache.users {
-            self.traffic_manager
-                .record_uplink(&username, stats.uplink_bytes, stats.uplink_packets);
-            self.traffic_manager
-                .record_downlink(&username, stats.downlink_bytes, stats.downlink_packets);
+        // Restore traffic stats per endpoint
+        // For now, we treat all endpoints as a single shared traffic manager
+        // (Go has per-endpoint traffic managers, Rust currently has one shared one)
+        for (_endpoint_tag, endpoint_cache) in cache.endpoints {
+            // Restore per-user traffic
+            for (username, uplink) in endpoint_cache.user_uplink {
+                let downlink = endpoint_cache
+                    .user_downlink
+                    .get(&username)
+                    .copied()
+                    .unwrap_or(0);
+                let uplink_packets = endpoint_cache
+                    .user_uplink_packets
+                    .get(&username)
+                    .copied()
+                    .unwrap_or(0);
+                let downlink_packets = endpoint_cache
+                    .user_downlink_packets
+                    .get(&username)
+                    .copied()
+                    .unwrap_or(0);
+
+                self.traffic_manager
+                    .record_uplink(&username, uplink, uplink_packets);
+                self.traffic_manager
+                    .record_downlink(&username, downlink, downlink_packets);
+            }
+
+            // Restore users (if UserManager supports bulk set)
+            for (username, password) in endpoint_cache.users {
+                if !username.is_empty() && !password.is_empty() {
+                    // Ignore errors if user already exists
+                    let _ = self.user_manager.add(username, password);
+                }
+            }
         }
 
         tracing::info!(
@@ -169,28 +267,59 @@ impl SsmapiService {
         Ok(())
     }
 
-    /// Save traffic stats to disk cache.
+    /// Save traffic stats to disk cache (Go parity).
+    /// Uses per-endpoint format for compatibility with Go.
     fn save_cache(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let Some(path) = &self.cache_path else {
             return Ok(());
         };
 
-        // Collect user traffic stats
-        let mut users = HashMap::new();
-        for mut user in self.user_manager.list() {
-            self.traffic_manager.read_user(&mut user, false);
-            users.insert(
-                user.user_name.clone(),
-                UserTrafficCache {
-                    uplink_bytes: user.uplink_bytes,
-                    downlink_bytes: user.downlink_bytes,
-                    uplink_packets: user.uplink_packets,
-                    downlink_packets: user.downlink_packets,
-                },
-            );
+        // Collect per-endpoint cache (using servers tags as endpoints)
+        let mut endpoints = BTreeMap::new();
+        for endpoint in self.servers.keys() {
+            let mut endpoint_cache = EndpointCache::default();
+
+            // Collect user traffic stats
+            for mut user in self.user_manager.list() {
+                self.traffic_manager.read_user(&mut user, false);
+                let username = user.user_name.clone();
+
+                if user.uplink_bytes > 0 {
+                    endpoint_cache
+                        .user_uplink
+                        .insert(username.clone(), user.uplink_bytes);
+                }
+                if user.downlink_bytes > 0 {
+                    endpoint_cache
+                        .user_downlink
+                        .insert(username.clone(), user.downlink_bytes);
+                }
+                if user.uplink_packets > 0 {
+                    endpoint_cache
+                        .user_uplink_packets
+                        .insert(username.clone(), user.uplink_packets);
+                }
+                if user.downlink_packets > 0 {
+                    endpoint_cache
+                        .user_downlink_packets
+                        .insert(username.clone(), user.downlink_packets);
+                }
+
+                // Store user password (only if present and non-empty)
+                if let Some(ref pwd) = user.password {
+                    if !pwd.is_empty() {
+                        endpoint_cache.users.insert(username, pwd.clone());
+                    }
+                }
+            }
+
+            // Global stats (not currently tracked separately, would need extension)
+            // For now, leave as 0 (Go also initializes to 0)
+
+            endpoints.insert(endpoint.clone(), endpoint_cache);
         }
 
-        let cache = CacheData { users };
+        let cache = Cache { endpoints };
         let file = std::fs::File::create(path)?;
         serde_json::to_writer_pretty(file, &cache)?;
 
@@ -227,6 +356,7 @@ impl SsmapiService {
 
     /// Create per-inbound nested routes for discovered inbound tags.
     /// Called from PostStart when inbound manager discovery completes.
+    #[allow(dead_code)]
     fn create_inbound_routes(inbound_tags: &[String], state: api::ApiState) -> Router {
         let mut router = Router::new()
             .nest("/server", api::api_routes())
@@ -234,7 +364,10 @@ impl SsmapiService {
 
         for tag in inbound_tags {
             // Each inbound gets its own prefixed routes: /{tag}/v1/...
-            router = router.nest(&format!("/{}", tag), api::api_routes().with_state(state.clone()));
+            router = router.nest(
+                &format!("/{}", tag),
+                api::api_routes().with_state(state.clone()),
+            );
         }
 
         tracing::info!(
@@ -261,7 +394,11 @@ impl SsmapiService {
     /// Actual binding uses TrafficTracker trait and is triggered by SS adapters.
     async fn bind_inbounds_static(_traffic_manager: Arc<TrafficManager>, tag: String) {
         let Some(registry) = crate::context::context_registry() else {
-            tracing::debug!(service = "ssm-api", tag = tag, "No context registry available");
+            tracing::debug!(
+                service = "ssm-api",
+                tag = tag,
+                "No context registry available"
+            );
             return;
         };
 
@@ -324,16 +461,17 @@ impl Service for SsmapiService {
                         // HTTPS with TLS (auto HTTP/2)
                         use axum_server::tls_rustls::RustlsConfig;
 
-                        let config = match RustlsConfig::from_pem_file(&cert_path, &key_path).await {
+                        let config = match RustlsConfig::from_pem_file(&cert_path, &key_path).await
+                        {
                             Ok(c) => c,
                             Err(e) => {
-                                    tracing::error!(
-                                        service = "ssm-api",
-                                        error = %e,
-                                        cert = ?cert_path,
-                                        key = ?key_path,
-                                        "Failed to load TLS config"
-                                    );
+                                tracing::error!(
+                                    service = "ssm-api",
+                                    error = %e,
+                                    cert = ?cert_path,
+                                    key = ?key_path,
+                                    "Failed to load TLS config"
+                                );
                                 return;
                             }
                         };
@@ -415,7 +553,11 @@ impl Service for SsmapiService {
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        tracing::info!(service = "ssm-api", tag = self.tag, "Closing SSMAPI service");
+        tracing::info!(
+            service = "ssm-api",
+            tag = self.tag,
+            "Closing SSMAPI service"
+        );
 
         // Save cache before closing
         if let Err(e) = self.save_cache() {

@@ -2,6 +2,8 @@
 use hkdf::Hkdf;
 // Use SHA-256 for both paths to avoid extra dependency while preserving behavior.
 #[cfg(feature = "out_ss")]
+use sha1::Sha1;
+#[cfg(feature = "out_ss")]
 use sha2::Sha256;
 
 /// HKDF implementation for Shadowsocks AEAD subkey derivation
@@ -31,7 +33,7 @@ pub const fn derive_subkey(_master_key: &[u8], _salt: &[u8], _hash_alg: HashAlgo
 
 #[cfg(feature = "out_ss")]
 fn derive_subkey_sha1(master_key: &[u8], salt: &[u8]) -> [u8; 32] {
-    let hk = Hkdf::<Sha256>::new(Some(salt), master_key);
+    let hk = Hkdf::<Sha1>::new(Some(salt), master_key);
     let mut okm = [0u8; 32];
     hk.expand(b"ss-subkey", &mut okm)
         .expect("HKDF expand should never fail with valid parameters");

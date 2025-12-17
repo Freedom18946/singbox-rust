@@ -1,4 +1,4 @@
-# Go-Rust Parity Matrix (2025-12-15 Comprehensive Calibration)
+# Go-Rust Parity Matrix (2025-12-16 Comprehensive Calibration)
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.12` for functional, type, API, comment, and directory parity.
 
@@ -10,20 +10,22 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - ⊘ **De-scoped**: intentionally excluded; will not be ported.
 - ➕ **Rust-only**: exists in Rust but not in Go reference (extension).
 
+---
+
 ## Executive Summary
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| **Protocol Coverage** | ✅ High | All 23 Go `protocol/*` modules have Rust counterparts (see Protocol Matrix below) |
+| **Protocol Coverage** | ✅ High | All 23 Go `protocol/*` modules have Rust counterparts |
 | **Tailscale endpoint/data plane** | ❌ Not aligned | Go uses tsnet+gVisor netstack; Rust uses stub/daemon with host sockets |
 | **Tailscale outbound (Go has no outbound)** | ⊘ Feature-gated | Feature `legacy_tailscale_outbound` (default OFF); Go has Tailscale endpoint only |
 | **ShadowsocksR (Go removed)** | ⊘ Feature-gated | Feature `legacy_shadowsocksr` (default OFF); Go removed upstream |
-| **DNS transports (DHCP/Resolved/Tailscale)** | ◐ Partial | DHCP passive only; tailscale transport not feature-equivalent |
+| **DNS transports (DHCP/Resolved/Tailscale)** | ◐ Partial | DHCP passive only; tailscale transport aligned with TsnetSocketFactory |
 | **TLS uTLS fidelity** | ◐ Partial | Wired, but rustls cannot reproduce Go/uTLS extension ordering and full ClientHello shape |
 | **ECH (Go: go1.24+)** | ◐ Partial | Rust has config/parser/HPKE scaffolding but no rustls ECH handshake integration |
-| **Resolved service** | ◐ Partial | D-Bus skeleton exists (Linux+feature gated) but query path/monitor parity is incomplete |
-| **DERP service** | ✅ Aligned | HTTP endpoints + TLS-required + `config_path` JSON key + NaCl box wire protocol + Go mesh model (`meshKey` in ClientInfo) aligned |
-| **SSMAPI service** | ✅ Aligned | Core aligned: `UpdateUsers`, `post_update`, config/routing. Optional: per-endpoint cache format |
+| **Resolved service** | ✅ Aligned | D-Bus server + DNSRouter injection + NetworkMonitor callbacks integrated |
+| **DERP service** | ✅ Aligned | HTTP endpoints + TLS-required + `config_path` JSON key + NaCl box wire protocol + Go mesh model aligned |
+| **SSMAPI service** | ✅ Aligned | Core aligned: `UpdateUsers`, `post_update`, config/routing |
 | **Transport layer** | ✅ High | WebSocket, gRPC, HTTP/2, QUIC, simple-obfs, sip003 all implemented |
 | **Router/Rules** | ✅ High | Rule matching, geoip, geosite, process detection aligned |
 | **Experimental (Go)** | ⊘ De-scoped | Go-only experimental features (clashapi, v2rayapi, cachefile, libbox) not ported |
@@ -35,21 +37,21 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 | Go Module/Dir | Rust Crate/Module | Status | Notes |
 | --- | --- | --- | --- |
-| `adapter/` | `crates/sb-core/src/adapter/`, `crates/sb-adapters/` | ✅ | Trait surface and lifecycle aligned |
-| `common/` | `crates/sb-common/`, `crates/sb-platform/`, `crates/sb-runtime/` | ◐ | Some helper APIs differ; see area-specific gaps |
-| `common/tls/` | `crates/sb-tls/`, `crates/sb-transport/src/tls.rs` | ◐ | std_client/server aligned; uTLS partial; ECH partial; REALITY aligned |
-| `constant/` | `crates/sb-types/` + per‑crate `types.rs`/enum modules | ✅ | Constants/enums mirrored where used |
-| `dns/` | `crates/sb-core/src/dns/` | ✅ | Core resolver aligned; DHCP/Resolved/Tailscale transports partial |
-| `dns/transport/` | `crates/sb-core/src/dns/transport/` | ◐ | udp/tcp/tls/https/quic/fakeip/hosts/local aligned; dhcp/tailscale partial |
-| `log/` | `crates/sb-core/src/log/`, `crates/sb-metrics/` | ✅ | Logging levels/fields aligned |
-| `option/` | `crates/sb-config/` (schema + IR) | ✅ | Core coverage high; service schema/type IDs now aligned |
-| `protocol/` | `crates/sb-adapters/`, `crates/sb-proto/`, `crates/sb-transport/` | ✅ | Protocol implementations aligned (except tailscale endpoint) |
-| `protocol/tailscale/` | `crates/sb-core/src/endpoint/tailscale.rs` | ❌ | Stub only; no tsnet/netstack integration |
-| `route/` | `crates/sb-core/src/router/`, `crates/sb-core/src/routing/` | ✅ | Rule engine aligned |
-| `service/` | `crates/sb-core/src/services/`, `crates/sb-adapters/src/service/` | ◐ | DERP + SSMAPI aligned; Resolved partial (Linux-only) |
-| `transport/` | `crates/sb-transport/` | ✅ | Transport APIs aligned |
+| `adapter/` (26 files) | `crates/sb-core/src/adapter/`, `crates/sb-adapters/` | ✅ | Trait surface and lifecycle aligned |
+| `common/` (24 subdirs) | `crates/sb-common/`, `crates/sb-platform/`, `crates/sb-runtime/` | ◐ | Some helper APIs differ; see area-specific gaps |
+| `common/tls/` (20 files) | `crates/sb-tls/`, `crates/sb-transport/src/tls.rs` | ◐ | std_client/server aligned; uTLS partial; ECH partial; REALITY aligned |
+| `constant/` (22 files) | `crates/sb-types/` + per‑crate `types.rs`/enum modules | ✅ | Constants/enums mirrored where used |
+| `dns/` (11 files) | `crates/sb-core/src/dns/` (28 files) | ✅ | Core resolver aligned; comprehensive DNS implementation |
+| `dns/transport/` (5 subdirs) | `crates/sb-core/src/dns/transport/` (10 files) | ◐ | udp/tcp/tls/https/quic/fakeip/hosts/local aligned; dhcp partial |
+| `log/` (10 files) | `crates/sb-core/src/log/`, `crates/sb-metrics/` | ✅ | Logging levels/fields aligned |
+| `option/` (47 files) | `crates/sb-config/` (18 files + subdirs) | ✅ | Core coverage high; service schema/type IDs aligned |
+| `protocol/` (23 subdirs) | `crates/sb-adapters/` (inbound/outbound/endpoint) | ✅ | Protocol implementations aligned (except tailscale endpoint) |
+| `protocol/tailscale/` (4 files) | `crates/sb-core/src/endpoint/tailscale.rs` (38KB) | ❌ | Enhanced stub with DaemonControlPlane; no tsnet/netstack integration |
+| `route/` (7 files + rule/) | `crates/sb-core/src/router/` (49 files), `crates/sb-core/src/routing/` (7 files) | ✅ | Rule engine aligned with advanced features |
+| `service/` (3 subdirs) | `crates/sb-core/src/services/`, `crates/sb-adapters/src/service/` | ✅ | DERP + SSMAPI + Resolved aligned |
+| `transport/` (11 subdirs) | `crates/sb-transport/` (28 files) | ✅ | Transport APIs aligned |
 | `cmd/`, `box.go` | `app/`, `crates/sb-core/src/bin/` | ✅ | CLI/subcommand parity aligned |
-| `experimental/` | N/A | ⊘ | De-scoped: Go-only experimental features (clashapi, v2rayapi, cachefile, libbox, locale) |
+| `experimental/` (6 subdirs) | N/A | ⊘ | De-scoped: Go-only experimental features |
 | `clients/` | N/A | ⊘ | De-scoped: subscription client helpers |
 
 ---
@@ -58,143 +60,148 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 ### Inbound Protocols (19 total)
 
-| Go Protocol | Rust File | Status | Notes |
-| --- | --- | --- | --- |
-| anytls | `inbound/anytls.rs` (20KB) | ✅ | Full implementation |
-| direct | `inbound/direct.rs` (3KB) | ✅ | Full implementation |
-| dns | `inbound/dns.rs` (20KB) | ✅ | Full implementation |
-| http | `inbound/http.rs` (35KB) | ✅ | Full implementation |
-| hysteria | `inbound/hysteria.rs` (6KB) | ✅ | Full implementation |
-| hysteria2 | `inbound/hysteria2.rs` (16KB) | ✅ | Full implementation |
-| mixed | `inbound/mixed.rs` (12KB) | ✅ | HTTP+SOCKS combination |
-| naive | `inbound/naive.rs` (17KB) | ✅ | Full implementation |
-| redirect | `inbound/redirect.rs` (9KB) | ✅ | Linux redirect support |
-| shadowsocks | `inbound/shadowsocks.rs` (40KB) | ✅ | Multi-user, relay modes |
-| shadowtls | `inbound/shadowtls.rs` (10KB) | ✅ | Full implementation |
-| socks | `inbound/socks/` (7 files) | ✅ | SOCKS4/5 support |
-| ssh | `inbound/ssh.rs` (21KB) | ✅ | SSH tunnel |
-| tproxy | `inbound/tproxy.rs` (8KB) | ✅ | Linux tproxy support |
-| trojan | `inbound/trojan.rs` (44KB) | ✅ | Full implementation |
-| tuic | `inbound/tuic.rs` (24KB) | ✅ | QUIC-based |
-| tun | `inbound/tun/` (7 files + extras) | ✅ | Multi-platform TUN |
-| vless | `inbound/vless.rs` (21KB) | ✅ | Full implementation |
-| vmess | `inbound/vmess.rs` (20KB) | ✅ | Full implementation |
+| Go Protocol | Go Files | Rust File | Status | Notes |
+| --- | --- | --- | --- | --- |
+| anytls | `protocol/anytls/inbound.go` | `inbound/anytls.rs` (20KB) | ✅ | Full implementation |
+| direct | `protocol/direct/inbound.go` | `inbound/direct.rs` (3KB) | ✅ | Full implementation |
+| dns | `protocol/dns/handle.go` | `inbound/dns.rs` (20KB) | ✅ | Full implementation |
+| http | `protocol/http/inbound.go` | `inbound/http.rs` (35KB) | ✅ | Full implementation |
+| hysteria | `protocol/hysteria/inbound.go` | `inbound/hysteria.rs` (6KB) | ✅ | Full implementation |
+| hysteria2 | `protocol/hysteria2/inbound.go` | `inbound/hysteria2.rs` (16KB) | ✅ | Full implementation |
+| mixed | `protocol/mixed/inbound.go` | `inbound/mixed.rs` (12KB) | ✅ | HTTP+SOCKS combination |
+| naive | `protocol/naive/inbound.go` | `inbound/naive.rs` (17KB) | ✅ | Full implementation |
+| redirect | `protocol/redirect/redirect.go` | `inbound/redirect.rs` (9KB) | ✅ | Linux redirect support |
+| shadowsocks | `protocol/shadowsocks/inbound*.go` (4 files) | `inbound/shadowsocks.rs` (40KB) | ✅ | Multi-user, relay modes |
+| shadowtls | `protocol/shadowtls/inbound.go` | `inbound/shadowtls.rs` (10KB) | ✅ | Full implementation |
+| socks | `protocol/socks/inbound.go` | `inbound/socks/` (7 files) | ✅ | SOCKS4/5 support |
+| ssh | `protocol/ssh/outbound.go` (no inbound) | `inbound/ssh.rs` (21KB) | ➕ | Rust extension: SSH inbound |
+| tproxy | `protocol/redirect/tproxy.go` | `inbound/tproxy.rs` (8KB) | ✅ | Linux tproxy support |
+| trojan | `protocol/trojan/inbound.go` | `inbound/trojan.rs` (44KB) | ✅ | Full implementation |
+| tuic | `protocol/tuic/inbound.go` | `inbound/tuic.rs` (24KB) | ✅ | QUIC-based |
+| tun | `protocol/tun/inbound.go` | `inbound/tun/` (7+ files) | ✅ | Multi-platform TUN |
+| vless | `protocol/vless/inbound.go` | `inbound/vless.rs` (21KB) | ✅ | Full implementation |
+| vmess | `protocol/vmess/inbound.go` | `inbound/vmess.rs` (20KB) | ✅ | Full implementation |
 
 ### Outbound Protocols (22 total)
 
-| Go Protocol | Rust File | Status | Notes |
-| --- | --- | --- | --- |
-| anytls | `outbound/anytls.rs` (15KB) | ✅ | Full implementation |
-| block | `outbound/block.rs` (543B) | ✅ | Connection blocker |
-| direct | `outbound/direct.rs` (4KB) | ✅ | Full implementation |
-| dns | `outbound/dns.rs` (17KB) | ✅ | DNS outbound |
-| http | `outbound/http.rs` (24KB) | ✅ | HTTP CONNECT proxy |
-| hysteria | `outbound/hysteria.rs` (4KB) | ✅ | Full implementation |
-| hysteria2 | `outbound/hysteria2.rs` (5KB) | ✅ | Full implementation |
-| selector | `outbound/selector.rs` (4KB) | ✅ | Group selector |
-| shadowsocks | `outbound/shadowsocks.rs` (38KB) | ✅ | Full ciphers |
-| shadowsocksr | `outbound/shadowsocksr/` (5 files) | ⊘ | Feature-gated (`legacy_shadowsocksr`, default OFF); Go removed |
-| shadowtls | `outbound/shadowtls.rs` (4KB) | ✅ | uTLS wired via `utls_fingerprint` |
-| socks4 | `outbound/socks4.rs` (11KB) | ✅ | SOCKS4 client |
-| socks5 | `outbound/socks5.rs` (52KB) | ✅ | SOCKS5 client |
-| ssh | `outbound/ssh.rs` (13KB) | ✅ | SSH client |
-| tailscale | `outbound/tailscale.rs` (21KB) | ⊘ | Feature-gated (`legacy_tailscale_outbound`, default OFF); Go has no outbound |
-| tor | `outbound/tor.rs` (7KB) | ✅ | Tor proxy |
-| trojan | `outbound/trojan.rs` (23KB) | ✅ | Full implementation |
-| tuic | `outbound/tuic.rs` (11KB) | ✅ | Full implementation |
-| urltest | `outbound/urltest.rs` (4KB) | ✅ | URL test group |
-| vless | `outbound/vless.rs` (23KB) | ✅ | Full implementation |
-| vmess | `outbound/vmess.rs` (15KB) | ✅ | Full implementation |
-| wireguard | `outbound/wireguard.rs` (8KB) | ✅ | WireGuard client |
+| Go Protocol | Go Files | Rust File | Status | Notes |
+| --- | --- | --- | --- | --- |
+| anytls | `protocol/anytls/outbound.go` | `outbound/anytls.rs` (15KB) | ✅ | Full implementation |
+| block | `protocol/block/outbound.go` | `outbound/block.rs` (543B) | ✅ | Connection blocker |
+| direct | `protocol/direct/outbound.go` | `outbound/direct.rs` (4KB) | ✅ | Full implementation |
+| dns | `protocol/dns/outbound.go` | `outbound/dns.rs` (17KB) | ✅ | DNS outbound |
+| http | `protocol/http/outbound.go` | `outbound/http.rs` (24KB) | ✅ | HTTP CONNECT proxy |
+| hysteria | `protocol/hysteria/outbound.go` | `outbound/hysteria.rs` (4KB) | ✅ | Full implementation |
+| hysteria2 | `protocol/hysteria2/outbound.go` | `outbound/hysteria2.rs` (5KB) | ✅ | Full implementation |
+| selector | `protocol/group/selector.go` | `outbound/selector.rs` (4KB) | ✅ | Group selector |
+| shadowsocks | `protocol/shadowsocks/outbound.go` | `outbound/shadowsocks.rs` (38KB) | ✅ | Full ciphers |
+| shadowsocksr | N/A (Go removed) | `outbound/shadowsocksr/` (5 files) | ⊘ | Feature-gated (`legacy_shadowsocksr`, default OFF) |
+| shadowtls | `protocol/shadowtls/outbound.go` | `outbound/shadowtls.rs` (4KB) | ✅ | uTLS wired via `utls_fingerprint` |
+| socks | `protocol/socks/outbound.go` | `outbound/socks4.rs` (11KB), `outbound/socks5.rs` (52KB) | ✅ | SOCKS4/5 client |
+| ssh | `protocol/ssh/outbound.go` | `outbound/ssh.rs` (13KB) | ✅ | SSH client |
+| tailscale | N/A (Go has no outbound) | `outbound/tailscale.rs` (21KB) | ⊘ | Feature-gated (`legacy_tailscale_outbound`, default OFF) |
+| tor | `protocol/tor/outbound.go` | `outbound/tor.rs` (7KB) | ✅ | Tor proxy |
+| trojan | `protocol/trojan/outbound.go` | `outbound/trojan.rs` (23KB) | ✅ | Full implementation |
+| tuic | `protocol/tuic/outbound.go` | `outbound/tuic.rs` (11KB) | ✅ | Full implementation |
+| urltest | `protocol/group/urltest.go` | `outbound/urltest.rs` (4KB) | ✅ | URL test group |
+| vless | `protocol/vless/outbound.go` | `outbound/vless.rs` (23KB) | ✅ | Full implementation |
+| vmess | `protocol/vmess/outbound.go` | `outbound/vmess.rs` (15KB) | ✅ | Full implementation |
+| wireguard | `protocol/wireguard/outbound.go` | `outbound/wireguard.rs` (8KB) | ✅ | WireGuard client |
 
 ### Endpoint Protocols (2 total)
 
-| Go Protocol | Rust Implementation | Status | Notes |
-| --- | --- | --- | --- |
-| tailscale | `crates/sb-core/src/endpoint/tailscale.rs` | ❌ | Stub/daemon only, no tsnet/netstack |
-| wireguard | `crates/sb-core/src/endpoint/wireguard.rs` | ✅ | WireGuard endpoint |
+| Go Protocol | Go Files | Rust Implementation | Status | Notes |
+| --- | --- | --- | --- | --- |
+| tailscale | `protocol/tailscale/` (4 files) | `sb-core/src/endpoint/tailscale.rs` (38KB) | ❌ | Stub/daemon only, no tsnet/netstack |
+| wireguard | `protocol/wireguard/endpoint.go` | `sb-core/src/endpoint/wireguard.rs` (18KB) | ✅ | WireGuard endpoint |
 
 ---
 
 ## Service Parity Matrix
 
-| Go Service | Rust Implementation | Status | Gap Details |
-| --- | --- | --- | --- |
-| derp (`type="derp"`) | `services/derp/` (4 files) | ✅ | TLS-required + `config_path` key JSON + tailscale DERP v2 (NaCl box ClientInfo/ServerInfo) + Go mesh model (`meshKey` in ClientInfo) aligned; `verify_client_endpoint` de-scoped |
-| resolved (`type="resolved"`) | `sb-adapters/src/service/resolved_impl.rs`, `sb-core/src/dns/transport/resolved.rs` | ✅ | Linux+feature gated; DNSRouter injection + NetworkMonitor callback integrated (2025-12-15). Full parity with Go reference. |
-| ssmapi (`type="ssm-api"`) | `services/ssmapi/` (5 files) | ✅ | Core aligned: `ManagedSSMServer::update_users()`, `UserManager::post_update()`, `TrafficManager::update_users()` implemented |
+| Go Service | Go Files | Rust Implementation | Status | Gap Details |
+| --- | --- | --- | --- | --- |
+| derp (`type="derp"`) | `service/derp/service.go` (15KB) | `services/derp/` (4 files, 197KB total) | ✅ | TLS-required + `config_path` key JSON + tailscale DERP v2 (NaCl box) + mesh model aligned |
+| resolved (`type="resolved"`) | `service/resolved/` (4 files, 35KB total) | `sb-adapters/src/service/` (3 files, 47KB) + `sb-core/src/dns/transport/resolved.rs` | ✅ | D-Bus server + DNSRouter injection + NetworkMonitor callbacks integrated |
+| ssmapi (`type="ssm-api"`) | `service/ssmapi/` (5 files, 25KB total) | `services/ssmapi/` (5 files, 53KB total) | ✅ | Core aligned: `update_users()`, `post_update()`, `TrafficManager` implemented |
 
 ### Rust-Only Services (Extensions)
 
 | Rust Service | File | Status | Notes |
 | --- | --- | --- | --- |
 | Clash API | `services/clash_api.rs` (23KB) | ➕ | Rust custom implementation of Clash API; not in Go reference |
-| V2Ray API | `services/v2ray_api.rs` (16KB) | ➕ | Rust custom implementation of V2Ray stats API; not in Go reference |
-| Cache File | `services/cache_file.rs` (14KB) | ➕ | Rust-native rule set cache; Go has `experimental/cachefile/` (de-scoped) |
-| NTP | `services/ntp.rs` (7KB) | ➕ | NTP time sync service; Go has `option.NTPOptions` but not as service |
+| V2Ray API | `services/v2ray_api.rs` (16KB) | ➕ | Rust custom implementation of V2Ray stats API |
+| Cache File | `services/cache_file.rs` (14KB) | ➕ | Rust-native rule set cache |
+| NTP | `services/ntp.rs` (7KB) | ➕ | NTP time sync service |
 | DNS Forwarder | `services/dns_forwarder.rs` (11KB) | ➕ | DNS forwarding service |
+| Tailscale Service | `services/tailscale/` (3 files) | ➕ | Extended Tailscale service integration |
 
 ---
 
 ## Transport Parity Matrix
 
-| Go Transport | Rust File | Status | Notes |
-| --- | --- | --- | --- |
-| simple-obfs | `simple_obfs.rs` (13KB) | ✅ | HTTP/TLS obfuscation |
-| sip003 | `sip003.rs` (11KB) | ✅ | Plugin framework |
-| trojan | `trojan.rs` (13KB) | ✅ | Trojan framing |
-| v2ray (grpc) | `grpc.rs` (17KB) | ✅ | gRPC transport |
-| v2raygrpclite | `grpc_lite.rs` (12KB) | ✅ | Lightweight gRPC |
-| v2rayhttp | `http2.rs` (21KB) | ✅ | HTTP/2 transport |
-| v2rayhttpupgrade | `httpupgrade.rs` (15KB) | ✅ | HTTP Upgrade |
-| v2rayquic | `quic.rs` (20KB) | ✅ | QUIC transport |
-| v2raywebsocket | `websocket.rs` (21KB) | ✅ | WebSocket transport |
-| wireguard | `wireguard.rs` (18KB) | ✅ | WireGuard transport |
+| Go Transport | Go Files | Rust File | Status | Notes |
+| --- | --- | --- | --- | --- |
+| simple-obfs | `transport/simple-obfs/` (2 files) | `simple_obfs.rs` (13KB) | ✅ | HTTP/TLS obfuscation |
+| sip003 | `transport/sip003/` (4 files) | `sip003.rs` (11KB) | ✅ | Plugin framework |
+| trojan | `transport/trojan/` (5 files) | `trojan.rs` (13KB) | ✅ | Trojan framing |
+| v2ray (grpc) | `transport/v2raygrpc/` (8 files) | `grpc.rs` (17KB) | ✅ | gRPC transport |
+| v2raygrpclite | `transport/v2raygrpclite/` (3 files) | `grpc_lite.rs` (12KB) | ✅ | Lightweight gRPC |
+| v2rayhttp | `transport/v2rayhttp/` (5 files) | `http2.rs` (21KB) | ✅ | HTTP/2 transport |
+| v2rayhttpupgrade | `transport/v2rayhttpupgrade/` (2 files) | `httpupgrade.rs` (15KB) | ✅ | HTTP Upgrade |
+| v2rayquic | `transport/v2rayquic/` (4 files) | `quic.rs` (20KB) | ✅ | QUIC transport |
+| v2raywebsocket | `transport/v2raywebsocket/` (4 files) | `websocket.rs` (21KB) | ✅ | WebSocket transport |
+| wireguard | `transport/wireguard/` (9 files) | `wireguard.rs` (18KB) | ✅ | WireGuard transport |
+| v2ray (coordinator) | `transport/v2ray/transport.go` | N/A (integrated) | ✅ | Integrated into Rust transport selection |
 
 ### Rust-Only Transports (Extensions)
 
 | Rust Transport | File | Status | Notes |
 | --- | --- | --- | --- |
-| DERP | `derp/` (3 files) | ➕ | DERP relay transport (separate from service) |
+| DERP | `derp/` (3 files) | ➕ | DERP relay transport |
 | Multiplex | `multiplex.rs` (25KB) + `multiplex/` | ➕ | Connection multiplexing |
 | UoT | `uot.rs` (13KB) | ➕ | UDP over TCP |
-| Tailscale DNS | `tailscale_dns.rs` (18KB) | ✅ | TsnetSocketFactory trait added (2025-12-15); uses tsnet-bound socket when context provided |
+| Tailscale DNS | `tailscale_dns.rs` (20KB) | ✅ | TsnetSocketFactory trait integrated |
 | Circuit Breaker | `circuit_breaker.rs` (24KB) | ➕ | Fault tolerance extension |
 | Resource Pressure | `resource_pressure.rs` (18KB) | ➕ | Load management |
 | Retry | `retry.rs` (20KB) | ➕ | Connection retry logic |
+| Memory Transport | `mem.rs` (12KB) | ➕ | In-memory testing transport |
+| Pool | `pool/` (2 files) | ➕ | Connection pooling |
 
 ---
 
 ## TLS/Crypto Parity Matrix
 
-| Go Component | Rust Implementation | Status | Gap Details |
-| --- | --- | --- | --- |
-| std_client/server | `sb-transport/src/tls.rs` (101KB) | ✅ | Standard TLS, comprehensive implementation |
-| utls_client | `sb-tls/src/utls.rs` (28KB) | ◐ | Cipher suite/ALPN ordering only; rustls cannot match Go/uTLS extension ordering & full ClientHello |
-| reality_client/server | `sb-tls/src/reality/` (7 files) | ✅ | Client uses uTLS-ordered config while preserving REALITY verifier |
-| ech | `sb-tls/src/ech/` (5 files) | ◐ | Parser/HPKE + CLI keygen exist; rustls lacks ECH handshake integration (Go: enabled on go1.24+) |
-| acme | `sb-tls/src/acme.rs` (28KB) | ✅ | ACME certificate management |
-| standard | `sb-tls/src/standard.rs` (4KB) | ✅ | Standard TLS config |
+| Go Component | Go Files | Rust Implementation | Status | Gap Details |
+| --- | --- | --- | --- | --- |
+| std_client | `common/tls/std_client.go` (4KB) | `sb-transport/src/tls.rs` (101KB) | ✅ | Standard TLS client |
+| std_server | `common/tls/std_server.go` (8KB) | `sb-transport/src/tls.rs` | ✅ | Standard TLS server |
+| utls_client | `common/tls/utls_client.go` (8KB) | `sb-tls/src/utls.rs` (28KB) | ◐ | Cipher suite/ALPN ordering only; rustls cannot match full ClientHello |
+| reality_client | `common/tls/reality_client.go` (9KB) | `sb-tls/src/reality/` (7 files) | ✅ | Client uses uTLS-ordered config with REALITY verifier |
+| reality_server | `common/tls/reality_server.go` (6KB) | `sb-tls/src/reality/` | ✅ | Full REALITY server support |
+| ech | `common/tls/ech*.go` (4 files) | `sb-tls/src/ech/` (5 files) | ◐ | Parser/HPKE exist; rustls lacks ECH handshake (Go: go1.24+ gated) |
+| acme | `common/tls/acme*.go` (3 files) | `sb-tls/src/acme.rs` (28KB) | ✅ | ACME certificate management |
+| mkcert | `common/tls/mkcert.go` (2KB) | N/A (integrated) | ✅ | Certificate generation integrated |
+| config | `common/tls/config.go` (1KB) | `sb-tls/src/standard.rs` (4KB) | ✅ | TLS configuration |
 
 ---
 
 ## DNS Transport Parity Matrix
 
-| Go DNS Transport | Rust File | Status | Gap Details |
-| --- | --- | --- | --- |
-| udp | `transport/udp.rs` (19KB) | ✅ | UDP DNS |
-| tcp | `transport/tcp.rs` (9KB) | ✅ | TCP DNS |
-| tls (DoT) | `transport/dot.rs` (9KB) | ✅ | DNS over TLS |
-| https (DoH) | `transport/doh.rs` (11KB) | ✅ | DNS over HTTPS |
-| https (DoH3) | `transport/doh3.rs` (8KB) | ✅ | DNS over HTTP/3 (Rust extension) |
-| quic (DoQ) | `transport/doq.rs` (5KB) | ✅ | DNS over QUIC |
-| fakeip | `fakeip.rs` (10KB) | ✅ | FakeIP pool |
-| hosts | `hosts.rs` (12KB) | ✅ | Hosts file |
-| local | `transport/local.rs` (8KB) | ✅ | System resolver |
-| dhcp | (passive monitoring) | ◐ | Passive only, no INFORM probe |
-| tailscale | `tailscale_dns.rs` (18KB) | ✅ | TsnetSocketFactory integrated; uses tsnet-bound socket when context provided |
-| resolved | `transport/resolved.rs` (20KB) | ✅ | D-Bus resolved DNS transport |
-| enhanced_udp | `transport/enhanced_udp.rs` (9KB) | ➕ | Enhanced UDP DNS (Rust extension) |
+| Go DNS Transport | Go Files | Rust File | Status | Gap Details |
+| --- | --- | --- | --- | --- |
+| udp | `dns/transport/udp.go` (5KB) | `transport/udp.rs` (19KB) | ✅ | UDP DNS |
+| tcp | `dns/transport/tcp.go` (3KB) | `transport/tcp.rs` (9KB) | ✅ | TCP DNS |
+| tls (DoT) | `dns/transport/tls.go` (4KB) | `transport/dot.rs` (9KB) | ✅ | DNS over TLS |
+| https (DoH) | `dns/transport/https*.go` (2 files, 8KB) | `transport/doh.rs` (11KB) | ✅ | DNS over HTTPS |
+| https (DoH3) | (Go: in quic/) | `transport/doh3.rs` (8KB) | ✅ | DNS over HTTP/3 |
+| quic (DoQ) | `dns/transport/quic/` (2 files) | `transport/doq.rs` (5KB) | ✅ | DNS over QUIC |
+| fakeip | `dns/transport/fakeip/` (3 files) | `fakeip.rs` (10KB) | ✅ | FakeIP pool |
+| hosts | `dns/transport/hosts/` (5 files) | `hosts.rs` (12KB) | ✅ | Hosts file |
+| local | `dns/transport/local/` (7 files) | `transport/local.rs` (8KB) | ✅ | System resolver |
+| dhcp | `dns/transport/dhcp/` (2 files) | (passive monitoring) | ◐ | Passive only, no DHCP INFORM probe |
+| resolved | `service/resolved/transport.go` (9KB) | `transport/resolved.rs` (20KB) | ✅ | D-Bus resolved DNS transport |
+| enhanced_udp | N/A | `transport/enhanced_udp.rs` (9KB) | ➕ | Enhanced UDP DNS (Rust extension) |
 
 ---
 
@@ -202,17 +209,17 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 | Go Type | Rust IR Type | Status | Notes |
 | --- | --- | --- | --- |
-| `option.Inbound` | `crates/sb-config/src/ir/mod.rs::InboundIR` | ✅ | Full parity |
-| `option.Outbound` | `crates/sb-config/src/ir/mod.rs::OutboundIR` | ✅ | Full parity |
-| `option.Service` | `crates/sb-config/src/ir/mod.rs::ServiceIR` | ✅ | Listen fields + TLS container aligned |
+| `option.Inbound` | `InboundIR` in `sb-config/src/ir/` | ✅ | Full parity |
+| `option.Outbound` | `OutboundIR` in `sb-config/src/ir/` | ✅ | Full parity |
+| `option.Service` | `ServiceIR` in `sb-config/src/ir/` | ✅ | Listen fields + TLS container aligned |
 | `option.SSMAPIServiceOptions` | `ServiceIR` with `ty=Ssmapi` | ✅ | `servers` map + `cache_path` aligned |
 | `option.DERPServiceOptions` | `ServiceIR` with `ty=Derp` | ✅ | All fields aligned |
 | `option.ResolvedServiceOptions` | `ServiceIR` with `ty=Resolved` | ✅ | Listen fields aligned |
 | `constant.TypeSSMAPI = "ssm-api"` | `ServiceType::Ssmapi` | ✅ | Serializes as `"ssm-api"` |
 | `constant.TypeDERP = "derp"` | `ServiceType::Derp` | ✅ | Aligned |
 | `constant.TypeResolved = "resolved"` | `ServiceType::Resolved` | ✅ | Aligned |
-| `constant.TypeShadowsocksR = "shadowsocksr"` | `OutboundType::ShadowsocksR` | ⊘ | Go rejects; Rust accepts when feature enabled |
-| `constant.TypeTailscale` (endpoint only) | `OutboundType::Tailscale` + `EndpointType::Tailscale` | ⊘ | Rust outbound feature-gated; Go has endpoint only |
+| `constant.TypeShadowsocksR` | `OutboundType::ShadowsocksR` | ⊘ | Go rejects; Rust accepts when feature enabled |
+| `constant.TypeTailscale` (endpoint) | `EndpointType::Tailscale` | ❌ | Rust stub only |
 
 ---
 
@@ -220,7 +227,8 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 ### 1) Tailscale Endpoint (Critical Gap)
 
-**Go Implementation** (`protocol/tailscale/endpoint.go`):
+**Go Implementation** (`protocol/tailscale/`):
+- 4 files: `endpoint.go`, `dns_transport.go`, `protect_android.go`, `protect_nonandroid.go`
 - Full `tsnet.Server` with gVisor netstack
 - Control plane auth via Tailscale control URL
 - DNS hooks with `LookupHook` integration
@@ -231,7 +239,7 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - Network monitor integration via `netmon.RegisterInterfaceGetter`
 - Platform interface for Android protect
 
-**Rust Implementation** (`crates/sb-core/src/endpoint/tailscale.rs`):
+**Rust Implementation** (`crates/sb-core/src/endpoint/tailscale.rs` - 38KB):
 - `StubControlPlane` for testing only
 - `DaemonControlPlane` connects to local `tailscaled` daemon via Unix socket
 - Data plane uses host network stack, not netstack
@@ -246,73 +254,48 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 **ShadowsocksR**:
 - Go: `constant.TypeShadowsocksR = "shadowsocksr"` exists but registry **rejects** it (removed upstream)
-- Rust: `OutboundType::ShadowsocksR` implemented in `crates/sb-adapters/src/outbound/shadowsocksr/`
-- **Resolution**: Feature-gated with `legacy_shadowsocksr` (default OFF) in `sb-adapters/Cargo.toml`
+- Rust: `OutboundType::ShadowsocksR` implemented in `outbound/shadowsocksr/` (5 files)
+- **Resolution**: Feature-gated with `legacy_shadowsocksr` (default OFF)
 
 **Tailscale Outbound**:
 - Go: No `tailscale` outbound exists; Tailscale is endpoint-only
-- Rust: `OutboundType::Tailscale` implemented in `crates/sb-adapters/src/outbound/tailscale.rs`
-- **Resolution**: Feature-gated with `legacy_tailscale_outbound` (default OFF) in `sb-adapters/Cargo.toml`
+- Rust: `OutboundType::Tailscale` implemented in `outbound/tailscale.rs` (21KB)
+- **Resolution**: Feature-gated with `legacy_tailscale_outbound` (default OFF)
 
-### 3) Resolved Service (Partial Gap)
+### 3) uTLS Integration (Partial)
 
-**Go Implementation** (`service/resolved/service.go`):
-- Full D-Bus server at `org.freedesktop.resolve1`
-- Per-link DNS/domain tracking (`TransportLink`)
-- Network monitor callback integration (`NetworkUpdateCallback`)
-- TCP+UDP DNS serving via listener
-- Default route sequence management
-- Link update/delete callbacks
-- Query forwarding via `adapter.DNSRouter`
-
-**Rust Implementation** (`crates/sb-adapters/src/service/resolved_impl.rs` + `crates/sb-core/src/dns/transport/resolved.rs`):
-- D-Bus `org.freedesktop.resolve1.Manager` server implemented on Linux
-- Per‑link DNS/domain state tracked in `Resolve1ManagerState`
-- Resolved DNS transport mirrors Go `TransportLink` routing + ndots/search semantics
-- DNS stub listener implemented
-- **Missing** NetworkMonitor callback registration and Linux netlink change tracking
-- **Behavior gap**: Go forwards queries via `adapter.DNSRouter`; Rust service currently uses a system resolver for query handling
-
-**Impact**: Feature parity is high on static networks; dynamic link updates still lag Go.
-
-### 4) uTLS Integration (Partial)
-
-**Go Implementation** (`common/tls/utls_client.go`):
+**Go Implementation** (`common/tls/utls_client.go` - 8KB):
 - Full `UTLSClientConfig` with fingerprint selection
 - Supported fingerprints: Chrome, Firefox, Edge, Safari, 360, QQ, iOS, Android, random, randomized
 - ECH support integration
 - Fragment and record fragment support
-- Wired into all TLS client paths (standard, Reality, ShadowTLS)
-- `uTLSClientHelloID` function for name→fingerprint mapping
+- Wired into all TLS client paths
 
-**Rust Implementation** (`crates/sb-tls/src/utls.rs`):
+**Rust Implementation** (`crates/sb-tls/src/utls.rs` - 28KB):
 - `UtlsFingerprint` enum with all fingerprints defined
 - `UtlsConfig` struct with configuration
-- `CustomFingerprint` with detailed parameters
-- Name→fingerprint parsing aligned with Go aliases (incl. `chrome_psk*`, `chrome_pq*`, `ios`, `android`, `random`, `randomized`)
-- `UtlsConfig::build_client_config_with_roots()` supports caller-provided roots; insecure mode supported
-- Wired into TLS client paths:
-  - Standard TLS (per-outbound override in `sb-core` v2ray transport mapper)
-  - REALITY client (keeps `RealityVerifier`, uses uTLS-ordered config)
-  - ShadowTLS outbound (uTLS-enabled ClientConfig)
+- Name→fingerprint parsing aligned with Go aliases
+- Wired into TLS paths: Standard TLS, REALITY, ShadowTLS
 
-**Impact**: Fingerprint selection is wired, but cannot match Go/uTLS on-wire fingerprints without a different TLS stack (or deeper rustls customization).
+**Impact**: Fingerprint selection is wired, but cannot match Go/uTLS on-wire fingerprints without different TLS stack.
 
-### 5) ECH (Partial / Build-Gated in Go)
+### 4) ECH (Partial / Build-Gated in Go)
 
-**Go Implementation** (`common/tls/ech.go`, `common/tls/ech_stub.go`):
+**Go Implementation** (`common/tls/ech*.go`):
+- 4 files: `ech.go`, `ech_shared.go`, `ech_stub.go`, `ech_tag_stub.go`
 - Enabled only on `go1.24` builds; otherwise returns "ECH requires go1.24 …"
 - When enabled, integrates with stdlib `crypto/tls` ECH hooks
 
-**Rust Implementation** (`crates/sb-tls/src/ech/`):
+**Rust Implementation** (`crates/sb-tls/src/ech/` - 5 files):
 - ECHConfigList parsing + HPKE primitives + CLI keygen exist
 - **Missing** runtime TLS handshake integration (rustls 0.23 has no native ECH)
 
 **Impact**: Config-level and crypto scaffolding exist, but runtime ECH parity is blocked by TLS library support.
 
-### 6) DNS DHCP Transport (Partial Gap)
+### 5) DNS DHCP Transport (Partial Gap)
 
 **Go Implementation** (`dns/transport/dhcp/`):
+- 2 files: `dhcp.go`, `dhcp_shared.go`
 - Active DHCP INFORM probe
 - Interface discovery
 - Server timeout and refresh handling
@@ -322,22 +305,22 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 - No DHCP INFORM probes
 - No interface discovery
 
-**Impact**: DHCP-discovered DNS servers may not be detected.
+**Impact**: DHCP-discovered DNS servers may not be detected dynamically.
 
-### 7) Experimental Features (De-scoped)
+### 6) Experimental Features (De-scoped)
 
-**Go `experimental/`**:
-- `cachefile/` - persistent cache for rule sets
-- `clashapi/` - Clash API compatibility
-- `v2rayapi/` - V2Ray stats API
-- `libbox/` - mobile platform bindings
-- `locale/` - localization
-- `deprecated/` - deprecated feature warnings
+**Go `experimental/`** (6 subdirectories, 80+ files):
+- `cachefile/` - persistent cache for rule sets (3 files)
+- `clashapi/` - Clash API compatibility (19 files)
+- `v2rayapi/` - V2Ray stats API (4 files)
+- `libbox/` - mobile platform bindings (47 files)
+- `locale/` - localization (2 files)
+- `deprecated/` - deprecated feature warnings (3 files)
 
-**Rust Status**: These are intentionally **not ported** as they are Go-specific experimental features. However, Rust has **custom implementations** of some features:
-- Clash API → `services/clash_api.rs` (Rust-native implementation)
-- V2Ray API → `services/v2ray_api.rs` (Rust-native implementation)
-- Cache File → `services/cache_file.rs` (Rust-native implementation)
+**Rust Status**: Intentionally **not ported** as Go-specific experimental features. However, Rust has **custom implementations**:
+- Clash API → `services/clash_api.rs` (23KB, Rust-native)
+- V2Ray API → `services/v2ray_api.rs` (16KB, Rust-native)
+- Cache File → `services/cache_file.rs` (14KB, Rust-native)
 
 ---
 
@@ -345,56 +328,52 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 | Category | Aligned | Partial | Not Aligned | Feature-gated | Rust-only |
 | --- | --- | --- | --- | --- | --- |
-| Inbound Protocols | 19 | 0 | 0 | 0 | 0 |
+| Inbound Protocols | 18 | 0 | 0 | 0 | 1 |
 | Outbound Protocols | 18 | 0 | 0 | 2 | 0 |
 | Endpoints | 1 | 0 | 1 | 0 | 0 |
-| Services (Go parity) | 2 | 1 | 0 | 0 | 5 |
-| Transports | 10 | 0 | 0 | 0 | 7 |
-| DNS Transports | 9 | 2 | 0 | 0 | 2 |
-| TLS/Crypto | 4 | 2 | 0 | 0 | 0 |
-| Config Schema | 9 | 0 | 0 | 2 | 0 |
-| Go Directories | 12 | 3 | 1 | 0 | 0 |
-| **Total** | **84** | **8** | **2** | **4** | **14** |
+| Services (Go parity) | 3 | 0 | 0 | 0 | 6 |
+| Transports | 10 | 0 | 0 | 0 | 9 |
+| DNS Transports | 10 | 1 | 0 | 0 | 1 |
+| TLS/Crypto | 6 | 2 | 0 | 0 | 0 |
+| Config Schema | 9 | 0 | 1 | 1 | 0 |
+| Go Directories | 12 | 2 | 1 | 0 | 0 |
+| **Total** | **87** | **5** | **3** | **3** | **17** |
 
-**Parity Rate**: ~88% aligned (84 aligned / 95 core items; 2 not aligned; 4 feature-gated/de-scoped; 14 Rust extensions)
+**Parity Rate**: ~90% aligned (87 aligned / 95 core items)
+- 3 not aligned (Tailscale endpoint, Tailscale config, 1 DNS transport)
+- 3 feature-gated (de-scoped legacy features)
+- 17 Rust-only extensions
 
 ---
 
 ## Priority Remediation Order
 
-### P0: Protocol Divergence Cleanup ✅ Completed (2025-12-14)
+### P0: Protocol Divergence Cleanup ✅ Completed
 
 1. **ShadowsocksR**: Feature-gated with `legacy_shadowsocksr` (default OFF)
 2. **Tailscale Outbound**: Feature-gated with `legacy_tailscale_outbound` (default OFF)
 
-### P1: SSMAPI Service Alignment ✅ Core Completed (2025-12-14)
+### P1: SSMAPI + Resolved Service Alignment ✅ Completed
 
-1. ✅ `ManagedSSMServer::update_users()` trait method added
-2. ✅ `ShadowsocksInboundAdapter` implements `update_users()`
-3. ✅ `UserManager::post_update()` pushes changes to bound SS inbound
-4. ✅ `TrafficManager::update_users()` syncs user list
-5. Align per-endpoint cache format with Go (users + traffic per endpoint) — **Optional**
-6. Full API response parity (all status codes, error messages) — **Optional**
+1. ✅ SSMAPI: `update_users()`, `post_update()`, `TrafficManager` aligned
+2. ✅ Resolved: D-Bus server + DNSRouter injection + NetworkMonitor callbacks
 
-### P2: Resolved Service Completion (1-2 days)
+### P2: DNS DHCP Enhancement (Low priority, 1-2 days)
 
-1. Route DNS via configured router (Go `adapter.DNSRouter` equivalent)
-2. Register NetworkMonitor callbacks + Linux netlink change tracking
+- [ ] Add active DHCP INFORM probe
+- [ ] Add interface discovery
+- [ ] Server timeout and refresh handling
 
 ### P3: TLS Fidelity (Blocked by rustls)
 
-1. Decide approach for full uTLS fingerprint parity (blocked by rustls limitations)
-2. Decide ECH runtime parity approach (blocked by rustls 0.23)
+- [ ] Decide approach for full uTLS fingerprint parity
+- [ ] Decide ECH runtime parity approach
 
-### P4: DHCP Transport Enhancement (Low priority)
+### P4: Tailscale Stack Parity (Major undertaking - 2-4 weeks)
 
-1. Add active DHCP INFORM probe + interface discovery
-
-### P5: Tailscale Stack Parity (Major undertaking - 2-4 weeks)
-
-1. Evaluate tsnet/FFI integration for netstack TCP/UDP and DNS hooks
-2. Evaluate `tailscale-control` pure Rust alternative
-3. Write decision document
+- [ ] Evaluate tsnet/FFI integration for netstack TCP/UDP and DNS hooks
+- [ ] Evaluate `tailscale-control` pure Rust alternative
+- [ ] Write decision document
 
 ---
 
@@ -402,34 +381,47 @@ Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-
 
 ### Go Reference (`go_fork_source/sing-box-1.12.12`)
 
-| Directory | Contents |
-| --- | --- |
-| `protocol/` | 23 protocol implementations (anytls, block, direct, dns, group, http, hysteria, hysteria2, mixed, naive, redirect, shadowsocks, shadowtls, socks, ssh, tailscale, tor, trojan, tuic, tun, vless, vmess, wireguard) |
-| `service/` | 3 services (derp, resolved, ssmapi) |
-| `transport/` | 11 transports (simple-obfs, sip003, trojan, v2ray, v2raygrpc, v2raygrpclite, v2rayhttp, v2rayhttpupgrade, v2rayquic, v2raywebsocket, wireguard) |
-| `common/tls/` | TLS implementations (std, utls, reality, ech, acme) |
-| `dns/transport/` | DNS transports (dhcp, fakeip, hosts, local, quic, https, tcp, tls, udp) |
-| `option/` | 47 config type files |
-| `constant/` | Type constants and enums |
-| `experimental/` | 6 experimental features (cachefile, clashapi, deprecated, libbox, locale, v2rayapi) |
+| Directory | Files | Contents |
+| --- | --- | --- |
+| `protocol/` | 23 subdirs | Protocol implementations |
+| `service/` | 3 subdirs | derp, resolved, ssmapi services |
+| `transport/` | 11 subdirs | Transport implementations |
+| `common/tls/` | 20 files | TLS implementations |
+| `dns/transport/` | 5 subdirs | DNS transport implementations |
+| `option/` | 47 files | Config type definitions |
+| `constant/` | 22 files | Type constants and enums |
+| `route/` | 7 files + rule/ | Router and rule engine |
+| `adapter/` | 26 files | Adapter interfaces |
+| `log/` | 10 files | Logging infrastructure |
+| `experimental/` | 6 subdirs | Experimental features (de-scoped) |
+| `cmd/` | CLI | Command-line interface |
 
 ### Rust Implementation (`crates/`)
 
-| Crate | Purpose | Files |
+| Crate | Files | Purpose |
 | --- | --- | --- |
-| `sb-adapters` | Protocol implementations (inbound/outbound/endpoint/service) | 109 |
-| `sb-config` | Config parsing, validation, IR types | 49 |
-| `sb-core` | Core runtime, router, DNS, services | 424 |
-| `sb-tls` | TLS implementations (utls, reality, ech, acme) | 20 |
-| `sb-transport` | Transport layer implementations | 57 |
-| `sb-common` | Shared utilities | 10 |
-| `sb-platform` | Platform-specific code | 20 |
-| `sb-runtime` | Async runtime utilities | 17 |
-| `sb-types` | Shared type definitions | 2 |
-| `sb-metrics` | Metrics and telemetry | 9 |
-| `sb-proto` | Protocol-specific types | 9 |
-| `sb-api` | Admin API | 29 |
-| `sb-subscribe` | Subscription management | 24 |
-| `sb-security` | Security utilities | 5 |
-| `sb-test-utils` | Test utilities | 3 |
-| `sb-admin-contract` | Admin API contracts | 2 |
+| `sb-adapters` | 109 | Protocol implementations (inbound/outbound/endpoint/service) |
+| `sb-config` | 49 | Config parsing, validation, IR types |
+| `sb-core` | 424 | Core runtime, router, DNS, services |
+| `sb-tls` | 20 | TLS implementations (utls, reality, ech, acme) |
+| `sb-transport` | 57 | Transport layer implementations |
+| `sb-common` | 10 | Shared utilities |
+| `sb-platform` | 20 | Platform-specific code |
+| `sb-runtime` | 17 | Async runtime utilities |
+| `sb-types` | 2 | Shared type definitions |
+| `sb-metrics` | 9 | Metrics and telemetry |
+| `sb-proto` | 9 | Protocol-specific types |
+| `sb-api` | 29 | Admin API |
+| `sb-subscribe` | 24 | Subscription management |
+| `sb-security` | 5 | Security utilities |
+| `sb-test-utils` | 3 | Test utilities |
+| `sb-admin-contract` | 2 | Admin API contracts |
+
+---
+
+## Calibration Metadata
+
+- **Date**: 2025-12-16
+- **Go Reference Version**: sing-box-1.12.12
+- **Rust Project**: singbox-rust
+- **Methodology**: File-by-file directory comparison, protocol enumeration, service/transport/TLS/DNS mapping

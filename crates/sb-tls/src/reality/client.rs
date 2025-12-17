@@ -133,15 +133,16 @@ impl RealityConnector {
                     .fingerprint
                     .parse::<UtlsFingerprint>()
                     .map_err(|e| RealityError::InvalidConfig(e.to_string()))?;
-                let utls_cfg = UtlsConfig::new(self.config.server_name.clone())
-                    .with_fingerprint(fp);
+                let utls_cfg =
+                    UtlsConfig::new(self.config.server_name.clone()).with_fingerprint(fp);
 
                 let mut roots = rustls::RootCertStore::empty();
                 roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
                 let mut c = (*utls_cfg.build_client_config_with_roots(roots)).clone();
-                c.dangerous().set_certificate_verifier(Arc::new(RealityVerifier {
-                    expected_server_name: self.config.server_name.clone(),
-                }));
+                c.dangerous()
+                    .set_certificate_verifier(Arc::new(RealityVerifier {
+                        expected_server_name: self.config.server_name.clone(),
+                    }));
                 c
             }
             #[cfg(not(feature = "utls"))]

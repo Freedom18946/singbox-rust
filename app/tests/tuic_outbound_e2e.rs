@@ -230,7 +230,7 @@ mod packet_tests {
         let packet = TuicOutbound::encode_udp_packet_static("192.168.1.1", 8080, b"test data");
         assert!(packet.is_ok(), "IPv4 packet encoding should succeed");
         let packet = packet.unwrap();
-        assert!(packet.len() > 0, "Packet should not be empty");
+        assert!(!packet.is_empty(), "Packet should not be empty");
 
         // Decode the packet
         let (host, port, data) = TuicOutbound::decode_udp_packet(&packet).unwrap();

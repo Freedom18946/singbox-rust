@@ -132,7 +132,9 @@ fn parse_fwmark_field(value: Option<&Value>) -> Option<u32> {
             if trimmed.is_empty() {
                 return None;
             }
-            let hex = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X"));
+            let hex = trimmed
+                .strip_prefix("0x")
+                .or_else(|| trimmed.strip_prefix("0X"));
             if let Some(hex) = hex {
                 u32::from_str_radix(hex.trim(), 16).ok()
             } else {
@@ -147,7 +149,10 @@ fn parse_inbound_tls_options(value: Option<&Value>) -> Option<InboundTlsOptionsI
     let obj = value.and_then(|v| v.as_object())?;
 
     Some(InboundTlsOptionsIR {
-        enabled: obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+        enabled: obj
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         server_name: obj
             .get("server_name")
             .and_then(|v| v.as_str())
@@ -210,7 +215,11 @@ fn parse_derp_mesh_with(value: Option<&Value>) -> Option<Vec<String>> {
         }
         _ => {}
     }
-    if out.is_empty() { None } else { Some(out) }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 fn parse_derp_stun_options(value: Option<&Value>) -> Option<DerpStunOptionsIR> {
@@ -230,7 +239,10 @@ fn parse_derp_stun_options(value: Option<&Value>) -> Option<DerpStunOptionsIR> {
             ..Default::default()
         }),
         Value::Object(obj) => Some(DerpStunOptionsIR {
-            enabled: obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false),
+            enabled: obj
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             listen: obj
                 .get("listen")
                 .and_then(|v| v.as_str())
@@ -2248,8 +2260,11 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                         .map(|s| s.to_string())
                 });
             service_ir.listen_port = parse_u16_field(s.get("listen_port")).or_else(|| {
-                parse_u16_field(s.get(legacy_listen_port_key))
-                    .or_else(|| s.get(legacy_listen_port_key).and_then(|v| v.as_u64()).map(|x| x as u16))
+                parse_u16_field(s.get(legacy_listen_port_key)).or_else(|| {
+                    s.get(legacy_listen_port_key)
+                        .and_then(|v| v.as_u64())
+                        .map(|x| x as u16)
+                })
             });
             service_ir.bind_interface = s
                 .get("bind_interface")
@@ -2273,8 +2288,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             service_ir.sniff = s.get("sniff").and_then(|v| v.as_bool());
-            service_ir.sniff_override_destination =
-                s.get("sniff_override_destination").and_then(|v| v.as_bool());
+            service_ir.sniff_override_destination = s
+                .get("sniff_override_destination")
+                .and_then(|v| v.as_bool());
             service_ir.sniff_timeout = s
                 .get("sniff_timeout")
                 .and_then(|v| v.as_str())
@@ -2283,8 +2299,9 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                 .get("domain_strategy")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            service_ir.udp_disable_domain_unmapping =
-                s.get("udp_disable_domain_unmapping").and_then(|v| v.as_bool());
+            service_ir.udp_disable_domain_unmapping = s
+                .get("udp_disable_domain_unmapping")
+                .and_then(|v| v.as_bool());
 
             service_ir.tls = parse_inbound_tls_options(s.get("tls"));
 

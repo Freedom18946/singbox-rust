@@ -1,8 +1,8 @@
 //! REALITY configuration
 
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "utls")]
 use crate::UtlsFingerprint;
+use serde::{Deserialize, Serialize};
 
 /// REALITY client configuration
 /// REALITY 客户端配置

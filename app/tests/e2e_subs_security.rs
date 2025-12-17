@@ -286,7 +286,7 @@ async fn security_metrics_error_ringbuffer() {
         }
 
         let snapshot = app::admin_debug::security_metrics::snapshot();
-        assert!(snapshot.last_errors.len() > 0);
+        assert!(!snapshot.last_errors.is_empty());
         assert!(snapshot.last_errors.len() <= 32); // MAX_ERRORS = 32
 
         // Check that errors have proper structure
@@ -341,7 +341,7 @@ async fn subs_rate_limiting_concurrency() {
             app::admin_debug::endpoints::subs::fetch_with_limits(&url),
             app::admin_debug::endpoints::subs::fetch_with_limits(&url),
         );
-        let results = vec![r1, r2, r3, r4];
+        let results = [r1, r2, r3, r4];
         let elapsed = start.elapsed();
 
         // With concurrency limit of 2, requests should be serialized

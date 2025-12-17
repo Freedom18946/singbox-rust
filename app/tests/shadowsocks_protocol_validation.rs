@@ -217,7 +217,7 @@ async fn test_ss_multi_user_concurrent() {
     let (server2, _stop2) = start_ss_server("aes-256-gcm", "user2-password").await;
     let (server3, _stop3) = start_ss_server("chacha20-poly1305", "user3-password").await;
 
-    let users = vec![
+    let users = [
         (server1, "user1-password", "aes-256-gcm"),
         (server2, "user2-password", "aes-256-gcm"),
         (server3, "user3-password", "chacha20-poly1305"),
@@ -422,7 +422,7 @@ async fn test_ss_wrong_password() {
             let test_data = b"test";
             if stream.write_all(test_data).await.is_ok() {
                 let mut buf = vec![0u8; test_data.len()];
-                stream.read_exact(&mut buf).await.is_ok() && &buf == test_data
+                stream.read_exact(&mut buf).await.is_ok() && buf == test_data
             } else {
                 false
             }

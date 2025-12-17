@@ -5,7 +5,7 @@
 //!
 //! Mirrors Go's `service/resolved/transport.go`.
 
-use super::{DnsStartStage, DnsTransport, DnsTransportError};
+use super::{DnsStartStage, DnsTransport};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use parking_lot::RwLock;
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Configuration for the resolved transport.
 #[derive(Debug, Clone)]

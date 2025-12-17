@@ -766,7 +766,7 @@ mod tests_concurrency_and_rollback {
             let _ = apply_with_dryrun(
                 &crate::admin_debug::endpoints::config::ConfigDelta {
                     // Start from 4001 to ensure the first apply changes something
-                    timeout_ms: Some(4001 + i as u64),
+                    timeout_ms: Some(4001 + i),
                     ..Default::default()
                 },
                 false,

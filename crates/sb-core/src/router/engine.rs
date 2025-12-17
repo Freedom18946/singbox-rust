@@ -19,7 +19,8 @@ use crate::router::{
     shared_index, RouteTarget, RouterIndex,
 };
 
-static UDP_RULES_CACHE: Lazy<RwLock<Option<(String, Arc<RouterIndex>)>>> = Lazy::new(|| RwLock::new(None));
+type UdpRulesCacheEntry = Option<(String, Arc<RouterIndex>)>;
+static UDP_RULES_CACHE: Lazy<RwLock<UdpRulesCacheEntry>> = Lazy::new(|| RwLock::new(None));
 
 fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
     if !crate::util::env::env_bool("SB_ROUTER_UDP") {
@@ -914,7 +915,10 @@ impl RouterHandle {
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(300);
-            if let DnsResult::Ok(ips) = self.resolve_with_fallback(host_for_domain, timeout_ms).await {
+            if let DnsResult::Ok(ips) = self
+                .resolve_with_fallback(host_for_domain, timeout_ms)
+                .await
+            {
                 for ip in ips {
                     if let Some(d) = super::runtime_override_ip(ip) {
                         let d_str = d.to_string();

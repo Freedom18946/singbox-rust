@@ -2,8 +2,7 @@
 use std::process::Command;
 
 fn bin() -> Command {
-    let cmd = Command::new(env!("CARGO_BIN_EXE_app"));
-    cmd
+    Command::new(env!("CARGO_BIN_EXE_app"))
 }
 
 #[cfg(not(feature = "reqwest"))]

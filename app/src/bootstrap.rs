@@ -318,6 +318,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                 h2_host: ob.h2_host.clone(),
                                 tls_sni: ob.tls_sni.clone(),
                                 tls_alpn,
+                                utls_fingerprint: ob.utls_fingerprint.clone(),
                                 grpc_service: ob.grpc_service.clone(),
                                 grpc_method: ob.grpc_method.clone(),
                                 grpc_authority: ob.grpc_authority.clone(),
@@ -355,6 +356,7 @@ pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Outbound
                                 h2_host: ob.h2_host.clone(),
                                 tls_sni: ob.tls_sni.clone(),
                                 tls_alpn,
+                                utls_fingerprint: ob.utls_fingerprint.clone(),
                                 grpc_service: ob.grpc_service.clone(),
                                 grpc_method: ob.grpc_method.clone(),
                                 grpc_authority: ob.grpc_authority.clone(),
@@ -593,7 +595,7 @@ fn to_adapter_connector(
     }
 }
 
-/// Convert `ConfigIR` to router rules text (mirrors `config_loader::config_ir_to_router_rules`)
+/// Convert `ConfigIR` to router rules text
 #[cfg(feature = "router")]
 fn ir_to_router_rules_text(config: &sb_config::ir::ConfigIR) -> String {
     let mut rules = Vec::new();
@@ -841,8 +843,8 @@ fn start_clash_api_server(listen: String, secret: Option<String>) {
     }
 }
 
-/// Start V2Ray API server in background task.
-/// 在后台任务中启动 V2Ray API 服务器。
+/// Start `V2Ray` API server in background task.
+/// 在后台任务中启动 `V2Ray` API 服务器。
 #[cfg(feature = "v2ray_api")]
 fn start_v2ray_api_server(listen: String) {
     use std::net::SocketAddr;

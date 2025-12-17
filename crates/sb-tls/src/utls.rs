@@ -110,15 +110,18 @@ impl std::str::FromStr for UtlsFingerprint {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "" => Ok(Self::Chrome110),
             // Go sing-box accepts multiple chrome alias names that map to Chrome Auto.
-            "chrome"
+            ""
+            | "chrome"
             | "chrome110"
             | "chrome_psk"
             | "chrome_psk_shuffle"
             | "chrome_padding_psk_shuffle"
             | "chrome_pq"
-            | "chrome_pq_psk" => Ok(Self::Chrome110),
+            | "chrome_pq_psk"
+            | "android"
+            | "android11"
+            | "android_11" => Ok(Self::Chrome110),
             "chrome58" => Ok(Self::Chrome58),
             "chrome62" => Ok(Self::Chrome62),
             "chrome70" => Ok(Self::Chrome70),
@@ -147,14 +150,13 @@ impl std::str::FromStr for UtlsFingerprint {
             "edge" | "edge106" => Ok(Self::Edge106),
             "edge85" => Ok(Self::Edge85),
 
-            "random" => Ok(Self::Random),
-            "randomized" => Ok(Self::Random),
+            "random" | "randomized" => Ok(Self::Random),
+
             "randomchrome" | "random_chrome" => Ok(Self::RandomChrome),
             "randomfirefox" | "random_firefox" => Ok(Self::RandomFirefox),
 
             "360" | "360browser" => Ok(Self::Browser360),
             "qq" | "qqbrowser" => Ok(Self::QQBrowser),
-            "android" | "android11" | "android_11" => Ok(Self::Chrome110),
 
             other => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -430,12 +432,14 @@ impl UtlsConfig {
     }
 
     /// Set fingerprint
+    #[must_use]
     pub fn with_fingerprint(mut self, fp: UtlsFingerprint) -> Self {
         self.fingerprint = fp;
         self
     }
 
     /// Set insecure mode
+    #[must_use]
     pub fn with_insecure(mut self, insecure: bool) -> Self {
         self.insecure_skip_verify = insecure;
         self
@@ -451,12 +455,6 @@ impl UtlsConfig {
     /// Get the custom fingerprint parameters for this config
     pub fn get_fingerprint_params(&self) -> CustomFingerprint {
         match &self.fingerprint {
-            UtlsFingerprint::Chrome110
-            | UtlsFingerprint::Chrome106
-            | UtlsFingerprint::Chrome102
-            | UtlsFingerprint::Chrome100
-            | UtlsFingerprint::ChromePsk
-            | UtlsFingerprint::ChromePq => CustomFingerprint::chrome_110(),
             UtlsFingerprint::Firefox105
             | UtlsFingerprint::Firefox99
             | UtlsFingerprint::Firefox65
@@ -506,7 +504,9 @@ impl UtlsConfig {
         &self,
         roots: rustls::RootCertStore,
     ) -> std::sync::Arc<rustls::ClientConfig> {
-        use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+        use rustls::client::danger::{
+            HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+        };
         use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
         use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
         use std::sync::Arc;
@@ -523,6 +523,7 @@ impl UtlsConfig {
         };
 
         // Build config with custom cipher suites via CryptoProvider
+        #[allow(clippy::expect_used)]
         let mut config = ClientConfig::builder_with_provider(Arc::new(provider))
             .with_safe_default_protocol_versions()
             .expect("TLS protocol versions should be valid")
@@ -531,7 +532,7 @@ impl UtlsConfig {
 
         // Apply ALPN from config override or fingerprint default
         let alpn = self.alpn.clone().unwrap_or(fp.alpn);
-        config.alpn_protocols = alpn.into_iter().map(|s| s.into_bytes()).collect();
+        config.alpn_protocols = alpn.into_iter().map(String::into_bytes).collect();
 
         if self.insecure_skip_verify {
             #[derive(Debug)]
@@ -772,8 +773,7 @@ mod tests {
     #[test]
     fn test_build_client_config_firefox() {
         // Test Firefox fingerprint
-        let config = UtlsConfig::new("firefox.test")
-            .with_fingerprint(UtlsFingerprint::Firefox105);
+        let config = UtlsConfig::new("firefox.test").with_fingerprint(UtlsFingerprint::Firefox105);
 
         let tls_config = config.build_client_config();
 

@@ -116,11 +116,9 @@ impl UserManager {
         // Push to server if bound
         if let Some(server) = &self.server {
             let users = self.users.read();
-            let (usernames, passwords): (Vec<_>, Vec<_>) = users
-                .iter()
-                .map(|(u, p)| (u.clone(), p.clone()))
-                .unzip();
-            
+            let (usernames, passwords): (Vec<_>, Vec<_>) =
+                users.iter().map(|(u, p)| (u.clone(), p.clone())).unzip();
+
             server.update_users(usernames, passwords).map_err(|e| {
                 tracing::error!(error = %e, "Failed to push users to SS server");
                 UserError::ServerError(e)
@@ -359,8 +357,10 @@ mod tests {
         let manager = UserManager::with_server(mock_server.clone(), traffic_manager);
 
         // Add user should trigger update_users
-        assert!(manager.add("alice".to_string(), "pass1".to_string()).is_ok());
-        
+        assert!(manager
+            .add("alice".to_string(), "pass1".to_string())
+            .is_ok());
+
         let calls = mock_server.get_update_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, vec!["alice".to_string()]);
@@ -368,7 +368,7 @@ mod tests {
 
         // Update user should also trigger update_users
         assert!(manager.update("alice", "newpass".to_string()).is_ok());
-        
+
         let calls = mock_server.get_update_calls();
         assert_eq!(calls.len(), 2);
         assert!(calls[1].0.contains(&"alice".to_string()));
@@ -382,7 +382,9 @@ mod tests {
         let manager = UserManager::with_server(mock_server.clone(), traffic_manager);
 
         // Add two users
-        assert!(manager.add("alice".to_string(), "pass1".to_string()).is_ok());
+        assert!(manager
+            .add("alice".to_string(), "pass1".to_string())
+            .is_ok());
         assert!(manager.add("bob".to_string(), "pass2".to_string()).is_ok());
 
         // Delete one user
@@ -391,7 +393,7 @@ mod tests {
         let calls = mock_server.get_update_calls();
         // 3 calls: add alice, add bob, delete alice
         assert_eq!(calls.len(), 3);
-        
+
         // Last call should only have bob
         let last_call = calls.last().unwrap();
         assert_eq!(last_call.0.len(), 1);
@@ -402,13 +404,14 @@ mod tests {
     fn test_standalone_manager_no_server() {
         // Standalone manager should work without server binding
         let manager = UserManager::new();
-        
-        assert!(manager.add("alice".to_string(), "pass1".to_string()).is_ok());
+
+        assert!(manager
+            .add("alice".to_string(), "pass1".to_string())
+            .is_ok());
         assert!(manager.update("alice", "newpass".to_string()).is_ok());
         assert!(manager.delete("alice").is_ok());
-        
+
         // No panics, all operations succeed
         assert_eq!(manager.len(), 0);
     }
 }
-

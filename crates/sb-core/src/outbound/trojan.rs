@@ -97,20 +97,24 @@ impl TrojanOutbound {
         let insecure = config.skip_cert_verify || insecure_env;
 
         // Resolve ALPN list (env overrides config)
-        let alpn_list: Option<Vec<String>> = if let Ok(alpn_env) = std::env::var("SB_TROJAN_ALPN")
-        {
+        let alpn_list: Option<Vec<String>> = if let Ok(alpn_env) = std::env::var("SB_TROJAN_ALPN") {
             let v = alpn_env
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>();
-            if v.is_empty() { None } else { Some(v) }
+            if v.is_empty() {
+                None
+            } else {
+                Some(v)
+            }
         } else {
             config.alpn.clone()
         };
 
         // Create TLS configuration for Trojan
-        let tls_config: Arc<ClientConfig> = if let Some(fp_name) = config.utls_fingerprint.as_deref()
+        let tls_config: Arc<ClientConfig> = if let Some(fp_name) =
+            config.utls_fingerprint.as_deref()
         {
             let fp = fp_name
                 .parse::<UtlsFingerprint>()

@@ -3,7 +3,9 @@
 //! These tests validate that UDP-capable outbound adapters properly
 //! register their UDP factories for QUIC-based protocols.
 
-use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType};
+use sb_config::ir::{ConfigIR, InboundIR, InboundType};
+#[cfg(any(feature = "out_ss", feature = "out_tuic", feature = "out_hysteria2"))]
+use sb_config::ir::{OutboundIR, OutboundType};
 
 #[allow(dead_code)]
 fn base_ir() -> ConfigIR {

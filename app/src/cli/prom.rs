@@ -409,6 +409,7 @@ async fn hist(
     Ok(())
 }
 
+#[allow(clippy::unused_async)]
 async fn http_get_text(_url: &str) -> Result<String> {
     #[cfg(feature = "reqwest")]
     {

@@ -10,7 +10,6 @@
 use super::memory::MemoryStats;
 use super::options::DebugOptions;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tracing::{error, info, warn};

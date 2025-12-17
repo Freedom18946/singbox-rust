@@ -2270,7 +2270,10 @@ mod tests {
         assert_eq!(ir.listen, Some("127.0.0.1".to_string()));
         assert_eq!(ir.listen_port, Some(6001));
         assert_eq!(
-            ir.servers.as_ref().and_then(|m| m.get("/")).map(String::as_str),
+            ir.servers
+                .as_ref()
+                .and_then(|m| m.get("/"))
+                .map(String::as_str),
             Some("ss-in")
         );
 

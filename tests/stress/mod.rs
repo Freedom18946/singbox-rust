@@ -337,9 +337,7 @@ impl ResourceSample {
         use std::process::Command;
 
         let pid = std::process::id();
-        let output = Command::new("lsof")
-            .args(&["-p", &pid.to_string()])
-            .output();
+        let output = Command::new("lsof").args(["-p", &pid.to_string()]).output();
 
         match output {
             Ok(output) => {

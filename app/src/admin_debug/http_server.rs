@@ -1113,6 +1113,26 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
 
     Ok(())
 }
+fn admin_limits() -> (usize, usize, u64, u64) {
+    // returns (max_header_bytes, max_body_bytes, firstline_timeout_ms, read_timeout_ms)
+    let max_h = std::env::var("SB_ADMIN_MAX_HEADER_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(64 * 1024);
+    let max_b = std::env::var("SB_ADMIN_MAX_BODY_BYTES")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2 * 1024 * 1024);
+    let firstline = std::env::var("SB_ADMIN_FIRSTLINE_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(3000);
+    let read_timeout = std::env::var("SB_ADMIN_READ_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(4000);
+    (max_h, max_b, firstline, read_timeout)
+}
 
 #[cfg(test)]
 #[cfg(feature = "admin_tests")]
@@ -1341,24 +1361,4 @@ mod tests {
 
         std::env::remove_var("SB_ADMIN_HMAC_SECRET");
     }
-}
-fn admin_limits() -> (usize, usize, u64, u64) {
-    // returns (max_header_bytes, max_body_bytes, firstline_timeout_ms, read_timeout_ms)
-    let max_h = std::env::var("SB_ADMIN_MAX_HEADER_BYTES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(64 * 1024);
-    let max_b = std::env::var("SB_ADMIN_MAX_BODY_BYTES")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(2 * 1024 * 1024);
-    let firstline = std::env::var("SB_ADMIN_FIRSTLINE_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(3000);
-    let read_timeout = std::env::var("SB_ADMIN_READ_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(4000);
-    (max_h, max_b, firstline, read_timeout)
 }

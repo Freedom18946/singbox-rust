@@ -141,7 +141,12 @@ fn first_byte_timeout_closes_conn() {
             assert!(text.contains("\"error\""));
             assert!(text.contains("\"detail\""));
         }
-        Err(e) if matches!(e.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock) => {
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            ) =>
+        {
             panic!("connection still open without response after first-byte timeout");
         }
         Err(_) => {

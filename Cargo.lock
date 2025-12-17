@@ -6589,6 +6589,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha1",
  "sha2 0.10.9",
  "smallvec",
  "smoltcp",

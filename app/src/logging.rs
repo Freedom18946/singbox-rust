@@ -281,7 +281,6 @@ where
             if let Some(sampling) = &config.sampling {
                 if !should_sample(metadata.target(), sampling) {
                     // Rate limit exceeded; skip event
-                    return;
                 }
             }
         }

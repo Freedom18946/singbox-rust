@@ -602,392 +602,393 @@ pub fn router_build_index_from_str(
             if line.is_empty() {
                 continue;
             }
-        // R5: let 变量定义
-        if let Some(rest) = line.strip_prefix("let:") {
-            let (name, val) = match rest.split_once('=') {
-                Some((n, v)) => (n.trim(), v.trim()),
-                None => continue, // 忽略空定义
-            };
-            if !is_valid_var_name(name) {
-                #[cfg(feature = "metrics")]
-                incr_counter("router_rules_invalid_total", &[("reason", "bad_var_name")]);
-                return Err(BuildError::Invalid(InvalidReason::BadVarName));
+            // R5: let 变量定义
+            if let Some(rest) = line.strip_prefix("let:") {
+                let (name, val) = match rest.split_once('=') {
+                    Some((n, v)) => (n.trim(), v.trim()),
+                    None => continue, // 忽略空定义
+                };
+                if !is_valid_var_name(name) {
+                    #[cfg(feature = "metrics")]
+                    incr_counter("router_rules_invalid_total", &[("reason", "bad_var_name")]);
+                    return Err(BuildError::Invalid(InvalidReason::BadVarName));
+                }
+                vars.insert(name.to_string(), v_unquote(val).to_string());
+                continue;
             }
-            vars.insert(name.to_string(), v_unquote(val).to_string());
-            continue;
-        }
 
-        // 在本行进行变量替换：
-        // - $NAME
-        // - ${NAME:-default}  （R10 新增；default 可含空格，直至右花括号）
-        let line = expand_vars_on_line(line, &vars);
+            // 在本行进行变量替换：
+            // - $NAME
+            // - ${NAME:-default}  （R10 新增；default 可含空格，直至右花括号）
+            let line = expand_vars_on_line(line, &vars);
 
-        // 先处理 default:... 这种不含 '=' 的形式（兼容 normalize 的写法）
-        if let Some(rest) = line.strip_prefix("default:") {
-            let v = rest.trim();
-            if v.is_empty() {
+            // 先处理 default:... 这种不含 '=' 的形式（兼容 normalize 的写法）
+            if let Some(rest) = line.strip_prefix("default:") {
+                let v = rest.trim();
+                if v.is_empty() {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("router_rules_invalid_total", "reason"=>"empty_decision")
+                        .increment(1);
+                    return Err(BuildError::Invalid(InvalidReason::EmptyDecision));
+                }
+                default_seen = true;
+                default = Some(intern_dec(v));
+                continue;
+            }
+
+            // 形如： kind:pattern=decision   或   default=decision
+            let mut it = line.splitn(2, '=');
+            let left = it.next().unwrap_or("").trim();
+            let decision = it.next().unwrap_or("").trim();
+            if decision.is_empty() {
                 #[cfg(feature = "metrics")]
                 metrics::counter!("router_rules_invalid_total", "reason"=>"empty_decision")
                     .increment(1);
                 return Err(BuildError::Invalid(InvalidReason::EmptyDecision));
             }
-            default_seen = true;
-            default = Some(intern_dec(v));
-            continue;
-        }
+            if has_illegal_chars(decision) {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
+                    .increment(1);
+                return Err(BuildError::Invalid(InvalidReason::InvalidChar));
+            }
+            if count >= max {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("router_rules_invalid_total", "reason"=>"overflow").increment(1);
+                return Err(BuildError::Invalid(InvalidReason::Overflow));
+            }
 
-        // 形如： kind:pattern=decision   或   default=decision
-        let mut it = line.splitn(2, '=');
-        let left = it.next().unwrap_or("").trim();
-        let decision = it.next().unwrap_or("").trim();
-        if decision.is_empty() {
-            #[cfg(feature = "metrics")]
-            metrics::counter!("router_rules_invalid_total", "reason"=>"empty_decision")
-                .increment(1);
-            return Err(BuildError::Invalid(InvalidReason::EmptyDecision));
-        }
-        if has_illegal_chars(decision) {
-            #[cfg(feature = "metrics")]
-            metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char").increment(1);
-            return Err(BuildError::Invalid(InvalidReason::InvalidChar));
-        }
-        if count >= max {
-            #[cfg(feature = "metrics")]
-            metrics::counter!("router_rules_invalid_total", "reason"=>"overflow").increment(1);
-            return Err(BuildError::Invalid(InvalidReason::Overflow));
-        }
+            // 对 IPv6 友好：只在第一个 ':' 处分割 kind 与 pattern
+            let mut it2 = left.splitn(2, ':');
+            let kind = strip_bom(it2.next().unwrap_or("")).trim();
+            let pat = strip_bom(it2.next().unwrap_or("")).trim();
 
-        // 对 IPv6 友好：只在第一个 ':' 处分割 kind 与 pattern
-        let mut it2 = left.splitn(2, ':');
-        let kind = strip_bom(it2.next().unwrap_or("")).trim();
-        let pat = strip_bom(it2.next().unwrap_or("")).trim();
-
-        match kind {
-            "exact" => {
-                if pat.is_empty() {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"empty_host")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                if has_illegal_chars(pat) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::InvalidChar));
-                }
-                let host_norm = normalize_host(pat);
-                if !seen_exact.insert(host_norm.clone()) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"dup_exact")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::DupExact));
-                }
-                let dec = decision_intern::intern_decision(decision.trim());
-                exact.insert(host_norm, dec);
-                count += 1;
-            }
-            #[cfg(feature = "router_keyword")]
-            "keyword" => {
-                // keyword:foo=decision
-                if pat.is_empty() {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"empty_host")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                let kw = keyword::normalize_keyword(pat);
-                if has_illegal_chars(&kw) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::InvalidChar));
-                }
-                keyword_rules.push((kw, decision.to_string()));
-                count += 1;
-            }
-            "suffix" => {
-                if pat.is_empty() {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"empty_host")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                if has_illegal_chars(pat) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::InvalidChar));
-                }
-                let key = normalize_host(pat.trim_start_matches('.'));
-                if !seen_suffix.insert(key.clone()) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"dup_suffix")
-                        .increment(1);
-                    // first-wins：跳过重复
-                } else {
-                    suffix.push((key.clone(), intern_dec(decision)));
-                    // 建立精确尾段直查索引（基于标签边界）
-                    suffix_map.insert(key, intern_dec(decision));
-                }
-                count += 1;
-            }
-            "cidr4" => {
-                let mut it = pat.split('/');
-                let ip = it
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .parse::<Ipv4Addr>()
-                    .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
-                let mask = it
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .parse::<u8>()
-                    .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
-                if mask > 32 {
-                    return Err(BuildError::Invalid(InvalidReason::InvalidCidr));
-                }
-                let net = Ipv4Net { net: ip, mask };
-                let dec = intern_dec(decision);
-                cidr4.push((net, dec));
-                buckets4[mask as usize].push((net, dec));
-                count += 1;
-            }
-            "cidr6" => {
-                let mut it = pat.split('/');
-                let ip = it
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .parse::<Ipv6Addr>()
-                    .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
-                let mask = it
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .parse::<u8>()
-                    .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
-                if mask > 128 {
-                    return Err(BuildError::Invalid(InvalidReason::InvalidCidr));
-                }
-                let net = Ipv6Net { net: ip, mask };
-                let dec = intern_dec(decision);
-                cidr6.push((net, dec));
-                buckets6[mask as usize].push((net, dec));
-                count += 1;
-            }
-            "geoip" => {
-                if pat.len() != 2 || !pat.chars().all(|c| c.is_ascii_alphabetic()) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_geoip")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::BadGeoip));
-                }
-                geoip.push((pat.to_uppercase(), intern_dec(decision)));
-                count += 1;
-            }
-            "geosite" => {
-                if pat.is_empty() || has_illegal_chars(pat) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_geosite")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::BadGeosite));
-                }
-                geosite.push((pat.to_lowercase(), intern_dec(decision)));
-                count += 1;
-            }
-            "wifi_ssid" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                wifi_ssid.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "wifi_bssid" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                wifi_bssid.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "rule_set" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                rule_set.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "process" | "process_name" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                process.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "process_path" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                process_path.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "protocol" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                protocol.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "network" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                network.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "source" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                source.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "dest" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                dest.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "user_agent" => {
-                if pat.is_empty() {
-                    return Err(BuildError::Invalid(InvalidReason::EmptyHost));
-                }
-                user_agent.push((pat.to_string(), intern_dec(decision)));
-                count += 1;
-            }
-            "port" => {
-                // port:443=proxy
-                let p: u16 = pat.parse().map_err(|_| {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_port")
-                        .increment(1);
-                    BuildError::Invalid(InvalidReason::BadPort)
-                })?;
-                if !seen_port.insert(p) {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"dup_port")
-                        .increment(1);
-                } else {
-                    port_rules.insert(p, intern_dec(decision));
-                }
-                count += 1;
-            }
-            "transport" => {
-                // transport:tcp=reject / transport:udp=proxy
-                let t = pat.to_ascii_lowercase();
-                match t.as_str() {
-                    "tcp" => transport_tcp = Some(intern_dec(decision)),
-                    "udp" => transport_udp = Some(intern_dec(decision)),
-                    _ => {
+            match kind {
+                "exact" => {
+                    if pat.is_empty() {
                         #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"empty_host")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    if has_illegal_chars(pat) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::InvalidChar));
+                    }
+                    let host_norm = normalize_host(pat);
+                    if !seen_exact.insert(host_norm.clone()) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"dup_exact")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::DupExact));
+                    }
+                    let dec = decision_intern::intern_decision(decision.trim());
+                    exact.insert(host_norm, dec);
+                    count += 1;
+                }
+                #[cfg(feature = "router_keyword")]
+                "keyword" => {
+                    // keyword:foo=decision
+                    if pat.is_empty() {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"empty_host")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    let kw = keyword::normalize_keyword(pat);
+                    if has_illegal_chars(&kw) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::InvalidChar));
+                    }
+                    keyword_rules.push((kw, decision.to_string()));
+                    count += 1;
+                }
+                "suffix" => {
+                    if pat.is_empty() {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"empty_host")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    if has_illegal_chars(pat) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"invalid_char")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::InvalidChar));
+                    }
+                    let key = normalize_host(pat.trim_start_matches('.'));
+                    if !seen_suffix.insert(key.clone()) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"dup_suffix")
+                            .increment(1);
+                        // first-wins：跳过重复
+                    } else {
+                        suffix.push((key.clone(), intern_dec(decision)));
+                        // 建立精确尾段直查索引（基于标签边界）
+                        suffix_map.insert(key, intern_dec(decision));
+                    }
+                    count += 1;
+                }
+                "cidr4" => {
+                    let mut it = pat.split('/');
+                    let ip = it
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .parse::<Ipv4Addr>()
+                        .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
+                    let mask = it
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .parse::<u8>()
+                        .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
+                    if mask > 32 {
+                        return Err(BuildError::Invalid(InvalidReason::InvalidCidr));
+                    }
+                    let net = Ipv4Net { net: ip, mask };
+                    let dec = intern_dec(decision);
+                    cidr4.push((net, dec));
+                    buckets4[mask as usize].push((net, dec));
+                    count += 1;
+                }
+                "cidr6" => {
+                    let mut it = pat.split('/');
+                    let ip = it
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .parse::<Ipv6Addr>()
+                        .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
+                    let mask = it
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .parse::<u8>()
+                        .map_err(|_| BuildError::Invalid(InvalidReason::InvalidCidr))?;
+                    if mask > 128 {
+                        return Err(BuildError::Invalid(InvalidReason::InvalidCidr));
+                    }
+                    let net = Ipv6Net { net: ip, mask };
+                    let dec = intern_dec(decision);
+                    cidr6.push((net, dec));
+                    buckets6[mask as usize].push((net, dec));
+                    count += 1;
+                }
+                "geoip" => {
+                    if pat.len() != 2 || !pat.chars().all(|c| c.is_ascii_alphabetic()) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_geoip")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::BadGeoip));
+                    }
+                    geoip.push((pat.to_uppercase(), intern_dec(decision)));
+                    count += 1;
+                }
+                "geosite" => {
+                    if pat.is_empty() || has_illegal_chars(pat) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_geosite")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::BadGeosite));
+                    }
+                    geosite.push((pat.to_lowercase(), intern_dec(decision)));
+                    count += 1;
+                }
+                "wifi_ssid" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    wifi_ssid.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "wifi_bssid" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    wifi_bssid.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "rule_set" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    rule_set.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "process" | "process_name" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    process.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "process_path" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    process_path.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "protocol" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    protocol.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "network" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    network.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "source" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    source.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "dest" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    dest.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "user_agent" => {
+                    if pat.is_empty() {
+                        return Err(BuildError::Invalid(InvalidReason::EmptyHost));
+                    }
+                    user_agent.push((pat.to_string(), intern_dec(decision)));
+                    count += 1;
+                }
+                "port" => {
+                    // port:443=proxy
+                    let p: u16 = pat.parse().map_err(|_| {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_port")
+                            .increment(1);
+                        BuildError::Invalid(InvalidReason::BadPort)
+                    })?;
+                    if !seen_port.insert(p) {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"dup_port")
+                            .increment(1);
+                    } else {
+                        port_rules.insert(p, intern_dec(decision));
+                    }
+                    count += 1;
+                }
+                "transport" => {
+                    // transport:tcp=reject / transport:udp=proxy
+                    let t = pat.to_ascii_lowercase();
+                    match t.as_str() {
+                        "tcp" => transport_tcp = Some(intern_dec(decision)),
+                        "udp" => transport_udp = Some(intern_dec(decision)),
+                        _ => {
+                            #[cfg(feature = "metrics")]
                         metrics::counter!("router_rules_invalid_total", "reason"=>"bad_transport")
                             .increment(1);
-                        return Err(BuildError::Invalid(InvalidReason::BadTransport));
+                            return Err(BuildError::Invalid(InvalidReason::BadTransport));
+                        }
                     }
+                    count += 1;
                 }
-                count += 1;
-            }
-            "portrange" => {
-                // portrange:1000-2000=proxy
-                let mut it = pat.splitn(2, '-');
-                let a = it.next().unwrap_or_default();
-                let b = it.next().unwrap_or_default();
-                if a.is_empty() || b.is_empty() {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::BadPortRange));
-                }
-                let s: u16 = a.parse().map_err(|_| {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
-                        .increment(1);
-                    BuildError::Invalid(InvalidReason::BadPortRange)
-                })?;
-                let e: u16 = b.parse().map_err(|_| {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
-                        .increment(1);
-                    BuildError::Invalid(InvalidReason::BadPortRange)
-                })?;
-                if e < s {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
-                        .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::BadPortRange));
-                }
-                port_ranges.push((s, e, intern_dec(decision)));
-                count += 1;
-            }
-            "portset" => {
-                // portset:80,443,8443=proxy
-                let mut any = false;
-                for tok in pat.split(',') {
-                    let t = tok.trim();
-                    if t.is_empty() {
-                        continue;
+                "portrange" => {
+                    // portrange:1000-2000=proxy
+                    let mut it = pat.splitn(2, '-');
+                    let a = it.next().unwrap_or_default();
+                    let b = it.next().unwrap_or_default();
+                    if a.is_empty() || b.is_empty() {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::BadPortRange));
                     }
-                    match t.parse::<u16>() {
-                        Ok(p) => {
-                            if seen_port.insert(p) {
-                                port_rules.insert(p, intern_dec(decision));
-                                any = true;
-                            } else {
-                                #[cfg(feature="metrics")] metrics::counter!("router_rules_invalid_total", "reason"=>"dup_port").increment(1);
+                    let s: u16 = a.parse().map_err(|_| {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
+                            .increment(1);
+                        BuildError::Invalid(InvalidReason::BadPortRange)
+                    })?;
+                    let e: u16 = b.parse().map_err(|_| {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
+                            .increment(1);
+                        BuildError::Invalid(InvalidReason::BadPortRange)
+                    })?;
+                    if e < s {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portrange")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::BadPortRange));
+                    }
+                    port_ranges.push((s, e, intern_dec(decision)));
+                    count += 1;
+                }
+                "portset" => {
+                    // portset:80,443,8443=proxy
+                    let mut any = false;
+                    for tok in pat.split(',') {
+                        let t = tok.trim();
+                        if t.is_empty() {
+                            continue;
+                        }
+                        match t.parse::<u16>() {
+                            Ok(p) => {
+                                if seen_port.insert(p) {
+                                    port_rules.insert(p, intern_dec(decision));
+                                    any = true;
+                                } else {
+                                    #[cfg(feature="metrics")] metrics::counter!("router_rules_invalid_total", "reason"=>"dup_port").increment(1);
+                                }
+                            }
+                            Err(_) => {
+                                #[cfg(feature="metrics")] metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portset").increment(1);
+                                return Err(BuildError::Invalid(InvalidReason::BadPortSet));
                             }
                         }
-                        Err(_) => {
-                            #[cfg(feature="metrics")] metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portset").increment(1);
-                            return Err(BuildError::Invalid(InvalidReason::BadPortSet));
-                        }
+                    }
+                    if any {
+                        count += 1;
+                    } else {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portset")
+                            .increment(1);
+                        return Err(BuildError::Invalid(InvalidReason::BadPortSet));
                     }
                 }
-                if any {
-                    count += 1;
-                } else {
+                "default" => {
+                    // default=decision；若同行还有内容，现已在分片阶段切开，不会拼串
+                    if default_seen {
+                        #[cfg(feature = "metrics")]
+                        metrics::counter!("router_rules_invalid_total", "reason"=>"dup_default")
+                            .increment(1);
+                        eprintln!("router rule: duplicate default (last-wins)");
+                    }
+                    default_seen = true;
+                    default = Some(intern_dec(decision)); // last-wins
+                }
+                _ => {
+                    // 容错：未知 kind 计数并忽略，不中断构建
                     #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"bad_portset")
+                    metrics::counter!("router_rules_invalid_total", "reason"=>"unknown_kind")
                         .increment(1);
-                    return Err(BuildError::Invalid(InvalidReason::BadPortSet));
+                    eprintln!("router rule: unknown kind `{}` -> ignored", kind);
+                    continue;
                 }
             }
-            "default" => {
-                // default=decision；若同行还有内容，现已在分片阶段切开，不会拼串
-                if default_seen {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("router_rules_invalid_total", "reason"=>"dup_default")
-                        .increment(1);
-                    eprintln!("router rule: duplicate default (last-wins)");
-                }
-                default_seen = true;
-                default = Some(intern_dec(decision)); // last-wins
+            count += 1;
+            if count > max {
+                break;
             }
-            _ => {
-                // 容错：未知 kind 计数并忽略，不中断构建
-                #[cfg(feature = "metrics")]
-                metrics::counter!("router_rules_invalid_total", "reason"=>"unknown_kind")
-                    .increment(1);
-                eprintln!("router rule: unknown kind `{}` -> ignored", kind);
-                continue;
-            }
-        }
-        count += 1;
-        if count > max {
-            break;
-        }
         }
     }
 
@@ -1949,7 +1950,8 @@ pub async fn spawn_rules_hot_reload(
                     let new_sum = *hasher.finalize().as_bytes();
                     if new_sum == cur_sum {
                         #[cfg(feature = "metrics")]
-                        metrics::counter!("router_rules_reload_total", "result"=>"noop").increment(1);
+                        metrics::counter!("router_rules_reload_total", "result"=>"noop")
+                            .increment(1);
                     } else {
                         #[cfg(feature = "metrics")]
                         let build_start = Instant::now();
@@ -1964,8 +1966,10 @@ pub async fn spawn_rules_hot_reload(
                                 idx_cloned.gen = prev_gen.saturating_add(1);
                                 #[cfg(feature = "metrics")]
                                 {
-                                    metrics::gauge!("router_rules_generation").set(idx_cloned.gen as f64);
-                                    metrics::histogram!("router_rules_reload_ms_bucket").record(elapsed);
+                                    metrics::gauge!("router_rules_generation")
+                                        .set(idx_cloned.gen as f64);
+                                    metrics::histogram!("router_rules_reload_ms_bucket")
+                                        .record(elapsed);
                                     // reload 后再次写规模（便于观察变化）
                                     metrics::gauge!("router_rules_size", "kind"=>"exact")
                                         .set(idx_cloned.exact.len() as f64);
@@ -1974,8 +1978,10 @@ pub async fn spawn_rules_hot_reload(
                                     metrics::gauge!("router_rules_size", "kind"=>"port")
                                         .set(idx_cloned.port_rules.len() as f64);
                                     let tcnt = (idx_cloned.transport_tcp.is_some() as i32
-                                        + idx_cloned.transport_udp.is_some() as i32) as f64;
-                                    metrics::gauge!("router_rules_size", "kind"=>"transport").set(tcnt);
+                                        + idx_cloned.transport_udp.is_some() as i32)
+                                        as f64;
+                                    metrics::gauge!("router_rules_size", "kind"=>"transport")
+                                        .set(tcnt);
                                     metrics::gauge!("router_rules_size", "kind"=>"cidr4")
                                         .set(idx_cloned.cidr4.len() as f64);
                                     metrics::gauge!("router_rules_size", "kind"=>"cidr6")
@@ -2238,7 +2244,8 @@ struct RuntimeOverride {
     default: Option<&'static str>,
 }
 
-static RUNTIME_OVERRIDE_CACHE: Lazy<RwLock<Option<(String, Arc<RuntimeOverride>)>>> =
+type RuntimeOverrideCacheEntry = Option<(String, Arc<RuntimeOverride>)>;
+static RUNTIME_OVERRIDE_CACHE: Lazy<RwLock<RuntimeOverrideCacheEntry>> =
     Lazy::new(|| RwLock::new(None));
 
 fn parse_runtime_override(raw: &str) -> RuntimeOverride {
@@ -2284,7 +2291,9 @@ fn parse_runtime_override(raw: &str) -> RuntimeOverride {
             "cidr4" => {
                 let mut it = pat.split('/');
                 if let (Some(ip), Some(mask)) = (it.next(), it.next()) {
-                    if let (Ok(net), Ok(mask)) = (ip.trim().parse::<Ipv4Addr>(), mask.trim().parse::<u8>()) {
+                    if let (Ok(net), Ok(mask)) =
+                        (ip.trim().parse::<Ipv4Addr>(), mask.trim().parse::<u8>())
+                    {
                         if mask <= 32 {
                             cidr4_buckets[mask as usize].push((Ipv4Net { net, mask }, v));
                         }
@@ -2294,7 +2303,9 @@ fn parse_runtime_override(raw: &str) -> RuntimeOverride {
             "cidr6" => {
                 let mut it = pat.split('/');
                 if let (Some(ip), Some(mask)) = (it.next(), it.next()) {
-                    if let (Ok(net), Ok(mask)) = (ip.trim().parse::<Ipv6Addr>(), mask.trim().parse::<u8>()) {
+                    if let (Ok(net), Ok(mask)) =
+                        (ip.trim().parse::<Ipv6Addr>(), mask.trim().parse::<u8>())
+                    {
                         if mask <= 128 {
                             cidr6_buckets[mask as usize].push((Ipv6Net { net, mask }, v));
                         }

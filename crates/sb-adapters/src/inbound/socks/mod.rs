@@ -25,7 +25,6 @@ use tracing::{debug, info, warn};
 use once_cell::sync::OnceCell;
 use sb_core::adapter::InboundService;
 use sb_core::outbound::health as ob_health;
-use sb_core::outbound::OutboundRegistry;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,

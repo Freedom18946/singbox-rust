@@ -73,4 +73,3 @@ pub trait ManagedSSMServer: Send + Sync {
     /// * `Err(String)` with error message on failure
     fn update_users(&self, users: Vec<String>, passwords: Vec<String>) -> Result<(), String>;
 }
-

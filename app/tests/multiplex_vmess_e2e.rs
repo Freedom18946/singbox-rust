@@ -410,7 +410,7 @@ async fn test_vmess_multiplex_security_levels() {
         let mut stream = connector
             .dial(target, DialOpts::default())
             .await
-            .expect(&format!("Failed to dial with {:?}", security));
+            .unwrap_or_else(|_| panic!("Failed to dial with {:?}", security));
 
         let test_data = format!("Security: {:?}", security);
         stream.write_all(test_data.as_bytes()).await.unwrap();
@@ -460,7 +460,7 @@ async fn test_vmess_multiplex_alter_id_variations() {
         let mut stream = connector
             .dial(target, DialOpts::default())
             .await
-            .expect(&format!("Failed to dial with alter_id {}", alter_id));
+            .unwrap_or_else(|_| panic!("Failed to dial with alter_id {}", alter_id));
 
         let test_data = format!("AlterID: {}", alter_id);
         stream.write_all(test_data.as_bytes()).await.unwrap();

@@ -46,6 +46,7 @@ pub fn run(args: VersionArgs) -> Result<()> {
 }
 
 /// Collect enabled features from cargo feature flags
+#[must_use]
 pub fn collect_features() -> Vec<String> {
     let mut features = Vec::new();
 

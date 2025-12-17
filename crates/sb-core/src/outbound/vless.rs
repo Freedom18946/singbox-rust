@@ -6,9 +6,9 @@
 #[cfg(feature = "out_vless")]
 use async_trait::async_trait;
 #[cfg(feature = "out_vless")]
-use std::io;
-#[cfg(feature = "out_vless")]
 use sb_tls::{UtlsConfig, UtlsFingerprint};
+#[cfg(feature = "out_vless")]
+use std::io;
 #[cfg(feature = "out_vless")]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(feature = "out_vless")]
@@ -226,9 +226,9 @@ impl crate::outbound::traits::OutboundConnectorIo for VlessOutbound {
 
         let chain_opt = self.config.transport.as_deref();
         let tls_override = if let Some(fp_name) = self.config.utls_fingerprint.as_deref() {
-            let fp = fp_name
-                .parse::<UtlsFingerprint>()
-                .map_err(|e| crate::error::SbError::other(format!("invalid uTLS fingerprint: {e}")))?;
+            let fp = fp_name.parse::<UtlsFingerprint>().map_err(|e| {
+                crate::error::SbError::other(format!("invalid uTLS fingerprint: {e}"))
+            })?;
             let sni = self
                 .config
                 .tls_sni

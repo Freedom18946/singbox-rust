@@ -40,8 +40,7 @@ mod tests {
             std::fs::write(key_file.path(), key_pem).unwrap();
 
             let mut roots = rustls::RootCertStore::empty();
-            let cert_der =
-                rustls::pki_types::CertificateDer::from(cert.cert.der().to_vec());
+            let cert_der = rustls::pki_types::CertificateDer::from(cert.cert.der().to_vec());
             roots.add(cert_der).expect("add root");
 
             let client_config = rustls::ClientConfig::builder()
@@ -117,9 +116,8 @@ mod tests {
             .expect("server info");
         match server_info_frame {
             DerpFrame::ServerInfo { encrypted_info } => {
-                let clear =
-                    open_from(&client_private_key, &server_public_key, &encrypted_info)
-                        .expect("open server info");
+                let clear = open_from(&client_private_key, &server_public_key, &encrypted_info)
+                    .expect("open server info");
                 let clear = String::from_utf8_lossy(&clear);
                 assert!(
                     clear.contains(&format!("\"version\":{}", PROTOCOL_VERSION)),

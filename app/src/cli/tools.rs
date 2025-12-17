@@ -572,37 +572,6 @@ fn compute_ntp_offset(t0_ntp_seconds: f64, packet: &[u8]) -> f64 {
     f64::midpoint(t2n - t1, t3n - t0n)
 }
 
-#[cfg(test)]
-mod ntp_tests {
-    use super::*;
-
-    // Helper to write a 32.32 fixed-point NTP timestamp
-    fn write_ts(buf: &mut [u8], secs: u64, frac: u32) {
-        let s = (secs as u32).to_be_bytes();
-        let f = frac.to_be_bytes();
-        buf[..4].copy_from_slice(&s);
-        buf[4..8].copy_from_slice(&f);
-    }
-
-    #[test]
-    fn compute_offset_basic() {
-        // Construct minimal 48-byte NTP response
-        let mut pkt = [0u8; 48];
-        // Choose an arbitrary base time in NTP seconds (e.g., 3900000000)
-        let base_secs = 3_900_000_000u64;
-        // Server receive and transmit times are base+0.2s
-        let frac_0p2 = ((0.2f64) * (u32::MAX as f64 + 1.0)) as u32;
-        write_ts(&mut pkt[32..40], base_secs, frac_0p2); // t2
-        write_ts(&mut pkt[40..48], base_secs, frac_0p2); // t3
-
-        // Local now equals base time
-        let t0 = base_secs as f64;
-        let off = compute_ntp_offset(t0, &pkt);
-        // With t1≈0, offset ≈ ((t2-0)+(t3-t0))/2 = (base+0.2 + (base+0.2 - base))/2 = ~0.2
-        assert!(off > 0.19 && off < 0.21, "off={off}");
-    }
-}
-
 #[cfg(feature = "tools_http3")]
 async fn fetch_http3(url: String, output: Option<PathBuf>) -> Result<()> {
     // Use reqwest with http3 feature; if server supports H3, it will negotiate H3.
@@ -701,4 +670,35 @@ async fn dns_lookup(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod ntp_tests {
+    use super::*;
+
+    // Helper to write a 32.32 fixed-point NTP timestamp
+    fn write_ts(buf: &mut [u8], secs: u64, frac: u32) {
+        let s = (secs as u32).to_be_bytes();
+        let f = frac.to_be_bytes();
+        buf[..4].copy_from_slice(&s);
+        buf[4..8].copy_from_slice(&f);
+    }
+
+    #[test]
+    fn compute_offset_basic() {
+        // Construct minimal 48-byte NTP response
+        let mut pkt = [0u8; 48];
+        // Choose an arbitrary base time in NTP seconds (e.g., 3900000000)
+        let base_secs = 3_900_000_000u64;
+        // Server receive and transmit times are base+0.2s
+        let frac_0p2 = ((0.2f64) * (u32::MAX as f64 + 1.0)) as u32;
+        write_ts(&mut pkt[32..40], base_secs, frac_0p2); // t2
+        write_ts(&mut pkt[40..48], base_secs, frac_0p2); // t3
+
+        // Local now equals base time
+        let t0 = base_secs as f64;
+        let off = compute_ntp_offset(t0, &pkt);
+        // With t1≈0, offset ≈ ((t2-0)+(t3-t0))/2 = (base+0.2 + (base+0.2 - base))/2 = ~0.2
+        assert!(off > 0.19 && off < 0.21, "off={off}");
+    }
 }

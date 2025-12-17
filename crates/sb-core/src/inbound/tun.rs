@@ -232,6 +232,11 @@ impl SessionTable {
         self.sessions.read().unwrap().len()
     }
 
+    /// Check if session table is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Clean up expired sessions
     pub fn cleanup_expired(&self) -> usize {
         let mut sessions = self.sessions.write().unwrap();
@@ -616,6 +621,7 @@ impl TunInboundService {
 
             // Periodic session cleanup
             cleanup_counter += 1;
+            #[allow(clippy::manual_is_multiple_of)]
             if cleanup_counter % 10000 == 0 {
                 let evicted = self.sessions.cleanup_expired();
                 if evicted > 0 {

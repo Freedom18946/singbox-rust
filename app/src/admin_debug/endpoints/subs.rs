@@ -1518,6 +1518,35 @@ pub async fn handle(path_q: &str, sock: &mut (impl AsyncWriteExt + Unpin)) -> st
     }
 }
 
+/// 解析 Cache-Control: max-age
+#[cfg(feature = "subs_http")]
+pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
+    use reqwest::header::CACHE_CONTROL;
+    let s = h.get(CACHE_CONTROL)?.to_str().ok()?;
+    for d in s.split(',') {
+        let d = d.trim();
+        if let Some(v) = d.strip_prefix("max-age=") {
+            if let Ok(n) = v.parse::<u64>() {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
+/// 在主路径成功后触发预取（200/304 且 max-age>=60）
+#[cfg(feature = "subs_http")]
+pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: Option<&String>) {
+    if let Some(ma) = cache_control_max_age(resp.headers()) {
+        if ma >= 60 {
+            let _ = crate::admin_debug::prefetch::enqueue_prefetch(
+                resp.url().as_str(),
+                response_etag.cloned(),
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "admin_tests")]
 mod tests {
@@ -1801,35 +1830,6 @@ mod tests {
             assert!(
                 available <= new_conc,
                 "Available permits should not exceed new concurrency limit"
-            );
-        }
-    }
-}
-
-/// 解析 Cache-Control: max-age
-#[cfg(feature = "subs_http")]
-pub fn cache_control_max_age(h: &reqwest::header::HeaderMap) -> Option<u64> {
-    use reqwest::header::CACHE_CONTROL;
-    let s = h.get(CACHE_CONTROL)?.to_str().ok()?;
-    for d in s.split(',') {
-        let d = d.trim();
-        if let Some(v) = d.strip_prefix("max-age=") {
-            if let Ok(n) = v.parse::<u64>() {
-                return Some(n);
-            }
-        }
-    }
-    None
-}
-
-/// 在主路径成功后触发预取（200/304 且 max-age>=60）
-#[cfg(feature = "subs_http")]
-pub(crate) fn maybe_enqueue_prefetch(resp: &reqwest::Response, response_etag: Option<&String>) {
-    if let Some(ma) = cache_control_max_age(resp.headers()) {
-        if ma >= 60 {
-            let _ = crate::admin_debug::prefetch::enqueue_prefetch(
-                resp.url().as_str(),
-                response_etag.cloned(),
             );
         }
     }

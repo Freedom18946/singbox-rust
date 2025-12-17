@@ -321,7 +321,7 @@ invalid_field: "test"
     let v: Json = serde_json::from_str(&stdout).unwrap();
 
     // Verify the report structure matches requirements
-    assert!(v.get("ok").and_then(|x| x.as_bool()).unwrap() == false);
+    assert!(!v.get("ok").and_then(|x| x.as_bool()).unwrap());
     assert!(v.get("file").and_then(|x| x.as_str()).is_some());
 
     let issues = v.get("issues").and_then(|x| x.as_array()).unwrap();

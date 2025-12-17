@@ -3,6 +3,7 @@
 //! Verifies that tools connect/run properly use adapter registry and can
 //! instantiate configured outbounds from config files.
 
+#[cfg(feature = "tools")]
 use assert_cmd::Command;
 use std::io::Write;
 use tempfile::NamedTempFile;

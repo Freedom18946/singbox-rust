@@ -290,6 +290,9 @@ impl WireGuardTransport {
     }
 }
 
+type ReadFuture = Pin<Box<dyn Future<Output = io::Result<Vec<u8>>> + Send>>;
+type WriteFuture = Pin<Box<dyn Future<Output = io::Result<usize>> + Send>>;
+
 /// WireGuard stream that provides AsyncRead/AsyncWrite over the tunnel.
 ///
 /// This uses a simple poll-based approach where reads/writes are performed
@@ -297,9 +300,9 @@ impl WireGuardTransport {
 pub struct WireGuardStream {
     transport: Arc<WireGuardInner>,
     /// Pending read future state
-    read_state: Option<Pin<Box<dyn Future<Output = io::Result<Vec<u8>>> + Send>>>,
+    read_state: Option<ReadFuture>,
     /// Pending write future state
-    write_state: Option<Pin<Box<dyn Future<Output = io::Result<usize>> + Send>>>,
+    write_state: Option<WriteFuture>,
 }
 
 impl WireGuardStream {

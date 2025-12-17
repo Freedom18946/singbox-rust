@@ -6,11 +6,11 @@
 //!
 //! Protocol v2 aligned with Tailscale DERP specification.
 
-use std::io::{self, Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use crypto_box::aead::rand_core::RngCore;
 use crypto_box::aead::{Aead, OsRng};
 use crypto_box::{PublicKey as CryptoBoxPublicKey, SalsaBox, SecretKey as CryptoBoxSecretKey};
+use std::io::{self, Read, Write};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -102,10 +102,7 @@ impl ClientInfoPayload {
             let start = s.find(&needle)?;
             let rest = &s[start + needle.len()..];
             let rest = rest.trim_start();
-            let digits: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect();
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
             if digits.is_empty() {
                 return None;
             }
@@ -279,8 +276,7 @@ pub fn open_from(
 
     let nonce = crypto_box::Nonce::clone_from_slice(&msgbox[..NONCE_LEN]);
     let ciphertext = &msgbox[NONCE_LEN..];
-    box_
-        .decrypt(&nonce, ciphertext)
+    box_.decrypt(&nonce, ciphertext)
         .map_err(|e| ProtocolError::Crypto(e.to_string()))
 }
 
@@ -531,7 +527,10 @@ impl DerpFrame {
                 writer.write_all(MAGIC)?;
                 writer.write_all(key)?;
             }
-            DerpFrame::ClientInfo { key, encrypted_info } => {
+            DerpFrame::ClientInfo {
+                key,
+                encrypted_info,
+            } => {
                 // 32B key + encrypted info (nonce + ciphertext)
                 let len = KEY_LEN + encrypted_info.len();
                 if len > MAX_INFO_LEN {
@@ -581,7 +580,11 @@ impl DerpFrame {
                 writer.write_all(key)?;
                 writer.write_all(&[*reason as u8])?;
             }
-            DerpFrame::PeerPresent { key, endpoint, flags } => {
+            DerpFrame::PeerPresent {
+                key,
+                endpoint,
+                flags,
+            } => {
                 // 32B key + optional 18B (16B IP + 2B port) + optional 1B flags
                 //
                 // Go DERP uses `netip.Addr.As16()` which yields an IPv4-mapped IPv6 address for v4
@@ -714,7 +717,10 @@ impl DerpFrame {
                 if encrypted_len > 0 {
                     reader.read_exact(&mut encrypted_info)?;
                 }
-                Ok(DerpFrame::ClientInfo { key, encrypted_info })
+                Ok(DerpFrame::ClientInfo {
+                    key,
+                    encrypted_info,
+                })
             }
             FrameType::ServerInfo => {
                 // Encrypted info (nonce + ciphertext)
@@ -777,7 +783,9 @@ impl DerpFrame {
                     let mut discard = vec![0u8; frame_len - 1];
                     reader.read_exact(&mut discard)?;
                 }
-                Ok(DerpFrame::NotePreferred { preferred: byte[0] != 0 })
+                Ok(DerpFrame::NotePreferred {
+                    preferred: byte[0] != 0,
+                })
             }
             FrameType::PeerGone => {
                 // 32B key + optional 1B reason
@@ -827,7 +835,8 @@ impl DerpFrame {
                         && ip_bytes[10] == 0xff
                         && ip_bytes[11] == 0xff
                     {
-                        let ipv4 = Ipv4Addr::new(ip_bytes[12], ip_bytes[13], ip_bytes[14], ip_bytes[15]);
+                        let ipv4 =
+                            Ipv4Addr::new(ip_bytes[12], ip_bytes[13], ip_bytes[14], ip_bytes[15]);
                         SocketAddr::new(IpAddr::V4(ipv4), port)
                     } else {
                         let ipv6 = Ipv6Addr::from(ip_bytes);
@@ -856,7 +865,11 @@ impl DerpFrame {
                     (None, 0)
                 };
 
-                Ok(DerpFrame::PeerPresent { key, endpoint, flags })
+                Ok(DerpFrame::PeerPresent {
+                    key,
+                    endpoint,
+                    flags,
+                })
             }
             FrameType::ForwardPacket => {
                 if frame_len < KEY_LEN * 2 {
@@ -965,7 +978,6 @@ impl DerpFrame {
             }
         }
     }
-
 
     /// Encode frame to bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -1084,16 +1096,19 @@ mod tests {
     #[test]
     fn test_client_info_roundtrip() {
         let key = [123u8; 32];
-        let frame = DerpFrame::ClientInfo { key, encrypted_info: vec![] };
+        let frame = DerpFrame::ClientInfo {
+            key,
+            encrypted_info: vec![],
+        };
 
         let bytes = frame.to_bytes().unwrap();
         let decoded = DerpFrame::from_bytes(&bytes).unwrap();
         assert_eq!(decoded, frame);
 
         // Also test with encrypted info
-        let frame_enc = DerpFrame::ClientInfo { 
-            key, 
-            encrypted_info: vec![1, 2, 3, 4, 5] 
+        let frame_enc = DerpFrame::ClientInfo {
+            key,
+            encrypted_info: vec![1, 2, 3, 4, 5],
         };
         let bytes_enc = frame_enc.to_bytes().unwrap();
         let decoded_enc = DerpFrame::from_bytes(&bytes_enc).unwrap();
@@ -1149,23 +1164,40 @@ mod tests {
         let key = [99u8; 32];
 
         // PeerGone with reason
-        let gone = DerpFrame::PeerGone { key, reason: PeerGoneReason::Disconnected };
+        let gone = DerpFrame::PeerGone {
+            key,
+            reason: PeerGoneReason::Disconnected,
+        };
         let gone_bytes = gone.to_bytes().unwrap();
         assert_eq!(DerpFrame::from_bytes(&gone_bytes).unwrap(), gone);
 
-        let gone_not_here = DerpFrame::PeerGone { key, reason: PeerGoneReason::NotHere };
+        let gone_not_here = DerpFrame::PeerGone {
+            key,
+            reason: PeerGoneReason::NotHere,
+        };
         let gone_not_here_bytes = gone_not_here.to_bytes().unwrap();
-        assert_eq!(DerpFrame::from_bytes(&gone_not_here_bytes).unwrap(), gone_not_here);
+        assert_eq!(
+            DerpFrame::from_bytes(&gone_not_here_bytes).unwrap(),
+            gone_not_here
+        );
 
         // PeerPresent with no endpoint
-        let present = DerpFrame::PeerPresent { key, endpoint: None, flags: 0 };
+        let present = DerpFrame::PeerPresent {
+            key,
+            endpoint: None,
+            flags: 0,
+        };
         let present_bytes = present.to_bytes().unwrap();
         assert_eq!(DerpFrame::from_bytes(&present_bytes).unwrap(), present);
 
         // PeerPresent with endpoint
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 12345);
-        let present_with_ep = DerpFrame::PeerPresent { key, endpoint: Some(addr), flags: 0x01 };
+        let present_with_ep = DerpFrame::PeerPresent {
+            key,
+            endpoint: Some(addr),
+            flags: 0x01,
+        };
         let present_with_ep_bytes = present_with_ep.to_bytes().unwrap();
         let decoded = DerpFrame::from_bytes(&present_with_ep_bytes).unwrap();
         assert_eq!(decoded, present_with_ep);
@@ -1190,17 +1222,24 @@ mod tests {
         assert_eq!(DerpFrame::from_bytes(&close_bytes).unwrap(), close);
 
         // Health
-        let health = DerpFrame::Health { message: "ok".to_string() };
+        let health = DerpFrame::Health {
+            message: "ok".to_string(),
+        };
         let health_bytes = health.to_bytes().unwrap();
         assert_eq!(DerpFrame::from_bytes(&health_bytes).unwrap(), health);
 
         // Restarting
-        let restart = DerpFrame::Restarting { reconnect_in_ms: 1000, try_for_ms: 30000 };
+        let restart = DerpFrame::Restarting {
+            reconnect_in_ms: 1000,
+            try_for_ms: 30000,
+        };
         let restart_bytes = restart.to_bytes().unwrap();
         assert_eq!(DerpFrame::from_bytes(&restart_bytes).unwrap(), restart);
 
         // ServerInfo
-        let info = DerpFrame::ServerInfo { encrypted_info: vec![10, 20, 30] };
+        let info = DerpFrame::ServerInfo {
+            encrypted_info: vec![10, 20, 30],
+        };
         let info_bytes = info.to_bytes().unwrap();
         assert_eq!(DerpFrame::from_bytes(&info_bytes).unwrap(), info);
     }
@@ -1217,8 +1256,7 @@ mod tests {
         assert!(!decoded.is_prober);
 
         // With mesh key
-        let mesh_key =
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let mesh_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
         let payload_mesh = ClientInfoPayload::new(PROTOCOL_VERSION as u32)
             .with_mesh_key(mesh_key)
             .with_can_ack_pings(true)

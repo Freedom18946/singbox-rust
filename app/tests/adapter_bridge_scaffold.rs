@@ -15,20 +15,18 @@ mod t_scaffold {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let echo_addr = l.local_addr().unwrap();
         std::thread::spawn(move || {
-            for c in l.incoming() {
-                if let Ok(mut s) = c {
-                    std::thread::spawn(move || {
-                        let mut buf = [0u8; 1024];
-                        loop {
-                            match s.read(&mut buf) {
-                                Ok(0) | Err(_) => break,
-                                Ok(n) => {
-                                    let _ = s.write_all(&buf[..n]);
-                                }
+            for mut s in l.incoming().flatten() {
+                std::thread::spawn(move || {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match s.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                let _ = s.write_all(&buf[..n]);
                             }
                         }
-                    });
-                }
+                    }
+                });
             }
         });
         // ir: one socks inbound + direct outbound

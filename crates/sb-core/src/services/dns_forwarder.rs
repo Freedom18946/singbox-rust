@@ -22,11 +22,7 @@ pub struct DnsForwarderService {
 
 impl DnsForwarderService {
     pub fn new(ir: &ServiceIR) -> Self {
-        let host = ir
-            .listen
-            .as_deref()
-            .unwrap_or("127.0.0.53")
-            .to_string();
+        let host = ir.listen.as_deref().unwrap_or("127.0.0.53").to_string();
         let port = ir.listen_port.unwrap_or(53);
         let addr_str = format!("{}:{}", host, port);
         let listen_addr = addr_str.parse().unwrap_or_else(|_| {

@@ -3,7 +3,6 @@
 /// This module abstracts platform-specific network monitoring capabilities.
 /// - Linux: Uses netlink sockets via rtnetlink
 /// - macOS/Windows: Stub implementations (TODO)
-
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -11,13 +10,29 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub enum NetworkEvent {
     /// A network interface was added or came online.
-    LinkUp { interface: String },
+    LinkUp {
+        /// Network interface name that came up.
+        interface: String,
+    },
     /// A network interface was removed or went offline.
-    LinkDown { interface: String },
+    LinkDown {
+        /// Network interface name that went down.
+        interface: String,
+    },
     /// An IP address was added to an interface.
-    AddressAdded { interface: String, address: String },
+    AddressAdded {
+        /// Network interface name.
+        interface: String,
+        /// IP address that was added.
+        address: String,
+    },
     /// An IP address was removed from an interface.
-    AddressRemoved { interface: String, address: String },
+    AddressRemoved {
+        /// Network interface name.
+        interface: String,
+        /// IP address that was removed.
+        address: String,
+    },
     /// Network route changed.
     RouteChanged,
     /// General network change (unspecified).
@@ -73,6 +88,7 @@ impl NetworkMonitor {
     }
 
     /// Notify all registered callbacks of a network event.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn notify(&self, event: NetworkEvent) {
         let callbacks = self.callbacks.read();
         for callback in callbacks.iter() {
@@ -101,7 +117,9 @@ impl NetworkMonitor {
     /// Start listening for network changes.
     /// On Linux, this spawns a background task to listen to netlink events.
     #[cfg(target_os = "linux")]
-    pub fn start(&self) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn start(
+        &self,
+    ) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error + Send + Sync>> {
         use std::sync::atomic::Ordering;
 
         if self.running.load(Ordering::SeqCst) {
@@ -135,6 +153,7 @@ impl NetworkMonitor {
         tracing::info!("NetworkMonitor stopped");
     }
 
+    /// Stop listening for network changes.
     #[cfg(not(target_os = "linux"))]
     pub fn stop(&self) {
         tracing::info!("NetworkMonitor stopped (stub)");
@@ -203,7 +222,9 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         // Second notification
-        monitor.notify(NetworkEvent::LinkUp { interface: "eth0".into() });
+        monitor.notify(NetworkEvent::LinkUp {
+            interface: "eth0".into(),
+        });
         assert_eq!(counter.load(Ordering::SeqCst), 2);
     }
 

@@ -6,9 +6,11 @@ use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use async_trait::async_trait;
 #[cfg(feature = "out_ss")]
 use chacha20poly1305::ChaCha20Poly1305;
+#[cfg(feature = "v2ray_transport")]
 use sb_transport::Dialer;
 #[cfg(feature = "out_ss")]
 use std::pin::Pin;
+#[cfg(feature = "v2ray_transport")]
 use std::sync::Arc;
 #[cfg(feature = "out_ss")]
 use std::task::{Context, Poll};
