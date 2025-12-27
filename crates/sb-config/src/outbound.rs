@@ -336,9 +336,11 @@ pub struct EchConfig {
 /// V2Ray 协议 (VMess, VLESS, Trojan) 的传输配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
+#[derive(Default)]
 pub enum TransportConfig {
     /// Direct TCP connection (default)
     /// 直接 TCP 连接（默认）
+    #[default]
     Tcp,
     /// WebSocket transport
     /// WebSocket 传输
@@ -384,11 +386,6 @@ pub enum TransportConfig {
     },
 }
 
-impl Default for TransportConfig {
-    fn default() -> Self {
-        Self::Tcp
-    }
-}
 
 fn default_ws_path() -> String {
     "/".to_string()

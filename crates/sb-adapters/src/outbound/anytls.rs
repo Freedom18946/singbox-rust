@@ -10,6 +10,7 @@ use anytls_rs::padding::PaddingFactory;
 use anytls_rs::session::Session;
 use anytls_rs::util::auth::hash_password;
 use bytes::Bytes;
+use rand::Rng;
 use sb_core::adapter::OutboundConnector;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -118,16 +119,19 @@ impl AnyTlsConnector {
 
         // We need to send padding length 0 for now as initial handshake
         // Or does AnyTLS require padding in handshake?
-        // Looking at inbound:
-        // reader.read_exact(&mut provided) (32 bytes)
-        // reader.read_exact(&mut padding_len) (2 bytes)
-        // reader.read_exact(&mut padding)
-
-        // So we must send padding length.
-        let padding_len: u16 = 0; // TODO: Implement random padding for handshake?
+        // Protocol: Client sends Hash(32) + PaddingLen(2) + Padding
+        
+        let mut rng = rand::thread_rng();
+        // Generate random padding length (0-255 bytes)
+        // This makes the handshake packet size variable, resisting traffic analysis
+        let padding_len: u16 = rng.gen_range(0..=255);
         writer.write_all(&padding_len.to_be_bytes()).await?;
 
-        // If we had padding, we would write it here.
+        if padding_len > 0 {
+            let mut padding = vec![0u8; padding_len as usize];
+            rng.fill(&mut padding[..]);
+            writer.write_all(&padding).await?;
+        }
 
         writer.flush().await?;
         Ok(())

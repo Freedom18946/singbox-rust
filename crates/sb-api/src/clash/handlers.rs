@@ -19,6 +19,8 @@ use axum::{
 use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
+use sb_core::outbound::{selector_group::SelectorGroup, OutboundImpl};
+use std::any::Any;
 
 // ===== Constants =====
 
@@ -88,34 +90,40 @@ fn convert_connection(conn: &crate::managers::Connection) -> Connection {
     }
 }
 
-/// Best-effort proxy type inference from a tag/name
-fn infer_proxy_type(name: &str) -> &'static str {
+/// Infer proxy type from OutboundImpl
+fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
+    if let Some(outbound) = impl_ {
+        return match outbound {
+            OutboundImpl::Direct => PROXY_TYPE_DIRECT.to_string(),
+            OutboundImpl::Block => PROXY_TYPE_REJECT.to_string(),
+            OutboundImpl::Socks5(_) => PROXY_TYPE_SOCKS5.to_string(),
+            OutboundImpl::HttpProxy(_) => PROXY_TYPE_HTTP.to_string(),
+            OutboundImpl::Shadowsocks(_) => PROXY_TYPE_SHADOWSOCKS.to_string(),
+            OutboundImpl::Vless(_) => PROXY_TYPE_VLESS.to_string(),
+            OutboundImpl::Vmess(_) => PROXY_TYPE_VMESS.to_string(),
+            OutboundImpl::Trojan(_) => PROXY_TYPE_TROJAN.to_string(),
+            OutboundImpl::Hysteria2(_) => "Hysteria2".to_string(),
+            OutboundImpl::Tuic(_) => "Tuic".to_string(),
+            OutboundImpl::Connector(c) => {
+                 if c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()).is_some() {
+                     "Selector".to_string()
+                 } else {
+                     "Unknown".to_string()
+                 }
+            }
+            _ => PROXY_TYPE_UNKNOWN.to_string(),
+        };
+    }
+
+    // Fallback to name inference
     let n = name.to_ascii_lowercase();
     if n.contains("direct") {
-        return PROXY_TYPE_DIRECT;
+        return PROXY_TYPE_DIRECT.to_string();
     }
     if n.contains("reject") {
-        return PROXY_TYPE_REJECT;
+        return PROXY_TYPE_REJECT.to_string();
     }
-    if n.contains("socks") {
-        return PROXY_TYPE_SOCKS5;
-    }
-    if n.contains("http") {
-        return PROXY_TYPE_HTTP;
-    }
-    if n.contains("vless") {
-        return PROXY_TYPE_VLESS;
-    }
-    if n.contains("vmess") {
-        return PROXY_TYPE_VMESS;
-    }
-    if n.contains("trojan") {
-        return PROXY_TYPE_TROJAN;
-    }
-    if n.contains("shadow") || n.contains("ss") {
-        return PROXY_TYPE_SHADOWSOCKS;
-    }
-    PROXY_TYPE_UNKNOWN
+    PROXY_TYPE_UNKNOWN.to_string()
 }
 
 /// Determine connection type based on network protocol and proxy type
@@ -267,49 +275,63 @@ fn simulate_proxy_delay(proxy_name: &str) -> i32 {
 pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
 
-    // Get proxies from outbound manager if available
-    if let Some(outbound_manager) = &state.outbound_manager {
-        let tags = outbound_manager.list_tags().await;
-        for tag in tags {
-            let proxy = Proxy {
-                name: tag.clone(),
-                r#type: infer_proxy_type(&tag).to_string(),
-                all: vec![],
-                now: tag.clone(),
-                alive: Some(true),
-                delay: None,
-                extra: HashMap::new(),
-            };
-            proxies.insert(tag, proxy);
+    // Get proxies from outbound registry
+    if let Some(registry) = &state.outbound_registry {
+        let reg = registry.read();
+        for key in reg.keys() {
+             if let Some(outbound) = reg.get(key) {
+                 let mut proxy = Proxy {
+                     name: key.clone(),
+                     r#type: infer_proxy_type(key, Some(outbound)),
+                     all: vec![],
+                     now: String::new(),
+                     alive: Some(true),
+                     delay: None,
+                     extra: HashMap::new(),
+                 };
+
+                 if let OutboundImpl::Connector(c) = outbound {
+                      if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                           proxy.all = group.members.iter().map(|m| m.name.clone()).collect();
+                           proxy.now = group.current_selected().await.unwrap_or_default();
+                           proxy.r#type = "Selector".to_string();
+                      }
+                 }
+                 proxies.insert(key.clone(), proxy);
+             }
         }
     }
 
-    // Add default proxies
-    proxies.insert(
-        DIRECT_PROXY_NAME.to_string(),
-        Proxy {
-            name: DIRECT_PROXY_NAME.to_string(),
-            r#type: PROXY_TYPE_DIRECT.to_string(),
-            all: vec![],
-            now: DIRECT_PROXY_NAME.to_string(),
-            alive: Some(true),
-            delay: Some(0),
-            extra: HashMap::new(),
-        },
-    );
+    // Add default proxies if not present
+    if !proxies.contains_key(DIRECT_PROXY_NAME) {
+         proxies.insert(
+            DIRECT_PROXY_NAME.to_string(),
+            Proxy {
+                name: DIRECT_PROXY_NAME.to_string(),
+                r#type: PROXY_TYPE_DIRECT.to_string(),
+                all: vec![],
+                now: DIRECT_PROXY_NAME.to_string(),
+                alive: Some(true),
+                delay: Some(0),
+                extra: HashMap::new(),
+            },
+        );
+    }
 
-    proxies.insert(
-        REJECT_PROXY_NAME.to_string(),
-        Proxy {
-            name: REJECT_PROXY_NAME.to_string(),
-            r#type: PROXY_TYPE_REJECT.to_string(),
-            all: vec![],
-            now: REJECT_PROXY_NAME.to_string(),
-            alive: Some(true),
-            delay: None,
-            extra: HashMap::new(),
-        },
-    );
+    if !proxies.contains_key(REJECT_PROXY_NAME) {
+        proxies.insert(
+            REJECT_PROXY_NAME.to_string(),
+            Proxy {
+                name: REJECT_PROXY_NAME.to_string(),
+                r#type: PROXY_TYPE_REJECT.to_string(),
+                all: vec![],
+                now: REJECT_PROXY_NAME.to_string(),
+                alive: Some(true),
+                delay: None,
+                extra: HashMap::new(),
+            },
+        );
+    }
 
     Json(json!({ "proxies": proxies }))
 }
@@ -322,23 +344,23 @@ pub async fn select_proxy(
     Path(proxy_name): Path<String>,
     Json(request): Json<SelectProxyRequest>,
 ) -> impl IntoResponse {
-    // Validate and handle proxy selection
-    if let Some(outbound_manager) = &state.outbound_manager {
-        if outbound_manager.contains(&request.name).await {
-            log::info!(
-                "Selected proxy '{}' for group '{}'",
-                request.name,
-                proxy_name
-            );
-            StatusCode::NO_CONTENT
-        } else {
-            log::warn!("Proxy '{}' not found in outbound manager", request.name);
-            StatusCode::NOT_FOUND
-        }
-    } else {
-        log::warn!("Outbound manager not available");
-        StatusCode::SERVICE_UNAVAILABLE
+    if let Some(registry) = &state.outbound_registry {
+         let outbound_opt = {
+             let reg = registry.read();
+             reg.get(&proxy_name).cloned()
+         };
+
+         if let Some(OutboundImpl::Connector(c)) = outbound_opt {
+             if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                  if group.select_by_name(&request.name).await.is_ok() {
+                      log::info!("Selected proxy '{}' for group '{}'", request.name, proxy_name);
+                      return StatusCode::NO_CONTENT;
+                  }
+             }
+         }
+         return StatusCode::BAD_REQUEST;
     }
+    StatusCode::SERVICE_UNAVAILABLE
 }
 
 /// Get proxy delay/latency
@@ -349,36 +371,63 @@ pub async fn get_proxy_delay(
     Path(proxy_name): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    // Check if proxy exists
-    if let Some(outbound_manager) = &state.outbound_manager {
-        if !outbound_manager.contains(&proxy_name).await {
-            return Json(json!({ "delay": -1 })).into_response();
-        }
-    }
+    let outbound_opt = if let Some(registry) = &state.outbound_registry {
+         let reg = registry.read();
+         reg.get(&proxy_name).cloned()
+    } else {
+        None
+    };
 
-    let timeout = params
+    let Some(outbound) = outbound_opt else {
+         return Json(json!({ "delay": -1 })).into_response();
+    };
+
+    let timeout_ms = params
         .get("timeout")
-        .and_then(|t| t.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS);
+        .and_then(|t| t.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS as u64);
 
     let url = params
         .get("url")
         .map(std::string::String::as_str)
         .unwrap_or(DEFAULT_TEST_URL);
 
-    log::info!(
-        "Testing delay for proxy '{}' with URL '{}' and timeout {}ms",
-        proxy_name,
-        url,
-        timeout
-    );
+    let (host, port) = if let Some(u) = url.strip_prefix("http://") {
+        u.split_once('/').map(|(h, _)| h).unwrap_or(u)
+    } else if let Some(u) = url.strip_prefix("https://") {
+        u.split_once('/').map(|(h, _)| h).unwrap_or(u)
+    } else {
+        url
+    }.split_once(':').unwrap_or((url, "80"));
+    
+    let port = port.parse::<u16>().unwrap_or(80);
 
-    // Simulate delay test - in real implementation, this would ping the proxy
-    let simulated_delay = simulate_proxy_delay(&proxy_name);
+    // Measure latency
+    let delay = match outbound {
+        OutboundImpl::Connector(c) => {
+             let start = std::time::Instant::now();
+             if let Ok(_) = tokio::time::timeout(
+                 std::time::Duration::from_millis(timeout_ms),
+                 c.connect(host, port)
+             ).await {
+                 start.elapsed().as_millis() as i32
+             } else {
+                 -1
+             }
+        }
+        OutboundImpl::Direct => {
+             let start = std::time::Instant::now();
+             match tokio::net::TcpStream::connect((host, port)).await {
+                 Ok(_) => start.elapsed().as_millis() as i32,
+                 Err(_) => -1,
+             }
+        }
+        _ => -1,
+    };
 
     Json(json!({
-        "delay": simulated_delay,
-        "meanDelay": simulated_delay
+        "delay": delay,
+        "meanDelay": delay
     }))
     .into_response()
 }
@@ -500,28 +549,58 @@ pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoRe
 ///
 /// Returns the current routing rules configuration. This is a demo implementation
 /// that returns static rules; the full version would integrate with the router.
-pub async fn get_rules(State(_state): State<ApiState>) -> impl IntoResponse {
-    // Demo rules for compatibility; integration point for live router
-    let rules = vec![
-        Rule {
-            r#type: "DOMAIN".to_string(),
-            payload: "www.google.com".to_string(),
-            proxy: DIRECT_PROXY_NAME.to_string(),
-            order: Some(1),
-        },
-        Rule {
-            r#type: "DOMAIN-SUFFIX".to_string(),
-            payload: ".cn".to_string(),
-            proxy: DIRECT_PROXY_NAME.to_string(),
-            order: Some(2),
-        },
-        Rule {
-            r#type: "FINAL".to_string(),
-            payload: String::new(),
-            proxy: "PROXY".to_string(),
-            order: Some(999),
-        },
-    ];
+pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
+    let mut rules = Vec::new();
+
+    if let Some(cfg) = &state.global_config {
+         for (i, rule) in cfg.route.rules.iter().enumerate() {
+             let proxy = rule.outbound.clone().unwrap_or("DIRECT".to_string());
+             
+             // Explode rule conditions
+             for domain in &rule.domain {
+                 rules.push(Rule {
+                     r#type: "DOMAIN".to_string(),
+                     payload: domain.clone(),
+                     proxy: proxy.clone(),
+                     order: Some(i as i32),
+                 });
+             }
+             for suffix in &rule.domain_suffix {
+                 rules.push(Rule {
+                     r#type: "DOMAIN-SUFFIX".to_string(),
+                     payload: suffix.clone(),
+                     proxy: proxy.clone(),
+                     order: Some(i as i32),
+                 });
+             }
+             for cidr in &rule.ipcidr {
+                 rules.push(Rule {
+                     r#type: "IP-CIDR".to_string(),
+                     payload: cidr.clone(),
+                     proxy: proxy.clone(),
+                     order: Some(i as i32),
+                 });
+             }
+             // Fallback for complex rules
+             if rule.domain.is_empty() && rule.domain_suffix.is_empty() && rule.ipcidr.is_empty() {
+                  rules.push(Rule {
+                     r#type: "MATCH".to_string(),
+                     payload: "".to_string(),
+                     proxy: proxy.clone(),
+                     order: Some(i as i32),
+                 });
+             }
+         }
+         
+         if let Some(default) = &cfg.route.default {
+              rules.push(Rule {
+                     r#type: "MATCH".to_string(),
+                     payload: "".to_string(),
+                     proxy: default.clone(),
+                     order: Some(9999),
+                 });
+         }
+    }
 
     Json(json!({ "rules": rules }))
 }

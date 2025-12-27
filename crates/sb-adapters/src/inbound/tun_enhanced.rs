@@ -270,10 +270,50 @@ impl EnhancedTunInbound {
         stats: Arc<TunStats>,
         shutdown_rx: &mut mpsc::Receiver<()>,
     ) {
-        // TODO: Implement proper async TUN read when AsyncTunDevice supports it
-        // For now, just wait for shutdown
-        // The current AsyncTunDevice::read() is synchronous and cannot be used in tokio::select!
-        let _ = shutdown_rx.recv().await;
+        let mut buffer = vec![0u8; config.buffer_size];
+        
+        // Note: AsyncTunDevice::read is blocking on the thread pool for some platforms
+        // We rely on the generic shutdown/cancellation mechanics or OS-level closing
+        // if this loop needs to exit promptly when idle.
+        loop {
+            // Check for shutdown signal (best effort, before read)
+            if let Ok(_) = shutdown_rx.try_recv() {
+                break;
+            }
+
+            // Perform read
+            match device.read(&mut buffer) {
+                Ok(n) => {
+                    if n == 0 {
+                        continue;
+                    }
+                    stats.packets_received.fetch_add(1, Ordering::Relaxed);
+                    stats.bytes_received.fetch_add(n as u64, Ordering::Relaxed);
+
+                    // Parse packet
+                    if let Some(packet) = Self::parse_packet(&buffer[..n]) {
+                         // Process packet
+                         Self::handle_packet(
+                            packet,
+                            &outbound,
+                            &tcp_connections,
+                            &udp_nat,
+                            &stats,
+                            &config
+                         ).await;
+                    }
+                }
+                Err(e) => {
+                    // Log error but continue loop unless it's a fatal IO error
+                    stats.errors.fetch_add(1, Ordering::Relaxed);
+                    tracing::debug!("TUN read error: {}", e);
+                    // Check if device is closed/invalid
+                    // Simple heuristic: if error is generic IO error, maybe try to continue
+                    // If repeated, we might want to break. For now, continue.
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        }
     }
 
     /// Parse packet from raw bytes

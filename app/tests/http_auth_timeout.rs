@@ -50,9 +50,7 @@ async fn test_http_auth_timeout() -> Result<()> {
     ready_rx.await?;
 
     let mut stream = TcpStream::connect(http_addr).await?;
-    let request = format!(
-        "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n"
-    );
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n".to_string();
     stream.write_all(request.as_bytes()).await?;
 
     let mut resp_buf = vec![0u8; 256];

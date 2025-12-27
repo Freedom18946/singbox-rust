@@ -35,8 +35,13 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "tls_reality")]
+#[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
+#[cfg(feature = "tls_reality")]
+use sb_tls::reality::server::RealityConnection;
+
+type StreamBox = Box<dyn tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send>;
 
 /// Trojan protocol command codes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,7 +238,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                     continue;
                 }
 
-                // Check if IP is banned due to auth failures
+                // Check if IP is banned due to excessive auth failures
                 if rate_limiter.is_banned(peer.ip()) {
                     warn!(%peer, "trojan: IP banned due to excessive auth failures");
                     rate_limit_metrics::record_rate_limited("trojan", "auth_failure_ban");
@@ -255,127 +260,40 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                         rate_limit_metrics::dec_active_connections("trojan");
                     });
 
-                    // Helper to handle the stream after TLS/Mux negotiation
-                    async fn handle_inner_stream(
-                        cfg: &TrojanInboundConfig,
-                        stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
-                        peer: SocketAddr,
-                        rate_limiter: &TcpRateLimiter,
-                    ) -> Result<()> {
-                        handle_conn_stream(cfg, stream, peer, rate_limiter).await
-                    }
+                    // Prepare TLS Layer
+                    let stream_res = {
+                        #[cfg(feature = "tls_reality")]
+                        { prepare_tls_layer(stream, reality_acceptor_clone.as_deref(), tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                        #[cfg(not(feature = "tls_reality"))]
+                        { prepare_tls_layer(stream, tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                    };
 
-                    // 1. Establish TLS (or use plain stream if no TLS)
-                    // 2. Check Mux
-                    // 3. Handle Trojan protocol
-
-                    #[cfg(feature = "tls_reality")]
-                    {
-                        if reality_acceptor_clone.is_some() {
-                            // REALITY
-                             warn!("REALITY TLS over V2Ray transports not yet supported, using stream directly");
-                             // TODO: REALITY Mux support
-                             if let Err(e) = handle_inner_stream(&cfg_clone, &mut *stream, peer, &rate_limiter_clone).await {
-                                 sb_core::metrics::http::record_error_display(&e);
-                                 warn!(%peer, error=%e, "trojan: REALITY session error");
-                             }
-                        } else if let Some(acceptor) = tls_acceptor_clone {
-                            // Standard TLS
-                            match acceptor.accept(stream).await {
-                                Ok(mut tls_stream) => {
-                                    // ALPN Fallback Check
-                                    let mut fallback_target = None;
-                                    if !cfg_clone.fallback_for_alpn.is_empty() {
-                                        if let Some(alpn) = tls_stream.get_ref().1.alpn_protocol() {
-                                            let alpn_str = String::from_utf8_lossy(alpn);
-                                            if let Some(addr) = cfg_clone.fallback_for_alpn.get(alpn_str.as_ref()) {
-                                                fallback_target = Some(*addr);
-                                            }
-                                        }
-                                    }
-
-                                    if let Some(target) = fallback_target {
-                                        debug!(%peer, alpn=?target, "trojan: ALPN fallback triggered");
-                                        if let Err(e) = handle_fallback(&mut tls_stream, target, &[]).await {
-                                            warn!(%peer, error=%e, "trojan: ALPN fallback error");
-                                        }
-                                    } else {
-                                        // Check Mux
-                                        if let Some(mux_cfg) = &cfg_clone.multiplex {
-                                            // Mux enabled: wrap TLS stream in Yamux
-                                            use tokio_util::compat::TokioAsyncReadCompatExt;
-                                            use sb_transport::yamux::{Config, Connection, Mode};
-                                            use futures::future::poll_fn;
-
-                                            let mut config = Config::default();
-                                            config.set_max_num_streams(mux_cfg.max_num_streams);
-                                            // Apply other mux configs if needed
-
-                                            let compat_stream = tls_stream.compat();
-                                            let mut connection = Connection::new(compat_stream, config, Mode::Server);
-
-                                            debug!(%peer, "trojan: mux session started");
-
-                                            // Accept streams from mux session
-                                            while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
-                                                match result {
-                                                    Ok(stream) => {
-                                                        let cfg_inner = cfg_clone.clone();
-                                                        let limiter_inner = rate_limiter_clone.clone();
-                                                        tokio::spawn(async move {
-                                                            use tokio_util::compat::FuturesAsyncReadCompatExt;
-                                                            let mut tokio_stream = stream.compat();
-                                                            if let Err(e) = handle_inner_stream(&cfg_inner, &mut tokio_stream, peer, &limiter_inner).await {
-                                                                debug!(%peer, error=%e, "trojan: mux stream error");
-                                                            }
-                                                        });
-                                                    }
-                                                    Err(e) => {
-                                                        warn!(%peer, error=%e, "trojan: mux connection error");
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            debug!(%peer, "trojan: mux session ended");
-                                        } else {
-                                            // No Mux
-                                            if let Err(e) = handle_inner_stream(&cfg_clone, &mut tls_stream, peer, &rate_limiter_clone).await {
-                                                sb_core::metrics::http::record_error_display(&e);
-                                                sb_core::metrics::record_inbound_error_display("trojan", &e);
-                                                warn!(%peer, error=%e, "trojan: session error (TLS)");
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!(%peer, error=%e, "trojan: TLS accept failed");
-                                }
-                            }
-                        } else {
-                            // No TLS
+                    match stream_res {
+                        Ok(Some(stream)) => {
+                            // Check Mux
                             if let Some(mux_cfg) = &cfg_clone.multiplex {
-                                // Mux over TCP (no TLS)
                                 use tokio_util::compat::TokioAsyncReadCompatExt;
                                 use sb_transport::yamux::{Config, Connection, Mode};
                                 use futures::future::poll_fn;
 
                                 let mut config = Config::default();
                                 config.set_max_num_streams(mux_cfg.max_num_streams);
-
+                                
                                 let compat_stream = stream.compat();
                                 let mut connection = Connection::new(compat_stream, config, Mode::Server);
 
-                                debug!(%peer, "trojan: mux session started (no TLS)");
-
+                                debug!(%peer, "trojan: mux session started");
+                                
                                 while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                                     match result {
                                         Ok(stream) => {
                                             let cfg_inner = cfg_clone.clone();
                                             let limiter_inner = rate_limiter_clone.clone();
+                                            
                                             tokio::spawn(async move {
                                                 use tokio_util::compat::FuturesAsyncReadCompatExt;
                                                 let mut tokio_stream = stream.compat();
-                                                if let Err(e) = handle_inner_stream(&cfg_inner, &mut tokio_stream, peer, &limiter_inner).await {
+                                                if let Err(e) = handle_conn_stream(&cfg_inner, &mut tokio_stream, peer, &limiter_inner).await {
                                                     debug!(%peer, error=%e, "trojan: mux stream error");
                                                 }
                                             });
@@ -386,120 +304,22 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                                         }
                                     }
                                 }
-                            } else if let Err(e) = handle_inner_stream(&cfg_clone, &mut *stream, peer, &rate_limiter_clone).await {
-                                sb_core::metrics::http::record_error_display(&e);
-                                warn!(%peer, error=%e, "trojan: session error (no TLS)");
-                            }
-                        }
-                    }
-
-                    #[cfg(not(feature = "tls_reality"))]
-                    {
-                        if let Some(acceptor) = tls_acceptor_clone {
-                            match acceptor.accept(stream).await {
-                                Ok(mut tls_stream) => {
-                                    // ALPN Fallback Check
-                                    let mut fallback_target = None;
-                                    if !cfg_clone.fallback_for_alpn.is_empty() {
-                                        if let Some(alpn) = tls_stream.get_ref().1.alpn_protocol() {
-                                            let alpn_str = String::from_utf8_lossy(alpn);
-                                            if let Some(addr) = cfg_clone.fallback_for_alpn.get(alpn_str.as_ref()) {
-                                                fallback_target = Some(*addr);
-                                            }
-                                        }
-                                    }
-
-                                    if let Some(target) = fallback_target {
-                                        debug!(%peer, alpn=?target, "trojan: ALPN fallback triggered");
-                                        if let Err(e) = handle_fallback(&mut tls_stream, target, &[]).await {
-                                            warn!(%peer, error=%e, "trojan: ALPN fallback error");
-                                        }
-                                    } else {
-                                        // Check Mux
-                                        if let Some(mux_cfg) = &cfg_clone.multiplex {
-                                            use tokio_util::compat::TokioAsyncReadCompatExt;
-                                            use sb_transport::yamux::{Config, Connection, Mode};
-                                            use futures::future::poll_fn;
-
-                                            let mut config = Config::default();
-                                            config.set_max_num_streams(mux_cfg.max_num_streams);
-
-                                            let compat_stream = tls_stream.compat();
-                                            let mut connection = Connection::new(compat_stream, config, Mode::Server);
-
-                                            debug!(%peer, "trojan: mux session started");
-                                            while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
-                                                match result {
-                                                    Ok(stream) => {
-                                                        let cfg_inner = cfg_clone.clone();
-                                                        let limiter_inner = rate_limiter_clone.clone();
-                                                        tokio::spawn(async move {
-                                                            use tokio_util::compat::FuturesAsyncReadCompatExt;
-                                                            let mut tokio_stream = stream.compat();
-                                                            if let Err(e) = handle_inner_stream(&cfg_inner, &mut tokio_stream, peer, &limiter_inner).await {
-                                                                debug!(%peer, error=%e, "trojan: mux stream error");
-                                                            }
-                                                        });
-                                                    }
-                                                    Err(e) => {
-                                                        warn!(%peer, error=%e, "trojan: mux connection error");
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            if let Err(e) = handle_inner_stream(&cfg_clone, &mut tls_stream, peer, &rate_limiter_clone).await {
-                                                sb_core::metrics::http::record_error_display(&e);
-                                                sb_core::metrics::record_inbound_error_display("trojan", &e);
-                                                warn!(%peer, error=%e, "trojan: session error (TLS)");
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!(%peer, error=%e, "trojan: TLS accept failed");
-                                }
-                            }
-                        } else {
-                             // No TLS
-                            if let Some(mux_cfg) = &cfg_clone.multiplex {
-                                use tokio_util::compat::TokioAsyncReadCompatExt;
-                                use sb_transport::yamux::{Config, Connection, Mode};
-                                use futures::future::poll_fn;
-
-                                let mut config = Config::default();
-                                config.set_max_num_streams(mux_cfg.max_num_streams);
-
-                                let compat_stream = stream.compat();
-                                let mut connection = Connection::new(compat_stream, config, Mode::Server);
-
-                                debug!(%peer, "trojan: mux session started (no TLS)");
-                                while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
-                                    match result {
-                                        Ok(stream) => {
-                                            let cfg_inner = cfg_clone.clone();
-                                            let limiter_inner = rate_limiter_clone.clone();
-                                            tokio::spawn(async move {
-                                                use tokio_util::compat::FuturesAsyncReadCompatExt;
-                                                let mut tokio_stream = stream.compat();
-                                                if let Err(e) = handle_inner_stream(&cfg_inner, &mut tokio_stream, peer, &limiter_inner).await {
-                                                    debug!(%peer, error=%e, "trojan: mux stream error");
-                                                }
-                                            });
-                                        }
-                                        Err(e) => {
-                                            warn!(%peer, error=%e, "trojan: mux connection error");
-                                            break;
-                                        }
-                                    }
-                                }
+                                debug!(%peer, "trojan: mux session ended");
                             } else {
-                                if let Err(e) = handle_inner_stream(&cfg_clone, &mut *stream, peer, &rate_limiter_clone).await {
+                                // No Mux
+                                let mut stream = stream;
+                                if let Err(e) = handle_conn_stream(&cfg_clone, &mut stream, peer, &rate_limiter_clone).await {
                                     sb_core::metrics::http::record_error_display(&e);
                                     sb_core::metrics::record_inbound_error_display("trojan", &e);
-                                    warn!(%peer, error=%e, "trojan: session error (no TLS)");
+                                    warn!(%peer, error=%e, "trojan: session error");
                                 }
                             }
+                        }
+                        Ok(None) => {
+                            // Handled (fallback or ignore)
+                        }
+                        Err(e) => {
+                            warn!(%peer, error=%e, "trojan: generic/tls error");
                         }
                     }
                 });
@@ -507,6 +327,61 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
         }
     }
     Ok(())
+}
+
+async fn prepare_tls_layer(
+    stream: tokio::net::TcpStream,
+    #[cfg(feature = "tls_reality")]
+    reality: Option<&RealityAcceptor>,
+    tls: Option<&tokio_rustls::TlsAcceptor>,
+    fallback_for_alpn: &HashMap<String, SocketAddr>,
+    peer: SocketAddr,
+) -> Result<Option<StreamBox>> {
+    #[cfg(feature = "tls_reality")]
+    if let Some(acceptor) = reality {
+        match acceptor.accept(stream).await {
+            Ok(conn) => match conn {
+                RealityConnection::Proxy(s) => return Ok(Some(Box::new(s))),
+                RealityConnection::Fallback { client, target } => {
+                     debug!(%peer, "trojan: REALITY fallback triggered");
+                     let conn = RealityConnection::Fallback { client, target };
+                     if let Err(e) = conn.handle().await {
+                         warn!(%peer, error=%e, "trojan: REALITY fallback error");
+                     }
+                     return Ok(None);
+                }
+            },
+            Err(e) => return Err(anyhow!("REALITY handshake failed: {}", e)),
+        }
+    }
+    
+    if let Some(acceptor) = tls {
+        let mut tls_stream = acceptor.accept(stream).await.map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
+        
+        // ALPN Fallback Check
+        let mut fallback_target = None;
+        if !fallback_for_alpn.is_empty() {
+            if let Some(alpn) = tls_stream.get_ref().1.alpn_protocol() {
+                let alpn_str = String::from_utf8_lossy(alpn);
+                if let Some(addr) = fallback_for_alpn.get(alpn_str.as_ref()) {
+                    fallback_target = Some(*addr);
+                }
+            }
+        }
+
+        if let Some(target) = fallback_target {
+            debug!(%peer, alpn=?target, "trojan: ALPN fallback triggered");
+            if let Err(e) = handle_fallback(&mut tls_stream, target, &[]).await {
+                 warn!(%peer, error=%e, "trojan: ALPN fallback error");
+            }
+            return Ok(None);
+        }
+
+        return Ok(Some(Box::new(tls_stream)));
+    } else {
+        // No TLS
+        return Ok(Some(Box::new(stream)));
+    }
 }
 
 // Helper function to handle connections from generic streams (for V2Ray transport support)

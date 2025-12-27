@@ -12,7 +12,6 @@
 mod common;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -47,6 +46,7 @@ async fn start_echo_server() -> std::io::Result<SocketAddr> {
     Ok(addr)
 }
 
+#[cfg(all(feature = "http", feature = "socks"))]
 async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc::Sender<()>)> {
     use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
     use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
@@ -87,6 +87,7 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
     Ok((mixed_addr, stop_tx))
 }
 
+#[cfg(feature = "shadowsocks")]
 async fn start_ss_server(method: &str, password: &str) -> std::io::Result<(SocketAddr, tokio::sync::mpsc::Sender<()>)> {
     use sb_adapters::inbound::shadowsocks::{serve, ShadowsocksInboundConfig, ShadowsocksUser};
     use sb_core::router::engine::RouterHandle;
@@ -116,6 +117,7 @@ async fn start_ss_server(method: &str, password: &str) -> std::io::Result<(Socke
     Ok((addr, stop_tx))
 }
 
+#[cfg(feature = "vmess")]
 async fn start_vmess_server() -> std::io::Result<(SocketAddr, uuid::Uuid, tokio::sync::mpsc::Sender<()>)> {
     use sb_adapters::inbound::vmess::VmessInboundConfig;
     use sb_core::router::engine::RouterHandle;
@@ -147,6 +149,7 @@ async fn start_vmess_server() -> std::io::Result<(SocketAddr, uuid::Uuid, tokio:
     Ok((addr, test_uuid, stop_tx))
 }
 
+#[cfg(all(feature = "http", feature = "socks"))]
 async fn socks5_connect(
     socks_addr: SocketAddr,
     target: SocketAddr,

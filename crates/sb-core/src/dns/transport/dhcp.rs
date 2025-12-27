@@ -400,7 +400,7 @@ impl DhcpTransport {
                     if part.is_empty() {
                         continue;
                     }
-                    let len = part.as_bytes().len();
+                    let len = part.len();
                     if len > 63 {
                         return Err(anyhow!("label too long in fqdn"));
                     }
@@ -531,7 +531,7 @@ fn avoid_dns(name: &str) -> bool {
 fn parse_mac_str(raw: &str) -> Option<[u8; 6]> {
     let cleaned = raw.trim().trim_matches('"');
     let parts: Vec<&str> = cleaned
-        .split(|c| c == '-' || c == ':' || c == ' ')
+        .split(['-', ':', ' '])
         .filter(|s| !s.is_empty())
         .collect();
     if parts.len() != 6 {

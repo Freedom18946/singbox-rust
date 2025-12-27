@@ -277,6 +277,9 @@ impl OutboundRegistry {
     pub fn insert(&mut self, name: String, v: OutboundImpl) {
         self.map.insert(name, v);
     }
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.map.keys()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -300,6 +303,9 @@ impl OutboundRegistryHandle {
         if let Ok(mut w) = self.inner.write() {
             *w = reg;
         }
+    }
+    pub fn read(&self) -> std::sync::RwLockReadGuard<'_, OutboundRegistry> {
+        self.inner.read().unwrap()
     }
     pub async fn connect_tcp(&self, target: &RouteTarget, ep: Endpoint) -> io::Result<TcpStream> {
         match target {

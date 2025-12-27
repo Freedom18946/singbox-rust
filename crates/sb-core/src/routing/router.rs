@@ -37,4 +37,8 @@ impl Router {
         // 修复：使用 route.default (Option<String>, outbound tag)
         Ok(guard.route.default.clone().unwrap_or_default())
     }
+
+    pub async fn get_rules(&self) -> Vec<sb_config::ir::RuleIR> {
+        self.ir.read().await.route.rules.clone()
+    }
 }

@@ -26,6 +26,8 @@ pub struct DerpClient {
     public_key: PublicKey,
     /// Optional mesh key for mesh peer authentication.
     mesh_key: Option<String>,
+    /// Expected server public key for verification.
+    expected_server_key: Option<PublicKey>,
 }
 
 impl DerpClient {
@@ -37,6 +39,7 @@ impl DerpClient {
             stream: Arc::new(Mutex::new(None)),
             public_key,
             mesh_key: None,
+            expected_server_key: None,
         }
     }
 
@@ -50,6 +53,12 @@ impl DerpClient {
     /// When set, client will send mesh_key in ClientInfo to authenticate as a mesh peer.
     pub fn with_mesh_key(mut self, key: impl Into<String>) -> Self {
         self.mesh_key = Some(key.into());
+        self
+    }
+
+    /// Set expected server public key for verification.
+    pub fn with_expected_key(mut self, key: PublicKey) -> Self {
+        self.expected_server_key = Some(key);
         self
     }
 
@@ -75,19 +84,45 @@ impl DerpClient {
 
     /// Resolve server address (naive implementation, assumes IP:Port or simple host:port).
     async fn resolve_addr(&self) -> io::Result<SocketAddr> {
-        // TODO: Proper URL parsing and DNS resolution
-        // For now, assume it's "host:port"
-        let addr_str = if self.server_addr.contains("://") {
-            self.server_addr
-                .split("://")
-                .nth(1)
-                .unwrap_or(&self.server_addr)
+        let mut addr_str = self.server_addr.as_str();
+        let mut default_port = 443;
+
+        // Simple scheme parsing
+        if let Some(pos) = addr_str.find("://") {
+            let scheme = &addr_str[..pos];
+            if scheme.eq_ignore_ascii_case("http") {
+                default_port = 80;
+            }
+            addr_str = &addr_str[pos + 3..];
+        }
+
+        // Check if port is missing
+        let host_port_str = if addr_str.contains(']') {
+            // IPv6 [host]:port
+             if !addr_str.ends_with(']') && addr_str.rfind(':').map(|c| c > addr_str.rfind(']').unwrap()).unwrap_or(false) {
+                 addr_str.to_string()
+             } else {
+                 format!("{}:{}", addr_str, default_port)
+             }
+        } else if addr_str.contains(':') {
+             // IPv4 or host:port
+             // If multiple colons, it might be raw IPv6 without brackets (which is invalid for SocketAddr lookup usually, needs brackets)
+             // But assume standard host:port or ipv4:port
+             // If it has one colon, it has port.
+             // If more than one... could be IPv6? tokio lookup handles raw IPv6 sometimes provided.
+             // But standard URL format for IPv6 is [addr]:port.
+             // Let's rely on if it parses.
+             if addr_str.rfind(':').is_some() {
+                 addr_str.to_string()
+             } else {
+                 format!("{}:{}", addr_str, default_port)
+             }
         } else {
-            &self.server_addr
+            format!("{}:{}", addr_str, default_port)
         };
 
         // Use tokio lookup
-        let mut addrs = tokio::net::lookup_host(addr_str).await?;
+        let mut addrs = tokio::net::lookup_host(&host_port_str).await?;
         addrs.next().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
@@ -108,7 +143,14 @@ impl DerpClient {
         match frame {
             DerpFrame::ServerKey { key } => {
                 trace!("Received DERP server key: {:02x?}", key);
-                // TODO: Verify server key if we have expected one
+                if let Some(expected) = self.expected_server_key {
+                    if key != expected {
+                         return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Server key mismatch: expected {:02x?}, got {:02x?}", expected, key),
+                        ));
+                    }
+                }
             }
             _ => {
                 return Err(io::Error::new(

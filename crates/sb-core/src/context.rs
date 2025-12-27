@@ -85,7 +85,7 @@ pub struct Context {
     pub endpoint_manager: Arc<crate::endpoint::EndpointManager>,
     pub service_manager: Arc<crate::service::ServiceManager>,
     pub cache_file: Option<Arc<dyn CacheFile>>,
-    pub clash_server: Option<Arc<dyn ClashServer>>,
+
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
     pub process_matcher: Option<Arc<ProcessMatcher>>,
@@ -104,7 +104,7 @@ pub struct ContextRegistry {
     pub endpoint_manager: Arc<crate::endpoint::EndpointManager>,
     pub service_manager: Arc<crate::service::ServiceManager>,
     pub cache_file: Option<Arc<dyn CacheFile>>,
-    pub clash_server: Option<Arc<dyn ClashServer>>,
+
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
     pub process_matcher: Option<Arc<ProcessMatcher>>,
@@ -123,7 +123,7 @@ impl From<&Context> for ContextRegistry {
             endpoint_manager: ctx.endpoint_manager.clone(),
             service_manager: ctx.service_manager.clone(),
             cache_file: ctx.cache_file.clone(),
-            clash_server: ctx.clash_server.clone(),
+
             v2ray_server: ctx.v2ray_server.clone(),
             ntp_service: ctx.ntp_service.clone(),
             process_matcher: ctx.process_matcher.clone(),
@@ -158,7 +158,7 @@ impl Context {
             endpoint_manager: Arc::new(crate::endpoint::EndpointManager::new()),
             service_manager: Arc::new(crate::service::ServiceManager::new()),
             cache_file: None,
-            clash_server: None,
+
             v2ray_server: None,
             ntp_service: None,
             process_matcher: match ProcessMatcher::new() {
@@ -177,10 +177,7 @@ impl Context {
         self
     }
 
-    pub fn with_clash_server(mut self, clash_server: Arc<dyn ClashServer>) -> Self {
-        self.clash_server = Some(clash_server);
-        self
-    }
+
 
     pub fn with_v2ray_server(mut self, v2ray_server: Arc<dyn V2RayServer>) -> Self {
         self.v2ray_server = Some(v2ray_server);
@@ -652,11 +649,7 @@ impl Startable for PlatformInterface {
 
 // Service traits
 pub trait CacheFile: Send + Sync + std::fmt::Debug {}
-pub trait ClashServer: Send + Sync + std::fmt::Debug {
-    fn start(&self) -> anyhow::Result<()>;
-    fn close(&self) -> anyhow::Result<()>;
-    fn get_mode(&self) -> String;
-}
+
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;
     fn close(&self) -> anyhow::Result<()>;
@@ -750,7 +743,7 @@ mod tests {
     fn test_context_builder() {
         let ctx = Context::new();
         assert!(ctx.cache_file.is_none());
-        assert!(ctx.clash_server.is_none());
+
         assert!(ctx.v2ray_server.is_none());
         assert!(ctx.ntp_service.is_none());
         // process_matcher might be Some or None depending on platform support

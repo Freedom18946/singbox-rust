@@ -306,17 +306,10 @@ impl DirectConnector {
         }
 
         if self.tcp_fast_open {
-            #[cfg(any(
-                target_os = "android",
-                target_os = "linux",
-                target_os = "macos",
-                target_os = "ios"
-            ))]
+            #[cfg(any(target_os = "linux", target_os = "android"))]
             {
                 let s = socket2::SockRef::from(&socket);
-                // let _ = s.set_tcp_fastopen_connect(true);
-                // TODO: Enable TFO when supported by socket2/platform
-                let _ = s; // suppress unused warning
+                let _ = s.set_tcp_fastopen_connect(true);
             }
         }
 
@@ -394,22 +387,10 @@ impl DirectConnector {
             }
 
             if tcp_fast_open {
-                // Note: TFO connect support varies by platform and tokio version.
-                // socket2 provides set_tcp_fastopen_connect on some platforms.
-                #[cfg(any(
-                    target_os = "android",
-                    target_os = "linux",
-                    target_os = "macos",
-                    target_os = "ios"
-                ))]
+                #[cfg(any(target_os = "linux", target_os = "android"))]
                 {
                     let s = socket2::SockRef::from(&socket);
-                    // On some platforms/versions this might be missing or named differently.
-                    // We'll try to use what's available or log a warning if not supported.
-                    // For now, we assume standard socket2 support if compiled.
-                    // let _ = s.set_tcp_fastopen_connect(true);
-                    // TODO: Enable TFO when supported by socket2/platform
-                    let _ = s; // suppress unused warning
+                    let _ = s.set_tcp_fastopen_connect(true);
                 }
             }
 

@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Shared state for the resolved transport/service.
 pub static RESOLVED_STATE: Lazy<Arc<Resolve1ManagerState>> =

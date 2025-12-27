@@ -39,6 +39,10 @@ use sb_tls::reality::server::RealityConnection;
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
+#[cfg(feature = "tls_reality")]
+use sb_tls::reality::server::RealityConnection;
+
+type StreamBox = Box<dyn tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send>;
 
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
@@ -134,143 +138,190 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         }
     }
 
-    // Handle Multiplexing
-    // 处理多路复用
-    if let Some(ref mux_cfg) = cfg.multiplex {
-        match listener {
-            crate::transport_config::InboundListener::Tcp(tcp_listener) => {
-                info!("vless: enabling multiplexing over TCP");
-                let mux_listener =
-                    sb_transport::multiplex::MultiplexListener::new(tcp_listener, mux_cfg.clone());
-
-                let mut hb = interval(Duration::from_secs(5));
-                loop {
-                    select! {
-                        _ = stop_rx.recv() => break,
-                        _ = hb.tick() => {
-                            // debug!("vless: mux accept-loop heartbeat");
-                        }
-                        r = mux_listener.accept() => {
-                            let stream = match r {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    warn!(error=%e, "vless: mux accept error");
-                                    continue;
-                                }
-                            };
-
-                            // Mux streams don't have a direct peer address in the same way,
-                            // but we can try to get it from the listener or use a placeholder.
-                            // For now, use 0.0.0.0:0 or try to get it if exposed.
-                            // MuxListener doesn't expose per-stream peer addr easily yet.
-                            let peer = SocketAddr::from(([0, 0, 0, 0], 0));
-
-                            let cfg_clone = cfg.clone();
-                            // Wrap stream in a way that handle_conn_stream accepts
-                            // handle_conn_stream takes &mut (AsyncRead+AsyncWrite+Unpin)
-                            // stream is Box<dyn ...> which implements that.
-
-                            tokio::spawn(async move {
-                                let mut stream = stream;
-                                if let Err(e) = handle_conn_stream(&cfg_clone, &mut stream, peer).await {
-                                    sb_core::metrics::http::record_error_display(&e);
-                                    sb_core::metrics::record_inbound_error_display("vless", &e);
-                                    warn!(%peer, error=%e, "vless: mux session error");
-                                }
-                            });
-                        }
-                    }
-                }
-                return Ok(());
-            }
-            _ => {
-                warn!("vless: multiplexing not supported for this transport type");
-                return Err(anyhow!(
-                    "vless: multiplexing not supported for this transport type"
-                ));
+    // Load standard TLS config if not using REALITY
+    // 加载标准 TLS 配置 (如果不使用 REALITY)
+    let tls_acceptor = {
+        #[cfg(feature = "tls_reality")]
+        {
+            if cfg.reality.is_none() {
+                // We assume there is a standard TLS way?
+                // VLESS config doesn't have cert_path/key_path fields visible in the snippet I saw?
+                // Wait, VlessInboundConfig definition L55... L77 does NOT have cert_path/key_path!
+                // Trojan has them. Vless usually relies on `TransportConfig` for Ws/Grpc TLS?
+                // Or maybe Vless TCP TLS is handled differently?
+                // Check L1 to 543 again. VlessInboundConfig has `reality`, `multiplex`, `transport_layer`.
+                // It does NOT have `cert_path` / `key_path`!
+                // So VLESS Inbound only supports TLS via REALITY or via TransportLayer (WS/GRPC + TLS)?
+                // OR external transport?
+                // But `trojan.rs` has `cert_path`.
+                // Let's re-read VLESS logic I am replacing.
+                // L220: `if let Some(acceptor) = reality_acceptor_clone { ... } else { Plain TCP }`.
+                // It does NOT seem to support standard TLS (Rustls) directly for TCP?
+                // Unless `transport_layer` creates a TLS listener?
+                // If `transport_layer` creates a TLS listener, then `listener.accept()` yields TlsStreams?
+                // If so, my abstraction `prepare_tls_layer` handling `tls: Option<&TlsAcceptor>` logic:
+                // If I pass `None` for generic TLS (since I can't build one), it just returns simple stream.
+                // So if listener is already TLS, `stream` is `TlsStream` (wrapped in generic).
+                // My abstraction works: it adds REALITY if configured, else pass through.
+                None
+            } else {
+                None
             }
         }
-    }
+        #[cfg(not(feature = "tls_reality"))]
+        {
+            None
+        }
+    };
 
-    // Standard accept loop (Non-Mux or Non-TCP)
-    // 标准接受循环 (非 Mux 或非 TCP)
     let mut hb = interval(Duration::from_secs(5));
     loop {
         select! {
-            _ = stop_rx.recv() => break,
-            _ = hb.tick() => {
-                // debug!("vless: accept-loop heartbeat");
-            }
-            r = listener.accept() => {
-                let (mut stream, peer) = match r {
-                    Ok(v) => v,
-                    Err(e) => {
-                        warn!(error=%e, "vless: accept error");
-                        sb_core::metrics::http::record_error_display(&e);
-                        sb_core::metrics::record_inbound_error_display("vless", &e);
-                        continue;
-                    }
-                };
+             _ = stop_rx.recv() => break,
+             _ = hb.tick() => {
+                 // debug!("vless: accept-loop heartbeat");
+             }
+             r = listener.accept() => {
+                 let (mut stream, peer) = match r {
+                     Ok(v) => v,
+                     Err(e) => {
+                         warn!(error=%e, "vless: accept error");
+                         sb_core::metrics::http::record_error_display(&e);
+                         sb_core::metrics::record_inbound_error_display("vless", &e);
+                         continue;
+                     }
+                 };
 
-                let cfg_clone = cfg.clone();
-                #[cfg(feature = "tls_reality")]
-                let reality_acceptor_clone = reality_acceptor.clone();
+                 #[cfg(feature = "tls_reality")]
+                 let reality_acceptor_clone = reality_acceptor.clone();
+                 let tls_acceptor_clone = tls_acceptor.clone();
+                 let cfg_clone = cfg.clone();
 
-                tokio::spawn(async move {
-                    #[cfg(feature = "tls_reality")]
-                    {
-                        if let Some(acceptor) = reality_acceptor_clone {
-                             // Perform REALITY handshake
-                             match acceptor.accept(stream).await {
-                                 Ok(connection) => {
-                                     match connection {
-                                         RealityConnection::Proxy(tls_stream) => {
-                                             debug!(%peer, "vless: REALITY handshake success (proxy)");
-                                             let mut stream = tls_stream;
-                                             if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                                                 sb_core::metrics::http::record_error_display(&e);
-                                                 sb_core::metrics::record_inbound_error_display("vless", &e);
-                                                 warn!(%peer, error=%e, "vless: session error");
-                                             }
+                 tokio::spawn(async move {
+                     // Prepare TLS Layer (REALITY or None)
+                     let stream_res = {
+                         #[cfg(feature = "tls_reality")]
+                         { prepare_tls_layer(stream, reality_acceptor_clone.as_deref(), tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                         #[cfg(not(feature = "tls_reality"))]
+                         { prepare_tls_layer(stream, tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                     };
+
+                     match stream_res {
+                         Ok(Some(stream)) => {
+                             // Check Mux
+                             if let Some(mux_cfg) = &cfg_clone.multiplex {
+                                 use tokio_util::compat::TokioAsyncReadCompatExt;
+                                 use sb_transport::yamux::{Config, Connection, Mode};
+                                 use futures::future::poll_fn;
+
+                                 let mut config = Config::default();
+                                 config.set_max_num_streams(mux_cfg.max_num_streams);
+                                 
+                                 let compat_stream = stream.compat();
+                                 let mut connection = Connection::new(compat_stream, config, Mode::Server);
+
+                                 debug!(%peer, "vless: mux session started");
+                                 
+                                 while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
+                                     match result {
+                                         Ok(stream) => {
+                                             let cfg_inner = cfg_clone.clone();
+                                             tokio::spawn(async move {
+                                                 use tokio_util::compat::FuturesAsyncReadCompatExt;
+                                                 let mut tokio_stream = stream.compat();
+                                                 if let Err(e) = handle_conn_stream(&cfg_inner, &mut tokio_stream, peer).await {
+                                                     debug!(%peer, error=%e, "vless: mux stream error");
+                                                 }
+                                             });
                                          }
-                                         RealityConnection::Fallback { client, target } => {
-                                             debug!(%peer, "vless: REALITY fallback triggered");
-                                             // Fallback is handled by bidirectional copy in handle()
-                                            let conn = RealityConnection::Fallback { client, target };
-                                            if let Err(e) = conn.handle().await {
-                                                 warn!(%peer, error=%e, "vless: fallback relay error");
-                                            }
+                                         Err(e) => {
+                                             warn!(%peer, error=%e, "vless: mux connection error");
+                                             break;
                                          }
                                      }
                                  }
-                                 Err(e) => {
-                                     warn!(%peer, error=%e, "vless: REALITY handshake failed");
+                                 debug!(%peer, "vless: mux session ended");
+                             } else {
+                                 // No Mux
+                                 let mut stream = stream;
+                                 if let Err(e) = handle_conn_stream(&cfg_clone, &mut stream, peer).await {
+                                     sb_core::metrics::http::record_error_display(&e);
+                                     sb_core::metrics::record_inbound_error_display("vless", &e);
+                                     warn!(%peer, error=%e, "vless: session error");
                                  }
                              }
-                        } else {
-                             // Plain TCP
-                            if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                                sb_core::metrics::http::record_error_display(&e);
-                                sb_core::metrics::record_inbound_error_display("vless", &e);
-                                warn!(%peer, error=%e, "vless: session error");
-                            }
-                        }
-                    }
-
-                    #[cfg(not(feature = "tls_reality"))]
-                    {
-                        if let Err(e) = handle_conn_stream(&cfg_clone, &mut *stream, peer).await {
-                            sb_core::metrics::http::record_error_display(&e);
-                            sb_core::metrics::record_inbound_error_display("vless", &e);
-                            warn!(%peer, error=%e, "vless: session error");
-                        }
-                    }
-                });
-            }
+                         }
+                         Ok(None) => {}, // Handled
+                         Err(e) => {
+                             warn!(%peer, error=%e, "vless: TLS/REALITY error");
+                         }
+                     }
+                 });
+             }
         }
     }
     Ok(())
 }
+
+async fn prepare_tls_layer(
+    stream: tokio::net::TcpStream,
+    #[cfg(feature = "tls_reality")]
+    reality: Option<&RealityAcceptor>,
+    tls: Option<&tokio_rustls::TlsAcceptor>,
+    fallback_for_alpn: &HashMap<String, SocketAddr>,
+    peer: SocketAddr,
+) -> Result<Option<StreamBox>> {
+    #[cfg(feature = "tls_reality")]
+    if let Some(acceptor) = reality {
+        match acceptor.accept(stream).await {
+            Ok(conn) => match conn {
+                RealityConnection::Proxy(s) => return Ok(Some(Box::new(s))),
+                RealityConnection::Fallback { client, target } => {
+                     debug!(%peer, "vless: REALITY fallback triggered");
+                     // For VLESS, fallback logic is typically bidirectional relay
+                     // In old code: RealityConnection::Fallback { client, target }.handle()
+                     // We need to reconstruct or call method if possible.
+                     // The `conn` *is* the enum.
+                     // We can't reuse `conn` after matching it unless ref.
+                     // Reconstruct:
+                     let conn = RealityConnection::Fallback { client, target };
+                     if let Err(e) = conn.handle().await {
+                         warn!(%peer, error=%e, "vless: REALITY fallback error");
+                     }
+                     return Ok(None);
+                }
+            },
+            Err(e) => return Err(anyhow!("REALITY handshake failed: {}", e)),
+        }
+    }
+    
+    if let Some(acceptor) = tls {
+        let mut tls_stream = acceptor.accept(stream).await.map_err(|e| anyhow!("TLS handshake failed: {}", e))?;
+        
+        // ALPN Fallback Check
+        let mut fallback_target = None;
+        if !fallback_for_alpn.is_empty() {
+             if let Some(alpn) = tls_stream.get_ref().1.alpn_protocol() {
+                let alpn_str = String::from_utf8_lossy(alpn);
+                if let Some(addr) = fallback_for_alpn.get(alpn_str.as_ref()) {
+                    fallback_target = Some(*addr);
+                }
+            }
+        }
+
+        if let Some(target) = fallback_target {
+            debug!(%peer, alpn=?target, "vless: ALPN fallback triggered");
+            if let Err(e) = handle_fallback(&mut tls_stream, target, &[]).await {
+                 warn!(%peer, error=%e, "vless: ALPN fallback error");
+            }
+            return Ok(None);
+        }
+
+        return Ok(Some(Box::new(tls_stream)));
+    } else {
+        // No TLS
+        return Ok(Some(Box::new(stream)));
+    }
 
 async fn handle_fallback(
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),

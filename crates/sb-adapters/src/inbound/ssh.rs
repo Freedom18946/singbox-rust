@@ -13,7 +13,7 @@ use std::sync::Arc;
 use sb_core::adapter::InboundService;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 #[cfg(feature = "ssh")]
 use {
@@ -21,7 +21,7 @@ use {
     russh::server::{self, Auth, Msg, Session},
     russh::{Channel, ChannelId, CryptoVec},
     std::path::Path,
-    tokio::io::AsyncReadExt,
+    tokio::io::{AsyncReadExt, AsyncWriteExt},
 };
 
 /// SSH inbound adapter that provides SSH tunnel server functionality.
@@ -138,6 +138,7 @@ mod ssh_server {
     pub(super) struct ChannelState {
         pub target_host: String,
         pub target_port: u32,
+        pub writer: tokio::net::tcp::OwnedWriteHalf,
     }
 
     impl server::Server for SshServerHandler {
@@ -218,29 +219,28 @@ mod ssh_server {
                 "SSH direct-tcpip channel requested"
             );
 
-            // Store channel state
-            self.channels.insert(
-                channel_id,
-                ChannelState {
-                    target_host: host_to_connect.to_string(),
-                    target_port: port_to_connect,
-                },
-            );
-
             // Accept the channel and initiate connection
             let target = format!("{}:{}", host_to_connect, port_to_connect);
 
-            // Spawn connection handler
-            let session_handle = session.handle();
-            tokio::spawn(async move {
-                match tokio::net::TcpStream::connect(&target).await {
-                    Ok(mut stream) => {
-                        debug!(target = %target, "Connected to target for SSH tunnel");
+            match tokio::net::TcpStream::connect(&target).await {
+                Ok(stream) => {
+                    debug!(target = %target, "Connected to target for SSH tunnel");
+                    let (mut read_half, write_half) = stream.into_split();
 
-                        // Read from target and send to SSH channel
-                        let (mut read_half, _write_half) = stream.split();
+                    // Store channel state with writer
+                    self.channels.insert(
+                        channel_id,
+                        ChannelState {
+                            target_host: host_to_connect.to_string(),
+                            target_port: port_to_connect,
+                            writer: write_half,
+                        },
+                    );
+
+                    // Spawn connection handler for reading from target
+                    let session_handle = session.handle();
+                    tokio::spawn(async move {
                         let mut buf = vec![0u8; 32768];
-
                         loop {
                             match read_half.read(&mut buf).await {
                                 Ok(0) => {
@@ -261,15 +261,15 @@ mod ssh_server {
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        warn!(target = %target, error = %e, "Failed to connect to target");
-                        let _ = session_handle.close(channel_id);
-                    }
-                }
-            });
+                    });
 
-            Ok(true)
+                    Ok(true)
+                }
+                Err(e) => {
+                    warn!(target = %target, error = %e, "Failed to connect to target");
+                    Ok(false)
+                }
+            }
         }
 
         async fn data(
@@ -278,14 +278,17 @@ mod ssh_server {
             data: &[u8],
             _session: &mut Session,
         ) -> Result<(), Self::Error> {
-            if let Some(state) = self.channels.get(&channel) {
-                debug!(
+            if let Some(state) = self.channels.get_mut(&channel) {
+                trace!(
                     channel = ?channel,
                     len = data.len(),
                     target = %format!("{}:{}", state.target_host, state.target_port),
-                    "SSH channel data received"
+                    "SSH channel data forwarding"
                 );
-                // In full implementation, we'd write to the stored TcpStream
+                if let Err(e) = state.writer.write_all(data).await {
+                     warn!(error = %e, "Failed to write to target");
+                     return Ok(()); // Connection closed effectively
+                }
             }
             Ok(())
         }

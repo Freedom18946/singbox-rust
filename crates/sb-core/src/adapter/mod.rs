@@ -79,6 +79,11 @@ pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
     /// Establish a TCP connection to the specified host and port.
     /// 建立到指定主机和端口的 TCP 连接。
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
+
+    /// Allow downcasting to concrete type
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
 }
 
 /// UDP session for datagram-based outbound protocols (e.g. QUIC-based).

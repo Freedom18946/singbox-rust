@@ -1,5 +1,8 @@
 //! Test for Direct inbound adapter registration and instantiation.
 
+// When adapters feature is disabled, param variables are unused but intentional
+#![allow(unused_variables)]
+
 use sb_core::adapter::InboundParam;
 
 #[test]

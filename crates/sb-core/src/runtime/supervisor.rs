@@ -18,7 +18,7 @@
 //!   计算旧配置和新配置之间的差异，以尽量减少变动（例如，仅重启更改的入站）。
 
 use crate::adapter::Bridge;
-use crate::context::{install_context_registry, ClashServer, Context, Startable, V2RayServer};
+use crate::context::{install_context_registry, Context, Startable, V2RayServer};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine;
@@ -881,17 +881,7 @@ fn wire_experimental_sidecars(mut context: Context, ir: &sb_config::ir::ConfigIR
             }
         }
 
-        if let Some(clash_cfg) = &exp.clash_api {
-            let clash_server = Arc::new(crate::services::clash_api::ClashApiServer::new(
-                clash_cfg.clone(),
-            ));
-            if let Err(e) = clash_server.start() {
-                tracing::warn!(target: "sb_core::runtime", error = %e, "failed to start Clash API server");
-            } else {
-                context = context.with_clash_server(clash_server);
-                tracing::info!(target: "sb_core::runtime", controller = ?clash_cfg.external_controller, "Clash API server wired");
-            }
-        }
+
 
         if let Some(v2ray_cfg) = &exp.v2ray_api {
             let v2ray_server = Arc::new(crate::services::v2ray_api::V2RayApiServer::new(
@@ -1017,11 +1007,7 @@ async fn download_file(url: &str, path: &str) -> Result<()> {
 
 fn shutdown_context(ctx: &Context) {
     // Close sidecars
-    if let Some(clash) = &ctx.clash_server {
-        if let Err(e) = clash.close() {
-            tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close Clash API server");
-        }
-    }
+
     if let Some(v2ray) = &ctx.v2ray_server {
         if let Err(e) = v2ray.close() {
             tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close V2Ray API server");

@@ -378,7 +378,7 @@ impl TcpDialer {
         let mut last_error = DialError::Other("no addresses provided".into());
 
         for addr in addrs {
-            match Self::connect_tcp_stream(*addr).await {
+            match self.connect_tcp_stream(*addr).await {
                 Ok(stream) => {
                     debug!("Successfully connected to {}", addr);
                     return Ok(Box::new(stream));
@@ -400,7 +400,7 @@ impl TcpDialer {
         addr: SocketAddr,
         cancel_token: CancellationToken,
     ) -> Result<IoStream, DialError> {
-        let connect_future = Self::connect_tcp_stream(addr);
+        let connect_future = self.connect_tcp_stream(addr);
 
         tokio::select! {
             result = connect_future => {
@@ -422,24 +422,76 @@ impl TcpDialer {
         }
     }
 
-    /// Helper to connect a TCP stream with platform-specific protection
-    async fn connect_tcp_stream(addr: SocketAddr) -> std::io::Result<TcpStream> {
-        #[cfg(target_os = "android")]
+    /// Helper to connect a TCP stream with platform-specific protection and socket options
+    async fn connect_tcp_stream(&self, addr: SocketAddr) -> std::io::Result<TcpStream> {
+        #[cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios", target_os = "windows"))]
         {
-            let socket = if addr.is_ipv4() {
-                TcpSocket::new_v4()?
-            } else {
-                TcpSocket::new_v6()?
-            };
+            use socket2::{Domain, Protocol, Socket, Type};
 
-            if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&socket) {
-                tracing::warn!("Failed to protect TCP socket: {}", e);
+            let domain = if addr.is_ipv4() {
+                Domain::IPV4
+            } else {
+                Domain::IPV6
+            };
+            let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+            // Set socket options
+            if self.reuse_addr {
+                socket.set_reuse_address(true)?;
             }
 
-            socket.connect(addr).await
+            #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
+            if self.reuse_addr {
+                socket.set_reuse_port(true)?;
+            }
+
+            // Bind to specific IP if configured
+            if addr.is_ipv4() {
+                if let Some(bind_v4) = self.bind_v4 {
+                    socket.bind(&std::net::SocketAddr::new(std::net::IpAddr::V4(bind_v4), 0).into())?;
+                }
+            } else if let Some(bind_v6) = self.bind_v6 {
+                socket.bind(&std::net::SocketAddr::new(std::net::IpAddr::V6(bind_v6), 0).into())?;
+            }
+
+            // Platform-specific options
+            #[cfg(target_os = "linux")]
+            {
+                if let Some(iface) = &self.bind_interface {
+                    socket.bind_device(Some(iface.as_bytes()))?;
+                }
+                if let Some(mark) = self.routing_mark {
+                    socket.set_mark(mark)?;
+                }
+            }
+            
+            #[cfg(target_os = "android")]
+            {
+                if let Some(mark) = self.routing_mark {
+                    socket.set_mark(mark)?;
+                }
+                if let Err(e) = sb_platform::android_protect::protect_tcp_socket(&tokio::net::TcpSocket::from_std_stream(socket.try_clone()?.into())) {
+                    tracing::warn!("Failed to protect TCP socket: {}", e);
+                }
+            }
+
+            // TCP Fast Open (Linux/Android only)
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            if self.tcp_fast_open {
+                 let _ = socket.set_tcp_fastopen_connect(true);
+            }
+
+            // Set non-blocking before connecting (required for tokio)
+            socket.set_nonblocking(true)?;
+
+            // Convert to tokio TcpStream via TcpSocket to ensure correct registration
+             let tokio_socket = tokio::net::TcpSocket::from_std_stream(socket.into());
+             tokio_socket.connect(addr).await
         }
-        #[cfg(not(target_os = "android"))]
+
+        #[cfg(not(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "ios", target_os = "windows")))]
         {
+            // Fallback for other platforms (e.g. WASM if supported, or obscure unix)
             TcpStream::connect(addr).await
         }
     }

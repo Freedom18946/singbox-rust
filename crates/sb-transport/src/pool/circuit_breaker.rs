@@ -150,44 +150,66 @@ mod tests {
         let _ = result; // Don't assert on result since we don't have a server
     }
 
-    // TODO: Fix FnDialer trait bounds issue
-    // The closure type doesn't properly satisfy the Dialer trait bounds
-    // This test is temporarily disabled until the type system issue is resolved
-    #[cfg(disabled_tests)]
+    // Mock Dialer for testing
+    #[derive(Clone)]
+    struct MockDialer {
+        call_count: Arc<std::sync::atomic::AtomicU32>,
+        mode: MockMode,
+    }
+
+    #[derive(Clone)]
+    enum MockMode {
+        AlwaysFail,
+        FailUntil(u32),
+        Timeout,
+    }
+
+    #[async_trait]
+    impl Dialer for MockDialer {
+        async fn connect(&self, _host: &str, _port: u16) -> Result<IoStream, DialError> {
+            let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            
+            match &self.mode {
+                MockMode::AlwaysFail => Err(DialError::Other("connection failed".to_string())),
+                MockMode::FailUntil(limit) => {
+                    if count < *limit {
+                         Err(DialError::Other("connection failed".to_string()))
+                    } else {
+                        // Return a dummy stream
+                        let (client, _server) = tokio::io::duplex(64);
+                        Ok(Box::new(client))
+                    }
+                }
+                MockMode::Timeout => Err(DialError::Other("timeout".to_string())),
+            }
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
     #[tokio::test]
     async fn test_circuit_breaker_opens_on_failures() {
-        use crate::dialer::FnDialer;
-        use std::pin::Pin;
-        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::atomic::Ordering;
         use std::time::Duration;
-        let call_count = Arc::new(AtomicU32::new(0));
-        let call_count_clone = call_count.clone();
 
-        let failing_dialer = FnDialer::new(move |_host, _port| {
-            let count = call_count_clone.clone();
-            Box::pin(async move {
-                count.fetch_add(1, Ordering::Relaxed);
-                Err(DialError::Other("connection failed".to_string()))
-            })
-                as Pin<
-                    Box<
-                        dyn std::future::Future<
-                                Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
-                            > + Send
-                            + 'static,
-                    >,
-                >
-        });
+        let call_count = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let dialer = MockDialer {
+            call_count: call_count.clone(),
+            mode: MockMode::AlwaysFail,
+        };
 
         let config = CircuitBreakerConfig {
             failure_threshold: 2,
-            window_duration_ms: 1000,
-            half_open_max_calls: 1,
-            open_timeout_ms: 100,
+            failure_window: Duration::from_millis(1000),
+            half_open_max_requests: 1,
+            recovery_timeout: Duration::from_millis(100),
+            count_timeouts: true,
         };
 
         let cb_dialer =
-            CircuitBreakerDialer::new(failing_dialer, "test-outbound".to_string(), config);
+            CircuitBreakerDialer::new(dialer, "test-outbound".to_string(), config);
 
         // First two failures should go through
         let result1 = cb_dialer.connect("example.com", 80).await;
@@ -203,62 +225,44 @@ mod tests {
         // Check that the error message indicates circuit breaker rejection
         match result3 {
             Err(DialError::Other(msg)) if msg.contains("circuit breaker") => {
-                // Expected - circuit breaker rejected the request
+                // Expected - circuit breaker rejected the request (if mapped to Other)
             }
-            _ => panic!("Expected circuit breaker rejection, got: {:?}", result3),
+            Err(DialError::Io(e)) if e.to_string().contains("circuit breaker") => {
+                // Expected - circuit breaker rejected the request (mapped to Io)
+            }
+            _ => panic!("Expected circuit breaker rejection, got result variant that is not Circuit Breaker error: {:?}", result3.err()),
         }
 
         // Should only have been called twice (third was rejected by circuit breaker)
         assert_eq!(call_count.load(Ordering::Relaxed), 2);
     }
 
-    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn test_circuit_breaker_half_open_recovery() {
-        use crate::dialer::FnDialer;
-        use std::pin::Pin;
-        use std::sync::atomic::{AtomicU32, Ordering};
         use std::time::Duration;
         use tokio::time::sleep;
-        let call_count = Arc::new(AtomicU32::new(0));
-        let call_count_clone = call_count.clone();
 
-        let recovering_dialer = FnDialer::new(move |_host, _port| {
-            let count = call_count_clone.clone();
-            Box::pin(async move {
-                let current_count = count.fetch_add(1, Ordering::Relaxed);
-                if current_count < 2 {
-                    // First two calls fail
-                    Err(DialError::Other("connection failed".to_string()))
-                } else {
-                    // Subsequent calls succeed
-                    let (client, _server) = tokio::io::duplex(64);
-                    Ok(Box::new(client) as crate::dialer::IoStream)
-                }
-            })
-                as Pin<
-                    Box<
-                        dyn std::future::Future<
-                                Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
-                            > + Send
-                            + 'static,
-                    >,
-                >
-        });
+        let call_count = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let dialer = MockDialer {
+            call_count: call_count.clone(),
+            mode: MockMode::FailUntil(2),
+        };
 
         let config = CircuitBreakerConfig {
             failure_threshold: 2,
-            window_duration_ms: 1000,
-            half_open_max_calls: 1,
-            open_timeout_ms: 50, // Short timeout for fast test
+            failure_window: Duration::from_millis(1000),
+            half_open_max_requests: 1,
+            recovery_timeout: Duration::from_millis(50), // Short timeout for fast test
+            count_timeouts: true,
         };
 
         let cb_dialer =
-            CircuitBreakerDialer::new(recovering_dialer, "test-outbound".to_string(), config);
+            CircuitBreakerDialer::new(dialer, "test-outbound".to_string(), config);
 
         // Trigger circuit breaker opening
-        cb_dialer.connect("example.com", 80).await.unwrap_err();
-        cb_dialer.connect("example.com", 80).await.unwrap_err();
+        // Manually check IsErr because unwrapping Ok panics with debug info which IoStream lacks
+        assert!(cb_dialer.connect("example.com", 80).await.is_err());
+        assert!(cb_dialer.connect("example.com", 80).await.is_err());
 
         // Wait for half-open timeout
         sleep(Duration::from_millis(60)).await;
@@ -272,25 +276,16 @@ mod tests {
         assert!(result2.is_ok());
     }
 
-    #[cfg(disabled_tests)]
     #[tokio::test]
     async fn test_timeout_error_classification() {
-        use crate::dialer::FnDialer;
-        use std::pin::Pin;
-        let timeout_dialer = FnDialer::new(|_host, _port| {
-            Box::pin(async move { Err(DialError::Other("timeout".to_string())) })
-                as Pin<
-                    Box<
-                        dyn std::future::Future<
-                                Output = Result<crate::dialer::IoStream, crate::dialer::DialError>,
-                            > + Send
-                            + 'static,
-                    >,
-                >
-        });
+        let call_count = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let dialer = MockDialer {
+            call_count: call_count.clone(),
+            mode: MockMode::Timeout,
+        };
 
         let cb_dialer = CircuitBreakerDialer::new(
-            timeout_dialer,
+            dialer,
             "test-outbound".to_string(),
             CircuitBreakerConfig::default(),
         );

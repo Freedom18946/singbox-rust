@@ -1,7 +1,7 @@
 //! Background services (NTP, Resolved, DERP, SSM, etc.)
 
 pub mod cache_file;
-pub mod clash_api;
+
 
 #[cfg(feature = "service_derp")]
 pub mod derp;

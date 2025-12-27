@@ -2,7 +2,7 @@
 name = "sb-admin-contract"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.90"
+rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 description = "Shared envelope and error types for admin endpoints and CLI JSON."
 repository = ""

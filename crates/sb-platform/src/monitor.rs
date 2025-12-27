@@ -100,11 +100,11 @@ impl NetworkMonitor {
     pub fn get_network_type(&self) -> &'static str {
         #[cfg(target_os = "macos")]
         {
-            return get_network_type_macos();
+            get_network_type_macos()
         }
         #[cfg(target_os = "windows")]
         {
-            return get_network_type_windows();
+            get_network_type_windows()
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
@@ -116,11 +116,11 @@ impl NetworkMonitor {
     pub fn is_expensive(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
-            return matches!(get_network_type_macos(), "cellular");
+            matches!(get_network_type_macos(), "cellular")
         }
         #[cfg(target_os = "windows")]
         {
-            return matches!(get_network_type_windows(), "cellular");
+            matches!(get_network_type_windows(), "cellular")
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
@@ -130,14 +130,8 @@ impl NetworkMonitor {
 
     /// Check if the current network is constrained (e.g., low data mode).
     pub fn is_constrained(&self) -> bool {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
-        {
-            return false;
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            false
-        }
+        // No platform currently supports constrained network detection
+        false
     }
 
     /// Start listening for network changes.
@@ -234,6 +228,9 @@ fn get_network_type_macos() -> &'static str {
     use std::ffi::CStr;
 
     let mut names = HashSet::new();
+    // SAFETY: libc::getifaddrs is a standard POSIX function that populates
+    // a linked list of interface addresses. We check the return value and
+    // properly free the memory with freeifaddrs at the end.
     unsafe {
         let mut addrs: *mut libc::ifaddrs = std::ptr::null_mut();
         if libc::getifaddrs(&mut addrs) != 0 {

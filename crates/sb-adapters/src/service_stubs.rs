@@ -138,7 +138,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    #[ignore] // TODO: cross-platform behavior complex, covered in resolved_impl.rs
+
     fn test_resolved_stub_registration() {
         let registry = sb_core::service::ServiceRegistry::new();
         assert!(registry.register(ServiceType::Resolved, build_resolved_service));

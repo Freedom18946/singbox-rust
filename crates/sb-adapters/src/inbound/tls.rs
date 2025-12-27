@@ -4,7 +4,7 @@ use tokio_rustls::rustls;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
 
-pub struct TlsMaterial<'a> {
+pub(crate) struct TlsMaterial<'a> {
     pub cert_pem: Option<&'a str>,
     pub cert_path: Option<&'a str>,
     pub key_pem: Option<&'a str>,
@@ -12,7 +12,7 @@ pub struct TlsMaterial<'a> {
 }
 
 impl<'a> TlsMaterial<'a> {
-    pub fn from_paths(cert_path: &'a str, key_path: &'a str) -> Self {
+    pub(crate) fn from_paths(cert_path: &'a str, key_path: &'a str) -> Self {
         Self {
             cert_pem: None,
             cert_path: Some(cert_path),
@@ -22,7 +22,7 @@ impl<'a> TlsMaterial<'a> {
     }
 }
 
-pub fn build_tls_acceptor(
+pub(crate) fn build_tls_acceptor(
     material: TlsMaterial<'_>,
     alpn: Option<&[String]>,
 ) -> Result<Arc<TlsAcceptor>> {

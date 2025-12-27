@@ -133,7 +133,7 @@ _No blocking TODOs found - all critical functionality is complete._
 ### AnyTLS Padding
 - **Location**: `crates/sb-adapters/src/outbound/anytls.rs:129`
 - **Description**: Implement random padding for handshake
-- **Status**: Basic padding implemented; random padding is traffic analysis resistance enhancement
+- **Status**: ✅ RESOLVED - implemented random padding (0-255 bytes) for traffic analysis resistance (2025-12-27).
 
 ### ECH Payload (rustls)
 - **Location**: `crates/sb-transport/src/tls.rs:660`
@@ -144,7 +144,7 @@ _No blocking TODOs found - all critical functionality is complete._
 ### Circuit Breaker Trait
 - **Location**: `crates/sb-transport/src/pool/circuit_breaker.rs:134`
 - **Description**: Fix FnDialer trait bounds issue
-- **Status**: Circuit breaker functional; trait cleanup is code quality enhancement
+- **Status**: ✅ RESOLVED - Replaced FnDialer usage with proper MockDialer struct in tests (2025-12-27).
 
 ## Test Coverage Summary
 
@@ -210,10 +210,10 @@ _No blocking TODOs found - all critical functionality is complete._
 - `crates/sb-platform/src/process/native_macos.rs`: 2 TODOs (optimization)
 - `crates/sb-adapters/src/inbound/vless.rs`: 1 TODO (TLS wrapper)
 - `crates/sb-adapters/src/inbound/tun_enhanced.rs`: 1 TODO (router selection)
-- `crates/sb-adapters/src/outbound/anytls.rs`: 1 TODO (padding)
+- `crates/sb-adapters/src/outbound/anytls.rs`: 0 TODOs (resolved)
 - `crates/sb-adapters/src/service_stubs.rs`: 1 TODO (cross-platform test)
 - `crates/sb-tls/src/lib.rs`: 1 TODO (browser fingerprint)
-- `crates/sb-transport/src/pool/circuit_breaker.rs`: 1 TODO (trait bounds)
+- `crates/sb-transport/src/pool/circuit_breaker.rs`: 0 TODOs (resolved)
 - `crates/sb-transport/src/tls.rs`: 1 TODO (ECH payload)
 - `crates/sb-transport/src/grpc.rs`: 1 TODO (server-side)
 

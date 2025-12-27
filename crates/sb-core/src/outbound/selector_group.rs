@@ -499,6 +499,10 @@ impl OutboundConnector for SelectorGroup {
 
         result
     }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// Perform a health check via a specific outbound connector

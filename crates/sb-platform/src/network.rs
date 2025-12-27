@@ -197,7 +197,7 @@ fn get_mac_windows(iface: &str) -> Result<MacAddress, String> {
 pub fn parse_mac_string(raw: &str) -> Option<MacAddress> {
     let cleaned = raw.trim().trim_matches('"');
     let parts: Vec<&str> = cleaned
-        .split(|c| c == '-' || c == ':' || c == ' ')
+        .split(['-', ':', ' '])
         .filter(|s| !s.is_empty())
         .collect();
 

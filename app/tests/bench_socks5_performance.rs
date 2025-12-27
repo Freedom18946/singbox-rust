@@ -111,7 +111,7 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
 
     ready_rx
         .await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socks ready failed"))?;
+        .map_err(|_| std::io::Error::other("socks ready failed"))?;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     Ok((socks_addr, stop_tx))

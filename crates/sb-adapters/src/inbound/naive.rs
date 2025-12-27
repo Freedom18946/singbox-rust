@@ -20,6 +20,7 @@ use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
 use sb_transport::dialer::AsyncReadWrite;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -41,6 +42,26 @@ pub struct NaiveInboundConfig {
     pub password: Option<String>,
     /// Outbound registry for upstream connection
     pub outbounds: Arc<OutboundRegistryHandle>,
+    /// Active connection counter
+    pub connections: Arc<AtomicU64>,
+}
+
+/// RAII guard for connection tracking
+struct ConnectionGuard {
+    counter: Arc<AtomicU64>,
+}
+
+impl ConnectionGuard {
+    fn new(counter: Arc<AtomicU64>) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self { counter }
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 /// Main server loop
@@ -83,8 +104,10 @@ pub async fn serve(cfg: NaiveInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 };
 
                 let cfg_clone = cfg.clone();
+                let _guard = ConnectionGuard::new(cfg.connections.clone());
 
                 tokio::spawn(async move {
+                    let _guard = _guard; // Move guard into task
                     // Create TLS transport inside the spawn to avoid clone issues
                     let tls_transport = sb_transport::TlsTransport::new(cfg_clone.tls.clone());
                     match tls_transport.wrap_server(stream).await {
@@ -411,6 +434,7 @@ impl NaiveInboundAdapter {
             username,
             password,
             outbounds,
+            connections: Arc::new(AtomicU64::new(0)),
         };
 
         Ok(Box::new(NaiveInboundAdapter {
@@ -459,8 +483,7 @@ impl sb_core::adapter::InboundService for NaiveInboundAdapter {
     }
 
     fn active_connections(&self) -> Option<u64> {
-        // TODO: Add connection tracking in the future
-        None
+        Some(self.config.connections.load(Ordering::Relaxed))
     }
 
     fn udp_sessions_estimate(&self) -> Option<u64> {

@@ -254,8 +254,7 @@ pub(crate) async fn handle_conn(
                                 }
                             }
                         }
-                        let clash_mode_str =
-                            br_owned.context.clash_server.as_ref().map(|s| s.get_mode());
+                        let clash_mode_str: Option<String> = None;
                         let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
                             "rule" => "Rule",
                             "global" => "Global",
@@ -557,7 +556,7 @@ pub(crate) async fn handle_conn(
                 }
             }
         }
-        let clash_mode_str = bridge.context.clash_server.as_ref().map(|s| s.get_mode());
+        let clash_mode_str: Option<String> = None;
         let clash_mode_ref = clash_mode_str.as_deref().map(|s| match s {
             "rule" => "Rule",
             "global" => "Global",

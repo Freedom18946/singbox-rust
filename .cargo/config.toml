@@ -23,7 +23,7 @@ rustflags = [
 rustdocflags = ["-D", "warnings"]
 
 # Target-specific configurations
-# Note: Rust 1.90+ uses lld by default on x86_64-unknown-linux-gnu
+# Note: Rust 1.92+ uses lld by default on x86_64-unknown-linux-gnu
 # For other platforms (macOS, Windows), we manually enable rust-lld for faster linking
 
 # macOS Apple Silicon - Use rust-lld for 30-50% faster linking

@@ -76,12 +76,10 @@ impl MacOsTun {
             sc_reserved: [0; 5],
         };
 
-        // SAFETY:
-        // - 不变量：fd 是有效的文件描述符，addr 指向有效的 SockaddrCtl 结构体
-        // - 并发/别名：addr 为局部变量，由当前线程独占访问
-        // - FFI/平台契约：connect 系统调用参数类型转换合法
         #[allow(clippy::ptr_as_ptr, clippy::borrow_as_ptr)] // Required for C FFI
         #[allow(clippy::cast_possible_truncation)] // socklen_t is u32 on macOS
+        // SAFETY: fd is a valid file descriptor, addr points to a valid SockaddrCtl struct,
+        // and the size calculation is correct for the connect syscall.
         let result = unsafe {
             libc::connect(
                 fd,
@@ -142,15 +140,13 @@ impl MacOsTun {
         #[allow(clippy::cast_possible_truncation)] // IF_NAMESIZE is a small constant
         let mut len = libc::IF_NAMESIZE as libc::socklen_t;
 
-        // SAFETY:
-        // - 不变量：fd 是有效的文件描述符，ifname 是大小为 IF_NAMESIZE 的可变缓冲区
-        // - 并发/别名：ifname 为局部变量，由当前线程独占访问
-        // - FFI/平台契约：getsockopt 系统调用参数类型和大小正确
         #[allow(
             clippy::cast_possible_truncation,
             clippy::ptr_as_ptr,
             clippy::borrow_as_ptr
         )] // Required for C FFI
+        // SAFETY: fd is a valid file descriptor, ifname is a mutable buffer of IF_NAMESIZE,
+        // and len pointer is valid for getsockopt to write the actual size.
         let result = unsafe {
             libc::getsockopt(
                 fd,

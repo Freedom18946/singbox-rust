@@ -11,13 +11,13 @@
 //! - `network_is_constrained`: From platform NetworkMonitor
 //! - `user`/`user_id`/`group`/`group_id`: From process info lookup
 
+#[allow(unused_imports)]
 use std::sync::Arc;
 
 /// Source of routing context information.
 #[derive(Debug, Clone, Default)]
 pub struct ContextSource {
-    /// Clash API server for mode information.
-    pub clash_server: Option<Arc<dyn crate::context::ClashServer>>,
+
     /// Network monitor for network type info.
     #[cfg(feature = "platform")]
     pub network_monitor: Option<Arc<sb_platform::monitor::NetworkMonitor>>,
@@ -50,13 +50,11 @@ pub struct ContextData {
 
 impl ContextData {
     /// Populate from available sources.
+    #[allow(unused_variables, unused_mut)]
     pub fn populate(source: &ContextSource) -> Self {
         let mut data = Self::default();
 
-        // Populate clash_mode from Clash API server
-        if let Some(ref clash) = source.clash_server {
-            data.clash_mode = Some(clash.get_mode());
-        }
+
 
         // Populate network info from platform monitor
         #[cfg(feature = "platform")]

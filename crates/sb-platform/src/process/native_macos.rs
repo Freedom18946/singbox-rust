@@ -131,7 +131,9 @@ impl NativeMacOsProcessMatcher {
                 }
 
                 let in_info = match SocketInfoKind::from(socket.psi.soi_kind) {
+                    // SAFETY: union access is safe after verifying SocketInfoKind
                     SocketInfoKind::Tcp => unsafe { socket.psi.soi_proto.pri_tcp.tcpsi_ini },
+                    // SAFETY: union access is safe after verifying SocketInfoKind
                     SocketInfoKind::In => unsafe { socket.psi.soi_proto.pri_in },
                     _ => continue,
                 };
@@ -167,9 +169,11 @@ fn socket_matches(conn: &ConnectionInfo, info: &InSockInfo, family: i32) -> bool
 fn parse_socket_addrs(info: &InSockInfo, family: i32) -> Option<(SocketAddr, SocketAddr)> {
     match family {
         libc::AF_INET => {
+            // SAFETY: union access is safe after verifying family == AF_INET
             let local_ip = Ipv4Addr::from(u32::from_be(unsafe {
                 info.insi_laddr.ina_46.i46a_addr4.s_addr
             }));
+            // SAFETY: union access is safe after verifying family == AF_INET
             let remote_ip = Ipv4Addr::from(u32::from_be(unsafe {
                 info.insi_faddr.ina_46.i46a_addr4.s_addr
             }));
@@ -180,7 +184,9 @@ fn parse_socket_addrs(info: &InSockInfo, family: i32) -> Option<(SocketAddr, Soc
             Some((local, remote))
         }
         libc::AF_INET6 => {
+            // SAFETY: union access is safe after verifying family == AF_INET6
             let local_ip = Ipv6Addr::from(unsafe { info.insi_laddr.ina_6.s6_addr });
+            // SAFETY: union access is safe after verifying family == AF_INET6
             let remote_ip = Ipv6Addr::from(unsafe { info.insi_faddr.ina_6.s6_addr });
             let local_port = u16::from_be(info.insi_lport as u16);
             let remote_port = u16::from_be(info.insi_fport as u16);

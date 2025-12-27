@@ -643,10 +643,10 @@ fn test_selector_empty_outbounds() {
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
     let selector = bridge.find_outbound("empty-selector");
-    if selector.is_none() {
-        println!("Selector with empty outbounds was not created (as expected)");
+    if let Some(s) = selector {
+        println!("Selector created: {:?}", s);
     } else {
-        println!("Selector created: {:?}", selector.unwrap());
+        println!("Selector with empty outbounds was not created (as expected)");
     }
     // assert!(selector.is_some(), "Selector with empty outbounds should be built");
     // It might be useless, but should exist.

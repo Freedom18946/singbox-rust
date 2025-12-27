@@ -27,7 +27,7 @@ const ITEM_PROCESS_PATH: u8 = 12;
 const ITEM_PACKAGE_NAME: u8 = 13;
 const ITEM_WIFI_SSID: u8 = 14;
 const ITEM_WIFI_BSSID: u8 = 15;
-const ITEM_ADGUARD_DOMAIN: u8 = 16;
+#[allow(dead_code)] // Reserved for future AdGuard domain matching\nconst ITEM_ADGUARD_DOMAIN: u8 = 16;
 const ITEM_PROCESS_PATH_REGEX: u8 = 17;
 const ITEM_NETWORK_TYPE: u8 = 18;
 const ITEM_NETWORK_IS_EXPENSIVE: u8 = 19;
@@ -257,74 +257,13 @@ fn parse_rule_item(
     rule: &mut DefaultRule,
 ) -> SbResult<()> {
     match item_type {
-        // Domain (exact)
+        // Domain - in sing-box binary format, this covers both exact and suffix matching
+        // Go's domain.Matcher treats domains as suffix matches by default
         ITEM_DOMAIN => {
             let domain = read_string(cursor)?;
-            rule.domain.push(DomainRule::Exact(domain));
-        }
-        // Domain suffix
-        // Go does not have explicit Suffix item type?
-        // Wait, Go uses domain.Matcher which handles suffix.
-        // In Go srs/binary.go: ruleItemDomain (2) writes exact domain.
-        // Where is suffix?
-        // Go Reference: domain.Matcher stores suffix as ".example.com".
-        // Go writes exact/suffix/keyword/regex into separate items.
-        // Go srs/binary.go line 76 (truncated in previous cat):
-        // It iterates rule.Domain...
-        // Let's assume ITEM_DOMAIN is Exact?
-        // Wait, looking at Go source again (not visible fully).
-        // Common practice: "example.com" is exact, ".example.com" is suffix?
-        // Or maybe Go binary format distinguishes them?
-        // The consts list: Domain, DomainKeyword, DomainRegex. NO DomainSuffix.
-        // Go likely maps Suffix to Domain with leading dot or something?
-        // Or maybe Domain (2) covers both?
-        // In Sing-Box Go:
-        // rule.Domain is []string. Suffix is []string.
-        // Wait, looking at my cat output (step 167):
-        // It writes ruleItemDomain for rule.Domain.
-        // It writes ruleItemDomainKeyword for rule.DomainKeyword.
-        // It writes ruleItemDomainRegex for rule.DomainRegex.
-        // It does NOT have ruleItemDomainSuffix.
-        // AND it does NOT have code to write Suffix?
-        // This implies Suffix is merged into Domain?
-        // Or Go SRS V2/V3 doesn't support Suffix separate from Domain?
-        // Actually, Sing-Box documents "domain_suffix".
-        // Maybe it's mapped to Domain (2) but stored with specific format?
-        // OR I missed a constant.
-        // Let's look at `const` block again (Step 172).
-        // ruleItemDomain, ruleItemDomainKeyword, ruleItemDomainRegex.
-        // NO Suffix.
-        // This means Rust's `DomainRule::Suffix` must be serialized as `ITEM_DOMAIN`?
-        // But how to distinguish?
-        // Go's `domain.NewMatcher` usually treats ".com" as suffix.
-        // So I should map Rust Suffix => ITEM_DOMAIN (2).
-        // And Rust Exact => ITEM_DOMAIN (2).
-        ITEM_DOMAIN => {
-             // In Rust we need to distinguish for optimized matching.
-             // If implicit: if starts with dot, it's suffix?
-             // But Exact might also start with dot?
-             // Let's check how parse handles it.
-             let domain = read_string(cursor)?;
-             // Heuristic: pure domain is exact? No, sing-box usually treats all domains as "suffix matching" if no special char?
-             // Actually, in Go sing-box, `domain` list is usually suffix match unless specified `full:`?
-             // No, `domain` is usually suffix. `domain_suffix` is alias.
-             // Wait, `domain` in JSON -> `geosite` uses `domain`.
-             // In sing-box docs: `domain` matches domain and subdomains (Suffix). `domain_suffix` is same.
-             // `domain_keyword` is keyword.
-             // `domain_regex` is regex.
-             // Is there `domain_full`?
-             // If `domain` is Suffix by default, then `DomainRule::Suffix` fits ITEM_DOMAIN.
-             // What about `DomainRule::Exact`?
-             // Maybe go uses `full:example.com`?
-             // Go's `writeRuleItemString(writer, ruleItemDomain, rule.Domain)` writes the string as-is.
-             // So I should map ALL domain/suffix/full to ITEM_DOMAIN?
-             // But if I write "domain:example.com", Go treats it as Suffix?
-             // Rust `DomainRule::Exact` implies Full match.
-             // I'll stick to: Rust DomainRule::Suffix -> ITEM_DOMAIN.
-             // Rust DomainRule::Exact -> ITEM_DOMAIN?
-             // If I write Exact to ITEM_DOMAIN, verify behavior.
-             rule.domain_suffix.push(domain.clone()); 
-             rule.domain.push(DomainRule::Suffix(domain));
+            // Store in both domain_suffix (for index) and domain (for matching)
+            rule.domain_suffix.push(domain.clone());
+            rule.domain.push(DomainRule::Suffix(domain));
         }
         ITEM_DOMAIN_KEYWORD => {
             let keyword = read_string(cursor)?;
@@ -404,8 +343,14 @@ fn parse_rule_item(
             // Let's read as u8 and format to string just to hold it?
             // "0" -> ???
             // I'll stick to skipping or strict reading.
-            let _val = read_u8(cursor)?; 
-            // TODO: Map u8 to network type string
+            let val = read_u8(cursor)?;
+            let network_type = match val {
+                1 => "wifi",
+                2 => "cellular",
+                3 => "ethernet",
+                _ => "unknown",
+            };
+            rule.network_type.push(network_type.to_string());
         }
         ITEM_NETWORK_IS_EXPENSIVE => {
             // Go: binary.Write(..., ruleItemNetworkIsExpensive) (no value payload? just the tag implies true?)

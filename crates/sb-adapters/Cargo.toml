@@ -2,7 +2,7 @@
 name = "sb-adapters"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.90"
+rust-version.workspace = true
 license = "Apache-2.0"
 description = "Proxy adapters for singbox-rust"
 repository = "https://github.com/singbox-rust/singbox-rust"
@@ -92,6 +92,7 @@ ssh-key = { version = "0.6", optional = true }
 
 anytls-rs = { version = "0.5.4", optional = true }
 smoltcp = { version = "0.11", features = ["std", "async", "medium-ethernet", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp", "socket-icmp"] }
+md-5 = "0.10.6"
 
 # D-Bus support for systemd-resolved service (Linux only)
 [target.'cfg(target_os = "linux")'.dependencies]

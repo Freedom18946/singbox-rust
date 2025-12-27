@@ -720,7 +720,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     cfg.validate()?; // Configuration validation (IR compiled inside)
 
     // Convert to IR once
-    let cfg_ir = sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?;
+    let cfg_ir = Arc::new(sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?);
 
     // Optionally configure DNS via config (env bridge for sb-core)
     apply_dns_from_config(&cfg);
@@ -765,7 +765,14 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     if let Some(ref exp) = cfg_ir.experimental {
         if let Some(ref clash) = exp.clash_api {
             if let Some(ref listen) = clash.external_controller {
-                start_clash_api_server(listen.clone(), clash.secret.clone());
+                start_clash_api_server(
+                    listen.clone(),
+                    clash.secret.clone(),
+                    #[cfg(feature = "router")]
+                    rh.clone(),
+                    oh.clone(),
+                    cfg_ir.clone(),
+                );
             }
         }
     }
@@ -806,7 +813,13 @@ async fn start_inbounds_from_ir(
 /// Start Clash API server in background task.
 /// 在后台任务中启动 Clash API 服务器。
 #[cfg(feature = "clash_api")]
-fn start_clash_api_server(listen: String, secret: Option<String>) {
+fn start_clash_api_server(
+    listen: String,
+    secret: Option<String>,
+    #[cfg(feature = "router")] router: Arc<RouterHandle>,
+    outbounds: Arc<OutboundRegistryHandle>,
+    config_ir: Arc<sb_config::ir::ConfigIR>,
+) {
     use std::net::SocketAddr;
 
     let listen_addr: SocketAddr = match listen.parse() {
@@ -830,6 +843,13 @@ fn start_clash_api_server(listen: String, secret: Option<String>) {
 
     match sb_api::clash::ClashApiServer::new(config) {
         Ok(server) => {
+            let server = server
+                .with_outbound_registry(outbounds)
+                .with_config_ir(config_ir);
+
+            #[cfg(feature = "router")]
+            let server = server.with_router((*router).clone());
+
             info!(listen = %listen_addr, "Starting Clash API server");
             tokio::spawn(async move {
                 if let Err(e) = server.start().await {

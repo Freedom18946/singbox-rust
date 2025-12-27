@@ -20,7 +20,9 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use sb_core::routing::router::Router as CoreRouter;
+use sb_core::outbound::OutboundRegistryHandle;
+use sb_core::router::RouterHandle;
+use sb_config::ir::ConfigIR;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
@@ -41,15 +43,17 @@ pub struct ApiState {
     /// Real-time monitoring system handle
     pub monitoring: Option<MonitoringSystemHandle>,
     /// Router handle for routing decisions
-    pub router: Option<Arc<CoreRouter>>,
-    /// Outbound manager for proxy operations
-    pub outbound_manager: Option<Arc<sb_core::outbound::manager::OutboundManager>>,
+    pub router: Option<RouterHandle>,
+    /// Outbound registry handle for proxy operations
+    pub outbound_registry: Option<Arc<OutboundRegistryHandle>>,
     /// Connection manager for active connection tracking
     pub connection_manager: Option<Arc<ConnectionManager>>,
     /// DNS resolver for cache operations
     pub dns_resolver: Option<Arc<DnsResolver>>,
     /// Provider manager for proxy and rule providers
     pub provider_manager: Option<Arc<ProviderManager>>,
+    /// Global configuration IR
+    pub global_config: Option<Arc<ConfigIR>>,
 }
 
 impl ApiState {
@@ -70,10 +74,11 @@ impl ApiState {
             log_tx,
             monitoring: None,
             router: None,
-            outbound_manager: None,
+            outbound_registry: None,
             connection_manager: None,
             dns_resolver: None,
             provider_manager: None,
+            global_config: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -97,10 +102,11 @@ impl ApiState {
             log_tx,
             monitoring: Some(monitoring),
             router: None,
-            outbound_manager: None,
+            outbound_registry: None,
             connection_manager: None,
             dns_resolver: None,
             provider_manager: None,
+            global_config: None,
         };
 
         (state, traffic_rx, log_rx)
@@ -135,6 +141,24 @@ impl ClashApiServer {
         let (state, _traffic_rx, _log_rx) = ApiState::with_monitoring(config, monitoring);
 
         Ok(Self { state, listen_addr })
+    }
+
+    /// Set router handle
+    pub fn with_router(mut self, router: RouterHandle) -> Self {
+        self.state.router = Some(router);
+        self
+    }
+
+    /// Set outbound registry handle
+    pub fn with_outbound_registry(mut self, registry: Arc<OutboundRegistryHandle>) -> Self {
+        self.state.outbound_registry = Some(registry);
+        self
+    }
+
+    /// Set global configuration IR
+    pub fn with_config_ir(mut self, config: Arc<ConfigIR>) -> Self {
+        self.state.global_config = Some(config);
+        self
     }
 
     /// Start the API server
