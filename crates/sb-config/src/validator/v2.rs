@@ -574,6 +574,39 @@ pub fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<Value> {
                     "add it",
                 ));
             }
+            if let Some(listen_val) = ib.get("listen") {
+                if !listen_val.is_string() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/inbounds/{}/listen", i),
+                        "listen must be a string",
+                        "use string value",
+                    ));
+                }
+            }
+            if let Some(port_val) = ib.get("port") {
+                if !port_val.is_u64() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/inbounds/{}/port", i),
+                        "port must be a number",
+                        "use numeric value",
+                    ));
+                }
+            }
+            if let Some(port_val) = ib.get("listen_port") {
+                if !port_val.is_u64() {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/inbounds/{}/listen_port", i),
+                        "listen_port must be a number",
+                        "use numeric value",
+                    ));
+                }
+            }
 
             // additionalProperties=false (V2 allowed fields)
             if let Some(map) = ib.as_object() {

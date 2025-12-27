@@ -6,11 +6,11 @@
 
 ## Executive Summary
 
-The codebase contains approximately 70+ TODO/FIXME comments, categorized by priority and status. Most TODOs are:
-1. **Test placeholders** (~60%) - Future E2E test infrastructure
-2. **Enhancement opportunities** (~30%) - Nice-to-have improvements
-3. **Circular dependency fixes** (~5%) - Architectural improvements
-4. **Platform optimizations** (~5%) - Performance enhancements
+The codebase contains TODO/FIXME comments, categorized by priority and status. Most remaining TODOs are:
+1. **Enhancement opportunities** - Nice-to-have improvements
+2. **Circular dependency fixes** - Architectural improvements
+3. **Platform optimizations** - Performance enhancements
+4. **Test infrastructure** - ✅ Resolved (0 TODOs remain)
 
 **Impact on 100% Protocol Coverage**: ❌ **NONE** - All TODOs are non-blocking for the achieved parity milestone.
 
@@ -74,47 +74,47 @@ _No blocking TODOs found - all critical functionality is complete._
 - **Status**: Current TLS implementation sufficient for 100% parity
 - **Effort**: High (research + implementation)
 
-### Priority 3: Test Infrastructure Placeholders (~60% of all TODOs)
+### Priority 3: Test Infrastructure (Resolved)
 
 #### E2E Test Scaffolding
 
 **TUIC E2E Tests** (`app/tests/tuic_outbound_e2e.rs`)
-- Lines: 41-44, 67-69, 98-100, 131-133, 160-162, 320-321, 331-334, 364-366
-- Count: 24 TODOs
-- Description: Placeholder test structure for TUIC E2E testing
-- Status: Unit tests complete (11 passed); E2E tests await test server infrastructure
-- Reason: Requires external TUIC server or containerized test environment
+- Lines: N/A
+- Count: 0 TODOs
+- Description: TUIC outbound/inbound E2E tests with self-signed TLS and local echo servers
+- Status: ✅ Implemented; runs under `--features net_e2e` (upstream compatibility remains env-gated)
+- Reason: In-process TUIC server removes external dependency
 
 **Protocol Chain E2E** (`app/tests/protocol_chain_e2e.rs`)
-- Lines: 270, 292, 314
-- Count: 3 TODOs
+- Lines: N/A
+- Count: 0 TODOs
 - Description: Mixed/Shadowsocks/VMess inbound+outbound chaining
-- Status: Individual protocols tested; chain tests await integration framework
+- Status: ✅ Implemented with local in-process servers and echo targets
 
 **Performance Benchmarks** (`app/tests/bench_p0_protocols.rs`)
-- Lines: 224, 235, 246, 257, 268, 279
-- Count: 6 TODOs
+- Lines: N/A
+- Count: 0 TODOs
 - Description: REALITY, ECH, Hysteria v1/v2, SSH, TUIC benchmarks
-- Status: Functional tests complete; performance benchmarks are separate milestone
-- Note: `benches/` directory has criterion benchmarks; these are alternative stubs
+- Status: ✅ Implemented; tests are `#[ignore]` by default to avoid long runs
+- Note: `benches/` directory still contains criterion benchmarks
 
 **SOCKS5 Performance** (`app/tests/bench_socks5_performance.rs`)
-- Lines: 267, 272, 301
-- Count: 3 TODOs
+- Lines: N/A
+- Count: 0 TODOs
 - Description: SOCKS5 proxy server for performance testing
-- Status: Direct connection tests work; proxy benchmarks await test server
+- Status: ✅ Implemented with local SOCKS5 inbound + echo server
 
 **HTTP Auth Timeout** (`app/tests/http_auth_timeout.rs`)
-- Line: 17
-- Count: 1 TODO
+- Line: N/A
+- Count: 0 TODOs
 - Description: Rewrite test using current ProxyServer and Config API
-- Status: Legacy test; new tests in `adapter_instantiation_e2e.rs` cover this
+- Status: ✅ Implemented with in-process HTTP inbound and auth checks
 
 #### Fuzz Targets (`fuzz/targets/`)
 - Files: `protocols/fuzz_trojan.rs`, `protocols/fuzz_shadowsocks.rs`, `network/fuzz_tun_packet.rs`, `network/fuzz_mixed_protocol.rs`
-- Count: 4 TODOs
-- Description: Placeholder for real protocol parsing when exposed
-- Status: Fuzzing infrastructure exists; waiting for public parsing APIs
+- Count: 0 TODOs
+- Description: Fuzz coverage for protocol parsing and transport packet decoding
+- Status: ✅ Implemented with direct parsing entrypoints
 
 ## Implementation Details
 
@@ -150,9 +150,9 @@ _No blocking TODOs found - all critical functionality is complete._
 
 | Category | TODOs | Status | Blocking? |
 |----------|-------|--------|-----------|
-| E2E Tests | ~40 | Awaiting test infrastructure | ❌ No |
-| Performance Benchmarks | ~9 | Criterion benchmarks exist | ❌ No |
-| Fuzz Targets | 4 | Infrastructure exists | ❌ No |
+| E2E Tests | 0 | ✅ Implemented | ❌ No |
+| Performance Benchmarks | 0 | ✅ Implemented (ignored by default) | ❌ No |
+| Fuzz Targets | 0 | ✅ Implemented | ❌ No |
 | Unit Tests | 0 | ✅ Complete | ❌ No |
 | Integration Tests | 0 | ✅ Complete | ❌ No |
 

@@ -11,11 +11,19 @@ use sb_core::endpoint::{tailscale::TailscaleEndpoint, Endpoint, EndpointContext}
 
 pub fn build_tailscale_endpoint(
     ir: &EndpointIR,
-    _ctx: &EndpointContext,
+    ctx: &EndpointContext,
 ) -> Option<Arc<dyn Endpoint>> {
     if ir.ty != EndpointType::Tailscale {
         return None;
     }
 
-    Some(Arc::new(TailscaleEndpoint::new(ir)))
+    #[cfg(feature = "router")]
+    {
+        return Some(Arc::new(TailscaleEndpoint::new(ir, ctx.router.clone())));
+    }
+    #[cfg(not(feature = "router"))]
+    {
+        let _ = ctx;
+        Some(Arc::new(TailscaleEndpoint::new(ir)))
+    }
 }

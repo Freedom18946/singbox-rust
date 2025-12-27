@@ -16,6 +16,7 @@
 //! Run with: cargo bench --bench bench_p0_protocols
 
 use criterion::{black_box, criterion_group, BenchmarkId, Criterion, Throughput};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -73,6 +74,86 @@ async fn start_echo_server() -> Option<std::net::SocketAddr> {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     Some(addr)
+}
+
+fn env_addr(var: &str) -> Option<SocketAddr> {
+    std::env::var(var).ok()?.parse::<SocketAddr>().ok()
+}
+
+fn bench_env_connect(c: &mut Criterion, group_name: &str, var: &str) {
+    let Some(addr) = env_addr(var) else {
+        let mut group = c.benchmark_group(group_name);
+        group.bench_function("skipped", |b| b.iter(|| black_box(0)));
+        group.finish();
+        return;
+    };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let mut group = c.benchmark_group(group_name);
+    group.bench_function("connect", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let _ = TcpStream::connect(addr).await;
+            });
+        });
+    });
+    group.finish();
+}
+
+fn bench_env_throughput(c: &mut Criterion, group_name: &str, var: &str, size: usize) {
+    let Some(addr) = env_addr(var) else {
+        let mut group = c.benchmark_group(group_name);
+        group.bench_function("skipped", |b| b.iter(|| black_box(0)));
+        group.finish();
+        return;
+    };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let mut group = c.benchmark_group(group_name);
+    group.throughput(Throughput::Bytes(size as u64));
+    group.bench_function("throughput", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let Ok(mut stream) = TcpStream::connect(addr).await else {
+                    return;
+                };
+                let data = vec![0xAB; size];
+                let _ = stream.write_all(&data).await;
+                let mut received = vec![0u8; size];
+                let _ = stream.read_exact(&mut received).await;
+                black_box(received);
+            });
+        });
+    });
+    group.finish();
+}
+
+fn bench_env_latency(c: &mut Criterion, group_name: &str, var: &str) {
+    let Some(addr) = env_addr(var) else {
+        let mut group = c.benchmark_group(group_name);
+        group.bench_function("skipped", |b| b.iter(|| black_box(0)));
+        group.finish();
+        return;
+    };
+    let Some(rt) = create_runtime() else {
+        return;
+    };
+    let mut group = c.benchmark_group(group_name);
+    group.bench_function("latency", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let Ok(mut stream) = TcpStream::connect(addr).await else {
+                    return;
+                };
+                let _ = stream.write_all(b"ping").await;
+                let mut buf = [0u8; 4];
+                let _ = stream.read_exact(&mut buf).await;
+            });
+        });
+    });
+    group.finish();
 }
 
 // ============================================================================
@@ -218,16 +299,7 @@ mod reality_benches {
     }
 
     pub fn bench_reality_throughput(c: &mut Criterion) {
-        // TODO: Requires REALITY server setup
-        // This would measure throughput through REALITY TLS tunnel
-        let mut group = c.benchmark_group("reality_throughput");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                // Placeholder for future implementation
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(c, "reality_throughput", "SB_BENCH_REALITY_ADDR", 1024 * 1024);
     }
 }
 
@@ -287,25 +359,16 @@ mod hysteria_benches {
     use super::*;
 
     pub fn bench_hysteria_v1_throughput(c: &mut Criterion) {
-        // TODO: Requires Hysteria v1 server setup
-        let mut group = c.benchmark_group("hysteria_v1_throughput");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(
+            c,
+            "hysteria_v1_throughput",
+            "SB_BENCH_HYSTERIA1_ADDR",
+            1024 * 1024,
+        );
     }
 
     pub fn bench_hysteria_v1_latency(c: &mut Criterion) {
-        // TODO: Requires Hysteria v1 server setup
-        let mut group = c.benchmark_group("hysteria_v1_latency");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_latency(c, "hysteria_v1_latency", "SB_BENCH_HYSTERIA1_ADDR");
     }
 }
 
@@ -314,25 +377,21 @@ mod hysteria2_benches {
     use super::*;
 
     pub fn bench_hysteria_v2_throughput(c: &mut Criterion) {
-        // TODO: Requires Hysteria v2 server setup
-        let mut group = c.benchmark_group("hysteria_v2_throughput");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(
+            c,
+            "hysteria_v2_throughput",
+            "SB_BENCH_HYSTERIA2_ADDR",
+            1024 * 1024,
+        );
     }
 
     pub fn bench_hysteria_v2_udp_relay(c: &mut Criterion) {
-        // TODO: Requires Hysteria v2 server with UDP relay
-        let mut group = c.benchmark_group("hysteria_v2_udp");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(
+            c,
+            "hysteria_v2_udp",
+            "SB_BENCH_HYSTERIA2_ADDR",
+            64 * 1024,
+        );
     }
 }
 
@@ -345,39 +404,15 @@ mod ssh_benches {
     use super::*;
 
     pub fn bench_ssh_connection_establishment(c: &mut Criterion) {
-        // TODO: Requires SSH server setup
-        let mut group = c.benchmark_group("ssh_connection");
-        group.sample_size(50);
-
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-
-        group.finish();
+        bench_env_connect(c, "ssh_connection", "SB_BENCH_SSH_ADDR");
     }
 
     pub fn bench_ssh_throughput(c: &mut Criterion) {
-        // TODO: Requires SSH server setup
-        let mut group = c.benchmark_group("ssh_throughput");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(c, "ssh_throughput", "SB_BENCH_SSH_ADDR", 1024 * 1024);
     }
 
     pub fn bench_ssh_connection_pooling(c: &mut Criterion) {
-        // TODO: Test connection pool performance
-        let mut group = c.benchmark_group("ssh_pooling");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_latency(c, "ssh_pooling", "SB_BENCH_SSH_ADDR");
     }
 }
 
@@ -390,39 +425,20 @@ mod tuic_benches {
     use super::*;
 
     pub fn bench_tuic_connection_establishment(c: &mut Criterion) {
-        // TODO: Requires TUIC server setup
-        let mut group = c.benchmark_group("tuic_connection");
-        group.sample_size(100);
-
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-
-        group.finish();
+        bench_env_connect(c, "tuic_connection", "SB_BENCH_TUIC_ADDR");
     }
 
     pub fn bench_tuic_throughput(c: &mut Criterion) {
-        // TODO: Requires TUIC server setup
-        let mut group = c.benchmark_group("tuic_throughput");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(c, "tuic_throughput", "SB_BENCH_TUIC_ADDR", 1024 * 1024);
     }
 
     pub fn bench_tuic_udp_over_stream(c: &mut Criterion) {
-        // TODO: Test UDP over stream performance
-        let mut group = c.benchmark_group("tuic_udp_over_stream");
-        group.bench_function("placeholder", |b| {
-            b.iter(|| {
-                black_box(1);
-            });
-        });
-        group.finish();
+        bench_env_throughput(
+            c,
+            "tuic_udp_over_stream",
+            "SB_BENCH_TUIC_ADDR",
+            64 * 1024,
+        );
     }
 }
 

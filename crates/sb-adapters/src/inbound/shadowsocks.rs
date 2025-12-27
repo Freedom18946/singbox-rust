@@ -313,7 +313,8 @@ async fn write_aead_chunk(
     Ok(())
 }
 
-fn parse_ss_addr(buf: &[u8]) -> Result<(String, u16, usize)> {
+/// Parse a Shadowsocks address header from raw bytes.
+pub fn parse_ss_addr(buf: &[u8]) -> Result<(String, u16, usize)> {
     if buf.is_empty() {
         return Err(anyhow!("empty addr"));
     }

@@ -24,7 +24,6 @@ use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
-use std::io::Cursor;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -32,6 +31,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
+use super::tls;
 
 const ANYTLS_INBOUND_TAG: &str = "anytls";
 
@@ -87,7 +87,16 @@ impl AnyTlsInboundAdapter {
             )
         })?;
 
-        let tls = build_tls_acceptor(param).map_err(as_io_error)?;
+        let tls = tls::build_tls_acceptor(
+            tls::TlsMaterial {
+                cert_pem: param.tls_cert_pem.as_deref(),
+                cert_path: param.tls_cert_path.as_deref(),
+                key_pem: param.tls_key_pem.as_deref(),
+                key_path: param.tls_key_path.as_deref(),
+            },
+            param.tls_alpn.as_deref(),
+        )
+        .map_err(as_io_error)?;
         let padding = build_padding_factory(param).map_err(as_io_error)?;
         let users = prepare_users(param).map_err(as_io_error)?;
 
@@ -481,60 +490,6 @@ async fn fallback_connect(
         ProxyChoice::Socks5(addr) => socks5_connect_through_socks5(addr, host, port, opts).await?,
     };
     Ok(stream)
-}
-
-fn build_tls_acceptor(param: &InboundParam) -> Result<Arc<TlsAcceptor>> {
-    let (certs, key) = load_cert_and_key(param)?;
-    let builder = rustls::ServerConfig::builder().with_no_client_auth();
-    let mut config = builder.with_single_cert(certs, key)?;
-    if let Some(alpn) = &param.tls_alpn {
-        config.alpn_protocols = alpn.iter().map(|p| p.as_bytes().to_vec()).collect();
-    }
-    Ok(Arc::new(TlsAcceptor::from(Arc::new(config))))
-}
-
-fn load_cert_and_key(
-    param: &InboundParam,
-) -> Result<(
-    Vec<rustls::pki_types::CertificateDer<'static>>,
-    rustls::pki_types::PrivateKeyDer<'static>,
-)> {
-    let cert_pem = if let Some(pem) = &param.tls_cert_pem {
-        pem.clone()
-    } else if let Some(path) = &param.tls_cert_path {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read certificate from {}", path))?
-    } else {
-        return Err(anyhow!(
-            "AnyTLS inbound requires tls_cert_pem or tls_cert_path"
-        ));
-    };
-
-    let key_pem = if let Some(pem) = &param.tls_key_pem {
-        pem.clone()
-    } else if let Some(path) = &param.tls_key_path {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read private key from {}", path))?
-    } else {
-        return Err(anyhow!(
-            "AnyTLS inbound requires tls_key_pem or tls_key_path"
-        ));
-    };
-
-    let mut cert_reader = Cursor::new(cert_pem);
-    let certs = rustls_pemfile::certs(&mut cert_reader)
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .context("failed to parse certificate PEM")?;
-    if certs.is_empty() {
-        return Err(anyhow!("no certificates found in PEM data"));
-    }
-
-    let mut key_reader = Cursor::new(key_pem);
-    let key = rustls_pemfile::private_key(&mut key_reader)
-        .context("failed to parse private key")?
-        .ok_or_else(|| anyhow!("no private key found in PEM data"))?;
-
-    Ok((certs, key))
 }
 
 fn build_padding_factory(param: &InboundParam) -> Result<Arc<PaddingFactory>> {

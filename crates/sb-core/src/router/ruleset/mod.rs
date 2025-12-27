@@ -91,6 +91,20 @@ pub struct DefaultRule {
     pub process_path: Vec<String>,
     /// Process path regex
     pub process_path_regex: Vec<String>,
+    /// Package name (Android)
+    pub package_name: Vec<String>,
+    /// WiFi SSID
+    pub wifi_ssid: Vec<String>,
+    /// WiFi BSSID
+    pub wifi_bssid: Vec<String>,
+    /// Network Type (Android)
+    pub network_type: Vec<String>,
+    /// Network is expensive (Android)
+    pub network_is_expensive: bool,
+    /// Network is constrained (Android)
+    pub network_is_constrained: bool,
+    /// DNS Query Type
+    pub query_type: Vec<String>, // simplified as string for matching
 }
 
 /// Logical rule with AND/OR operations

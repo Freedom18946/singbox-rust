@@ -401,6 +401,24 @@ fn rule_to_json(rule: &sb_core::router::ruleset::Rule) -> serde_json::Value {
             if !r.process_path_regex.is_empty() {
                 obj["process_path_regex"] = serde_json::json!(r.process_path_regex);
             }
+            if !r.package_name.is_empty() {
+                obj["package_name"] = serde_json::json!(r.package_name);
+            }
+            if !r.wifi_ssid.is_empty() {
+                obj["wifi_ssid"] = serde_json::json!(r.wifi_ssid);
+            }
+            if !r.wifi_bssid.is_empty() {
+                obj["wifi_bssid"] = serde_json::json!(r.wifi_bssid);
+            }
+            if !r.query_type.is_empty() {
+                obj["query_type"] = serde_json::json!(r.query_type);
+            }
+            if r.network_is_expensive {
+                obj["network_is_expensive"] = serde_json::json!(true);
+            }
+            if r.network_is_constrained {
+                obj["network_is_constrained"] = serde_json::json!(true);
+            }
             obj
         }
         Rule::Logical(r) => {

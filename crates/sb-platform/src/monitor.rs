@@ -2,7 +2,7 @@
 ///
 /// This module abstracts platform-specific network monitoring capabilities.
 /// - Linux: Uses netlink sockets via rtnetlink
-/// - macOS/Windows: Stub implementations (TODO)
+/// - macOS/Windows: Best-effort interface probing
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -98,20 +98,46 @@ impl NetworkMonitor {
 
     /// Get the current network type (e.g., "wifi", "cellular", "ethernet").
     pub fn get_network_type(&self) -> &'static str {
-        // TODO: Implement platform-specific logic
-        "unknown"
+        #[cfg(target_os = "macos")]
+        {
+            return get_network_type_macos();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return get_network_type_windows();
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            "unknown"
+        }
     }
 
     /// Check if the current network is expensive (e.g., cellular data).
     pub fn is_expensive(&self) -> bool {
-        // TODO: Implement platform-specific logic
-        false
+        #[cfg(target_os = "macos")]
+        {
+            return matches!(get_network_type_macos(), "cellular");
+        }
+        #[cfg(target_os = "windows")]
+        {
+            return matches!(get_network_type_windows(), "cellular");
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            false
+        }
     }
 
     /// Check if the current network is constrained (e.g., low data mode).
     pub fn is_constrained(&self) -> bool {
-        // TODO: Implement platform-specific logic
-        false
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            return false;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            false
+        }
     }
 
     /// Start listening for network changes.
@@ -202,6 +228,115 @@ impl NetworkMonitor {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn get_network_type_macos() -> &'static str {
+    use std::collections::HashSet;
+    use std::ffi::CStr;
+
+    let mut names = HashSet::new();
+    unsafe {
+        let mut addrs: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut addrs) != 0 {
+            return "unknown";
+        }
+
+        let mut cursor = addrs;
+        while !cursor.is_null() {
+            let ifa = &*cursor;
+            if !ifa.ifa_name.is_null() {
+                let flags = ifa.ifa_flags as i32;
+                let is_up = flags & libc::IFF_UP != 0;
+                let is_running = flags & libc::IFF_RUNNING != 0;
+                let is_loopback = flags & libc::IFF_LOOPBACK != 0;
+                if is_up && is_running && !is_loopback {
+                    if let Ok(name) = CStr::from_ptr(ifa.ifa_name).to_str() {
+                        names.insert(name.to_string());
+                    }
+                }
+            }
+            cursor = (*cursor).ifa_next;
+        }
+
+        libc::freeifaddrs(addrs);
+    }
+
+    if names.iter().any(|n| n.starts_with("pdp_ip")) {
+        return "cellular";
+    }
+    if names.iter().any(|n| n.starts_with("awdl") || n.starts_with("llw")) {
+        return "wifi";
+    }
+    if names.iter().any(|n| n.starts_with("en")) {
+        return "ethernet";
+    }
+
+    "unknown"
+}
+
+#[cfg(target_os = "windows")]
+fn get_network_type_windows() -> &'static str {
+    use windows::Win32::NetworkManagement::IpHelper::{
+        GetAdaptersAddresses, GAA_FLAG_INCLUDE_PREFIX, IF_TYPE_ETHERNET_CSMACD,
+        IF_TYPE_IEEE80211, IF_TYPE_SOFTWARE_LOOPBACK, IF_TYPE_WWANPP, IF_TYPE_WWANPP2,
+        IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows::Win32::NetworkManagement::Ndis::IfOperStatusUp;
+    use windows::Win32::Networking::WinSock::AF_UNSPEC;
+
+    let mut buffer_size: u32 = 15000;
+    let mut buffer: Vec<u8>;
+
+    loop {
+        buffer = vec![0u8; buffer_size as usize];
+        let result = unsafe {
+            GetAdaptersAddresses(
+                AF_UNSPEC.0 as u32,
+                GAA_FLAG_INCLUDE_PREFIX,
+                None,
+                Some(buffer.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH),
+                &mut buffer_size,
+            )
+        };
+        match result.0 {
+            0 => break,
+            111 => continue,
+            _ => return "unknown",
+        }
+    }
+
+    let mut saw_wifi = false;
+    let mut saw_ethernet = false;
+    let mut saw_cellular = false;
+
+    let mut adapter_ptr = buffer.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+    unsafe {
+        while !adapter_ptr.is_null() {
+            let adapter = &*adapter_ptr;
+            if adapter.OperStatus == IfOperStatusUp
+                && adapter.IfType != IF_TYPE_SOFTWARE_LOOPBACK
+            {
+                match adapter.IfType {
+                    IF_TYPE_WWANPP | IF_TYPE_WWANPP2 => saw_cellular = true,
+                    IF_TYPE_IEEE80211 => saw_wifi = true,
+                    IF_TYPE_ETHERNET_CSMACD => saw_ethernet = true,
+                    _ => {}
+                }
+            }
+            adapter_ptr = adapter.Next;
+        }
+    }
+
+    if saw_cellular {
+        "cellular"
+    } else if saw_wifi {
+        "wifi"
+    } else if saw_ethernet {
+        "ethernet"
+    } else {
+        "unknown"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,8 +366,16 @@ mod tests {
     #[test]
     fn test_default_values() {
         let monitor = NetworkMonitor::new();
-        assert_eq!(monitor.get_network_type(), "unknown");
-        assert!(!monitor.is_expensive());
+        let network_type = monitor.get_network_type();
+        assert!(matches!(
+            network_type,
+            "unknown" | "wifi" | "cellular" | "ethernet"
+        ));
+        if network_type == "cellular" {
+            assert!(monitor.is_expensive());
+        } else {
+            assert!(!monitor.is_expensive());
+        }
         assert!(!monitor.is_constrained());
     }
 }

@@ -113,6 +113,11 @@ pub mod local;
 pub mod tcp;
 mod udp;
 
+#[cfg(feature = "dns_dhcp")]
+pub mod dhcp;
+#[cfg(feature = "dns_dhcp")]
+pub use dhcp::DhcpTransport;
+
 #[cfg(feature = "dns_doh")]
 pub mod doh;
 #[cfg(feature = "dns_doh3")]

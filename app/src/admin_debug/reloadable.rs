@@ -805,6 +805,7 @@ mod loom_smoke {
     use loom::thread;
 
     #[test]
+    #[serial_test::serial]
     fn loom_apply_and_get_do_not_panic() {
         loom::model(|| {
             // initialize

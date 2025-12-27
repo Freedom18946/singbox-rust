@@ -16,6 +16,8 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
+    let _ = sb_adapters::inbound::trojan::parse_trojan_request(data);
+
     // Test 1: Trojan password hash validation (56 bytes SHA224 hex)
     if data.len() >= 56 {
         let _password_hash = &data[..56];
@@ -174,11 +176,4 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 
-    // TODO: When sb-adapters exposes the real parsing function, replace
-    // the above manual parsing with:
-    //
-    // let _ = sb_adapters::inbound::trojan::parse_trojan_request(data);
-    //
-    // This will ensure we're testing the actual production code path
-    // rather than a reimplementation.
 });

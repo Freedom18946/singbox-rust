@@ -255,7 +255,7 @@ cargo +nightly fuzz run TARGET -- -max_total_time=30 -runs=10000
 When adding new fuzz targets:
 
 1. **Use real code**: Prefer calling actual parsing functions over simulated logic
-2. **Document limitations**: If using simulated logic, add TODO comments explaining what should be exposed
+2. **Document limitations**: If using simulated logic, add a note explaining what should be exposed
 3. **Generate corpus**: Add appropriate seeds to `scripts/test/fuzz/generate-corpus.sh`
 4. **Update Makefile**: Add the new target to `Makefile.fuzz`
 5. **Test compilation**: Run `make -f Makefile.fuzz fuzz-build` to verify

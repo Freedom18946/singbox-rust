@@ -1,6 +1,117 @@
-# Next Steps (2025-12-16 Execution Plan)
+# Next Steps (2025-12-24 Full Calibration)
 
-Parity Status: **~90% Aligned** with Go `go_fork_source/sing-box-1.12.12` (87 aligned / 95 core items; 3 not aligned; 3 feature-gated/de-scoped; 17 Rust extensions). See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for details.
+**Parity Status**: **92% aligned** (175/190 items) with Go `go_fork_source/sing-box-1.12.12`.
+
+| Category | Aligned | Partial | Gap |
+|----------|---------|---------|-----|
+| Protocols (43 total) | 37 | 0 | 3 de-scoped + 3 Rust-only |
+| Services (9 total) | 6 | 0 | 3 Rust-only |
+| DNS Transports (11 total) | 11 | 0 | — |
+| TLS/Crypto (7 total) | 5 | 2 | — |
+| Router/Rules (38 total) | 38 | 0 | — |
+| Config/Option (47 total) | 45 | 1 | 1 de-scoped |
+| Transport Layer (11 total) | 11 | 0 | — |
+| Common Utilities (24 total) | 22 | 2 | — |
+
+**Critical Gaps (2)**:
+1. 🔴 **Tailscale endpoint**: Go runs tsnet + gVisor + DNS hook + protect_*; Rust is daemon-only (de-scoped, see `docs/TAILSCALE_LIMITATIONS.md`)
+2. 🟡 **TLS uTLS/ECH**: rustls cannot fully replicate ClientHello; ECH incomplete (library limitation)
+
+*Closed gap*: DHCP DNS Windows MAC parity via `GetAdaptersAddresses()` (2025-12-22).
+
+**Latest QA (2025-12-24 13:37)**:
+| Crate | Tests | Status |
+|-------|-------|--------|
+| sb-tls | 72 | ✅ PASS |
+| sb-transport | 39 | ✅ PASS |
+| sb-common | 25 | ✅ PASS |
+| sb-platform | 39 | ✅ PASS |
+| sb-config | 54 | ✅ PASS |
+| sb-core (DHCP) | 7 | ✅ PASS |
+| sb-core (SSMAPI) | 13 | ✅ PASS |
+| sb-core (DERP) | 28 | ✅ PASS |
+| sb-core (Tailscale) | 4 | ✅ PASS |
+| sb-adapters | 14 | ✅ PASS |
+| **TOTAL** | **295** | ✅ **ALL PASS** |
+
+See [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) for the full module-by-module comparison.
+
+## 🎯 Gap Closure Action Plan (2025-12-24)
+
+Based on [GO_PARITY_MATRIX.md](GO_PARITY_MATRIX.md) calibration, execute in order:
+
+### Gap 1 (Closed): DHCP DNS Windows MAC (🟡 Medium)
+**Status**: ✅ Verified (2025-12-24 Three-Layer QA)  
+**Files**:
+- `crates/sb-platform/src/network.rs` (NEW) - Cross-platform MAC retrieval using native APIs
+- `crates/sb-core/src/dns/transport/dhcp.rs` - Updated to use platform module
+
+| Task | Status | Detail |
+|------|--------|--------|
+| Replace `ipconfig /all` parsing with `GetAdaptersAddresses` API | [x] | Uses `windows` crate via sb-platform |
+| Add fallback to `ipconfig` if API fails | [n/a] | API is primary; random MAC fallback exists |
+| Add Windows-specific unit tests | [x] | MAC parsing tests in network.rs (Verified) |
+
+**Verification**: `cargo test -p sb-core --lib dhcp` + `sb-platform --lib network` passed.
+
+---
+
+### Gap 2: Tailscale Endpoint (🔴 High → De-scoped)
+**Status**: ✅ Verified (2025-12-24 Three-Layer QA)  
+**Decision**: Short-term daemon-only mode with documented limitations
+
+**Option A: Document De-scope** (✅ Completed)
+- [x] Add [`TAILSCALE_LIMITATIONS.md`](docs/TAILSCALE_LIMITATIONS.md) to docs/
+- [x] Update `tailscale.rs` header comments with architecture note
+- [x] Verify stubs via unit tests (`endpoint::tailscale::tests`)
+
+**Option B: Pure Rust Implementation** (⏳ Future evaluation if needed)
+- [ ] Evaluate smoltcp + boringtun for netstack
+- [ ] Design DNS hook integration with sb-core router
+- [ ] Implement protect_* socket API for Android
+
+**Verification**: `cargo test -p sb-core --lib endpoint::tailscale` passed.
+
+---
+
+### Gap 3: TLS uTLS/ECH (🟡 Medium, 接受限制)
+**Status**: ✅ Verified (2025-12-24 Three-Layer QA)  
+**Decision**: See [docs/TLS_DECISION.md](docs/TLS_DECISION.md)
+
+| Component | Status | Action |
+|-----------|--------|--------|
+| uTLS fingerprint names | ✅ Aligned | Verified 30+ mappings in `utls.rs` |
+| ClientHello extension order | ◐ Partial | Documented fallback to `Chrome110` for Android/Random/360 |
+| ECH handshake | ❌ Not supported | Config/Parser verified; runtime handshake blocked by rustls |
+
+**Verification**: `cargo test -p sb-tls --lib utls` passed.
+
+---
+
+## 当前执行顺序 (严格) - Updated 2025-12-24 15:10
+
+| # | Task | Status | Evidence |
+|---|------|--------|----------|
+| 1 | DHCP/Mac/Tailscale/uTLS 验证 | ✅ 完成 | 2025-12-24 三层验证 (295 tests) |
+| 2 | Router/Rules Parity (SRS) | ✅ 完成 | Binary ID parity + new fields added |
+| 3 | sb-core 服务回归测试 | ✅ 完成 | SSMAPI (13), DERP (28) tests passed |
+| 4 | Finalize Documentation | ✅ 完成 | TLS/Tailscale docs verified, README + CHANGELOG updated |
+| 5 | E2E Integration Tests | ✅ 完成 | app lib (13) + version (3) + protocol tests passed |
+| 6 | Release Prep | ⏳ 待执行 | 确认版本号，生成最终报告 |
+
+### 当前优先任务
+
+**Task 4: Finalize Documentation** ✅ 完成
+- [x] Verify all TLS partial items are documented in `docs/TLS_DECISION.md`
+- [x] Verify Tailscale de-scope is documented in `docs/TAILSCALE_LIMITATIONS.md`
+- [x] Update README.md with parity status (92%)
+- [x] Add CHANGELOG entry for 92% parity milestone
+
+**Task 5: E2E Integration Tests** ✅ 完成
+- [x] Run `cargo test -p app` full suite (13 tests)
+- [x] Verify protocol E2E tests pass (version: 3 tests)
+- [x] All tests passing with 2 minor warnings (dead code)
+
 
 ## Working Method (Strict)
 
@@ -86,14 +197,17 @@ After each acceptance:
 
 ## 📦 Tier 2: 平台完善 (下周, 1-2周, 中风险)
 
-### 2.1 DHCP INFORM 主动探测
-**状态**: ⏳ 待评估 | **工作量**: 1-2天 | **优先级**: 低
-
-**现状**:
-- Rust: 仅 passive `resolv.conf` 监控
-- Go: 主动 DHCP INFORM 探测 + 接口发现
-
-**Go 参考**: `dns/transport/dhcp/` (2 files)
+### 2.1 DHCP INFORM 主动探测 (Parity Gap)
+**状态**: ✅ 完成 (2025-12-22) | **优先级**: 高
+**现状**: `dhcp.rs` 完整实现接口自动检测、TTL 刷新、跨平台 MAC 获取、并行多服务器查询，解析并应用 search/ndots。
+**已完成**:
+- [x] 接口自动检测 + TTL 刷新/退避
+- [x] 多服务器并行查询 (`select_ok`) 而非单一 server
+- [x] Linux 平台读取真实 MAC + 随机回退
+- [x] DHCP search/ndots 解析并应用（nameList 等价）
+- [x] Windows 平台 MAC 读取硬化 → `GetAdaptersAddresses()` (2025-12-22)
+- [x] macOS/BSD 平台 MAC via `getifaddrs()` + `AF_LINK`
+**Go 参考**: `dns/transport/dhcp/` (`dhcp.go`, `dhcp_shared.go`)
 
 ### 2.2 E2E 集成测试补全
 **状态**: ✅ 验证完成 (2025-12-16) | **工作量**: 已覆盖 | **优先级**: 中
@@ -122,9 +236,8 @@ cargo test -p app → 82+ tests passed, 4 ignored (stress benchmarks)
 **结论**: E2E 测试覆盖充分,核心协议链验证通过。部分测试文件为 stub (需运行时 fixture)。
 
 ### 2.3 Resolved 服务动态验证
-**状态**: ✅ 代码审核完成 (2025-12-16) | **工作量**: 已实现 | **优先级**: 中
-
-**实现状态** (Linux only, `service_resolved` feature):
+**状态**: ✅ Fixed (Wiring Implemented) | **工作量**: Done | **优先级**: Medium
+**说明**: Implemented `RESOLVED_STATE` singleton to connect D-Bus service and DNS transport. Verified via compilation.
 
 **NetworkMonitor 回调集成** (`resolved_impl.rs:403-480`):
 ```rust
@@ -152,7 +265,7 @@ monitor.register_callback(Box::new(move |event| {
 ## 🔬 Tier 3: 战略决策 (后续, 需评估, 高影响)
 
 ### 3.1 Tailscale 栈评估决策文档
-**状态**: ✅ 评估完成 (2025-12-16) | **决策**: Daemon-only 短期、Pure Rust 中期评估
+**状态**: ◐ Daemon-only 已评估 (2025-12-16) | **缺口**: Go tsnet + gVisor netstack/DNS hook 尚未移植
 
 **决策文档**: [docs/TAILSCALE_DECISION.md](../docs/TAILSCALE_DECISION.md)
 
@@ -166,7 +279,7 @@ monitor.register_callback(Box::new(move |event| {
 **建议**:
 - **短期**: 保持 Daemon-only 模式,文档化限制
 - **中期**: 评估 smoltcp + boringtun 方案
-- **长期**: 监控 gVisor darwin/arm64 支持ecision.md`
+- **长期**: 监控 gVisor darwin/arm64 支持，必要时再评估移植路径
 
 ### 3.2 TLS 库策略评估
 **状态**: ✅ 评估完成 (2025-12-16) | **决策**: rustls + UtlsConfig (接受限制)
@@ -214,16 +327,50 @@ monitor.register_callback(Box::new(move |event| {
 | 1.1 | 清理编译警告 | 🔥 高 | 0.5天 | ✅ 完成 |
 | 1.2 | 补全 adapters 测试 | 🔥 高 | 1天 | ✅ 审核完成 |
 | 1.3 | SSMAPI 缓存对齐 | 🔥 中 | 1天 | ✅ 完成 |
-| 2.1 | DHCP INFORM | 📦 低 | 1-2天 | ⏳ 待评估 |
+| 2.1 | DHCP INFORM | 📦 高 | 1-2天 | ✅ 完成 (含 Windows MAC) |
 | 2.2 | E2E 测试补全 | 📦 中 | 2-3天 | ✅ 验证完成 |
 | 2.3 | Resolved 动态验证 | 📦 中 | 1-2天 | ✅ 代码审核完成 |
-| 3.1 | Tailscale 决策 | 🔬 研究 | 2-4周 | ✅ 评估完成 |
-| 3.2 | TLS 库评估 | 🔬 研究 | 3-5天 | ✅ 评估完成 |
+| 3.1 | Tailscale De-scope | 🔬 研究 | 0.5天 | ✅ 文档化完成 |
+| 3.2 | TLS 库评估 | 🔬 研究 | 3-5天 | ✅ 接受限制决策 |
 | 3.3 | 移动平台评估 | 🔬 研究 | 1周 | ✅ 评估完成 |
 
 ---
 
 ## ✅ 已完成项 (Completed)
+
+### 2025-12-24 完成
+
+1. **uTLS 指纹映射文档对齐** ✅
+   - 更新 `sb-tls/src/utls.rs` 明确 Android/Random/360/QQ 等指纹回退至 `Chrome110` 的行为
+   - 确保代码注释与 Go reference 差异点对齐
+
+2. **Go-Rust Parity 持续校准** ✅
+   - 验证 `service/derp` 架构对齐 (Rust native implementations vs Go wrappers)
+   - 验证 `endpoint/tailscale` de-scope 文档头部声明
+
+3. **SRS Binary Parity (Fixed)** ✅
+   - Refactored `sb-core/src/router/ruleset/binary.rs` to match Go's Item IDs (Domain=2, etc.) for binary compatibility
+   - Implemented missing fields: `package_name`, `wifi_ssid`, `wifi_bssid`, `query_type`, `network_type`
+   - Updated `app/src/cli/ruleset.rs` for JSON export of new fields
+   - Result: Router/Rules parity improved to 100% Aligned
+
+### 2025-12-23 完成
+
+1. **Go-Rust Parity 校准刷新** ✅
+   - DHCP DNS Windows MAC parity reflected as ✅ (`GetAdaptersAddresses()`)
+   - Tailscale endpoint marked de-scoped; totals updated (descoped items = 4)
+   - 总体对齐率 91% (154/169 aligned, 5 partial, 4 de-scoped, 6 Rust-only)
+   - 更新 `GO_PARITY_MATRIX.md` (300+ 行)
+   - 更新 `NEXT_STEPS.md` Gap Closure Action Plan
+
+2. **Gap 1: Windows DHCP MAC 硬化** ✅
+   - 新增 `sb-platform/src/network.rs` - 跨平台 MAC API
+   - Windows: `GetAdaptersAddresses()` 替代 `ipconfig` 解析
+   - 更新 `dhcp.rs` 使用平台模块
+
+3. **Gap 2: Tailscale De-scope 文档** ✅
+   - 新增 `docs/TAILSCALE_LIMITATIONS.md` - 架构决策文档
+   - 更新 `tailscale.rs` 头部注释
 
 ### 2025-12-15 完成
 
@@ -260,53 +407,23 @@ monitor.register_callback(Box::new(move |event| {
 5. **uTLS 指纹接入** ◐ (受 rustls 限制)
 
 ---
-
-## P2: 平台完善 (下周)
-
-### 1. DNS DHCP 主动探测
-**状态**: ⏳ 待评估 | **工作量**: 1-2天 | **优先级**: 低
-
-**现状**:
-- Rust: 仅 passive `resolv.conf` 监控
-- Go: 主动 DHCP INFORM 探测 + 接口发现
-
-**任务**:
-- [ ] 评估是否需要 DHCP INFORM
-- [ ] 添加接口发现
-- [ ] 服务器超时和刷新处理
-
-**Go 参考**: `dns/transport/dhcp/` (2 files: `dhcp.go`, `dhcp_shared.go`)
-
----
-
 ## P3: 长期评估
 
-### 2. Tailscale 栈完全对齐
-**状态**: ⏳ 需评估 | **工作量**: 2-4周 | **风险**: 高
+### 1. Tailscale 栈完全对齐
+**状态**: ✅ De-scoped (2025-12-22) | **决策**: Daemon-only 模式，已文档化
 
-**现状差距**:
-| 方面 | Go | Rust |
-|------|----|------|
-| 控制平面 | `tsnet.Server` 内置 | 依赖外部 `tailscaled` daemon |
-| 数据平面 | gVisor netstack | 主机网络栈 |
-| DNS Hook | `LookupHook` 集成 | 无 |
-| 路由/过滤 | `wgengine.ReconfigListener` | 无 |
-| 文件数 | 4 files in `protocol/tailscale/` | 1 file (38KB) |
+**决策文档**: [docs/TAILSCALE_LIMITATIONS.md](docs/TAILSCALE_LIMITATIONS.md)
 
-**Go 文件参考**:
-- `protocol/tailscale/endpoint.go` - 主端点实现
-- `protocol/tailscale/dns_transport.go` - DNS 传输
-- `protocol/tailscale/protect_android.go` - Android 保护
-- `protocol/tailscale/protect_nonandroid.go` - 非 Android 保护
+**现状**: 使用 `DaemonControlPlane` 连接外部 `tailscaled`，数据平面走宿主网络栈。
+已接受架构差异，记录于限制文档中。
 
-**评估任务**:
-- [ ] 研究 tsnet CGO → Rust FFI 可行性
-- [ ] 评估 `tailscale-control` 纯 Rust 替代
-- [ ] 编写决策文档 (`docs/tailscale_alignment_decision.md`)
+**中/长期评估** (如有需求):
+- [ ] 研究 smoltcp + boringtun 纯 Rust 方案
+- [ ] 评估 gVisor darwin/arm64 支持进展
 
 ---
 
-### 3. ECH / uTLS 深度对齐
+### 2. ECH / uTLS 深度对齐
 **状态**: ⏳ 待决策 | **阻塞**: rustls 库限制
 
 **uTLS 现状**:
@@ -450,14 +567,15 @@ monitor.register_callback(Box::new(move |event| {
 
 ---
 
-## Calibration Summary (2025-12-16)
+## Calibration Summary (2025-12-24)
 
 | Metric | Value |
 |--------|-------|
 | Go Reference Version | sing-box-1.12.12 |
-| Parity Rate | ~90% (87/95 core items aligned) |
-| Not Aligned | 3 items (Tailscale endpoint critical) |
-| Feature-gated | 3 items (legacy protocols) |
-| Rust Extensions | 17 items (services, transports, protocols) |
-| Critical Gaps | Tailscale tsnet integration |
-| Blocked Items | ECH (rustls), uTLS fidelity (rustls) |
+| Total Items Compared | 190 |
+| Fully Aligned | 175 (92%) |
+| Partial Alignment | 5 (3%) |
+| Not Aligned | 0 (0%) |
+| De-scoped/Feature-Gated | 4 (2%) |
+| Rust-only Extensions | 6 (3%) |
+| Critical Gaps | 2 (Tailscale endpoint de-scoped, TLS uTLS/ECH limitation) |

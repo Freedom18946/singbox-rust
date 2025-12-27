@@ -1,12 +1,11 @@
 ```console
-$ app route -c {fixtures}/minimal_good.json --dest example.com:443 --explain
-dest: example.com:443
-[..]outbound: direct
+$ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain
+example.com:443 → direct (rule=[..])
 
-$ app route -c {fixtures}/minimal_good.json --dest example.com:443 --explain --with-trace
-[..]trace[..]
+$ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain --with-trace
+example.com:443 → direct (rule=[..])
 
-$ app route -c {fixtures}/minimal_good.json --dest example.com:53 --udp --explain
-dest: example.com:53
-[..]outbound: direct
+$ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:53 --udp --explain
+example.com:53 → direct (rule=00000000)
+
 ```

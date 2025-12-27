@@ -46,7 +46,7 @@ serde_yaml = "0.9"
 sha1 = "0.10"
 sha2 = "0.10"
 smallvec = "1.15"  # 新增：用于小向量（如 DNS addrs）
-smoltcp = { version = "0.11", default-features = false, features = ["std", "log", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }
+smoltcp = { version = "0.11", default-features = false, features = ["std", "log", "medium-ip", "medium-ethernet", "proto-ipv4", "proto-ipv6", "proto-dhcpv4", "socket-tcp", "socket-udp"] }
 snow = "0.9"
 socket2 = "0.6"  # 新增：用于 socket 配置
 thiserror = "1.0"

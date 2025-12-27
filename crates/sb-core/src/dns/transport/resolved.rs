@@ -8,6 +8,7 @@
 use super::{DnsStartStage, DnsTransport};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -15,7 +16,149 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+
+/// Shared state for the resolved transport/service.
+pub static RESOLVED_STATE: Lazy<Arc<Resolve1ManagerState>> =
+    Lazy::new(|| Arc::new(Resolve1ManagerState::new()));
+
+/// Per-link DNS configuration (raw from D-Bus).
+#[derive(Debug, Clone, Default)]
+pub struct TransportLink {
+    pub if_index: i32,
+    pub if_name: String,
+    pub addresses: Vec<LinkDNS>,
+    pub addresses_ex: Vec<LinkDNSEx>,
+    pub domains: Vec<LinkDomainConfig>,
+    pub default_route: bool,
+    pub dns_over_tls: bool,
+}
+
+/// Simple DNS server address.
+#[derive(Debug, Clone)]
+pub struct LinkDNS {
+    pub family: i32,
+    pub address: Vec<u8>,
+}
+
+impl LinkDNS {
+    pub fn to_ip_addr(&self) -> Option<IpAddr> {
+        match self.family {
+            2 if self.address.len() == 4 => {
+                let bytes: [u8; 4] = self.address[..4].try_into().ok()?;
+                Some(IpAddr::V4(bytes.into()))
+            }
+            10 if self.address.len() == 16 => {
+                let bytes: [u8; 16] = self.address[..16].try_into().ok()?;
+                Some(IpAddr::V6(bytes.into()))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Extended DNS server address.
+#[derive(Debug, Clone)]
+pub struct LinkDNSEx {
+    pub family: i32,
+    pub address: Vec<u8>,
+    pub port: u16,
+    pub server_name: String,
+}
+
+impl LinkDNSEx {
+    pub fn to_ip_addr(&self) -> Option<IpAddr> {
+        match self.family {
+            2 if self.address.len() == 4 => {
+                let bytes: [u8; 4] = self.address[..4].try_into().ok()?;
+                Some(IpAddr::V4(bytes.into()))
+            }
+            10 if self.address.len() == 16 => {
+                let bytes: [u8; 16] = self.address[..16].try_into().ok()?;
+                Some(IpAddr::V6(bytes.into()))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Domain configuration (raw).
+#[derive(Debug, Clone)]
+pub struct LinkDomainConfig {
+    pub domain: String,
+    pub routing_only: bool,
+}
+
+/// Callback type for link updates.
+pub type UpdateCallback = Box<dyn Fn(&TransportLink) -> Result<(), String> + Send + Sync>;
+
+/// Callback type for link deletion.
+pub type DeleteCallback = Box<dyn Fn(&TransportLink) + Send + Sync>;
+
+/// Shared state manager.
+pub struct Resolve1ManagerState {
+    pub links: RwLock<HashMap<i32, TransportLink>>,
+    pub default_route_sequence: RwLock<Vec<i32>>,
+    pub update_callback: RwLock<Option<UpdateCallback>>,
+    pub delete_callback: RwLock<Option<DeleteCallback>>,
+}
+
+impl Default for Resolve1ManagerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Resolve1ManagerState {
+    pub fn new() -> Self {
+        Self {
+            links: RwLock::new(HashMap::new()),
+            default_route_sequence: RwLock::new(Vec::new()),
+            update_callback: RwLock::new(None),
+            delete_callback: RwLock::new(None),
+        }
+    }
+
+    pub fn get_or_create_link(&self, if_index: i32, if_name: &str) -> TransportLink {
+        let mut links = self.links.write();
+        links
+            .entry(if_index)
+            .or_insert_with(|| TransportLink {
+                if_index,
+                if_name: if_name.to_string(),
+                ..Default::default()
+            })
+            .clone()
+    }
+
+    pub fn update_link(&self, link: TransportLink) -> Result<(), String> {
+        let if_index = link.if_index;
+        {
+            let mut links = self.links.write();
+            links.insert(if_index, link.clone());
+        }
+        if let Some(ref callback) = *self.update_callback.read() {
+            callback(&link)?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_link(&self, if_index: i32) {
+        let link = {
+            let mut links = self.links.write();
+            links.remove(&if_index)
+        };
+        if let Some(link) = link {
+            {
+                let mut seq = self.default_route_sequence.write();
+                seq.retain(|&idx| idx != if_index);
+            }
+            if let Some(ref callback) = *self.delete_callback.read() {
+                callback(&link);
+            }
+        }
+    }
+}
 
 /// Configuration for the resolved transport.
 #[derive(Debug, Clone)]
@@ -181,10 +324,6 @@ pub struct ResolvedTransport {
     name: String,
     /// Configuration.
     config: ResolvedTransportConfig,
-    /// Per-link servers (if_index -> LinkServers).
-    link_servers: RwLock<HashMap<i32, Arc<LinkServers>>>,
-    /// Default route sequence (most recent last).
-    default_route_sequence: RwLock<Vec<i32>>,
     /// Started flag.
     started: std::sync::atomic::AtomicBool,
 }
@@ -192,84 +331,103 @@ pub struct ResolvedTransport {
 impl ResolvedTransport {
     /// Create a new resolved transport.
     pub fn new(name: impl Into<String>, config: ResolvedTransportConfig) -> Self {
+        let name = name.into();
         Self {
-            name: name.into(),
+            name,
             config,
-            link_servers: RwLock::new(HashMap::new()),
-            default_route_sequence: RwLock::new(Vec::new()),
             started: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
-    /// Update servers for a link.
-    pub fn update_link(&self, link: LinkServers) {
-        let if_index = link.if_index;
-        let is_default = link.default_route;
-
-        {
-            let mut servers = self.link_servers.write();
-            servers.insert(if_index, Arc::new(link));
-        }
-
-        // Update default route sequence
-        {
-            let mut seq = self.default_route_sequence.write();
-            seq.retain(|&idx| idx != if_index);
-            if is_default {
-                seq.push(if_index);
-            }
-        }
-
-        debug!(if_index, "Updated link DNS servers");
-    }
-
-    /// Delete a link.
-    pub fn delete_link(&self, if_index: i32) {
-        {
-            let mut servers = self.link_servers.write();
-            servers.remove(&if_index);
-        }
-        {
-            let mut seq = self.default_route_sequence.write();
-            seq.retain(|&idx| idx != if_index);
-        }
-        debug!(if_index, "Deleted link DNS servers");
-    }
-
     /// Select link for a query based on domain matching.
     fn select_link(&self, qname: &str) -> Option<Arc<LinkServers>> {
-        let servers = self.link_servers.read();
+        let state = &RESOLVED_STATE;
+        let links = state.links.read();
+
+        // Need to convert TransportLink to LinkServers on the fly or cached?
+        // Converting on every query is expensive.
+        // Maybe we SHOULD maintain a local cache that is updated via polling or callback?
+        // Or simpler: Convert the whole `LinkServers` logic to work on `TransportLink`.
+
+        // Let's stick to the Plan: read directly. To avoid conversion cost,
+        // we can implement a helper that does the domain matching on TransportLink directly.
 
         // Try domain matching first
-        for link in servers.values() {
-            for domain in &link.domains {
-                // Skip routing-only "." if not accepting default resolvers
-                if domain.domain == "."
-                    && domain.routing_only
+        for transport_link in links.values() {
+            // Basic conversion/checking logic
+            for domain_config in &transport_link.domains {
+                if domain_config.domain == "."
+                    && domain_config.routing_only
                     && !self.config.accept_default_resolvers
                 {
                     continue;
                 }
-                // Check if query name matches domain suffix
-                if qname.ends_with(&domain.domain) || domain.domain == "." {
-                    return Some(link.clone());
+                if qname.ends_with(&domain_config.domain) || domain_config.domain == "." {
+                    return Some(Arc::new(Self::convert_link(transport_link)));
                 }
             }
         }
 
-        // Fall back to default route if accepting default resolvers
+        // Fall back to default route
         if self.config.accept_default_resolvers {
-            let seq = self.default_route_sequence.read();
+            let seq = state.default_route_sequence.read();
             for &if_index in seq.iter().rev() {
-                if let Some(link) = servers.get(&if_index) {
-                    if !link.servers.is_empty() {
-                        return Some(link.clone());
+                if let Some(link) = links.get(&if_index) {
+                    // Check if it has servers
+                    if !link.addresses.is_empty() || !link.addresses_ex.is_empty() {
+                        return Some(Arc::new(Self::convert_link(link)));
                     }
                 }
             }
         }
 
         None
+    }
+
+    fn convert_link(link: &TransportLink) -> LinkServers {
+        let servers: Vec<DnsServer> = link
+            .addresses
+            .iter()
+            .filter_map(|a| {
+                a.to_ip_addr().map(|addr| DnsServer {
+                    addr,
+                    port: 0,
+                    server_name: None,
+                    use_dot: link.dns_over_tls,
+                })
+            })
+            .chain(link.addresses_ex.iter().filter_map(|a| {
+                a.to_ip_addr().map(|addr| DnsServer {
+                    addr,
+                    port: a.port,
+                    server_name: if a.server_name.is_empty() {
+                        None
+                    } else {
+                        Some(a.server_name.clone())
+                    },
+                    use_dot: link.dns_over_tls, // Inherit link setting or infer? usually inherited + per server override capability?
+                                                // Go impl seems to use link.DNSOverTLS
+                })
+            }))
+            .collect();
+
+        let domains = link
+            .domains
+            .iter()
+            .map(|d| LinkDomain {
+                domain: d.domain.clone(),
+                routing_only: d.routing_only,
+            })
+            .collect();
+
+        LinkServers {
+            if_index: link.if_index,
+            if_name: link.if_name.clone(),
+            servers,
+            domains,
+            default_route: link.default_route,
+            offset: AtomicU32::new(0), // Reset offset on conversion is acceptable for stateless
+        }
     }
 
     /// Exchange DNS query with a single server.
@@ -463,8 +621,6 @@ impl DnsTransport for ResolvedTransport {
 
     async fn close(&self) -> Result<()> {
         self.started.store(false, Ordering::Relaxed);
-        self.link_servers.write().clear();
-        self.default_route_sequence.write().clear();
         info!(name = %self.name, "Resolved DNS transport closed");
         Ok(())
     }

@@ -41,7 +41,14 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     let mut raw: Value = if args.config.ends_with(".yaml") || args.config.ends_with(".yml") {
         serde_yaml::from_slice(&data).with_context(|| "parse as yaml")?
     } else {
-        serde_json::from_slice(&data).with_context(|| "parse as json")?
+        match serde_json::from_slice(&data) {
+            Ok(v) => v,
+            Err(json_err) => {
+                serde_yaml::from_slice(&data).with_context(|| {
+                    format!("parse as json (fallback to yaml): {json_err}")
+                })?
+            }
+        }
     };
 
     // Optional migration to v2 schema view
@@ -305,14 +312,14 @@ fn validate_rule(rule: &Value, index: usize, issues: &mut Vec<CheckIssue>) -> Re
         );
     }
 
-    // Check if rule has an action
-    if rule.get("outbound").is_none() {
+    // Check if rule has an action (v1 `outbound` or v2 `to`)
+    if rule.get("outbound").is_none() && rule.get("to").is_none() {
         push_err(
             issues,
             IssueCode::SchemaMissingField,
             &format!("{ptr}/outbound"),
             "rule missing outbound",
-            Some("specify an outbound"),
+            Some("specify an outbound/to action"),
         );
     }
 

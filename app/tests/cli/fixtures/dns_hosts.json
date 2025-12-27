@@ -9,12 +9,9 @@
         "address": "system"
       }
     ],
-    "hosts": [
-      {
-        "domain": "example.com",
-        "ips": ["1.2.3.4"]
-      }
-    ],
-    "hosts_ttl_s": 123
+    "hosts": {
+      "example.com": ["1.2.3.4"]
+    },
+    "hosts_ttl": 123
   }
 }

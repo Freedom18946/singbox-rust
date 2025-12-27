@@ -1,55 +1,53 @@
 ```console
 $ app geoip --help
-GeoIP tools[..]
+`GeoIP` tooling (list/lookup/export)
 
 Usage: app geoip [OPTIONS] <COMMAND>
 
-Options:
-  -f, --file <FILE>[..]
-  -h, --help[..]
-  -V, --version[..]
-
 Commands:
-  list    List country codes[..]
-  lookup  Lookup if an IP[..]
-  export  Export a country[..]
+  list    List country codes available in the database
+  lookup  Lookup if an IP is contained in the `GeoIP` database
+  export  Export a country as rule-set JSON
   help    Print this message or the help of the given subcommand(s)
 
+Options:
+  -f, --file <FILE>  `GeoIP` database file (text or MMDB) [default: geoip.db]
+  -h, --help         Print help
+
 $ app geosite --help
-Geosite tools[..]
+Geosite tooling (list/lookup/export/matcher)
 
 Usage: app geosite [OPTIONS] <COMMAND>
 
-Options:
-  -f, --file <FILE>[..]
-  -h, --help[..]
-  -V, --version[..]
-
 Commands:
-  list     List geosite categories[..]
-  lookup   Check if domain is in geosite[..]
-  export   Export category as rule-set JSON[..]
-  matcher  Test matcher[..]
+  list     List geosite categories (sorted by rule count)
+  lookup   Check if domain is in geosite (optional category)
+  export   Export category as rule-set JSON (stdout or file)
+  matcher  Test matcher: read domains from stdin and print first match per line
   help     Print this message or the help of the given subcommand(s)
 
+Options:
+  -f, --file <FILE>  Geosite database file (text or binary) [default: geosite.db]
+  -h, --help         Print help
+
 $ app ruleset --help
-Rule-Set management tool[..]
+Rule-set management (validate/compile/etc.)
 
 Usage: app ruleset <COMMAND>
 
 Commands:
-  validate   Validate a rule-set file[..]
+  validate   Validate a rule-set file (JSON or binary)
   info       Show information about a rule-set file
   format     Format a JSON rule-set (prettify)
-  decompile  Decompile a binary .srs file[..]
-  match      Match helper[..]
+  decompile  Decompile a binary .srs file into JSON source format
+  match      Match helper: test whether a domain/IP/port matches the rule-set
   compile    Compile a JSON rule-set into binary .srs
   convert    Convert between JSON and SRS formats based on extension
-  merge      Merge multiple rule-set files[..]
-  upgrade    Upgrade rule-set version[..]
+  merge      Merge multiple rule-set files (append rules) and write to output
+  upgrade    Upgrade rule-set version (JSON or SRS input)
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help[..]
-  -V, --version[..]
+  -h, --help  Print help
+
 ```

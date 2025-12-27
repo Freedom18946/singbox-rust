@@ -1676,6 +1676,7 @@ pub mod inbound {
                 congestion_control: None,
                 salamander: None,
                 obfs: None,
+                masquerade: None,
             };
 
             let inbound = Hysteria2Inbound::new(config);
@@ -1700,6 +1701,7 @@ pub mod inbound {
                 congestion_control: None,
                 salamander: None,
                 obfs: Some("test_key".to_string()),
+                masquerade: None,
             };
 
             let inbound = Hysteria2Inbound::new(config);

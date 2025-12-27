@@ -119,12 +119,10 @@ mod t_scaffold {
         let eng = Engine::new(&ir);
         std::env::set_var("ADAPTER_FORCE", "scaffold");
         let br = build_bridge(&ir, eng, sb_core::context::Context::default());
-        assert_eq!(br.inbound_kinds.len(), 1);
-        assert_eq!(br.inbound_kinds[0], "naive");
-        let res = br.inbounds[0].serve();
+        assert!(br.inbounds.is_empty(), "unsupported inbound should not build");
         assert!(
-            res.is_err(),
-            "naive inbound should not be supported under scaffold"
+            br.inbound_kinds.is_empty(),
+            "unsupported inbound should not be registered"
         );
     }
 }

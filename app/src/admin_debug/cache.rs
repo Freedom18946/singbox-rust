@@ -760,10 +760,13 @@ mod tests {
         use std::fs;
 
         // Create temporary test directory
-        let test_dir = "/tmp/sb-cache-counting-test";
-        let _ = fs::create_dir_all(test_dir);
+        let test_dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join("target")
+            .join("sb-cache-counting-test");
+        let _ = fs::create_dir_all(&test_dir);
 
-        std::env::set_var("SB_SUBS_CACHE_DISK", test_dir);
+        std::env::set_var("SB_SUBS_CACHE_DISK", test_dir.to_string_lossy().to_string());
         let mut lru = Lru::with_byte_limit(1, 10000, 60); // Small memory limit to force eviction
 
         // Test 1: Memory overflow migration to disk should update evict_count_mem only for true evictions

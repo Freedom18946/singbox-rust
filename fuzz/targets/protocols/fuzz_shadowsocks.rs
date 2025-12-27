@@ -28,49 +28,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Test 2: Address encoding parsing (SOCKS5-like format)
-    if data.len() >= 4 {
-        let atyp = data[0];
-        let mut offset = 1;
-
-        match atyp {
-            0x01 => {
-                // IPv4: 4 bytes + 2 bytes port
-                if data.len() >= offset + 6 {
-                    let _ipv4 = &data[offset..offset + 4];
-                    let _port = u16::from_be_bytes([data[offset + 4], data[offset + 5]]);
-                }
-            }
-            0x02 => {
-                // Domain: length byte + domain + 2 bytes port
-                if data.len() > offset {
-                    let domain_len = data[offset] as usize;
-                    offset += 1;
-
-                    if data.len() >= offset + domain_len + 2 {
-                        let _domain = &data[offset..offset + domain_len];
-                        let _port = u16::from_be_bytes([
-                            data[offset + domain_len],
-                            data[offset + domain_len + 1],
-                        ]);
-
-                        // Validate domain is valid UTF-8
-                        let _ = std::str::from_utf8(_domain);
-                    }
-                }
-            }
-            0x03 => {
-                // IPv6: 16 bytes + 2 bytes port
-                if data.len() >= offset + 18 {
-                    let _ipv6 = &data[offset..offset + 16];
-                    let _port = u16::from_be_bytes([data[offset + 16], data[offset + 17]]);
-                }
-            }
-            _ => {
-                // Invalid address type - shouldn't panic
-                return;
-            }
-        }
-    }
+    let _ = sb_adapters::inbound::shadowsocks::parse_ss_addr(data);
 
     // Test 3: TCP request parsing
     if data.len() >= 3 {
@@ -187,13 +145,4 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 
-    // TODO: When sb-adapters exposes the real parsing function, replace
-    // the above manual parsing with:
-    //
-    // let _ = sb_adapters::inbound::shadowsocks::parse_aead_packet(data);
-    // let _ = sb_adapters::inbound::shadowsocks::parse_address(data);
-    // let _ = sb_adapters::inbound::shadowsocks::parse_tcp_request(data);
-    //
-    // This will ensure we're testing the actual production code path
-    // rather than a reimplementation.
 });

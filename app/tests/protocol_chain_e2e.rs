@@ -12,6 +12,7 @@
 mod common;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -44,6 +45,165 @@ async fn start_echo_server() -> std::io::Result<SocketAddr> {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
     Ok(addr)
+}
+
+async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc::Sender<()>)> {
+    use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
+    use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+    use sb_core::router::{Router, RouterHandle};
+    use tokio::sync::{mpsc, oneshot};
+
+    let temp_listener = TcpListener::bind("127.0.0.1:0").await?;
+    let mixed_addr = temp_listener.local_addr()?;
+    drop(temp_listener);
+
+    let mut map = std::collections::HashMap::new();
+    map.insert("direct".to_string(), OutboundImpl::Direct);
+    let registry = OutboundRegistry::new(map);
+    let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
+    let router = Arc::new(RouterHandle::new(Router::with_default("direct")));
+
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let cfg = MixedInboundConfig {
+        listen: mixed_addr,
+        router,
+        outbounds,
+        read_timeout: Some(Duration::from_secs(2)),
+        tls: None,
+        users: Some(vec![]),
+        set_system_proxy: false,
+    };
+
+    tokio::spawn(async move {
+        let _ = serve_mixed(cfg, stop_rx, Some(ready_tx)).await;
+    });
+
+    ready_rx
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "mixed ready failed"))?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    Ok((mixed_addr, stop_tx))
+}
+
+async fn start_ss_server(method: &str, password: &str) -> std::io::Result<(SocketAddr, tokio::sync::mpsc::Sender<()>)> {
+    use sb_adapters::inbound::shadowsocks::{serve, ShadowsocksInboundConfig, ShadowsocksUser};
+    use sb_core::router::engine::RouterHandle;
+    use tokio::sync::mpsc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    drop(listener);
+
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let cfg = ShadowsocksInboundConfig {
+        listen: addr,
+        method: method.to_string(),
+        #[allow(deprecated)]
+        password: None,
+        users: vec![ShadowsocksUser::new("test".to_string(), password.to_string())],
+        router: Arc::new(RouterHandle::new_mock()),
+        multiplex: None,
+        transport_layer: None,
+    };
+
+    tokio::spawn(async move {
+        let _ = serve(cfg, stop_rx).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    Ok((addr, stop_tx))
+}
+
+async fn start_vmess_server() -> std::io::Result<(SocketAddr, uuid::Uuid, tokio::sync::mpsc::Sender<()>)> {
+    use sb_adapters::inbound::vmess::VmessInboundConfig;
+    use sb_core::router::engine::RouterHandle;
+    use tokio::sync::mpsc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    drop(listener);
+
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let test_uuid = uuid::Uuid::new_v4();
+
+    let cfg = VmessInboundConfig {
+        listen: addr,
+        uuid: test_uuid,
+        security: "aes-128-gcm".to_string(),
+        router: Arc::new(RouterHandle::new_mock()),
+        multiplex: None,
+        transport_layer: None,
+        fallback: None,
+        fallback_for_alpn: std::collections::HashMap::new(),
+    };
+
+    tokio::spawn(async move {
+        let _ = sb_adapters::inbound::vmess::serve(cfg, stop_rx).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    Ok((addr, test_uuid, stop_tx))
+}
+
+async fn socks5_connect(
+    socks_addr: SocketAddr,
+    target: SocketAddr,
+) -> std::io::Result<TcpStream> {
+    let mut stream = TcpStream::connect(socks_addr).await?;
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await?;
+    if resp != [0x05, 0x00] {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "socks5 auth failed",
+        ));
+    }
+
+    let mut req = vec![0x05, 0x01, 0x00, 0x01];
+    match target.ip() {
+        std::net::IpAddr::V4(ip) => req.extend_from_slice(&ip.octets()),
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "expected IPv4 target",
+            ));
+        }
+    }
+    req.extend_from_slice(&target.port().to_be_bytes());
+    stream.write_all(&req).await?;
+
+    let mut header = [0u8; 4];
+    stream.read_exact(&mut header).await?;
+    if header[1] != 0x00 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "socks5 connect failed",
+        ));
+    }
+
+    match header[3] {
+        0x01 => {
+            let mut buf = [0u8; 6];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut buf = vec![0u8; len[0] as usize + 2];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x04 => {
+            let mut buf = [0u8; 18];
+            stream.read_exact(&mut buf).await?;
+        }
+        _ => {}
+    }
+
+    Ok(stream)
 }
 
 /// Test: SOCKS5 inbound → Direct outbound
@@ -269,11 +429,51 @@ async fn test_mixed_inbound_protocol_detection_runtime() {
         Err(e) => panic!("Failed to start echo server: {}", e),
     };
 
-    // TODO: Setup Mixed inbound that detects both protocols
-    // Test both HTTP CONNECT and SOCKS5 through same port
+    let (mixed_addr, _stop_tx) = match start_mixed_server().await {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Failed to start mixed inbound: {}", e);
+            return;
+        }
+    };
 
-    println!("Echo server at: {}", echo_addr);
-    // Placeholder for actual implementation
+    // HTTP CONNECT path
+    let mut http_stream = TcpStream::connect(mixed_addr).await.expect("connect mixed http");
+    let request = format!(
+        "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+        echo_addr.ip(),
+        echo_addr.port(),
+        echo_addr.ip(),
+        echo_addr.port()
+    );
+    http_stream.write_all(request.as_bytes()).await.unwrap();
+    let mut resp_buf = vec![0u8; 256];
+    let n = timeout(Duration::from_secs(2), http_stream.read(&mut resp_buf))
+        .await
+        .unwrap()
+        .unwrap();
+    let response = String::from_utf8_lossy(&resp_buf[..n]);
+    assert!(response.starts_with("HTTP/1.1 200"), "HTTP CONNECT failed");
+
+    let test_data = b"mixed-http";
+    http_stream.write_all(test_data).await.unwrap();
+    let mut echo_back = vec![0u8; test_data.len()];
+    timeout(Duration::from_secs(2), http_stream.read_exact(&mut echo_back))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&echo_back, test_data);
+
+    // SOCKS5 path
+    let mut socks_stream = socks5_connect(mixed_addr, echo_addr).await.expect("socks connect");
+    let socks_data = b"mixed-socks";
+    socks_stream.write_all(socks_data).await.unwrap();
+    let mut socks_back = vec![0u8; socks_data.len()];
+    timeout(Duration::from_secs(2), socks_stream.read_exact(&mut socks_back))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&socks_back, socks_data);
 }
 
 /// Test: Shadowsocks inbound → Shadowsocks outbound (double encryption)
@@ -291,11 +491,44 @@ async fn test_shadowsocks_chain() {
         Err(e) => panic!("Failed to start echo server: {}", e),
     };
 
-    // TODO: Setup Shadowsocks inbound + Shadowsocks outbound
-    // This tests encryption/decryption chain
+    use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
+    use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
+    use sb_adapters::TransportKind;
 
-    println!("Echo server at: {}", echo_addr);
-    // Placeholder for actual implementation
+    let (ss_addr, _stop_tx) = match start_ss_server("aes-256-gcm", "test-password").await {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Failed to start shadowsocks server: {}", e);
+            return;
+        }
+    };
+
+    let connector = ShadowsocksConnector::new(ShadowsocksConfig {
+        server: ss_addr.to_string(),
+        tag: None,
+        method: "aes-256-gcm".to_string(),
+        password: "test-password".to_string(),
+        connect_timeout_sec: Some(5),
+        multiplex: None,
+    })
+    .expect("create ss connector");
+
+    let target = Target {
+        host: echo_addr.ip().to_string(),
+        port: echo_addr.port(),
+        kind: TransportKind::Tcp,
+    };
+
+    let mut stream = connector
+        .dial(target, DialOpts::default())
+        .await
+        .expect("dial ss");
+
+    let payload = b"ss-chain";
+    stream.write_all(payload).await.expect("write");
+    let mut buf = vec![0u8; payload.len()];
+    stream.read_exact(&mut buf).await.expect("read");
+    assert_eq!(&buf, payload);
 }
 
 /// Test: VMess inbound → VMess outbound chain
@@ -313,10 +546,55 @@ async fn test_vmess_chain() {
         Err(e) => panic!("Failed to start echo server: {}", e),
     };
 
-    // TODO: Setup VMess inbound + VMess outbound
+    use sb_adapters::outbound::vmess::{
+        Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
+    };
+    use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
+    use sb_adapters::transport_config::TransportConfig;
+    use sb_adapters::TransportKind;
 
-    println!("Echo server at: {}", echo_addr);
-    // Placeholder for actual implementation
+    let (vmess_addr, test_uuid, _stop_tx) = match start_vmess_server().await {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Failed to start vmess server: {}", e);
+            return;
+        }
+    };
+
+    let client_config = VmessConfig {
+        server_addr: vmess_addr,
+        auth: VmessAuth {
+            uuid: test_uuid,
+            alter_id: 0,
+            security: Security::Auto,
+            additional_data: None,
+        },
+        transport: VmessTransport::default(),
+        timeout: Some(Duration::from_secs(10)),
+        packet_encoding: false,
+        headers: Default::default(),
+        transport_layer: TransportConfig::Tcp,
+        multiplex: None,
+        tls: None,
+    };
+
+    let connector = VmessConnector::new(client_config);
+    let target = Target {
+        host: echo_addr.ip().to_string(),
+        port: echo_addr.port(),
+        kind: TransportKind::Tcp,
+    };
+
+    let mut stream = connector
+        .dial(target, DialOpts::default())
+        .await
+        .expect("dial vmess");
+
+    let payload = b"vmess-chain";
+    stream.write_all(payload).await.expect("write");
+    let mut buf = vec![0u8; payload.len()];
+    stream.read_exact(&mut buf).await.expect("read");
+    assert_eq!(&buf, payload);
 }
 
 /// Test: Concurrent connections through proxy chain

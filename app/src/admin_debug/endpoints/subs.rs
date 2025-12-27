@@ -1556,6 +1556,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_limiter_resize_concurrency() {
         // Test concurrency resize from 2 -> 8 -> 3
         resize_limiters(2, 10);
@@ -1597,6 +1598,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_rps_resize() {
         // Test RPS resize functionality
         resize_rps(2);
@@ -1610,6 +1612,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_tick_based_rps_refill() {
         // Set low RPS for testing
         resize_rps(1);
@@ -1639,6 +1642,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_concurrent_resize_operations() {
         // Test thread safety of resize operations
         let handles: Vec<_> = (0..10)
@@ -1662,6 +1666,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_semi_hot_expansion_logic() {
         // Test the semi-hot expansion logic that dynamically adds permits
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1699,6 +1704,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_expansion_limit() {
         // Test that expansion is limited to prevent abuse
         resize_limiters(1, 10);
@@ -1806,6 +1812,7 @@ mod tests {
 
     #[cfg(feature = "subs_http")]
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_resize_limiters_atomicity() {
         // Test that resize_limiters updates both concurrency and RPS atomically
         let original_conc = DESIRED_CONCURRENCY.load(Ordering::Relaxed);

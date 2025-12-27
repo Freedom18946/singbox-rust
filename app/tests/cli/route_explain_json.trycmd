@@ -1,10 +1,26 @@
 ```console
-$ app route -c {fixtures}/minimal_good.json --dest example.com:443 --explain --format json
-{ "dest": "example.com:443", "matched_rule": "[..]", "outbound": "direct" }
+$ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain --format json
+{
+  "dest": "example.com:443",
+  "matched_rule": "[..]",
+  "chain": [],
+  "outbound": "direct"
+}
 
-$ app route -c {fixtures}/minimal_good.json --dest example.com:443 --explain --format json --with-trace
-[..]"trace":[..]
+$ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain --format json --with-trace
+{
+  "dest": "example.com:443",
+  "matched_rule": "[..]",
+  "chain": [],
+  "outbound": "direct"
+}
 
-$ app route -c {fixtures}/minimal_good.json --dest example.com:53 --udp --explain --format json
-{ "dest": "example.com:53", "outbound": "direct"[..] }
+$ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:53 --udp --explain --format json
+{
+  "dest": "example.com:53",
+  "matched_rule": "[..]",
+  "chain": [],
+  "outbound": "direct"
+}
+
 ```

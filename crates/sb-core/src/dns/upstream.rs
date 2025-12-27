@@ -689,6 +689,7 @@ pub struct DhcpUpstream {
     round_robin: AtomicUsize,
     fallback: Arc<dyn DnsUpstream>,
     _watcher: Option<RecommendedWatcher>,
+    transport: Option<Arc<crate::dns::transport::DhcpTransport>>,
 }
 
 #[cfg(feature = "dns_dhcp")]
@@ -775,6 +776,25 @@ impl DhcpUpstream {
             }
         }
 
+        let transport = if iface.is_some() {
+            Some(Arc::new(crate::dns::transport::DhcpTransport::new(
+                iface.clone(),
+            )))
+        } else {
+            None
+        };
+
+        if let Some(t) = &transport {
+            // Start the transport immediately
+            // Note: In real lifecycle this should be started by a manager, but Upstream is usually self-contained.
+            let t_clone = t.clone();
+            tokio::spawn(async move {
+                let _ = t_clone
+                    .start(crate::dns::transport::DnsStartStage::Start)
+                    .await;
+            });
+        }
+
         Ok(Self {
             name,
             interface: iface,
@@ -783,11 +803,25 @@ impl DhcpUpstream {
             round_robin: AtomicUsize::new(0),
             fallback,
             _watcher: watcher,
+            transport,
         })
     }
 
     fn snapshot(&self) -> Vec<Arc<dyn DnsUpstream>> {
-        self.upstreams.read().clone()
+        let mut list = self.upstreams.read().clone();
+        if let Some(t) = &self.transport {
+            let servers = t.servers();
+            if !servers.is_empty() {
+                for addr in servers {
+                    list.push(Arc::new(UdpUpstream::new(addr)));
+                }
+            }
+        }
+        if list.is_empty() {
+            vec![self.fallback.clone()]
+        } else {
+            list
+        }
     }
 
     /// Reload nameservers from resolv.conf file

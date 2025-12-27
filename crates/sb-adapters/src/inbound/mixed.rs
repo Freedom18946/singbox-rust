@@ -183,6 +183,36 @@ async fn handle_mixed_conn(
     }
 }
 
+/// Detect TLS handshake based on the first bytes of a stream.
+pub fn detect_tls(data: &[u8]) -> bool {
+    if data.len() < 3 {
+        return false;
+    }
+    if data[0] != 0x16 {
+        return false;
+    }
+    matches!(
+        u16::from_be_bytes([data[1], data[2]]),
+        0x0301 | 0x0302 | 0x0303 | 0x0304
+    )
+}
+
+/// Detect SOCKS protocol based on the first bytes of a stream.
+pub fn detect_socks5(data: &[u8]) -> bool {
+    data.first().copied() == Some(0x05)
+}
+
+/// Detect HTTP-like requests based on method prefixes.
+pub fn detect_http(data: &[u8]) -> bool {
+    if data.len() < 4 {
+        return false;
+    }
+    matches!(
+        &data[..4],
+        b"GET " | b"POST" | b"PUT " | b"HEAD" | b"OPTI" | b"DELE" | b"PATC" | b"CONN"
+    )
+}
+
 /// Handle SOCKS connection
 async fn handle_socks(
     cli: TcpStream,

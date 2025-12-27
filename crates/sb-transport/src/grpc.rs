@@ -41,14 +41,15 @@
 use crate::dialer::{DialError, Dialer, IoStream};
 use async_trait::async_trait;
 use bytes::{Buf, Bytes};
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use http::Uri;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Channel, Endpoint, Server};
+use tonic::{Request, Response, Status};
 use tracing::debug;
 
 // gRPC service definition for tunnel
@@ -350,6 +351,122 @@ impl AsyncWrite for GrpcStreamAdapter {
 // Server-side gRPC implementation
 // ============================================================================
 
+struct GrpcServerStreamAdapter {
+    tx: mpsc::UnboundedSender<tunnel::TunnelResponse>,
+    rx: mpsc::Receiver<Result<tunnel::TunnelRequest, Status>>,
+    read_buffer: Bytes,
+}
+
+impl AsyncRead for GrpcServerStreamAdapter {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if !self.read_buffer.is_empty() {
+            let to_read = std::cmp::min(self.read_buffer.len(), buf.remaining());
+            buf.put_slice(&self.read_buffer[..to_read]);
+            self.read_buffer.advance(to_read);
+            return Poll::Ready(Ok(()));
+        }
+
+        match self.rx.poll_recv(cx) {
+            Poll::Ready(Some(Ok(msg))) => {
+                let data = Bytes::from(msg.data);
+                if data.is_empty() {
+                    return self.poll_read(cx, buf);
+                }
+
+                let to_read = std::cmp::min(data.len(), buf.remaining());
+                buf.put_slice(&data[..to_read]);
+
+                if to_read < data.len() {
+                    self.read_buffer = Bytes::from(data[to_read..].to_vec());
+                }
+
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(std::io::Error::other(format!(
+                "gRPC stream error: {}",
+                e
+            )))),
+            Poll::Ready(None) => Poll::Ready(Ok(())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncWrite for GrpcServerStreamAdapter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let data = Bytes::copy_from_slice(buf);
+        let response = tunnel::TunnelResponse {
+            data: data.to_vec(),
+        };
+        self.tx.send(response).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                format!("Failed to send gRPC message: {}", e),
+            )
+        })?;
+
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[derive(Clone)]
+struct GrpcTunnelService {
+    stream_tx: mpsc::UnboundedSender<IoStream>,
+}
+
+#[async_trait]
+impl tunnel::tunnel_service_server::TunnelService for GrpcTunnelService {
+    type TunnelStream =
+        Pin<Box<dyn Stream<Item = Result<tunnel::TunnelResponse, Status>> + Send + 'static>>;
+
+    async fn tunnel(
+        &self,
+        request: Request<tonic::Streaming<tunnel::TunnelRequest>>,
+    ) -> Result<Response<Self::TunnelStream>, Status> {
+        let mut inbound_stream = request.into_inner();
+        let (outbound_tx, outbound_rx) = mpsc::unbounded_channel();
+        let (inbound_tx, inbound_rx) = mpsc::channel(32);
+
+        tokio::spawn(async move {
+            while let Some(item) = inbound_stream.next().await {
+                if inbound_tx.send(item).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let adapter = GrpcServerStreamAdapter {
+            tx: outbound_tx,
+            rx: inbound_rx,
+            read_buffer: Bytes::new(),
+        };
+
+        if self.stream_tx.send(Box::new(adapter)).is_err() {
+            return Err(Status::unavailable("gRPC stream channel closed"));
+        }
+
+        let response_stream =
+            tokio_stream::wrappers::UnboundedReceiverStream::new(outbound_rx).map(Ok);
+        Ok(Response::new(Box::pin(response_stream)))
+    }
+}
+
 /// gRPC server configuration
 #[derive(Debug, Clone)]
 pub struct GrpcServerConfig {
@@ -385,6 +502,7 @@ impl GrpcServer {
         config: GrpcServerConfig,
     ) -> std::io::Result<Self> {
         use tokio::net::TcpListener;
+        use tunnel::tunnel_service_server::TunnelServiceServer;
 
         // Create TCP listener for the gRPC server
         let tcp_listener = TcpListener::bind(bind_addr).await?;
@@ -393,42 +511,48 @@ impl GrpcServer {
         // Create channel for distributing incoming streams
         let (stream_tx, stream_rx) = mpsc::unbounded_channel();
 
-        // Clone config for the background task
-        let config_clone = config.clone();
+        if config.service_name != "TunnelService" || config.method_name != "Tunnel" {
+            tracing::warn!(
+                "gRPC server uses fixed service/method TunnelService/Tunnel (requested: {}/{})",
+                config.service_name,
+                config.method_name
+            );
+        }
 
-        // Start background task to accept TCP connections and handle gRPC
+        let service = GrpcTunnelService {
+            stream_tx: stream_tx.clone(),
+        };
+
+        let (incoming_tx, incoming_rx) =
+            mpsc::channel::<Result<tokio::net::TcpStream, std::io::Error>>(32);
+
+        // Start background task to accept TCP connections
         tokio::spawn(async move {
             loop {
                 match tcp_listener.accept().await {
                     Ok((tcp_stream, peer_addr)) => {
                         debug!("Accepted gRPC connection from {}", peer_addr);
-                        let stream_tx = stream_tx.clone();
-                        let config = config_clone.clone();
-
-                        tokio::spawn(async move {
-                            // TODO: Implement proper gRPC server-side handling with tonic server
-                            // For now, this is a placeholder that wraps TCP stream directly
-                            tracing::warn!(
-                                "gRPC server-side handling not yet fully implemented for {} (service: {})",
-                                peer_addr,
-                                config.service_name
-                            );
-
-                            // Placeholder: wrap TCP stream directly for basic functionality
-                            // In production, this should handle gRPC framing and service dispatch
-                            // Placeholder: wrap TCP stream directly for basic functionality
-                            // In production, this should handle gRPC framing and service dispatch
-                            let stream: IoStream = Box::new(tcp_stream);
-                            if stream_tx.send(stream).is_err() {
-                                tracing::warn!("Failed to send stream, listener may be closed");
-                            }
-                        });
+                        if incoming_tx.send(Ok(tcp_stream)).await.is_err() {
+                            tracing::warn!("gRPC incoming channel closed");
+                            break;
+                        }
                     }
                     Err(e) => {
                         tracing::warn!("Failed to accept gRPC connection: {}", e);
                         continue;
                     }
                 }
+            }
+        });
+
+        let incoming = tokio_stream::wrappers::ReceiverStream::new(incoming_rx);
+        tokio::spawn(async move {
+            if let Err(e) = Server::builder()
+                .add_service(TunnelServiceServer::new(service))
+                .serve_with_incoming(incoming)
+                .await
+            {
+                tracing::warn!("gRPC server terminated: {}", e);
             }
         });
 

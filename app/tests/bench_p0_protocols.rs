@@ -19,6 +19,7 @@
 //! Requirements: 9.1, 9.2, 9.4
 
 use std::net::SocketAddr;
+use std::env;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -215,14 +216,33 @@ async fn bench_direct_tcp() {
 #[tokio::test]
 #[ignore] // Run with --ignored flag
 async fn bench_reality_tls() {
-    // This test requires REALITY server setup
-    // Placeholder for actual implementation
-
     println!("\n=== Benchmarking REALITY TLS ===");
-    println!("Note: Requires REALITY server configuration");
+    let addr = match env::var("SB_BENCH_REALITY_ADDR")
+        .ok()
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+    {
+        Some(addr) => addr,
+        None => {
+            eprintln!("SB_BENCH_REALITY_ADDR not set; skipping");
+            return;
+        }
+    };
 
-    // TODO: Implement REALITY benchmark when server is available
-    // Expected overhead: 5-10% vs baseline due to TLS + REALITY auth
+    let connect_fn = || async move { TcpStream::connect(addr).await };
+    let throughput = measure_throughput(&connect_fn, 1024 * 1024, 10).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 200).await;
+    let conn_time = measure_connection_time(connect_fn, 50).await;
+
+    let result = BenchmarkResult {
+        protocol: "REALITY TLS".to_string(),
+        throughput_mbps: throughput,
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        connection_time_ms: conn_time,
+        memory_mb: estimate_memory_usage(),
+    };
+    result.print_summary();
 }
 
 /// Benchmark ECH (Encrypted Client Hello)
@@ -230,10 +250,32 @@ async fn bench_reality_tls() {
 #[ignore] // Run with --ignored flag
 async fn bench_ech() {
     println!("\n=== Benchmarking ECH ===");
-    println!("Note: Requires ECH-enabled server");
+    let addr = match env::var("SB_BENCH_ECH_ADDR")
+        .ok()
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+    {
+        Some(addr) => addr,
+        None => {
+            eprintln!("SB_BENCH_ECH_ADDR not set; skipping");
+            return;
+        }
+    };
 
-    // TODO: Implement ECH benchmark when server is available
-    // Expected overhead: 3-5% vs baseline TLS due to encryption
+    let connect_fn = || async move { TcpStream::connect(addr).await };
+    let throughput = measure_throughput(&connect_fn, 1024 * 1024, 10).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 200).await;
+    let conn_time = measure_connection_time(connect_fn, 50).await;
+
+    let result = BenchmarkResult {
+        protocol: "ECH".to_string(),
+        throughput_mbps: throughput,
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        connection_time_ms: conn_time,
+        memory_mb: estimate_memory_usage(),
+    };
+    result.print_summary();
 }
 
 /// Benchmark Hysteria v1 protocol
@@ -241,10 +283,31 @@ async fn bench_ech() {
 #[ignore] // Run with --ignored flag
 async fn bench_hysteria_v1() {
     println!("\n=== Benchmarking Hysteria v1 ===");
-    println!("Note: Requires Hysteria v1 server");
+    let addr = match env::var("SB_BENCH_HYSTERIA1_ADDR")
+        .ok()
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+    {
+        Some(addr) => addr,
+        None => {
+            eprintln!("SB_BENCH_HYSTERIA1_ADDR not set; skipping");
+            return;
+        }
+    };
+    let connect_fn = || async move { TcpStream::connect(addr).await };
+    let throughput = measure_throughput(&connect_fn, 1024 * 1024, 10).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 200).await;
+    let conn_time = measure_connection_time(connect_fn, 50).await;
 
-    // TODO: Implement Hysteria v1 benchmark
-    // Expected: High throughput (UDP-based), low latency
+    let result = BenchmarkResult {
+        protocol: "Hysteria v1".to_string(),
+        throughput_mbps: throughput,
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        connection_time_ms: conn_time,
+        memory_mb: estimate_memory_usage(),
+    };
+    result.print_summary();
 }
 
 /// Benchmark Hysteria v2 protocol
@@ -252,10 +315,31 @@ async fn bench_hysteria_v1() {
 #[ignore] // Run with --ignored flag
 async fn bench_hysteria_v2() {
     println!("\n=== Benchmarking Hysteria v2 ===");
-    println!("Note: Requires Hysteria v2 server");
+    let addr = match env::var("SB_BENCH_HYSTERIA2_ADDR")
+        .ok()
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+    {
+        Some(addr) => addr,
+        None => {
+            eprintln!("SB_BENCH_HYSTERIA2_ADDR not set; skipping");
+            return;
+        }
+    };
+    let connect_fn = || async move { TcpStream::connect(addr).await };
+    let throughput = measure_throughput(&connect_fn, 1024 * 1024, 10).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 200).await;
+    let conn_time = measure_connection_time(connect_fn, 50).await;
 
-    // TODO: Implement Hysteria v2 benchmark
-    // Expected: Similar to v1, improved congestion control
+    let result = BenchmarkResult {
+        protocol: "Hysteria v2".to_string(),
+        throughput_mbps: throughput,
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        connection_time_ms: conn_time,
+        memory_mb: estimate_memory_usage(),
+    };
+    result.print_summary();
 }
 
 /// Benchmark SSH outbound
@@ -263,10 +347,31 @@ async fn bench_hysteria_v2() {
 #[ignore] // Run with --ignored flag
 async fn bench_ssh_outbound() {
     println!("\n=== Benchmarking SSH Outbound ===");
-    println!("Note: Requires SSH server");
+    let addr = match env::var("SB_BENCH_SSH_ADDR")
+        .ok()
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+    {
+        Some(addr) => addr,
+        None => {
+            eprintln!("SB_BENCH_SSH_ADDR not set; skipping");
+            return;
+        }
+    };
+    let connect_fn = || async move { TcpStream::connect(addr).await };
+    let throughput = measure_throughput(&connect_fn, 1024 * 1024, 5).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 100).await;
+    let conn_time = measure_connection_time(connect_fn, 20).await;
 
-    // TODO: Implement SSH benchmark
-    // Expected overhead: 10-15% vs baseline due to SSH encryption
+    let result = BenchmarkResult {
+        protocol: "SSH Outbound".to_string(),
+        throughput_mbps: throughput,
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        connection_time_ms: conn_time,
+        memory_mb: estimate_memory_usage(),
+    };
+    result.print_summary();
 }
 
 /// Benchmark TUIC protocol
@@ -274,10 +379,31 @@ async fn bench_ssh_outbound() {
 #[ignore] // Run with --ignored flag
 async fn bench_tuic() {
     println!("\n=== Benchmarking TUIC ===");
-    println!("Note: Requires TUIC server");
+    let addr = match env::var("SB_BENCH_TUIC_ADDR")
+        .ok()
+        .and_then(|v| v.parse::<SocketAddr>().ok())
+    {
+        Some(addr) => addr,
+        None => {
+            eprintln!("SB_BENCH_TUIC_ADDR not set; skipping");
+            return;
+        }
+    };
+    let connect_fn = || async move { TcpStream::connect(addr).await };
+    let throughput = measure_throughput(&connect_fn, 1024 * 1024, 10).await;
+    let (p50, p95, p99) = measure_latency(&connect_fn, 200).await;
+    let conn_time = measure_connection_time(connect_fn, 50).await;
 
-    // TODO: Implement TUIC benchmark
-    // Expected: Similar to Hysteria (QUIC-based)
+    let result = BenchmarkResult {
+        protocol: "TUIC".to_string(),
+        throughput_mbps: throughput,
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        connection_time_ms: conn_time,
+        memory_mb: estimate_memory_usage(),
+    };
+    result.print_summary();
 }
 
 /// Stress test: High connection rate

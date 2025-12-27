@@ -74,6 +74,8 @@
 
 /// Network monitoring utilities for detecting network changes.
 pub mod monitor;
+/// Network utilities for MAC address retrieval and interface queries.
+pub mod network;
 pub mod process;
 pub mod system_proxy;
 pub mod tun;

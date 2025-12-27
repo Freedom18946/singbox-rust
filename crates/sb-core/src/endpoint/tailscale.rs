@@ -5,12 +5,18 @@
 //! - Control plane trait for tsnet/FFI integration
 //! - Connection handler integration for inbound routing
 //!
-//! The control plane can be provided via:
-//! 1. Native tsnet FFI (requires Go 1.20+ and CGO)
-//! 2. Command-line integration with `tailscale` daemon
-//! 3. Stub mode for testing
+//! ## Architecture (Daemon-Only Mode)
 //!
-//! Go reference: `protocol/tailscale/endpoint.go`
+//! Unlike the Go reference which embeds `tsnet` + gVisor netstack, this
+//! implementation uses **daemon-only mode** - connecting to an external
+//! `tailscaled` daemon via its Local API. See [`docs/TAILSCALE_LIMITATIONS.md`]
+//! for detailed architectural comparison and rationale.
+//!
+//! The control plane can be provided via:
+//! 1. `DaemonControlPlane` (default) - connects to local `tailscaled` daemon
+//! 2. `StubControlPlane` - for testing without a real daemon
+//!
+//! Go reference: `protocol/tailscale/endpoint.go` (4 files, 27KB)
 
 use super::{
     CloseHandler, ConnectionHandler, Endpoint, EndpointStream, InboundContext, Network, Socksaddr,
@@ -673,13 +679,13 @@ impl Endpoint for TailscaleEndpoint {
                 debug!(tag = %self.config.tag, "Initializing Tailscale endpoint");
                 self.set_state(TailscaleState::Initializing);
 
-                // Create stub control plane if none provided
+                // Default to DaemonControlPlane if none provided
                 if self.control_plane.read().is_none() {
-                    let stub = Arc::new(StubControlPlane::new(self.config.clone()));
-                    *self.control_plane.write() = Some(stub);
-                    warn!(
+                    let daemon = Arc::new(DaemonControlPlane::new(self.config.clone()));
+                    *self.control_plane.write() = Some(daemon);
+                    debug!(
                         tag = %self.config.tag,
-                        "No control plane provided, using stub (no real Tailscale connectivity)"
+                        "No control plane provided, using default DaemonControlPlane"
                     );
                 }
             }

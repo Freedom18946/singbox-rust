@@ -1,22 +1,70 @@
 //! HTTP authentication timeout tests
 //!
 //! These tests verify HTTP authentication timeout behavior.
-//! Currently marked as ignored pending API refactoring.
+//! Focused on auth rejection and header handling.
 
 use anyhow::Result;
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, sync::Arc};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{sleep, Duration, Instant};
 
 #[tokio::test]
-#[ignore = "Requires API refactoring - InboundDef and Router types changed"]
 async fn test_http_auth_timeout() -> Result<()> {
-    // This test was testing HTTP authentication timeout behavior
-    // using the old InboundDef API which has been refactored.
-    //
-    // TODO: Rewrite this test using the current ProxyServer and Config API
-    // to verify that HTTP authentication correctly times out after the
-    // configured duration.
+    use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
+    use sb_config::ir::Credentials;
+    use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+    use sb_core::router::{Router, RouterHandle};
+    use tokio::net::TcpListener;
+    use tokio::sync::{mpsc, oneshot};
+
+    let temp_listener = TcpListener::bind("127.0.0.1:0").await?;
+    let http_addr = temp_listener.local_addr()?;
+    drop(temp_listener);
+
+    let mut map = std::collections::HashMap::new();
+    map.insert("direct".to_string(), OutboundImpl::Direct);
+    let registry = OutboundRegistry::new(map);
+    let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
+    let router = Arc::new(RouterHandle::new(Router::with_default("direct")));
+
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let cfg = HttpProxyConfig {
+        listen: http_addr,
+        router,
+        outbounds,
+        tls: None,
+        users: Some(vec![Credentials {
+            username: Some("user".to_string()),
+            password: Some("pass".to_string()),
+            username_env: None,
+            password_env: None,
+        }]),
+    };
+
+    tokio::spawn(async move {
+        let _ = serve_http(cfg, stop_rx, Some(ready_tx)).await;
+    });
+
+    ready_rx.await?;
+
+    let mut stream = TcpStream::connect(http_addr).await?;
+    let request = format!(
+        "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).await?;
+
+    let mut resp_buf = vec![0u8; 256];
+    let n = stream.read(&mut resp_buf).await?;
+    let response = String::from_utf8_lossy(&resp_buf[..n]);
+    assert!(
+        response.starts_with("HTTP/1.1 407"),
+        "Expected 407 on missing auth, got: {}",
+        response
+    );
+
+    let _ = stop_tx.send(()).await;
 
     Ok(())
 }

@@ -5,216 +5,12 @@
 //!
 //! Mirrors Go's `service/resolved/resolve1.go`.
 
-use parking_lot::RwLock;
-use std::collections::HashMap;
-use std::net::IpAddr;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{debug, info, warn};
 
-/// Per-link DNS configuration.
-///
-/// Tracks DNS servers, domains, and settings for a specific network interface.
-/// Mirrors Go's `TransportLink` struct.
-#[derive(Debug, Clone, Default)]
-pub struct TransportLink {
-    /// Interface index.
-    pub if_index: i32,
-    /// Interface name (for logging).
-    pub if_name: String,
-    /// DNS server addresses (simple format).
-    pub addresses: Vec<LinkDNS>,
-    /// DNS server addresses with port and SNI (extended format).
-    pub addresses_ex: Vec<LinkDNSEx>,
-    /// Search domains configuration.
-    pub domains: Vec<LinkDomain>,
-    /// Whether this link is a default route for DNS queries.
-    pub default_route: bool,
-    /// Whether DNS-over-TLS is enabled.
-    pub dns_over_tls: bool,
-}
-
-/// Simple DNS server address (family + raw IP bytes).
-#[derive(Debug, Clone)]
-pub struct LinkDNS {
-    /// Address family (AF_INET=2 or AF_INET6=10).
-    pub family: i32,
-    /// Raw IP address bytes.
-    pub address: Vec<u8>,
-}
-
-impl LinkDNS {
-    /// Convert to IpAddr.
-    pub fn to_ip_addr(&self) -> Option<IpAddr> {
-        match self.family {
-            2 if self.address.len() == 4 => {
-                let bytes: [u8; 4] = self.address[..4].try_into().ok()?;
-                Some(IpAddr::V4(bytes.into()))
-            }
-            10 if self.address.len() == 16 => {
-                let bytes: [u8; 16] = self.address[..16].try_into().ok()?;
-                Some(IpAddr::V6(bytes.into()))
-            }
-            _ => None,
-        }
-    }
-}
-
-/// Extended DNS server address with port and SNI.
-#[derive(Debug, Clone)]
-pub struct LinkDNSEx {
-    /// Address family (AF_INET=2 or AF_INET6=10).
-    pub family: i32,
-    /// Raw IP address bytes.
-    pub address: Vec<u8>,
-    /// Port (0 means default 53 or 853 for DoT).
-    pub port: u16,
-    /// Server Name Indication for TLS.
-    pub server_name: String,
-}
-
-impl LinkDNSEx {
-    /// Convert to IpAddr.
-    pub fn to_ip_addr(&self) -> Option<IpAddr> {
-        match self.family {
-            2 if self.address.len() == 4 => {
-                let bytes: [u8; 4] = self.address[..4].try_into().ok()?;
-                Some(IpAddr::V4(bytes.into()))
-            }
-            10 if self.address.len() == 16 => {
-                let bytes: [u8; 16] = self.address[..16].try_into().ok()?;
-                Some(IpAddr::V6(bytes.into()))
-            }
-            _ => None,
-        }
-    }
-}
-
-/// DNS domain configuration.
-#[derive(Debug, Clone)]
-pub struct LinkDomain {
-    /// Domain name.
-    pub domain: String,
-    /// If true, domain is only used for routing, not search.
-    pub routing_only: bool,
-}
-
-/// Callback type for link updates.
-pub type UpdateCallback = Box<dyn Fn(&TransportLink) -> Result<(), String> + Send + Sync>;
-
-/// Callback type for link deletion.
-pub type DeleteCallback = Box<dyn Fn(&TransportLink) + Send + Sync>;
-
-/// Shared state for the resolve1 Manager.
-pub struct Resolve1ManagerState {
-    /// Per-link configuration.
-    pub links: RwLock<HashMap<i32, TransportLink>>,
-    /// Default route sequence (most recent is last).
-    pub default_route_sequence: RwLock<Vec<i32>>,
-    /// Callback when a link is updated.
-    pub update_callback: RwLock<Option<UpdateCallback>>,
-    /// Callback when a link is deleted.
-    pub delete_callback: RwLock<Option<DeleteCallback>>,
-}
-
-impl Default for Resolve1ManagerState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Resolve1ManagerState {
-    /// Create a new empty state.
-    pub fn new() -> Self {
-        Self {
-            links: RwLock::new(HashMap::new()),
-            default_route_sequence: RwLock::new(Vec::new()),
-            update_callback: RwLock::new(None),
-            delete_callback: RwLock::new(None),
-        }
-    }
-
-    /// Set the update callback.
-    pub fn set_update_callback(&self, callback: UpdateCallback) {
-        *self.update_callback.write() = Some(callback);
-    }
-
-    /// Set the delete callback.
-    pub fn set_delete_callback(&self, callback: DeleteCallback) {
-        *self.delete_callback.write() = Some(callback);
-    }
-
-    /// Get or create a link.
-    #[allow(dead_code)]
-    fn get_or_create_link(&self, if_index: i32, if_name: &str) -> TransportLink {
-        let mut links = self.links.write();
-        links
-            .entry(if_index)
-            .or_insert_with(|| TransportLink {
-                if_index,
-                if_name: if_name.to_string(),
-                ..Default::default()
-            })
-            .clone()
-    }
-
-    /// Update a link and call the update callback.
-    #[allow(dead_code)]
-    fn update_link(&self, link: TransportLink) -> Result<(), String> {
-        let if_index = link.if_index;
-        {
-            let mut links = self.links.write();
-            links.insert(if_index, link.clone());
-        }
-        if let Some(ref callback) = *self.update_callback.read() {
-            callback(&link)?;
-        }
-        Ok(())
-    }
-
-    /// Delete a link and call the delete callback.
-    #[allow(dead_code)]
-    fn delete_link(&self, if_index: i32) {
-        let link = {
-            let mut links = self.links.write();
-            links.remove(&if_index)
-        };
-        if let Some(link) = link {
-            // Remove from default route sequence
-            {
-                let mut seq = self.default_route_sequence.write();
-                seq.retain(|&idx| idx != if_index);
-            }
-            if let Some(ref callback) = *self.delete_callback.read() {
-                callback(&link);
-            }
-        }
-    }
-
-    /// Get the current default route link (if any).
-    pub fn default_route_link(&self) -> Option<TransportLink> {
-        let seq = self.default_route_sequence.read();
-        if let Some(&if_index) = seq.last() {
-            let links = self.links.read();
-            links.get(&if_index).cloned()
-        } else {
-            None
-        }
-    }
-
-    /// Get all links.
-    pub fn all_links(&self) -> Vec<TransportLink> {
-        self.links.read().values().cloned().collect()
-    }
-
-    /// Get all links that are default routes, in order.
-    pub fn default_route_links(&self) -> Vec<TransportLink> {
-        let seq = self.default_route_sequence.read();
-        let links = self.links.read();
-        seq.iter()
-            .filter_map(|idx| links.get(idx).cloned())
-            .collect()
-    }
-}
+use sb_core::dns::transport::resolved::{
+    Resolve1ManagerState, TransportLink, LinkDNS, LinkDNSEx, LinkDomainConfig,
+};
 
 // D-Bus interface implementation (zbus)
 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
@@ -331,7 +127,7 @@ pub mod dbus_server {
 
             link.domains = domains
                 .into_iter()
-                .map(|(domain, routing_only)| LinkDomain {
+                .map(|(domain, routing_only)| LinkDomainConfig {
                     domain,
                     routing_only,
                 })
@@ -520,6 +316,7 @@ pub mod dbus_server {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::IpAddr;
 
     #[test]
     fn test_transport_link_default() {
@@ -576,14 +373,25 @@ mod tests {
         state.default_route_sequence.write().push(2);
 
         // Most recent is last
-        let def = state.default_route_link();
+        let def = default_route_link(&state);
         assert!(def.is_some());
         assert_eq!(def.unwrap().if_index, 2);
 
         // Delete link 2
         state.delete_link(2);
-        let def = state.default_route_link();
+        let def = default_route_link(&state);
         assert!(def.is_some());
         assert_eq!(def.unwrap().if_index, 1);
+    }
+
+    fn default_route_link(state: &Resolve1ManagerState) -> Option<TransportLink> {
+        let seq = state.default_route_sequence.read();
+        let links = state.links.read();
+        for &if_index in seq.iter().rev() {
+            if let Some(link) = links.get(&if_index) {
+                return Some(link.clone());
+            }
+        }
+        None
     }
 }

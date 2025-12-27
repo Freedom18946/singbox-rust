@@ -192,7 +192,7 @@ fn test_outbound_adapters_instantiation() -> Result<()> {
                 }],
                 "outbounds": [{
                     "type": "shadowsocks",
-                    "tag": "ss-out",
+                    "tag": "shadowsocks-out",
                     "server": "127.0.0.1",
                     "port": 8388,
                     "method": "aes-256-gcm",
@@ -296,7 +296,7 @@ fn test_outbound_adapters_instantiation() -> Result<()> {
                 }],
                 "outbounds": [{
                     "type": "hysteria2",
-                    "tag": "hy2-out",
+                    "tag": "hysteria2-out",
                     "server": "127.0.0.1",
                     "port": 8443,
                     "password": "test-password",

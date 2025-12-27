@@ -5,21 +5,24 @@
 //!
 //! Current implementation:
 //! - Uses libproc's `pidpath()` for process info (native API)
-//! - Uses `lsof` for socket→PID mapping (command-line, to be replaced with native socket API)
+//! - Uses libproc socket fd info for socket→PID mapping
 //!
 //! Performance comparison (for process info retrieval):
 //! - Command-line (ps): ~50-100ms per query
 //! - Native API (pidpath): ~1-5ms per query
 //! - Improvement: 10-100x faster
 //!
-//! TODO: Replace lsof with native socket iteration API for full 20-50x improvement
-//!
 //! References:
 //! - libproc: <https://crates.io/crates/libproc>
 //! - Apple docs: <https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/proc_listpids.3.html>
 
-use super::{ConnectionInfo, ProcessInfo, ProcessMatchError};
-use libproc::libproc::proc_pid::pidpath;
+use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
+use libproc::libproc::bsd_info::BSDInfo;
+use libproc::libproc::file_info::{pidfdinfo, ListFDs, ProcFDType};
+use libproc::libproc::net_info::{InSockInfo, SocketFDInfo, SocketInfoKind};
+use libproc::libproc::proc_pid::{listpidinfo, pidinfo, pidpath};
+use libproc::processes::{pids_by_type, ProcFilter};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 /// macOS native process matcher using libproc
 ///
@@ -37,12 +40,12 @@ impl NativeMacOsProcessMatcher {
 
     /// Find process ID by connection information
     ///
-    /// Note: Currently uses lsof as fallback. Native socket iteration API requires
-    /// more complex libproc bindings and will be implemented in the next iteration.
+    /// Uses libproc socket fd info to map sockets to PIDs.
     pub async fn find_process_id(&self, conn: &ConnectionInfo) -> Result<u32, ProcessMatchError> {
-        // For now, use lsof for socket→PID mapping
-        // TODO: Implement native socket iteration using proc_pidinfo and socket_fdinfo
-        self.find_process_with_lsof(conn).await
+        let conn = conn.clone();
+        tokio::task::spawn_blocking(move || Self::find_process_id_blocking(&conn))
+            .await
+            .map_err(|e| ProcessMatchError::SystemError(format!("Task join error: {e}")))?
     }
 
     /// Get process information by PID using native libproc API
@@ -81,16 +84,116 @@ impl NativeMacOsProcessMatcher {
         Ok(ProcessInfo::new(name, path, pid))
     }
 
-    /// Fallback to lsof for finding PID by socket
-    ///
-    /// This is the same implementation as in the command-line fallback.
-    /// Performance: ~100-200ms per query
-    async fn find_process_with_lsof(
-        &self,
-        conn: &ConnectionInfo,
-    ) -> Result<u32, ProcessMatchError> {
-        super::macos_common::find_process_with_lsof(conn).await
+    fn find_process_id_blocking(conn: &ConnectionInfo) -> Result<u32, ProcessMatchError> {
+        let pids = pids_by_type(ProcFilter::All)
+            .map_err(|e| ProcessMatchError::SystemError(e.to_string()))?;
+        let mut saw_permission = false;
+
+        for pid in pids {
+            let Ok(pid_i32) = i32::try_from(pid) else {
+                continue;
+            };
+            if pid_i32 <= 0 {
+                continue;
+            }
+
+            let info = match pidinfo::<BSDInfo>(pid_i32, 0) {
+                Ok(info) => info,
+                Err(e) => {
+                    saw_permission |= is_permission_error(&e);
+                    continue;
+                }
+            };
+
+            let fds = match listpidinfo::<ListFDs>(pid_i32, info.pbi_nfiles as usize) {
+                Ok(fds) => fds,
+                Err(e) => {
+                    saw_permission |= is_permission_error(&e);
+                    continue;
+                }
+            };
+
+            for fd in fds {
+                if !matches!(ProcFDType::from(fd.proc_fdtype), ProcFDType::Socket) {
+                    continue;
+                }
+
+                let socket = match pidfdinfo::<SocketFDInfo>(pid_i32, fd.proc_fd) {
+                    Ok(socket) => socket,
+                    Err(e) => {
+                        saw_permission |= is_permission_error(&e);
+                        continue;
+                    }
+                };
+
+                if !protocol_matches(conn.protocol, socket.psi.soi_protocol) {
+                    continue;
+                }
+
+                let in_info = match SocketInfoKind::from(socket.psi.soi_kind) {
+                    SocketInfoKind::Tcp => unsafe { socket.psi.soi_proto.pri_tcp.tcpsi_ini },
+                    SocketInfoKind::In => unsafe { socket.psi.soi_proto.pri_in },
+                    _ => continue,
+                };
+
+                if socket_matches(conn, &in_info, socket.psi.soi_family) {
+                    return Ok(pid);
+                }
+            }
+        }
+
+        if saw_permission {
+            Err(ProcessMatchError::PermissionDenied)
+        } else {
+            Err(ProcessMatchError::ProcessNotFound)
+        }
     }
+}
+
+fn protocol_matches(protocol: Protocol, socket_protocol: i32) -> bool {
+    match protocol {
+        Protocol::Tcp => socket_protocol == libc::IPPROTO_TCP,
+        Protocol::Udp => socket_protocol == libc::IPPROTO_UDP,
+    }
+}
+
+fn socket_matches(conn: &ConnectionInfo, info: &InSockInfo, family: i32) -> bool {
+    let Some((local, remote)) = parse_socket_addrs(info, family) else {
+        return false;
+    };
+    conn.local_addr == local && conn.remote_addr == remote
+}
+
+fn parse_socket_addrs(info: &InSockInfo, family: i32) -> Option<(SocketAddr, SocketAddr)> {
+    match family {
+        libc::AF_INET => {
+            let local_ip = Ipv4Addr::from(u32::from_be(unsafe {
+                info.insi_laddr.ina_46.i46a_addr4.s_addr
+            }));
+            let remote_ip = Ipv4Addr::from(u32::from_be(unsafe {
+                info.insi_faddr.ina_46.i46a_addr4.s_addr
+            }));
+            let local_port = u16::from_be(info.insi_lport as u16);
+            let remote_port = u16::from_be(info.insi_fport as u16);
+            let local = SocketAddr::new(IpAddr::V4(local_ip), local_port);
+            let remote = SocketAddr::new(IpAddr::V4(remote_ip), remote_port);
+            Some((local, remote))
+        }
+        libc::AF_INET6 => {
+            let local_ip = Ipv6Addr::from(unsafe { info.insi_laddr.ina_6.s6_addr });
+            let remote_ip = Ipv6Addr::from(unsafe { info.insi_faddr.ina_6.s6_addr });
+            let local_port = u16::from_be(info.insi_lport as u16);
+            let remote_port = u16::from_be(info.insi_fport as u16);
+            let local = SocketAddr::new(IpAddr::V6(local_ip), local_port);
+            let remote = SocketAddr::new(IpAddr::V6(remote_ip), remote_port);
+            Some((local, remote))
+        }
+        _ => None,
+    }
+}
+
+fn is_permission_error(err: &str) -> bool {
+    err.contains("Operation not permitted") || err.contains("EPERM")
 }
 
 #[cfg(test)]

@@ -463,6 +463,12 @@ impl UtlsConfig {
             | UtlsFingerprint::SafariIos15
             | UtlsFingerprint::Safari => CustomFingerprint::safari_ios16(),
             UtlsFingerprint::Custom(custom) => custom.clone(),
+            
+            // Mappings for fingerprints ensuring best-effort compatibility:
+            // - Android: Mapped to Chrome 110 (closest modern behavior). Go uses specifically utls.HelloAndroid_11_OkHttp.
+            // - Random: Mapped to Chrome 110. Go implementation randomizes/rotates; here we use a stable modern baseline.
+            // - 360/QQ: Mapped to Chrome 110. Go uses utls.Hello360_Auto/HelloQQ_Auto.
+            // - ChromePsk/Pq: Mapped to Chrome 110.
             _ => CustomFingerprint::chrome_110(), // Default to Chrome
         }
     }

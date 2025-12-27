@@ -4,32 +4,89 @@
 #[cfg(feature = "observe")]
 mod observe_tests {
     use base64::Engine;
+    use serde_json::Value;
+    use std::fs;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::time::Duration;
+    use tempfile::NamedTempFile;
     use tokio::time::sleep;
 
+    fn target_dir_for(features: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let slug = if features.is_empty() {
+            "default".to_string()
+        } else {
+            features
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+                .collect()
+        };
+        dir.push(format!("sb_app_build_{slug}_{pid}"));
+        dir
+    }
+
+    fn bin_path(target_dir: &Path) -> PathBuf {
+        let profile = std::env::var("CARGO_PROFILE")
+            .ok()
+            .or_else(|| std::env::var("PROFILE").ok())
+            .unwrap_or_else(|| "debug".into());
+        let mut path = target_dir.to_path_buf();
+        path.push(profile);
+        path.push("app");
+        if cfg!(windows) {
+            path.set_extension("exe");
+        }
+        path
+    }
+
+    fn build_app(features: &str) -> PathBuf {
+        let target_dir = target_dir_for(features);
+        std::fs::create_dir_all(&target_dir).expect("create target dir");
+        let bin = bin_path(&target_dir);
+        if !bin.exists() {
+            let mut cmd = Command::new("cargo");
+            cmd.args(["build", "-p", "app", "--bin", "app"]);
+            if !features.is_empty() {
+                cmd.arg("--features");
+                cmd.arg(features);
+            }
+            cmd.env("CARGO_TARGET_DIR", &target_dir);
+            let status = cmd.status().expect("build app");
+            assert!(
+                status.success(),
+                "failed to build app with features: {features}"
+            );
+        }
+        bin
+    }
+
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_admin_endpoints_with_features() {
         use std::process::Stdio;
 
+        let bin = build_app("admin_debug,sbcore_rules_tool");
+
+        let portfile = NamedTempFile::new().expect("create admin portfile");
+        let cfg_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ok.json");
+
         // Start the admin server on a random port
-        let mut child = Command::new("cargo")
-            .args([
-                "run",
-                "--bin",
-                "singbox-rust",
-                "--features",
-                "observe,subs_http,sbcore_rules_tool",
-            ])
-            .env("SB_ADMIN_ADDR", "127.0.0.1:0")
+        let cfg_arg = cfg_path.to_string_lossy().to_string();
+        let mut child = Command::new(bin)
+            .args(["run", "--config", &cfg_arg, "--no-banner"])
+            .env("SB_DEBUG_ADDR", "127.0.0.1:0")
+            .env("SB_ADMIN_PORTFILE", portfile.path())
+            .env("SB_ADMIN_NO_AUTH", "1")
             .env("SB_LOG_LEVEL", "error")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .expect("Failed to start admin server");
 
-        // Wait for server to be ready by reading actual port from stdout
-        let base_url = wait_for_server_ready(&mut child).await;
+        // Wait for server to be ready via the admin portfile.
+        let base_url = wait_for_server_ready(&mut child, portfile.path()).await;
         if base_url.is_none() {
             let _ = child.kill();
             assert!(false, "Server did not become ready within timeout");
@@ -88,81 +145,75 @@ mod observe_tests {
         let _ = child.kill();
     }
 
-    async fn wait_for_server_ready(child: &mut std::process::Child) -> Option<String> {
-        use std::io::{BufRead, BufReader};
+    async fn wait_for_server_ready(
+        child: &mut std::process::Child,
+        portfile: &Path,
+    ) -> Option<String> {
         use std::time::Instant;
 
-        let timeout = Duration::from_secs(10);
+        let timeout = Duration::from_secs(30);
         let start = Instant::now();
-
-        // Get stdout from child process
-        let stdout = child.stdout.take()?;
-        let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
+        let expected_pid = child.id() as u64;
 
         while start.elapsed() < timeout {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) => {
-                    // EOF - process might have exited
-                    sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
-                Ok(_) => {
-                    // Check if this line contains our admin listen address
-                    if let Some(addr_part) = line.strip_prefix("ADMIN_LISTEN=") {
-                        let addr = addr_part.trim();
-                        let base_url = format!("http://{}", addr);
+            if let Ok(Some(_)) = child.try_wait() {
+                return None;
+            }
 
-                        // Verify server is actually responding
-                        let client = reqwest::Client::builder()
-                            .timeout(Duration::from_millis(500))
-                            .build()
-                            .ok()?;
-
-                        if let Ok(response) = client
-                            .get(format!("{}/router/geoip?ip=127.0.0.1", base_url))
-                            .send()
-                            .await
-                        {
-                            if response.status().is_success() || response.status() == 400 {
+            if let Ok(addr) = fs::read_to_string(portfile) {
+                let addr = addr.trim();
+                if !addr.is_empty() {
+                    let base_url = format!("http://{}", addr);
+                    let client = reqwest::Client::builder()
+                        .timeout(Duration::from_millis(500))
+                        .build()
+                        .ok()?;
+                    if let Ok(response) = client.get(format!("{}/__health", base_url)).send().await
+                    {
+                        if response.status().is_success() {
+                            let body = response.text().await.ok()?;
+                            let payload: Value = serde_json::from_str(&body).ok()?;
+                            if payload.get("pid").and_then(|v| v.as_u64())
+                                == Some(expected_pid)
+                            {
                                 return Some(base_url);
                             }
                         }
                     }
                 }
-                Err(_) => {
-                    sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
             }
+
+            sleep(Duration::from_millis(100)).await;
         }
 
         None
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_feature_gating() {
         use std::process::Stdio;
 
+        let bin = build_app("admin_debug");
+
+        let portfile = NamedTempFile::new().expect("create admin portfile");
+        let cfg_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ok.json");
+
         // Start the admin server without certain features
-        let mut child = Command::new("cargo")
-            .args([
-                "run",
-                "--bin",
-                "singbox-rust",
-                "--features",
-                "observe", // Only observe feature, missing subs_http and sbcore_rules_tool
-            ])
-            .env("SB_ADMIN_ADDR", "127.0.0.1:0")
+        let cfg_arg = cfg_path.to_string_lossy().to_string();
+        let mut child = Command::new(bin)
+            .args(["run", "--config", &cfg_arg, "--no-banner"])
+            .env("SB_DEBUG_ADDR", "127.0.0.1:0")
+            .env("SB_ADMIN_PORTFILE", portfile.path())
+            .env("SB_ADMIN_NO_AUTH", "1")
             .env("SB_LOG_LEVEL", "error")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .expect("Failed to start admin server");
 
         // Wait for server to be ready
-        let base_url = wait_for_server_ready(&mut child).await;
+        let base_url = wait_for_server_ready(&mut child, portfile.path()).await;
         if base_url.is_none() {
             let _ = child.kill();
             assert!(false, "Server did not become ready within timeout");

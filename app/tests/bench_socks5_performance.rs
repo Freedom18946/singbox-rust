@@ -13,9 +13,11 @@
 //! Priority: WS-E Task "Performance benchmarking vs Go version"
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone)]
 pub struct BenchmarkResult {
@@ -75,6 +77,110 @@ async fn start_echo_server() -> std::io::Result<SocketAddr> {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
     Ok(addr)
+}
+
+async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)> {
+    use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
+    use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+    use sb_core::router::{Router, RouterHandle};
+
+    let temp_listener = TcpListener::bind("127.0.0.1:0").await?;
+    let socks_addr = temp_listener.local_addr()?;
+    drop(temp_listener);
+
+    let mut map = std::collections::HashMap::new();
+    map.insert("direct".to_string(), OutboundImpl::Direct);
+    let registry = OutboundRegistry::new(map);
+    let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
+    let router = Arc::new(RouterHandle::new(Router::with_default("direct")));
+
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+    let cfg = SocksInboundConfig {
+        listen: socks_addr,
+        udp_bind: None,
+        router,
+        outbounds,
+        udp_nat_ttl: Duration::from_secs(60),
+        users: Some(vec![]),
+    };
+
+    tokio::spawn(async move {
+        let _ = serve_socks(cfg, stop_rx, Some(ready_tx)).await;
+    });
+
+    ready_rx
+        .await
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "socks ready failed"))?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    Ok((socks_addr, stop_tx))
+}
+
+async fn connect_via_socks5(
+    socks_addr: SocketAddr,
+    target: SocketAddr,
+) -> std::io::Result<TcpStream> {
+    let mut stream = TcpStream::connect(socks_addr).await?;
+
+    // Greeting: VER=5, NMETHODS=1, METHOD=0x00 (NO_AUTH)
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+    let mut resp = [0u8; 2];
+    stream.read_exact(&mut resp).await?;
+    if resp != [0x05, 0x00] {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "socks5 auth negotiation failed",
+        ));
+    }
+
+    // CONNECT request
+    let mut req = vec![0x05, 0x01, 0x00, 0x01];
+    if let std::net::IpAddr::V4(ip) = target.ip() {
+        req.extend_from_slice(&ip.octets());
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "expected IPv4 target",
+        ));
+    }
+    req.extend_from_slice(&target.port().to_be_bytes());
+    stream.write_all(&req).await?;
+
+    // Response: VER REP RSV ATYP BND.ADDR BND.PORT
+    let mut header = [0u8; 4];
+    stream.read_exact(&mut header).await?;
+    if header[1] != 0x00 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            format!("socks5 connect failed: {}", header[1]),
+        ));
+    }
+
+    match header[3] {
+        0x01 => {
+            let mut buf = [0u8; 6];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut buf = vec![0u8; len[0] as usize + 2];
+            stream.read_exact(&mut buf).await?;
+        }
+        0x04 => {
+            let mut buf = [0u8; 18];
+            stream.read_exact(&mut buf).await?;
+        }
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "socks5 unknown addr type",
+            ));
+        }
+    }
+
+    Ok(stream)
 }
 
 /// Measure throughput in Mbps
@@ -263,12 +369,16 @@ async fn bench_socks5_proxy() {
         }
     };
 
-    // TODO: Start SOCKS5 proxy server
-    // For now, use direct connection as placeholder
-    let connect_fn = || async move { TcpStream::connect(echo_addr).await };
+    let (socks_addr, _stop_tx) = match start_socks5_server().await {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Failed to start SOCKS5 server: {}", e);
+            return;
+        }
+    };
+    let connect_fn = || async move { connect_via_socks5(socks_addr, echo_addr).await };
 
     println!("\n=== Benchmarking SOCKS5 Proxy ===");
-    println!("Note: Currently using direct connection (SOCKS5 server TODO)");
 
     // Throughput test
     let (throughput, throughput_failed) = measure_throughput(&connect_fn, 1024 * 1024, 30).await;
@@ -295,9 +405,16 @@ async fn bench_socks5_proxy() {
 
     result.print_summary();
 
-    // Expected overhead: ~5-15% vs baseline
-    // TODO: Update assertions once actual SOCKS5 proxy is implemented
-    println!("Expected overhead vs baseline: 5-15%");
+    assert!(
+        throughput > 5.0,
+        "SOCKS5 throughput should be > 5 Mbps, got {:.2}",
+        throughput
+    );
+    assert!(
+        failed_requests < total_requests / 10,
+        "SOCKS5 failed requests too high: {}",
+        failed_requests
+    );
 }
 
 /// Stress test: High connection rate

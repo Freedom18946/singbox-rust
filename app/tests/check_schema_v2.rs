@@ -12,7 +12,7 @@ fn write_tmp(content: &str) -> tempfile::NamedTempFile {
 #[test]
 fn schema_v2_unknown_field_has_ptr_and_code() {
     let cfg = r#"
-    {"inbounds":[{"type":"socks","listen":"0.0.0.0","port":1080,"__unknown__":true}]}
+    {"schema_version":2,"inbounds":[{"type":"socks","listen":"0.0.0.0","port":1080,"__unknown__":true}]}
     "#;
     let tmp = write_tmp(cfg);
     let output = Command::cargo_bin("app")
@@ -24,6 +24,7 @@ fn schema_v2_unknown_field_has_ptr_and_code() {
             "--schema-v2-validate",
             "--format",
             "json",
+            "--fingerprint",
         ])
         .assert()
         .failure() // 退出码 2
@@ -32,14 +33,20 @@ fn schema_v2_unknown_field_has_ptr_and_code() {
         .clone();
     let v: Value = serde_json::from_slice(&output).unwrap();
     let issues = v.get("issues").unwrap().as_array().unwrap();
-    let first = issues.first().unwrap();
-    assert_eq!(first.get("kind").unwrap(), "error");
-    assert_eq!(first.get("code").unwrap(), "UnknownField");
-    assert!(first
-        .get("ptr")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .contains("/inbounds/0"));
+    let mut found = false;
+    for issue in issues {
+        if issue.get("code").and_then(|v| v.as_str()) == Some("UnknownField") {
+            assert_eq!(issue.get("level").unwrap(), "error");
+            assert!(issue
+                .get("ptr")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .contains("/inbounds/0"));
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "UnknownField issue not found");
     assert!(v.get("fingerprint").is_some());
 }

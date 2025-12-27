@@ -33,8 +33,7 @@ use std::fs;
 // use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
 
-// Removed sb_core dependencies to break circular dependency
-// TODO: These will be reintroduced when sb-core depends on sb-config
+// sb-config stays independent of sb-core; runtime wiring lives in sb-core.
 
 pub mod compat;
 pub mod de;
@@ -389,98 +388,6 @@ impl Config {
         None
     }
 
-    // 构建 `OutboundRegistry` 与 `Router`（真实实现）
-    // - 支持 direct/block/socks5/http 四类出站
-    // - 规则：`rules[].domain_suffix -> RouteTarget::Named(outbound)`
-    // - 默认路由：`default_outbound` 若指定则使用该命名出站，否则 Direct
-    // TODO: Re-enable after breaking circular dependency
-    /*
-    pub fn build_registry_and_router(&self) -> Result<(OutboundRegistry, Router)> {
-        // 1) 构建 OutboundRegistry
-        let mut map: HashMap<String, OutboundImpl> = HashMap::new();
-        for ob in &self.outbounds {
-            match ob {
-                Outbound::Direct { name } => {
-                    map.insert(name.clone(), OutboundImpl::Direct);
-                }
-                Outbound::Block { name } => {
-                    map.insert(name.clone(), OutboundImpl::Block);
-                }
-                Outbound::Socks5 {
-                    name,
-                    server,
-                    port,
-                    auth,
-                } => {
-                    let addr = resolve_host_port(server, *port)
-                        .with_context(|| format!("socks5 resolve {}:{}", server, port))?;
-                    let (u, p) = auth_user_pass(auth.as_ref());
-                    let cfg = CoreSocks5Cfg {
-                        proxy_addr: addr,
-                        username: u,
-                        password: p,
-                    };
-                    map.insert(name.clone(), OutboundImpl::Socks5(cfg));
-                }
-                Outbound::Http {
-                    name,
-                    server,
-                    port,
-                    auth,
-                } => {
-                    let addr = resolve_host_port(server, *port)
-                        .with_context(|| format!("http-proxy resolve {}:{}", server, port))?;
-                    let (u, p) = auth_user_pass(auth.as_ref());
-                    let cfg = CoreHttpCfg {
-                        proxy_addr: addr,
-                        username: u,
-                        password: p,
-                    };
-                    map.insert(name.clone(), OutboundImpl::HttpProxy(cfg));
-                }
-                Outbound::Vless { name, .. } => {
-                    // VLESS configuration should be handled in sb-core to avoid circular dependency
-                    // For now, return error indicating VLESS needs to be processed by sb-core
-                    return Err(anyhow::anyhow!("VLESS outbound '{}' requires runtime processing in sb-core", name));
-                }
-            }
-        }
-        let registry = OutboundRegistry::new(map);
-
-        // 2) 构建 Router（默认 Direct）
-        let mut router = Router::with_default(OutboundKind::Direct);
-        let mut rules: Vec<RouteRule> = Vec::new();
-        for r in &self.rules {
-            let has_ext = !r.ip_cidr.is_empty() || !r.port.is_empty() || r.transport.is_some();
-            if has_ext {
-                rules.push(RouteRule::Composite(CompositeRule {
-                    domain_suffix: r.domain_suffix.clone(),
-                    ip_cidr: r.ip_cidr.clone(),
-                    port: r.port.clone(),
-                    transport: r.transport.clone(),
-                    target: RouteTarget::Named(r.outbound.clone()),
-                }));
-            } else {
-                for suf in &r.domain_suffix {
-                    rules.push(RouteRule::DomainSuffix(
-                        suf.clone(),
-                        RouteTarget::Named(r.outbound.clone()),
-                    ));
-                }
-            }
-        }
-        // 若配置了命名默认出站，则在末尾添加"一切匹配"规则（通过空后缀实现兜底）
-        if let Some(def) = &self.default_outbound {
-            rules.push(RouteRule::DomainSuffix(
-                "".to_string(),
-                RouteTarget::Named(def.clone()),
-            ));
-        }
-        router.set_rules(rules);
-        Ok((registry, router))
-    }
-    */
-
     /// Build-time validation + IR 编译（不引入 sb-core 以避免环依赖）
     ///
     /// 作用：
@@ -488,6 +395,7 @@ impl Config {
     /// - 将 Config 转换为 IR（ConfigIR/RouteIR/RuleIR），保证规则可被路由层消费
     /// - 为上层提供"构建已通过"的语义（此处不返回具体路由器实例）
     pub fn build_registry_and_router(&self) -> Result<()> {
+        self.validate()?;
         // Delegate to present::to_ir for complete conversion (including inbounds)
         // This eliminates code duplication and ensures all fields are properly converted
         let _cfg_ir = crate::present::to_ir(self)?;
@@ -514,16 +422,6 @@ impl Config {
     }
 }
 
-/*
-fn resolve_host_port(host: &str, port: u16) -> Result<SocketAddr> {
-    let qp = format!("{}:{}", host, port);
-    let mut it = qp
-        .to_socket_addrs()
-        .with_context(|| format!("resolve failed: {}", qp))?;
-    it.next()
-        .ok_or_else(|| anyhow!("no address resolved for {}", qp))
-}
-*/
 
 pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
     use serde_json::Map;
@@ -561,15 +459,6 @@ pub(crate) fn merge_raw(base: &Value, sub: &Value) -> Value {
     Value::Object(merged)
 }
 
-/*
-fn auth_user_pass(a: Option<&Auth>) -> (Option<String>, Option<String>) {
-    if let Some(x) = a {
-        (Some(x.username.clone()), Some(x.password.clone()))
-    } else {
-        (None, None)
-    }
-}
-*/
 
 fn default_vless_network() -> String {
     "tcp".to_string()
@@ -628,36 +517,34 @@ rules:
         Ok(())
     }
 
-    /* TODO: Re-enable after breaking circular dependency
-        #[test]
-        fn default_outbound_as_fallback() {
-            let y = r#"
-    outbounds:
-      - type: direct
-        name: direct
-    default_outbound: direct
-    rules: []
-            "#;
-            let cfg: Config = serde_yaml::from_str(y).unwrap();
-            let (_reg, _router) = cfg.build_registry_and_router().unwrap();
-        }
-        */
+    #[test]
+    fn default_outbound_as_fallback() {
+        let y = r#"
+outbounds:
+  - type: direct
+    name: direct
+route:
+  default: direct
+  rules: []
+        "#;
+        let raw: Value = serde_yaml::from_str(y).unwrap();
+        let cfg = Config::from_value(raw).unwrap();
+        cfg.build_registry_and_router().unwrap();
+    }
 
-    /* TODO: Re-enable after breaking circular dependency
-        #[test]
-        fn resolve_strict_fail() {
-            let y = r#"
-    outbounds:
-      - type: http
-        name: bad
-        server: invalid.invalid.invalid
-        port: 3128
-    rules:
-      - domain_suffix: [".example.com"]
-        outbound: bad
-            "#;
-            let cfg: Config = serde_yaml::from_str(y).unwrap();
-            assert!(cfg.build_registry_and_router().is_err());
-        }
-        */
+    #[test]
+    fn rule_outbound_missing_fails() {
+        let y = r#"
+outbounds:
+  - type: direct
+    name: direct
+route:
+  rules:
+    - domain_suffix: [".example.com"]
+      outbound: missing
+        "#;
+        let raw: Value = serde_yaml::from_str(y).unwrap();
+        let cfg = Config::from_value(raw).unwrap();
+        assert!(cfg.build_registry_and_router().is_err());
+    }
 }

@@ -29,7 +29,9 @@ rustdocflags = ["-D", "warnings"]
 # macOS Apple Silicon - Use rust-lld for 30-50% faster linking
 # rust-lld is bundled with Rust toolchain, no extra installation needed
 [target.aarch64-apple-darwin]
-linker = "rust-lld"
+# rust-lld fails linking dev-cli bins on Apple Silicon; use system linker by default.
+# Opt-in: CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=rust-lld
+linker = "cc"
 
 # macOS Intel - Use rust-lld for 30-50% faster linking
 #[target.x86_64-apple-darwin]

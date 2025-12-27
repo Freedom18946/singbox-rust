@@ -31,7 +31,8 @@ fn router_route_explain_smoke() {
 #[cfg(feature = "observe")]
 #[test]
 fn metrics_export_probe() {
-    // The registry is always present; exporting should succeed
+    // Seed a metric so the export is non-empty and stable.
+    sb_metrics::set_proxy_select_score("probe", 1.0);
     let text = sb_metrics::export_prometheus();
-    assert!(text.contains("sb_build_info") || text.contains("proxy_select_score"));
+    assert!(text.contains("proxy_select_score"));
 }

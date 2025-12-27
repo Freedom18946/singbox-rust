@@ -60,6 +60,35 @@ async fn start_echo_server() -> SocketAddr {
     addr
 }
 
+async fn start_slow_echo_server(delay: Duration) -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind slow echo server");
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    while let Ok(n) = stream.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        tokio::time::sleep(delay).await;
+                        if stream.write_all(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    addr
+}
+
 // Helper: Generate test certificates
 fn generate_test_certs(cn: &str, expired: bool) -> (String, String) {
     let mut params = CertificateParams::new(vec![cn.to_string()]);
@@ -588,7 +617,22 @@ async fn test_trojan_timeout_handling() {
     );
 
     // Test read/write timeout with slow server
-    // TODO: Implement slow echo server for read/write timeout testing
+    let slow_addr = start_slow_echo_server(Duration::from_secs(2)).await;
+    let target = Target {
+        host: slow_addr.ip().to_string(),
+        port: slow_addr.port(),
+        kind: TransportKind::Tcp,
+    };
+    let mut slow_stream = connector
+        .dial(target, DialOpts::default())
+        .await
+        .expect("dial slow server");
+    slow_stream.write_all(b"slow").await.expect("write slow");
+
+    let mut buf = [0u8; 4];
+    let read = tokio::time::timeout(Duration::from_millis(200), slow_stream.read_exact(&mut buf))
+        .await;
+    assert!(read.is_err(), "slow server should exceed timeout");
 }
 
 // ============================================================================

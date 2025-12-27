@@ -60,8 +60,8 @@ mod dbus_impl {
                 )) as Arc<dyn DnsResolver>
             });
 
-            // Create resolve1 manager state
-            let resolve1_state = Arc::new(crate::service::resolve1::Resolve1ManagerState::new());
+            // Use the shared singleton state so updates are seen by ResolvedTransport
+            let resolve1_state = sb_core::dns::transport::resolved::RESOLVED_STATE.clone();
 
             Ok(Self {
                 tag,

@@ -11,7 +11,7 @@ use httparse;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
@@ -826,10 +826,19 @@ async fn serve_with_config(
         );
     }
 
+    let middleware_chain = match build_middleware_chain(&auth_conf) {
+        Ok(chain) => Arc::new(chain),
+        Err(e) => {
+            tracing::error!(target = "admin", error = %e, "failed to build middleware chain");
+            return Err(e);
+        }
+    };
+
     loop {
         let (stream, _) = listener.accept().await?;
         let tls = tls_acceptor.clone();
         let auth = auth_conf.clone();
+        let middleware_chain = Arc::clone(&middleware_chain);
         tokio::spawn(async move {
             let res = async {
                 // Upgrade to TLS if enabled
@@ -843,22 +852,6 @@ async fn serve_with_config(
                 let (method, path, headers) = read_request_head(&mut s).await?;
 
                 // Build middleware chain and create request context
-                let middleware_chain = match build_middleware_chain(&auth) {
-                    Ok(chain) => chain,
-                    Err(e) => {
-                        tracing::error!(target = "admin", error = %e, "failed to build middleware chain");
-                        send_error_response(
-                            &mut s,
-                            sb_admin_contract::ResponseEnvelope::err(
-                                sb_admin_contract::ErrorKind::Internal,
-                                "Server configuration error"
-                            ),
-                            500
-                        ).await?;
-                        return Ok::<(), std::io::Error>(());
-                    }
-                };
-
                 let mut request_context = RequestContext::new(method.clone(), path.clone(), headers.clone());
 
                 // Execute middleware chain
@@ -955,17 +948,30 @@ pub async fn serve_plain(addr: &str) -> std::io::Result<()> {
         }
     }
 
+    let auth_conf = AuthConf::from_env();
+    let middleware_chain = match build_middleware_chain(&auth_conf) {
+        Ok(chain) => Arc::new(chain),
+        Err(e) => {
+            tracing::error!(target = "admin", error = %e, "failed to build middleware chain");
+            return Err(e);
+        }
+    };
+
     loop {
         let (stream, _) = listener.accept().await?;
+        let middleware_chain = Arc::clone(&middleware_chain);
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream).await {
+            if let Err(e) = handle_connection(stream, middleware_chain).await {
                 tracing::warn!(error = %e, "admin debug connection error");
             }
         });
     }
 }
 
-async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
+async fn handle_connection(
+    mut stream: TcpStream,
+    middleware_chain: Arc<MiddlewareChain>,
+) -> std::io::Result<()> {
     START.get_or_init(std::time::Instant::now);
     let mut reader = BufReader::new(&mut stream);
     let mut request_line = String::new();
@@ -997,27 +1003,6 @@ async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
     }
 
     tracing::debug!(path = %path_q, "admin debug request");
-
-    // Create auth config from environment for contract compliance
-    let auth_config = AuthConf::from_env();
-
-    // Build middleware chain and create request context
-    let middleware_chain = match build_middleware_chain(&auth_config) {
-        Ok(chain) => chain,
-        Err(e) => {
-            tracing::error!(target = "admin", error = %e, "failed to build middleware chain");
-            send_error_response(
-                &mut stream,
-                sb_admin_contract::ResponseEnvelope::err(
-                    sb_admin_contract::ErrorKind::Internal,
-                    "Server configuration error",
-                ),
-                500,
-            )
-            .await?;
-            return Ok(());
-        }
-    };
 
     let mut request_context =
         RequestContext::new("GET".to_string(), path_q.to_string(), headers.clone());
@@ -1141,6 +1126,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
+    #[serial_test::serial]
     fn test_auth_disabled() {
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
         let headers = HashMap::new();
@@ -1149,6 +1135,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_bearer_auth_success() {
         std::env::set_var("SB_ADMIN_TOKEN", "secret123");
         let mut headers = HashMap::new();
@@ -1158,6 +1145,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_bearer_auth_failure() {
         std::env::set_var("SB_ADMIN_TOKEN", "secret123");
         let mut headers = HashMap::new();
@@ -1167,6 +1155,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_bearer_auth_with_whitespace() {
         std::env::set_var("SB_ADMIN_TOKEN", "secret123");
         let mut headers = HashMap::new();
@@ -1179,6 +1168,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_hmac_auth_format_validation() {
         std::env::set_var("SB_ADMIN_HMAC_SECRET", "testsecret");
         let mut headers = HashMap::new();
@@ -1208,6 +1198,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_hmac_auth_time_window() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1239,6 +1230,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_hmac_auth_signature_verification() {
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1276,6 +1268,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_no_auth_configured() {
         // Clear all auth env vars
         std::env::remove_var("SB_ADMIN_TOKEN");
@@ -1287,6 +1280,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_auth_mode() {
         // Test disabled mode
         std::env::set_var("SB_ADMIN_NO_AUTH", "1");
@@ -1318,6 +1312,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_hmac_auth_different_paths() {
         use std::time::{SystemTime, UNIX_EPOCH};
 

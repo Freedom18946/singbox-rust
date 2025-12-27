@@ -303,7 +303,7 @@ mod macos;
 #[cfg(feature = "native-process-match")]
 mod native_macos;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "native-process-match")))]
 mod macos_common;
 
 #[cfg(target_os = "windows")]

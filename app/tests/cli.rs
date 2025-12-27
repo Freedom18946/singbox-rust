@@ -33,6 +33,7 @@ fn cli_tests() {
             .env("PATH", bin_dir_clone)
             .env("FORCE_COLOR", "0")
             .env("NO_COLOR", "1")
+            .env("SB_LOG_LEVEL", "error")
             .run();
         let _ = tx.send(());
     });

@@ -20,6 +20,9 @@ pub mod mixed;
 
 pub mod direct;
 
+#[cfg(any(feature = "trojan", feature = "adapter-anytls"))]
+pub(crate) mod tls;
+
 #[cfg(feature = "dns")]
 pub mod dns;
 

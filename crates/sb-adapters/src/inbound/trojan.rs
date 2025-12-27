@@ -21,10 +21,9 @@ use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::runtime::{default_proxy, ProxyChoice};
 use sha2::{Digest, Sha224};
+use super::tls;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io;
-use std::io::BufReader;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -33,8 +32,6 @@ use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
-use tokio_rustls::rustls::{self, ServerConfig};
-use tokio_rustls::TlsAcceptor;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "tls_reality")]
@@ -139,45 +136,6 @@ impl TrojanInboundConfig {
     }
 }
 
-fn load_tls_config(cert_path: &str, key_path: &str) -> Result<ServerConfig> {
-    // Load cert chain
-    let cert_file = File::open(cert_path)?;
-    let mut cert_reader = BufReader::new(cert_file);
-    let certs: Vec<_> = rustls_pemfile::certs(&mut cert_reader)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| anyhow!("invalid cert file"))?;
-
-    // Load private key (PKCS#8 or RSA)
-    let key_file = File::open(key_path)?;
-    let mut key_reader = BufReader::new(key_file);
-
-    let key = {
-        // Try PKCS#8 first
-        if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
-            .next()
-            .transpose()
-            .map_err(|_| anyhow!("invalid key file (pkcs8)"))?
-        {
-            rustls_pki_types::PrivateKeyDer::Pkcs8(key)
-        } else {
-            // Try RSA
-            let key_file = File::open(key_path)?;
-            let mut key_reader = BufReader::new(key_file);
-            let key = rustls_pemfile::rsa_private_keys(&mut key_reader)
-                .next()
-                .ok_or_else(|| anyhow!("no private key found"))?
-                .map_err(|_| anyhow!("invalid key file (rsa)"))?;
-            rustls_pki_types::PrivateKeyDer::Pkcs1(key)
-        }
-    };
-
-    let cfg = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| anyhow!("tls config error: {}", e))?;
-    Ok(cfg)
-}
-
 pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
     // Create listener based on transport configuration (defaults to TCP if not specified)
     let transport = cfg.transport_layer.clone().unwrap_or_default();
@@ -233,16 +191,20 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
         #[cfg(feature = "tls_reality")]
         {
             if cfg.reality.is_none() {
-                let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
-                Some(TlsAcceptor::from(Arc::new(tls_cfg)))
+                Some(tls::build_tls_acceptor(
+                    tls::TlsMaterial::from_paths(&cfg.cert_path, &cfg.key_path),
+                    None,
+                )?)
             } else {
                 None
             }
         }
         #[cfg(not(feature = "tls_reality"))]
         {
-            let tls_cfg = load_tls_config(&cfg.cert_path, &cfg.key_path)?;
-            Some(TlsAcceptor::from(Arc::new(tls_cfg)))
+            Some(tls::build_tls_acceptor(
+                tls::TlsMaterial::from_paths(&cfg.cert_path, &cfg.key_path),
+                None,
+            )?)
         }
     };
 
@@ -739,6 +701,40 @@ async fn parse_trojan_address(
     let port = u16::from_be_bytes(port_buf);
 
     Ok((host, port))
+}
+
+/// Parse Trojan request header from raw bytes for fuzzing and tests.
+pub fn parse_trojan_request(buf: &[u8]) -> Result<()> {
+    if buf.len() < 60 {
+        return Err(anyhow!("trojan: buffer too short"));
+    }
+
+    let hash = &buf[..56];
+    if !hash.iter().all(|b| b.is_ascii_hexdigit()) {
+        return Err(anyhow!("trojan: invalid hash"));
+    }
+
+    let mut idx = 56;
+    if buf.get(idx..idx + 2) != Some(b"\r\n") {
+        return Err(anyhow!("trojan: missing CRLF after hash"));
+    }
+    idx += 2;
+
+    let cmd = *buf.get(idx).ok_or_else(|| anyhow!("trojan: missing command"))?;
+    idx += 1;
+    if cmd != 0x01 && cmd != 0x02 {
+        return Err(anyhow!("trojan: unsupported command"));
+    }
+
+    let (_host, _port, consumed) =
+        crate::inbound::shadowsocks::parse_ss_addr(&buf[idx..])?;
+    idx += consumed;
+
+    if buf.get(idx..idx + 2) != Some(b"\r\n") {
+        return Err(anyhow!("trojan: missing CRLF after address"));
+    }
+
+    Ok(())
 }
 
 /// Handle UDP ASSOCIATE request

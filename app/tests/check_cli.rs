@@ -12,9 +12,10 @@ fn bin() -> String {
 #[test]
 fn good_config_ok() {
     let good = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18081 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain: ["example.com"], outbound: "direct" } ] }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), good).unwrap();
@@ -50,9 +51,10 @@ dns: { mode: bad }
 #[cfg(feature = "schema-v2")]
 fn schema_v2_validate_flag_works() {
     let config = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18082 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
@@ -71,9 +73,10 @@ dns: { mode: system }
 #[cfg(feature = "schema-v2")]
 fn schema_v2_validate_unknown_field_fails() {
     let config = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18083 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field: "should_fail"
 "#;
@@ -93,9 +96,10 @@ unknown_field: "should_fail"
 #[cfg(feature = "schema-v2")]
 fn deny_unknown_enables_schema_v2_validation() {
     let config = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18084 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field: "should_fail"
 "#;
@@ -144,9 +148,10 @@ fn schema_v2_issue_format_stable_ptr_and_code() {
     use serde_json::Value as Json;
     // 构造一个含未知顶层字段的配置，命中 deny_unknown_fields
     let bad = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18086 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field: "should_fail"
 "#;
@@ -189,9 +194,10 @@ fn schema_v2_fingerprint_generation() {
     use serde_json::Value as Json;
     // Test that fingerprint is generated correctly for schema v2 errors
     let bad_config = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18087 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 unknown_field_1: "error1"
 unknown_field_2: "error2"
@@ -252,9 +258,10 @@ fn schema_v2_error_classification() {
     use serde_json::Value as Json;
     // Test different types of schema errors are classified correctly
     let type_error_config = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: "not_a_number" } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
@@ -297,9 +304,10 @@ fn schema_v2_structured_error_format() {
     use serde_json::Value as Json;
     // Test that the structured error format matches the expected schema
     let bad_config = r#"
+schema_version: 2
 inbounds: [ { type: http, listen: "127.0.0.1", port: 18088 } ]
 outbounds: [ { type: direct } ]
-route: { rules: [ { outbound: "direct" } ] }
+route: { rules: [ { domain_suffix: ["example.com"], outbound: "direct" } ] }
 dns: { mode: system }
 invalid_field: "test"
 "#;
@@ -329,10 +337,10 @@ invalid_field: "test"
 
     // Check each issue has the required fields
     for issue in issues {
-        assert!(issue.get("kind").and_then(|x| x.as_str()).is_some());
+        assert!(issue.get("level").and_then(|x| x.as_str()).is_some());
         assert!(issue.get("code").and_then(|x| x.as_str()).is_some());
         assert!(issue.get("ptr").and_then(|x| x.as_str()).is_some());
-        assert!(issue.get("msg").and_then(|x| x.as_str()).is_some());
+        assert!(issue.get("message").and_then(|x| x.as_str()).is_some());
         // hint is optional but should be present for schema errors
 
         let ptr = issue.get("ptr").and_then(|x| x.as_str()).unwrap();

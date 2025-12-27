@@ -5,8 +5,9 @@
 //! This module tests SOCKS5 UDP support with mock servers to verify
 //! the UDP encapsulation/decapsulation works correctly.
 
-use sb_adapters::Result;
+use sb_adapters::{DialOpts, Result, Target};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 
 use sb_adapters::outbound::socks5::Socks5Connector;
 use std::time::Duration;

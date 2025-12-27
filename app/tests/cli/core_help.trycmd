@@ -1,68 +1,72 @@
 ```console
 $ app auth --help
-鉴权相关工具[..]
+鉴权相关工具（签名/重放）
 
 Usage: app auth <COMMAND>
 
 Commands:
   sign    生成签名
-  replay  回放重试[..]
+  replay  回放重试（指向 dry-run 端点）
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help[..]
-  -V, --version[..]
+  -h, --help  Print help
 
 $ app prom --help
-Prometheus 指标工具[..]
+Prometheus 指标工具（抓取/直方图）
 
 Usage: app prom <COMMAND>
 
 Commands:
   scrape  抓取并筛选样本
-  hist    直方图转分位[..]
+  hist    直方图转分位（支持多 metric）
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help[..]
-  -V, --version[..]
+  -h, --help  Print help
 
 $ app generate --help
+Generate cryptographic keys (REALITY, ECH)
+
 Usage: app generate <COMMAND>
 
 Commands:
-  reality-keypair    Generate REALITY[..]
-  ech-keypair        Generate ECH[..]
-  tls-keypair        Generate a self-signed TLS[..]
-  wireguard-keypair  Generate `WireGuard`[..]
+  reality-keypair    Generate REALITY X25519 keypair
+  ech-keypair        Generate ECH (Encrypted Client Hello) X25519 keypair for HPKE
+  tls-keypair        Generate a self-signed TLS keypair (PEM)
+  vapid-keypair      Generate VAPID (`WebPush`) P-256 keypair
+  wireguard-keypair  Generate `WireGuard` X25519 keypair
   help               Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help[..]
-  -V, --version[..]
+  -h, --help  Print help
 
 $ app gen-completions --help
-Usage: app gen-completions[..]
+生成 shell 补全脚本
+
+Usage: app gen-completions [OPTIONS]
 
 Options:
-      --shell <SHELL>[..]
-      --dir <DIR>[..]
-      --all[..]
-  -h, --help[..]
-  -V, --version[..]
+      --shell <SHELL>  目标 shell [possible values: bash, zsh, fish, power-shell, elvish]
+      --dir <DIR>      输出目录（默认 stdout）
+      --all            一键生成全部 shell（需配合 --dir）
+  -h, --help           Print help
 
 $ app tools --help
-[..]tools <COMMAND>
+Utility helpers (connect/fetch/synctime)
+
+Usage: app tools <COMMAND>
 
 Commands:
   connect         Connect to an address and pipe stdin/stdout
   geodata-update  Download/update GeoIP/Geosite databases into a directory
   fetch           Fetch a URL (HTTP/HTTPS) and print body to stdout
   synctime        Query NTP server and print time offset
-  fetch-http3     Fetch a URL using HTTP/3[..]
+  fetch-http3     Fetch a URL using HTTP/3 (feature-gated)
+  dns-lookup      Lookup a domain using DNS
   help            Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help[..]
-  -V, --version[..]
+  -h, --help  Print help
+
 ```

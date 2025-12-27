@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - RC Preparation (Phase 8)
 
-### Protocol Coverage Milestone \ud83c\udf89
+### Parity Calibration Milestone (2025-12-24) 🎯
+
+**92% Go-Rust Parity Achieved** - Full calibration against `sing-box-1.12.12`
+
+- **Total Items Compared**: 190 (expanded from 169)
+- **Fully Aligned**: 175 (92%)
+- **Partial Alignment**: 5 (TLS uTLS/ECH library limitations)
+- **De-scoped**: 4 (Tailscale endpoint, ShadowsocksR)
+- **Rust-only Extensions**: 6 (NTP, DNS Forwarder, Circuit Breaker, etc.)
+- **Tests Passed**: 295 across 10 crates
+
+#### Added
+- **Comprehensive Parity Matrix**: Expanded `GO_PARITY_MATRIX.md` to 190 items
+- **Router/Rules Binary Parity**: Fixed SRS Item IDs and added missing fields
+- **Documentation**: Updated TLS and Tailscale limitation docs
+
+#### Fixed
+- `sb-core/src/router/ruleset/mod.rs`: Missing closing brace for `DefaultRule` struct
+
+---
+
+### Protocol Coverage Milestone 🎉
 
 **100% Go sing-box 1.12.12 Parity Achieved (2025-11-23)**
 

@@ -46,7 +46,7 @@ pub enum TailscaleMode {
 }
 
 /// Parsed Tailscale outbound configuration.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct TailscaleConfig {
     /// Outbound tag name.
     pub tag: Option<String>,
@@ -88,6 +88,46 @@ pub struct TailscaleConfig {
     pub peer_endpoint: Option<String>,
     /// Persistent keepalive interval.
     pub persistent_keepalive: Option<u16>,
+}
+
+impl std::fmt::Debug for TailscaleConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ds = f.debug_struct("TailscaleConfig");
+        ds.field("tag", &self.tag)
+            .field("state_directory", &self.state_directory)
+            .field("auth_key", &self.auth_key.as_ref().map(|_| "[redacted]"))
+            .field("control_url", &self.control_url)
+            .field("ephemeral", &self.ephemeral)
+            .field("hostname", &self.hostname)
+            .field("accept_routes", &self.accept_routes)
+            .field("exit_node", &self.exit_node)
+            .field("exit_node_allow_lan", &self.exit_node_allow_lan)
+            .field("advertise_routes", &self.advertise_routes)
+            .field("advertise_exit_node", &self.advertise_exit_node)
+            .field("udp_timeout", &self.udp_timeout);
+        #[cfg(feature = "sb-transport")]
+        {
+            ds.field(
+                "magic_dns_socket_factory",
+                &self
+                    .magic_dns_socket_factory
+                    .as_ref()
+                    .map(|_| "<factory>"),
+            );
+        }
+        ds.field("private_key", &self.private_key.as_ref().map(|_| "[redacted]"))
+            .field(
+                "peer_public_key",
+                &self.peer_public_key.as_ref().map(|_| "[redacted]"),
+            )
+            .field(
+                "pre_shared_key",
+                &self.pre_shared_key.as_ref().map(|_| "[redacted]"),
+            )
+            .field("peer_endpoint", &self.peer_endpoint)
+            .field("persistent_keepalive", &self.persistent_keepalive)
+            .finish()
+    }
 }
 
 impl TailscaleConfig {

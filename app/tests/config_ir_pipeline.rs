@@ -13,7 +13,7 @@ fn write_cfg(content: &str) -> tempfile::NamedTempFile {
 fn normalize_write_out() {
     let cfg = r#"{
       "inbounds":[{"type":"socks","listen":"127.0.0.1","port":1080}],
-      "route":{"rules":[{"domain":["EXAMPLE.COM","a.EXAMPLE.com",".b.com."],"port":["80-82","81","443"]}]}
+      "route":{"rules":[{"domain":["EXAMPLE.COM","a.EXAMPLE.com",".b.com."],"port":["80-82","81","443"],"outbound":"direct"}]}
     }"#;
     let tmp = write_cfg(cfg);
     let out = format!("{}.normalized.json", tmp.path().to_str().unwrap());
@@ -38,7 +38,8 @@ fn normalize_write_out() {
 
 #[test]
 fn minimize_guard_works() {
-    let cfg = r#"{"route":{"rules":[{"not_domain":["x.com"],"domain":["A.COM","a.com"]}]}}"#;
+    let cfg =
+        r#"{"route":{"rules":[{"not_domain":["x.com"],"domain":["A.COM","a.com"],"outbound":"direct"}]}}"#;
     let tmp = write_cfg(cfg);
     let out = Command::cargo_bin("app")
         .unwrap()
