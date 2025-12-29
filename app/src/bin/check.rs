@@ -2,12 +2,16 @@
 //! Full-featured config checker shim for the standalone `check` binary.
 
 use anyhow::Result;
+use std::io::Write;
 use app::cli::check::CheckArgs;
+use app::cli::GlobalArgs;
 use clap::{ArgAction, Parser};
 
 #[derive(Parser, Debug)]
 #[command(name = "check", version, about = "singbox-rs config checker")]
 struct CheckCli {
+    #[command(flatten)]
+    global: GlobalArgs,
     #[command(flatten)]
     args: CheckArgs,
     /// Print help information in JSON format and exit
@@ -20,9 +24,12 @@ fn main() -> Result<()> {
         app::cli::help::print_help_json::<CheckCli>();
     }
     let cli = CheckCli::parse();
+    app::cli::apply_global_options(&cli.global)?;
     if cli.help_json {
         app::cli::help::print_help_json::<CheckCli>();
     }
-    let code = app::cli::check::run(cli.args)?;
+    let code = app::cli::check::run(&cli.global, cli.args)?;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
     std::process::exit(code);
 }

@@ -79,6 +79,17 @@ pub async fn resolve_host_checked(host: &str) -> Result<Vec<IpAddr>> {
 
 /// 异步 DNS 校验：解析 A/AAAA，命中私网即拒（配合同步 allowlist）
 pub async fn forbid_private_host_or_resolved_async(url: &Url) -> Result<()> {
+    let allow = super::security::parse_private_allowlist();
+    if let Some(host) = url.host_str() {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            if super::security::host_matches_allowlist(host, Some(ip), &allow) {
+                return Ok(());
+            }
+        } else if super::security::host_matches_allowlist(host, None, &allow) {
+            return Ok(());
+        }
+    }
+
     super::security::forbid_private_host(url)?;
     if let Some(host) = url.host_str() {
         // Skip resolution if it's already an IP

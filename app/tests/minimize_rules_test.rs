@@ -1,7 +1,7 @@
 #![cfg(feature = "dev-cli")]
+use assert_cmd::Command;
 use serde_json::{from_str, Value};
 use std::io::Write;
-use std::process::Command;
 use tempfile::NamedTempFile;
 
 #[test]
@@ -36,15 +36,13 @@ outbound:
         .expect("Failed to write to temp file");
 
     // Run minimize-rules command
-    let output = Command::new("cargo")
+    let output = Command::cargo_bin("app")
+        .unwrap()
         .args([
-            "run",
-            "--bin",
-            "singbox-rust",
             "check",
             "-c",
             temp_file.path().to_str().unwrap(),
-            "--minimize-rules",
+            "--minimize-rules-output",
         ])
         .output()
         .expect("Failed to execute command");
@@ -116,15 +114,13 @@ outbound:
         .expect("Failed to write to temp file");
 
     // Run minimize-rules command
-    let output = Command::new("cargo")
+    let output = Command::cargo_bin("app")
+        .unwrap()
         .args([
-            "run",
-            "--bin",
-            "singbox-rust",
             "check",
             "-c",
             temp_file.path().to_str().unwrap(),
-            "--minimize-rules",
+            "--minimize-rules-output",
         ])
         .output()
         .expect("Failed to execute command");
@@ -205,15 +201,13 @@ outbound:
             .expect("Failed to write to temp file");
 
         // Run minimize-rules command
-        let output = Command::new("cargo")
+        let output = Command::cargo_bin("app")
+            .unwrap()
             .args([
-                "run",
-                "--bin",
-                "singbox-rust",
                 "check",
                 "-c",
                 temp_file.path().to_str().unwrap(),
-                "--minimize-rules",
+                "--minimize-rules-output",
             ])
             .output()
             .expect("Failed to execute command");

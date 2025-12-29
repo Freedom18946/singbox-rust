@@ -6,15 +6,43 @@ use url::Url;
 /// IDNA normalization for internationalized domain names
 pub fn normalize_host(host: &str) -> Result<String> {
     let trimmed = host.trim_end_matches('.');
+    if trimmed.is_empty() {
+        anyhow::bail!("invalid domain name: {host}");
+    }
 
     // Convert to ASCII using IDNA rules (handles punycode conversion)
-    match idna::domain_to_ascii(trimmed) {
-        Ok(ascii_host) => Ok(ascii_host),
+    let ascii_host = match idna::domain_to_ascii(trimmed) {
+        Ok(ascii_host) => ascii_host,
         Err(_) => anyhow::bail!("invalid domain name: {trimmed}"),
+    };
+
+    if ascii_host.is_empty() || ascii_host.len() > 253 {
+        anyhow::bail!("invalid domain name: {trimmed}");
     }
+
+    for label in ascii_host.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            anyhow::bail!("invalid domain name: {trimmed}");
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            anyhow::bail!("invalid domain name: {trimmed}");
+        }
+        if !label
+            .as_bytes()
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+        {
+            anyhow::bail!("invalid domain name: {trimmed}");
+        }
+    }
+
+    Ok(ascii_host)
 }
 
 fn is_private_ipv4(ip: Ipv4Addr) -> bool {
+    if ip.is_loopback() || ip.is_unspecified() {
+        return true;
+    }
     let octets = ip.octets();
     match octets {
         [10, _, _, _] => true,
@@ -97,13 +125,13 @@ pub fn forbid_private_host_or_resolved(url: &Url) -> Result<()> {
 }
 
 #[derive(Clone)]
-struct Allow {
+pub(crate) struct Allow {
     domains: Vec<String>,       // 精确或后缀（以 . 开头）
     cidrs: Vec<IpNet>,          // 10.0.0.0/8, fd00::/8 等
     ips: Vec<std::net::IpAddr>, // 精确 IP
 }
 
-fn parse_private_allowlist() -> Allow {
+pub(crate) fn parse_private_allowlist() -> Allow {
     let raw = std::env::var("SB_SUBS_PRIVATE_ALLOWLIST").unwrap_or_default();
     let mut domains = Vec::new();
     let mut cidrs = Vec::new();
@@ -126,7 +154,7 @@ fn parse_private_allowlist() -> Allow {
     }
 }
 
-fn host_matches_allowlist(host: &str, ip: Option<IpAddr>, allow: &Allow) -> bool {
+pub(crate) fn host_matches_allowlist(host: &str, ip: Option<IpAddr>, allow: &Allow) -> bool {
     // Apply IDNA normalization for consistent comparison
     let normalized_host = if let Ok(norm) = normalize_host(host) {
         norm.to_lowercase()

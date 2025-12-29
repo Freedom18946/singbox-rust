@@ -6,6 +6,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
+use crate::cli::GlobalArgs;
+use crate::config_loader::{self, ConfigSource};
+
 #[derive(ValueEnum, Clone, Debug)]
 pub enum Net {
     Tcp,
@@ -30,9 +33,6 @@ pub enum ToolsCmd {
         /// Network type (tcp)
         #[arg(short = 'n', long = "network", value_enum, default_value_t = Net::Tcp)]
         network: Net,
-        /// Config file path
-        #[arg(short = 'c', long = "config")]
-        config: PathBuf,
         /// Use named outbound (fallback to direct when absent)
         #[arg(long = "outbound")]
         outbound: Option<String>,
@@ -96,23 +96,19 @@ pub enum ToolsCmd {
         /// DNS server address (e.g. <udp://1.1.1.1>)
         #[arg(short = 's', long = "server")]
         server: Option<String>,
-        /// Config file path (to use DNS config)
-        #[arg(short = 'c', long = "config")]
-        config: Option<PathBuf>,
         /// Explain the query (show rule match)
         #[arg(long)]
         explain: bool,
     },
 }
 
-pub async fn run(args: ToolsArgs) -> Result<()> {
+pub async fn run(global: &GlobalArgs, args: ToolsArgs) -> Result<()> {
     match args.command {
         ToolsCmd::Connect {
             addr,
             network,
-            config,
             outbound,
-        } => connect(addr, network, config, outbound).await,
+        } => connect(global, addr, network, outbound).await,
         ToolsCmd::Fetch { url, output } => fetch(url, output).await,
         ToolsCmd::Synctime { server, timeout } => synctime(server, timeout).await,
         ToolsCmd::FetchHttp3 { url, output } => fetch_http3(url, output).await,
@@ -135,32 +131,27 @@ pub async fn run(args: ToolsArgs) -> Result<()> {
         ToolsCmd::DnsLookup {
             domain,
             server,
-            config,
             explain,
-        } => dns_lookup(domain, server, config, explain).await,
+        } => dns_lookup(global, domain, server, explain).await,
     }
 }
 
 async fn connect(
+    global: &GlobalArgs,
     addr: String,
     network: Net,
-    config: PathBuf,
     outbound: Option<String>,
 ) -> Result<()> {
+    let cfg = load_config_for_tools(global)?
+        .context("config required for tools connect")?;
     match network {
-        Net::Tcp => connect_tcp(addr.clone(), config.clone(), outbound.clone()).await,
-        Net::Udp => connect_udp(addr, config, outbound).await,
+        Net::Tcp => connect_tcp(addr.clone(), &cfg, outbound.clone()).await,
+        Net::Udp => connect_udp(addr, &cfg, outbound).await,
     }
 }
 
-async fn connect_tcp(addr: String, config_path: PathBuf, outbound: Option<String>) -> Result<()> {
-    // Load config JSON
-    let raw =
-        std::fs::read(&config_path).with_context(|| format!("read {}", config_path.display()))?;
-    let val: serde_json::Value = serde_json::from_slice(&raw).context("parse JSON config")?;
-
-    // Convert to IR
-    let ir = sb_config::validator::v2::to_ir_v1(&val);
+async fn connect_tcp(addr: String, cfg: &sb_config::Config, outbound: Option<String>) -> Result<()> {
+    let ir = cfg.ir().clone();
 
     // Register adapters (if feature enabled) before building bridge
     #[cfg(feature = "adapters")]
@@ -223,7 +214,7 @@ fn parse_addr(s: &str) -> Option<(String, u16)> {
     None
 }
 
-async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String>) -> Result<()> {
+async fn connect_udp(addr: String, cfg: &sb_config::Config, outbound: Option<String>) -> Result<()> {
     use tokio::net::UdpSocket;
     use tokio::time::{timeout, Duration};
 
@@ -231,11 +222,7 @@ async fn connect_udp(addr: String, config_path: PathBuf, outbound: Option<String
 
     // Try to use an outbound UDP factory when available
     let factory = if let Some(name) = outbound.as_deref() {
-        // Load config JSON and build bridge to access UDP factories
-        let raw = std::fs::read(&config_path)
-            .with_context(|| format!("read {}", config_path.display()))?;
-        let val: serde_json::Value = serde_json::from_slice(&raw).context("parse JSON config")?;
-        let ir = sb_config::validator::v2::to_ir_v1(&val);
+        let ir = cfg.ir().clone();
 
         // Register adapters before building bridge
         #[cfg(feature = "adapters")]
@@ -611,24 +598,21 @@ async fn fetch_http3(_url: String, _output: Option<PathBuf>) -> Result<()> {
 }
 
 async fn dns_lookup(
+    global: &GlobalArgs,
     domain: String,
     server: Option<String>,
-    config: Option<PathBuf>,
     explain: bool,
 ) -> Result<()> {
     use sb_core::dns::Resolver;
 
+    let cfg = load_config_for_tools(global)?;
     let resolver: Arc<dyn Resolver> = if let Some(s) = server {
         // Build single upstream resolver
         let up = sb_core::dns::config_builder::build_upstream(&s)?
             .ok_or_else(|| anyhow::anyhow!("invalid upstream address: {s}"))?;
         Arc::new(sb_core::dns::resolver::DnsResolver::new(vec![up]))
-    } else if let Some(p) = config {
-        // Load from config
-        let raw = std::fs::read(&p).with_context(|| format!("read {}", p.display()))?;
-        let val: serde_json::Value = serde_json::from_slice(&raw).context("parse JSON config")?;
-        let ir = sb_config::validator::v2::to_ir_v1(&val);
-        if let Some(dns_ir) = ir.dns {
+    } else if let Some(cfg) = cfg.as_ref() {
+        if let Some(dns_ir) = cfg.ir().dns.as_ref() {
             sb_core::dns::config_builder::resolver_from_ir(&dns_ir)?
         } else {
             // No DNS config, fallback to system
@@ -670,6 +654,22 @@ async fn dns_lookup(
     }
 
     Ok(())
+}
+
+fn load_config_for_tools(global: &GlobalArgs) -> Result<Option<sb_config::Config>> {
+    let entries =
+        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    if global.config.is_empty() && global.config_directory.is_empty() {
+        if let [entry] = entries.as_slice() {
+            if let ConfigSource::File(path) = &entry.source {
+                if !path.exists() {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    let cfg = config_loader::load_config(&entries)?;
+    Ok(Some(cfg))
 }
 
 #[cfg(test)]

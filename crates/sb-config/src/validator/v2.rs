@@ -1725,7 +1725,7 @@ pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
                     };
                 }
                 arrs!("domain", r.domain);
-                arrs!("domain_suffix", r.domain);
+                arrs!("domain_suffix", r.domain_suffix);
                 arrs!("geosite", r.geosite);
                 arrs!("geoip", r.geoip);
                 arrs!("ipcidr", r.ipcidr);

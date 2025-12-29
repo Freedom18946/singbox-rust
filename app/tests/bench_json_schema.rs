@@ -3,9 +3,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+fn target_root_dir() -> PathBuf {
+    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+        return PathBuf::from(target_dir);
+    }
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("target")
+}
+
 fn target_dir_for(features: &str) -> PathBuf {
-    let mut dir = std::env::temp_dir();
-    let pid = std::process::id();
+    let mut dir = target_root_dir();
     let slug = if features.is_empty() {
         "default".to_string()
     } else {
@@ -14,7 +22,7 @@ fn target_dir_for(features: &str) -> PathBuf {
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
             .collect()
     };
-    dir.push(format!("sb_app_build_{slug}_{pid}"));
+    dir.push(format!("sb_app_build_{slug}"));
     dir
 }
 

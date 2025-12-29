@@ -20,33 +20,169 @@
 
 #![allow(clippy::missing_errors_doc, clippy::cognitive_complexity)]
 
-#[cfg(feature = "dev-cli")]
-use anyhow::Result;
-#[cfg(feature = "dev-cli")]
-use std::path::Path;
+use anyhow::{Context, Result};
+use serde_json::Value;
+use std::fs;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
-#[cfg(feature = "router")]
-#[cfg(feature = "dev-cli")]
-#[allow(dead_code)]
-pub fn load_from_path(path: &Path) -> Result<sb_config::Config> {
-    sb_config::Config::load(path)
+#[derive(Debug, Clone)]
+pub enum ConfigSource {
+    File(PathBuf),
+    Stdin,
 }
 
-#[cfg(not(feature = "router"))]
-#[cfg(feature = "dev-cli")]
-#[allow(dead_code)]
-pub fn load_from_path(path: &Path) -> Result<sb_config::Config> {
-    // minimal 与 router 一致的读法，保持签名不变
-    Ok(sb_config::Config::load(path)?)
+#[derive(Debug, Clone)]
+pub struct ConfigEntry {
+    pub path: String,
+    pub source: ConfigSource,
 }
 
-/// 仅用于 `--check`：解析并构建 Router/Outbound，不触发任何 IO/监听。
-/// 返回 (inbounds, outbounds, rules) 便于主程序打印摘要。
-#[cfg(feature = "dev-cli")]
-pub fn check_only<P: AsRef<Path>>(path: P) -> Result<(usize, usize, usize)> {
-    let cfg = sb_config::Config::load(&path)?;
+pub fn collect_config_entries(
+    config_paths: &[PathBuf],
+    config_dirs: &[PathBuf],
+) -> Result<Vec<ConfigEntry>> {
+    let mut entries = Vec::new();
+
+    if config_paths.is_empty() && config_dirs.is_empty() {
+        entries.push(ConfigEntry {
+            path: "config.json".to_string(),
+            source: ConfigSource::File(PathBuf::from("config.json")),
+        });
+        return Ok(entries);
+    }
+
+    for path in config_paths {
+        if is_stdin_path(path) {
+            entries.push(ConfigEntry {
+                path: "stdin".to_string(),
+                source: ConfigSource::Stdin,
+            });
+            continue;
+        }
+        entries.push(ConfigEntry {
+            path: path.to_string_lossy().to_string(),
+            source: ConfigSource::File(path.clone()),
+        });
+    }
+
+    for dir in config_dirs {
+        let entries_iter = fs::read_dir(dir)
+            .with_context(|| format!("read config directory {}", dir.display()))?;
+        for entry in entries_iter {
+            let entry = entry?;
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            entries.push(ConfigEntry {
+                path: path.to_string_lossy().to_string(),
+                source: ConfigSource::File(path),
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(entries)
+}
+
+pub fn load_merged_value(entries: &[ConfigEntry]) -> Result<Value> {
+    if entries.is_empty() {
+        return Ok(Value::Null);
+    }
+
+    let mut stdin_cache = None::<Vec<u8>>;
+    let mut merged = Value::Null;
+    for entry in entries {
+        let data = read_config_bytes(entry, &mut stdin_cache)?;
+        let raw = parse_config_value(&data, &entry.path)?;
+        merged = merge_values(merged, raw);
+    }
+    Ok(merged)
+}
+
+pub fn load_config(entries: &[ConfigEntry]) -> Result<sb_config::Config> {
+    let raw = load_merged_value(entries)?;
+    let migrated = sb_config::compat::migrate_to_v2(&raw);
+    let cfg = sb_config::Config::from_value(migrated)?;
     cfg.validate()?;
-    // 构建以验证引用完整性/默认值语义，但不启动任何任务
+    Ok(cfg)
+}
+
+#[allow(dead_code)]
+pub fn entry_files(entries: &[ConfigEntry]) -> Vec<PathBuf> {
+    entries
+        .iter()
+        .filter_map(|entry| match &entry.source {
+            ConfigSource::File(path) => Some(path.clone()),
+            ConfigSource::Stdin => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "dev-cli")]
+#[allow(dead_code)]
+pub fn check_only(config_paths: &[PathBuf], config_dirs: &[PathBuf]) -> Result<(usize, usize, usize)> {
+    let entries = collect_config_entries(config_paths, config_dirs)?;
+    let cfg = load_config(&entries)?;
     cfg.build_registry_and_router()?; // Stub validation
     Ok(cfg.stats())
+}
+
+fn read_config_bytes(entry: &ConfigEntry, stdin_cache: &mut Option<Vec<u8>>) -> Result<Vec<u8>> {
+    match &entry.source {
+        ConfigSource::File(path) => fs::read(path)
+            .with_context(|| format!("read config at {}", entry.path)),
+        ConfigSource::Stdin => {
+            if let Some(cached) = stdin_cache.as_ref() {
+                return Ok(cached.clone());
+            }
+            let mut buf = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut buf)
+                .context("read config from stdin")?;
+            *stdin_cache = Some(buf.clone());
+            Ok(buf)
+        }
+    }
+}
+
+fn parse_config_value(data: &[u8], path: &str) -> Result<Value> {
+    match serde_json::from_slice(data) {
+        Ok(v) => Ok(v),
+        Err(json_err) => serde_yaml::from_slice(data)
+            .with_context(|| format!("parse config {} (json error: {json_err})", path)),
+    }
+}
+
+fn merge_values(base: Value, next: Value) -> Value {
+    use serde_json::Value as V;
+    match (base, next) {
+        (V::Object(mut a), V::Object(b)) => {
+            for (k, vb) in b {
+                if let Some(va) = a.remove(&k) {
+                    a.insert(k, merge_values(va, vb));
+                } else {
+                    a.insert(k, vb);
+                }
+            }
+            V::Object(a)
+        }
+        (V::Array(mut a), V::Array(b)) => {
+            a.extend(b);
+            V::Array(a)
+        }
+        (V::Null, x) => x,
+        (_a, b) => b,
+    }
+}
+
+fn is_stdin_path(path: &Path) -> bool {
+    matches!(
+        path.to_str(),
+        Some("stdin") | Some("-")
+    )
 }

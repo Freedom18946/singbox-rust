@@ -51,11 +51,10 @@ fn minimize_guard_works() {
             "--format",
             "json",
         ])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let out = out.stdout;
     let v: Value = serde_json::from_slice(&out).unwrap();
     let iss = v.get("issues").unwrap().as_array().unwrap();
     assert!(iss

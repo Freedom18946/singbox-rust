@@ -24,7 +24,7 @@ use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
 use sb_config::ir::ConfigIR;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 use tower_http::cors::{Any, CorsLayer};
 
 /// Clash API server state shared across handlers
@@ -43,7 +43,7 @@ pub struct ApiState {
     /// Real-time monitoring system handle
     pub monitoring: Option<MonitoringSystemHandle>,
     /// Router handle for routing decisions
-    pub router: Option<RouterHandle>,
+    pub router: Option<Arc<RouterHandle>>,
     /// Outbound registry handle for proxy operations
     pub outbound_registry: Option<Arc<OutboundRegistryHandle>>,
     /// Connection manager for active connection tracking
@@ -144,7 +144,7 @@ impl ClashApiServer {
     }
 
     /// Set router handle
-    pub fn with_router(mut self, router: RouterHandle) -> Self {
+    pub fn with_router(mut self, router: Arc<RouterHandle>) -> Self {
         self.state.router = Some(router);
         self
     }
@@ -174,6 +174,31 @@ impl ClashApiServer {
             })?;
 
         axum::serve(listener, app)
+            .await
+            .map_err(|e| ApiError::Internal { source: e.into() })?;
+
+        Ok(())
+    }
+
+    /// Start the API server with a graceful shutdown signal.
+    pub async fn start_with_shutdown(
+        &self,
+        shutdown: oneshot::Receiver<()>,
+    ) -> ApiResult<()> {
+        let app = self.create_app();
+
+        log::info!("Starting Clash API server on {}", self.listen_addr);
+
+        let listener = tokio::net::TcpListener::bind(self.listen_addr)
+            .await
+            .map_err(|e| {
+                ApiError::configuration(format!("Failed to bind to {}: {}", self.listen_addr, e))
+            })?;
+
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = shutdown.await;
+            })
             .await
             .map_err(|e| ApiError::Internal { source: e.into() })?;
 

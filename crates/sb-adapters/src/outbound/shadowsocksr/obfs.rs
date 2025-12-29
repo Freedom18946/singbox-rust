@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use rand::Rng;
 
@@ -24,7 +24,6 @@ impl Obfs {
     pub fn create(name: &str, param: Option<&str>) -> Box<dyn SsrObfs> {
         match name.to_lowercase().as_str() {
             "plain" | "none" => Box::new(PlainObfs),
-            "http_simple" => Box::new(HttpSimpleObfs::new(param)),
             "http_simple" => Box::new(HttpSimpleObfs::new(param)),
             "tls1.2_ticket_auth" => Box::new(Tls12TicketAuthObfs::new(param)),
             // TODO: Implement other obfs (etc.)

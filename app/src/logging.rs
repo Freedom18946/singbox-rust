@@ -44,6 +44,8 @@ pub struct LoggingConfig {
     pub redact: bool,
     /// Include timestamp in logs (SB_LOG_TIMESTAMP, default: on)
     pub timestamp: bool,
+    /// Enable ANSI color output (SB_LOG_COLOR=0 disables)
+    pub color: bool,
 }
 
 /// Supported log output formats
@@ -97,6 +99,14 @@ impl LoggingConfig {
                 window: Duration::from_secs(1),
             });
 
+        let mut color = std::env::var("SB_LOG_COLOR")
+            .ok()
+            .map(|v| v != "0")
+            .unwrap_or(true);
+        if std::env::var("NO_COLOR").is_ok() {
+            color = false;
+        }
+
         Self {
             format,
             level,
@@ -109,6 +119,7 @@ impl LoggingConfig {
                 .ok()
                 .map(|v| v != "0")
                 .unwrap_or(true),
+            color,
         }
     }
 }
@@ -136,6 +147,7 @@ pub fn init_logging() -> Result<()> {
                 let fmt_layer = fmt::layer()
                     .json()
                     .with_target(true)
+                    .with_ansi(config.color)
                     .with_writer(make_writer(config.redact))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
@@ -151,6 +163,7 @@ pub fn init_logging() -> Result<()> {
                     .json()
                     .without_time()
                     .with_target(true)
+                    .with_ansi(config.color)
                     .with_writer(make_writer(config.redact))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
@@ -169,6 +182,7 @@ pub fn init_logging() -> Result<()> {
                 let fmt_layer = fmt::layer()
                     .compact()
                     .with_target(true)
+                    .with_ansi(config.color)
                     .with_writer(make_writer(config.redact))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {
@@ -184,6 +198,7 @@ pub fn init_logging() -> Result<()> {
                     .compact()
                     .without_time()
                     .with_target(true)
+                    .with_ansi(config.color)
                     .with_writer(make_writer(config.redact))
                     .with_filter(env_filter.clone());
                 if let Some(sampling_layer) = sampling_layer {

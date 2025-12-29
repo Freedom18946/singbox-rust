@@ -19,10 +19,14 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs;
+use std::path::Path;
 
 use super::args::CheckArgs;
 use super::types::{push_err, push_warn, CheckIssue, CheckReport, IssueCode, IssueKind};
+use crate::cli::GlobalArgs;
+use crate::config_loader;
 use crate::cli::output;
 use crate::cli::Format;
 use app::util;
@@ -35,21 +39,20 @@ use sb_config::validator::v2;
 /// - 0: Config is valid (no errors or warnings)
 /// - 1: Config has warnings only (no errors)
 /// - 2: Config has errors (with or without warnings)
-pub fn run(args: CheckArgs) -> Result<i32> {
-    // Read and parse config file (support both JSON and YAML)
-    let data = fs::read(&args.config).with_context(|| format!("read config {}", &args.config))?;
-    let mut raw: Value = if args.config.ends_with(".yaml") || args.config.ends_with(".yml") {
-        serde_yaml::from_slice(&data).with_context(|| "parse as yaml")?
-    } else {
-        match serde_json::from_slice(&data) {
-            Ok(v) => v,
-            Err(json_err) => {
-                serde_yaml::from_slice(&data).with_context(|| {
-                    format!("parse as json (fallback to yaml): {json_err}")
-                })?
-            }
-        }
+pub fn run(global: &GlobalArgs, args: CheckArgs) -> Result<i32> {
+    if !wants_extended_analysis(&args) {
+        let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+        let cfg = config_loader::load_config(&entries)?;
+        check_config(&cfg)?;
+        return Ok(0);
+    }
+
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let primary_path = match entries.as_slice() {
+        [single] => single.path.clone(),
+        _ => "merged".to_string(),
     };
+    let mut raw = config_loader::load_merged_value(&entries)?;
 
     // Optional migration to v2 schema view
     if args.migrate {
@@ -57,6 +60,34 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     }
 
     let mut issues: Vec<CheckIssue> = Vec::new();
+
+    let mut minimized_raw: Option<Value> = None;
+    if args.minimize || args.minimize_rules {
+        let (minimized, action) = minimize_rules_value(&raw);
+        minimized_raw = Some(minimized);
+        let skipped = matches!(
+            action,
+            sb_config::minimize::MinimizeAction::SkippedByNegation
+        );
+        if skipped {
+            push_warn(
+                &mut issues,
+                IssueCode::MinimizeSkippedByNegation,
+                "/route/rules",
+                "minimize skipped due to negation rules",
+                None,
+            );
+            if args.format != "json" && args.format != "sarif" {
+                eprintln!("MINIMIZE_SKIPPED: negation_present=true");
+            }
+        }
+    }
+
+    if args.minimize_rules {
+        let out_json = minimized_raw.clone().unwrap_or_else(|| raw.clone());
+        println!("{}", serde_json::to_string_pretty(&out_json)?);
+        return Ok(0);
+    }
 
     // Handle --print-fingerprint early return
     if args.print_fingerprint {
@@ -130,12 +161,14 @@ pub fn run(args: CheckArgs) -> Result<i32> {
 
     // Basic config validation
     validate_basic_config(&raw, &args, &mut issues)?;
+    validate_geo_resources(&raw, &mut issues);
 
     // Generate report
     let ok = (issues.is_empty() || !args.strict)
         && !issues.iter().any(|i| matches!(i.kind, IssueKind::Error));
 
-    let fingerprint = if args.fingerprint {
+    let include_fingerprint = args.fingerprint || args.minimize;
+    let fingerprint = if include_fingerprint {
         Some(fingerprint_of(&raw))
     } else {
         None
@@ -151,7 +184,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
 
     let report = CheckReport {
         ok,
-        file: args.config.clone(),
+        file: primary_path.clone(),
         issues: issues.clone(),
         summary: serde_json::json!({
             "total_issues": issues.len(),
@@ -164,7 +197,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
 
     // Handle normalized/migrated output write if requested
     if args.write_normalized {
-        let mut out_json = raw.clone();
+        let mut out_json = minimized_raw.unwrap_or_else(|| raw.clone());
         normalize_json(&mut out_json);
         // stamp schema_version when migrating or missing
         if out_json.get("schema_version").is_none() {
@@ -176,7 +209,7 @@ pub fn run(args: CheckArgs) -> Result<i32> {
         let out = if let Some(o) = &args.out {
             o.clone()
         } else {
-            format!("{}.normalized.json", &args.config)
+            format!("{}.normalized.json", &primary_path)
         };
         util::write_atomic(&out, text.as_bytes()).with_context(|| format!("write {out}"))?;
     }
@@ -242,6 +275,250 @@ pub fn run(args: CheckArgs) -> Result<i32> {
     Ok(code)
 }
 
+fn wants_extended_analysis(args: &CheckArgs) -> bool {
+    args.format != "text"
+        || args.strict
+        || args.schema
+        || args.check_refs
+        || args.deny_unknown
+        || args.allow_unknown.is_some()
+        || args.explain
+        || args.enforce_apiversion
+        || args.fingerprint
+        || args.print_fingerprint
+        || args.rules_dir.is_some()
+        || args.normalize
+        || args.autofix_plan
+        || args.summary
+        || args.explain_why
+        || args.rule_graph
+        || args.minimize_rules
+        || args.apply_plan
+        || args.with_rule_id
+        || !args.diff_config.is_empty()
+        || args.schema_v2
+        || args.minimize
+        || args.write_normalized
+        || args.migrate
+        || args.out.is_some()
+}
+
+pub(crate) fn check_config(cfg: &sb_config::Config) -> Result<()> {
+    #[cfg(feature = "router")]
+    {
+        #[cfg(feature = "adapters")]
+        sb_adapters::register_all();
+        let cfg_ir = sb_config::present::to_ir(cfg)?;
+        sb_core::runtime::Runtime::from_config_ir(&cfg_ir)
+            .map_err(|e| anyhow::anyhow!("runtime init failed: {e}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "router"))]
+    {
+        cfg.build_registry_and_router()
+    }
+}
+
+struct RuleMatch {
+    action: String,
+    conds: Vec<Option<HashSet<String>>>,
+}
+
+struct RuleDimension {
+    keys: &'static [&'static str],
+}
+
+const RULE_DIMS: &[RuleDimension] = &[
+    RuleDimension { keys: &["domain"] },
+    RuleDimension {
+        keys: &["domain_suffix"],
+    },
+    RuleDimension {
+        keys: &["domain_keyword"],
+    },
+    RuleDimension {
+        keys: &["domain_regex"],
+    },
+    RuleDimension { keys: &["geoip"] },
+    RuleDimension { keys: &["geosite"] },
+    RuleDimension {
+        keys: &["ip_cidr", "ipcidr"],
+    },
+    RuleDimension {
+        keys: &["source_ip_cidr"],
+    },
+    RuleDimension { keys: &["port"] },
+    RuleDimension {
+        keys: &["source_port"],
+    },
+    RuleDimension { keys: &["network"] },
+    RuleDimension { keys: &["protocol"] },
+    RuleDimension { keys: &["process"] },
+];
+
+fn minimize_rules_value(raw: &Value) -> (Value, sb_config::minimize::MinimizeAction) {
+    let Some(rules) = rules_array(raw) else {
+        return (raw.clone(), sb_config::minimize::MinimizeAction::Applied);
+    };
+
+    if rules.iter().any(rule_has_negation) {
+        return (raw.clone(), sb_config::minimize::MinimizeAction::SkippedByNegation);
+    }
+
+    let mut kept: Vec<Value> = Vec::new();
+    let mut kept_matches: Vec<Option<RuleMatch>> = Vec::new();
+
+    for rule in rules {
+        let candidate = build_rule_match(rule);
+        let mut covered = false;
+        if let Some(ref cand_match) = candidate {
+            for prior in kept_matches.iter().flatten() {
+                if rule_covers(prior, cand_match) {
+                    covered = true;
+                    break;
+                }
+            }
+        }
+        if covered {
+            continue;
+        }
+        kept.push(rule.clone());
+        kept_matches.push(candidate);
+    }
+
+    let mut out = raw.clone();
+    if let Some(rules_mut) = rules_array_mut(&mut out) {
+        *rules_mut = kept;
+    }
+    (out, sb_config::minimize::MinimizeAction::Applied)
+}
+
+fn rule_covers(earlier: &RuleMatch, later: &RuleMatch) -> bool {
+    if earlier.action != later.action {
+        return false;
+    }
+    for (earlier_dim, later_dim) in earlier.conds.iter().zip(later.conds.iter()) {
+        match (earlier_dim, later_dim) {
+            (None, _) => {}
+            (Some(_), None) => return false,
+            (Some(earlier_set), Some(later_set)) => {
+                if !later_set.is_subset(earlier_set) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn build_rule_match(rule: &Value) -> Option<RuleMatch> {
+    let action = rule_action(rule)?;
+    let mut conds = Vec::with_capacity(RULE_DIMS.len());
+    for dim in RULE_DIMS {
+        conds.push(extract_dim(rule, dim.keys));
+    }
+    Some(RuleMatch { action, conds })
+}
+
+fn rule_action(rule: &Value) -> Option<String> {
+    if let Some(val) = rule.get("to").and_then(|v| v.as_str()) {
+        return Some(val.to_string());
+    }
+    if let Some(val) = rule.get("outbound").and_then(|v| v.as_str()) {
+        return Some(val.to_string());
+    }
+    None
+}
+
+fn extract_dim(rule: &Value, keys: &[&'static str]) -> Option<HashSet<String>> {
+    let mut collected = Vec::new();
+    for key in keys {
+        if let Some(when_val) = rule.get("when").and_then(|v| v.get(*key)) {
+            collect_values(when_val, &mut collected);
+        }
+        if let Some(rule_val) = rule.get(*key) {
+            collect_values(rule_val, &mut collected);
+        }
+    }
+    if collected.is_empty() {
+        None
+    } else {
+        Some(collected.into_iter().collect())
+    }
+}
+
+fn collect_values(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                collect_values(item, out);
+            }
+        }
+        Value::String(s) => out.push(s.clone()),
+        Value::Number(n) => out.push(n.to_string()),
+        Value::Bool(b) => out.push(b.to_string()),
+        Value::Null => {}
+        Value::Object(_) => out.push(value.to_string()),
+    }
+}
+
+fn rule_has_negation(rule: &Value) -> bool {
+    if let Some(when_obj) = rule.get("when").and_then(|v| v.as_object()) {
+        if map_has_negation(when_obj) {
+            return true;
+        }
+    }
+    if let Some(rule_obj) = rule.as_object() {
+        if map_has_negation(rule_obj) {
+            return true;
+        }
+    }
+    false
+}
+
+fn map_has_negation(map: &serde_json::Map<String, Value>) -> bool {
+    map.iter()
+        .filter(|(key, _)| key.starts_with("not_"))
+        .any(|(_, value)| value_has_content(value))
+}
+
+fn value_has_content(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Array(items) => !items.is_empty(),
+        Value::String(s) => !s.is_empty(),
+        Value::Object(obj) => !obj.is_empty(),
+        _ => true,
+    }
+}
+
+fn rules_array<'a>(config: &'a Value) -> Option<&'a Vec<Value>> {
+    if let Some(route) = config.get("route") {
+        if let Some(rules) = route.get("rules").and_then(|v| v.as_array()) {
+            return Some(rules);
+        }
+    }
+    config.get("rules").and_then(|v| v.as_array())
+}
+
+fn rules_array_mut<'a>(config: &'a mut Value) -> Option<&'a mut Vec<Value>> {
+    if let Value::Object(obj) = config {
+        if obj.contains_key("route") {
+            if let Some(Value::Object(route_obj)) = obj.get_mut("route") {
+                if let Some(Value::Array(rules)) = route_obj.get_mut("rules") {
+                    return Some(rules);
+                }
+            }
+            return None;
+        }
+        if let Some(Value::Array(rules)) = obj.get_mut("rules") {
+            return Some(rules);
+        }
+    }
+    None
+}
+
 /// Basic config validation
 fn validate_basic_config(
     config: &Value,
@@ -286,6 +563,44 @@ fn validate_basic_config(
     }
 
     Ok(())
+}
+
+#[allow(unused_variables)]
+fn validate_geo_resources(config: &Value, issues: &mut Vec<CheckIssue>) {
+    #[cfg(feature = "router")]
+    {
+        use sb_core::router::geo::{GeoIpDb, GeoSiteDb};
+
+        if let Some(path) = config
+            .pointer("/route/geoip/path")
+            .and_then(|v| v.as_str())
+        {
+            if let Err(err) = GeoIpDb::load_from_file(Path::new(path)) {
+                push_err(
+                    issues,
+                    IssueCode::TypeMismatch,
+                    "/route/geoip/path",
+                    &format!("geoip db load failed: {err}"),
+                    None,
+                );
+            }
+        }
+
+        if let Some(path) = config
+            .pointer("/route/geosite/path")
+            .and_then(|v| v.as_str())
+        {
+            if let Err(err) = GeoSiteDb::load_from_file(Path::new(path)) {
+                push_err(
+                    issues,
+                    IssueCode::TypeMismatch,
+                    "/route/geosite/path",
+                    &format!("geosite db load failed: {err}"),
+                    None,
+                );
+            }
+        }
+    }
 }
 
 /// Basic rule validation

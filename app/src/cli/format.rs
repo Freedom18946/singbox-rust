@@ -5,23 +5,17 @@
 
 use crate::cli::output;
 use crate::cli::Format as OutFormat;
+use crate::cli::GlobalArgs;
+use crate::config_loader::{self, ConfigEntry, ConfigSource};
 use anyhow::{Context, Result};
 use clap::{ArgAction, Parser};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::io::Read;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "format")]
 #[command(about = "Format configuration", long_about = None)]
 pub struct FormatArgs {
-    /// Configuration file path(s)
-    #[arg(short = 'c', long = "config")]
-    pub config: Vec<PathBuf>,
-
-    /// Configuration directory path(s) (non-recursive)
-    #[arg(short = 'C', long = "config-directory")]
-    pub config_directory: Vec<PathBuf>,
-
     /// Write result to (source) file instead of stdout
     #[arg(short = 'w', long = "write")]
     pub write: bool,
@@ -30,62 +24,50 @@ pub struct FormatArgs {
     pub help_json: bool,
 }
 
-pub fn run(args: FormatArgs) -> Result<()> {
+pub fn run(global: &GlobalArgs, args: FormatArgs) -> Result<()> {
     if args.help_json {
         crate::cli::help::print_help_json::<FormatArgs>();
     }
 
-    let mut entries = Vec::new();
-
-    // Gather files from -c/--config
-    for p in &args.config {
-        if p.is_file() {
-            entries.push(p.clone());
-        } else {
-            anyhow::bail!("config path not found: {}", p.display());
-        }
-    }
-
-    // Gather files from -C/--config-directory (non-recursive, *.json)
-    for d in &args.config_directory {
-        let meta = fs::metadata(d).with_context(|| format!("stat: {}", d.display()))?;
-        if !meta.is_dir() {
-            anyhow::bail!("not a directory: {}", d.display());
-        }
-        for ent in fs::read_dir(d).with_context(|| format!("read_dir: {}", d.display()))? {
-            let ent = ent?;
-            let path = ent.path();
-            if let Some(ext) = path.extension() {
-                if ext == "json" && path.is_file() {
-                    entries.push(path);
-                }
-            }
-        }
-    }
-
+    let entries =
+        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
     if entries.is_empty() {
-        // Default to config.json if nothing specified (matches upstream default behavior)
-        let default = PathBuf::from("config.json");
-        if default.exists() {
-            entries.push(default);
-        } else {
-            // Nothing to do
-            return Ok(());
-        }
+        return Ok(());
     }
-
+    let mut stdin_cache = None::<Vec<u8>>;
     let multi = entries.len() > 1;
-    for path in entries {
-        format_one(&path, args.write, multi)?;
+    for entry in entries {
+        format_one(&entry, args.write, multi, &mut stdin_cache)?;
     }
 
     Ok(())
 }
 
-fn format_one(path: &Path, write: bool, multi: bool) -> Result<()> {
-    let orig = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+fn format_one(
+    entry: &ConfigEntry,
+    write: bool,
+    multi: bool,
+    stdin_cache: &mut Option<Vec<u8>>,
+) -> Result<()> {
+    let orig = match &entry.source {
+        ConfigSource::File(path) => {
+            fs::read(path).with_context(|| format!("read {}", path.display()))?
+        }
+        ConfigSource::Stdin => {
+            if let Some(cached) = stdin_cache.as_ref() {
+                cached.clone()
+            } else {
+                let mut buf = Vec::new();
+                std::io::stdin()
+                    .read_to_end(&mut buf)
+                    .context("read config from stdin")?;
+                *stdin_cache = Some(buf.clone());
+                buf
+            }
+        }
+    };
     let val: serde_json::Value =
-        serde_json::from_slice(&orig).with_context(|| format!("parse JSON: {}", path.display()))?;
+        serde_json::from_slice(&orig).with_context(|| format!("parse JSON: {}", entry.path))?;
 
     // Pretty-print with 2 spaces to match upstream
     let formatted = serde_json::to_string_pretty(&val).context("encode pretty JSON")?;
@@ -97,26 +79,39 @@ fn format_one(path: &Path, write: bool, multi: bool) -> Result<()> {
                 return Ok(());
             }
         }
-        fs::write(path, formatted.as_bytes())
-            .with_context(|| format!("write {}", path.display()))?;
-        // Print absolute path to stderr like upstream
-        if let Ok(abs) = path.canonicalize() {
-            eprintln!("{}", abs.display());
+        if let ConfigSource::File(path) = &entry.source {
+            fs::write(path, formatted.as_bytes())
+                .with_context(|| format!("write {}", path.display()))?;
         } else {
-            eprintln!("{}", path.display());
+            fs::write(&entry.path, formatted.as_bytes())
+                .with_context(|| format!("write {}", entry.path))?;
+        }
+        // Print absolute path to stderr like upstream
+        if let ConfigSource::File(path) = &entry.source {
+            if let Ok(abs) = path.canonicalize() {
+                eprintln!("{}", abs.display());
+            } else {
+                eprintln!("{}", path.display());
+            }
+        } else {
+            eprintln!("{}", entry.path);
         }
     } else {
         // Print absolute path prefix when multiple inputs
         if multi {
-            let head = if let Ok(abs) = path.canonicalize() {
-                abs.display().to_string()
+            let head = if let ConfigSource::File(path) = &entry.source {
+                if let Ok(abs) = path.canonicalize() {
+                    abs.display().to_string()
+                } else {
+                    path.display().to_string()
+                }
             } else {
-                path.display().to_string()
+                entry.path.clone()
             };
             output::emit(
                 OutFormat::Human,
                 || head,
-                &serde_json::json!({"path": path.display().to_string()}),
+                &serde_json::json!({"path": entry.path.clone()}),
             );
         }
         output::emit(

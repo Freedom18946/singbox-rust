@@ -365,7 +365,13 @@ pub fn global() -> &'static Mutex<Lru> {
 #[cfg(feature = "admin_tests")]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use std::thread;
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn test_lru_basic_operations() {
@@ -542,6 +548,7 @@ mod tests {
 
     #[test]
     fn test_disk_backing_configuration() {
+        let _env_lock = env_lock();
         // Test without disk backing
         std::env::remove_var("SB_SUBS_CACHE_DISK");
         let lru_no_disk = Lru::with_byte_limit(10, 1000, 1024);
@@ -570,6 +577,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disk_tier_operations() {
+        let _env_lock = env_lock();
         use std::fs;
 
         // Create temporary test directory
@@ -616,6 +624,7 @@ mod tests {
 
     #[test]
     fn test_tiered_eviction_priority() {
+        let _env_lock = env_lock();
         // Test that larger entries are preferentially moved to disk
         std::env::set_var("SB_SUBS_CACHE_DISK", "/tmp/sb-cache-priority-test");
         let mut lru = Lru::with_byte_limit(2, 10000, 100);
@@ -659,6 +668,7 @@ mod tests {
 
     #[test]
     fn test_cache_key_hashing() {
+        let _env_lock = env_lock();
         std::env::set_var("SB_SUBS_CACHE_DISK", "/tmp/sb-cache-hash-test");
         let lru = Lru::with_byte_limit(10, 1000, 1024);
 
@@ -757,6 +767,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disk_migration_counting_fix() {
+        let _env_lock = env_lock();
         use std::fs;
 
         // Create temporary test directory

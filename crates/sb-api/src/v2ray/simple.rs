@@ -3,7 +3,7 @@
 use crate::{error::ApiResult, monitoring::MonitoringSystemHandle, types::ApiConfig};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, oneshot, Mutex};
 
 /// Simplified stats data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +147,53 @@ impl SimpleV2RayApiServer {
         });
 
         log::info!("V2Ray API server started successfully");
+        Ok(())
+    }
+
+    /// Start the simple V2Ray API server with a shutdown signal.
+    pub async fn start_with_shutdown(
+        &self,
+        mut shutdown: oneshot::Receiver<()>,
+    ) -> ApiResult<()> {
+        let _ = &self.monitoring;
+
+        log::info!(
+            "Starting simplified V2Ray API server on {}",
+            self.config.listen_addr
+        );
+
+        let stats_clone = Arc::clone(&self.stats);
+        let broadcast_clone = self.stats_broadcast.clone();
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut counter = 0;
+
+        loop {
+            tokio::select! {
+                _ = &mut shutdown => break,
+                _ = interval.tick() => {
+                    counter += 1000;
+                    {
+                        let mut stats = stats_clone.lock().await;
+                        *stats
+                            .entry("inbound>>>api>>>traffic>>>downlink".to_string())
+                            .or_insert(0) += counter;
+                        *stats
+                            .entry("outbound>>>direct>>>traffic>>>uplink".to_string())
+                            .or_insert(0) += counter / 2;
+                    }
+
+                    let stat_update = SimpleStat {
+                        name: "inbound>>>api>>>traffic>>>downlink".to_string(),
+                        value: counter,
+                    };
+
+                    let _ = broadcast_clone.send(stat_update);
+                    log::debug!("V2Ray API: Updated traffic stats");
+                }
+            }
+        }
+
+        log::info!("V2Ray API server stopped");
         Ok(())
     }
 

@@ -33,6 +33,7 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
+use crate::transport_config::InboundStream;
 
 #[cfg(feature = "tls_reality")]
 #[cfg(feature = "tls_reality")]
@@ -41,7 +42,7 @@ use sb_tls::RealityAcceptor;
 #[cfg(feature = "tls_reality")]
 use sb_tls::reality::server::RealityConnection;
 
-type StreamBox = Box<dyn tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send>;
+type StreamBox = Box<dyn InboundStream>;
 
 /// Trojan protocol command codes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +222,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                 // tracing::debug!("trojan: accept-loop heartbeat");
             }
             r = listener.accept() => {
-                let (mut stream, peer) = match r {
+                let (stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "trojan: accept error");
@@ -263,9 +264,9 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
                     // Prepare TLS Layer
                     let stream_res = {
                         #[cfg(feature = "tls_reality")]
-                        { prepare_tls_layer(stream, reality_acceptor_clone.as_deref(), tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                        { prepare_tls_layer(stream, reality_acceptor_clone.as_deref(), tls_acceptor_clone.as_deref(), &cfg_clone.fallback_for_alpn, peer).await }
                         #[cfg(not(feature = "tls_reality"))]
-                        { prepare_tls_layer(stream, tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                        { prepare_tls_layer(stream, tls_acceptor_clone.as_deref(), &cfg_clone.fallback_for_alpn, peer).await }
                     };
 
                     match stream_res {
@@ -330,7 +331,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
 }
 
 async fn prepare_tls_layer(
-    stream: tokio::net::TcpStream,
+    stream: StreamBox,
     #[cfg(feature = "tls_reality")]
     reality: Option<&RealityAcceptor>,
     tls: Option<&tokio_rustls::TlsAcceptor>,

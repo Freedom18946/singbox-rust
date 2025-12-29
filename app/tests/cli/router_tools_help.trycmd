@@ -11,8 +11,18 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-  -f, --file <FILE>  `GeoIP` database file (text or MMDB) [default: geoip.db]
-  -h, --help         Print help
+  -c, --config <CONFIG>
+          Set configuration file path(s)
+  -f, --file <FILE>
+          `GeoIP` database file (text or MMDB) [default: geoip.db]
+  -C, --config-directory <CONFIG_DIRECTORY>
+          Set configuration directory path(s) (non-recursive, *.json)
+  -D, --directory <DIRECTORY>
+          Set working directory
+      --disable-color
+          Disable color output
+  -h, --help
+          Print help
 
 $ app geosite --help
 Geosite tooling (list/lookup/export/matcher)
@@ -27,13 +37,23 @@ Commands:
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-  -f, --file <FILE>  Geosite database file (text or binary) [default: geosite.db]
-  -h, --help         Print help
+  -c, --config <CONFIG>
+          Set configuration file path(s)
+  -f, --file <FILE>
+          Geosite database file (text or binary) [default: geosite.db]
+  -C, --config-directory <CONFIG_DIRECTORY>
+          Set configuration directory path(s) (non-recursive, *.json)
+  -D, --directory <DIRECTORY>
+          Set working directory
+      --disable-color
+          Disable color output
+  -h, --help
+          Print help
 
 $ app ruleset --help
 Rule-set management (validate/compile/etc.)
 
-Usage: app ruleset <COMMAND>
+Usage: app ruleset [OPTIONS] <COMMAND>
 
 Commands:
   validate   Validate a rule-set file (JSON or binary)
@@ -48,6 +68,15 @@ Commands:
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help  Print help
+  -c, --config <CONFIG>
+          Set configuration file path(s)
+  -C, --config-directory <CONFIG_DIRECTORY>
+          Set configuration directory path(s) (non-recursive, *.json)
+  -D, --directory <DIRECTORY>
+          Set working directory
+      --disable-color
+          Disable color output
+  -h, --help
+          Print help
 
 ```

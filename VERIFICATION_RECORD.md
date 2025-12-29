@@ -1,8 +1,95 @@
 # Verification Record - Ground-Up Quality Assurance
 
-**Last Updated**: 2025-12-27 16:05:00 +0800  
-**Verification Status**: ⚠️ Partial update — full suite re-run pending (last full run 2025-12-24); Parity: **92%** (175/190 aligned)  
-**Timestamp**: `Update: 2025-12-27T16:05:00+08:00 | Focus: Test infra TODO completion + CLI/schema updates | Tests: partial (see below)`
+**Last Updated**: 2025-12-29 20:37:55 +0800  
+**Verification Status**: ⚠️ Partial update — full suite attempted; failures in `app/tests/dos_protection_test.rs`; Parity: **92%** (175/190 aligned)  
+**Timestamp**: `Update: 2025-12-29T20:37:55+08:00 | Focus: PX-001 check semantics + full-suite run | Tests: cargo test --workspace --all-features (failed)`
+
+---
+
+## QA Session: 2025-12-29 20:37 +0800 (PX-001 Check Semantics + Full Suite)
+
+### Scope
+- Align `check` semantics to use merged config + runtime instantiation (Go-style `box.New` equivalent) with extended analysis behind explicit flags.
+- Attempt full workspace test pass.
+
+### Verification Environment
+- **OS**: macOS (Darwin)
+- **Rust Toolchain**: stable
+- **Network**: restricted (local tests only)
+
+### Layer 2: Test Execution Evidence (Full Suite Attempt)
+
+| Command | Result | Notes |
+|--------|--------|-------|
+| `cargo test --workspace --all-features` | ❌ FAIL | `app/tests/dos_protection_test.rs` failures; long-running observe/bench tests completed |
+
+### Failures
+- `app/tests/dos_protection_test.rs`: `test_connection_flood_protection`, `test_burst_traffic_handling` (rate limiter expectations not met)
+
+### Warnings (Non-fatal)
+- `sb-adapters`: unused import/unreachable pattern/dead_code in `outbound/shadowsocksr/*`.
+- `sb-api`: unused `mut` in `crates/sb-api/src/clash/server.rs`.
+- `sb-core`: unused imports in DERP mesh tests; unused variable in `crates/sb-core/src/router/engine.rs`.
+- `app`: unused imports/fields in `app/src/inbound_starter.rs`, unused `check_only`/`entry_files`, unused re-export `check_config`.
+- Future incompatibility warning: `num-bigint-dig v0.8.4`.
+
+### Conclusion
+- Full-suite run failed due to DOS protection tests; other app CLI/check/schema tests passed within the run.
+
+---
+
+## QA Session: 2025-12-29 19:44 +0800 (CLI Config Loading + SIGHUP Reload Verification)
+
+### Scope
+- Align global CLI flags/config loading with Go (global -c/-C/-D/--disable-color, default config.json, config-directory merge order, stdin sentinel).
+- Verify SIGHUP restart + close monitor behavior with integration test.
+- Refresh CLI trycmd snapshots after global flag updates.
+
+### Verification Environment
+- **OS**: macOS (Darwin)
+- **Rust Toolchain**: stable
+- **Network**: restricted (local tests only)
+
+### Layer 2: Test Execution Evidence (Targeted)
+
+| Command | Result | Notes |
+|--------|--------|-------|
+| `cargo build -p app --features router,adapters` | ✅ PASS | warnings emitted |
+| `cargo test -p app --features router,adapters --test reload_sighup_restart -- --ignored` | ✅ PASS | SIGHUP restart + SIGTERM exit assertions |
+| `cargo test -p app --test config_merge_order` | ✅ PASS | config-directory merge order fixture |
+| `TRYCMD=overwrite cargo test -p app --test cli --all-features` | ✅ PASS | trycmd snapshots updated |
+
+### Layer 3: Config & Runtime Effect Validation (Targeted)
+- `-c/--config` and `-C/--config-directory` merge configs in path-sorted order, defaulting to `config.json` when unset.
+- `stdin` or `-` inputs are treated as stdin config sources and merged once for all reads.
+- `-D/--directory` sets working directory before config load; `--disable-color` disables ANSI logging via `SB_LOG_COLOR=0`.
+- SIGHUP triggers config check + restart and enforces close monitor timeout; SIGTERM exits cleanly.
+
+### Conclusion
+- CLI flags/config loading and SIGHUP reload behaviors are verified with targeted tests; full-suite re-run still pending.
+
+---
+
+## QA Session: 2025-12-29 18:55 +0800 (SIGHUP Reload Semantics Alignment)
+
+### Scope
+- Align run SIGHUP handling with Go (check -> restart) and add FatalStopTimeout close monitor.
+- Tighten SIGHUP restart integration test assertions for process liveness and clean exit.
+
+### Verification Environment
+- **OS**: macOS (Darwin)
+- **Rust Toolchain**: stable
+- **Network**: restricted (local tests only)
+
+### Layer 2: Test Execution Evidence (Not Run)
+
+| Command | Result | Notes |
+|--------|--------|-------|
+| `cargo build -p app --features router,adapters` | NOT RUN | required to produce `app` binary for integration test |
+| `cargo test -p app --features router,adapters --test reload_sighup_restart -- --ignored` | NOT RUN | manual run pending |
+
+### Conclusion
+- Code updated; SIGHUP restart test strengthened; verification pending.
 
 ---
 

@@ -112,7 +112,9 @@ pub mod run;
 pub mod tools;
 pub mod version;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Args as ClapArgs, Parser, Subcommand, ValueEnum};
+use std::path::PathBuf;
+use anyhow::Result;
 
 /// Output format for CLI commands
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -125,12 +127,47 @@ pub enum Format {
     Sarif,
 }
 
+#[derive(ClapArgs, Debug, Clone)]
+pub struct GlobalArgs {
+    /// Set configuration file path(s)
+    #[arg(short = 'c', long = "config", global = true, action = ArgAction::Append)]
+    pub config: Vec<PathBuf>,
+    /// Set configuration directory path(s) (non-recursive, *.json)
+    #[arg(short = 'C', long = "config-directory", global = true, action = ArgAction::Append)]
+    pub config_directory: Vec<PathBuf>,
+    /// Set working directory
+    #[arg(short = 'D', long = "directory", global = true)]
+    pub directory: Option<PathBuf>,
+    /// Disable color output
+    #[arg(long = "disable-color", global = true)]
+    pub disable_color: bool,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "app")]
 #[command(about = "Sing CLI", long_about = None)]
 pub struct Args {
+    #[command(flatten)]
+    pub global: GlobalArgs,
     #[command(subcommand)]
     pub command: Commands,
+}
+
+pub fn apply_global_options(global: &GlobalArgs) -> Result<()> {
+    if let Some(dir) = global.directory.as_ref() {
+        if let Err(err) = std::fs::metadata(dir) {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                std::fs::create_dir_all(dir)?;
+            }
+        }
+        std::env::set_current_dir(dir)?;
+    }
+
+    if global.disable_color {
+        std::env::set_var("SB_LOG_COLOR", "0");
+    }
+
+    Ok(())
 }
 
 #[derive(Subcommand, Debug)]

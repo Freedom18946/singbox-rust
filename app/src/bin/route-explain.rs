@@ -1,109 +1,79 @@
 #![cfg(feature = "explain")]
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
+
+use anyhow::{Context, Result};
+use app::cli::{output, Format, GlobalArgs};
+use app::config_loader;
+use clap::Parser;
 use sb_core::routing::ExplainEngine;
-use std::net::IpAddr;
+use serde_json::Value;
+use std::path::Path;
 
-fn main() {
-    // 极简参数解析：--sni --ip --port --proto --format json|dot
-    let args: Vec<String> = std::env::args().collect();
-    let mut sni = None;
-    let mut ip = None;
-    let mut host_opt: Option<String> = None;
-    let mut port = 0u16;
-    let mut proto = "tcp";
-    let mut fmt = "json";
-    let mut _alpn: Option<String> = None;
+#[derive(Parser, Debug)]
+#[command(name = "route-explain", about = "Route explain helper")]
+struct RouteExplainCli {
+    #[command(flatten)]
+    global: GlobalArgs,
+    /// Destination host[:port] or ip
+    #[arg(long = "destination", alias = "dest")]
+    destination: String,
+    /// Use UDP path
+    #[arg(long = "udp", default_value_t = false)]
+    udp: bool,
+    /// Output format
+    #[arg(long = "format", value_enum, default_value_t = Format::Json)]
+    format: Format,
+    /// Include detailed trace information
+    #[arg(long = "with-trace", alias = "trace", default_value_t = false)]
+    with_trace: bool,
+}
 
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--sni" => {
-                i += 1;
-                if i < args.len() {
-                    sni = Some(args[i].clone());
-                }
-            }
-            "--ip" => {
-                i += 1;
-                if i < args.len() {
-                    ip = args[i].parse::<IpAddr>().ok();
-                }
-            }
-            "--host" => {
-                i += 1;
-                if i < args.len() {
-                    host_opt = Some(args[i].clone());
-                }
-            }
-            "--port" => {
-                i += 1;
-                if i < args.len() {
-                    port = args[i].parse::<u16>().unwrap_or(0);
-                }
-            }
-            "--proto" => {
-                i += 1;
-                if i < args.len() {
-                    proto = Box::leak(args[i].clone().into_boxed_str());
-                }
-            }
-            "--format" => {
-                i += 1;
-                if i < args.len() {
-                    fmt = Box::leak(args[i].clone().into_boxed_str());
-                }
-            }
-            "--alpn" => {
-                i += 1;
-                if i < args.len() {
-                    _alpn = Some(args[i].clone());
-                }
-            }
-            "--json" => {
-                fmt = "json";
-            }
-            "--dot" => {
-                fmt = "dot";
-            }
-            _ => {}
-        }
-        i += 1;
+fn main() -> Result<()> {
+    let cli = RouteExplainCli::parse();
+    app::cli::apply_global_options(&cli.global)?;
+
+    let entries =
+        config_loader::collect_config_entries(&cli.global.config, &cli.global.config_directory)?;
+    let raw = config_loader::load_merged_value(&entries)?;
+    validate_geo_resources(&raw)?;
+
+    let cfg = config_loader::load_config(&entries).with_context(|| "load config for explain")?;
+    let engine = ExplainEngine::from_config(&cfg).with_context(|| "create explain engine")?;
+    let net = if cli.udp { "udp" } else { "tcp" };
+    let result = engine.explain_with_network(&cli.destination, net, cli.with_trace);
+
+    output::emit(
+        cli.format,
+        || {
+            format!(
+                "{} → {} (rule={})",
+                result.dest, result.outbound, result.matched_rule
+            )
+        },
+        &result,
+    );
+    Ok(())
+}
+
+#[cfg(feature = "router")]
+fn validate_geo_resources(raw: &Value) -> Result<()> {
+    use sb_core::router::geo::{GeoIpDb, GeoSiteDb};
+
+    if let Some(path) = raw.pointer("/route/geoip/path").and_then(|v| v.as_str()) {
+        GeoIpDb::load_from_file(Path::new(path))
+            .map_err(|e| anyhow::anyhow!("geoip db load failed: {e}"))?;
     }
-    // 统一使用 routing::ExplainEngine 输出稳定字段集：dest/matched_rule/chain/outbound/trace
-    let net = if proto == "udp" { "udp" } else { "tcp" };
-    // 目的地优先级：--host | --sni | --ip 拼接端口
-    let base_host = host_opt.or(sni).or_else(|| ip.map(|i| i.to_string()));
-    let dest = if let Some(h) = base_host {
-        format!("{}:{}", h, port)
-    } else {
-        format!("{}:{}", "", port)
-    };
-
-    // ExplainEngine 需要完整 Config；此工具作为开发辅助，允许使用空 ConfigIR（默认 direct）
-    let cfg = sb_config::Config::default();
-    let engine = ExplainEngine::from_config(&cfg).expect("explain engine");
-    let res = engine.explain_with_network(&dest, net, true);
-
-    match fmt {
-        "dot" => {
-            // 生成简化版 dot 输出（仅包含链路与命中规则）
-            println!("digraph explain {{");
-            println!(
-                "  info [label=\"dest: {}\\noutbound: {}\\nrule:{}\"];",
-                res.dest, res.outbound, res.matched_rule
-            );
-            for (idx, ch) in res.chain.iter().enumerate() {
-                println!("  c{idx} [label=\"{}\"];", ch);
-                if idx == 0 {
-                    println!("  info -> c{idx};");
-                } else {
-                    println!("  c{} -> c{};", idx - 1, idx);
-                }
-            }
-            println!("}}");
-        }
-        _ => {
-            println!("{}", serde_json::to_string_pretty(&res).unwrap());
-        }
+    if let Some(path) = raw
+        .pointer("/route/geosite/path")
+        .and_then(|v| v.as_str())
+    {
+        GeoSiteDb::load_from_file(Path::new(path))
+            .map_err(|e| anyhow::anyhow!("geosite db load failed: {e}"))?;
     }
+    Ok(())
+}
+
+#[cfg(not(feature = "router"))]
+fn validate_geo_resources(_raw: &Value) -> Result<()> {
+    Ok(())
 }

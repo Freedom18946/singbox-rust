@@ -1,9 +1,107 @@
 #![allow(unused_imports, dead_code)]
+use serial_test::serial;
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
 };
+
+const SUBS_ENV_KEYS: [&str; 18] = [
+    "SB_ADMIN_URL_DENY_PRIVATE",
+    "SB_SUBS_BR_FAILS",
+    "SB_SUBS_BR_OPEN_MS",
+    "SB_SUBS_BR_RATIO",
+    "SB_SUBS_BR_WIN_MS",
+    "SB_SUBS_CACHE_BYTES",
+    "SB_SUBS_CACHE_CAP",
+    "SB_SUBS_CACHE_DISK",
+    "SB_SUBS_CACHE_TTL_MS",
+    "SB_SUBS_HEAD_PRECHECK",
+    "SB_SUBS_MAX_BYTES",
+    "SB_SUBS_MAX_CONCURRENCY",
+    "SB_SUBS_MAX_REDIRECTS",
+    "SB_SUBS_MIME_ALLOW",
+    "SB_SUBS_MIME_DENY",
+    "SB_SUBS_PRIVATE_ALLOWLIST",
+    "SB_SUBS_RPS",
+    "SB_SUBS_TIMEOUT_MS",
+];
+
+const ADMIN_ENV_KEYS: [&str; 2] = ["SB_ADMIN_NO_AUTH", "SB_ADMIN_TOKEN"];
+
+struct EnvGuard {
+    saved: Vec<(String, Option<String>)>,
+}
+
+impl EnvGuard {
+    fn set(vars: &[(&str, Option<&str>)]) -> Self {
+        let mut saved = Vec::new();
+        let mut seen = HashSet::new();
+        for (key, value) in vars {
+            if seen.insert(*key) {
+                saved.push(((*key).to_string(), std::env::var(key).ok()));
+            }
+            match value {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+        }
+        Self { saved }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (key, value) in self.saved.drain(..) {
+            match value {
+                Some(v) => std::env::set_var(&key, v),
+                None => std::env::remove_var(&key),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "subs_http")]
+fn subs_env_guard(overrides: &[(&str, Option<&str>)]) -> EnvGuard {
+    let mut vars = Vec::new();
+    for key in SUBS_ENV_KEYS {
+        vars.push((key, None));
+    }
+    vars.extend_from_slice(overrides);
+    let guard = EnvGuard::set(&vars);
+    app::admin_debug::reloadable::reload();
+    if let Ok(mut breaker) = app::admin_debug::breaker::global().lock() {
+        breaker.reset();
+    }
+    guard
+}
+
+fn admin_env_guard(overrides: &[(&str, Option<&str>)]) -> EnvGuard {
+    let mut vars = Vec::new();
+    for key in ADMIN_ENV_KEYS {
+        vars.push((key, None));
+    }
+    vars.extend_from_slice(overrides);
+    EnvGuard::set(&vars)
+}
+
+fn expect_ok<T>(res: anyhow::Result<T>) -> T {
+    match res {
+        Ok(val) => val,
+        Err(err) => panic!("expected Ok result, got Err: {err}"),
+    }
+}
+
+fn expect_err_contains<T>(res: anyhow::Result<T>, needle: &str) {
+    match res {
+        Ok(_) => panic!("expected Err containing {needle}"),
+        Err(err) => assert!(
+            err.to_string().contains(needle),
+            "unexpected error: {err}"
+        ),
+    }
+}
 
 async fn serve_once_302_to_loopback(port: u16) {
     let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
@@ -35,37 +133,45 @@ async fn serve_once_large_body(port: u16, bytes: usize) {
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_block_private_redirect() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[]);
         let port = 19091;
         serve_once_302_to_loopback(port).await;
         let url = format!("http://127.0.0.1:{port}/first");
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_err(), "should block redirect to loopback, got {:?}", r);
-        assert!(r.err().unwrap().to_string().contains("private"));
+        expect_err_contains(r, "private");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_size_limit() {
     #[cfg(feature = "subs_http")]
     {
-        std::env::set_var("SB_SUBS_MAX_BYTES", "8192");
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MAX_BYTES", Some("8192")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         let port = 19092;
         serve_once_large_body(port, 16 * 1024).await;
         let url = format!("http://127.0.0.1:{port}/large");
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_err(), "should exceed size limit");
-        assert!(r.err().unwrap().to_string().contains("exceed size limit"));
+        expect_err_contains(r, "exceed size limit");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_timeout_limit() {
     #[cfg(feature = "subs_http")]
     {
-        std::env::set_var("SB_SUBS_TIMEOUT_MS", "200");
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_TIMEOUT_MS", Some("200")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -83,17 +189,17 @@ async fn subs_timeout_limit() {
         });
         let url = format!("http://127.0.0.1:{port}/slow");
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_err());
-        assert!(r.err().unwrap().to_string().contains("timeout"));
+        expect_err_contains(r, "timeout");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_allowlist_pass() {
     #[cfg(feature = "subs_http")]
     {
         // 直连到 127.0.0.1，但通过 allowlist 放行（仅示例：真实灰度请谨慎配置）
-        std::env::set_var("SB_SUBS_PRIVATE_ALLOWLIST", "127.0.0.1");
+        let _env = subs_env_guard(&[("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1"))]);
         let port = 19101u16;
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
@@ -114,15 +220,17 @@ async fn subs_allowlist_pass() {
         });
         let url = format!("http://127.0.0.1:{port}/ok");
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_ok());
-        assert_eq!(r.unwrap(), "ok");
+        let body = expect_ok(r);
+        assert_eq!(body, "ok");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_ipv6_block_loopback() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[]);
         // 仅校验路径：解析 ::1 应被拒
         let url = "http://[::1]:8080/evil";
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(url).await;
@@ -131,9 +239,14 @@ async fn subs_ipv6_block_loopback() {
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_redirect_loop() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MAX_REDIRECTS", Some("2")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -156,7 +269,6 @@ async fn subs_redirect_loop() {
             let resp = format!("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{}/back\r\nContent-Length: 0\r\n\r\n", a);
             let _ = s.write_all(resp.as_bytes()).await;
         });
-        std::env::set_var("SB_SUBS_MAX_REDIRECTS", "2");
         let url = format!("http://127.0.0.1:{}/first", a);
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
         assert!(r.is_err(), "should fail on redirect loop");
@@ -164,9 +276,14 @@ async fn subs_redirect_loop() {
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_slow_loris_timeout() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_TIMEOUT_MS", Some("800")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -183,18 +300,21 @@ async fn subs_slow_loris_timeout() {
                 .await;
             tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
         });
-        std::env::set_var("SB_SUBS_TIMEOUT_MS", "800");
         let url = format!("http://127.0.0.1:{}/loris", port);
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_err());
-        assert!(r.err().unwrap().to_string().contains("timeout"));
+        expect_err_contains(r, "timeout");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_mime_allow() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MIME_ALLOW", Some("application/json,text/plain")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -212,19 +332,19 @@ async fn subs_mime_allow() {
             );
             let _ = s.write_all(resp.as_bytes()).await;
         });
-        std::env::set_var("SB_SUBS_MIME_ALLOW", "application/json,text/plain");
         let url = format!("http://127.0.0.1:{}/ok", port);
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_ok());
+        let _body = expect_ok(r);
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_allowlist_cidr_pass() {
     #[cfg(feature = "subs_http")]
     {
         // 直连 127.0.0.1，CIDR 允许 127.0.0.0/8
-        std::env::set_var("SB_SUBS_PRIVATE_ALLOWLIST", "127.0.0.0/8");
+        let _env = subs_env_guard(&[("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.0/8"))]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -245,11 +365,12 @@ async fn subs_allowlist_cidr_pass() {
         });
         let url = format!("http://127.0.0.1:{}/ok", port);
         let r = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(r.is_ok());
+        let _body = expect_ok(r);
     }
 } // === Package A: Observability Enhancement Tests ===
 
 #[tokio::test]
+#[serial]
 async fn metrics_endpoint_prometheus_format() {
     #[cfg(feature = "observe")]
     {
@@ -273,6 +394,7 @@ async fn metrics_endpoint_prometheus_format() {
 }
 
 #[tokio::test]
+#[serial]
 async fn security_metrics_error_ringbuffer() {
     #[cfg(feature = "subs_http")]
     {
@@ -300,11 +422,15 @@ async fn security_metrics_error_ringbuffer() {
 // === Package B: Traffic Governance Tests ===
 
 #[tokio::test]
+#[serial]
 async fn subs_rate_limiting_concurrency() {
     #[cfg(feature = "subs_http")]
     {
-        std::env::set_var("SB_SUBS_MAX_CONCURRENCY", "2");
-        std::env::set_var("SB_SUBS_RPS", "10");
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MAX_CONCURRENCY", Some("2")),
+            ("SB_SUBS_RPS", Some("10")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
 
         // Create a slow server
         let port = 19120u16;
@@ -345,7 +471,10 @@ async fn subs_rate_limiting_concurrency() {
         let elapsed = start.elapsed();
 
         // With concurrency limit of 2, requests should be serialized
-        assert!(elapsed > Duration::from_millis(800)); // At least 2 batches of 500ms each
+        assert!(
+            elapsed > Duration::from_millis(800),
+            "elapsed {elapsed:?}, results {results:?}"
+        ); // At least 2 batches of 500ms each
 
         let successes = results.iter().filter(|r| r.as_ref().is_ok()).count();
         assert!(successes >= 2); // At least some should succeed
@@ -353,9 +482,18 @@ async fn subs_rate_limiting_concurrency() {
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_mime_denylist() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            (
+                "SB_SUBS_MIME_DENY",
+                Some("application/octet-stream,application/x-executable"),
+            ),
+            ("SB_SUBS_MIME_ALLOW", None),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -377,29 +515,22 @@ async fn subs_mime_denylist() {
             }
         });
 
-        // Set up denylist
-        std::env::set_var(
-            "SB_SUBS_MIME_DENY",
-            "application/octet-stream,application/x-executable",
-        );
-        std::env::remove_var("SB_SUBS_MIME_ALLOW"); // Clear allowlist
-
         let url = format!("http://127.0.0.1:{}/malicious", port);
         let result = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-
-        assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("content-type denied"));
+        expect_err_contains(result, "content-type denied");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn subs_mime_denylist_overrides_allowlist() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MIME_ALLOW", Some("text/javascript,text/plain")),
+            ("SB_SUBS_MIME_DENY", Some("text/javascript")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -421,25 +552,16 @@ async fn subs_mime_denylist_overrides_allowlist() {
             }
         });
 
-        // Set both allowlist and denylist - denylist should take precedence
-        std::env::set_var("SB_SUBS_MIME_ALLOW", "text/javascript,text/plain");
-        std::env::set_var("SB_SUBS_MIME_DENY", "text/javascript");
-
         let url = format!("http://127.0.0.1:{}/blocked", port);
         let result = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-
-        assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("content-type denied"));
+        expect_err_contains(result, "content-type denied");
     }
 }
 
 // === Package C: Stability & Coverage Tests ===
 
 #[tokio::test]
+#[serial]
 async fn idna_normalization_punycode() {
     #[cfg(feature = "subs_http")]
     {
@@ -455,6 +577,7 @@ async fn idna_normalization_punycode() {
 }
 
 #[tokio::test]
+#[serial]
 async fn idna_normalization_trailing_dot() {
     #[cfg(feature = "subs_http")]
     {
@@ -471,6 +594,7 @@ async fn idna_normalization_trailing_dot() {
 }
 
 #[tokio::test]
+#[serial]
 async fn idna_invalid_domain_rejection() {
     #[cfg(feature = "subs_http")]
     {
@@ -491,23 +615,23 @@ async fn idna_invalid_domain_rejection() {
 }
 
 #[tokio::test]
+#[serial]
 async fn comprehensive_security_integration() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MAX_CONCURRENCY", Some("3")),
+            ("SB_SUBS_RPS", Some("5")),
+            ("SB_SUBS_MAX_BYTES", Some("1024")),
+            ("SB_SUBS_TIMEOUT_MS", Some("2000")),
+            ("SB_SUBS_MIME_ALLOW", Some("text/plain,application/json")),
+            ("SB_SUBS_MIME_DENY", Some("text/javascript")),
+        ]);
         // Integration test combining all security features
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
         };
-
-        // Set up comprehensive security config
-        std::env::set_var("SB_SUBS_MAX_CONCURRENCY", "3");
-        std::env::set_var("SB_SUBS_RPS", "5");
-        std::env::set_var("SB_SUBS_MAX_BYTES", "1024");
-        std::env::set_var("SB_SUBS_TIMEOUT_MS", "2000");
-        std::env::set_var("SB_SUBS_MIME_ALLOW", "text/plain,application/json");
-        std::env::set_var("SB_SUBS_MIME_DENY", "text/javascript");
-        std::env::remove_var("SB_SUBS_PRIVATE_ALLOWLIST");
 
         let port = 19123u16;
         let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
@@ -532,8 +656,7 @@ async fn comprehensive_security_integration() {
 
         // This should fail due to private IP blocking
         let result = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("private"));
+        expect_err_contains(result, "private");
 
         // Verify metrics were updated
         let snapshot = app::admin_debug::security_metrics::snapshot();
@@ -545,17 +668,19 @@ async fn comprehensive_security_integration() {
 // === Package D: New Feature Tests (Cache, Circuit Breaker, Auth) ===
 
 #[tokio::test]
+#[serial]
 async fn subs_cache_etag_flow() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_CACHE_CAP", Some("8")),
+            ("SB_SUBS_CACHE_TTL_MS", Some("60000")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
         };
-
-        std::env::set_var("SB_SUBS_CACHE_CAP", "8");
-        std::env::set_var("SB_SUBS_CACHE_TTL_MS", "60000");
-        std::env::set_var("SB_SUBS_PRIVATE_ALLOWLIST", "127.0.0.1");
 
         let port = 19130u16;
 
@@ -577,8 +702,8 @@ async fn subs_cache_etag_flow() {
 
         let url = format!("http://127.0.0.1:{}/cached", port);
         let result1 = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(result1.is_ok());
-        assert_eq!(result1.unwrap(), "cached content");
+        let body1 = expect_ok(result1);
+        assert_eq!(body1, "cached content");
 
         // Second request - server returns 304 Not Modified
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -591,7 +716,8 @@ async fn subs_cache_etag_flow() {
 
                 // Verify If-None-Match header was sent
                 let request = String::from_utf8_lossy(&buf);
-                assert!(request.contains("If-None-Match"));
+                let request_lower = request.to_ascii_lowercase();
+                assert!(request_lower.contains("if-none-match"), "request: {request}");
 
                 let response = "HTTP/1.1 304 Not Modified\r\nContent-Length: 0\r\n\r\n";
                 let _ = stream.write_all(response.as_bytes()).await;
@@ -599,23 +725,25 @@ async fn subs_cache_etag_flow() {
         });
 
         let result2 = app::admin_debug::endpoints::subs::fetch_with_limits(&url).await;
-        assert!(result2.is_ok());
-        assert_eq!(result2.unwrap(), "cached content"); // Should return cached content
+        let body2 = expect_ok(result2);
+        assert_eq!(body2, "cached content"); // Should return cached content
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn circuit_breaker_trips_and_blocks() {
     #[cfg(feature = "subs_http")]
     {
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_BR_FAILS", Some("3")),
+            ("SB_SUBS_BR_OPEN_MS", Some("3000")),
+            ("SB_SUBS_PRIVATE_ALLOWLIST", Some("127.0.0.1")),
+        ]);
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
         };
-
-        std::env::set_var("SB_SUBS_BR_FAILS", "3");
-        std::env::set_var("SB_SUBS_BR_OPEN_MS", "3000");
-        std::env::set_var("SB_SUBS_PRIVATE_ALLOWLIST", "127.0.0.1");
 
         let port = 19131u16;
         let listener = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
@@ -654,11 +782,14 @@ async fn circuit_breaker_trips_and_blocks() {
 }
 
 #[tokio::test]
+#[serial]
 async fn admin_auth_bearer_token() {
     #[cfg(feature = "admin_debug")]
     {
-        std::env::set_var("SB_ADMIN_TOKEN", "test-secret-token");
-        std::env::remove_var("SB_ADMIN_NO_AUTH");
+        let _env = admin_env_guard(&[
+            ("SB_ADMIN_TOKEN", Some("test-secret-token")),
+            ("SB_ADMIN_NO_AUTH", None),
+        ]);
 
         let mut headers = std::collections::HashMap::new();
 
@@ -682,15 +813,18 @@ async fn admin_auth_bearer_token() {
         let result3 = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(!result3);
 
-        std::env::remove_var("SB_ADMIN_TOKEN");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn admin_auth_disabled() {
     #[cfg(feature = "admin_debug")]
     {
-        std::env::set_var("SB_ADMIN_NO_AUTH", "1");
+        let _env = admin_env_guard(&[
+            ("SB_ADMIN_NO_AUTH", Some("1")),
+            ("SB_ADMIN_TOKEN", None),
+        ]);
 
         let headers = std::collections::HashMap::new();
 
@@ -698,17 +832,19 @@ async fn admin_auth_disabled() {
         let result = app::admin_debug::http_server::check_auth(&headers, "/__health");
         assert!(result);
 
-        std::env::remove_var("SB_ADMIN_NO_AUTH");
     }
 }
 
 #[tokio::test]
+#[serial]
 async fn config_hot_reload() {
     #[cfg(feature = "subs_http")]
     {
         // Set initial config
-        std::env::set_var("SB_SUBS_MAX_REDIRECTS", "3");
-        std::env::set_var("SB_SUBS_TIMEOUT_MS", "5000");
+        let _env = subs_env_guard(&[
+            ("SB_SUBS_MAX_REDIRECTS", Some("3")),
+            ("SB_SUBS_TIMEOUT_MS", Some("5000")),
+        ]);
 
         let config1 = app::admin_debug::reloadable::get();
         assert_eq!(config1.max_redirects, 3);
@@ -726,8 +862,5 @@ async fn config_hot_reload() {
         assert_eq!(config2.max_redirects, 10);
         assert_eq!(config2.timeout_ms, 8000);
 
-        // Cleanup
-        std::env::remove_var("SB_SUBS_MAX_REDIRECTS");
-        std::env::remove_var("SB_SUBS_TIMEOUT_MS");
     }
 }

@@ -15,8 +15,8 @@ use once_cell::sync::Lazy;
 
 use crate::geoip::lookup_with_metrics_decision;
 use crate::router::{
-    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip, runtime_override_udp,
-    shared_index, RouteTarget, RouterIndex,
+    normalize_host, router_index_decide_exact_suffix, router_index_decide_ip, runtime_override_http,
+    runtime_override_udp, shared_index, RouteTarget, RouterIndex,
 };
 
 type UdpRulesCacheEntry = Option<(String, Arc<RouterIndex>)>;
@@ -952,9 +952,131 @@ impl RouterHandle {
 
     /// Async TCP decision
     pub async fn decide_tcp_async(&self, host: &str) -> String {
-        // For now, mostly identical to decide_udp_async but could handle port if host has it
-        // TODO: Parse port from host if present and use it for port rules
-        self.decide_udp_async(host).await
+        let (host_raw, port_opt) = if let Some((h, p)) = host.rsplit_once(':') {
+            (h, p.parse::<u16>().ok())
+        } else {
+            (host, None)
+        };
+
+        let started = Instant::now();
+        let _budget = std::env::var("SB_ROUTER_DECIDE_BUDGET_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(100);
+        let _idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
+        let host_norm: String = normalize_host(host_raw);
+        let ip_opt = host_norm.parse::<IpAddr>().ok();
+
+        // FakeIP: if enabled and the target is a FakeIP, prefer routing by original domain first,
+        // then fall back to routing by the FakeIP address range.
+        let fake_domain_norm: Option<String> = ip_opt.and_then(|ip| {
+            if crate::dns::fakeip::enabled() && crate::dns::fakeip::is_fake_ip(&ip) {
+                crate::dns::fakeip::to_domain(&ip).map(|d| normalize_host(&d))
+            } else {
+                None
+            }
+        });
+        let cache_key = if let Some(port) = port_opt {
+            format!("tcp|{}|{}", host_norm, port)
+        } else {
+            format!("tcp|{}", host_norm)
+        };
+
+        if let Some(domain) = fake_domain_norm.as_deref() {
+            if let Some((d, _tag)) = runtime_override_http(domain, port_opt) {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("router_decide_reason_total", "kind"=>_tag).increment(1);
+                #[cfg(feature = "metrics")]
+                metrics::histogram!("router_decide_latency_ms_bucket")
+                    .record(started.elapsed().as_millis() as f64);
+                return d.to_string();
+            }
+        }
+        if let Some((d, _tag)) = runtime_override_http(&host_norm, port_opt) {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("router_decide_reason_total", "kind"=>_tag).increment(1);
+            #[cfg(feature = "metrics")]
+            metrics::histogram!("router_decide_latency_ms_bucket")
+                .record(started.elapsed().as_millis() as f64);
+            return d.to_string();
+        }
+        if let Some(dec) = self.cache_try_get(&cache_key) {
+            #[cfg(feature = "metrics")]
+            metrics::histogram!("router_decide_latency_ms_bucket")
+                .record(started.elapsed().as_millis() as f64);
+            #[cfg(feature = "metrics")]
+            metrics::counter!("router_decide_reason_total", "kind"=>"cache").increment(1);
+            return dec.to_string();
+        }
+
+        let host_for_domain = fake_domain_norm.as_deref().unwrap_or(&host_norm);
+        if let Some(d) = super::router_index_decide_exact_suffix(&_idx, host_for_domain) {
+            let d_str = d.to_string();
+            self.cache_put(&cache_key, &d_str);
+            return d_str;
+        }
+
+        #[cfg(feature = "router_keyword")]
+        if let Some(d) = super::router_index_decide_keyword(&_idx, host_for_domain) {
+            let d_str = d.to_string();
+            self.cache_put(&cache_key, &d_str);
+            return d_str;
+        }
+
+        if let Some(ip) = ip_opt {
+            if let Some(d) = super::runtime_override_ip(ip) {
+                let d_str = d.to_string();
+                self.cache_put(&cache_key, &d_str);
+                return d_str;
+            }
+            if let Some(d) = super::router_index_decide_ip(&_idx, ip) {
+                let d_str = d.to_string();
+                self.cache_put(&cache_key, &d_str);
+                return d_str;
+            }
+        }
+
+        let try_dns = fake_domain_norm.is_none()
+            && std::env::var("SB_ROUTER_DNS")
+                .ok()
+                .map(|v| v == "1")
+                .unwrap_or(false);
+        if try_dns {
+            let timeout_ms = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(300);
+            if let DnsResult::Ok(ips) = self
+                .resolve_with_fallback(host_for_domain, timeout_ms)
+                .await
+            {
+                for ip in ips {
+                    if let Some(d) = super::runtime_override_ip(ip) {
+                        let d_str = d.to_string();
+                        self.cache_put(&cache_key, &d_str);
+                        return d_str;
+                    }
+                    if let Some(d) = super::router_index_decide_ip(&_idx, ip) {
+                        let d_str = d.to_string();
+                        self.cache_put(&cache_key, &d_str);
+                        return d_str;
+                    }
+                }
+            }
+        }
+
+        if let Some(d) = super::router_index_decide_transport_port(&_idx, port_opt, Some("tcp")) {
+            let d_str = d.to_string();
+            self.cache_put(&cache_key, &d_str);
+            return d_str;
+        }
+
+        let d_str = _idx.default.to_string();
+        self.cache_put(&cache_key, &d_str);
+        #[cfg(feature = "metrics")]
+        metrics::histogram!("router_decide_latency_ms_bucket")
+            .record(started.elapsed().as_millis() as f64);
+        d_str
     }
 
     /// 旧接口适配：根据上下文进行路由并返回 RouteTarget（不做 DNS，仅 exact/suffix/IP/default）

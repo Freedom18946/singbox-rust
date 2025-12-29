@@ -39,10 +39,9 @@ use sb_tls::reality::server::RealityConnection;
 #[cfg(feature = "tls_reality")]
 #[allow(unused_imports)]
 use sb_tls::RealityAcceptor;
-#[cfg(feature = "tls_reality")]
-use sb_tls::reality::server::RealityConnection;
+use crate::transport_config::InboundStream;
 
-type StreamBox = Box<dyn tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send>;
+type StreamBox = Box<dyn InboundStream>;
 
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
@@ -140,7 +139,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 
     // Load standard TLS config if not using REALITY
     // 加载标准 TLS 配置 (如果不使用 REALITY)
-    let tls_acceptor = {
+    let tls_acceptor: Option<Arc<tokio_rustls::TlsAcceptor>> = {
         #[cfg(feature = "tls_reality")]
         {
             if cfg.reality.is_none() {
@@ -182,7 +181,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                  // debug!("vless: accept-loop heartbeat");
              }
              r = listener.accept() => {
-                 let (mut stream, peer) = match r {
+                 let (stream, peer) = match r {
                      Ok(v) => v,
                      Err(e) => {
                          warn!(error=%e, "vless: accept error");
@@ -201,9 +200,9 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                      // Prepare TLS Layer (REALITY or None)
                      let stream_res = {
                          #[cfg(feature = "tls_reality")]
-                         { prepare_tls_layer(stream, reality_acceptor_clone.as_deref(), tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                         { prepare_tls_layer(stream, reality_acceptor_clone.as_deref(), tls_acceptor_clone.as_deref(), &cfg_clone.fallback_for_alpn, peer).await }
                          #[cfg(not(feature = "tls_reality"))]
-                         { prepare_tls_layer(stream, tls_acceptor_clone.as_ref(), &cfg_clone.fallback_for_alpn, peer).await }
+                         { prepare_tls_layer(stream, tls_acceptor_clone.as_deref(), &cfg_clone.fallback_for_alpn, peer).await }
                      };
 
                      match stream_res {
@@ -264,7 +263,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
 }
 
 async fn prepare_tls_layer(
-    stream: tokio::net::TcpStream,
+    stream: StreamBox,
     #[cfg(feature = "tls_reality")]
     reality: Option<&RealityAcceptor>,
     tls: Option<&tokio_rustls::TlsAcceptor>,
@@ -322,6 +321,7 @@ async fn prepare_tls_layer(
         // No TLS
         return Ok(Some(Box::new(stream)));
     }
+}
 
 async fn handle_fallback(
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),

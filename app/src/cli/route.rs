@@ -1,13 +1,11 @@
-use crate::cli::{output, Format};
+use crate::cli::{output, Format, GlobalArgs};
+use crate::config_loader;
 use anyhow::{Context, Result};
 use clap::Parser;
 use sb_core::routing::ExplainEngine;
 
 #[derive(Parser, Debug, Clone)]
 pub struct RouteArgs {
-    /// Path to config file
-    #[arg(short = 'c', long = "config")]
-    pub config: String,
     /// Destination host:port or ip
     #[arg(long = "dest")]
     pub dest: String,
@@ -25,16 +23,11 @@ pub struct RouteArgs {
     pub with_trace: bool,
 }
 
-pub fn run(args: RouteArgs) -> Result<()> {
-    // Load and parse config file (support both JSON and YAML)
-    let cfg = if args.config.ends_with(".yaml") || args.config.ends_with(".yml") {
-        let data = std::fs::read_to_string(&args.config)
-            .with_context(|| format!("read config {}", &args.config))?;
-        serde_yaml::from_str::<sb_config::Config>(&data).with_context(|| "parse config as yaml")?
-    } else {
-        sb_config::Config::load(&args.config)
-            .with_context(|| format!("load config from {}", &args.config))?
-    };
+pub fn run(global: &GlobalArgs, args: RouteArgs) -> Result<()> {
+    let entries =
+        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let cfg = config_loader::load_config(&entries)
+        .with_context(|| "load config for route explain")?;
 
     if args.explain {
         // Use real ExplainEngine instead of stub

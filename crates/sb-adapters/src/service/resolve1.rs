@@ -6,16 +6,18 @@
 //! Mirrors Go's `service/resolved/resolve1.go`.
 
 use std::sync::Arc;
+#[cfg(all(target_os = "linux", feature = "service_resolved"))]
 use tracing::{debug, info, warn};
+#[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
+use tracing::warn;
 
-use sb_core::dns::transport::resolved::{
-    Resolve1ManagerState, TransportLink, LinkDNS, LinkDNSEx, LinkDomainConfig,
-};
+use sb_core::dns::transport::resolved::Resolve1ManagerState;
 
 // D-Bus interface implementation (zbus)
 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
 pub mod dbus_server {
     use super::*;
+    use sb_core::dns::transport::resolved::{LinkDNS, LinkDNSEx, LinkDomainConfig};
     use zbus::{interface, Connection, Result as ZbusResult};
 
     /// D-Bus interface for org.freedesktop.resolve1.Manager.
@@ -315,7 +317,8 @@ pub mod dbus_server {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Resolve1ManagerState;
+    use sb_core::dns::transport::resolved::{LinkDNS, TransportLink};
     use std::net::IpAddr;
 
     #[test]

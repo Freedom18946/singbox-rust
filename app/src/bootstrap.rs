@@ -48,6 +48,53 @@ pub struct Runtime {
     #[cfg(feature = "router")]
     pub router: Arc<sb_core::router::engine::RouterHandle>,
     pub outbounds: Arc<OutboundRegistryHandle>,
+    pub inbounds: Vec<app::inbound_starter::InboundHandle>,
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+    services: Vec<ServiceHandle>,
+}
+
+#[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+struct ServiceHandle {
+    #[allow(dead_code)]
+    name: &'static str,
+    shutdown: tokio::sync::oneshot::Sender<()>,
+    join: tokio::task::JoinHandle<()>,
+}
+
+#[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+impl ServiceHandle {
+    async fn shutdown(self) {
+        let _ = self.shutdown.send(());
+        let _ = self.join.await;
+    }
+}
+
+impl Runtime {
+    pub async fn shutdown(self, timeout: Duration) -> Result<()> {
+        let Runtime {
+            inbounds,
+            #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+            services,
+            ..
+        } = self;
+
+        let shutdown = async {
+            #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+            {
+                for handle in services {
+                    handle.shutdown().await;
+                }
+            }
+            for handle in inbounds {
+                handle.shutdown().await;
+            }
+        };
+
+        tokio::time::timeout(timeout, shutdown)
+            .await
+            .map_err(|_| anyhow!("shutdown timeout after {:?}", timeout))?;
+        Ok(())
+    }
 }
 
 /// Initialize proxy registry from environment variables.
@@ -751,7 +798,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     // 2) 起入站（HTTP / SOCKS / TUN）：每个入站一个 stop 通道；当前不做热更新/回收
     // 2) Start Inbounds (HTTP / SOCKS / TUN): One stop channel per inbound; currently no hot-reload/reclaim
-    start_inbounds_from_ir(
+    let inbound_handles = start_inbounds_from_ir(
         &cfg_ir.inbounds,
         #[cfg(feature = "router")]
         rh.clone(),
@@ -761,18 +808,22 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
 
     // 3) Start experimental services if configured
     // 3) 如果配置了实验性服务则启动
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+    let mut service_handles: Vec<ServiceHandle> = Vec::new();
     #[cfg(feature = "clash_api")]
     if let Some(ref exp) = cfg_ir.experimental {
         if let Some(ref clash) = exp.clash_api {
             if let Some(ref listen) = clash.external_controller {
-                start_clash_api_server(
+                if let Some(handle) = start_clash_api_server(
                     listen.clone(),
                     clash.secret.clone(),
                     #[cfg(feature = "router")]
                     rh.clone(),
                     oh.clone(),
                     cfg_ir.clone(),
-                );
+                ) {
+                    service_handles.push(handle);
+                }
             }
         }
     }
@@ -781,7 +832,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     if let Some(ref exp) = cfg_ir.experimental {
         if let Some(ref v2ray) = exp.v2ray_api {
             if let Some(ref listen) = v2ray.listen {
-                start_v2ray_api_server(listen.clone());
+                if let Some(handle) = start_v2ray_api_server(listen.clone()) {
+                    service_handles.push(handle);
+                }
             }
         }
     }
@@ -790,6 +843,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         #[cfg(feature = "router")]
         router: rh,
         outbounds: oh,
+        inbounds: inbound_handles,
+        #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+        services: service_handles,
     })
 }
 
@@ -800,14 +856,14 @@ async fn start_inbounds_from_ir(
     inbounds: &[sb_config::ir::InboundIR],
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
-) {
+) -> Vec<app::inbound_starter::InboundHandle> {
     app::inbound_starter::start_inbounds_from_ir(
         inbounds,
         #[cfg(feature = "router")]
         router,
         outbounds,
     )
-    .await;
+    .await
 }
 
 /// Start Clash API server in background task.
@@ -819,14 +875,14 @@ fn start_clash_api_server(
     #[cfg(feature = "router")] router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
     config_ir: Arc<sb_config::ir::ConfigIR>,
-) {
+) -> Option<ServiceHandle> {
     use std::net::SocketAddr;
 
     let listen_addr: SocketAddr = match listen.parse() {
         Ok(addr) => addr,
         Err(e) => {
             warn!(error = %e, listen = %listen, "Invalid Clash API listen address, skipping");
-            return;
+            return None;
         }
     };
 
@@ -848,17 +904,24 @@ fn start_clash_api_server(
                 .with_config_ir(config_ir);
 
             #[cfg(feature = "router")]
-            let server = server.with_router((*router).clone());
+            let server = server.with_router(router.clone());
 
             info!(listen = %listen_addr, "Starting Clash API server");
-            tokio::spawn(async move {
-                if let Err(e) = server.start().await {
+            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+            let join = tokio::spawn(async move {
+                if let Err(e) = server.start_with_shutdown(shutdown_rx).await {
                     error!(error = %e, "Clash API server error");
                 }
             });
+            Some(ServiceHandle {
+                name: "clash_api",
+                shutdown: shutdown_tx,
+                join,
+            })
         }
         Err(e) => {
             error!(error = %e, "Failed to create Clash API server");
+            None
         }
     }
 }
@@ -866,14 +929,14 @@ fn start_clash_api_server(
 /// Start `V2Ray` API server in background task.
 /// 在后台任务中启动 `V2Ray` API 服务器。
 #[cfg(feature = "v2ray_api")]
-fn start_v2ray_api_server(listen: String) {
+fn start_v2ray_api_server(listen: String) -> Option<ServiceHandle> {
     use std::net::SocketAddr;
 
     let listen_addr: SocketAddr = match listen.parse() {
         Ok(addr) => addr,
         Err(e) => {
             warn!(error = %e, listen = %listen, "Invalid V2Ray API listen address, skipping");
-            return;
+            return None;
         }
     };
 
@@ -891,14 +954,21 @@ fn start_v2ray_api_server(listen: String) {
     match sb_api::v2ray::SimpleV2RayApiServer::new(config) {
         Ok(server) => {
             info!(listen = %listen_addr, "Starting V2Ray API server");
-            tokio::spawn(async move {
-                if let Err(e) = server.start().await {
+            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+            let join = tokio::spawn(async move {
+                if let Err(e) = server.start_with_shutdown(shutdown_rx).await {
                     error!(error = %e, "V2Ray API server error");
                 }
             });
+            Some(ServiceHandle {
+                name: "v2ray_api",
+                shutdown: shutdown_tx,
+                join,
+            })
         }
         Err(e) => {
             error!(error = %e, "Failed to create V2Ray API server");
+            None
         }
     }
 }

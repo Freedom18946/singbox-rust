@@ -1,4 +1,5 @@
-use crate::cli::{output, Format};
+use crate::cli::{output, Format, GlobalArgs};
+use crate::config_loader;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
@@ -22,9 +23,6 @@ pub enum DnsCommands {
 pub struct QueryArgs {
     /// Domain name to query
     pub domain: String,
-    /// Path to config file
-    #[arg(short = 'c', long = "config")]
-    pub config: String,
     /// Output format
     #[arg(long = "format", value_enum, default_value_t = Format::Human)]
     pub format: Format,
@@ -35,9 +33,6 @@ pub struct QueryArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct CacheArgs {
-    /// Path to config file
-    #[arg(short = 'c', long = "config")]
-    pub config: String,
     /// Output format
     #[arg(long = "format", value_enum, default_value_t = Format::Human)]
     pub format: Format,
@@ -45,26 +40,24 @@ pub struct CacheArgs {
 
 #[derive(Parser, Debug, Clone)]
 pub struct UpstreamArgs {
-    /// Path to config file  
-    #[arg(short = 'c', long = "config")]
-    pub config: String,
     /// Output format
     #[arg(long = "format", value_enum, default_value_t = Format::Human)]
     pub format: Format,
 }
 
-pub fn run(args: DnsArgs) -> Result<()> {
+pub fn run(global: &GlobalArgs, args: DnsArgs) -> Result<()> {
+    let entries =
+        config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let cfg = config_loader::load_config(&entries)
+        .with_context(|| "load config for DNS tools")?;
     match args.command {
-        DnsCommands::Query(query_args) => run_query(query_args),
-        DnsCommands::Cache(cache_args) => run_cache(cache_args),
-        DnsCommands::Upstream(upstream_args) => run_upstream(upstream_args),
+        DnsCommands::Query(query_args) => run_query(&cfg, query_args),
+        DnsCommands::Cache(cache_args) => run_cache(&cfg, cache_args),
+        DnsCommands::Upstream(upstream_args) => run_upstream(&cfg, upstream_args),
     }
 }
 
-fn run_query(args: QueryArgs) -> Result<()> {
-    // Load config
-    let cfg = load_config(&args.config)?;
-
+fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
     // Build DNS resolver from config IR
     let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
 
@@ -110,7 +103,7 @@ fn run_query(args: QueryArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_cache(_args: CacheArgs) -> Result<()> {
+fn run_cache(_cfg: &sb_config::Config, _args: CacheArgs) -> Result<()> {
     // TODO: Implement cache statistics
     // For now, return stub response
     let stats = serde_json::json!({
@@ -126,10 +119,7 @@ fn run_cache(_args: CacheArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_upstream(args: UpstreamArgs) -> Result<()> {
-    // Load config
-    let cfg = load_config(&args.config)?;
-
+fn run_upstream(cfg: &sb_config::Config, args: UpstreamArgs) -> Result<()> {
     // Get upstream info from DNS config IR
     let upstream_names: Vec<String> = if let Some(dns) = &cfg.ir().dns {
         dns.servers
@@ -153,14 +143,4 @@ fn run_upstream(args: UpstreamArgs) -> Result<()> {
     );
 
     Ok(())
-}
-
-/// Load config from file (supports JSON and YAML)
-fn load_config(path: &str) -> Result<sb_config::Config> {
-    if path.ends_with(".yaml") || path.ends_with(".yml") {
-        let data = std::fs::read_to_string(path).with_context(|| format!("read config {path}"))?;
-        serde_yaml::from_str::<sb_config::Config>(&data).with_context(|| "parse config as yaml")
-    } else {
-        sb_config::Config::load(path).with_context(|| format!("load config from {path}"))
-    }
 }

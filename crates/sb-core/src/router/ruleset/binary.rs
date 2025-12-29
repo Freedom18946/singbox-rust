@@ -327,30 +327,8 @@ fn parse_rule_item(
             rule.wifi_bssid.push(bssid);
         }
         ITEM_NETWORK_TYPE => {
-            // Go reads/writes Uint8 for NetworkType?
-            // Go Code: writeRuleItemUint8(..., rule.NetworkType) where NetworkType is []uint8?
-            // Wait, looking at Go `rule_types.go` (inferred): NetworkType is []string or []int?
-            // Go cat output: `err = writeRuleItemUint8(writer, ruleItemNetworkType, rule.NetworkType)`
-            // and `readRuleItemUint8`.
-            // So NetworkType is stored as Uint8. 
-            // In Rust `DefaultRule`, I defined it as Vec<String>.
-            // I should convert Uint8 to String (e.g. "wifi", "cellular") or store as u8.
-            // Sing-Box docs say network_type is "wifi", "cellular", etc.
-            // Mapping needed?
-            // Go `constant` likely defines the mapping.
-            // For now, I'll read Vec<u8> and TODO the mapping to String.
-            // Or better: Change `DefaultRule` to Vec<u8> or map it here.
-            // Let's read as u8 and format to string just to hold it?
-            // "0" -> ???
-            // I'll stick to skipping or strict reading.
             let val = read_u8(cursor)?;
-            let network_type = match val {
-                1 => "wifi",
-                2 => "cellular",
-                3 => "ethernet",
-                _ => "unknown",
-            };
-            rule.network_type.push(network_type.to_string());
+            rule.network_type.push(interface_type_to_string(val));
         }
         ITEM_NETWORK_IS_EXPENSIVE => {
             // Go: binary.Write(..., ruleItemNetworkIsExpensive) (no value payload? just the tag implies true?)
@@ -718,6 +696,27 @@ fn read_string(cursor: &mut Cursor<Vec<u8>>) -> SbResult<String> {
     })
 }
 
+fn interface_type_to_string(value: u8) -> String {
+    match value {
+        0 => "wifi".to_string(),
+        1 => "cellular".to_string(),
+        2 => "ethernet".to_string(),
+        3 => "other".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn interface_type_from_string(value: &str) -> Option<u8> {
+    let lower = value.trim().to_ascii_lowercase();
+    match lower.as_str() {
+        "wifi" => Some(0),
+        "cellular" => Some(1),
+        "ethernet" => Some(2),
+        "other" => Some(3),
+        _ => lower.parse::<u8>().ok(),
+    }
+}
+
 // ----------------------------
 // Binary writer (SRS compiler)
 // ----------------------------
@@ -779,9 +778,13 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
             count += r
                 .domain
                 .iter()
-                .filter(|d| matches!(d, super::DomainRule::Exact(_)))
+                .filter(|d| {
+                    matches!(
+                        d,
+                        super::DomainRule::Exact(_) | super::DomainRule::Suffix(_)
+                    )
+                })
                 .count() as u64;
-            count += r.domain_suffix.len() as u64;
             count += r.domain_keyword.len() as u64;
             count += r.domain_regex.len() as u64;
             count += r.ip_cidr.len() as u64;
@@ -792,6 +795,19 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
             count += r.process_name.len() as u64;
             count += r.process_path.len() as u64;
             count += r.process_path_regex.len() as u64;
+            count += r.package_name.len() as u64;
+            count += r.wifi_ssid.len() as u64;
+            count += r.wifi_bssid.len() as u64;
+            count += r.query_type.len() as u64;
+            count += r.source_port.len() as u64;
+            count += r.source_port_range.len() as u64;
+            count += r.network_type.len() as u64;
+            if r.network_is_expensive {
+                count += 1;
+            }
+            if r.network_is_constrained {
+                count += 1;
+            }
             write_varint(buf, count);
 
             // Emit items in deterministic order
@@ -887,20 +903,27 @@ fn write_rule(buf: &mut Vec<u8>, rule: &Rule) -> SbResult<()> {
                 write_u16(buf, *a);
                 write_u16(buf, *b);
             }
+            for nt in &r.network_type {
+                let Some(code) = interface_type_from_string(nt) else {
+                    return Err(SbError::Config {
+                        code: crate::error::IssueCode::InvalidType,
+                        ptr: "/rule_set/binary/network_type".to_string(),
+                        msg: format!("unknown network_type: {}", nt),
+                        hint: Some(
+                            "expected wifi, cellular, ethernet, other, or a numeric interface type"
+                                .to_string(),
+                        ),
+                    });
+                };
+                buf.push(ITEM_NETWORK_TYPE);
+                buf.push(code);
+            }
             if r.network_is_expensive {
                 buf.push(ITEM_NETWORK_IS_EXPENSIVE);
             }
             if r.network_is_constrained {
                 buf.push(ITEM_NETWORK_IS_CONSTRAINED);
             }
-            // network_type (TODO: mapping)
-            /*
-            for _ in &r.network_type {
-               // buf.push(ITEM_NETWORK_TYPE);
-               // write_u8(buf, 0); 
-            }
-            */
-            
             buf.push(255); // Final byte 0xFF
         }
         Rule::Logical(r) => {

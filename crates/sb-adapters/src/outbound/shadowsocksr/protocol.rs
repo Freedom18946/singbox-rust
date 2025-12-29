@@ -84,6 +84,7 @@ impl AuthSha1V4Protocol {
         }
     }
 
+    #[allow(dead_code)]
     fn adler32(data: &[u8]) -> u32 {
         let mut a = 1u32;
         let mut b = 0u32;

@@ -3,9 +3,6 @@ use std::path::PathBuf;
 
 #[derive(Args, Debug)]
 pub struct CheckArgs {
-    /// Config file path (YAML/JSON). Use '-' for stdin.
-    #[arg(short = 'c', long = "config")]
-    pub config: String,
     /// Output format: human | json | sarif
     #[arg(long, default_value = "text", value_parser = ["text", "json", "sarif"])]
     pub format: String,

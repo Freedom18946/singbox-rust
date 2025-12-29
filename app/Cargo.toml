@@ -119,6 +119,7 @@ adapters = [
     "sb-adapters/tun",
     "sb-adapters/mixed",
     "sb-adapters/router",
+    "tls_reality",
     "service_resolved",
     "service_ssmapi",
     "service_derp",

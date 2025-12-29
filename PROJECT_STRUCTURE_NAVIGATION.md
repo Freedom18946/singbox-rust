@@ -8,7 +8,7 @@
 > 3. 📋 Plan development paths based on this document
 >
 > **Update Responsibility**: Any operation that modifies the project structure MUST synchronously update this document
-> **Last Updated**: November 26, 2025 (Validated against current repository structure)
+> **Last Updated**: December 28, 2025 (Validated against current repository structure)
 
 ## Project Overview
 
@@ -18,14 +18,18 @@ SingBox-Rust is a high-performance proxy server implementation designed with a m
 
 ```
 singbox-rust/
+├── 📁 .cache/           # Local cache artifacts (gitignored)
 ├── 📁 .cargo/           # Cargo configuration (build parameters, aliases, etc.)
+├── 📁 .claude/          # Local assistant artifacts (gitignored)
 ├── 📁 .e2e/             # E2E test artifacts and summaries
 ├── 📁 .github/          # GitHub Actions workflows
 ├── 📁 app/              # Main application and multi-bin CLI (feature gated)
 ├── 📁 benches/          # Benchmark workspace
 ├── 📁 benchmark_results/# Benchmark results
+├── 📁 configs/          # Local/dev configs and test configs
 ├── 📁 crates/           # Core crate modules workspace
 ├── 📁 deployment/       # Deployment configurations and scripts
+├── 📁 deployments/      # Deployment examples (Docker/K8s/Systemd)
 ├── 📁 docs/             # Documentation portal (00-.. sections)
 ├── 📁 examples/         # Examples and configurations
 ├── 📁 fuzz/             # Fuzz testing
@@ -33,22 +37,36 @@ singbox-rust/
 ├── 📁 grafana/          # Monitoring dashboards
 ├── 📁 LICENSES/         # Dependency licenses
 ├── 📁 reports/          # Reports and baselines
+│   ├── 📄 ACCEPTANCE_QC_2025-11-24.md
 │   ├── 📄 PERFORMANCE_REPORT.md
+│   ├── 📄 README.md
+│   ├── 📁 stress-tests
 │   ├── 📄 TEST_COVERAGE.md
 │   └── 📄 VERIFICATION_RECORD.md
 ├── 📁 scripts/          # CI, tools, scenario scripts
+├── 📁 target/           # Local build output (gitignored)
 ├── 📁 tests/            # Tests (Integration/E2E/Configs/Data etc.)
 ├── 📁 vendor/           # Vendor dependency overrides (e.g., tun2socks)
 ├── 📁 xtask/            # Development/Release helper tasks
 ├── 📁 xtests/           # Extended testing tools
+├── 📄 BASELINE_UPSTREAM.env  # Upstream baseline pins
 ├── 📄 Cargo.toml        # Workspace manifest
 ├── 📄 Cargo.lock        # Lock file
-├── 📄 README.md         # Project description and quick start
+├── 📄 CHANGELOG.md      # Project changelog
+├── 📄 config.yaml       # Default/local config
+├── 📄 Dockerfile        # Container build file
 ├── 📄 GO_PARITY_MATRIX.md  # Parity matrix with sing-box
+├── 📄 minimal.yaml      # Minimal config example
 ├── 📄 NEXT_STEPS.md     # Next milestones and workflow
-├── 📄 SECURITY.md       # Security instructions
 ├── 📄 PROJECT_STRUCTURE_NAVIGATION.md   # Project structure navigation (Current)
-└── 📄 Others: deny.toml, clippy.toml, rust-toolchain.toml etc.
+├── 📄 public-api-baseline.txt # Public API baseline
+├── 📄 README.md         # Project description and quick start
+├── 📄 SECURITY.md       # Security instructions
+├── 📄 smoke-test.sh     # Quick smoke test runner
+├── 📄 test_config.json  # Local test config
+├── 📄 USAGE.md          # CLI usage reference
+├── 📄 VERIFICATION_RECORD.md # Top-level verification record
+└── 📄 Others: deny.toml, clippy.toml, rust-toolchain.toml, Makefile.fuzz etc.
 ```
 
 ## Core Module Architecture (crates/)
@@ -58,6 +76,7 @@ singbox-rust/
 ```
 crates/
 ├── sb-core/            # 🔧 Core: Routing engine, DNS, NAT, Inbound/Outbound abstractions
+├── sb-common/          # 🧩 Common: Shared helpers and utilities
 ├── sb-config/          # ⚙️ Config: Parsing, Schema/IR
 ├── sb-adapters/        # 🔌 Adapters: Protocol implementations (VMess/VLESS/Trojan/SS/TUIC/Hysteria etc.)
 ├── sb-transport/       # 🚀 Transport: TCP/UDP/WS/H2/H3/Upgrade/Multiplex
@@ -80,6 +99,7 @@ crates/
 |--------|------------------|----------------|
 | **sb-core** | Core functionality and abstractions | Routing engine, DNS system, UDP NAT, Error handling |
 | **sb-config** | Configuration management | Schema validation, Config parsing, Error reporting |
+| **sb-common** | Shared utilities | Common helpers, cross-crate glue |
 | **sb-adapters** | Protocol adapters | VMess, VLESS, Hysteria v1/v2, TUIC, Trojan |
 | **sb-transport** | Transport layer | TCP/UDP transport, WebSocket, HTTP/2, Multiplex |
 | **sb-tls** | TLS infrastructure | Standard TLS, REALITY, ECH, uTLS (Planned) |
@@ -348,4 +368,4 @@ When updating, please follow this format:
 
 **⚠️ Important Reminder**: The accuracy of this document directly impacts development efficiency and code quality. Please strictly abide by the maintenance guidelines to ensure the document stays in sync with the actual project structure.
 
-*Document Version: v1.4 | Last Updated: November 26, 2025 | Last Verified: November 26, 2025*
+*Document Version: v1.5 | Last Updated: December 28, 2025 | Last Verified: December 28, 2025*

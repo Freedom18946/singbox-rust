@@ -20,7 +20,6 @@ use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 use sb_core::outbound::{selector_group::SelectorGroup, OutboundImpl};
-use std::any::Any;
 
 // ===== Constants =====
 
@@ -276,30 +275,38 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
 
     // Get proxies from outbound registry
-    if let Some(registry) = &state.outbound_registry {
+    let entries = if let Some(registry) = &state.outbound_registry {
         let reg = registry.read();
-        for key in reg.keys() {
-             if let Some(outbound) = reg.get(key) {
-                 let mut proxy = Proxy {
-                     name: key.clone(),
-                     r#type: infer_proxy_type(key, Some(outbound)),
-                     all: vec![],
-                     now: String::new(),
-                     alive: Some(true),
-                     delay: None,
-                     extra: HashMap::new(),
-                 };
+        reg.keys()
+            .filter_map(|key| reg.get(key).cloned().map(|outbound| (key.clone(), outbound)))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
-                 if let OutboundImpl::Connector(c) = outbound {
-                      if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
-                           proxy.all = group.members.iter().map(|m| m.name.clone()).collect();
-                           proxy.now = group.current_selected().await.unwrap_or_default();
-                           proxy.r#type = "Selector".to_string();
-                      }
-                 }
-                 proxies.insert(key.clone(), proxy);
-             }
+    for (key, outbound) in entries {
+        let mut proxy = Proxy {
+            name: key.clone(),
+            r#type: infer_proxy_type(&key, Some(&outbound)),
+            all: vec![],
+            now: String::new(),
+            alive: Some(true),
+            delay: None,
+            extra: HashMap::new(),
+        };
+
+        if let OutboundImpl::Connector(c) = &outbound {
+            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                proxy.all = group
+                    .get_members()
+                    .into_iter()
+                    .map(|(tag, _, _)| tag)
+                    .collect();
+                proxy.now = group.get_selected().await.unwrap_or_default();
+                proxy.r#type = "Selector".to_string();
+            }
         }
+        proxies.insert(key, proxy);
     }
 
     // Add default proxies if not present
@@ -562,7 +569,7 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
                      r#type: "DOMAIN".to_string(),
                      payload: domain.clone(),
                      proxy: proxy.clone(),
-                     order: Some(i as i32),
+                     order: Some(i as u32),
                  });
              }
              for suffix in &rule.domain_suffix {
@@ -570,7 +577,7 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
                      r#type: "DOMAIN-SUFFIX".to_string(),
                      payload: suffix.clone(),
                      proxy: proxy.clone(),
-                     order: Some(i as i32),
+                     order: Some(i as u32),
                  });
              }
              for cidr in &rule.ipcidr {
@@ -578,7 +585,7 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
                      r#type: "IP-CIDR".to_string(),
                      payload: cidr.clone(),
                      proxy: proxy.clone(),
-                     order: Some(i as i32),
+                     order: Some(i as u32),
                  });
              }
              // Fallback for complex rules
@@ -587,7 +594,7 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
                      r#type: "MATCH".to_string(),
                      payload: "".to_string(),
                      proxy: proxy.clone(),
-                     order: Some(i as i32),
+                     order: Some(i as u32),
                  });
              }
          }
@@ -1140,22 +1147,43 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
 
     let mut groups = HashMap::new();
 
-    // Get all proxies from outbound manager
-    if let Some(outbound_manager) = &state.outbound_manager {
-        let tags = outbound_manager.list_tags().await;
+    let entries = if let Some(registry) = &state.outbound_registry {
+        let reg = registry.read();
+        reg.keys()
+            .filter_map(|key| reg.get(key).cloned().map(|outbound| (key.clone(), outbound)))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
-        for tag in tags {
-            let group = json!({
-                "name": tag,
-                "type": infer_proxy_type(&tag),
-                "all": vec![tag.clone()],
-                "now": tag.clone(),
-                "hidden": false,
-                "icon": "",
-                "udp": true,
-            });
-            groups.insert(tag, group);
+    // Get all proxies from outbound registry
+    for (tag, outbound) in entries {
+        let mut all = vec![tag.clone()];
+        let mut now = tag.clone();
+        let mut proxy_type = infer_proxy_type(&tag, Some(&outbound));
+
+        if let OutboundImpl::Connector(c) = &outbound {
+            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                all = group
+                    .get_members()
+                    .into_iter()
+                    .map(|(member, _, _)| member)
+                    .collect();
+                now = group.get_selected().await.unwrap_or_default();
+                proxy_type = "Selector".to_string();
+            }
         }
+
+        let group = json!({
+            "name": tag,
+            "type": proxy_type,
+            "all": all,
+            "now": now,
+            "hidden": false,
+            "icon": "",
+            "udp": true,
+        });
+        groups.insert(tag, group);
     }
 
     // Add default groups
@@ -1203,19 +1231,38 @@ pub async fn get_meta_group(
     log::info!("Meta group '{}' requested", group_name);
 
     // Check if the group/proxy exists in outbound manager
-    if let Some(outbound_manager) = &state.outbound_manager {
-        if outbound_manager.contains(&group_name).await {
-            let group = json!({
-                "name": group_name,
-                "type": infer_proxy_type(&group_name),
-                "all": vec![group_name.clone()],
-                "now": group_name.clone(),
-                "hidden": false,
-                "icon": "",
-                "udp": true,
-            });
-            return (StatusCode::OK, Json(group)).into_response();
+    let outbound = state
+        .outbound_registry
+        .as_ref()
+        .and_then(|registry| registry.read().get(&group_name).cloned());
+
+    if let Some(outbound) = outbound {
+        let mut all = vec![group_name.clone()];
+        let mut now = group_name.clone();
+        let mut proxy_type = infer_proxy_type(&group_name, Some(&outbound));
+
+        if let OutboundImpl::Connector(c) = &outbound {
+            if let Some(group) = c.as_any().and_then(|a| a.downcast_ref::<SelectorGroup>()) {
+                all = group
+                    .get_members()
+                    .into_iter()
+                    .map(|(member, _, _)| member)
+                    .collect();
+                now = group.get_selected().await.unwrap_or_default();
+                proxy_type = "Selector".to_string();
+            }
         }
+
+        let group = json!({
+            "name": group_name,
+            "type": proxy_type,
+            "all": all,
+            "now": now,
+            "hidden": false,
+            "icon": "",
+            "udp": true,
+        });
+        return (StatusCode::OK, Json(group)).into_response();
     }
 
     // Check default groups
@@ -1280,8 +1327,8 @@ pub async fn get_meta_group_delay(
         .unwrap_or(DEFAULT_TEST_URL);
 
     // Check if group exists
-    let exists = if let Some(outbound_manager) = &state.outbound_manager {
-        outbound_manager.contains(&group_name).await
+    let exists = if let Some(registry) = &state.outbound_registry {
+        registry.read().get(&group_name).is_some()
     } else {
         group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME
     };

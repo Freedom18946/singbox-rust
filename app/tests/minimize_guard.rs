@@ -26,7 +26,7 @@ fn minimize_is_degraded_when_negation_present_text() {
         tmp.path().to_str().unwrap(),
         "--minimize-rules",
     ]);
-    cmd.assert().success().stderr(contains("MINIMIZE_SKIPPED"));
+    cmd.assert().code(1).stderr(contains("MINIMIZE_SKIPPED"));
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn minimize_is_degraded_when_negation_present_json() {
             "json",
         ])
         .assert()
-        .success()
+        .code(1)
         .get_output()
         .stdout
         .clone();

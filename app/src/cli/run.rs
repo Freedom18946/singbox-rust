@@ -16,15 +16,20 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use std::{
-    env, fs,
+    collections::HashMap,
+    fs,
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime},
 };
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::bootstrap;
+use crate::cli::GlobalArgs;
+use crate::config_loader::{self, ConfigEntry};
 #[cfg(feature = "dev-cli")]
 use crate::env_dump;
 use sb_config::ir::ConfigIR;
@@ -38,8 +43,13 @@ pub struct RunArgs {
     #[arg(long = "http", value_parser = parse_addr)]
     http_listen: Option<SocketAddr>,
 
-    #[arg(long = "config")]
-    pub config_path: Option<PathBuf>,
+    /// Subscription import path
+    #[arg(short = 'i', long = "import")]
+    import_path: Option<PathBuf>,
+
+    /// Watch configuration files for changes (polling)
+    #[arg(short = 'w', long = "watch", default_value_t = false)]
+    watch: bool,
 
     /// 只做配置检查：解析+构建，零副作用；成功返回 0，否则返回非 0
     #[arg(long, default_value_t = false)]
@@ -47,6 +57,13 @@ pub struct RunArgs {
 
     #[arg(long, default_value_t = false)]
     no_banner: bool,
+}
+
+const FATAL_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+
+enum RunSignal {
+    Reload,
+    Terminate,
 }
 
 fn parse_addr(s: &str) -> std::result::Result<SocketAddr, String> {
@@ -61,17 +78,99 @@ async fn term_signal() {
     sig.recv().await;
 }
 
+#[cfg(unix)]
+async fn hup_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut sig = signal(SignalKind::hangup()).expect("install SIGHUP handler");
+    sig.recv().await;
+}
+
 #[cfg(not(unix))]
 async fn term_signal() {
     // 非 Unix 平台没有 SIGTERM，这里做一个永不完成的占位 future
     std::future::pending::<()>().await;
 }
 
+#[cfg(not(unix))]
+async fn hup_signal() {
+    std::future::pending::<()>().await;
+}
+
+struct WatchHandle {
+    stop: oneshot::Sender<()>,
+    join: JoinHandle<()>,
+}
+
+impl WatchHandle {
+    async fn shutdown(self) {
+        let _ = self.stop.send(());
+        let _ = self.join.await;
+    }
+}
+
+struct CloseMonitor {
+    stop: oneshot::Sender<()>,
+    join: JoinHandle<()>,
+}
+
+impl CloseMonitor {
+    fn start() -> Self {
+        let (stop, mut stop_rx) = oneshot::channel();
+        let join = tokio::spawn(async move {
+            tokio::select! {
+                _ = tokio::time::sleep(FATAL_STOP_TIMEOUT) => {
+                    error!("sing-box did not close!");
+                    std::process::exit(1);
+                }
+                _ = &mut stop_rx => {}
+            }
+        });
+        Self { stop, join }
+    }
+
+    async fn shutdown(self) {
+        let _ = self.stop.send(());
+        let _ = self.join.await;
+    }
+}
+
 #[allow(dead_code)]
-fn file_mtime(path: &str) -> SystemTime {
+fn file_mtime(path: &Path) -> SystemTime {
     fs::metadata(path)
         .and_then(|m| m.modified())
         .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+fn snapshot_mtimes(entries: &[ConfigEntry]) -> HashMap<PathBuf, SystemTime> {
+    let mut snapshot = HashMap::new();
+    for path in config_loader::entry_files(entries) {
+        snapshot.insert(path.clone(), file_mtime(&path));
+    }
+    snapshot
+}
+
+fn snapshot_changed(
+    prev: &HashMap<PathBuf, SystemTime>,
+    entries: &[ConfigEntry],
+) -> (bool, HashMap<PathBuf, SystemTime>) {
+    let mut changed = false;
+    let mut current = HashMap::new();
+    for path in config_loader::entry_files(entries) {
+        let now = file_mtime(&path);
+        match prev.get(&path) {
+            Some(old) => {
+                if now > *old {
+                    changed = true;
+                }
+            }
+            None => changed = true,
+        }
+        current.insert(path, now);
+    }
+    if prev.len() != current.len() {
+        changed = true;
+    }
+    (changed, current)
 }
 
 fn apply_debug_options(ir: &ConfigIR) {
@@ -113,36 +212,42 @@ fn apply_debug_options(ir: &ConfigIR) {
     }
 }
 
-pub async fn run(args: RunArgs) -> Result<()> {
+fn load_config_with_import(
+    entries: &[ConfigEntry],
+    import_path: Option<&Path>,
+) -> Result<sb_config::Config> {
+    let mut cfg = config_loader::load_config(entries)?;
+    if let Some(subfile) = import_path {
+        info!(path=%subfile.display(), "importing subscription");
+        let text = fs::read_to_string(subfile)
+            .with_context(|| format!("read subscription file {}", subfile.display()))?;
+        let subcfg = sb_config::subscribe::from_subscription(&text)
+            .with_context(|| "parse subscription failed")?;
+        cfg.merge_in_place(subcfg);
+        cfg.validate().with_context(|| "config after import invalid")?;
+    }
+    Ok(cfg)
+}
+
+fn check_reload_config(global: &GlobalArgs, import_path: Option<&Path>) -> Result<()> {
+    let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+    let cfg = load_config_with_import(&entries, import_path)?;
+    crate::cli::check::run::check_config(&cfg)?;
+    Ok(())
+}
+
+pub async fn run(global: &GlobalArgs, args: RunArgs) -> Result<()> {
     // Global Panic Hook / 全局 Panic 钩子
     // Handled by app::panic::install() called in main.rs
     // 确保 panic 同时记录到 stderr 和 tracing 由全局 hook 处理
 
     // --check：零副作用配置校验
     if args.check {
-        let cfg_path = args
-            .config_path
-            .clone()
-            .context("--check 需要指定 --config <path>")?;
-        #[cfg(feature = "dev-cli")]
-        {
-            match crate::config_loader::check_only(&cfg_path) {
-                Ok((ib, ob, rules)) => {
-                    println!("CONFIG_OK: inbounds={ib} outbounds={ob} rules={rules}");
-                    return Ok(());
-                }
-                Err(e) => {
-                    eprintln!("CONFIG_BAD: {e}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        #[cfg(not(feature = "dev-cli"))]
-        {
-            let _ = cfg_path;
-            eprintln!("CONFIG CHECK: dev-cli feature not enabled");
-            std::process::exit(2);
-        }
+        let entries =
+            config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+        let cfg = load_config_with_import(&entries, args.import_path.as_deref())?;
+        crate::cli::check::run::check_config(&cfg)?;
+        return Ok(());
     }
 
     if !args.no_banner {
@@ -154,169 +259,133 @@ pub async fn run(args: RunArgs) -> Result<()> {
     //let _rh = Arc::new(RouterHandle::from_env());
     let _oh = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::default()));
 
-    // 解析简单 CLI：--config <path> [--import <subfile>] [--watch]
-    let mut args_iter = env::args().skip(1);
-    let mut config_path = None::<String>;
-    let mut import_path = None::<String>;
-    let mut do_watch = false;
-    while let Some(a) = args_iter.next() {
-        match a.as_str() {
-            "--config" | "-c" => {
-                config_path = args_iter.next();
-            }
-            "--import" | "-i" => {
-                import_path = args_iter.next();
-            }
-            "--watch" | "-w" => {
-                do_watch = true;
-            }
-            _ => {}
-        }
-    }
-    let cfg_path = config_path.unwrap_or_else(|| {
-        // 回落到环境变量/默认
-        std::env::var("SB_CONFIG").unwrap_or_else(|_| "./config.yaml".to_string())
-    });
+    loop {
+        let entries =
+            config_loader::collect_config_entries(&global.config, &global.config_directory)?;
+        let cfg = load_config_with_import(&entries, args.import_path.as_deref())?;
 
-    // 加载本地配置 - simplified for minimal CLI
-    let mut cfg = sb_config::Config::load(&cfg_path)?;
+        // Apply debug/pprof options from config (experimental.debug)
+        apply_debug_options(cfg.ir());
 
-    // 避免部分移动，使用借用；后续还要 clone 给 watch 线程
-    if let Some(ref subfile) = import_path {
-        info!(path=%subfile, "importing subscription");
-        match fs::read_to_string(subfile) {
-            Ok(text) => {
-                match sb_config::subscribe::from_subscription(&text) {
-                    Ok(subcfg) => {
-                        // 合并：保留本地 inbounds，用订阅 outbounds/rules/default 覆盖
-                        cfg.merge_in_place(subcfg);
-                        // 再次校验（如果订阅规则指向的出站不在合并后的集合中，会报错）
-                        if let Err(e) = cfg.validate() {
-                            error!(error=%e, "config after import invalid");
-                            return Err(e);
-                        }
-                    }
-                    Err(e) => {
-                        error!(error=%e, "parse subscription failed");
-                        return Err(e);
-                    }
-                }
-            }
-            Err(e) => {
-                error!(error=%e, "read subscription file failed");
-                return Err(e.into());
-            }
-        }
-    }
+        // Initialize observability (tracing + metrics) once
+        #[cfg(feature = "dev-cli")]
+        crate::tracing_init::init_observability_once();
 
-    // Apply debug/pprof options from config (experimental.debug)
-    apply_debug_options(cfg.ir());
+        // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
+        #[cfg(feature = "dev-cli")]
+        env_dump::print_once_if_enabled();
 
-    // Initialize observability (tracing + metrics) once
-    #[cfg(feature = "dev-cli")]
-    crate::tracing_init::init_observability_once();
+        // Initialize admin debug server if enabled (after debug options applied)
+        #[cfg(all(feature = "observe", feature = "admin_debug"))]
+        crate::admin_debug::init(None).await;
 
-    // Optional one-shot ENV dump for troubleshooting (SB_PRINT_ENV=1)
-    #[cfg(feature = "dev-cli")]
-    env_dump::print_once_if_enabled();
-
-    // Initialize admin debug server if enabled (after debug options applied)
-    #[cfg(all(feature = "observe", feature = "admin_debug"))]
-    crate::admin_debug::init(None).await;
-
-    // 进入引导
-    let boot = async {
         let rt = bootstrap::start_from_config(cfg).await?;
 
-        // watch: 轮询 mtime，热替换 Router/Outbound
-        if do_watch {
-            let cfg_path_clone = cfg_path.clone();
-            let import_clone = import_path.clone(); // 此时 import_path 仍可用（上面用的是借用）
+        let watch_handle = if args.watch {
+            let config_paths = global.config.clone();
+            let config_dirs = global.config_directory.clone();
+            let import_clone = args.import_path.clone();
             #[cfg(feature = "router")]
             let rh = rt.router.clone();
             let oh = rt.outbounds.clone();
-            tokio::spawn(async move {
-                let mut last = file_mtime(&cfg_path_clone);
+            let (stop_tx, mut stop_rx) = oneshot::channel();
+            let join = tokio::spawn(async move {
+                let mut snapshot = snapshot_mtimes(&entries);
                 loop {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    let now = file_mtime(&cfg_path_clone);
-                    if now > last {
-                        last = now;
-                        info!("config change detected; reloading…");
-                        // 重新加载 + 合并订阅
-                        match sb_config::Config::load(&cfg_path_clone) {
-                            Ok(mut base) => {
-                                if let Some(subfile) = import_clone.clone() {
-                                    match fs::read_to_string(&subfile) {
-                                        Ok(text) => {
-                                            match sb_config::subscribe::from_subscription(&text) {
-                                                Ok(subcfg) => base.merge_in_place(subcfg),
-                                                Err(e) => {
-                                                    error!(error=%e, "parse subscription on reload failed");
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            error!(error=%e, "read subscription on reload failed");
-                                            continue;
-                                        }
-                                    }
-                                }
-                                if let Err(e) = base.validate() {
-                                    error!(error=%e, "config invalid after reload");
+                    tokio::select! {
+                        _ = &mut stop_rx => break,
+                        _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                            let current_entries = match config_loader::collect_config_entries(&config_paths, &config_dirs) {
+                                Ok(entries) => entries,
+                                Err(e) => {
+                                    error!(error=%e, "reload config failed");
                                     continue;
                                 }
-                                // Rebuild registry and router index from IR
-                                match sb_config::present::to_ir(&base) {
-                                    Ok(ir) => {
-                                        let reg = bootstrap::build_outbound_registry_from_ir(&ir);
-                                        oh.replace(reg);
-                                        #[cfg(feature = "router")]
-                                        {
-                                            match bootstrap::build_router_index_from_config(&base) {
-                                                Ok(idx) => {
-                                                    if let Err(e) = rh.replace_index(idx).await {
-                                                        error!(error=%e, "router index replace failed");
-                                                    } else {
-                                                        info!("hot-reload applied");
+                            };
+                            let (changed, next_snapshot) = snapshot_changed(&snapshot, &current_entries);
+                            snapshot = next_snapshot;
+                            if !changed {
+                                continue;
+                            }
+                            info!("config change detected; reloading…");
+                            match load_config_with_import(&current_entries, import_clone.as_deref()) {
+                                Ok(base) => {
+                                    if let Err(e) = base.validate() {
+                                        error!(error=%e, "config invalid after reload");
+                                        continue;
+                                    }
+                                    match sb_config::present::to_ir(&base) {
+                                        Ok(ir) => {
+                                            let reg = bootstrap::build_outbound_registry_from_ir(&ir);
+                                            oh.replace(reg);
+                                            #[cfg(feature = "router")]
+                                            {
+                                                match bootstrap::build_router_index_from_config(&base) {
+                                                    Ok(idx) => {
+                                                        if let Err(e) = rh.replace_index(idx).await {
+                                                            error!(error=%e, "router index replace failed");
+                                                        } else {
+                                                            info!("hot-reload applied");
+                                                        }
                                                     }
-                                                }
-                                                Err(e) => {
-                                                    error!(error=%e, "router index build failed on reload");
+                                                    Err(e) => {
+                                                        error!(error=%e, "router index build failed on reload");
+                                                    }
                                                 }
                                             }
                                         }
+                                        Err(e) => error!(error=%e, "to_ir failed on reload"),
                                     }
-                                    Err(e) => error!(error=%e, "to_ir failed on reload"),
                                 }
+                                Err(e) => error!(error=%e, "reload config failed"),
                             }
-                            Err(e) => error!(error=%e, "reload config failed"),
                         }
                     }
                 }
             });
+            Some(WatchHandle { stop: stop_tx, join })
+        } else {
+            None
+        };
+
+        info!("singbox-rust booted; press Ctrl+C to quit");
+        let restart = loop {
+            match wait_for_signal().await {
+                RunSignal::Reload => match check_reload_config(global, args.import_path.as_deref()) {
+                    Ok(()) => break true,
+                    Err(e) => {
+                        error!(error=%e, "reload service");
+                        continue;
+                    }
+                },
+                RunSignal::Terminate => break false,
+            }
+        };
+
+        let close_monitor = CloseMonitor::start();
+        if let Some(watch) = watch_handle {
+            watch.shutdown().await;
         }
 
-        // 永远等待（让 watch 任务在后台运行）
-        loop {
-            tokio::time::sleep(Duration::from_secs(3600)).await;
+        let shutdown_result = rt.shutdown(FATAL_STOP_TIMEOUT).await;
+        close_monitor.shutdown().await;
+        if let Err(e) = shutdown_result {
+            error!(error=%e, "singbox-rust did not close properly");
+            std::process::exit(1);
         }
-        #[allow(unreachable_code)]
-        Ok::<(), anyhow::Error>(())
-    };
 
-    // === 驻留：等待 Ctrl+C 或 SIGTERM，确保服务常驻 ===
-    info!("singbox-rust booted; press Ctrl+C to quit");
-    // 等待 Ctrl+C 或（Unix）SIGTERM
-    tokio::select! {
-        r = boot => { r?; }
-        _ = tokio::signal::ctrl_c() => {
-            tracing::info!("signal: Ctrl+C received, shutting down…");
-        }
-        () = term_signal() => {
-            tracing::info!("signal: SIGTERM received, shutting down…");
+        if !restart {
+            break;
         }
     }
+
     Ok(())
+}
+
+async fn wait_for_signal() -> RunSignal {
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => RunSignal::Terminate,
+        () = term_signal() => RunSignal::Terminate,
+        () = hup_signal() => RunSignal::Reload,
+    }
 }

@@ -25,7 +25,7 @@ use std::sync::Arc;
 #[cfg(feature = "subs_http")]
 use std::time::{Duration, Instant};
 #[cfg(feature = "subs_http")]
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 
 #[cfg(feature = "subs_http")]
 use reqwest::{redirect::Policy, Client};
@@ -41,6 +41,8 @@ static MAX_CONC: OnceCell<RwLock<Arc<Semaphore>>> = OnceCell::new();
 static RPS_TOKENS: OnceCell<(AtomicU64, AtomicU64, AtomicU64)> = OnceCell::new(); // (current, capacity, last_tick)
 #[cfg(feature = "subs_http")]
 static DESIRED_CONCURRENCY: AtomicUsize = AtomicUsize::new(8);
+#[cfg(feature = "subs_http")]
+static CONCURRENCY_CAP: AtomicUsize = AtomicUsize::new(8);
 
 // Improved RPS with tick-based resetting
 #[cfg(feature = "subs_http")]
@@ -79,6 +81,7 @@ fn limiter_init() {
 
     MAX_CONC.get_or_init(|| {
         DESIRED_CONCURRENCY.store(config.max_concurrency, Ordering::Relaxed);
+        CONCURRENCY_CAP.store(config.max_concurrency, Ordering::Relaxed);
         RwLock::new(Arc::new(Semaphore::new(config.max_concurrency)))
     });
 
@@ -92,6 +95,7 @@ fn limiter_init() {
 pub fn resize_limiters(new_conc: usize, new_rps: u64) {
     // Update desired concurrency
     DESIRED_CONCURRENCY.store(new_conc, Ordering::Relaxed);
+    CONCURRENCY_CAP.store(new_conc, Ordering::Relaxed);
 
     // Hot-swap semaphore
     if let Some(sem_lock) = MAX_CONC.get() {
@@ -120,7 +124,7 @@ pub fn resize_rps(cap: u64) {
 pub fn get_current_concurrency() -> u64 {
     if let Some(sem_lock) = MAX_CONC.get() {
         if let Ok(sem_guard) = sem_lock.try_read() {
-            let total_permits = DESIRED_CONCURRENCY.load(Ordering::Relaxed) as u64;
+            let total_permits = CONCURRENCY_CAP.load(Ordering::Relaxed) as u64;
             let available_permits = sem_guard.available_permits() as u64;
             return total_permits.saturating_sub(available_permits);
         }
@@ -134,7 +138,7 @@ pub fn get_current_concurrency() -> u64 {
 }
 
 #[cfg(feature = "subs_http")]
-async fn acquire_permits() -> anyhow::Result<()> {
+async fn acquire_permits() -> anyhow::Result<OwnedSemaphorePermit> {
     limiter_init();
     #[allow(clippy::expect_used)] // Safe: limiter_init() just called above
     let sem: Arc<Semaphore> = {
@@ -144,23 +148,25 @@ async fn acquire_permits() -> anyhow::Result<()> {
     };
 
     // Tick-based RPS token bucket: refill tokens every second
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    let prev_tick = RPS_LAST_TICK.swap(now_secs, Ordering::Relaxed);
-    if prev_tick != now_secs {
-        // New second, refill tokens to capacity
-        let cap = RPS_CAP.load(Ordering::Relaxed);
-        RPS_CURRENT.store(cap, Ordering::Relaxed);
-    }
+    let refill_tokens = || {
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let prev_tick = RPS_LAST_TICK.swap(now_secs, Ordering::Relaxed);
+        if prev_tick != now_secs {
+            let cap = RPS_CAP.load(Ordering::Relaxed);
+            RPS_CURRENT.store(cap, Ordering::Relaxed);
+        }
+    };
+    refill_tokens();
 
     // Try to acquire a token with timeout
     let mut attempts = 0;
     const MAX_ATTEMPTS: u32 = 100; // ~1 second timeout with 10ms intervals
 
     loop {
+        refill_tokens();
         let bal = RPS_CURRENT.load(Ordering::Relaxed);
         if bal > 0
             && RPS_CURRENT
@@ -181,25 +187,27 @@ async fn acquire_permits() -> anyhow::Result<()> {
 
     // Semi-hot limiter fallback: dynamic capacity adjustment
     let desired = DESIRED_CONCURRENCY.load(Ordering::Relaxed);
-    let available = sem.available_permits();
-
-    // If available permits are significantly lower than desired capacity,
-    // add permits to enable hot expansion without waiting for next reload
-    if available < desired {
-        let to_add = desired.saturating_sub(available);
+    let current_cap = CONCURRENCY_CAP.load(Ordering::Relaxed);
+    if desired > current_cap {
+        let to_add = desired.saturating_sub(current_cap);
         if to_add > 0 && to_add <= 32 {
-            // Limit expansion to prevent abuse
             sem.add_permits(to_add);
-            tracing::debug!(desired = %desired, available = %available, added = %to_add, "Hot-expanded semaphore capacity");
+            CONCURRENCY_CAP.store(desired, Ordering::Relaxed);
+            tracing::debug!(
+                desired = %desired,
+                current_cap = %current_cap,
+                added = %to_add,
+                "Expanded semaphore capacity"
+            );
         }
     }
 
     // For shrinking: rely on natural permit exhaustion + front gate limiting
     // This provides zero-risk shrinking as old permits expire naturally
 
-    // Acquire concurrency semaphore
-    let _permit = sem.acquire().await?;
-    Ok(())
+    // Acquire concurrency semaphore (permit must live for the request duration)
+    let permit = sem.acquire_owned().await?;
+    Ok(permit)
 }
 
 #[cfg(feature = "subs_http")]
@@ -260,13 +268,14 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     let t0 = Instant::now();
 
     // Rate limiting - acquire permits for both concurrency and RPS
-    acquire_permits().await.map_err(|e| {
+    let _permit = acquire_permits().await.map_err(|e| {
         crate::admin_debug::security_metrics::inc_rate_limited();
         set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {e}"));
         e
     })?;
-    let parsed = url::Url::parse(url)?;
-    let host = parsed.host_str().unwrap_or("").to_string();
+    let result = async {
+        let parsed = url::Url::parse(url)?;
+        let host = parsed.host_str().unwrap_or("").to_string();
 
     // Circuit breaker check
     if let Ok(mut br) = breaker::global().lock() {
@@ -549,18 +558,31 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
     let response_url = resp.url().clone();
     let response_headers = resp.headers().clone();
 
-    let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
-    let mut stream = resp.bytes_stream();
-    use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        if body.len() + chunk.len() > size_limit {
-            inc_exceed_size();
-            set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
-            anyhow::bail!("exceed size limit: {size_limit} bytes");
+    let read_body = async {
+        let mut body = bytes::BytesMut::with_capacity(std::cmp::min(size_limit, 8192));
+        let mut stream = resp.bytes_stream();
+        use futures_util::StreamExt;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            if body.len() + chunk.len() > size_limit {
+                inc_exceed_size();
+                set_last_error_with_host(SecurityErrorKind::SizeExceed, &host, "stream exceed");
+                anyhow::bail!("exceed size limit: {size_limit} bytes");
+            }
+            body.extend_from_slice(&chunk);
         }
-        body.extend_from_slice(&chunk);
-    }
+        Ok::<bytes::BytesMut, anyhow::Error>(body)
+    };
+
+    let body = match timeout(std::time::Duration::from_millis(timeout_ms), read_body).await {
+        Ok(Ok(body)) => body,
+        Ok(Err(err)) => return Err(err),
+        Err(_) => {
+            inc_timeout();
+            set_last_error_with_host(SecurityErrorKind::Timeout, &host, "read timeout");
+            return Err(anyhow::anyhow!("timeout"));
+        }
+    };
 
     // Record latency and mark success
     let dt = t0.elapsed().as_millis() as u64;
@@ -593,7 +615,11 @@ pub async fn fetch_with_limits(url: &str) -> anyhow::Result<String> {
             let _ = crate::admin_debug::prefetch::enqueue_prefetch(response_url.as_str(), et_local);
         }
     }
-    Ok(out)
+        Ok(out)
+    }
+    .await;
+    drop(_permit);
+    result
 }
 
 #[cfg(feature = "subs_http")]
@@ -607,7 +633,7 @@ pub async fn fetch_with_limits_to_cache(
     let t0 = Instant::now();
 
     // Rate limiting - acquire permits for both concurrency and RPS
-    acquire_permits().await.map_err(|e| {
+    let _permit = acquire_permits().await.map_err(|e| {
         crate::admin_debug::security_metrics::inc_rate_limited();
         set_last_error(SecurityErrorKind::RateLimited, format!("rate limit: {e}"));
         e
@@ -1692,7 +1718,7 @@ mod tests {
             .collect();
 
         let results = futures_util::future::join_all(tasks).await;
-        let success_count = results.iter().filter(|r| matches!(r, Ok(Ok(())))).count();
+        let success_count = results.iter().filter(|r| matches!(r, Ok(Ok(_)))).count();
 
         // Should have successful acquisitions due to semi-hot expansion
         assert!(

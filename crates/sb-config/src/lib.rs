@@ -269,13 +269,92 @@ fn rule_from_ir(ir_rule: &crate::ir::RuleIR) -> Option<Rule> {
     })
 }
 
+fn rule_from_route_value(rule: &Value) -> Option<Rule> {
+    let obj = rule.as_object()?;
+    let outbound = obj
+        .get("outbound")
+        .or_else(|| obj.get("to"))
+        .and_then(|v| v.as_str())?;
+    let mut domain_suffix = Vec::new();
+    let mut ip_cidr = Vec::new();
+    let mut port = Vec::new();
+    let mut transport = None;
+
+    collect_strings(obj.get("domain_suffix"), &mut domain_suffix);
+    collect_strings(obj.get("ip_cidr"), &mut ip_cidr);
+    collect_strings(obj.get("ipcidr"), &mut ip_cidr);
+    collect_strings(obj.get("port"), &mut port);
+    transport = first_string(obj.get("network")).or(transport);
+
+    if let Some(when) = obj.get("when").and_then(|v| v.as_object()) {
+        collect_strings(when.get("suffix"), &mut domain_suffix);
+        collect_strings(when.get("domain_suffix"), &mut domain_suffix);
+        collect_strings(when.get("ip_cidr"), &mut ip_cidr);
+        collect_strings(when.get("ipcidr"), &mut ip_cidr);
+        collect_strings(when.get("port"), &mut port);
+        if transport.is_none() {
+            transport = first_string(when.get("network"));
+        }
+    }
+
+    Some(Rule {
+        domain_suffix,
+        ip_cidr,
+        port,
+        transport,
+        outbound: outbound.to_string(),
+    })
+}
+
+fn collect_strings(value: Option<&Value>, out: &mut Vec<String>) {
+    let Some(value) = value else {
+        return;
+    };
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                collect_strings(Some(item), out);
+            }
+        }
+        Value::String(s) => {
+            let s = s.trim();
+            if !s.is_empty() {
+                out.push(s.to_string());
+            }
+        }
+        Value::Number(n) => out.push(n.to_string()),
+        _ => {}
+    }
+}
+
+fn first_string(value: Option<&Value>) -> Option<String> {
+    let value = value?;
+    match value {
+        Value::String(s) => Some(s.to_string()),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|item| item.as_str().map(|s| s.to_string())),
+        _ => None,
+    }
+}
+
 impl Config {
-    pub(crate) fn from_value(doc: Value) -> Result<Self> {
+    pub fn from_value(doc: Value) -> Result<Self> {
         let mut cfg: Config = serde_json::from_value(doc.clone()).unwrap_or_default();
         cfg.raw = doc;
         cfg.ir = crate::validator::v2::to_ir_v1(&cfg.raw);
         if cfg.raw.get("route").is_some() && !cfg.ir.route.rules.is_empty() {
             cfg.rules = cfg.ir.route.rules.iter().filter_map(rule_from_ir).collect();
+        }
+        if cfg.rules.is_empty() {
+            if let Some(rules) = cfg
+                .raw
+                .get("route")
+                .and_then(|route| route.get("rules"))
+                .and_then(|v| v.as_array())
+            {
+                cfg.rules = rules.iter().filter_map(rule_from_route_value).collect();
+            }
         }
         if cfg.default_outbound.is_none() && cfg.ir.route.default.is_some() {
             cfg.default_outbound = cfg.ir.route.default.clone();

@@ -287,6 +287,10 @@ impl HostBreaker {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.map.clear();
+    }
+
     fn calculate_backoff(&self, reopen_count: u32) -> Duration {
         #[allow(clippy::cast_possible_truncation)]
         let base_ms = self.open_duration.as_millis() as u64;

@@ -43,6 +43,8 @@ async fn main() -> anyhow::Result<()> {
     // 优先解析 CLI，以便我们可以选择性地从配置中派生日志设置
     let args = cli::Args::parse();
 
+    cli::apply_global_options(&args.global)?;
+
     // Best-effort: derive logging from config before initializing
     // 尽力而为：在初始化之前从配置中派生日志设置
     // This allows the user to control logging levels via the config file,
@@ -90,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
     // 根据解析的命令将执行路由到相应的子模块。
     match args.command {
         cli::Commands::Check(a) => {
-            let code = cli::check::run(a)?;
+            let code = cli::check::run(&args.global, a)?;
             std::process::exit(code);
         }
         #[cfg(feature = "prefetch")]
@@ -110,11 +112,11 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         cli::Commands::Merge(a) => {
-            cli::merge::run(a)?;
+            cli::merge::run(&args.global, a)?;
             Ok(())
         }
         cli::Commands::Format(a) => {
-            cli::format::run(a)?;
+            cli::format::run(&args.global, a)?;
             Ok(())
         }
         #[cfg(feature = "router")]
@@ -138,20 +140,20 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         #[cfg(feature = "router")]
-        cli::Commands::Run(a) => cli::run::run(a).await,
+        cli::Commands::Run(a) => cli::run::run(&args.global, a).await,
         #[cfg(feature = "router")]
         cli::Commands::Route(a) => {
-            cli::route::run(a)?;
+            cli::route::run(&args.global, a)?;
             Ok(())
         }
         #[cfg(feature = "router")]
         cli::Commands::Dns(a) => {
-            cli::dns_cli::run(a)?;
+            cli::dns_cli::run(&args.global, a)?;
             Ok(())
         }
         #[cfg(feature = "tools")]
         cli::Commands::Tools(a) => {
-            cli::tools::run(a).await?;
+            cli::tools::run(&args.global, a).await?;
             Ok(())
         }
         cli::Commands::Version(a) => {
@@ -166,41 +168,40 @@ async fn main() -> anyhow::Result<()> {
 fn try_extract_log_from_args(
     args: &cli::Args,
 ) -> Option<(Option<String>, Option<String>, Option<bool>)> {
-    // Determine config path from subcommand
-    let path_opt: Option<String> = match &args.command {
-        // check -c <path>
-        cli::Commands::Check(a) => Some(a.config.clone()),
-        // route --config <path>
+    let uses_config = matches!(
+        &args.command,
+        cli::Commands::Check(_) | cli::Commands::Merge(_) | cli::Commands::Format(_)
+    ) || {
         #[cfg(feature = "router")]
-        cli::Commands::Route(a) => Some(a.config.clone()),
-        // run --config <path> or SB_CONFIG env (best-effort)
-        #[cfg(feature = "router")]
-        cli::Commands::Run(a) => a
-            .config_path
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .or_else(|| std::env::var("SB_CONFIG").ok()),
-        _ => None,
+        {
+            matches!(&args.command, cli::Commands::Run(_) | cli::Commands::Route(_) | cli::Commands::Dns(_))
+        }
+        #[cfg(not(feature = "router"))]
+        {
+            false
+        }
+    } || {
+        #[cfg(feature = "tools")]
+        {
+            matches!(&args.command, cli::Commands::Tools(_))
+        }
+        #[cfg(not(feature = "tools"))]
+        {
+            false
+        }
     };
 
-    let path = path_opt?;
-
-    // If stdin indicated, skip (cannot pre-read here safely)
-    if path.trim() == "-" {
+    if !uses_config {
         return None;
     }
 
-    // Try loading config; ignore errors silently and fall back to env-only logging
-    let cfg = match sb_config::Config::load(&path) {
-        Ok(c) => c,
-        Err(_) => return None,
-    };
-    let ir = match sb_config::present::to_ir(&cfg) {
-        Ok(ir) => ir,
-        Err(_) => return None,
-    };
-    if let Some(log) = ir.log {
-        return Some((log.level, log.format, log.timestamp));
+    let entries =
+        crate::config_loader::collect_config_entries(&args.global.config, &args.global.config_directory)
+            .ok()?;
+    if entries.iter().any(|entry| matches!(entry.source, crate::config_loader::ConfigSource::Stdin)) {
+        return None;
     }
-    None
+    let cfg = crate::config_loader::load_config(&entries).ok()?;
+    let log = cfg.ir().log.as_ref()?;
+    Some((log.level.clone(), log.format.clone(), log.timestamp))
 }
